@@ -1,0 +1,2 @@
+# Global TypeScript Types
+This directory contains global TypeScript type definitions (api.ts, database.ts, common.ts, etc.)

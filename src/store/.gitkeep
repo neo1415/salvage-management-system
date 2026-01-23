@@ -1,0 +1,2 @@
+# Zustand State Management
+This directory contains Zustand stores (auth-store.ts, auction-store.ts, notification-store.ts, etc.)

@@ -1,0 +1,2 @@
+# Auction Services
+This directory contains auction services (auction.service.ts, bidding.service.ts, realtime.service.ts, etc.)

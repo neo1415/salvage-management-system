@@ -1,0 +1,39 @@
+{
+  "name": "salvage-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.1",
+    "framer-motion": "^12.29.0",
+    "lucide-react": "^0.562.0",
+    "next": "^15.1.4",
+    "postgres": "^3.4.8",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-type-animation": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitest/ui": "^4.0.18",
+    "autoprefixer": "^10.4.20",
+    "drizzle-kit": "^0.31.8",
+    "eslint": "^9",
+    "eslint-config-next": "^15.1.4",
+    "fast-check": "^4.5.3",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5",
+    "vitest": "^4.0.18"
+  }
+}

@@ -1,0 +1,2 @@
+# Global Custom Hooks
+This directory contains global custom hooks (use-offline.ts, use-geolocation.ts, use-speech-to-text.ts, etc.)

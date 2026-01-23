@@ -1,0 +1,2 @@
+# External Integrations
+This directory contains external API integrations (google-vision.ts, paystack.ts, termii.ts, etc.)

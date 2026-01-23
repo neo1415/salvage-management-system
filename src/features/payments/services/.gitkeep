@@ -1,0 +1,2 @@
+# Payment Services
+This directory contains payment services (payment.service.ts, paystack.service.ts, escrow.service.ts, etc.)
