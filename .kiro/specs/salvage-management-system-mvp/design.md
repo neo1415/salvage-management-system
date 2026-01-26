@@ -26,7 +26,7 @@ The Salvage Management System is a mobile-first Progressive Web Application (PWA
 **Third-Party Integrations**
 - Google Cloud Vision API (damage assessment)
 - Google Document AI (OCR for NIN/CAC)
-- Mono/Okra API (BVN verification)
+- Paystack Identity API (BVN verification, Bank Account Resolution)
 - TinyPNG API (image compression)
 - Paystack/Flutterwave (payments)
 - Termii/Africa's Talking (SMS)
@@ -40,7 +40,7 @@ The Salvage Management System is a mobile-first Progressive Web Application (PWA
 4. **Type Safety**: TypeScript strict mode, no `any` types
 5. **Security by Design**: NDPR compliance, encrypted sensitive data, audit trails
 6. **Performance**: API <500ms, Mobile load <2s, Real-time <1s
-7. **Scalability**: Stateless servers, Redis caching, horizontal scaling ready
+7. **Scalability**: Stateless servers, Vercel KV (Redis) caching, horizontal scaling ready
 
 
 ## Architecture
@@ -675,7 +675,7 @@ salvage-management-system/
 │   │   │   │   ├── payments.ts
 │   │   │   │   └── audit-logs.ts
 │   │   │   └── migrations/
-│   │   ├── redis/                    # Redis client
+│   │   ├── redis/                    # Vercel KV (Redis) client
 │   │   │   └── client.ts
 │   │   ├── storage/                  # File storage
 │   │   │   └── cloudinary.ts
@@ -2015,7 +2015,7 @@ interface ErrorResponse {
     code: 'SERVICE_UNAVAILABLE',
     message: 'BVN verification service temporarily unavailable',
     details: {
-      service: 'Mono BVN API',
+      service: 'Paystack Identity API',
       retryAfter: 60
     },
     timestamp: '2026-01-21T10:30:00Z',

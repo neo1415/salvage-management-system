@@ -188,7 +188,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Test file: `tests/unit/db/schema-validation.test.ts`
   - Use fast-check to generate random user data and validate against schema constraints
 
-- [ ] 3. Configure authentication with NextAuth.js v5
+- [x] 3. Configure authentication with NextAuth.js v5
   - Install NextAuth.js v5: `npm install next-auth@beta`
   - Create `src/lib/auth/next-auth.config.ts` with JWT strategy
   - Configure credentials provider for email/phone + password login
@@ -198,15 +198,16 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Configure JWT token expiry (24h desktop, 2h mobile)
   - _Requirements: 8, 9, NFR4.1, Enterprise Standards Section 6.1_
 
-- [ ] 4. Set up Redis for caching and session management
-  - Install Redis client: `npm install ioredis`
-  - Create `src/lib/redis/client.ts` with connection configuration
-  - Implement session storage in Redis
+- [x] 4. Set up Vercel KV (Redis) for caching and session management
+  - Install Vercel KV SDK: `npm install @vercel/kv`
+  - Create `src/lib/redis/client.ts` with Vercel KV connection configuration
+  - Use environment variables: `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_REST_API_READ_ONLY_TOKEN`
+  - Implement session storage in Vercel KV
   - Implement cache utilities for frequently accessed data
   - Configure TTL for different cache types (sessions: 2h mobile/24h desktop, auction data: 5min)
   - _Requirements: NFR1.2, NFR2.1, Enterprise Standards Section 8.3_
 
-- [ ] 5. Configure file storage with Cloudinary
+- [x] 5. Configure file storage with Cloudinary
   - Install Cloudinary SDK: `npm install cloudinary`
   - Create `src/lib/storage/cloudinary.ts` with upload/delete functions
   - Configure image transformation presets (compression, resizing)
@@ -214,7 +215,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Configure folder structure: `/salvage-cases/{caseId}/`, `/kyc-documents/{vendorId}/`
   - _Requirements: 12.8, 12.9, Enterprise Standards Section 14.2_
 
-- [ ] 6. Set up PWA with service workers
+- [x] 6. Set up PWA with service workers
   - Install Workbox: `npm install workbox-webpack-plugin workbox-window`
   - Create `public/sw.js` with Workbox service worker
   - Implement caching strategies: CacheFirst for images, NetworkFirst for API, StaleWhileRevalidate for static assets
@@ -223,7 +224,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Configure Next.js for PWA support in `next.config.js`
   - _Requirements: 13, NFR5.2, Enterprise Standards Section 14.2_
 
-- [ ] 6.1 Write E2E test for PWA installation
+- [x] 6.1 Write E2E test for PWA installation
   - Test file: `tests/e2e/pwa-installation.spec.ts`
   - Verify PWA can be installed on mobile devices
   - Verify offline mode works correctly
@@ -232,7 +233,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
 
 ### Epic 2: User Registration & Authentication
 
-- [ ] 7. Implement user registration API
+- [x] 7. Implement user registration API
   - Create `src/app/api/auth/register/route.ts` with POST handler
   - Create `src/features/auth/services/auth.service.ts` with `register()` method
   - Implement input validation using Zod schema in `src/lib/utils/validation.ts`
@@ -242,20 +243,20 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Create audit log entry
   - _Requirements: 1, Enterprise Standards Section 6.1_
 
-- [ ] 7.1 Write property test for password validation
+- [x] 7.1 Write property test for password validation
   - **Property 1: Registration Input Validation** (password requirements)
   - **Validates: Requirement 1.2**
   - Test file: `tests/unit/auth/password-validation.test.ts`
   - Generate random passwords and verify validation logic
 
-- [ ] 7.2 Write unit tests for registration edge cases
+- [x] 7.2 Write unit tests for registration edge cases
   - Test duplicate email/phone rejection
   - Test invalid email format rejection
   - Test weak password rejection
   - Test missing required fields
   - Test file: `tests/unit/auth/registration.test.ts`
 
-- [ ] 8. Implement OAuth registration (Google & Facebook)
+- [x] 8. Implement OAuth registration (Google & Facebook)
   - Configure Google OAuth in NextAuth.js config
   - Configure Facebook OAuth in NextAuth.js config
   - Create OAuth callback handler in `src/features/auth/services/oauth.service.ts`
@@ -264,7 +265,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Create user record with status 'unverified_tier_0'
   - _Requirements: 2, Enterprise Standards Section 6.1_
 
-- [ ] 9. Implement SMS OTP verification
+- [x] 9. Implement SMS OTP verification
   - Install Termii SDK: `npm install termii-node`
   - Create `src/features/auth/services/otp.service.ts`
   - Implement `sendOTP()` method with Termii API integration
@@ -275,13 +276,13 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Create audit log entry
   - _Requirements: 3, Enterprise Standards Section 6.1_
 
-- [ ] 9.1 Write property test for OTP expiry and validation
+- [x] 9.1 Write property test for OTP expiry and validation
   - **Property 4: OTP Expiry and Validation**
   - **Validates: Requirements 3.3, 3.4, 3.5**
   - Test file: `tests/unit/auth/otp-validation.test.ts`
   - Generate random OTPs and verify expiry logic
 
-- [ ] 10. Implement login API (email/phone + password)
+- [x] 10. Implement login API (email/phone + password)
   - Create `src/app/api/auth/login/route.ts` (handled by NextAuth.js)
   - Implement credentials provider in NextAuth.js config
   - Support login with email OR phone number
@@ -292,14 +293,14 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Create audit log entry with IP address and device type
   - _Requirements: 8, NFR4.1, Enterprise Standards Section 6.1_
 
-- [ ] 10.1 Write integration test for login flow
+- [x] 10.1 Write integration test for login flow
   - Test file: `tests/integration/auth/login.test.ts`
   - Test successful login with email
   - Test successful login with phone
   - Test failed login with wrong password
   - Test account lockout after 5 failures
 
-- [ ] 11. Implement comprehensive audit logging
+- [x] 11. Implement comprehensive audit logging
   - Create `src/lib/utils/audit-logger.ts` with `logAction()` function
   - Implement middleware to capture IP address, device type, user agent
   - Create audit log entries for all user actions (authentication, case management, bidding, payments, KYC, profile updates, admin actions)
@@ -307,13 +308,13 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Implement 2-year retention policy
   - _Requirements: 11, NFR4.3, Enterprise Standards Section 6.4_
 
-- [ ] 11.1 Write property test for audit logging
+- [x] 11.1 Write property test for audit logging
   - **Property 3: Comprehensive Audit Logging**
   - **Validates: Requirements 11.1-11.6**
   - Test file: `tests/unit/audit/logging.test.ts`
   - Verify all actions create audit logs with required fields
 
-- [ ] 12. Build registration UI components
+- [x] 12. Build registration UI components
   - Create `src/components/forms/vendor-registration-form.tsx` with React Hook Form + Zod
   - Create `src/app/(auth)/register/page.tsx` with registration form
   - Implement mobile-responsive design (Tailwind CSS)
@@ -323,7 +324,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Add terms and conditions checkbox
   - _Requirements: 1, 2, NFR5.3, Enterprise Standards Section 9.1_
 
-- [ ] 13. Build OTP verification UI
+- [x] 13. Build OTP verification UI
   - Create `src/app/(auth)/verify-otp/page.tsx` with OTP input
   - Implement 6-digit OTP input with auto-focus
   - Add countdown timer showing remaining time (5 minutes)
@@ -331,7 +332,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Display error messages for invalid/expired OTPs
   - _Requirements: 3, NFR5.3_
 
-- [ ] 14. Build login UI components
+- [x] 14. Build login UI components
   - Create `src/app/(auth)/login/page.tsx` with login form
   - Support email OR phone number input
   - Add "Remember me" checkbox
@@ -340,7 +341,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Display account lockout message after 5 failed attempts
   - _Requirements: 8, 9, NFR5.3_
 
-- [ ] 15. Checkpoint - Ensure all authentication tests pass
+- [x] 15. Checkpoint - Ensure all authentication tests pass
   - Run all unit tests: `npm run test:unit`
   - Run all integration tests: `npm run test:integration`
   - Verify 80%+ code coverage for auth module
@@ -354,17 +355,20 @@ This implementation plan breaks down the 8-week MVP development into granular, a
 
 ### Epic 3: Vendor KYC & Verification
 
-- [ ] 16. Implement BVN verification service
-  - Install Mono/Okra SDK: `npm install @mono.co/connect-node` or `npm install okra-js`
+- [-] 16. Implement BVN verification service
+  - Install Paystack SDK (already installed): `npm install paystack`
   - Create `src/features/vendors/services/bvn-verification.service.ts`
-  - Implement `verifyBVN()` method calling Mono/Okra API
-  - Implement BVN matching logic (name, DOB, phone)
+  - Implement `verifyBVN()` method calling Paystack Identity API
+  - Use endpoint: `GET https://api.paystack.co/bank/resolve_bvn/:bvn`
+  - Implement BVN matching logic (name, DOB, phone) with fuzzy matching for Nigerian names
   - Implement `encryptBVN()` using AES-256 encryption
   - Implement `decryptBVN()` for internal use
   - Implement `maskBVN()` to show only last 4 digits (****7890)
+  - **Test Mode Support**: When using test keys, accept Paystack test BVN (12345678901) and log verification to console
+  - **Cost**: ₦50 per verification (vs Mono ₦100)
   - _Requirements: 4, NFR4.2, Enterprise Standards Section 6.1_
 
-- [ ] 16.1 Write property test for BVN encryption round-trip
+- [-] 16.1 Write property test for BVN encryption round-trip
   - **Property 5: BVN Security (Encryption and Masking)**
   - **Validates: Requirements 4.8, 4.9, NFR4.3**
   - Test file: `tests/unit/vendors/bvn-encryption.test.ts`
@@ -393,11 +397,13 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Upload documents to Cloudinary with encryption
   - Extract NIN from ID using Google Document AI OCR
   - Verify NIN via API
-  - Verify bank account via Paystack/Mono API
+  - Verify bank account via Paystack Bank Account Resolution API
+  - Use endpoint: `GET https://api.paystack.co/bank/resolve?account_number=X&bank_code=Y`
   - Validate CAC number against SCUML/CAC database (if available)
   - Set status to 'pending' for manual review
   - Notify Salvage Manager
   - Send SMS + Email to vendor
+  - **Test Mode Support**: When using test keys, accept test account numbers and log verification to console
   - _Requirements: 6, Enterprise Standards Section 6.1_
 
 - [ ] 19. Implement Tier 2 approval workflow

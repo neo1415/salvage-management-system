@@ -142,7 +142,7 @@ The Salvage Management System is a mobile-first, AI-enhanced, payment-optimized 
 #### Acceptance Criteria
 
 1. WHEN phone verification completes THEN THE System SHALL display KYC prompt 'Verify your identity to start bidding'
-2. WHEN Vendor enters 11-digit BVN THEN THE System SHALL call BVN verification API (Mono or Okra) with BVN, DOB, and phone
+2. WHEN Vendor enters 11-digit BVN THEN THE System SHALL call Paystack BVN verification API with BVN, DOB, and phone
 3. WHEN BVN API responds THEN THE System SHALL match BVN details against registered name, DOB, and phone
 4. IF BVN match is successful THEN THE System SHALL auto-approve Tier 1 vendor status
 5. IF BVN mismatch occurs THEN THE System SHALL show specific error message indicating mismatch details
@@ -183,7 +183,7 @@ The Salvage Management System is a mobile-first, AI-enhanced, payment-optimized 
 4. WHEN NIN is extracted THEN THE System SHALL verify via API against full name and DOB
 5. WHEN CAC number is provided THEN THE System SHALL validate against SCUML/CAC database API if available
 6. IF CAC API is unavailable THEN THE System SHALL flag for manual review by Salvage Manager
-7. WHEN bank account details are provided THEN THE System SHALL verify account number against BVN using Paystack or Mono API
+7. WHEN bank account details are provided THEN THE System SHALL verify account number and account name using Paystack Bank Account Resolution API
 8. WHEN bank account is verified THEN THE System SHALL ensure account name matches registered business name
 9. WHEN documents are uploaded THEN THE System SHALL store in AWS S3 with encryption
 10. WHEN Tier 2 KYC is initiated THEN THE System SHALL log activities: 'Tier 2 KYC initiated', 'NIN verified', 'CAC uploaded', 'Bank details verified', 'Tier 2 KYC submitted for review'
@@ -224,7 +224,7 @@ The Salvage Management System is a mobile-first, AI-enhanced, payment-optimized 
 
 1. WHEN Vendor submits login form THEN THE System SHALL accept email OR phone number plus password
 2. WHEN login is successful THEN THE System SHALL generate JWT token valid for 24 hours on desktop or 2 hours on mobile
-3. WHEN login is successful THEN THE System SHALL store session in Redis cache
+3. WHEN login is successful THEN THE System SHALL store session in Vercel KV (Redis) cache
 4. IF login fails 5 times THEN THE System SHALL lock account for 30-minute cooldown
 5. WHEN login succeeds THEN THE System SHALL log activity 'Login successful from [IP address] - [Device type]'
 6. WHEN login succeeds THEN THE System SHALL redirect to vendor dashboard
@@ -552,7 +552,7 @@ The Salvage Management System is a mobile-first, AI-enhanced, payment-optimized 
 6. WHEN bid amount is frozen THEN THE System SHALL set status to 'Funds Reserved'
 7. WHEN pickup is confirmed THEN THE System SHALL release funds to NEM Insurance
 8. WHEN funds are released THEN THE System SHALL make remaining balance available for next bid
-9. WHEN wallet balance is checked THEN THE System SHALL cache in Redis for instant checks
+9. WHEN wallet balance is checked THEN THE System SHALL cache in Vercel KV (Redis) for instant checks
 10. WHEN Vendor views wallet THEN THE System SHALL display transaction history: date, type (Credit/Debit), amount, and balance
 11. WHEN wallet is funded THEN THE System SHALL log activity 'Wallet funded ₦[amount]'
 12. WHEN funds are frozen THEN THE System SHALL log activity 'Funds frozen for auction [ID]'
@@ -808,7 +808,7 @@ The Salvage Management System is a mobile-first, AI-enhanced, payment-optimized 
 1. THE System SHALL scale application servers horizontally via Kubernetes
 2. THE System SHALL support database read replicas for reporting queries
 3. THE System SHALL use CDN (Cloudflare/Bunny) for media delivery
-4. THE System SHALL use Redis caching for frequently accessed data
+4. THE System SHALL use Vercel KV (Redis) caching for frequently accessed data
 
 #### NFR2.2 - Growth Targets
 
@@ -839,7 +839,7 @@ The Salvage Management System is a mobile-first, AI-enhanced, payment-optimized 
 1. THE System SHALL enforce multi-factor authentication for Admin users
 2. THE System SHALL lock accounts after 5 failed login attempts
 3. THE System SHALL expire sessions after 2 hours inactivity on mobile
-4. THE System SHALL integrate BVN verification API (Mono/Okra)
+4. THE System SHALL integrate Paystack Identity API for BVN verification
 
 #### NFR4.2 - Data Protection
 
@@ -910,7 +910,7 @@ The Salvage Management System is a mobile-first, AI-enhanced, payment-optimized 
 - Salvage case creation (mobile-optimized)
 - AI damage assessment (Google Vision)
 - Paystack/Flutterwave integration
-- BVN verification (Mono/Okra)
+- BVN verification (Paystack Identity API)
 - Tiered vendor registration
 - SMS/Email notifications (Termii/SendGrid)
 

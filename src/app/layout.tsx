@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register';
+import { InstallPrompt } from '@/components/pwa/install-prompt';
+import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
@@ -105,6 +108,9 @@ export default function RootLayout({
         />
       </head>
       <body className={inter.className} suppressHydrationWarning>
+        <ServiceWorkerRegister />
+        <OfflineIndicator />
+        <InstallPrompt />
         {children}
       </body>
     </html>
