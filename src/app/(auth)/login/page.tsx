@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { useForm } from 'react-hook-form';
@@ -25,10 +25,10 @@ const loginSchema = z.object({
 type LoginInput = z.infer<typeof loginSchema>;
 
 /**
- * Login Page
- * Mobile-responsive login page with email/phone + password and OAuth options
+ * Login Form Component
+ * Separated to use useSearchParams with Suspense boundary
  */
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
@@ -278,5 +278,21 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Login Page
+ * Mobile-responsive login page with email/phone + password and OAuth options
+ */
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-white animate-spin" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

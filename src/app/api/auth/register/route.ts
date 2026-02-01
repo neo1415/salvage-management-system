@@ -43,8 +43,14 @@ export async function POST(request: NextRequest) {
       console.log('📧 Welcome email skipped (using Resend test domain - verify a custom domain to enable)');
     }
 
-    // Send OTP for phone verification
-    const otpResult = await otpService.sendOTP(validatedInput.phone, ipAddress, deviceType);
+    // Send OTP for phone verification (with email backup)
+    const otpResult = await otpService.sendOTP(
+      validatedInput.phone, 
+      ipAddress, 
+      deviceType,
+      validatedInput.email, // Pass email for backup OTP delivery
+      validatedInput.fullName // Pass fullName for email personalization
+    );
     
     if (!otpResult.success) {
       console.error('Failed to send OTP:', otpResult.message);

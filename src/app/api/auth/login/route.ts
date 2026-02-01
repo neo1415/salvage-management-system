@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const userAgent = request.headers.get('user-agent') || '';
 
     // Attempt sign in with NextAuth
-    const result = await signIn('credentials', {
+    await signIn('credentials', {
       emailOrPhone,
       password,
       ipAddress,
@@ -52,11 +52,11 @@ export async function POST(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Login API error:', error);
 
     // Handle specific error messages from authorize function
-    if (error.message) {
+    if (error instanceof Error && error.message) {
       return NextResponse.json(
         { error: error.message },
         { status: 401 }

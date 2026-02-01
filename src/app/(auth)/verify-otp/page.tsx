@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, CheckCircle2, Loader2, Phone, ArrowLeft } from 'lucide-react';
 
 /**
- * OTP Verification Page
- * Mobile-responsive OTP verification with 6-digit input, countdown timer, and resend functionality
+ * OTP Verification Form Component
+ * Separated to use useSearchParams with Suspense boundary
  */
-export default function VerifyOTPPage() {
+function VerifyOTPForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const phone = searchParams.get('phone') || '';
@@ -58,69 +58,8 @@ export default function VerifyOTPPage() {
     }
   }, []);
 
-  // Handle OTP input change
-  const handleOtpChange = useCallback((index: number, value: string) => {
-    // Only allow digits
-    if (value && !/^\d$/.test(value)) {
-      return;
-    }
-
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-    setError(null);
-
-    // Auto-focus next input
-    if (value && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-
-    // Auto-submit when all 6 digits are entered
-    if (value && index === 5 && newOtp.every((digit) => digit !== '')) {
-      handleVerifyOtp(newOtp.join(''));
-    }
-  }, [otp]);
-
-  // Handle backspace
-  const handleKeyDown = useCallback((index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace') {
-      if (!otp[index] && index > 0) {
-        // Move to previous input if current is empty
-        inputRefs.current[index - 1]?.focus();
-      } else {
-        // Clear current input
-        const newOtp = [...otp];
-        newOtp[index] = '';
-        setOtp(newOtp);
-      }
-    } else if (e.key === 'ArrowLeft' && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  }, [otp]);
-
-  // Handle paste
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pastedData = e.clipboardData.getData('text').trim();
-    
-    // Only process if it's 6 digits
-    if (/^\d{6}$/.test(pastedData)) {
-      const newOtp = pastedData.split('');
-      setOtp(newOtp);
-      setError(null);
-      
-      // Focus last input
-      inputRefs.current[5]?.focus();
-      
-      // Auto-submit
-      handleVerifyOtp(pastedData);
-    }
-  }, []);
-
-  // Verify OTP
-  const handleVerifyOtp = async (otpValue: string) => {
+  // Verify OTP - defined first because other callbacks depend on it
+  const handleVerifyOtp = useCallback(async (otpValue: string) => {
     if (!phone) {
       setError('Phone number is missing. Please register again.');
       return;
@@ -162,7 +101,68 @@ export default function VerifyOTPPage() {
     } finally {
       setIsVerifying(false);
     }
-  };
+  }, [phone, router]);
+
+  // Handle OTP input change
+  const handleOtpChange = useCallback((index: number, value: string) => {
+    // Only allow digits
+    if (value && !/^\d$/.test(value)) {
+      return;
+    }
+
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+    setError(null);
+
+    // Auto-focus next input
+    if (value && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+
+    // Auto-submit when all 6 digits are entered
+    if (value && index === 5 && newOtp.every((digit) => digit !== '')) {
+      void handleVerifyOtp(newOtp.join(''));
+    }
+  }, [otp, handleVerifyOtp]);
+
+  // Handle backspace
+  const handleKeyDown = useCallback((index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      if (!otp[index] && index > 0) {
+        // Move to previous input if current is empty
+        inputRefs.current[index - 1]?.focus();
+      } else {
+        // Clear current input
+        const newOtp = [...otp];
+        newOtp[index] = '';
+        setOtp(newOtp);
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  }, [otp]);
+
+  // Handle paste
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').trim();
+    
+    // Only process if it's 6 digits
+    if (/^\d{6}$/.test(pastedData)) {
+      const newOtp = pastedData.split('');
+      setOtp(newOtp);
+      setError(null);
+      
+      // Focus last input
+      inputRefs.current[5]?.focus();
+      
+      // Auto-submit
+      void handleVerifyOtp(pastedData);
+    }
+  }, [handleVerifyOtp]);
 
   // Resend OTP
   const handleResendOtp = async () => {
@@ -211,7 +211,7 @@ export default function VerifyOTPPage() {
       return;
     }
 
-    handleVerifyOtp(otpValue);
+    void handleVerifyOtp(otpValue);
   };
 
   return (
@@ -376,5 +376,21 @@ export default function VerifyOTPPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * OTP Verification Page
+ * Mobile-responsive OTP verification with 6-digit input, countdown timer, and resend functionality
+ */
+export default function VerifyOTPPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-white animate-spin" />
+      </div>
+    }>
+      <VerifyOTPForm />
+    </Suspense>
   );
 }

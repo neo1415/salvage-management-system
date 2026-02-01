@@ -2,7 +2,7 @@ import { hash } from 'bcryptjs';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
-import { eq, or } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { RegistrationInput } from '@/lib/utils/validation';
 
 export interface RegistrationResult {

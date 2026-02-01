@@ -1,4 +1,5 @@
 import { pgTable, uuid, timestamp, numeric, boolean, varchar } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 import { auctions } from './auctions';
 import { vendors } from './vendors';
 import { deviceTypeEnum } from './users';
@@ -17,6 +18,18 @@ export const bids = pgTable('bids', {
   deviceType: deviceTypeEnum('device_type').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// Relations
+export const bidsRelations = relations(bids, ({ one }) => ({
+  auction: one(auctions, {
+    fields: [bids.auctionId],
+    references: [auctions.id],
+  }),
+  vendor: one(vendors, {
+    fields: [bids.vendorId],
+    references: [vendors.id],
+  }),
+}));
 
 // Indexes are created via SQL in migrations
 // CREATE INDEX idx_bids_auction_id ON bids(auction_id);

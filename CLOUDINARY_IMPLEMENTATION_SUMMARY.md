@@ -50,14 +50,16 @@ Successfully configured Cloudinary file storage service for the Salvage Manageme
   - Transformation preset support
   - Secure signature generation
 
-### 5. Example Component (`src/components/upload/cloudinary-upload-example.tsx`)
-- **Purpose**: Demonstration of client-side upload flow
+### 5. Upload Component (`src/components/upload/cloudinary-uploader.tsx`)
+- **Purpose**: Production-ready component for client-side file uploads
 - **Features**:
   - File selection with validation
-  - Progress tracking
-  - Error handling
+  - Real-time progress tracking
+  - Error handling and user feedback
   - Upload preview
   - Complete upload flow from signed params to Cloudinary
+  - Support for salvage cases and KYC documents
+  - Optional image transformations
 
 ## Key Features Implemented
 

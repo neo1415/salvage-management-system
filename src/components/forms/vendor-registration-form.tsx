@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { registrationSchema, type RegistrationInput } from '@/lib/utils/validation';
 import { Eye, EyeOff, Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 
@@ -71,23 +72,24 @@ export function VendorRegistrationForm({ onSubmit, onOAuthLogin }: VendorRegistr
     handleSubmit,
     watch,
     formState: { errors, touchedFields },
-  } = useForm<RegistrationInput>({
+  } = useForm<z.input<typeof registrationSchema>>({
     resolver: zodResolver(registrationSchema),
     mode: 'onChange',
   });
 
   const password = watch('password', '');
 
-  const handleFormSubmit = async (data: RegistrationInput) => {
+  const handleFormSubmit = async (data: z.input<typeof registrationSchema>) => {
     setIsSubmitting(true);
     try {
-      await onSubmit(data);
+      // The zodResolver will transform the data to output type
+      await onSubmit(data as RegistrationInput);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const getFieldStatus = (fieldName: keyof RegistrationInput) => {
+  const getFieldStatus = (fieldName: keyof z.input<typeof registrationSchema>) => {
     if (!touchedFields[fieldName]) return null;
     return errors[fieldName] ? 'error' : 'success';
   };

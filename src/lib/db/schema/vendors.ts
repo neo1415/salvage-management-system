@@ -40,6 +40,13 @@ export const vendors = pgTable('vendors', {
       fraudFlags: 0,
     }),
   rating: numeric('rating', { precision: 3, scale: 2 }).notNull().default('0.00'),
+  // Tier 2 KYC document URLs
+  cacCertificateUrl: varchar('cac_certificate_url', { length: 500 }),
+  bankStatementUrl: varchar('bank_statement_url', { length: 500 }),
+  ninCardUrl: varchar('nin_card_url', { length: 500 }),
+  // Verification flags
+  ninVerified: timestamp('nin_verified_at'),
+  bankAccountVerified: timestamp('bank_account_verified_at'),
   approvedBy: uuid('approved_by').references(() => users.id),
   approvedAt: timestamp('approved_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),

@@ -1,4 +1,18 @@
 import { Resend } from 'resend';
+import {
+  getWelcomeEmailTemplate,
+  getOTPEmailTemplate,
+  getCaseApprovalEmailTemplate,
+  getAuctionStartEmailTemplate,
+  getBidAlertEmailTemplate,
+  getPaymentConfirmationEmailTemplate,
+  type WelcomeTemplateData,
+  type OTPTemplateData,
+  type CaseApprovalTemplateData,
+  type AuctionStartTemplateData,
+  type BidAlertTemplateData,
+  type PaymentConfirmationTemplateData,
+} from '../templates';
 
 // Validate required environment variables
 if (!process.env.RESEND_API_KEY) {
@@ -59,17 +73,21 @@ export class EmailService {
         throw new Error('Invalid email format');
       }
 
+      const templateData: WelcomeTemplateData = {
+        fullName: this.escapeHtml(fullName),
+      };
+
       const result = await this.sendEmailWithRetry({
         to: email,
         subject: 'Welcome to NEM Insurance Salvage Management System',
-        html: this.getWelcomeEmailTemplate(fullName),
+        html: getWelcomeEmailTemplate(templateData),
         replyTo: this.supportEmail,
       });
 
       if (result.success) {
-        console.log(`Welcome email sent successfully to ${email} (Message ID: ${result.messageId})`);
+        console.log(`✅ Welcome email sent successfully to ${email} (Message ID: ${result.messageId})`);
       } else {
-        console.error(`Failed to send welcome email to ${email}: ${result.error}`);
+        console.error(`❌ Failed to send welcome email to ${email}: ${result.error}`);
       }
 
       return result;
@@ -89,19 +107,19 @@ export class EmailService {
    * @returns Email result
    */
   private async sendEmailWithRetry(options: EmailOptions): Promise<EmailResult> {
+    // Check if API key is configured BEFORE retry loop
+    if (!process.env.RESEND_API_KEY) {
+      console.warn('Email not sent: RESEND_API_KEY not configured');
+      return {
+        success: false,
+        error: 'Email service not configured',
+      };
+    }
+
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        // Check if API key is configured
-        if (!process.env.RESEND_API_KEY) {
-          console.warn('Email not sent: RESEND_API_KEY not configured');
-          return {
-            success: false,
-            error: 'Email service not configured',
-          };
-        }
-
         const response = await resend.emails.send({
           from: this.fromAddress,
           to: options.to,
@@ -136,177 +154,6 @@ export class EmailService {
       success: false,
       error: lastError?.message || 'Failed to send email after multiple attempts',
     };
-  }
-
-  /**
-   * Get welcome email HTML template
-   * @param fullName - User full name
-   * @returns HTML email template
-   */
-  private getWelcomeEmailTemplate(fullName: string): string {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
-    
-    return `
-      <!DOCTYPE html>
-      <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Welcome to NEM Insurance Salvage Management System</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-              line-height: 1.6;
-              color: #333;
-              margin: 0;
-              padding: 0;
-              background-color: #f5f5f5;
-            }
-            .container {
-              max-width: 600px;
-              margin: 0 auto;
-              background-color: #ffffff;
-            }
-            .header {
-              background-color: #800020;
-              color: white;
-              padding: 30px 20px;
-              text-align: center;
-            }
-            .header h1 {
-              margin: 0;
-              font-size: 24px;
-              font-weight: 600;
-            }
-            .content {
-              padding: 30px 20px;
-            }
-            .content p {
-              margin: 0 0 15px 0;
-            }
-            .steps {
-              background-color: #f9f9f9;
-              border-left: 4px solid #FFD700;
-              padding: 15px 20px;
-              margin: 20px 0;
-            }
-            .steps ol {
-              margin: 10px 0;
-              padding-left: 20px;
-            }
-            .steps li {
-              margin: 8px 0;
-            }
-            .button {
-              display: inline-block;
-              padding: 14px 28px;
-              background-color: #FFD700;
-              color: #800020;
-              text-decoration: none;
-              border-radius: 6px;
-              font-weight: 600;
-              margin: 20px 0;
-              text-align: center;
-            }
-            .button:hover {
-              background-color: #FFC700;
-            }
-            .button-container {
-              text-align: center;
-              margin: 30px 0;
-            }
-            .support-info {
-              background-color: #f9f9f9;
-              padding: 20px;
-              border-radius: 6px;
-              margin: 20px 0;
-            }
-            .support-info h3 {
-              margin: 0 0 10px 0;
-              font-size: 16px;
-              color: #800020;
-            }
-            .support-info ul {
-              list-style: none;
-              padding: 0;
-              margin: 0;
-            }
-            .support-info li {
-              margin: 8px 0;
-            }
-            .footer {
-              text-align: center;
-              padding: 20px;
-              font-size: 12px;
-              color: #666;
-              background-color: #f5f5f5;
-              border-top: 1px solid #e0e0e0;
-            }
-            .footer p {
-              margin: 5px 0;
-            }
-            @media only screen and (max-width: 600px) {
-              .header h1 {
-                font-size: 20px;
-              }
-              .content {
-                padding: 20px 15px;
-              }
-              .button {
-                display: block;
-                width: 100%;
-                box-sizing: border-box;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>Welcome to NEM Insurance<br>Salvage Management System</h1>
-            </div>
-            
-            <div class="content">
-              <p><strong>Dear ${this.escapeHtml(fullName)},</strong></p>
-              
-              <p>Thank you for registering with NEM Insurance Salvage Management System! Your account has been created successfully.</p>
-              
-              <div class="steps">
-                <h3 style="margin-top: 0; color: #800020;">Next Steps to Start Bidding:</h3>
-                <ol>
-                  <li><strong>Verify your phone number</strong> via SMS OTP</li>
-                  <li><strong>Complete Tier 1 KYC verification</strong> with your BVN (Bank Verification Number)</li>
-                  <li><strong>Browse available auctions</strong> and start bidding on salvage items</li>
-                </ol>
-              </div>
-              
-              <div class="button-container">
-                <a href="${appUrl}/login" class="button">Login to Your Account</a>
-              </div>
-              
-              <div class="support-info">
-                <h3>Need Help?</h3>
-                <p>Our support team is here to assist you:</p>
-                <ul>
-                  <li>📞 Phone: ${this.supportPhone}</li>
-                  <li>📧 Email: ${this.supportEmail}</li>
-                  <li>📍 Address: 199 Ikorodu Road, Obanikoro, Lagos</li>
-                </ul>
-              </div>
-              
-              <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Team</strong></p>
-            </div>
-            
-            <div class="footer">
-              <p><strong>NEM Insurance Plc</strong></p>
-              <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
-              <p style="margin-top: 15px;">This is an automated email. Please do not reply to this message.</p>
-              <p>If you did not create this account, please contact us immediately.</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
   }
 
   /**
@@ -368,6 +215,291 @@ export class EmailService {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Send OTP verification email
+   * @param email - User email address
+   * @param fullName - User full name
+   * @param otpCode - 6-digit OTP code
+   * @param expiryMinutes - OTP expiry time in minutes
+   * @returns Email result with success status
+   */
+  async sendOTPEmail(email: string, fullName: string, otpCode: string, expiryMinutes: number = 5): Promise<EmailResult> {
+    try {
+      // Validate inputs
+      if (!email || !fullName || !otpCode) {
+        throw new Error('Email, fullName, and otpCode are required');
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Invalid email format');
+      }
+
+      // Validate OTP format (6 digits)
+      if (!/^\d{6}$/.test(otpCode)) {
+        throw new Error('OTP must be a 6-digit code');
+      }
+
+      const templateData: OTPTemplateData = {
+        fullName: this.escapeHtml(fullName),
+        otpCode,
+        expiryMinutes,
+      };
+
+      const result = await this.sendEmailWithRetry({
+        to: email,
+        subject: `Your OTP Verification Code: ${otpCode}`,
+        html: getOTPEmailTemplate(templateData),
+        replyTo: this.supportEmail,
+      });
+
+      if (result.success) {
+        console.log(`✅ OTP email sent successfully to ${email} (Message ID: ${result.messageId})`);
+      } else {
+        console.error(`❌ Failed to send OTP email to ${email}: ${result.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('OTP email error:', errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Send case approval/rejection notification email
+   * @param email - Adjuster email address
+   * @param data - Case approval template data
+   * @returns Email result with success status
+   */
+  async sendCaseApprovalEmail(email: string, data: CaseApprovalTemplateData): Promise<EmailResult> {
+    try {
+      // Validate inputs
+      if (!email || !data) {
+        throw new Error('Email and data are required');
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Invalid email format');
+      }
+
+      // Escape HTML in user-provided data
+      const safeData: CaseApprovalTemplateData = {
+        ...data,
+        adjusterName: this.escapeHtml(data.adjusterName),
+        caseId: this.escapeHtml(data.caseId),
+        claimReference: this.escapeHtml(data.claimReference),
+        assetType: this.escapeHtml(data.assetType),
+        managerName: this.escapeHtml(data.managerName),
+        comment: data.comment ? this.escapeHtml(data.comment) : undefined,
+      };
+
+      const subject = data.status === 'approved' 
+        ? `Case Approved: ${data.claimReference}`
+        : `Case Rejected: ${data.claimReference}`;
+
+      const result = await this.sendEmailWithRetry({
+        to: email,
+        subject,
+        html: getCaseApprovalEmailTemplate(safeData),
+        replyTo: this.supportEmail,
+      });
+
+      if (result.success) {
+        console.log(`✅ Case approval email sent successfully to ${email} (Message ID: ${result.messageId})`);
+      } else {
+        console.error(`❌ Failed to send case approval email to ${email}: ${result.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Case approval email error:', errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Send auction start notification email
+   * @param email - Vendor email address
+   * @param data - Auction start template data
+   * @returns Email result with success status
+   */
+  async sendAuctionStartEmail(email: string, data: AuctionStartTemplateData): Promise<EmailResult> {
+    try {
+      // Validate inputs
+      if (!email || !data) {
+        throw new Error('Email and data are required');
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Invalid email format');
+      }
+
+      // Escape HTML in user-provided data
+      const safeData: AuctionStartTemplateData = {
+        ...data,
+        vendorName: this.escapeHtml(data.vendorName),
+        auctionId: this.escapeHtml(data.auctionId),
+        assetType: this.escapeHtml(data.assetType),
+        assetName: this.escapeHtml(data.assetName),
+        location: this.escapeHtml(data.location),
+      };
+
+      const result = await this.sendEmailWithRetry({
+        to: email,
+        subject: `New Auction: ${data.assetName} - Starting at ₦${data.reservePrice.toLocaleString()}`,
+        html: getAuctionStartEmailTemplate(safeData),
+        replyTo: this.supportEmail,
+      });
+
+      if (result.success) {
+        console.log(`✅ Auction start email sent successfully to ${email} (Message ID: ${result.messageId})`);
+      } else {
+        console.error(`❌ Failed to send auction start email to ${email}: ${result.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Auction start email error:', errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Send bid alert notification email
+   * @param email - Vendor email address
+   * @param data - Bid alert template data
+   * @returns Email result with success status
+   */
+  async sendBidAlertEmail(email: string, data: BidAlertTemplateData): Promise<EmailResult> {
+    try {
+      // Validate inputs
+      if (!email || !data) {
+        throw new Error('Email and data are required');
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Invalid email format');
+      }
+
+      // Escape HTML in user-provided data
+      const safeData: BidAlertTemplateData = {
+        ...data,
+        vendorName: this.escapeHtml(data.vendorName),
+        auctionId: this.escapeHtml(data.auctionId),
+        assetName: this.escapeHtml(data.assetName),
+        currentBidder: data.currentBidder ? this.escapeHtml(data.currentBidder) : undefined,
+        timeRemaining: data.timeRemaining ? this.escapeHtml(data.timeRemaining) : undefined,
+      };
+
+      let subject = '';
+      if (data.alertType === 'outbid') {
+        subject = `You've Been Outbid: ${data.assetName}`;
+      } else if (data.alertType === 'winning') {
+        subject = `You're Winning: ${data.assetName}`;
+      } else if (data.alertType === 'won') {
+        subject = `Congratulations! You Won: ${data.assetName}`;
+      }
+
+      const result = await this.sendEmailWithRetry({
+        to: email,
+        subject,
+        html: getBidAlertEmailTemplate(safeData),
+        replyTo: this.supportEmail,
+      });
+
+      if (result.success) {
+        console.log(`✅ Bid alert email sent successfully to ${email} (Message ID: ${result.messageId})`);
+      } else {
+        console.error(`❌ Failed to send bid alert email to ${email}: ${result.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Bid alert email error:', errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Send payment confirmation email with pickup authorization
+   * @param email - Vendor email address
+   * @param data - Payment confirmation template data
+   * @returns Email result with success status
+   */
+  async sendPaymentConfirmationEmail(email: string, data: PaymentConfirmationTemplateData): Promise<EmailResult> {
+    try {
+      // Validate inputs
+      if (!email || !data) {
+        throw new Error('Email and data are required');
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Invalid email format');
+      }
+
+      // Escape HTML in user-provided data
+      const safeData: PaymentConfirmationTemplateData = {
+        ...data,
+        vendorName: this.escapeHtml(data.vendorName),
+        auctionId: this.escapeHtml(data.auctionId),
+        assetName: this.escapeHtml(data.assetName),
+        paymentMethod: this.escapeHtml(data.paymentMethod),
+        paymentReference: this.escapeHtml(data.paymentReference),
+        pickupAuthCode: this.escapeHtml(data.pickupAuthCode),
+        pickupLocation: this.escapeHtml(data.pickupLocation),
+        pickupDeadline: this.escapeHtml(data.pickupDeadline),
+      };
+
+      const result = await this.sendEmailWithRetry({
+        to: email,
+        subject: `Payment Confirmed - Pickup Authorization for ${data.assetName}`,
+        html: getPaymentConfirmationEmailTemplate(safeData),
+        replyTo: this.supportEmail,
+      });
+
+      if (result.success) {
+        console.log(`✅ Payment confirmation email sent successfully to ${email} (Message ID: ${result.messageId})`);
+      } else {
+        console.error(`❌ Failed to send payment confirmation email to ${email}: ${result.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Payment confirmation email error:', errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
   }
 
   /**

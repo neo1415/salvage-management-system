@@ -20,7 +20,7 @@ const publicRoutes = [
 ];
 
 // This function can be marked `async` if using `await` inside
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Check if route is protected
@@ -41,8 +41,8 @@ export async function middleware(request: NextRequest) {
   }
 
   // Redirect to dashboard if accessing public auth routes while authenticated
-  // Only redirect if token exists AND user is not on verify-otp page
-  if (isPublicRoute && token && (pathname === '/login' || pathname === '/register') && pathname !== '/verify-otp') {
+  // Only redirect if token exists AND user is on login or register page (not verify-otp)
+  if (isPublicRoute && token && (pathname === '/login' || pathname === '/register')) {
     // Redirect based on user role
     const role = token.role as string;
     let dashboardUrl = '/vendor/dashboard';

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import { redis } from '@/lib/redis/client';
 import { getToken } from 'next-auth/jwt';
@@ -7,11 +7,11 @@ import { getToken } from 'next-auth/jwt';
  * Manual logout endpoint
  * Clears session from Redis and browser cookies
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     // Get token to find user ID
     const token = await getToken({
-      req: request as any,
+      req: request,
       secret: process.env.NEXTAUTH_SECRET,
     });
 
@@ -49,6 +49,6 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   return POST(request);
 }

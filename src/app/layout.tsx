@@ -4,10 +4,12 @@ import './globals.css';
 import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register';
 import { InstallPrompt } from '@/components/pwa/install-prompt';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
+import { AuthProvider } from '@/lib/auth/auth-provider';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com'),
   title: 'Salvage Management System - AI-Powered Auctions for Nigerian Vendors | NEM Insurance',
   description: 'Transform salvage recovery with AI-powered auctions. Instant Paystack payments, real-time bidding, mobile PWA. Join 500+ Nigerian vendors. BVN verification, escrow wallet, gamified leaderboards.',
   keywords: ['salvage auctions', 'Nigerian vendors', 'AI damage assessment', 'Paystack payments', 'NEM Insurance', 'mobile auctions', 'real-time bidding', 'salvage management'],
@@ -108,10 +110,12 @@ export default function RootLayout({
         />
       </head>
       <body className={inter.className} suppressHydrationWarning>
-        <ServiceWorkerRegister />
-        <OfflineIndicator />
-        <InstallPrompt />
-        {children}
+        <AuthProvider>
+          <ServiceWorkerRegister />
+          <OfflineIndicator />
+          <InstallPrompt />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

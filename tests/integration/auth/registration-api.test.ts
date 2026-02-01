@@ -6,16 +6,19 @@ import { authService } from '@/features/auth/services/auth.service';
  * Tests the complete registration flow including database operations
  */
 describe('Registration API Integration Tests', () => {
-  const validRegistrationData = {
+  // Helper function to generate unique test data
+  const generateTestData = () => ({
     fullName: 'Test User',
-    email: `test-${Date.now()}@example.com`,
+    email: `test-${Date.now()}-${Math.random().toString(36).substring(7)}@example.com`,
     phone: `+234801${Math.floor(Math.random() * 10000000)}`,
     password: 'SecurePass123!',
     dateOfBirth: new Date('1990-01-01'),
     termsAccepted: true,
-  };
+  });
 
   it('should successfully register a new user', async () => {
+    const validRegistrationData = generateTestData();
+    
     const result = await authService.register(
       validRegistrationData,
       '127.0.0.1',
@@ -28,6 +31,7 @@ describe('Registration API Integration Tests', () => {
   });
 
   it('should reject duplicate email registration', async () => {
+    const validRegistrationData = generateTestData();
     // First registration
     const firstResult = await authService.register(
       validRegistrationData,
@@ -49,14 +53,15 @@ describe('Registration API Integration Tests', () => {
   });
 
   it('should reject duplicate phone registration', async () => {
-    const uniqueEmail1 = `test-${Date.now()}-1@example.com`;
-    const uniqueEmail2 = `test-${Date.now()}-2@example.com`;
+    const baseData = generateTestData();
+    const uniqueEmail1 = `test-${Date.now()}-1-${Math.random().toString(36).substring(7)}@example.com`;
+    const uniqueEmail2 = `test-${Date.now()}-2-${Math.random().toString(36).substring(7)}@example.com`;
     const sharedPhone = `+234801${Math.floor(Math.random() * 10000000)}`;
 
     // First registration
     const firstResult = await authService.register(
       {
-        ...validRegistrationData,
+        ...baseData,
         email: uniqueEmail1,
         phone: sharedPhone,
       },
@@ -69,7 +74,7 @@ describe('Registration API Integration Tests', () => {
     // Second registration with same phone
     const secondResult = await authService.register(
       {
-        ...validRegistrationData,
+        ...baseData,
         email: uniqueEmail2,
         phone: sharedPhone,
       },
@@ -82,12 +87,10 @@ describe('Registration API Integration Tests', () => {
   });
 
   it('should hash password with bcrypt', async () => {
+    const validRegistrationData = generateTestData();
+    
     const result = await authService.register(
-      {
-        ...validRegistrationData,
-        email: `test-${Date.now()}@example.com`,
-        phone: `+234801${Math.floor(Math.random() * 10000000)}`,
-      },
+      validRegistrationData,
       '127.0.0.1',
       'desktop'
     );
@@ -101,12 +104,10 @@ describe('Registration API Integration Tests', () => {
   });
 
   it('should create user with correct initial status', async () => {
+    const validRegistrationData = generateTestData();
+    
     const result = await authService.register(
-      {
-        ...validRegistrationData,
-        email: `test-${Date.now()}@example.com`,
-        phone: `+234801${Math.floor(Math.random() * 10000000)}`,
-      },
+      validRegistrationData,
       '127.0.0.1',
       'desktop'
     );

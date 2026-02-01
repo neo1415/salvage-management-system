@@ -6,13 +6,14 @@
  * 
  * Features:
  * - Signed upload URLs for secure client-side uploads
- * - Automatic image compression and optimization
+ * - Automatic image compression via TinyPNG before upload
  * - Organized folder structure by entity type
  * - Image transformation presets
  * - Secure deletion with signature verification
  */
 
 import { v2 as cloudinary } from 'cloudinary';
+import { compressImage, isCompressionAvailable, COMPRESSION_PRESETS } from '../integrations/tinypng';
 
 // Configure Cloudinary
 cloudinary.config({
@@ -75,6 +76,16 @@ export interface UploadOptions {
   transformation?: typeof TRANSFORMATION_PRESETS[keyof typeof TRANSFORMATION_PRESETS];
   resourceType?: 'image' | 'raw' | 'video' | 'auto';
   tags?: string[];
+  /**
+   * Whether to compress image using TinyPNG before upload
+   * Default: true for images, false for other resource types
+   */
+  compress?: boolean;
+  /**
+   * Compression preset to use (only applies if compress is true)
+   * Default: MOBILE preset for optimal mobile data savings
+   */
+  compressionPreset?: keyof typeof COMPRESSION_PRESETS;
 }
 
 /**
@@ -107,18 +118,35 @@ export interface SignedUploadParams {
 /**
  * Upload a file to Cloudinary
  * 
+ * Automatically compresses images using TinyPNG before upload to save mobile data.
+ * Compression can be disabled by setting compress: false in options.
+ * 
  * @param file - File path or buffer to upload
  * @param options - Upload configuration options
  * @returns Upload result with URLs and metadata
  * 
  * @example
  * ```typescript
- * const result = await uploadFile('/path/to/image.jpg', {
+ * // Upload with automatic compression (default)
+ * const result = await uploadFile(imageBuffer, {
  *   folder: `${CLOUDINARY_FOLDERS.SALVAGE_CASES}/case-123`,
  *   transformation: TRANSFORMATION_PRESETS.COMPRESSED,
  *   tags: ['vehicle', 'front-damage'],
  * });
- * console.log(result.secureUrl);
+ * 
+ * // Upload without compression (for documents)
+ * const result = await uploadFile(pdfBuffer, {
+ *   folder: `${CLOUDINARY_FOLDERS.KYC_DOCUMENTS}/vendor-456`,
+ *   resourceType: 'raw',
+ *   compress: false,
+ * });
+ * 
+ * // Upload with custom compression preset
+ * const result = await uploadFile(imageBuffer, {
+ *   folder: getSalvageCaseFolder('case-123'),
+ *   compress: true,
+ *   compressionPreset: 'THUMBNAIL',
+ * });
  * ```
  */
 export async function uploadFile(
@@ -126,9 +154,47 @@ export async function uploadFile(
   options: UploadOptions
 ): Promise<UploadResult> {
   try {
-    const uploadOptions: any = {
+    let fileToUpload: string | Buffer = file;
+    
+    // Determine if we should compress
+    const shouldCompress = options.compress !== false && 
+                          (options.resourceType === 'image' || options.resourceType === 'auto' || !options.resourceType) &&
+                          Buffer.isBuffer(file) &&
+                          isCompressionAvailable();
+    
+    // Compress image if applicable
+    if (shouldCompress) {
+      try {
+        const compressionOptions = options.compressionPreset 
+          ? COMPRESSION_PRESETS[options.compressionPreset]
+          : COMPRESSION_PRESETS.MOBILE;
+        
+        const compressionResult = await compressImage(file as Buffer, compressionOptions);
+        
+        console.log(`Image compressed: ${compressionResult.originalSize} bytes → ${compressionResult.compressedSize} bytes (${compressionResult.compressionRatio}% reduction)`);
+        
+        fileToUpload = compressionResult.buffer;
+      } catch (compressionError) {
+        // Log compression error but continue with original file
+        console.warn('Image compression failed, uploading original:', compressionError);
+        fileToUpload = file;
+      }
+    }
+    
+    interface CloudinaryUploadOptions {
+      folder: string;
+      resource_type: 'image' | 'raw' | 'video' | 'auto';
+      use_filename: boolean;
+      unique_filename: boolean;
+      overwrite: boolean;
+      public_id?: string;
+      transformation?: typeof TRANSFORMATION_PRESETS[keyof typeof TRANSFORMATION_PRESETS];
+      tags?: string[];
+    }
+    
+    const uploadOptions: CloudinaryUploadOptions = {
       folder: options.folder,
-      resource_type: options.resourceType || 'auto',
+      resource_type: (options.resourceType || 'auto') as 'image' | 'raw' | 'video' | 'auto',
       use_filename: true,
       unique_filename: true,
       overwrite: false,
@@ -151,7 +217,7 @@ export async function uploadFile(
 
     // Upload to Cloudinary
     const result = await cloudinary.uploader.upload(
-      typeof file === 'string' ? file : `data:image/jpeg;base64,${file.toString('base64')}`,
+      typeof fileToUpload === 'string' ? fileToUpload : `data:image/jpeg;base64,${fileToUpload.toString('base64')}`,
       uploadOptions
     );
 
@@ -209,7 +275,7 @@ export function generateSignedUploadParams(
 ): SignedUploadParams {
   const timestamp = Math.round(Date.now() / 1000);
   
-  const params: Record<string, any> = {
+  const params: Record<string, string | number> = {
     timestamp,
     folder,
   };
@@ -317,7 +383,7 @@ export async function deleteMultipleFiles(
  */
 export function getTransformedUrl(
   publicId: string,
-  transformation: typeof TRANSFORMATION_PRESETS[keyof typeof TRANSFORMATION_PRESETS] | Record<string, any>
+  transformation: typeof TRANSFORMATION_PRESETS[keyof typeof TRANSFORMATION_PRESETS] | Record<string, unknown>
 ): string {
   return cloudinary.url(publicId, {
     ...transformation,

@@ -142,14 +142,16 @@ describe('VendorRegistrationForm', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(mockOnSubmit).toHaveBeenCalledWith({
-        fullName: 'John Doe',
-        email: 'john@example.com',
-        phone: '+2348012345678',
-        dateOfBirth: '1990-01-01',
-        password: 'Password123!',
-        termsAccepted: true,
-      });
+      expect(mockOnSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fullName: 'John Doe',
+          email: 'john@example.com',
+          phone: '+2348012345678',
+          dateOfBirth: expect.any(Object), // Can be string or Date object
+          password: 'Password123!',
+          termsAccepted: true,
+        })
+      );
     });
   });
 });

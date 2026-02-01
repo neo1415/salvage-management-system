@@ -11,7 +11,10 @@ import crypto from 'crypto';
 
 // Encryption configuration
 const ENCRYPTION_ALGORITHM = 'aes-256-cbc';
-const ENCRYPTION_KEY = process.env.BVN_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+// Generate a proper 32-byte key from the environment variable
+const ENCRYPTION_KEY_STRING = process.env.BVN_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+// Ensure we have exactly 32 bytes for AES-256
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENCRYPTION_KEY_STRING).digest();
 const IV_LENGTH = 16;
 
 // Paystack configuration
@@ -20,6 +23,13 @@ const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 
 // Test mode BVN
 const TEST_BVN = '12345678901';
+
+/**
+ * Check if we're in test mode (runtime check)
+ */
+function isTestMode(): boolean {
+  return process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test_') || false;
+}
 
 export interface BVNVerificationRequest {
   bvn: string;
@@ -73,8 +83,7 @@ export async function verifyBVN(request: BVNVerificationRequest): Promise<BVNVer
     }
 
     // Test mode support
-    const isTestMode = PAYSTACK_SECRET_KEY?.startsWith('sk_test_');
-    if (isTestMode && request.bvn === TEST_BVN) {
+    if (isTestMode() && request.bvn === TEST_BVN) {
       console.log('[TEST MODE] BVN Verification:', {
         bvn: maskBVN(request.bvn),
         firstName: request.firstName,
@@ -324,9 +333,8 @@ export function encryptBVN(bvn: string): string {
     // Generate random IV
     const iv = crypto.randomBytes(IV_LENGTH);
 
-    // Create cipher
-    const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
-    const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
+    // Create cipher with the 32-byte key
+    const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, ENCRYPTION_KEY, iv);
 
     // Encrypt
     let encrypted = cipher.update(bvn, 'utf8', 'hex');
@@ -354,9 +362,8 @@ export function decryptBVN(encryptedBVN: string): string {
     const iv = Buffer.from(parts[0], 'hex');
     const encrypted = parts[1];
 
-    // Create decipher
-    const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
-    const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+    // Create decipher with the 32-byte key
+    const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, ENCRYPTION_KEY, iv);
 
     // Decrypt
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');

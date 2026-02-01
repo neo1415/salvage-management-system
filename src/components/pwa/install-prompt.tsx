@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { X } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -81,10 +82,12 @@ export function InstallPrompt() {
 
         <div className="flex items-start gap-4">
           <div className="flex-shrink-0">
-            <img
+            <Image
               src="/icons/Nem-insurance-Logo.jpg"
               alt="NEM Insurance"
-              className="w-16 h-16 rounded-xl"
+              width={64}
+              height={64}
+              className="rounded-xl"
             />
           </div>
 

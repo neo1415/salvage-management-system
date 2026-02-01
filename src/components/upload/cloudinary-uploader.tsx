@@ -1,15 +1,25 @@
 /**
- * Example Component: Cloudinary Upload
+ * Cloudinary File Uploader Component
  * 
- * This component demonstrates how to upload files to Cloudinary using signed upload parameters.
- * It shows the complete flow from getting signed params to uploading the file.
+ * Production-ready component for uploading files to Cloudinary with signed upload parameters.
+ * Supports progress tracking, file validation, and error handling.
+ * 
+ * Features:
+ * - Secure signed uploads (no API keys exposed to client)
+ * - Real-time upload progress tracking
+ * - File size and type validation
+ * - Image preview after upload
+ * - Support for salvage cases and KYC documents
+ * - Optional image transformations
  * 
  * Usage:
  * ```tsx
- * <CloudinaryUploadExample
+ * <CloudinaryUploader
  *   entityType="salvage-case"
  *   entityId="case-123"
+ *   transformation="compressed"
  *   onUploadComplete={(result) => console.log('Uploaded:', result)}
+ *   onUploadError={(error) => console.error('Upload failed:', error)}
  * />
  * ```
  */
@@ -17,8 +27,9 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 
-interface CloudinaryUploadExampleProps {
+interface CloudinaryUploaderProps {
   entityType: 'salvage-case' | 'kyc-document';
   entityId: string;
   transformation?: 'thumbnail' | 'medium' | 'large' | 'compressed';
@@ -37,13 +48,13 @@ interface CloudinaryUploadResult {
   created_at: string;
 }
 
-export function CloudinaryUploadExample({
+export function CloudinaryUploader({
   entityType,
   entityId,
   transformation,
   onUploadComplete,
   onUploadError,
-}: CloudinaryUploadExampleProps) {
+}: CloudinaryUploaderProps) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
@@ -204,10 +215,11 @@ export function CloudinaryUploadExample({
         <div className="mb-4">
           <p className="text-sm font-medium text-green-700 mb-2">Upload successful!</p>
           <div className="relative aspect-video bg-gray-100 rounded-md overflow-hidden">
-            <img
+            <Image
               src={uploadedUrl}
               alt="Uploaded file"
-              className="w-full h-full object-contain"
+              fill
+              className="object-contain"
             />
           </div>
           <p className="mt-2 text-xs text-gray-500 break-all">{uploadedUrl}</p>

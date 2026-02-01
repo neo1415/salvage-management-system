@@ -12,8 +12,8 @@ export const auditLogs = pgTable('audit_logs', {
   ipAddress: varchar('ip_address', { length: 45 }).notNull(),
   deviceType: deviceTypeEnum('device_type').notNull(),
   userAgent: varchar('user_agent', { length: 500 }).notNull(),
-  beforeState: jsonb('before_state').$type<Record<string, any>>(),
-  afterState: jsonb('after_state').$type<Record<string, any>>(),
+  beforeState: jsonb('before_state').$type<Record<string, unknown>>(),
+  afterState: jsonb('after_state').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 

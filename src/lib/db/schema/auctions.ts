@@ -1,6 +1,8 @@
 import { pgTable, uuid, timestamp, numeric, integer, pgEnum } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 import { salvageCases } from './cases';
 import { vendors } from './vendors';
+import { bids } from './bids';
 
 export const auctionStatusEnum = pgEnum('auction_status', [
   'scheduled',
@@ -30,8 +32,22 @@ export const auctions = pgTable('auctions', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+// Relations
+export const auctionsRelations = relations(auctions, ({ one, many }) => ({
+  case: one(salvageCases, {
+    fields: [auctions.caseId],
+    references: [salvageCases.id],
+  }),
+  currentBidderVendor: one(vendors, {
+    fields: [auctions.currentBidder],
+    references: [vendors.id],
+  }),
+  bids: many(bids),
+}));
+
 // Indexes are created via SQL in migrations
 // CREATE INDEX idx_auctions_case_id ON auctions(case_id);
 // CREATE INDEX idx_auctions_status ON auctions(status);
 // CREATE INDEX idx_auctions_end_time ON auctions(end_time);
 // CREATE INDEX idx_auctions_status_end_time ON auctions(status, end_time) WHERE status = 'active';
+

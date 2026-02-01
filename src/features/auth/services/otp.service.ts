@@ -38,16 +38,20 @@ export class OTPService {
   }
 
   /**
-   * Send OTP via SMS using Termii API
+   * Send OTP via SMS using Termii API and Email as backup
    * @param phone - Phone number in international format (e.g., +2348012345678)
    * @param ipAddress - IP address of the requester
    * @param deviceType - Device type
+   * @param email - Email address (optional, for backup OTP delivery)
+   * @param fullName - User full name (optional, for email personalization)
    * @returns Success status and message
    */
   async sendOTP(
     phone: string,
     ipAddress: string,
-    deviceType: 'mobile' | 'desktop' | 'tablet'
+    deviceType: 'mobile' | 'desktop' | 'tablet',
+    email?: string,
+    fullName?: string
   ): Promise<{ success: boolean; message: string }> {
     try {
       // Check rate limiting (max 3 OTP requests per 30 minutes per phone)
@@ -95,6 +99,9 @@ export class OTPService {
           });
 
           const result = await response.json();
+
+          // Log the full Termii response for debugging
+          console.log('📱 Termii API Response:', JSON.stringify(result, null, 2));
 
           if (!response.ok) {
             throw new Error(`Termii API error: ${result.message || 'Failed to send SMS'}`);
@@ -160,6 +167,18 @@ export class OTPService {
         console.error('Failed to create audit log for OTP send:', auditError);
       }
 
+      // Send OTP via email as backup (if email provided)
+      if (email && fullName) {
+        try {
+          const { emailService } = await import('@/features/notifications/services/email.service');
+          await emailService.sendOTPEmail(email, fullName, otp, 5);
+          console.log(`✅ OTP email sent successfully to ${email}`);
+        } catch (emailError) {
+          console.error('Failed to send OTP email:', emailError);
+          // Don't fail if email sending fails - SMS is primary
+        }
+      }
+
       return {
         success: true,
         message: 'OTP sent successfully',
@@ -211,10 +230,11 @@ export class OTPService {
 
       // Verify OTP
       if (otpData.otp !== otp) {
-        // Increment attempts
-        await otpCache.incrementAttempts(phone);
+        // Increment attempts and get the new count
+        const newAttempts = await otpCache.incrementAttempts(phone);
         
-        const remainingAttempts = this.MAX_ATTEMPTS - (otpData.attempts + 1);
+        // Calculate remaining attempts using the NEW attempts value
+        const remainingAttempts = this.MAX_ATTEMPTS - newAttempts;
         
         return {
           success: false,

@@ -71,9 +71,13 @@ export function isStandalone(): boolean {
     return false;
   }
 
+  interface NavigatorStandalone extends Navigator {
+    standalone?: boolean;
+  }
+
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
-    (window.navigator as any).standalone === true
+    (window.navigator as NavigatorStandalone).standalone === true
   );
 }
 

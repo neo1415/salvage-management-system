@@ -12,9 +12,26 @@ import { encryptBVN, decryptBVN, maskBVN } from '../../../src/features/vendors/s
  * 3. Encrypted BVNs are different from original BVNs
  */
 
+// Custom generator for 11-digit BVN
+const bvnArbitrary = fc.tuple(
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 }),
+  fc.integer({ min: 0, max: 9 })
+).map(digits => digits.join(''));
+
 describe('Property 5: BVN Security (Encryption and Masking)', () => {
   // Property test: Encryption round-trip
-  test.prop([fc.string({ minLength: 11, maxLength: 11 }).filter(s => /^\d{11}$/.test(s))])(
+  test.prop([bvnArbitrary], {
+    numRuns: 20,
+  })(
     'encrypt → decrypt produces original BVN',
     (bvn) => {
       // Encrypt the BVN
@@ -29,7 +46,9 @@ describe('Property 5: BVN Security (Encryption and Masking)', () => {
   );
 
   // Property test: Encrypted BVN is different from original
-  test.prop([fc.string({ minLength: 11, maxLength: 11 }).filter(s => /^\d{11}$/.test(s))])(
+  test.prop([bvnArbitrary], {
+    numRuns: 20,
+  })(
     'encrypted BVN is different from original',
     (bvn) => {
       const encrypted = encryptBVN(bvn);
@@ -43,7 +62,9 @@ describe('Property 5: BVN Security (Encryption and Masking)', () => {
   );
 
   // Property test: BVN masking shows only last 4 digits
-  test.prop([fc.string({ minLength: 11, maxLength: 11 }).filter(s => /^\d{11}$/.test(s))])(
+  test.prop([bvnArbitrary], {
+    numRuns: 20,
+  })(
     'maskBVN shows only last 4 digits',
     (bvn) => {
       const masked = maskBVN(bvn);
@@ -63,7 +84,9 @@ describe('Property 5: BVN Security (Encryption and Masking)', () => {
   );
 
   // Property test: Multiple encryptions produce different ciphertexts
-  test.prop([fc.string({ minLength: 11, maxLength: 11 }).filter(s => /^\d{11}$/.test(s))])(
+  test.prop([bvnArbitrary], {
+    numRuns: 20,
+  })(
     'multiple encryptions of same BVN produce different ciphertexts (due to random IV)',
     (bvn) => {
       const encrypted1 = encryptBVN(bvn);

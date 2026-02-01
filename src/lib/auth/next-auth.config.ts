@@ -9,7 +9,7 @@ import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq, or } from 'drizzle-orm';
 import { kv } from '@vercel/kv';
-import { redis, rateLimiter } from '@/lib/redis/client';
+import { redis } from '@/lib/redis/client';
 
 // Device type detection helper
 function getDeviceType(userAgent: string | null): 'mobile' | 'desktop' | 'tablet' {
@@ -77,7 +77,7 @@ async function createAuditLog(
   ipAddress: string,
   deviceType: 'mobile' | 'desktop' | 'tablet',
   userAgent: string,
-  afterState?: Record<string, any>
+  afterState?: Record<string, unknown>
 ): Promise<void> {
   try {
     await db.insert(auditLogs).values({
@@ -106,7 +106,7 @@ export const authConfig: NextAuthConfig = {
         ipAddress: { label: 'IP Address', type: 'hidden' },
         userAgent: { label: 'User Agent', type: 'hidden' },
       },
-      async authorize(credentials, req) {
+      async authorize(credentials, _req) {
         if (!credentials?.emailOrPhone || !credentials?.password) {
           throw new Error('Email/Phone and password are required');
         }
@@ -213,6 +213,7 @@ export const authConfig: NextAuthConfig = {
           name: user.fullName,
           role: user.role,
           status: user.status,
+          phone: user.phone,
         };
       },
     }),
@@ -280,12 +281,20 @@ export const authConfig: NextAuthConfig = {
         // New OAuth user - extract phone from profile if available
         let phone: string | undefined;
         
+        interface OAuthProfile {
+          phone_number?: string;
+          phoneNumber?: string;
+          phone?: string;
+        }
+        
         if (account.provider === 'google' && profile) {
           // Google may provide phone in profile
-          phone = (profile as any).phone_number || (profile as any).phoneNumber;
+          const googleProfile = profile as OAuthProfile;
+          phone = googleProfile.phone_number || googleProfile.phoneNumber;
         } else if (account.provider === 'facebook' && profile) {
           // Facebook may provide phone in profile
-          phone = (profile as any).phone;
+          const facebookProfile = profile as OAuthProfile;
+          phone = facebookProfile.phone;
         }
 
         // If no phone number, user will need to provide it after OAuth
@@ -327,13 +336,18 @@ export const authConfig: NextAuthConfig = {
       return true;
     },
 
-    async jwt({ token, user, account, trigger }) {
+    async jwt({ token, user, account: _account, trigger }) {
       // Initial sign in
       if (user) {
         token.id = user.id;
         token.role = user.role || 'vendor';
         token.status = user.status || 'unverified_tier_0';
         token.email = user.email || '';
+        token.phone = user.phone;
+        
+        // Generate access token (use the JWT token itself as access token)
+        // In production, you might want to generate a separate access token
+        token.accessToken = token.jti || token.id;
         
         // Set token expiry based on device type
         const deviceType = getDeviceType(token.userAgent as string | null);
@@ -353,6 +367,7 @@ export const authConfig: NextAuthConfig = {
         if (updatedUser) {
           token.role = updatedUser.role;
           token.status = updatedUser.status;
+          token.phone = updatedUser.phone;
         }
       }
 
@@ -365,12 +380,21 @@ export const authConfig: NextAuthConfig = {
         session.user.role = token.role as string;
         session.user.status = token.status as string;
         session.user.email = token.email as string;
+        session.user.phone = token.phone as string | undefined;
+        
+        // Include access token in session for Socket.io authentication
+        session.accessToken = token.accessToken as string;
       }
 
       // Store session in Redis for quick lookups
       if (session.user?.id && token) {
         const sessionKey = `session:${session.user.id}`;
-        const deviceType = getDeviceType((token as any).userAgent as string | null);
+        
+        interface TokenWithUserAgent {
+          userAgent?: string | null;
+        }
+        
+        const deviceType = getDeviceType((token as TokenWithUserAgent).userAgent as string | null);
         const expirySeconds = getTokenExpiry(deviceType);
         
         await kv.set(sessionKey, JSON.stringify(session), {
@@ -392,7 +416,7 @@ export const authConfig: NextAuthConfig = {
   },
 
   events: {
-    async signIn({ user, account, isNewUser }) {
+    async signIn({ user, account, isNewUser: _isNewUser }) {
       // Update last login timestamp (already done in authorize for credentials)
       // For OAuth, update here
       if (user.id && account?.provider !== 'credentials') {

@@ -22,4 +22,4 @@ if (missingEnvVars.length > 0) {
 }
 
 // Set test environment
-process.env.NODE_ENV = 'test';
+// NODE_ENV is already set to 'test' by vitest

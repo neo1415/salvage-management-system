@@ -115,6 +115,25 @@ if (workbox) {
     'POST'
   );
 
+  // Listen for sync events from the browser
+  self.addEventListener('sync', (event) => {
+    console.log('Sync event triggered:', event.tag);
+    
+    if (event.tag === 'offline-cases-sync') {
+      event.waitUntil(
+        // Notify all clients to trigger sync
+        self.clients.matchAll().then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({
+              type: 'SYNC_OFFLINE_CASES',
+              timestamp: Date.now(),
+            });
+          });
+        })
+      );
+    }
+  });
+
   // Skip waiting and claim clients immediately
   workbox.core.skipWaiting();
   workbox.core.clientsClaim();

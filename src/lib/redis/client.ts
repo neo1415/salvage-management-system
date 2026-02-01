@@ -57,7 +57,7 @@ export const cache = {
   /**
    * Invalidate cache by key pattern
    */
-  async invalidatePattern(pattern: string): Promise<void> {
+  async invalidatePattern(_pattern: string): Promise<void> {
     // Note: Vercel KV doesn't support SCAN, so we need to track keys manually
     // For now, we'll just delete specific keys
     // In production, consider using a key tracking mechanism
@@ -67,7 +67,7 @@ export const cache = {
   /**
    * Set cache with TTL
    */
-  async set(key: string, value: any, expirySeconds: number = 300): Promise<void> {
+  async set(key: string, value: unknown, expirySeconds: number = 300): Promise<void> {
     await redis.set(key, JSON.stringify(value), { ex: expirySeconds });
   },
 
@@ -151,7 +151,7 @@ export const sessionCache = {
    */
   async set(
     userId: string,
-    sessionData: any,
+    sessionData: Record<string, unknown>,
     deviceType: 'mobile' | 'desktop' | 'tablet' = 'desktop'
   ): Promise<void> {
     const key = `session:${userId}`;
@@ -162,7 +162,7 @@ export const sessionCache = {
   /**
    * Get session data
    */
-  async get(userId: string): Promise<any | null> {
+  async get(userId: string): Promise<Record<string, unknown> | null> {
     const key = `session:${userId}`;
     return await cache.get(key);
   },
@@ -266,7 +266,7 @@ export const auctionCache = {
   /**
    * Cache auction data with 5-minute TTL
    */
-  async set(auctionId: string, auctionData: any): Promise<void> {
+  async set(auctionId: string, auctionData: Record<string, unknown>): Promise<void> {
     const key = `auction:${auctionId}`;
     await cache.set(key, auctionData, CACHE_TTL.AUCTION_DATA);
   },
@@ -274,7 +274,7 @@ export const auctionCache = {
   /**
    * Get cached auction data
    */
-  async get(auctionId: string): Promise<any | null> {
+  async get(auctionId: string): Promise<Record<string, unknown> | null> {
     const key = `auction:${auctionId}`;
     return await cache.get(key);
   },
@@ -290,7 +290,7 @@ export const auctionCache = {
   /**
    * Cache active auctions list
    */
-  async setActiveList(auctions: any[]): Promise<void> {
+  async setActiveList(auctions: Record<string, unknown>[]): Promise<void> {
     const key = 'auctions:active';
     await cache.set(key, auctions, CACHE_TTL.AUCTION_DATA);
   },
@@ -298,7 +298,7 @@ export const auctionCache = {
   /**
    * Get cached active auctions list
    */
-  async getActiveList(): Promise<any[] | null> {
+  async getActiveList(): Promise<Record<string, unknown>[] | null> {
     const key = 'auctions:active';
     return await cache.get(key);
   },
@@ -320,7 +320,7 @@ export const userCache = {
   /**
    * Cache user profile data
    */
-  async set(userId: string, userData: any): Promise<void> {
+  async set(userId: string, userData: Record<string, unknown>): Promise<void> {
     const key = `user:${userId}`;
     await cache.set(key, userData, CACHE_TTL.USER_PROFILE);
   },
@@ -328,7 +328,7 @@ export const userCache = {
   /**
    * Get cached user profile
    */
-  async get(userId: string): Promise<any | null> {
+  async get(userId: string): Promise<Record<string, unknown> | null> {
     const key = `user:${userId}`;
     return await cache.get(key);
   },
@@ -349,7 +349,7 @@ export const vendorCache = {
   /**
    * Cache vendor data
    */
-  async set(vendorId: string, vendorData: any): Promise<void> {
+  async set(vendorId: string, vendorData: Record<string, unknown>): Promise<void> {
     const key = `vendor:${vendorId}`;
     await cache.set(key, vendorData, CACHE_TTL.VENDOR_DATA);
   },
@@ -357,7 +357,7 @@ export const vendorCache = {
   /**
    * Get cached vendor data
    */
-  async get(vendorId: string): Promise<any | null> {
+  async get(vendorId: string): Promise<Record<string, unknown> | null> {
     const key = `vendor:${vendorId}`;
     return await cache.get(key);
   },
@@ -394,7 +394,7 @@ export const caseCache = {
   /**
    * Cache case data
    */
-  async set(caseId: string, caseData: any): Promise<void> {
+  async set(caseId: string, caseData: Record<string, unknown>): Promise<void> {
     const key = `case:${caseId}`;
     await cache.set(key, caseData, CACHE_TTL.CASE_DATA);
   },
@@ -402,7 +402,7 @@ export const caseCache = {
   /**
    * Get cached case data
    */
-  async get(caseId: string): Promise<any | null> {
+  async get(caseId: string): Promise<Record<string, unknown> | null> {
     const key = `case:${caseId}`;
     return await cache.get(key);
   },

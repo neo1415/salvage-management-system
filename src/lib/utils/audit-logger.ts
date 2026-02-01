@@ -39,6 +39,7 @@ export enum AuditActionType {
   AUCTION_WON = 'auction_won',
   AUCTION_EXTENDED = 'auction_extended',
   AUCTION_CREATED = 'auction_created',
+  AUCTION_CLOSED = 'auction_closed',
   AUCTION_CANCELLED = 'auction_cancelled',
   
   // Payment actions
@@ -79,6 +80,7 @@ export enum AuditActionType {
   
   // Notification actions
   OUTBID_NOTIFICATION_SENT = 'outbid_notification_sent',
+  NOTIFICATION_SENT = 'notification_sent',
   
   // Reporting actions
   LEADERBOARD_VIEWED = 'leaderboard_viewed',
@@ -117,8 +119,8 @@ export interface AuditLogData {
   ipAddress: string;
   deviceType: DeviceType;
   userAgent: string;
-  beforeState?: Record<string, any>;
-  afterState?: Record<string, any>;
+  beforeState?: Record<string, unknown>;
+  afterState?: Record<string, unknown>;
 }
 
 /**
@@ -230,8 +232,8 @@ export function createAuditLogData(
   actionType: AuditActionType,
   entityType: AuditEntityType,
   entityId: string,
-  beforeState?: Record<string, any>,
-  afterState?: Record<string, any>
+  beforeState?: Record<string, unknown>,
+  afterState?: Record<string, unknown>
 ): AuditLogData {
   const headers = request.headers;
   const userAgent = headers.get('user-agent') || 'unknown';
