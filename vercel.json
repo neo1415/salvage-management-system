@@ -1,4 +1,10 @@
 {
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ],
   "crons": [
     {
       "path": "/api/cron/payment-deadlines",
