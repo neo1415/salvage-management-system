@@ -64,7 +64,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https: blob:",
               "font-src 'self' data:",
-              "connect-src 'self' https://api.paystack.co https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com",
+              "connect-src 'self' https://api.paystack.co https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com https://nominatim.openstreetmap.org",
               "frame-src 'self' https://js.paystack.co https://checkout.flutterwave.com",
               "media-src 'self' https://res.cloudinary.com",
               "object-src 'none'",
