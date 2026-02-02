@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/cron/payment-deadlines",
-      "schedule": "0 * * * *"
+      "schedule": "0 2 * * *"
     },
     {
       "path": "/api/cron/auction-closure",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }
