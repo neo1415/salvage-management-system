@@ -25,6 +25,16 @@ export async function middleware(request: NextRequest) {
 
   const isAuthenticated = !!token;
 
+  // Debug logging (remove after fixing)
+  if (pathname.startsWith('/vendor') || pathname.startsWith('/login')) {
+    console.log('[Middleware]', {
+      pathname,
+      hasToken: !!token,
+      tokenRole: token?.role,
+      hasSecret: !!process.env.NEXTAUTH_SECRET,
+    });
+  }
+
   // Check if the current path is a protected route
   const isProtectedRoute = protectedRoutes.some((route) =>
     pathname.startsWith(route)
