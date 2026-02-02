@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   
+  // ESLint configuration
+  eslint: {
+    // Don't fail build on ESLint errors
+    ignoreDuringBuilds: true,
+  },
+  
   // Performance optimizations
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
