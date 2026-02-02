@@ -415,6 +415,9 @@ export const authConfig: NextAuthConfig = {
     maxAge: 24 * 60 * 60, // 24 hours (will be overridden by device-specific expiry)
   },
 
+  // Let NextAuth v5 handle cookies automatically based on NEXTAUTH_URL
+  // In production with HTTPS, it will use __Secure- prefix automatically
+
   events: {
     async signIn({ user, account, isNewUser: _isNewUser }) {
       // Update last login timestamp (already done in authorize for credentials)

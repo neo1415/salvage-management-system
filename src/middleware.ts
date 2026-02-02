@@ -18,20 +18,38 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Get the token from the request
+  // For NextAuth v5, getToken automatically handles __Secure- prefix in production
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
+    secureCookie: process.env.NODE_ENV === 'production',
   });
 
   const isAuthenticated = !!token;
 
-  // Debug logging (remove after fixing)
+  // Enhanced debug logging
   if (pathname.startsWith('/vendor') || pathname.startsWith('/login')) {
-    console.log('[Middleware]', {
+    const cookies = request.cookies.getAll();
+    const authCookies = cookies.filter(c => 
+      c.name.includes('next-auth') || c.name.includes('session') || c.name.includes('Secure')
+    );
+    
+    console.log('[Middleware Debug]', {
       pathname,
       hasToken: !!token,
       tokenRole: token?.role,
+      tokenEmail: token?.email,
+      tokenExp: token?.exp,
+      currentTime: Math.floor(Date.now() / 1000),
+      tokenExpired: token?.exp ? token.exp < Math.floor(Date.now() / 1000) : 'no-exp',
       hasSecret: !!process.env.NEXTAUTH_SECRET,
+      secretLength: process.env.NEXTAUTH_SECRET?.length,
+      nextauthUrl: process.env.NEXTAUTH_URL,
+      nodeEnv: process.env.NODE_ENV,
+      host: request.headers.get('host'),
+      authCookieNames: authCookies.map(c => c.name),
+      authCookieCount: authCookies.length,
+      allCookieNames: cookies.map(c => c.name),
     });
   }
 

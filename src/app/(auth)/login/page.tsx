@@ -70,8 +70,15 @@ function LoginForm() {
         return;
       }
 
-      // Successful login - redirect to callback URL
-      router.push(callbackUrl);
+      if (!result?.ok) {
+        setError('Login failed. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Successful login - use window.location for hard navigation
+      // This ensures cookies are properly set before middleware runs
+      window.location.href = callbackUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
       setIsSubmitting(false);
