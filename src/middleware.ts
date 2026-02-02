@@ -1,0 +1,84 @@
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
+
+// Routes that require authentication
+const protectedRoutes = [
+  '/vendor',
+  '/manager',
+  '/adjuster',
+  '/finance',
+  '/admin',
+];
+
+// Routes that should redirect to dashboard if already authenticated
+const authRoutes = ['/login', '/register'];
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Get the token from the request
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+
+  const isAuthenticated = !!token;
+
+  // Check if the current path is a protected route
+  const isProtectedRoute = protectedRoutes.some((route) =>
+    pathname.startsWith(route)
+  );
+
+  // Check if the current path is an auth route
+  const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
+
+  // Redirect to login if accessing protected route without authentication
+  if (isProtectedRoute && !isAuthenticated) {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('callbackUrl', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Redirect to dashboard if accessing auth routes while authenticated
+  if (isAuthRoute && isAuthenticated) {
+    const role = token.role as string;
+    const dashboardUrl = getDashboardUrl(role);
+    return NextResponse.redirect(new URL(dashboardUrl, request.url));
+  }
+
+  return NextResponse.next();
+}
+
+// Helper function to get dashboard URL based on role
+function getDashboardUrl(role: string): string {
+  switch (role) {
+    case 'vendor':
+      return '/vendor/dashboard';
+    case 'manager':
+      return '/manager/dashboard';
+    case 'adjuster':
+      return '/adjuster/cases';
+    case 'finance':
+      return '/finance/payments';
+    case 'admin':
+      return '/admin/dashboard';
+    default:
+      return '/vendor/dashboard';
+  }
+}
+
+// Configure which routes to run middleware on
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public files (images, etc.)
+     */
+    '/((?!api|_next/static|_next/image|favicon.ico|icons|assets|manifest.json|sw.js|offline.html).*)',
+  ],
+};
