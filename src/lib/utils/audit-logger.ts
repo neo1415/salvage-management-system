@@ -52,6 +52,7 @@ export enum AuditActionType {
   WALLET_FUNDED = 'wallet_funded',
   FUNDS_FROZEN = 'funds_frozen',
   FUNDS_RELEASED = 'funds_released',
+  FUNDS_UNFROZEN = 'funds_unfrozen',
   
   // KYC actions
   BVN_VERIFICATION_INITIATED = 'bvn_verification_initiated',

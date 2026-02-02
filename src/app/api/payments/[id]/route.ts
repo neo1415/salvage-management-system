@@ -8,7 +8,7 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { eq } from 'drizzle-orm';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {

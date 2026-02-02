@@ -79,7 +79,7 @@ interface PageProps {
 export default function AuctionDetailsPage({ params }: PageProps) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: _session } = useSession(); // Prefixed with _ to indicate intentionally unused for now
   
   // State
   const [auction, setAuction] = useState<AuctionDetails | null>(null);

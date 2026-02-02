@@ -1,170 +1,131 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/use-auth';
-import { signOut } from 'next-auth/react';
-import { TierUpgradeBanner } from '@/components/ui/tier-upgrade-banner';
-import { TierUpgradeModal } from '@/components/ui/tier-upgrade-modal';
-import { useTierUpgrade } from '@/hooks/use-tier-upgrade';
 
-interface VendorData {
-  id: string;
-  tier: 'tier1_bvn' | 'tier2_full';
-  businessName: string | null;
-  rating: string;
-  status: string;
-  performanceStats: {
-    totalBids: number;
-    totalWins: number;
-    winRate: number;
-    avgPaymentTimeHours: number;
-    onTimePickupRate: number;
-    fraudFlags: number;
-  };
+interface PerformanceStats {
+  winRate: number;
+  avgPaymentTimeHours: number;
+  onTimePickupRate: number;
+  rating: number;
+  leaderboardPosition: number;
+  totalVendors: number;
+  totalBids: number;
+  totalWins: number;
 }
 
-interface DashboardStats {
-  activeAuctions: number;
-  watchingCount: number;
-  activeBids: number;
-  wonAuctions: number;
+interface Badge {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  earned: boolean;
+}
+
+interface Comparison {
+  metric: string;
+  currentValue: number;
+  previousValue: number;
+  change: number;
+  trend: 'up' | 'down' | 'neutral';
+}
+
+interface VendorDashboardData {
+  performanceStats: PerformanceStats;
+  badges: Badge[];
+  comparisons: Comparison[];
+  lastUpdated: string;
 }
 
 export default function VendorDashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading } = useAuth();
-  
-  const [vendorData, setVendorData] = useState<VendorData | null>(null);
-  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
-  const [highValueAuctionCount, setHighValueAuctionCount] = useState(0);
+
+  const [dashboardData, setDashboardData] = useState<VendorDashboardData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Initialize tier upgrade hook (must be called before any conditional returns)
-  const {
-    showUpgradeModal,
-    closeUpgradeModal,
-    blockedAuctionValue,
-    isTier1,
-    TIER_1_LIMIT,
-  } = useTierUpgrade({
-    currentTier: vendorData?.tier || 'tier1_bvn',
-    onUpgradeRequired: (value) => {
-      // Log for analytics
-      console.log(`Tier upgrade required for auction value: ₦${value.toLocaleString()}`);
-    },
-  });
+  // Fetch dashboard data
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await fetch('/api/dashboard/vendor');
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push('/login');
+          return;
+        }
+        if (response.status === 403) {
+          setError('Access denied. Vendor role required.');
+          return;
+        }
+        throw new Error('Failed to fetch dashboard data');
+      }
 
-  // Fetch vendor data on mount
+      const data: VendorDashboardData = await response.json();
+      setDashboardData(data);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Failed to load dashboard data. Please try again.');
+    } finally {
+      setIsLoadingData(false);
+    }
+  }, [router]);
+
+  // Initial fetch and auth check
   useEffect(() => {
-    if (!isAuthenticated && !isLoading) {
+    // Don't redirect if still loading
+    if (isLoading) {
+      return;
+    }
+
+    // Only redirect to login if definitely not authenticated
+    if (!isAuthenticated) {
       router.push('/login');
       return;
     }
 
-    if (isAuthenticated && user) {
-      fetchVendorData();
-      fetchDashboardStats();
-      fetchHighValueAuctionCount();
-    }
-  }, [isAuthenticated, isLoading, user, router]);
-
-  const fetchVendorData = async () => {
-    try {
-      const response = await fetch('/api/vendors/me');
-      if (!response.ok) {
-        // Use mock data if API doesn't exist yet
-        console.warn('Vendor API not available, using mock data');
-        setVendorData({
-          id: user?.id || 'mock-id',
-          tier: 'tier1_bvn',
-          businessName: user?.name || 'Your Business',
-          rating: '4.5',
-          status: 'approved',
-          performanceStats: {
-            totalBids: 0,
-            totalWins: 0,
-            winRate: 0,
-            avgPaymentTimeHours: 0,
-            onTimePickupRate: 0,
-            fraudFlags: 0,
-          },
-        });
-        return;
-      }
-      const data = await response.json();
-      setVendorData(data);
-    } catch (error) {
-      console.error('Error fetching vendor data:', error);
-      // Use mock data on error
-      setVendorData({
-        id: user?.id || 'mock-id',
-        tier: 'tier1_bvn',
-        businessName: user?.name || 'Your Business',
-        rating: '4.5',
-        status: 'approved',
-        performanceStats: {
-          totalBids: 0,
-          totalWins: 0,
-          winRate: 0,
-          avgPaymentTimeHours: 0,
-          onTimePickupRate: 0,
-          fraudFlags: 0,
-        },
-      });
-    } finally {
+    // Check role only after we know user is authenticated
+    if (user && user.role !== 'vendor') {
+      setError('Access denied. Vendor role required.');
       setIsLoadingData(false);
+      return;
     }
+
+    // Fetch dashboard data only if authenticated and is vendor
+    if (user && user.role === 'vendor') {
+      fetchDashboardData();
+    }
+  }, [isAuthenticated, isLoading, user, router, fetchDashboardData]);
+
+  // Get trend indicator
+  const getTrendIndicator = (trend: 'up' | 'down' | 'neutral') => {
+    if (trend === 'up') {
+      return (
+        <span className="text-green-600 flex items-center gap-1">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+          ↑
+        </span>
+      );
+    } else if (trend === 'down') {
+      return (
+        <span className="text-red-600 flex items-center gap-1">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+          ↓
+        </span>
+      );
+    }
+    return <span className="text-gray-500">—</span>;
   };
 
-  const fetchDashboardStats = async () => {
-    try {
-      const response = await fetch('/api/vendors/dashboard-stats');
-      if (!response.ok) {
-        // Use mock data if API doesn't exist yet
-        console.warn('Dashboard stats API not available, using mock data');
-        setDashboardStats({
-          activeAuctions: 0,
-          watchingCount: 0,
-          activeBids: 0,
-          wonAuctions: 0,
-        });
-        return;
-      }
-      const data = await response.json();
-      setDashboardStats(data);
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
-      // Use mock data on error
-      setDashboardStats({
-        activeAuctions: 0,
-        watchingCount: 0,
-        activeBids: 0,
-        wonAuctions: 0,
-      });
-    }
-  };
-
-  const fetchHighValueAuctionCount = async () => {
-    try {
-      const response = await fetch('/api/auctions/high-value-count');
-      if (!response.ok) {
-        // Use mock data if API doesn't exist yet
-        console.warn('High-value auction count API not available, using mock data');
-        setHighValueAuctionCount(0);
-        return;
-      }
-      const data = await response.json();
-      setHighValueAuctionCount(data.count || 0);
-    } catch (error) {
-      console.error('Error fetching high-value auction count:', error);
-      // Use mock data on error
-      setHighValueAuctionCount(0);
-    }
-  };
-
-  // Show loading state
-  if (isLoading || isLoadingData || !vendorData) {
+  // Loading state
+  if (isLoading || (isLoadingData && !dashboardData)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -175,242 +136,264 @@ export default function VendorDashboardPage() {
     );
   }
 
-  const handleViewAllAuctions = () => {
-    router.push('/vendor/auctions');
-  };
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => router.push('/login')}
+            className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  const handleViewProfile = () => {
-    router.push('/vendor/profile');
-  };
+  if (!dashboardData) {
+    return null;
+  }
+
+  const { performanceStats, badges, comparisons } = dashboardData;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Page Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
-              Vendor Dashboard
-            </h1>
-            <p className="text-gray-600">
-              Welcome back, {vendorData.businessName || user?.name || 'Vendor'}
-            </p>
-          </div>
-          
-          {/* Logout Button */}
-          <button
-            onClick={async () => {
-              if (confirm('Are you sure you want to logout?')) {
-                try {
-                  // Call logout API to clear server-side session
-                  await fetch('/api/auth/logout', { method: 'POST' });
-                  // Use NextAuth signOut to clear client session
-                  await signOut({ redirect: false });
-                  // Clear any local storage
-                  localStorage.clear();
-                  sessionStorage.clear();
-                  // Redirect to login
-                  router.push('/login');
-                } catch (error) {
-                  console.error('Logout error:', error);
-                  // Force redirect even if error
-                  router.push('/login');
-                }
-              }
-            }}
-            className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            Logout
-          </button>
+        <div className="mb-6">
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+            My Performance Dashboard
+          </h1>
+          <p className="text-gray-600">
+            Track your stats and improve your ranking
+          </p>
         </div>
 
-        {/* Tier Upgrade Banner - Only show for Tier 1 vendors */}
-        {isTier1 && (
-          <TierUpgradeBanner highValueAuctionCount={highValueAuctionCount} />
-        )}
-
-        {/* Dashboard Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Tier Status Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Your Tier</h3>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold text-gray-900">
-                {vendorData.tier === 'tier1_bvn' ? 'Tier 1' : 'Tier 2'}
-              </span>
-              {vendorData.tier === 'tier1_bvn' && (
-                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded">
-                  Limited
-                </span>
-              )}
-              {vendorData.tier === 'tier2_full' && (
-                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
-                  Premium
-                </span>
-              )}
+        {/* Performance Stats Cards - Mobile Optimized */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
+          {/* Win Rate */}
+          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Win Rate</h3>
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                </svg>
+              </div>
             </div>
-            {isTier1 && (
-              <p className="text-sm text-gray-600 mt-2">
-                Bid limit: ₦{TIER_1_LIMIT.toLocaleString()}
+            <p className="text-3xl font-bold text-gray-900">{performanceStats.winRate.toFixed(1)}%</p>
+            <p className="text-sm text-gray-600 mt-1">
+              {performanceStats.totalWins} wins / {performanceStats.totalBids} bids
+            </p>
+          </div>
+
+          {/* Average Payment Time */}
+          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Avg Payment Time</h3>
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-gray-900">
+              {performanceStats.avgPaymentTimeHours > 0 
+                ? `${performanceStats.avgPaymentTimeHours.toFixed(1)}h` 
+                : 'N/A'}
+            </p>
+            <p className="text-sm text-gray-600 mt-1">
+              {performanceStats.avgPaymentTimeHours < 6 && performanceStats.avgPaymentTimeHours > 0
+                ? 'Fast payer! 🚀'
+                : 'Time to payment'}
+            </p>
+          </div>
+
+          {/* On-Time Pickup Rate */}
+          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">On-Time Pickup</h3>
+              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-gray-900">{performanceStats.onTimePickupRate.toFixed(1)}%</p>
+            <p className="text-sm text-gray-600 mt-1">Reliability score</p>
+          </div>
+
+          {/* Rating */}
+          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Rating</h3>
+              <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-gray-900">
+              {performanceStats.rating > 0 ? performanceStats.rating.toFixed(1) : 'N/A'}
+            </p>
+            <p className="text-sm text-gray-600 mt-1 break-words">
+              {performanceStats.rating >= 4.5 ? '⭐ Top rated!' : 'Out of 5 stars'}
+            </p>
+          </div>
+        </div>
+
+        {/* Leaderboard Position */}
+        <div className="bg-gradient-to-r from-[#800020] to-[#600018] rounded-lg shadow-lg p-6 mb-8 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold mb-2">Leaderboard Position</h2>
+              <p className="text-3xl font-black">
+                #{performanceStats.leaderboardPosition}
+                <span className="text-lg font-normal ml-2">
+                  of {performanceStats.totalVendors} vendors
+                </span>
               </p>
-            )}
-          </div>
-
-          {/* Rating Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Rating</h3>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold text-gray-900">
-                {parseFloat(vendorData.rating).toFixed(1)}
-              </span>
-              <span className="text-yellow-500">★</span>
+              {performanceStats.leaderboardPosition <= 10 && (
+                <p className="text-sm mt-2 text-yellow-300">
+                  🏆 You're in the Top 10! Keep it up!
+                </p>
+              )}
             </div>
-            <p className="text-sm text-gray-600 mt-2">
-              {vendorData.performanceStats.totalWins} wins
-            </p>
+            <div className="w-20 h-20 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+              <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+            </div>
           </div>
+        </div>
 
-          {/* Active Bids Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Active Bids</h3>
-            <span className="text-2xl font-bold text-gray-900">
-              {dashboardStats?.activeBids || 0}
-            </span>
-            <p className="text-sm text-gray-600 mt-2">
-              Watching {dashboardStats?.watchingCount || 0}
-            </p>
+        {/* Badges Section */}
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Your Badges</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            {badges.map((badge) => (
+              <div
+                key={badge.id}
+                className={`p-4 rounded-lg border-2 text-center transition-all ${
+                  badge.earned
+                    ? 'border-[#FFD700] bg-yellow-50 shadow-md'
+                    : 'border-gray-200 bg-gray-50 opacity-50'
+                }`}
+                title={badge.description}
+              >
+                <div className="text-4xl mb-2">{badge.icon}</div>
+                <p className={`text-xs font-semibold ${badge.earned ? 'text-gray-900' : 'text-gray-500'}`}>
+                  {badge.name}
+                </p>
+                {badge.earned && (
+                  <div className="mt-2">
+                    <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
+                      Earned
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
+        </div>
 
-          {/* Win Rate Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Win Rate</h3>
-            <span className="text-2xl font-bold text-gray-900">
-              {vendorData.performanceStats.winRate.toFixed(1)}%
-            </span>
-            <p className="text-sm text-gray-600 mt-2">
-              {vendorData.performanceStats.totalBids} total bids
-            </p>
+        {/* Comparison to Last Month */}
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">
+            Comparison to Last Month
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {comparisons.map((comparison) => (
+              <div
+                key={comparison.metric}
+                className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+              >
+                <h3 className="text-sm font-medium text-gray-500 mb-2">
+                  {comparison.metric}
+                </h3>
+                <div className="flex items-baseline gap-2 mb-2">
+                  <p className="text-2xl font-bold text-gray-900">
+                    {comparison.metric.includes('Time')
+                      ? `${comparison.currentValue.toFixed(1)}h`
+                      : comparison.metric.includes('Rate')
+                      ? `${comparison.currentValue.toFixed(1)}%`
+                      : comparison.currentValue}
+                  </p>
+                  {getTrendIndicator(comparison.trend)}
+                </div>
+                <p className="text-xs text-gray-600">
+                  {comparison.change > 0 ? '+' : ''}
+                  {comparison.metric.includes('Time')
+                    ? `${comparison.change.toFixed(1)}h`
+                    : comparison.metric.includes('Rate')
+                    ? `${comparison.change.toFixed(1)}%`
+                    : comparison.change}{' '}
+                  from last month
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Previous: {comparison.metric.includes('Time')
+                    ? `${comparison.previousValue.toFixed(1)}h`
+                    : comparison.metric.includes('Rate')
+                    ? `${comparison.previousValue.toFixed(1)}%`
+                    : comparison.previousValue}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <button
-              onClick={handleViewAllAuctions}
-              className="px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+              onClick={() => router.push('/vendor/auctions')}
+              className="px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors flex items-center justify-center gap-2"
             >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
               Browse Auctions
             </button>
             <button
-              onClick={handleViewProfile}
-              className="px-6 py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+              onClick={() => router.push('/vendor/wallet')}
+              className="px-6 py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
             >
-              View Profile
-            </button>
-            {isTier1 && (
-              <button
-                onClick={() => router.push('/vendor/kyc/tier2')}
-                className="px-6 py-3 bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-semibold rounded-lg hover:shadow-lg transition-all"
-              >
-                Upgrade to Tier 2
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* TEMPORARY: Demo Links - Will be removed when proper navigation is implemented */}
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg shadow p-6 mb-8 border-2 border-blue-200">
-          <div className="flex items-start gap-3 mb-4">
-            <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
               </svg>
-            </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-bold text-gray-900 mb-1">🚀 Demo Mode - Quick Navigation</h2>
-              <p className="text-sm text-gray-600 mb-4">
-                Temporary links to all completed pages. This section will be removed when proper navigation is implemented.
-              </p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                <button
-                  onClick={() => router.push('/demo')}
-                  className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all text-sm"
-                >
-                  📋 View All Demo Pages
-                </button>
-                <button
-                  onClick={() => router.push('/vendor/kyc/tier1')}
-                  className="px-4 py-2 bg-white border-2 border-blue-300 text-blue-700 font-semibold rounded-lg hover:bg-blue-50 transition-colors text-sm"
-                >
-                  🔐 Tier 1 KYC
-                </button>
-                <button
-                  onClick={() => router.push('/vendor/kyc/tier2')}
-                  className="px-4 py-2 bg-white border-2 border-purple-300 text-purple-700 font-semibold rounded-lg hover:bg-purple-50 transition-colors text-sm"
-                >
-                  🏆 Tier 2 KYC
-                </button>
-                <button
-                  onClick={() => router.push('/manager/vendors')}
-                  className="px-4 py-2 bg-white border-2 border-green-300 text-green-700 font-semibold rounded-lg hover:bg-green-50 transition-colors text-sm"
-                >
-                  ✅ Vendor Approvals
-                </button>
-                <button
-                  onClick={() => router.push('/manager/approvals')}
-                  className="px-4 py-2 bg-white border-2 border-orange-300 text-orange-700 font-semibold rounded-lg hover:bg-orange-50 transition-colors text-sm"
-                >
-                  📦 Case Approvals
-                </button>
-                <button
-                  onClick={() => router.push('/adjuster/cases/new')}
-                  className="px-4 py-2 bg-white border-2 border-red-300 text-red-700 font-semibold rounded-lg hover:bg-red-50 transition-colors text-sm"
-                >
-                  🚗 Create Case
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Performance Overview */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Performance Overview</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <p className="text-sm text-gray-500 mb-1">Average Payment Time</p>
-              <p className="text-lg font-semibold text-gray-900">
-                {vendorData.performanceStats.avgPaymentTimeHours.toFixed(1)} hours
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 mb-1">On-Time Pickup Rate</p>
-              <p className="text-lg font-semibold text-gray-900">
-                {vendorData.performanceStats.onTimePickupRate.toFixed(1)}%
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 mb-1">Total Wins</p>
-              <p className="text-lg font-semibold text-gray-900">
-                {vendorData.performanceStats.totalWins}
-              </p>
-            </div>
+              My Wallet
+            </button>
+            <button
+              onClick={() => router.push('/vendor/leaderboard')}
+              className="px-6 py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+              Leaderboard
+            </button>
+            <button
+              onClick={() => router.push('/vendor/kyc/tier2')}
+              className="px-6 py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              Upgrade Tier
+            </button>
           </div>
         </div>
       </div>
-
-      {/* Tier Upgrade Modal */}
-      <TierUpgradeModal
-        isOpen={showUpgradeModal}
-        onClose={closeUpgradeModal}
-        auctionValue={blockedAuctionValue}
-      />
     </div>
   );
 }

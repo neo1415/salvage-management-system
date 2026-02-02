@@ -48,7 +48,6 @@ export class EmailService {
   private readonly maxRetries: number = 3;
   private readonly retryDelay: number = 1000; // 1 second
   private readonly supportEmail: string = 'nemsupport@nem-insurance.com';
-  private readonly supportPhone: string = '234-02-014489560';
 
   constructor() {
     this.fromAddress = process.env.EMAIL_FROM || 'NEM Insurance <noreply@salvage.nem-insurance.com>';

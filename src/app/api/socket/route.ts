@@ -8,18 +8,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Server as HTTPServer } from 'http';
-import { initializeSocketServer, getSocketServer } from '@/lib/socket/server';
-
-// Store the HTTP server instance
-let httpServer: HTTPServer | null = null;
+import { getSocketServer } from '@/lib/socket/server';
 
 /**
  * GET /api/socket
  * 
  * Returns Socket.io connection information
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const socketServer = getSocketServer();
 
@@ -72,7 +68,7 @@ export async function GET(request: NextRequest) {
  * 
  * Initialize Socket.io server (for development/testing)
  */
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     // Check if already initialized
     const existingServer = getSocketServer();

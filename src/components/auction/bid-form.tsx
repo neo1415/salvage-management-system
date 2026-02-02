@@ -47,7 +47,6 @@ export function BidForm({
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [otpTimer, setOtpTimer] = useState(180); // 3 minutes in seconds
-  const [otpSent, setOtpSent] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
 
   // Calculate minimum bid
@@ -61,7 +60,6 @@ export function BidForm({
       setOtp('');
       setError('');
       setOtpTimer(180);
-      setOtpSent(false);
       setStartTime(Date.now());
     }
   }, [isOpen]);
@@ -153,7 +151,6 @@ export function BidForm({
 
       // Move to OTP step
       setStep('otp');
-      setOtpSent(true);
       setOtpTimer(180); // Reset timer
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send OTP');

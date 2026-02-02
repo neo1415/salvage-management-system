@@ -108,7 +108,7 @@ export async function POST(
  * Get all bids for an auction
  */
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest, // Prefixed with _ as it's required by Next.js but not used
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {

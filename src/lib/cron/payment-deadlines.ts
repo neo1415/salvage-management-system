@@ -69,7 +69,7 @@ async function sendPaymentReminders(now: Date, results: EnforcementResults) {
         )
       );
 
-    for (const { payment, auction, vendor, user } of pendingPayments) {
+    for (const { payment, auction, vendor: _vendor, user } of pendingPayments) {
       try {
         await smsService.sendSMS({
           to: user.phone,
@@ -116,7 +116,7 @@ async function markPaymentsOverdue(now: Date, results: EnforcementResults) {
         )
       );
 
-    for (const { payment, auction, vendor, user } of overduePayments) {
+    for (const { payment, auction, vendor: _vendor, user } of overduePayments) {
       try {
         await db
           .update(payments)

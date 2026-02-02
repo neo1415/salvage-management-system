@@ -1,3 +1,4 @@
+// Next.js configuration file
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
@@ -7,12 +8,6 @@ const nextConfig: NextConfig = {
   typescript: {
     // Don't fail build on type errors - we'll handle them separately
     ignoreBuildErrors: true,
-  },
-  
-  // ESLint configuration
-  eslint: {
-    // Don't fail build on ESLint errors
-    ignoreDuringBuilds: true,
   },
   
   // Performance optimizations

@@ -11,7 +11,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { incrementWatchingCount, decrementWatchingCount } from '@/features/auctions/services/watching.service';
 
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -50,7 +50,7 @@ export async function POST(
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {

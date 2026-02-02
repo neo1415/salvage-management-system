@@ -13,7 +13,7 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
@@ -220,7 +220,7 @@ export class AuctionService {
         );
 
       // Filter vendors by category match (client-side filtering for simplicity)
-      const filteredVendors = matchingVendors.filter((vendor) => {
+      const filteredVendors = matchingVendors.filter(() => {
         // This would ideally be done in the SQL query with array operators
         // For now, we'll notify all approved vendors
         return true;

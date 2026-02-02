@@ -44,7 +44,7 @@ app.prepare().then(() => {
   });
 
   // Initialize Socket.io server
-  const io = initializeSocketServer(httpServer);
+  const _io = initializeSocketServer(httpServer); // Prefixed with _ to indicate intentionally unused
 
   // Start server
   httpServer.listen(port, () => {

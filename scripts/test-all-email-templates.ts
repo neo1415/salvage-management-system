@@ -18,11 +18,7 @@ async function testAllEmailTemplates() {
   try {
     // Test 1: Welcome Email
     console.log('\n1️⃣  Testing Welcome Email...');
-    await emailService.sendWelcomeEmail(TEST_EMAIL, {
-      vendorName: 'John Doe',
-      loginUrl: 'https://salvage.nem-insurance.com/login',
-      supportEmail: 'nemsupport@nem-insurance.com',
-    });
+    await emailService.sendWelcomeEmail(TEST_EMAIL, 'John Doe');
     console.log('✅ Welcome email sent successfully');
 
     // Wait 2 seconds between emails
@@ -30,11 +26,7 @@ async function testAllEmailTemplates() {
 
     // Test 2: OTP Email
     console.log('\n2️⃣  Testing OTP Email...');
-    await emailService.sendOTPEmail(TEST_EMAIL, {
-      vendorName: 'John Doe',
-      otp: '123456',
-      expiresIn: '10 minutes',
-    });
+    await emailService.sendOTPEmail(TEST_EMAIL, 'John Doe', '123456', 10);
     console.log('✅ OTP email sent successfully');
 
     await new Promise(resolve => setTimeout(resolve, 2000));

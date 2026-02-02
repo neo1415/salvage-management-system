@@ -3,7 +3,7 @@ import { db } from '@/lib/db/drizzle';
 import { payments } from '@/lib/db/schema/payments';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { uploadFile, validateFile } from '@/lib/storage/cloudinary';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { emailService } from '@/features/notifications/services/email.service';
@@ -143,17 +143,6 @@ export async function POST(
       tags: ['payment-proof', 'bank-transfer', paymentId],
     });
 
-    // Update payment with proof URL and set status to pending
-    const [updatedPayment] = await db
-      .update(payments)
-      .set({
-        paymentProofUrl: uploadResult.secureUrl,
-        status: 'pending',
-        updatedAt: new Date(),
-      })
-      .where(eq(payments.id, paymentId))
-      .returning();
-
     // Get user details for notification
     const [user] = await db
       .select()
@@ -168,8 +157,19 @@ export async function POST(
       );
     }
 
-    // Notify Finance Officers
+    // Notify Finance Officers about the upload
     await notifyFinanceOfficers(payment, user, uploadResult.secureUrl);
+
+    // Update payment with proof URL and set status to pending
+    const [updatedPayment] = await db
+      .update(payments)
+      .set({
+        paymentProofUrl: uploadResult.secureUrl,
+        status: 'pending',
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, paymentId))
+      .returning();
 
     // Log activity
     await logAction({
@@ -212,8 +212,8 @@ export async function POST(
  */
 async function notifyFinanceOfficers(
   payment: typeof payments.$inferSelect,
-  vendor: typeof users.$inferSelect,
-  proofUrl: string
+  _vendor: typeof users.$inferSelect,
+  _proofUrl: string
 ): Promise<void> {
   try {
     // Get all Finance Officers
@@ -229,6 +229,20 @@ async function notifyFinanceOfficers(
 
     // Send email to each Finance Officer
     const emailPromises = financeOfficers.map(async (officer) => {
+      const vendorInfo = await db
+        .select()
+        .from(users)
+        .innerJoin(vendors, eq(users.id, vendors.userId))
+        .where(eq(vendors.id, payment.vendorId))
+        .limit(1);
+
+      if (!vendorInfo.length) {
+        console.warn('Vendor not found for notification');
+        return;
+      }
+
+      const vendor = vendorInfo[0].users;
+
       const emailSubject = 'New Bank Transfer Payment Proof Submitted';
       const emailHtml = `
         <!DOCTYPE html>

@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, pgEnum, jsonb } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', [
   'vendor',
@@ -19,6 +19,16 @@ export const userStatusEnum = pgEnum('user_status', [
 
 export const deviceTypeEnum = pgEnum('device_type', ['mobile', 'desktop', 'tablet']);
 
+export interface NotificationPreferences {
+  pushEnabled: boolean;
+  smsEnabled: boolean;
+  emailEnabled: boolean;
+  bidAlerts: boolean;
+  auctionEnding: boolean;
+  paymentReminders: boolean;
+  leaderboardUpdates: boolean;
+}
+
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: varchar('email', { length: 255 }).notNull().unique(),
@@ -28,6 +38,18 @@ export const users = pgTable('users', {
   status: userStatusEnum('status').notNull().default('unverified_tier_0'),
   fullName: varchar('full_name', { length: 255 }).notNull(),
   dateOfBirth: timestamp('date_of_birth').notNull(),
+  notificationPreferences: jsonb('notification_preferences')
+    .notNull()
+    .$type<NotificationPreferences>()
+    .default({
+      pushEnabled: true,
+      smsEnabled: true,
+      emailEnabled: true,
+      bidAlerts: true,
+      auctionEnding: true,
+      paymentReminders: true,
+      leaderboardUpdates: true,
+    }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   lastLoginAt: timestamp('last_login_at'),
@@ -39,3 +61,4 @@ export const users = pgTable('users', {
 // CREATE INDEX idx_users_phone ON users(phone);
 // CREATE INDEX idx_users_role ON users(role);
 // CREATE INDEX idx_users_status ON users(status);
+// CREATE INDEX idx_users_notification_preferences ON users USING GIN (notification_preferences);

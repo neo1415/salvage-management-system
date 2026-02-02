@@ -267,6 +267,7 @@ export function verifyWebhookSignature(payload: string, signature: string): bool
 /**
  * Process Paystack webhook
  * Auto-verifies payment and generates pickup authorization
+ * Also handles wallet funding confirmations
  */
 export async function processPaystackWebhook(
   payload: PaystackWebhookPayload,
@@ -285,13 +286,64 @@ export async function processPaystackWebhook(
       return;
     }
 
-    const { reference, amount, status } = payload.data;
+    const { reference, amount, status, metadata } = payload.data;
 
     if (status !== 'success') {
       console.log(`Payment not successful: ${status}`);
       return;
     }
 
+    // Check if this is a wallet funding transaction
+    if (metadata && typeof metadata === 'object' && 'type' in metadata && metadata.type === 'wallet_funding') {
+      await processWalletFunding(reference, amount, metadata);
+      return;
+    }
+
+    // Otherwise, process as auction payment
+    await processAuctionPayment(reference, amount);
+  } catch (error) {
+    console.error('Error processing Paystack webhook:', error);
+    throw error;
+  }
+}
+
+/**
+ * Process wallet funding webhook
+ */
+async function processWalletFunding(
+  reference: string,
+  amountInKobo: number,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  try {
+    const { escrowService } = await import('@/features/payments/services/escrow.service');
+    
+    // Extract wallet ID and vendor ID from metadata
+    const walletId = metadata.walletId as string;
+    const vendorId = metadata.vendorId as string;
+
+    if (!walletId || !vendorId) {
+      throw new Error('Missing wallet or vendor ID in metadata');
+    }
+
+    // Convert amount from kobo to naira
+    const amount = amountInKobo / 100;
+
+    // Credit the wallet
+    await escrowService.creditWallet(walletId, amount, reference, vendorId);
+
+    console.log(`Wallet funded successfully: ${walletId}, Amount: ₦${amount}`);
+  } catch (error) {
+    console.error('Error processing wallet funding:', error);
+    throw error;
+  }
+}
+
+/**
+ * Process auction payment webhook
+ */
+async function processAuctionPayment(reference: string, amountInKobo: number): Promise<void> {
+  try {
     // Find payment in database
     const [payment] = await db
       .select()
@@ -305,9 +357,9 @@ export async function processPaystackWebhook(
 
     // Verify amount matches (Paystack sends amount in kobo)
     const expectedAmountInKobo = Math.round(parseFloat(payment.amount) * 100);
-    if (amount !== expectedAmountInKobo) {
+    if (amountInKobo !== expectedAmountInKobo) {
       throw new Error(
-        `Amount mismatch: expected ${expectedAmountInKobo} kobo, got ${amount} kobo`
+        `Amount mismatch: expected ${expectedAmountInKobo} kobo, got ${amountInKobo} kobo`
       );
     }
 
@@ -429,7 +481,7 @@ export async function processPaystackWebhook(
 
     console.log(`Payment auto-verified successfully: ${payment.id}`);
   } catch (error) {
-    console.error('Error processing Paystack webhook:', error);
+    console.error('Error processing auction payment:', error);
     throw error;
   }
 }

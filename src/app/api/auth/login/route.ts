@@ -34,34 +34,42 @@ export async function POST(request: NextRequest) {
     const userAgent = request.headers.get('user-agent') || '';
 
     // Attempt sign in with NextAuth
-    await signIn('credentials', {
-      emailOrPhone,
-      password,
-      ipAddress,
-      userAgent,
-      redirect: false,
-    });
+    // Note: signIn with redirect: false in server-side context doesn't work as expected
+    // We need to use the authorize function directly or handle this differently
+    try {
+      await signIn('credentials', {
+        emailOrPhone,
+        password,
+        ipAddress,
+        userAgent,
+        redirect: false,
+      });
 
-    // Note: NextAuth's signIn with redirect: false doesn't return the result directly
-    // We need to handle this differently. Let's return success and let the client
-    // handle the session check
-    return NextResponse.json(
-      {
-        success: true,
-        message: 'Login successful',
-      },
-      { status: 200 }
-    );
-  } catch (error: unknown) {
-    console.error('Login API error:', error);
-
-    // Handle specific error messages from authorize function
-    if (error instanceof Error && error.message) {
       return NextResponse.json(
-        { error: error.message },
+        {
+          success: true,
+          message: 'Login successful',
+        },
+        { status: 200 }
+      );
+    } catch (authError: unknown) {
+      // Handle authentication errors
+      console.error('Authentication error:', authError);
+      
+      if (authError instanceof Error) {
+        return NextResponse.json(
+          { error: authError.message },
+          { status: 401 }
+        );
+      }
+      
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
         { status: 401 }
       );
     }
+  } catch (error: unknown) {
+    console.error('Login API error:', error);
 
     return NextResponse.json(
       { error: 'Login failed. Please try again.' },

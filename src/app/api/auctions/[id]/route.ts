@@ -13,12 +13,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
-import { salvageCases } from '@/lib/db/schema/cases';
 import { bids } from '@/lib/db/schema/bids';
 import { eq, desc } from 'drizzle-orm';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest, // Required by Next.js API route signature
   context: { params: Promise<{ id: string }> }
 ) {
   try {

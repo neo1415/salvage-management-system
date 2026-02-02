@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { initiatePayment } from '@/features/payments/services/paystack.service';
 
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {

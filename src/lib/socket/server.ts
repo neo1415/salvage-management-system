@@ -241,7 +241,7 @@ function registerAuctionWatchingHandlers(socket: AuthenticatedSocket) {
 function registerBiddingHandlers(socket: AuthenticatedSocket) {
   // Note: Actual bid placement is handled via REST API for security
   // This is just for real-time updates
-  socket.on('bid:place', async ({ auctionId, amount, otp }) => {
+  socket.on('bid:place', async () => {
     // Redirect to REST API
     socket.emit('connect_error', new Error('Please use REST API for bid placement'));
   });

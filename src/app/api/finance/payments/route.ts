@@ -19,7 +19,7 @@ import { eq, and, gte, sql } from 'drizzle-orm';
  * - Show uploaded payment receipts
  * - Show only bank transfer payments requiring manual review
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await auth();
 
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
       .orderBy(sql`${payments.createdAt} ASC`);
 
     // Format response
-    const formattedPayments = pendingPayments.map(({ payment, vendor, auction, case: caseData }) => ({
+    const formattedPayments = pendingPayments.map(({ payment, vendor, case: caseData }) => ({
       id: payment.id,
       auctionId: payment.auctionId,
       vendorId: payment.vendorId,

@@ -41,7 +41,6 @@ export async function trackAuctionView(
 ): Promise<number> {
   try {
     const viewerKey = `${VIEWER_KEY_PREFIX}${auctionId}:${vendorId}`;
-    const watchingKey = `${WATCHING_KEY_PREFIX}${auctionId}`;
 
     // Check if vendor is already being tracked
     const existingTimestamp = await kv.get<number>(viewerKey);

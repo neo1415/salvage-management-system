@@ -33,7 +33,7 @@ interface PaymentDetails {
 export default function PaymentPage() {
   const params = useParams();
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: _session } = useSession(); // Prefixed with _ to indicate intentionally unused for now
   const [payment, setPayment] = useState<PaymentDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
