@@ -7,3 +7,4 @@ export * from './bids';
 export * from './payments';
 export * from './escrow';
 export * from './audit-logs';
+export * from './ratings';

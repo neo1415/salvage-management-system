@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/use-auth';
+import { TrustBadges } from '@/components/vendor/trust-badges';
 
 interface LeaderboardEntry {
   rank: number;
@@ -282,14 +283,13 @@ export default function VendorLeaderboardPage() {
                         {entry.businessName && (
                           <p className="text-sm text-gray-500">{entry.businessName}</p>
                         )}
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`inline-block px-2 py-0.5 text-xs font-semibold rounded ${
-                            entry.tier === 'tier2_full'
-                              ? 'bg-purple-100 text-purple-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {entry.tier === 'tier2_full' ? 'Tier 2' : 'Tier 1'}
-                          </span>
+                        <div className="mt-2">
+                          <TrustBadges
+                            tier={entry.tier as 'tier1_bvn' | 'tier2_full'}
+                            rating={parseFloat(entry.rating)}
+                            avgPaymentTimeHours={0}
+                            size="sm"
+                          />
                         </div>
                       </div>
                     </td>
@@ -363,15 +363,14 @@ export default function VendorLeaderboardPage() {
                 )}
               </div>
 
-              {/* Tier Badge */}
+              {/* Trust Badges */}
               <div className="mb-4">
-                <span className={`inline-block px-3 py-1 text-sm font-semibold rounded-full ${
-                  entry.tier === 'tier2_full'
-                    ? 'bg-purple-100 text-purple-800'
-                    : 'bg-blue-100 text-blue-800'
-                }`}>
-                  {entry.tier === 'tier2_full' ? 'Tier 2 Vendor' : 'Tier 1 Vendor'}
-                </span>
+                <TrustBadges
+                  tier={entry.tier as 'tier1_bvn' | 'tier2_full'}
+                  rating={parseFloat(entry.rating)}
+                  avgPaymentTimeHours={0}
+                  size="sm"
+                />
               </div>
 
               {/* Metrics Grid */}

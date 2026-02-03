@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/leaderboard-update",
       "schedule": "0 0 * * 1"
+    },
+    {
+      "path": "/api/cron/fraud-auto-suspend",
+      "schedule": "0 * * * *"
     }
   ]
 }

@@ -34,9 +34,9 @@ async function createVendorProfile(email: string) {
     const [newVendor] = await db.insert(vendors).values({
       userId: user.id,
       businessName: user.fullName || 'Vendor Business',
-      tier: 'unverified_tier_0',
+      tier: 'tier1_bvn',
       rating: '0',
-      status: 'active',
+      status: 'pending',
     }).returning();
     
     console.log('\n✓ Vendor profile created successfully!');

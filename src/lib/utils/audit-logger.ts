@@ -36,6 +36,7 @@ export enum AuditActionType {
   // Bidding actions
   BID_PLACED = 'bid_placed',
   BID_OUTBID = 'bid_outbid',
+  BID_CANCELLED = 'bid_cancelled',
   AUCTION_WON = 'auction_won',
   AUCTION_EXTENDED = 'auction_extended',
   AUCTION_CREATED = 'auction_created',

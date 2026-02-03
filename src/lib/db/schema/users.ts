@@ -38,6 +38,7 @@ export const users = pgTable('users', {
   status: userStatusEnum('status').notNull().default('unverified_tier_0'),
   fullName: varchar('full_name', { length: 255 }).notNull(),
   dateOfBirth: timestamp('date_of_birth').notNull(),
+  requirePasswordChange: varchar('require_password_change', { length: 10 }).default('false'),
   notificationPreferences: jsonb('notification_preferences')
     .notNull()
     .$type<NotificationPreferences>()

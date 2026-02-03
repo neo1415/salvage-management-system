@@ -458,12 +458,8 @@ function generatePaymentAgingHTML(
       <div class="summary-value">₦${summary.totalAmount.toLocaleString()}</div>
     </div>
     <div class="summary-card">
-      <div class="summary-label">Pending Amount</div>
-      <div class="summary-value">₦${summary.pendingAmount.toLocaleString()}</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Auto-Verification Rate</div>
-      <div class="summary-value">${summary.autoVerificationRate.toFixed(1)}%</div>
+      <div class="summary-label">Average Age (Days)</div>
+      <div class="summary-value">${summary.averageAge.toFixed(1)}</div>
     </div>
   </div>
 

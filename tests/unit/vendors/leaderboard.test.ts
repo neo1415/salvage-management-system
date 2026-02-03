@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { GET, POST } from '@/app/api/vendors/leaderboard/route';
-import { NextRequest } from 'next/server';
+import { GET } from '@/app/api/vendors/leaderboard/route';
 
 // Mock dependencies
 vi.mock('@/lib/db/drizzle', () => {
@@ -49,8 +48,7 @@ describe('Vendor Leaderboard API', () => {
 
       vi.mocked(cache.get).mockResolvedValue(mockLeaderboard);
 
-      const request = new NextRequest('http://localhost:3000/api/vendors/leaderboard');
-      const response = await GET(request);
+      const response = await GET();
       const data = await response.json();
 
       expect(response.status).toBe(200);
@@ -69,8 +67,7 @@ describe('Vendor Leaderboard API', () => {
         throw new Error('Database error');
       });
 
-      const request = new NextRequest('http://localhost:3000/api/vendors/leaderboard');
-      const response = await GET(request);
+      const response = await GET();
       const data = await response.json();
 
       expect(response.status).toBe(500);
@@ -90,8 +87,7 @@ describe('Vendor Leaderboard API', () => {
 
       vi.mocked(cache.get).mockResolvedValue(mockLeaderboard);
 
-      const request = new NextRequest('http://localhost:3000/api/vendors/leaderboard');
-      const response = await GET(request);
+      const response = await GET();
       const data = await response.json();
 
       expect(data).toHaveProperty('lastUpdated');

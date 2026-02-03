@@ -94,13 +94,13 @@ function getDashboardUrl(role: string): string {
   switch (role) {
     case 'vendor':
       return '/vendor/dashboard';
-    case 'manager':
+    case 'salvage_manager':
       return '/manager/dashboard';
-    case 'adjuster':
-      return '/adjuster/cases';
-    case 'finance':
-      return '/finance/payments';
-    case 'admin':
+    case 'claims_adjuster':
+      return '/adjuster/dashboard';
+    case 'finance_officer':
+      return '/finance/dashboard';
+    case 'system_admin':
       return '/admin/dashboard';
     default:
       return '/vendor/dashboard';

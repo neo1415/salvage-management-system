@@ -981,7 +981,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
 
 ### Epic 10: Fraud Detection & Security
 
-- [ ] 66. Implement fraud detection service
+- [x] 66. Implement fraud detection service
   - Create `src/features/fraud/services/fraud-detection.service.ts`
   - Implement pattern detection on every bid submission:
     - Pattern 1: Same IP address bidding against itself in same auction
@@ -994,13 +994,13 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Create audit log entry
   - _Requirements: 34, Enterprise Standards Section 6.3_
 
-- [ ] 66.1 Write property test for fraud detection
+- [x] 66.1 Write property test for fraud detection
   - **Property 18: Fraud Detection Pattern Matching**
   - **Validates: Requirements 34.2-34.4**
   - Test file: `tests/unit/fraud/fraud-detection.test.ts`
   - Generate suspicious patterns and verify detection
 
-- [ ] 67. Implement fraud alert review API
+- [x] 67. Implement fraud alert review API
   - Create `src/app/api/admin/fraud-alerts/route.ts` with GET handler
   - Create `src/app/api/admin/fraud-alerts/[id]/dismiss/route.ts` with POST handler
   - Create `src/app/api/admin/fraud-alerts/[id]/suspend-vendor/route.ts` with POST handler
@@ -1011,7 +1011,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Create audit log entry
   - _Requirements: 35, Enterprise Standards Section 6.3_
 
-- [ ] 68. Implement auto-suspend for repeat offenders
+- [x] 68. Implement auto-suspend for repeat offenders
   - Create `src/lib/cron/fraud-auto-suspend.ts`
   - Check for vendors with 3+ confirmed fraud flags
   - Auto-suspend account for 30 days
@@ -1021,7 +1021,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Create audit log entry
   - _Requirements: 36, Enterprise Standards Section 6.3_
 
-- [ ] 69. Build fraud alert dashboard for Admin
+- [x] 69. Build fraud alert dashboard for Admin
   - Create `src/app/(dashboard)/admin/fraud/page.tsx`
   - Display all flagged auctions
   - Show vendor details, bid history, IP addresses, evidence
@@ -1031,7 +1031,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
 
 ### Epic 11: Vendor Ratings & Trust
 
-- [ ] 70. Implement vendor rating service
+- [x] 70. Implement vendor rating service
   - Create `src/features/vendors/services/rating.service.ts`
   - Implement `rateVendor()` method (triggered after pickup confirmation)
   - Accept 5-star rating (1-5 stars)
@@ -1042,20 +1042,20 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Create audit log entry
   - _Requirements: 37, Enterprise Standards Section 5_
 
-- [ ] 70.1 Write property test for vendor rating calculation
+- [x] 70.1 Write property test for vendor rating calculation
   - **Property 19: Vendor Rating Calculation**
   - **Validates: Requirements 37.5, 37.6**
   - Test file: `tests/unit/vendors/rating-calculation.test.ts`
   - Verify average rating calculation is correct
 
-- [ ] 71. Implement vendor rating API
+- [x] 71. Implement vendor rating API
   - Create `src/app/api/vendors/[id]/ratings/route.ts` with POST handler
   - Validate rating is 1-5 stars
   - Validate review is ≤500 characters
   - Update vendor average rating
   - _Requirements: 37, Enterprise Standards Section 5_
 
-- [ ] 72. Build vendor rating UI
+- [x] 72. Build vendor rating UI
   - Create rating modal component `src/components/vendor/rating-modal.tsx`
   - Display after pickup confirmation
   - Show 5-star rating input
@@ -1063,7 +1063,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Show rating categories (payment speed, communication, pickup punctuality)
   - _Requirements: 37, NFR5.3_
 
-- [ ] 73. Implement trust badges
+- [x] 73. Implement trust badges
   - Create badge component `src/components/vendor/trust-badges.tsx`
   - Display badges: 'Verified BVN' (Tier 1), 'Verified Business' (Tier 2), 'Top Rated' (≥4.5 stars), 'Fast Payer' (avg <6 hours)
   - Display on vendor profile, auction bid list, leaderboard
@@ -1072,7 +1072,7 @@ This implementation plan breaks down the 8-week MVP development into granular, a
 
 ### Epic 12: Admin & System Management
 
-- [ ] 74. Implement staff account creation
+- [x] 74. Implement staff account creation
   - Create `src/app/api/admin/users/route.ts` with POST handler
   - Allow Admin to create staff accounts (Claims Adjuster, Salvage Manager, Finance Officer)
   - Generate temporary password
@@ -1083,21 +1083,21 @@ This implementation plan breaks down the 8-week MVP development into granular, a
   - Target provisioning time <3 minutes
   - _Requirements: 10, Enterprise Standards Section 6.1_
 
-- [ ] 75. Build admin user management UI
+- [x] 75. Build admin user management UI
   - Create `src/app/(dashboard)/admin/users/page.tsx`
   - Display user list with filters (role, status)
   - Add "Add New User" button
   - Display form: full name, email, phone, role dropdown
   - _Requirements: 10, NFR5.3_
 
-- [ ] 76. Implement audit log viewer
+- [x] 76. Implement audit log viewer
   - Create `src/app/api/admin/audit-logs/route.ts` with GET handler
   - Support filtering by: user, date range, action type, entity type
   - Support pagination (50 logs per page)
   - Support export to CSV/Excel
   - _Requirements: 11, Enterprise Standards Section 6.4_
 
-- [ ] 77. Build audit log viewer UI
+- [x] 77. Build audit log viewer UI
   - Create `src/app/(dashboard)/admin/audit-logs/page.tsx`
   - Display audit logs table with filters
   - Show: timestamp, user, action type, entity, IP address, device type

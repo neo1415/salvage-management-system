@@ -13,6 +13,7 @@ declare module 'next-auth' {
       role: string;
       status: string;
       phone?: string;
+      requirePasswordChange?: boolean;
     };
     accessToken?: string;
   }
@@ -28,6 +29,7 @@ declare module 'next-auth' {
     status?: string;
     phone?: string;
     needsPhoneNumber?: boolean;
+    requirePasswordChange?: boolean;
   }
 }
 
@@ -43,5 +45,6 @@ declare module 'next-auth/jwt' {
     phone?: string;
     userAgent?: string;
     accessToken?: string;
+    requirePasswordChange?: boolean;
   }
 }

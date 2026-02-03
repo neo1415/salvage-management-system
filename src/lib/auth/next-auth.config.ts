@@ -214,6 +214,7 @@ export const authConfig: NextAuthConfig = {
           role: user.role,
           status: user.status,
           phone: user.phone,
+          requirePasswordChange: user.requirePasswordChange === 'true',
         };
       },
     }),
@@ -344,6 +345,7 @@ export const authConfig: NextAuthConfig = {
         token.status = user.status || 'unverified_tier_0';
         token.email = user.email || '';
         token.phone = user.phone;
+        token.requirePasswordChange = user.requirePasswordChange || false;
         
         // Generate access token (use the JWT token itself as access token)
         // In production, you might want to generate a separate access token
@@ -368,6 +370,7 @@ export const authConfig: NextAuthConfig = {
           token.role = updatedUser.role;
           token.status = updatedUser.status;
           token.phone = updatedUser.phone;
+          token.requirePasswordChange = updatedUser.requirePasswordChange === 'true';
         }
       }
 
@@ -381,6 +384,7 @@ export const authConfig: NextAuthConfig = {
         session.user.status = token.status as string;
         session.user.email = token.email as string;
         session.user.phone = token.phone as string | undefined;
+        session.user.requirePasswordChange = token.requirePasswordChange as boolean;
         
         // Include access token in session for Socket.io authentication
         session.accessToken = token.accessToken as string;
