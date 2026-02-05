@@ -30,10 +30,9 @@ import {
  */
 export default function Tier1KYCPage() {
   const router = useRouter();
-  const { status } = useSession();
+  const { status, data: session } = useSession();
 
   const [bvn, setBvn] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -41,13 +40,25 @@ export default function Tier1KYCPage() {
     matchScore?: number;
     mismatches?: string[];
   } | null>(null);
+  const [userProfile, setUserProfile] = useState<{
+    fullName: string;
+    dateOfBirth: string;
+    phone: string;
+  } | null>(null);
 
-  // Redirect if not authenticated
+  // Redirect if not authenticated and fetch user profile
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
+    } else if (status === 'authenticated' && session?.user) {
+      // Set user profile from session
+      setUserProfile({
+        fullName: session.user.name || '',
+        dateOfBirth: session.user.dateOfBirth || '',
+        phone: session.user.phone || '',
+      });
     }
-  }, [status, router]);
+  }, [status, session, router]);
 
   // Handle BVN input (only allow digits, max 11)
   const handleBvnChange = (value: string) => {
@@ -68,11 +79,6 @@ export default function Tier1KYCPage() {
       return;
     }
 
-    if (!dateOfBirth) {
-      setError('Please confirm your date of birth');
-      return;
-    }
-
     setIsVerifying(true);
     setError(null);
     setVerificationDetails(null);
@@ -85,13 +91,17 @@ export default function Tier1KYCPage() {
         },
         body: JSON.stringify({
           bvn,
-          dateOfBirth,
         }),
       });
 
       const result = await response.json();
 
       if (!response.ok) {
+        console.error('[BVN Verification] API error:', {
+          status: response.status,
+          result,
+        });
+        
         // Handle specific error cases
         if (result.mismatches && result.mismatches.length > 0) {
           setVerificationDetails({
@@ -295,21 +305,85 @@ export default function Tier1KYCPage() {
                             </p>
                           </div>
                         )}
+                        
+                        {/* Troubleshooting tips */}
+                        {!verificationDetails && (
+                          <div className="mt-3 p-3 bg-yellow-50 rounded border border-yellow-300">
+                            <p className="text-sm font-semibold text-yellow-900 mb-2">Troubleshooting Tips:</p>
+                            <ul className="text-sm text-yellow-800 space-y-1">
+                              <li className="flex items-start gap-2">
+                                <span>•</span>
+                                <span>Ensure you entered the correct 11-digit BVN</span>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span>•</span>
+                                <span>Check that your date of birth matches your BVN registration</span>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span>•</span>
+                                <span>Verify your internet connection is stable</span>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span>•</span>
+                                <span>If the issue persists, contact support for assistance</span>
+                              </li>
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Info Box */}
-                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
-                  <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="font-semibold text-blue-900">Why do we need your BVN?</h3>
-                    <p className="text-sm text-blue-700 mt-1">
-                      Your BVN helps us verify your identity securely. We use Paystack's secure API and encrypt your BVN with AES-256 encryption. Only the last 4 digits are ever displayed.
+                {/* User Profile Confirmation */}
+                {userProfile && (
+                  <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start gap-3 mb-3">
+                      <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h3 className="font-semibold text-blue-900">We'll verify your BVN against your profile</h3>
+                        <p className="text-sm text-blue-700 mt-1">
+                          Your BVN will be matched with the information you provided during registration.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Full Name:</span>
+                        <span className="font-medium text-gray-900">{userProfile.fullName}</span>
+                      </div>
+                      {userProfile.dateOfBirth && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Date of Birth:</span>
+                          <span className="font-medium text-gray-900">
+                            {(() => {
+                              try {
+                                const date = new Date(userProfile.dateOfBirth);
+                                if (isNaN(date.getTime())) {
+                                  return userProfile.dateOfBirth;
+                                }
+                                return date.toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                });
+                              } catch {
+                                return userProfile.dateOfBirth;
+                              }
+                            })()}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Phone:</span>
+                        <span className="font-medium text-gray-900">{userProfile.phone}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-blue-600 mt-3">
+                      ℹ️ If any of this information is incorrect, please contact support before proceeding.
                     </p>
                   </div>
-                </div>
+                )}
 
                 {/* Verification Form */}
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -345,35 +419,7 @@ export default function Tier1KYCPage() {
                     </div>
                     <p className="mt-2 text-sm text-gray-600 flex items-center gap-2">
                       <Lock className="w-4 h-4" />
-                      Your BVN is encrypted and secure
-                    </p>
-                  </div>
-
-                  {/* Date of Birth Confirmation */}
-                  <div>
-                    <label htmlFor="dateOfBirth" className="block text-sm font-medium text-gray-700 mb-2">
-                      Confirm Your Date of Birth <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      id="dateOfBirth"
-                      value={dateOfBirth}
-                      onChange={(e) => {
-                        setDateOfBirth(e.target.value);
-                        setError(null);
-                      }}
-                      disabled={isVerifying}
-                      max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
-                      className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 transition-colors ${
-                        error && !verificationDetails
-                          ? 'border-red-500 focus:ring-red-500'
-                          : dateOfBirth
-                          ? 'border-green-500 focus:ring-green-500'
-                          : 'border-gray-300 focus:ring-[#800020]'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    />
-                    <p className="mt-2 text-sm text-gray-600">
-                      This must match your BVN registration date of birth
+                      Your BVN is encrypted with AES-256 and stored securely
                     </p>
                   </div>
 
@@ -404,7 +450,7 @@ export default function Tier1KYCPage() {
                   {/* Submit Button */}
                   <button
                     type="submit"
-                    disabled={isVerifying || bvn.length !== 11 || !dateOfBirth}
+                    disabled={isVerifying || bvn.length !== 11}
                     className="w-full bg-[#FFD700] text-[#800020] font-bold py-4 px-4 rounded-lg hover:bg-[#FFC700] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
                   >
                     {isVerifying ? (

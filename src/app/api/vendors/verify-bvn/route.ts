@@ -34,8 +34,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { bvn } = body;
 
+    console.log('[BVN Verification] Request received:', {
+      userId,
+      bvnMasked: bvn ? `***${bvn.slice(-4)}` : 'missing',
+      bodyKeys: Object.keys(body),
+    });
+
     // Validate BVN format (11 digits)
     if (!bvn || typeof bvn !== 'string') {
+      console.log('[BVN Verification] Validation failed: BVN missing or invalid type');
       return NextResponse.json(
         { error: 'BVN is required' },
         { status: 400 }
@@ -43,6 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!/^\d{11}$/.test(bvn)) {
+      console.log('[BVN Verification] Validation failed: Invalid BVN format');
       return NextResponse.json(
         { error: 'Invalid BVN format. BVN must be exactly 11 digits.' },
         { status: 400 }
@@ -68,6 +76,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Only vendors can complete BVN verification' },
         { status: 403 }
+      );
+    }
+
+    // Check if user has date of birth
+    if (!user.dateOfBirth) {
+      return NextResponse.json(
+        { 
+          error: 'Date of birth not found',
+          message: 'Your account is missing date of birth information. Please contact support to update your profile.',
+        },
+        { status: 400 }
       );
     }
 
@@ -130,12 +149,27 @@ export async function POST(request: NextRequest) {
     const [firstName, ...lastNameParts] = user.fullName.split(' ');
     const lastName = lastNameParts.join(' ');
 
+    console.log('[BVN Verification] Calling verification service:', {
+      bvnMasked: `***${bvn.slice(-4)}`,
+      firstName,
+      lastName,
+      dateOfBirth: user.dateOfBirth.toISOString().split('T')[0],
+      phone: user.phone,
+    });
+
     const verificationResult = await verifyBVN({
       bvn,
       firstName,
       lastName,
       dateOfBirth: user.dateOfBirth.toISOString().split('T')[0], // YYYY-MM-DD
       phone: user.phone,
+    });
+
+    console.log('[BVN Verification] Service response:', {
+      success: verificationResult.success,
+      verified: verificationResult.verified,
+      matchScore: verificationResult.matchScore,
+      error: verificationResult.error,
     });
 
     // 7. Handle verification failure
@@ -268,6 +302,10 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('BVN verification API error:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     
     return NextResponse.json(
       { 

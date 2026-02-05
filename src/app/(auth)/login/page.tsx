@@ -35,7 +35,9 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const callbackUrl = searchParams.get('callbackUrl') || '/vendor/dashboard';
+  // Don't set a default callbackUrl - let the middleware handle role-based redirect
+  const callbackUrl = searchParams.get('callbackUrl') || null;
+  const successMessage = searchParams.get('message') || null;
 
   const {
     register,
@@ -76,9 +78,14 @@ function LoginForm() {
         return;
       }
 
-      // Successful login - use window.location for hard navigation
-      // This ensures cookies are properly set before middleware runs
-      window.location.href = callbackUrl;
+      // Successful login - redirect based on role
+      // If there's a callbackUrl, use it; otherwise let the server redirect based on role
+      if (callbackUrl) {
+        window.location.href = callbackUrl;
+      } else {
+        // Force a full page reload to let middleware handle role-based redirect
+        window.location.href = '/';
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
       setIsSubmitting(false);
@@ -88,7 +95,7 @@ function LoginForm() {
   const handleOAuthLogin = async (provider: 'google' | 'facebook') => {
     try {
       await signIn(provider, {
-        callbackUrl,
+        callbackUrl: callbackUrl || '/',
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign in. Please try again.');
@@ -111,6 +118,19 @@ function LoginForm() {
 
         {/* Login Form Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8">
+          {/* Success Message */}
+          {successMessage && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
+              <svg className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <h3 className="font-semibold text-green-900">Success</h3>
+                <p className="text-sm text-green-700 mt-1">{successMessage}</p>
+              </div>
+            </div>
+          )}
+          
           {/* Error Message */}
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">

@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-// import { enforcePaymentDeadlines } from '@/lib/cron/payment-deadlines';
+import { enforcePaymentDeadlines } from '@/lib/cron/payment-deadlines';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -26,15 +26,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // TODO: Re-enable when Turbopack build issue is resolved
     // Run the payment deadline enforcement
-    // const result = await enforcePaymentDeadlines();
+    const result = await enforcePaymentDeadlines();
 
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
-      message: 'Payment deadline enforcement temporarily disabled due to build issue',
-      // result,
+      message: 'Payment deadline enforcement completed',
+      result,
     });
   } catch (error) {
     console.error('Error in payment deadlines cron:', error);

@@ -6,6 +6,9 @@ import { getToken } from 'next-auth/jwt';
 /**
  * Manual logout endpoint
  * Clears session from Redis and browser cookies
+ * 
+ * NOTE: For client-side logout, prefer using signOut() from next-auth/react
+ * This endpoint is for server-side or API-based logout scenarios
  */
 export async function POST(request: NextRequest) {
   try {
@@ -21,9 +24,17 @@ export async function POST(request: NextRequest) {
       await redis.del(sessionKey);
     }
 
-    // Clear all NextAuth cookies
+    // Clear all Auth.js (NextAuth v5) cookies
     const cookieStore = await cookies();
     const cookieNames = [
+      // Auth.js v5 cookie names
+      'authjs.session-token',
+      '__Secure-authjs.session-token',
+      'authjs.csrf-token',
+      '__Host-authjs.csrf-token',
+      'authjs.callback-url',
+      '__Secure-authjs.callback-url',
+      // Legacy NextAuth v4 names (for backwards compatibility)
       'next-auth.session-token',
       '__Secure-next-auth.session-token',
       'next-auth.csrf-token',
@@ -36,10 +47,22 @@ export async function POST(request: NextRequest) {
       cookieStore.delete(name);
     });
 
-    return NextResponse.json({ 
+    // Create response with redirect to login
+    const response = NextResponse.json({ 
       success: true, 
-      message: 'Logged out successfully' 
+      message: 'Logged out successfully',
+      redirect: '/login'
     });
+
+    // Also set cookies to expire in the response
+    cookieNames.forEach((name) => {
+      response.cookies.set(name, '', {
+        expires: new Date(0),
+        path: '/',
+      });
+    });
+
+    return response;
   } catch (error) {
     console.error('Logout error:', error);
     return NextResponse.json(

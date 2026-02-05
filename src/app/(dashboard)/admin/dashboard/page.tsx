@@ -29,40 +29,62 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Wait for session to be fully loaded
+    if (status === 'loading') {
+      return;
+    }
+
     if (status === 'unauthenticated') {
       router.push('/login');
       return;
     }
 
-    if (session?.user?.role !== 'system_admin') {
-      router.push('/vendor/dashboard');
-      return;
-    }
+    // Only check role after session is loaded
+    if (status === 'authenticated') {
+      const userRole = session?.user?.role;
+      
+      if (userRole !== 'system_admin' && userRole !== 'admin') {
+        // Redirect to appropriate dashboard based on role
+        if (userRole === 'vendor') router.push('/vendor/dashboard');
+        else if (userRole === 'salvage_manager') router.push('/manager/dashboard');
+        else if (userRole === 'claims_adjuster') router.push('/adjuster/dashboard');
+        else if (userRole === 'finance_officer') router.push('/finance/dashboard');
+        else router.push('/login');
+        return;
+      }
 
-    // Fetch dashboard stats
-    fetchDashboardStats();
+      // User has correct role, fetch dashboard stats
+      fetchDashboardStats();
+    }
   }, [session, status, router]);
 
   const fetchDashboardStats = async () => {
     try {
-      // TODO: Create API endpoint for admin dashboard stats
-      // For now, using mock data
-      setStats({
-        totalUsers: 156,
-        activeVendors: 89,
-        pendingFraudAlerts: 3,
-        todayAuditLogs: 1247,
-        userGrowth: 12.5,
-        systemHealth: 'healthy',
-      });
+      const response = await fetch('/api/dashboard/admin');
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch dashboard stats');
+      }
+
+      const data = await response.json();
+      setStats(data);
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error);
+      // Set default values on error
+      setStats({
+        totalUsers: 0,
+        activeVendors: 0,
+        pendingFraudAlerts: 0,
+        todayAuditLogs: 0,
+        userGrowth: 0,
+        systemHealth: 'healthy',
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
+  if (status === 'loading' || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020]"></div>

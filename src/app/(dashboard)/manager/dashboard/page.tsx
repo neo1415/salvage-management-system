@@ -140,6 +140,18 @@ export default function ManagerDashboardPage() {
     }
   }, [isAuthenticated, isLoading, user, router, fetchDashboardData]);
 
+  // Refresh dashboard when page becomes visible (e.g., returning from another page)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isAuthenticated && user) {
+        fetchDashboardData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isAuthenticated, user, fetchDashboardData]);
+
   // Auto-refresh every 30 seconds
   useEffect(() => {
     if (!isAuthenticated || !user) return;

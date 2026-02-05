@@ -82,28 +82,60 @@ export async function verifyBVN(request: BVNVerificationRequest): Promise<BVNVer
       };
     }
 
-    // Test mode support
-    if (isTestMode() && request.bvn === TEST_BVN) {
-      console.log('[TEST MODE] BVN Verification:', {
-        bvn: maskBVN(request.bvn),
-        firstName: request.firstName,
-        lastName: request.lastName,
-        dateOfBirth: request.dateOfBirth,
-        phone: request.phone,
-      });
-
-      return {
-        success: true,
-        verified: true,
-        matchScore: 100,
-        details: {
+    // Test mode support - only accept test BVN in test mode
+    if (isTestMode()) {
+      if (request.bvn === TEST_BVN) {
+        console.log('[TEST MODE] BVN Verification:', {
+          bvn: maskBVN(request.bvn),
           firstName: request.firstName,
           lastName: request.lastName,
           dateOfBirth: request.dateOfBirth,
           phone: request.phone,
-        },
+        });
+
+        return {
+          success: true,
+          verified: true,
+          matchScore: 100,
+          details: {
+            firstName: request.firstName,
+            lastName: request.lastName,
+            dateOfBirth: request.dateOfBirth,
+            phone: request.phone,
+          },
+        };
+      } else {
+        // In test mode, real BVNs cannot be verified
+        console.warn('[TEST MODE] Real BVN provided in test mode:', {
+          bvn: maskBVN(request.bvn),
+          testBvn: TEST_BVN,
+        });
+        
+        return {
+          success: false,
+          verified: false,
+          matchScore: 0,
+          error: `Test mode: Please use test BVN ${TEST_BVN} for testing. Real BVN verification requires production Paystack keys.`,
+        };
+      }
+    }
+
+    // Check if Paystack secret key is configured
+    if (!PAYSTACK_SECRET_KEY) {
+      console.error('[BVN Verification] PAYSTACK_SECRET_KEY not configured');
+      return {
+        success: false,
+        verified: false,
+        matchScore: 0,
+        error: 'BVN Service Unavailable - Configuration Error',
       };
     }
+
+    console.log('[BVN Verification] Calling Paystack API:', {
+      url: `${PAYSTACK_BASE_URL}/bank/resolve_bvn/${maskBVN(request.bvn)}`,
+      hasKey: !!PAYSTACK_SECRET_KEY,
+      keyPrefix: PAYSTACK_SECRET_KEY.substring(0, 10) + '...',
+    });
 
     // Call Paystack BVN verification API
     const response = await fetch(`${PAYSTACK_BASE_URL}/bank/resolve_bvn/${request.bvn}`, {
@@ -114,17 +146,33 @@ export async function verifyBVN(request: BVNVerificationRequest): Promise<BVNVer
       },
     });
 
+    console.log('[BVN Verification] Paystack API response:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+    });
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.error('[BVN Verification] Paystack API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+      });
       return {
         success: false,
         verified: false,
         matchScore: 0,
-        error: errorData.message || `Paystack API error: ${response.status}`,
+        error: errorData.message || `Paystack API error: ${response.status} ${response.statusText}`,
       };
     }
 
     const paystackData: PaystackBVNResponse = await response.json();
+    console.log('[BVN Verification] Paystack API success:', {
+      status: paystackData.status,
+      message: paystackData.message,
+      hasData: !!paystackData.data,
+    });
 
     if (!paystackData.status || !paystackData.data) {
       return {
@@ -151,12 +199,17 @@ export async function verifyBVN(request: BVNVerificationRequest): Promise<BVNVer
       mismatches: matchResult.mismatches,
     };
   } catch (error) {
-    console.error('BVN verification error:', error);
+    console.error('[BVN Verification] Exception caught:', {
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined,
+    });
     return {
       success: false,
       verified: false,
       matchScore: 0,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: 'BVN Service Unavailable',
     };
   }
 }

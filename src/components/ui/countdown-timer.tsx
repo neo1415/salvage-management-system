@@ -156,7 +156,9 @@ export function CountdownTimer({
 
     if (remaining <= 0) {
       setIsExpired(true);
-      onComplete?.();
+      if (onComplete) {
+        onComplete();
+      }
       return;
     }
 
@@ -168,12 +170,14 @@ export function CountdownTimer({
       if (newRemaining <= 0) {
         setIsExpired(true);
         clearInterval(interval);
-        onComplete?.();
+        if (onComplete) {
+          onComplete();
+        }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [calculateTimeRemaining, onComplete]);
+  }, [calculateTimeRemaining]);
 
   /**
    * Handle notification triggers
@@ -183,17 +187,17 @@ export function CountdownTimer({
     const minutes = timeRemaining / (1000 * 60);
 
     // Send push notification at 1 hour remaining (once)
-    if (hours <= 1 && hours > 0 && !oneHourNotificationSent.current) {
+    if (hours <= 1 && hours > 0 && !oneHourNotificationSent.current && onOneHourRemaining) {
       oneHourNotificationSent.current = true;
-      onOneHourRemaining?.();
+      onOneHourRemaining();
     }
 
     // Send SMS notification at 30 minutes remaining (once)
-    if (minutes <= 30 && minutes > 0 && !thirtyMinutesNotificationSent.current) {
+    if (minutes <= 30 && minutes > 0 && !thirtyMinutesNotificationSent.current && onThirtyMinutesRemaining) {
       thirtyMinutesNotificationSent.current = true;
-      onThirtyMinutesRemaining?.();
+      onThirtyMinutesRemaining();
     }
-  }, [timeRemaining, onOneHourRemaining, onThirtyMinutesRemaining]);
+  }, [timeRemaining]);
 
   const formatted = formatCountdown(timeRemaining, compact);
   const colorClass = getCountdownColor(timeRemaining);

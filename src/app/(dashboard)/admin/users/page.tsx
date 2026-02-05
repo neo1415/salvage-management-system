@@ -10,8 +10,8 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, useCallback } from 'react';
+import ActionModal from './action-modal';
 
 interface User {
   id: string;
@@ -26,8 +26,10 @@ interface User {
   loginDeviceType: string | null;
 }
 
+type ActionModalType = 'suspend' | 'unsuspend' | 'delete' | 'resetPassword' | 'changeRole' | 'view' | null;
+
 export default function AdminUserManagement() {
-  const router = useRouter();
+  
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,11 +53,12 @@ export default function AdminUserManagement() {
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchUsers();
-  }, [roleFilter, statusFilter, searchQuery]);
+  // Action modal states
+  const [actionModal, setActionModal] = useState<ActionModalType>(null);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -79,7 +82,11 @@ export default function AdminUserManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [roleFilter, statusFilter, searchQuery]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,7 +166,7 @@ export default function AdminUserManagement() {
     }
   };
 
-  const getRoleDisplayName = (role: string): string => {
+  const getRoleDisplayName = useCallback((role: string): string => {
     const roleNames: Record<string, string> = {
       vendor: 'Vendor',
       claims_adjuster: 'Claims Adjuster',
@@ -168,9 +175,9 @@ export default function AdminUserManagement() {
       system_admin: 'System Admin',
     };
     return roleNames[role] || role;
-  };
+  }, []);
 
-  const getStatusDisplayName = (status: string): string => {
+  const getStatusDisplayName = useCallback((status: string): string => {
     const statusNames: Record<string, string> = {
       unverified_tier_0: 'Unverified',
       phone_verified_tier_0: 'Phone Verified',
@@ -180,9 +187,9 @@ export default function AdminUserManagement() {
       deleted: 'Deleted',
     };
     return statusNames[status] || status;
-  };
+  }, []);
 
-  const getStatusColor = (status: string): string => {
+  const getStatusColor = useCallback((status: string): string => {
     const colors: Record<string, string> = {
       unverified_tier_0: 'bg-gray-100 text-gray-800',
       phone_verified_tier_0: 'bg-blue-100 text-blue-800',
@@ -192,9 +199,9 @@ export default function AdminUserManagement() {
       deleted: 'bg-gray-100 text-gray-500',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
-  };
+  }, []);
 
-  const getRoleColor = (role: string): string => {
+  const getRoleColor = useCallback((role: string): string => {
     const colors: Record<string, string> = {
       vendor: 'bg-blue-100 text-blue-800',
       claims_adjuster: 'bg-green-100 text-green-800',
@@ -203,7 +210,18 @@ export default function AdminUserManagement() {
       system_admin: 'bg-red-100 text-red-800',
     };
     return colors[role] || 'bg-gray-100 text-gray-800';
-  };
+  }, []);
+
+  const handleAction = useCallback((action: ActionModalType, user: User) => {
+    setSelectedUser(user);
+    setActionModal(action);
+    setOpenDropdownId(null);
+  }, []);
+
+  const closeActionModal = useCallback(() => {
+    setActionModal(null);
+    setSelectedUser(null);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
@@ -323,6 +341,9 @@ export default function AdminUserManagement() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Created
                   </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -358,6 +379,65 @@ export default function AdminUserManagement() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(user.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="relative inline-block text-left">
+                        <button
+                          onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
+                          className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-burgundy-500"
+                        >
+                          Actions
+                          <svg className="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+
+                        {openDropdownId === user.id && (
+                          <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                            <div className="py-1" role="menu">
+                              <button
+                                onClick={() => handleAction('view', user)}
+                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                              >
+                                👁️ View Details
+                              </button>
+                              <button
+                                onClick={() => handleAction('changeRole', user)}
+                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                              >
+                                🔄 Change Role
+                              </button>
+                              <button
+                                onClick={() => handleAction('resetPassword', user)}
+                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                              >
+                                🔑 Reset Password
+                              </button>
+                              {user.status === 'suspended' ? (
+                                <button
+                                  onClick={() => handleAction('unsuspend', user)}
+                                  className="block w-full text-left px-4 py-2 text-sm text-green-700 hover:bg-green-50"
+                                >
+                                  ✅ Unsuspend Account
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleAction('suspend', user)}
+                                  className="block w-full text-left px-4 py-2 text-sm text-orange-700 hover:bg-orange-50"
+                                >
+                                  ⚠️ Suspend Account
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleAction('delete', user)}
+                                className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                              >
+                                🗑️ Delete User
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -553,6 +633,14 @@ export default function AdminUserManagement() {
           </div>
         </div>
       )}
+
+      {/* Action Modal */}
+      <ActionModal
+        actionModal={actionModal}
+        selectedUser={selectedUser}
+        onClose={closeActionModal}
+        onSuccess={fetchUsers}
+      />
     </div>
   );
 }

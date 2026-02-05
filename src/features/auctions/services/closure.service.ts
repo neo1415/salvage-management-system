@@ -20,6 +20,7 @@ import { eq, and, lte } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { escrowService } from '@/features/payments/services/escrow.service';
 
 /**
  * Auction closure result
@@ -261,6 +262,21 @@ export class AuctionClosureService {
           updatedAt: new Date(),
         })
         .where(eq(salvageCases.id, auction.caseId));
+
+      // Freeze funds in escrow wallet (Requirement 26.5)
+      try {
+        await escrowService.freezeFunds(
+          vendor.id,
+          parseFloat(auction.currentBid),
+          auction.id,
+          vendor.userId
+        );
+        console.log(`Funds frozen for vendor ${vendor.id}: ₦${parseFloat(auction.currentBid).toLocaleString()}`);
+      } catch (error) {
+        console.error(`Failed to freeze funds for vendor ${vendor.id}:`, error);
+        // Log the error but don't fail the auction closure
+        // The payment can still be processed manually if needed
+      }
 
       // Log auction closure
       await logAction({

@@ -457,9 +457,15 @@ export default function ApprovalsPage() {
                   />
                 </div>
                 
-                <p className="text-sm text-gray-600 mt-2">
-                  Coordinates: {selectedCase.gpsLocation.y.toFixed(6)}, {selectedCase.gpsLocation.x.toFixed(6)}
-                </p>
+                {selectedCase.gpsLocation.y !== undefined && selectedCase.gpsLocation.x !== undefined ? (
+                  <p className="text-sm text-gray-600 mt-2">
+                    Coordinates: {selectedCase.gpsLocation.y.toFixed(6)}, {selectedCase.gpsLocation.x.toFixed(6)}
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-600 mt-2">
+                    Coordinates: Not available
+                  </p>
+                )}
               </>
             ) : (
               <div className="w-full h-48 bg-gray-100 rounded-lg flex items-center justify-center">

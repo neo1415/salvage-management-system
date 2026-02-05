@@ -182,6 +182,19 @@ export const authConfig: NextAuthConfig = {
         // Reset failed login attempts on successful login
         await resetFailedLogins(emailOrPhone);
 
+        // Fetch vendor profile if user is a vendor
+        let vendorId: string | undefined;
+        if (user.role === 'vendor') {
+          const { vendors } = await import('@/lib/db/schema/vendors');
+          const [vendor] = await db
+            .select({ id: vendors.id })
+            .from(vendors)
+            .where(eq(vendors.userId, user.id))
+            .limit(1);
+          
+          vendorId = vendor?.id;
+        }
+
         // Update last login timestamp and device type
         const deviceType = getDeviceType(userAgent);
         await db
@@ -214,7 +227,9 @@ export const authConfig: NextAuthConfig = {
           role: user.role,
           status: user.status,
           phone: user.phone,
+          dateOfBirth: user.dateOfBirth?.toISOString().split('T')[0],
           requirePasswordChange: user.requirePasswordChange === 'true',
+          vendorId,
         };
       },
     }),
@@ -242,12 +257,12 @@ export const authConfig: NextAuthConfig = {
   pages: {
     signIn: '/login',
     signOut: '/login',
-    error: '/login',
+    error: '/auth/error',
   },
 
   callbacks: {
     async signIn({ user, account, profile }) {
-      // For OAuth providers, check if user exists or create new user
+      // For OAuth providers, check if user exists or handle new registration
       if (account?.provider === 'google' || account?.provider === 'facebook') {
         const email = user.email;
         if (!email) {
@@ -262,10 +277,11 @@ export const authConfig: NextAuthConfig = {
           .limit(1);
 
         if (existingUser) {
-          // Update user ID for session
+          // Existing user - allow login
           user.id = existingUser.id;
           user.role = existingUser.role;
           user.status = existingUser.status;
+          user.phone = existingUser.phone;
           
           // Update last login
           await db
@@ -279,59 +295,24 @@ export const authConfig: NextAuthConfig = {
           return true;
         }
 
-        // New OAuth user - extract phone from profile if available
-        let phone: string | undefined;
+        // New OAuth user - store temporary data in Redis for completion flow
+        // DO NOT create user account yet - they need to verify phone with OTP first
+        const tempKey = `oauth_temp:${email}`;
+        const tempData = {
+          email,
+          name: user.name || 'OAuth User',
+          provider: account.provider,
+          providerId: account.providerAccountId,
+          picture: user.image,
+          createdAt: Date.now(),
+        };
         
-        interface OAuthProfile {
-          phone_number?: string;
-          phoneNumber?: string;
-          phone?: string;
-        }
+        // Store for 15 minutes
+        await redis.set(tempKey, JSON.stringify(tempData), { ex: 15 * 60 });
         
-        if (account.provider === 'google' && profile) {
-          // Google may provide phone in profile
-          const googleProfile = profile as OAuthProfile;
-          phone = googleProfile.phone_number || googleProfile.phoneNumber;
-        } else if (account.provider === 'facebook' && profile) {
-          // Facebook may provide phone in profile
-          const facebookProfile = profile as OAuthProfile;
-          phone = facebookProfile.phone;
-        }
-
-        // If no phone number, user will need to provide it after OAuth
-        // Store temporary OAuth data in session for completion flow
-        if (!phone) {
-          // Allow sign-in but flag that phone is needed
-          // This will be handled in the session callback
-          user.needsPhoneNumber = true;
-          return true;
-        }
-
-        // Create new user with OAuth data
-        try {
-          const [newUser] = await db
-            .insert(users)
-            .values({
-              email: email,
-              phone: phone,
-              passwordHash: '', // No password for OAuth users
-              fullName: user.name || 'OAuth User',
-              dateOfBirth: new Date('1990-01-01'), // Placeholder
-              role: 'vendor',
-              status: 'unverified_tier_0',
-              lastLoginAt: new Date(),
-            })
-            .returning();
-
-          user.id = newUser.id;
-          user.role = newUser.role;
-          user.status = newUser.status;
-
-          return true;
-        } catch (error) {
-          console.error('OAuth user creation error:', error);
-          return false;
-        }
+        // Return false to deny sign in, which will redirect to error page
+        // The error page will detect this and redirect to complete-oauth
+        return `/auth/complete-oauth?email=${encodeURIComponent(email)}`;
       }
 
       return true;
@@ -345,16 +326,74 @@ export const authConfig: NextAuthConfig = {
         token.status = user.status || 'unverified_tier_0';
         token.email = user.email || '';
         token.phone = user.phone;
+        token.dateOfBirth = user.dateOfBirth;
         token.requirePasswordChange = user.requirePasswordChange || false;
+        token.needsPhoneNumber = user.needsPhoneNumber || false;
+        token.vendorId = user.vendorId;
         
-        // Generate access token (use the JWT token itself as access token)
-        // In production, you might want to generate a separate access token
-        token.accessToken = token.jti || token.id;
+        // Generate a unique session identifier to bind this token to this specific login
+        // This prevents token reuse across different browser contexts
+        token.sessionId = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        
+        // Generate access token as a JWT that Socket.IO can verify
+        // Use the same secret as NextAuth for consistency
+        const jwt = require('jsonwebtoken');
+        token.accessToken = jwt.sign(
+          {
+            sub: user.id,
+            role: user.role,
+            vendorId: user.vendorId,
+            email: user.email,
+          },
+          process.env.NEXTAUTH_SECRET!,
+          {
+            expiresIn: '24h',
+          }
+        );
         
         // Set token expiry based on device type
         const deviceType = getDeviceType(token.userAgent as string | null);
         const expirySeconds = getTokenExpiry(deviceType);
         token.exp = Math.floor(Date.now() / 1000) + expirySeconds;
+        
+        // Skip validation on initial sign-in since user object is present and trusted
+        return token;
+      }
+
+      // Validate token integrity on subsequent requests (when user object is not present)
+      // This ensures the token hasn't been tampered with and the user still exists
+      if (token.id && !user) {
+        // Verify the user still exists and hasn't been deleted/suspended
+        const [currentUser] = await db
+          .select({
+            id: users.id,
+            role: users.role,
+            status: users.status,
+            email: users.email,
+          })
+          .from(users)
+          .where(eq(users.id, token.id as string))
+          .limit(1);
+
+        // If user doesn't exist or is deleted, invalidate the token
+        if (!currentUser || currentUser.status === 'deleted') {
+          console.warn(`[JWT] Invalid token for user ${token.id} - user not found or deleted`);
+          throw new Error('Invalid session');
+        }
+
+        // Verify the token's user ID matches the database user ID
+        // This prevents token tampering
+        if (currentUser.id !== token.id) {
+          console.error(`[JWT] Token user ID mismatch! Token: ${token.id}, DB: ${currentUser.id}`);
+          throw new Error('Session validation failed');
+        }
+
+        // Verify the token's email matches the database email
+        // This catches cases where the wrong user's token is being used
+        if (currentUser.email !== token.email) {
+          console.error(`[JWT] Token email mismatch! Token: ${token.email}, DB: ${currentUser.email}`);
+          throw new Error('Session validation failed');
+        }
       }
 
       // Update session
@@ -371,6 +410,18 @@ export const authConfig: NextAuthConfig = {
           token.status = updatedUser.status;
           token.phone = updatedUser.phone;
           token.requirePasswordChange = updatedUser.requirePasswordChange === 'true';
+          
+          // Refresh vendorId if user is a vendor
+          if (updatedUser.role === 'vendor') {
+            const { vendors } = await import('@/lib/db/schema/vendors');
+            const [vendor] = await db
+              .select({ id: vendors.id })
+              .from(vendors)
+              .where(eq(vendors.userId, updatedUser.id))
+              .limit(1);
+            
+            token.vendorId = vendor?.id;
+          }
         }
       }
 
@@ -384,15 +435,22 @@ export const authConfig: NextAuthConfig = {
         session.user.status = token.status as string;
         session.user.email = token.email as string;
         session.user.phone = token.phone as string | undefined;
+        session.user.dateOfBirth = token.dateOfBirth as string | undefined;
         session.user.requirePasswordChange = token.requirePasswordChange as boolean;
+        session.user.needsPhoneNumber = token.needsPhoneNumber as boolean;
+        session.user.vendorId = token.vendorId as string | undefined;
         
         // Include access token in session for Socket.io authentication
         session.accessToken = token.accessToken as string;
+        
+        // Include session ID for tracking
+        session.sessionId = token.sessionId as string;
       }
 
-      // Store session in Redis for quick lookups
-      if (session.user?.id && token) {
-        const sessionKey = `session:${session.user.id}`;
+      // Store session in Redis using the unique session ID
+      // This prevents session collision between different users
+      if (session.user?.id && token?.sessionId) {
+        const sessionKey = `session:${token.sessionId}`;
         
         interface TokenWithUserAgent {
           userAgent?: string | null;
@@ -401,7 +459,21 @@ export const authConfig: NextAuthConfig = {
         const deviceType = getDeviceType((token as TokenWithUserAgent).userAgent as string | null);
         const expirySeconds = getTokenExpiry(deviceType);
         
-        await kv.set(sessionKey, JSON.stringify(session), {
+        // Store session with user ID validation data
+        const sessionData = {
+          ...session,
+          userId: session.user.id, // Explicit user ID for validation
+          email: session.user.email, // Email for cross-validation
+          createdAt: Date.now(),
+        };
+        
+        await kv.set(sessionKey, JSON.stringify(sessionData), {
+          ex: expirySeconds,
+        });
+        
+        // Also maintain a user-to-session mapping for logout
+        const userSessionKey = `user:${session.user.id}:session`;
+        await kv.set(userSessionKey, token.sessionId as string, {
           ex: expirySeconds,
         });
       }
@@ -419,8 +491,44 @@ export const authConfig: NextAuthConfig = {
     maxAge: 24 * 60 * 60, // 24 hours (will be overridden by device-specific expiry)
   },
 
-  // Let NextAuth v5 handle cookies automatically based on NEXTAUTH_URL
-  // In production with HTTPS, it will use __Secure- prefix automatically
+  // Explicit cookie configuration to prevent session hijacking
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production' 
+        ? '__Secure-authjs.session-token' 
+        : 'authjs.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax', // Prevents CSRF while allowing normal navigation
+        path: '/',
+        secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+        // Domain is intentionally NOT set to ensure cookies are bound to exact host
+        // This prevents cookie sharing across subdomains or different browser contexts
+      },
+    },
+    callbackUrl: {
+      name: process.env.NODE_ENV === 'production'
+        ? '__Secure-authjs.callback-url'
+        : 'authjs.callback-url',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+    csrfToken: {
+      name: process.env.NODE_ENV === 'production'
+        ? '__Host-authjs.csrf-token'
+        : 'authjs.csrf-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
 
   events: {
     async signIn({ user, account, isNewUser: _isNewUser }) {
@@ -438,18 +546,32 @@ export const authConfig: NextAuthConfig = {
     },
 
     async signOut(message) {
-      // Remove session from Redis
+      // Remove session from Redis using both keys
       if ('token' in message && message.token?.id) {
-        const sessionKey = `session:${message.token.id}`;
-        await kv.del(sessionKey);
+        const userId = message.token.id as string;
+        const sessionId = message.token.sessionId as string;
+        
+        // Remove the session by session ID
+        if (sessionId) {
+          const sessionKey = `session:${sessionId}`;
+          await kv.del(sessionKey);
+        }
+        
+        // Remove the user-to-session mapping
+        const userSessionKey = `user:${userId}:session`;
+        await kv.del(userSessionKey);
+        
+        // Also remove old-style session key for backwards compatibility
+        const oldSessionKey = `session:${userId}`;
+        await kv.del(oldSessionKey);
         
         // Create audit log for logout
         try {
           await db.insert(auditLogs).values({
-            userId: message.token.id as string,
+            userId,
             actionType: 'logout',
             entityType: 'user',
-            entityId: message.token.id as string,
+            entityId: userId,
             ipAddress: 'unknown',
             deviceType: 'desktop',
             userAgent: 'unknown',

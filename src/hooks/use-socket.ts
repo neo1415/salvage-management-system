@@ -60,6 +60,13 @@ export function useSocket(): UseSocketReturn {
       return;
     }
 
+    // Validate access token format (should be a JWT)
+    if (!session.accessToken.startsWith('eyJ')) {
+      console.error('Invalid access token format. Expected JWT.');
+      setError(new Error('Invalid access token format'));
+      return;
+    }
+
     // Get Socket.io URL from environment or default to current origin
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
 
@@ -113,7 +120,7 @@ export function useSocket(): UseSocketReturn {
         setIsConnected(false);
       }
     };
-  }, [session, status]);
+  }, [session?.accessToken, status]);
 
   return { socket, isConnected, error };
 }

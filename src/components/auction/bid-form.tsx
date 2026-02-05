@@ -211,9 +211,15 @@ export function BidForm({
       const totalTime = startTime ? (Date.now() - startTime) / 1000 : 0;
       console.log(`✅ Bid placed in ${totalTime.toFixed(1)} seconds`);
 
-      // Show success message
+      // Show success message and trigger refresh
       setStep('bid');
-      onSuccess?.();
+      
+      // Call onSuccess to trigger parent component refresh
+      if (onSuccess) {
+        onSuccess();
+      }
+      
+      // Close modal
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to place bid');

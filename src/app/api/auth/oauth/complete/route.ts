@@ -1,107 +1,97 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
-import { oauthService } from '@/features/auth/services/oauth.service';
-import { getSession } from '@/lib/auth/auth-helpers';
+import { redis } from '@/lib/redis/client';
+import { db } from '@/lib/db/drizzle';
+import { users } from '@/lib/db/schema/users';
+import { eq } from 'drizzle-orm';
+import { otpService } from '@/features/auth/services/otp.service';
 
-// Validation schema for OAuth completion
-const oauthCompleteSchema = z.object({
-  phone: z.string()
-    .regex(/^(\+234|0)[789]\d{9}$/, 'Invalid Nigerian phone number format'),
-  dateOfBirth: z.string()
-    .refine((date) => {
-      const dob = new Date(date);
-      const age = (new Date().getTime() - dob.getTime()) / (1000 * 60 * 60 * 24 * 365);
-      return age >= 18;
-    }, 'You must be at least 18 years old'),
-});
-
-/**
- * POST /api/auth/oauth/complete
- * Complete OAuth registration by providing phone number
- */
 export async function POST(request: NextRequest) {
   try {
-    // Get session to verify user is authenticated via OAuth
-    const session = await getSession();
-    
-    if (!session?.user?.email) {
+    const { email, phone } = await request.json();
+
+    if (!email || !phone) {
       return NextResponse.json(
-        { error: 'Unauthorized. Please sign in with OAuth first.' },
-        { status: 401 }
-      );
-    }
-
-    // Parse request body
-    const body = await request.json();
-
-    // Validate input
-    const validatedInput = oauthCompleteSchema.parse(body);
-
-    // Get IP address and device type
-    const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
-    const userAgent = request.headers.get('user-agent') || '';
-    const deviceType = getDeviceType(userAgent);
-
-    // Complete OAuth registration
-    const result = await oauthService.completeOAuthRegistration(
-      session.user.email,
-      validatedInput.phone,
-      new Date(validatedInput.dateOfBirth),
-      ipAddress,
-      deviceType,
-      userAgent
-    );
-
-    if (!result.success) {
-      return NextResponse.json(
-        { error: result.error },
+        { error: 'Email and phone are required' },
         { status: 400 }
       );
     }
 
-    return NextResponse.json(
-      {
-        success: true,
-        userId: result.userId,
-        message: 'Registration completed successfully. Please verify your phone number.',
-      },
-      { status: 200 }
-    );
+    // Validate phone format (basic validation)
+    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+    if (!phoneRegex.test(phone.replace(/\s/g, ''))) {
+      return NextResponse.json(
+        { error: 'Invalid phone number format' },
+        { status: 400 }
+      );
+    }
+
+    // Get temporary OAuth data from Redis
+    const tempKey = `oauth_temp:${email}`;
+    const tempDataStr = await redis.get(tempKey);
+
+    if (!tempDataStr) {
+      return NextResponse.json(
+        { error: 'OAuth session expired. Please try again.' },
+        { status: 400 }
+      );
+    }
+
+    const tempData = JSON.parse(tempDataStr as string);
+
+    // Check if phone is already registered
+    const [existingUserByPhone] = await db
+      .select()
+      .from(users)
+      .where(eq(users.phone, phone))
+      .limit(1);
+
+    if (existingUserByPhone) {
+      return NextResponse.json(
+        { error: 'Phone number already registered' },
+        { status: 400 }
+      );
+    }
+
+    // Check if email is already registered (shouldn't happen, but double-check)
+    const [existingUserByEmail] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    if (existingUserByEmail) {
+      return NextResponse.json(
+        { error: 'Email already registered' },
+        { status: 400 }
+      );
+    }
+
+    // Store phone number with OAuth data for later user creation
+    const updatedTempData = {
+      ...tempData,
+      phone,
+    };
+    await redis.set(tempKey, JSON.stringify(updatedTempData), { ex: 15 * 60 });
+
+    // Generate and send OTP
+    const otpResult = await otpService.generateOTP(phone);
+
+    if (!otpResult.success) {
+      return NextResponse.json(
+        { error: otpResult.error || 'Failed to send OTP' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'OTP sent successfully',
+    });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          error: 'Validation failed',
-          details: error.issues.map((err) => ({
-            field: err.path.join('.'),
-            message: err.message,
-          })),
-        },
-        { status: 400 }
-      );
-    }
-
-    console.error('OAuth completion API error:', error);
+    console.error('OAuth completion error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
     );
   }
-}
-
-/**
- * Helper function to detect device type from user agent
- */
-function getDeviceType(userAgent: string): 'mobile' | 'desktop' | 'tablet' {
-  const ua = userAgent.toLowerCase();
-  
-  if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) {
-    return 'tablet';
-  }
-  
-  if (/mobile|iphone|ipod|blackberry|opera mini|iemobile|wpdesktop/i.test(ua)) {
-    return 'mobile';
-  }
-  
-  return 'desktop';
 }

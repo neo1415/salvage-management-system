@@ -11,7 +11,8 @@ import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY!;
-const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET!;
+// Paystack uses the SECRET KEY for webhook signature verification
+const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export interface PaymentInitiation {
@@ -258,6 +259,7 @@ export async function verifyPayment(
 
 /**
  * Verify Paystack webhook signature
+ * Paystack uses HMAC SHA512 with your secret key
  */
 export function verifyWebhookSignature(payload: string, signature: string): boolean {
   const hash = crypto.createHmac('sha512', PAYSTACK_WEBHOOK_SECRET).update(payload).digest('hex');
@@ -326,13 +328,24 @@ async function processWalletFunding(
       throw new Error('Missing wallet or vendor ID in metadata');
     }
 
+    // Get vendor to find the userId
+    const [vendor] = await db
+      .select()
+      .from(vendors)
+      .where(eq(vendors.id, vendorId))
+      .limit(1);
+
+    if (!vendor) {
+      throw new Error(`Vendor not found: ${vendorId}`);
+    }
+
     // Convert amount from kobo to naira
     const amount = amountInKobo / 100;
 
-    // Credit the wallet
-    await escrowService.creditWallet(walletId, amount, reference, vendorId);
+    // Credit the wallet (using the vendor's userId)
+    await escrowService.creditWallet(walletId, amount, reference, vendor.userId);
 
-    console.log(`Wallet funded successfully: ${walletId}, Amount: ₦${amount}`);
+    console.log(`Wallet funded successfully: ${walletId}, Amount: ₦${amount}, Reference: ${reference}`);
   } catch (error) {
     console.error('Error processing wallet funding:', error);
     throw error;

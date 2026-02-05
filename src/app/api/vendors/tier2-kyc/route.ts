@@ -345,8 +345,59 @@ export async function POST(request: NextRequest) {
       console.error('Error sending email:', error);
     }
 
-    // TODO: Notify Salvage Manager (implement notification system)
-    // This could be done via email, SMS, or in-app notification
+    // Notify Salvage Manager about new Tier 2 KYC submission
+    try {
+      // Get all Salvage Managers
+      const managers = await db
+        .select()
+        .from(users)
+        .where(eq(users.role, 'salvage_manager'));
+
+      // Send notification to each manager
+      for (const manager of managers) {
+        // Send SMS notification
+        if (manager.phone) {
+          await smsService.sendSMS({
+            to: manager.phone,
+            message: `New Tier 2 KYC application from ${businessName} (${vendor.businessName || 'N/A'}). Please review in the admin panel.`,
+          });
+        }
+
+        // Send email notification
+        if (manager.email) {
+          await emailService.sendEmail({
+            to: manager.email,
+            subject: 'New Tier 2 KYC Application - Action Required',
+            html: `
+              <h2>New Tier 2 KYC Application</h2>
+              <p>A vendor has submitted a Tier 2 KYC application that requires your review.</p>
+              <h3>Vendor Details:</h3>
+              <ul>
+                <li><strong>Business Name:</strong> ${businessName}</li>
+                <li><strong>CAC Number:</strong> ${cacNumber}</li>
+                <li><strong>Bank Account:</strong> ${bankAccountNumber} (${bankName})</li>
+                <li><strong>Vendor Name:</strong> ${vendor.businessName || 'N/A'}</li>
+                <li><strong>Email:</strong> ${user.email}</li>
+                <li><strong>Phone:</strong> ${user.phone || 'N/A'}</li>
+              </ul>
+              <h3>Verification Status:</h3>
+              <ul>
+                <li><strong>BVN:</strong> ✓ Verified</li>
+                <li><strong>NIN:</strong> ${ninVerified ? '✓ Verified' : '✗ Not Verified'}</li>
+                <li><strong>Bank Account:</strong> ${bankAccountVerified ? '✓ Verified' : '✗ Not Verified'}</li>
+                <li><strong>CAC:</strong> Pending Manual Review</li>
+              </ul>
+              <p>Please log in to the admin panel to review the application and uploaded documents.</p>
+              <p><a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/manager/vendors" style="background-color: #800020; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Review Application</a></p>
+              <p>Best regards,<br>NEM Salvage Management System</p>
+            `,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error notifying managers:', error);
+      // Don't fail the request if notification fails
+    }
 
     return NextResponse.json({
       success: true,

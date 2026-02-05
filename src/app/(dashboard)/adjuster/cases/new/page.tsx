@@ -24,6 +24,8 @@ import { z } from 'zod';
 import { useOffline } from '@/hooks/use-offline';
 import { useOfflineSync } from '@/hooks/use-offline-sync';
 import { saveOfflineCase } from '@/lib/db/indexeddb';
+import { getAccurateGeolocation, type GeolocationError } from '@/lib/integrations/google-geolocation';
+import { useToast } from '@/components/ui/toast';
 
 /**
  * Web Speech API types (not fully supported in TypeScript)
@@ -154,6 +156,7 @@ export default function NewCasePage() {
   const router = useRouter();
   const isOffline = useOffline();
   const { pendingCount } = useOfflineSync();
+  const toast = useToast();
   
   // Form state
   const {
@@ -208,7 +211,9 @@ export default function NewCasePage() {
   }, []);
 
   /**
-   * Capture GPS location
+   * Capture GPS location using hybrid approach
+   * - When online: Uses Google Maps Geolocation API (accurate)
+   * - When offline: Falls back to browser geolocation
    */
   const captureGPSLocation = async () => {
     if (!navigator.geolocation) {
@@ -220,56 +225,31 @@ export default function NewCasePage() {
     setGpsError(null);
 
     try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 30000, // Increased to 30 seconds for better reliability
-          maximumAge: 0,
-        });
-      });
+      // Use hybrid geolocation service (Google API + browser fallback)
+      const result = await getAccurateGeolocation();
 
       const location: GeoLocation = {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
+        latitude: result.latitude,
+        longitude: result.longitude,
       };
 
       setGpsLocation(location);
       
-      // Reverse geocode to get location name
-      try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.latitude}&lon=${location.longitude}`
-        );
-        const data = await response.json();
-        setValue('locationName', data.display_name || 'Unknown location');
-      } catch (error) {
-        console.error('Failed to reverse geocode:', error);
-        setValue('locationName', `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`);
-      }
+      // Set location name (already includes reverse geocoding)
+      setValue('locationName', result.locationName || `${result.latitude.toFixed(6)}, ${result.longitude.toFixed(6)}`);
+
+      // Log accuracy for debugging
+      console.log(`GPS captured via ${result.source}, accuracy: ${result.accuracy}m`);
     } catch (error) {
       console.error('GPS capture error:', error);
       
-      // Provide user-friendly error messages based on error code
-      let errorMessage = 'Failed to capture GPS location';
-      
+      // Handle GeolocationError from our service
       if (error && typeof error === 'object' && 'code' in error) {
-        const geoError = error as GeolocationPositionError;
-        switch (geoError.code) {
-          case 1: // PERMISSION_DENIED
-            errorMessage = 'Location permission denied. Please enable location access in your browser settings.';
-            break;
-          case 2: // POSITION_UNAVAILABLE
-            errorMessage = 'Location unavailable. Please check your device GPS settings.';
-            break;
-          case 3: // TIMEOUT
-            errorMessage = 'Location request timed out. Please try again or move to an area with better GPS signal.';
-            break;
-          default:
-            errorMessage = geoError.message || 'Failed to capture GPS location';
-        }
+        const geoError = error as GeolocationError;
+        setGpsError(geoError.message);
+      } else {
+        setGpsError('Failed to capture GPS location. Please try again.');
       }
-      
-      setGpsError(errorMessage);
     } finally {
       setIsCapturingGPS(false);
     }
@@ -289,7 +269,7 @@ export default function NewCasePage() {
       
       // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert(`Photo ${file.name} exceeds 5MB limit`);
+        toast.error('Photo too large', `${file.name} exceeds 5MB limit`);
         continue;
       }
 
@@ -301,6 +281,64 @@ export default function NewCasePage() {
     const currentPhotos = photos || [];
     const updatedPhotos = [...currentPhotos, ...newPhotos].slice(0, 10);
     setValue('photos', updatedPhotos);
+
+    // Only trigger AI assessment when online and we have at least 3 photos
+    if (!isOffline && updatedPhotos.length >= 3) {
+      await runAIAssessment(updatedPhotos);
+    }
+  };
+
+  /**
+   * Run AI assessment on uploaded photos
+   * Only runs when online - offline cases will be processed when synced
+   */
+  const runAIAssessment = async (photosToAssess: string[]) => {
+    if (isProcessingAI || isOffline) return; // Prevent duplicate calls and skip if offline
+    
+    setIsProcessingAI(true);
+    setAiAssessment(null); // Clear previous results
+    
+    try {
+      const response = await fetch('/api/cases/ai-assessment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          photos: photosToAssess,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'AI assessment failed');
+      }
+
+      const result = await response.json();
+      
+      // Set AI assessment results
+      if (result.data) {
+        const assessment: AIAssessmentResult = {
+          damageSeverity: result.data.damageSeverity,
+          confidenceScore: result.data.confidenceScore,
+          labels: result.data.labels,
+          estimatedSalvageValue: result.data.estimatedSalvageValue,
+          reservePrice: result.data.reservePrice,
+        };
+        
+        setAiAssessment(assessment);
+        
+        // Auto-fill market value
+        setValue('marketValue', result.data.estimatedSalvageValue);
+        
+        console.log('AI Assessment Complete:', assessment);
+      }
+    } catch (error) {
+      console.error('AI assessment error:', error);
+      toast.warning('AI assessment failed', 'You can still submit the form manually.');
+    } finally {
+      setIsProcessingAI(false);
+    }
   };
 
   /**
@@ -328,7 +366,7 @@ export default function NewCasePage() {
    */
   const startVoiceRecording = async () => {
     if (!recognitionRef.current) {
-      alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      toast.error('Speech recognition not supported', 'Please use Chrome, Edge, or Safari.');
       return;
     }
 
@@ -337,7 +375,7 @@ export default function NewCasePage() {
       await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (error) {
       console.error('Microphone permission denied:', error);
-      alert('Microphone access denied. Please enable microphone permissions in your browser settings to use voice notes.');
+      toast.error('Microphone access denied', 'Please enable microphone permissions in your browser settings.');
       return;
     }
 
@@ -359,21 +397,19 @@ export default function NewCasePage() {
       setIsRecording(false);
       
       // Provide user-friendly error messages
-      let errorMessage = 'Voice recording failed. ';
       switch (event.error) {
         case 'not-allowed':
-          errorMessage += 'Microphone access denied. Please enable microphone permissions in your browser settings.';
+          toast.error('Microphone access denied', 'Please enable microphone permissions in your browser settings.');
           break;
         case 'no-speech':
-          errorMessage += 'No speech detected. Please try again.';
+          toast.warning('No speech detected', 'Please try again.');
           break;
         case 'network':
-          errorMessage += 'Network error. Please check your internet connection.';
+          toast.error('Network error', 'Please check your internet connection.');
           break;
         default:
-          errorMessage += `Error: ${event.error}`;
+          toast.error('Voice recording failed', `Error: ${event.error}`);
       }
-      alert(errorMessage);
     };
 
     try {
@@ -381,7 +417,7 @@ export default function NewCasePage() {
     } catch (error) {
       console.error('Failed to start recognition:', error);
       setIsRecording(false);
-      alert('Failed to start voice recording. Please try again.');
+      toast.error('Failed to start voice recording', 'Please try again.');
     }
   };
 
@@ -397,11 +433,13 @@ export default function NewCasePage() {
 
   /**
    * Submit form
+   * Note: AI assessment already runs in real-time during photo upload (line ~380)
+   * This function just saves the case with the AI results already captured
    */
   const onSubmit = async (data: CaseFormData, isDraft: boolean = false) => {
     try {
       if (!gpsLocation) {
-        alert('GPS location is required. Please allow location access.');
+        toast.error('GPS location required', 'Please allow location access.');
         return;
       }
 
@@ -447,12 +485,10 @@ export default function NewCasePage() {
           syncStatus: 'pending',
         });
         
-        alert('Case saved offline. It will be synced when connection is restored.');
+        toast.success('Case saved offline', 'It will be synced when connection is restored.');
         router.push('/adjuster/cases');
       } else {
-        // Submit to API
-        setIsProcessingAI(true);
-        
+        // Submit to API (AI assessment already completed during photo upload)
         const response = await fetch('/api/cases', {
           method: 'POST',
           headers: {
@@ -466,28 +502,16 @@ export default function NewCasePage() {
           throw new Error(error.error || 'Failed to create case');
         }
 
-        const result = await response.json();
-        
-        // Display AI assessment
-        if (result.data.aiAssessment) {
-          setAiAssessment({
-            damageSeverity: result.data.damageSeverity,
-            confidenceScore: result.data.aiAssessment.confidenceScore,
-            labels: result.data.aiAssessment.labels,
-            estimatedSalvageValue: result.data.estimatedSalvageValue,
-            reservePrice: result.data.reservePrice,
-          });
-        }
-
-        alert(isDraft ? 'Case saved as draft' : 'Case submitted for approval');
+        toast.success(
+          isDraft ? 'Case saved as draft' : 'Case submitted for approval',
+          isDraft ? 'You can continue editing later.' : 'Manager will review your submission.'
+        );
         router.push('/adjuster/cases');
       }
     } catch (error) {
       console.error('Error submitting case:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to submit case';
-      alert(errorMessage);
-    } finally {
-      setIsProcessingAI(false);
+      toast.error('Submission failed', errorMessage);
     }
   };
 
@@ -742,15 +766,49 @@ export default function NewCasePage() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-[#800020] hover:text-[#800020] transition-colors font-medium"
+            disabled={isProcessingAI}
+            className="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-[#800020] hover:text-[#800020] transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             📷 Take Photo or Upload ({photos?.length || 0}/10)
           </button>
           <p className="mt-1 text-xs text-gray-500">
-            Tap to use camera or select from gallery
+            {isOffline 
+              ? 'Tap to use camera or select from gallery. AI will analyze when connection is restored.' 
+              : 'Tap to use camera or select from gallery. AI will analyze photos automatically.'}
           </p>
           {errors.photos && (
             <p className="mt-1 text-sm text-red-600">{errors.photos.message}</p>
+          )}
+          
+          {/* Offline AI Notice */}
+          {isOffline && photos && photos.length >= 3 && (
+            <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-yellow-900">You're offline</p>
+                  <p className="text-xs text-yellow-700">AI assessment will run automatically when connection is restored</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* AI Processing Indicator */}
+          {isProcessingAI && (
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-blue-900">AI is analyzing your photos...</p>
+                  <p className="text-xs text-blue-700">This may take a few seconds</p>
+                </div>
+              </div>
+            </div>
           )}
           
           {/* Photo Preview */}
@@ -763,6 +821,7 @@ export default function NewCasePage() {
                     alt={`Photo ${index + 1}`}
                     width={200}
                     height={96}
+                    unoptimized
                     className="w-full h-24 object-cover rounded-lg"
                   />
                   <button
@@ -777,6 +836,55 @@ export default function NewCasePage() {
             </div>
           )}
         </div>
+
+        {/* AI Assessment Results - Show immediately after photos */}
+        {aiAssessment && (
+          <div className="p-5 bg-gradient-to-br from-green-50 to-blue-50 rounded-xl border-2 border-green-300 shadow-md">
+            <div className="flex items-center mb-3">
+              <svg className="w-6 h-6 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 className="text-lg font-bold text-gray-900">✨ AI Damage Assessment Complete</h3>
+            </div>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center p-3 bg-white rounded-lg">
+                <span className="text-gray-700 font-medium">Damage Severity:</span>
+                <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                  aiAssessment.damageSeverity === 'minor' ? 'bg-green-100 text-green-800' :
+                  aiAssessment.damageSeverity === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
+                  'bg-red-100 text-red-800'
+                }`}>
+                  {aiAssessment.damageSeverity.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-white rounded-lg">
+                <span className="text-gray-700 font-medium">AI Confidence:</span>
+                <span className="text-lg font-bold text-blue-600">{aiAssessment.confidenceScore}%</span>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-white rounded-lg">
+                <span className="text-gray-700 font-medium">Estimated Salvage Value:</span>
+                <span className="text-lg font-bold text-green-600">₦{aiAssessment.estimatedSalvageValue.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-white rounded-lg">
+                <span className="text-gray-700 font-medium">Reserve Price:</span>
+                <span className="text-lg font-bold text-[#800020]">₦{aiAssessment.reservePrice.toLocaleString()}</span>
+              </div>
+              <div className="p-3 bg-white rounded-lg">
+                <span className="text-gray-700 font-medium block mb-2">Detected Damage:</span>
+                <div className="flex flex-wrap gap-2">
+                  {aiAssessment.labels.map((label, index) => (
+                    <span key={index} className="px-3 py-1 bg-blue-500 text-white rounded-full text-xs font-medium">
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-gray-600 italic">
+              💡 Market value has been auto-filled based on AI analysis. You can edit it if needed.
+            </p>
+          </div>
+        )}
 
         {/* GPS Location */}
         <div>
@@ -855,47 +963,12 @@ export default function NewCasePage() {
           )}
         </div>
 
-        {/* AI Assessment Results */}
-        {aiAssessment && (
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h3 className="font-medium text-gray-900 mb-3">AI Damage Assessment</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Damage Severity:</span>
-                <span className="font-medium capitalize">{aiAssessment.damageSeverity}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Confidence:</span>
-                <span className="font-medium">{aiAssessment.confidenceScore}%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Estimated Salvage Value:</span>
-                <span className="font-medium">₦{aiAssessment.estimatedSalvageValue.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Reserve Price:</span>
-                <span className="font-medium">₦{aiAssessment.reservePrice.toLocaleString()}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">Damage Labels:</span>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {aiAssessment.labels.map((label, index) => (
-                    <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                      {label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Submit Buttons */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 space-y-2">
           <button
             type="button"
             onClick={handleSubmit((data) => onSubmit(data, true))}
-            disabled={isSubmitting || isProcessingAI}
+            disabled={isSubmitting}
             className="w-full px-4 py-3 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400"
           >
             {isSubmitting ? 'Saving...' : 'Save as Draft'}
@@ -903,10 +976,10 @@ export default function NewCasePage() {
           <button
             type="button"
             onClick={handleSubmit((data) => onSubmit(data, false))}
-            disabled={isSubmitting || isProcessingAI}
+            disabled={isSubmitting}
             className="w-full px-4 py-3 bg-[#800020] text-white rounded-lg font-medium hover:bg-[#600018] disabled:bg-gray-400"
           >
-            {isProcessingAI ? 'Processing AI Assessment...' : isSubmitting ? 'Submitting...' : 'Submit for Approval'}
+            {isSubmitting ? 'Submitting...' : 'Submit for Approval'}
           </button>
         </div>
       </form>

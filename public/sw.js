@@ -7,8 +7,8 @@ importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox
 if (workbox) {
   console.log('Workbox loaded successfully');
 
-  // Enable debug mode in development
-  if (process.env.NODE_ENV === 'development') {
+  // Enable debug mode in development (check hostname instead of process.env)
+  if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1') {
     workbox.setConfig({ debug: true });
   }
 

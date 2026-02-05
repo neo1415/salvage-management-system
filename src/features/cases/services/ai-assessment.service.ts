@@ -1,18 +1,27 @@
 /**
  * AI Damage Assessment Service
  * Uses Google Cloud Vision API to analyze damage from photos
+ * 
+ * Supports both:
+ * - Base64 data URLs (data:image/jpeg;base64,...)
+ * - Regular image URLs (https://...)
+ * 
+ * Mock Mode: Set MOCK_AI_ASSESSMENT=true in .env to use mock data for testing
  */
 
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 
-// Initialize the Vision API client
-const visionClient = new ImageAnnotatorClient({
+// Check if we should use mock mode (for development without billing)
+const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
+
+// Initialize the Vision API client (only if not in mock mode)
+const visionClient = MOCK_MODE ? null : new ImageAnnotatorClient({
   keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
 });
 
-// Initialize the Document AI client
-const documentAIClient = new DocumentProcessorServiceClient({
+// Initialize the Document AI client (only if not in mock mode)
+const documentAIClient = MOCK_MODE ? null : new DocumentProcessorServiceClient({
   keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
 });
 
@@ -36,8 +45,29 @@ export interface OCRResult {
 }
 
 /**
+ * Generate mock AI assessment for testing without Google Cloud billing
+ */
+function generateMockAssessment(imageCount: number): Array<{ description: string; score: number }> {
+  const mockLabels = [
+    { description: 'Vehicle', score: 0.95 },
+    { description: 'Car', score: 0.92 },
+    { description: 'Damage', score: 0.88 },
+    { description: 'Dent', score: 0.85 },
+    { description: 'Broken', score: 0.82 },
+    { description: 'Collision', score: 0.78 },
+    { description: 'Accident', score: 0.75 },
+    { description: 'Scratch', score: 0.72 },
+    { description: 'Automotive', score: 0.70 },
+    { description: 'Metal', score: 0.68 },
+  ];
+  
+  // Return more damage labels for more images
+  return mockLabels.slice(0, Math.min(5 + imageCount, mockLabels.length));
+}
+
+/**
  * Assess damage from uploaded photos using Google Cloud Vision API
- * @param imageUrls - Array of Cloudinary URLs for uploaded photos
+ * @param imageUrls - Array of Cloudinary URLs or base64 data URLs for uploaded photos
  * @param marketValue - Market value of the asset
  * @returns Damage assessment with severity, estimated value, and reserve price
  */
@@ -54,9 +84,42 @@ export async function assessDamage(
     const allLabels: Array<{ description: string; score: number }> = [];
     let totalConfidence = 0;
 
-    for (const imageUrl of imageUrls) {
-      const [result] = await visionClient.labelDetection(imageUrl);
-      const labels = result.labelAnnotations || [];
+    // MOCK MODE: Generate fake data for testing
+    if (MOCK_MODE) {
+      console.log('🎭 MOCK MODE: Generating fake AI assessment data');
+      const mockLabels = generateMockAssessment(imageUrls.length);
+      allLabels.push(...mockLabels);
+      totalConfidence = mockLabels.reduce((sum, label) => sum + label.score, 0) / mockLabels.length * imageUrls.length;
+    } else {
+      // REAL MODE: Use Google Cloud Vision API
+      if (!visionClient) {
+        throw new Error('Vision API client not initialized');
+      }
+
+      for (const imageUrl of imageUrls) {
+        // Check if this is a base64 data URL or a regular URL
+        let result;
+        if (imageUrl.startsWith('data:image')) {
+          // Extract base64 data from data URL (format: data:image/jpeg;base64,...)
+          const base64Data = imageUrl.split(',')[1];
+          if (!base64Data) {
+            console.warn('Invalid base64 data URL, skipping image');
+            continue;
+          }
+          
+          // Convert base64 to Buffer for Vision API
+          const imageBuffer = Buffer.from(base64Data, 'base64');
+          
+          // Use buffer for label detection
+          [result] = await visionClient.labelDetection({
+            image: { content: imageBuffer },
+          });
+        } else {
+          // Regular URL - use as-is
+          [result] = await visionClient.labelDetection(imageUrl);
+        }
+        
+        const labels = result.labelAnnotations || [];
 
       // Collect labels with their confidence scores
       labels.forEach((label) => {
@@ -78,6 +141,7 @@ export async function assessDamage(
         }
       }
     }
+  }
 
     // Calculate overall confidence score (0-100)
     const confidenceScore =
@@ -219,6 +283,10 @@ export async function extractTextFromDocument(
   imageUrl: string
 ): Promise<OCRResult> {
   try {
+    if (!documentAIClient) {
+      throw new Error('Document AI client not initialized. Set MOCK_AI_ASSESSMENT=false and configure Google Cloud credentials.');
+    }
+
     const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
     const location = 'us'; // or 'eu'
     const processorId =

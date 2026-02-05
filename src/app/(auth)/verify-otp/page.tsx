@@ -12,6 +12,8 @@ function VerifyOTPForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const phone = searchParams.get('phone') || '';
+  const email = searchParams.get('email') || '';
+  const type = searchParams.get('type') || ''; // 'oauth' for OAuth completion
 
   const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -77,6 +79,8 @@ function VerifyOTPForm() {
         body: JSON.stringify({
           phone,
           otp: otpValue,
+          email: type === 'oauth' ? email : undefined,
+          type: type || undefined,
         }),
       });
 
@@ -89,9 +93,14 @@ function VerifyOTPForm() {
       // Show success message
       setSuccess(true);
 
-      // Redirect to dashboard or KYC page after 2 seconds
+      // For OAuth completion, redirect to login page
+      // For regular registration, redirect to KYC
       setTimeout(() => {
-        router.push('/vendor/kyc/tier1');
+        if (result.isOAuthComplete) {
+          router.push('/login?message=Registration completed. Please sign in with Google.');
+        } else {
+          router.push('/vendor/kyc/tier1');
+        }
       }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verification failed. Please try again.');
@@ -101,7 +110,7 @@ function VerifyOTPForm() {
     } finally {
       setIsVerifying(false);
     }
-  }, [phone, router]);
+  }, [phone, email, type, router]);
 
   // Handle OTP input change
   const handleOtpChange = useCallback((index: number, value: string) => {

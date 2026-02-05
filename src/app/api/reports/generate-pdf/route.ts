@@ -352,7 +352,12 @@ function generateVendorRankingsHTML(
     <tbody>
       ${rankings
         .map(
-          (vendor: any) => `
+          (vendor: any) => {
+            const winRate = vendor.totalBids > 0 ? ((vendor.totalWins / vendor.totalBids) * 100) : 0;
+            const avgPaymentTime = vendor.avgPaymentTimeHours || 0;
+            const rating = parseFloat(vendor.rating) || 0;
+            
+            return `
         <tr class="${vendor.rank <= 3 ? 'top3' : ''}">
           <td class="rank">${vendor.rank}</td>
           <td>${vendor.businessName}</td>
@@ -360,11 +365,12 @@ function generateVendorRankingsHTML(
           <td>${vendor.totalBids}</td>
           <td>${vendor.totalWins}</td>
           <td>₦${vendor.totalSpent.toLocaleString()}</td>
-          <td>${vendor.winRate.toFixed(1)}%</td>
-          <td>${vendor.avgPaymentTime.toFixed(1)}h</td>
-          <td>${vendor.rating.toFixed(1)} ⭐</td>
+          <td>${winRate.toFixed(1)}%</td>
+          <td>${avgPaymentTime.toFixed(1)}h</td>
+          <td>${rating.toFixed(1)} ⭐</td>
         </tr>
-      `
+      `;
+          }
         )
         .join('')}
     </tbody>
@@ -480,17 +486,23 @@ function generatePaymentAgingHTML(
       ${payments
         .slice(0, 50)
         .map(
-          (payment: any) => `
+          (payment: any) => {
+            const hoursOverdue = payment.hoursOverdue || 0;
+            const agingBucket = payment.agingBucket || 'Current';
+            const paymentMethod = payment.paymentMethod || 'paystack';
+            
+            return `
         <tr>
           <td>${payment.claimReference}</td>
           <td>${payment.vendorName}</td>
           <td>₦${payment.amount.toLocaleString()}</td>
           <td class="status-${payment.status}">${payment.status.toUpperCase()}</td>
-          <td>${payment.paymentMethod.replace('_', ' ').toUpperCase()}</td>
-          <td>${payment.hoursOverdue > 0 ? payment.hoursOverdue.toFixed(1) : '-'}</td>
-          <td>${payment.agingBucket}</td>
+          <td>${paymentMethod.replace('_', ' ').toUpperCase()}</td>
+          <td>${hoursOverdue > 0 ? hoursOverdue.toFixed(1) : '-'}</td>
+          <td>${agingBucket}</td>
         </tr>
-      `
+      `;
+          }
         )
         .join('')}
     </tbody>

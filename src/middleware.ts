@@ -27,32 +27,6 @@ export async function middleware(request: NextRequest) {
 
   const isAuthenticated = !!token;
 
-  // Enhanced debug logging
-  if (pathname.startsWith('/vendor') || pathname.startsWith('/login')) {
-    const cookies = request.cookies.getAll();
-    const authCookies = cookies.filter(c => 
-      c.name.includes('next-auth') || c.name.includes('session') || c.name.includes('Secure')
-    );
-    
-    console.log('[Middleware Debug]', {
-      pathname,
-      hasToken: !!token,
-      tokenRole: token?.role,
-      tokenEmail: token?.email,
-      tokenExp: token?.exp,
-      currentTime: Math.floor(Date.now() / 1000),
-      tokenExpired: token?.exp ? token.exp < Math.floor(Date.now() / 1000) : 'no-exp',
-      hasSecret: !!process.env.NEXTAUTH_SECRET,
-      secretLength: process.env.NEXTAUTH_SECRET?.length,
-      nextauthUrl: process.env.NEXTAUTH_URL,
-      nodeEnv: process.env.NODE_ENV,
-      host: request.headers.get('host'),
-      authCookieNames: authCookies.map(c => c.name),
-      authCookieCount: authCookies.length,
-      allCookieNames: cookies.map(c => c.name),
-    });
-  }
-
   // Check if the current path is a protected route
   const isProtectedRoute = protectedRoutes.some((route) =>
     pathname.startsWith(route)
@@ -60,6 +34,24 @@ export async function middleware(request: NextRequest) {
 
   // Check if the current path is an auth route
   const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
+
+  // Debug logging only for auth-related issues (can be removed in production)
+  if (process.env.NODE_ENV === 'development' && !isAuthenticated && isProtectedRoute) {
+    console.log('[Middleware] Unauthenticated access to protected route:', pathname);
+  }
+
+  // Check if user needs to change password (force password change)
+  if (isAuthenticated && token.requirePasswordChange && pathname !== '/change-password') {
+    console.log('[Middleware] User requires password change, redirecting to /change-password');
+    return NextResponse.redirect(new URL('/change-password', request.url));
+  }
+
+  // Redirect authenticated users from root to their dashboard
+  if (pathname === '/' && isAuthenticated) {
+    const role = token.role as string;
+    const dashboardUrl = getDashboardUrl(role);
+    return NextResponse.redirect(new URL(dashboardUrl, request.url));
+  }
 
   // Redirect to login if accessing protected route without authentication
   if (isProtectedRoute && !isAuthenticated) {
@@ -70,9 +62,22 @@ export async function middleware(request: NextRequest) {
 
   // Redirect to dashboard if accessing auth routes while authenticated
   if (isAuthRoute && isAuthenticated) {
-    const role = token.role as string;
-    const dashboardUrl = getDashboardUrl(role);
-    return NextResponse.redirect(new URL(dashboardUrl, request.url));
+    // Check if session cookie actually exists to prevent redirect loops during logout
+    const sessionCookie = request.cookies.get('authjs.session-token') || 
+                          request.cookies.get('__Secure-authjs.session-token');
+    
+    // Only redirect if we have a valid session cookie
+    // This prevents redirect loops when cookies are being cleared
+    if (sessionCookie) {
+      const role = token.role as string;
+      const dashboardUrl = getDashboardUrl(role);
+      
+      // Avoid redirect loop by checking if we're already being redirected
+      const url = new URL(dashboardUrl, request.url);
+      if (url.pathname !== pathname) {
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   // Add security headers to all responses
@@ -83,7 +88,22 @@ export async function middleware(request: NextRequest) {
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set(
     'Permissions-Policy',
-    'camera=(), microphone=(), geolocation=(self)'
+    'camera=(self), microphone=(self), geolocation=(self)'
+  );
+  
+  // Content Security Policy - allow necessary external services
+  response.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self' https://www.googleapis.com https://nominatim.openstreetmap.org https://api.paystack.co https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com",
+      "frame-src 'self' https://js.paystack.co https://checkout.flutterwave.com",
+      "worker-src 'self' blob:",
+    ].join('; ')
   );
 
   return response;
@@ -101,9 +121,12 @@ function getDashboardUrl(role: string): string {
     case 'finance_officer':
       return '/finance/dashboard';
     case 'system_admin':
+    case 'admin': // Support both 'system_admin' and 'admin' role names
       return '/admin/dashboard';
     default:
-      return '/vendor/dashboard';
+      // Log unexpected role for debugging
+      console.warn(`[Middleware] Unexpected role: ${role}, defaulting to /login`);
+      return '/login';
   }
 }
 

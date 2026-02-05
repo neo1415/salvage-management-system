@@ -121,7 +121,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   // Update auction with real-time data
   useEffect(() => {
-    if (realtimeAuction && auction) {
+    if (realtimeAuction) {
       setAuction(prev => prev ? {
         ...prev,
         currentBid: realtimeAuction.currentBid || prev.currentBid,
@@ -131,18 +131,18 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         extensionCount: realtimeAuction.extensionCount ?? prev.extensionCount,
       } : null);
     }
-  }, [realtimeAuction, auction]);
+  }, [realtimeAuction]);
 
   // Update watching count
   useEffect(() => {
-    if (auction && watchingCount !== undefined) {
+    if (watchingCount !== undefined) {
       setAuction(prev => prev ? { ...prev, watchingCount } : null);
     }
-  }, [watchingCount, auction]);
+  }, [watchingCount]);
 
   // Add new bid to history
   useEffect(() => {
-    if (latestBid && auction) {
+    if (latestBid) {
       setAuction(prev => {
         if (!prev) return null;
         
@@ -162,7 +162,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         };
       });
     }
-  }, [latestBid, auction]);
+  }, [latestBid]);
 
   // Handle watch/unwatch
   const handleToggleWatch = async () => {
@@ -484,25 +484,37 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 </svg>
                 <div>
                   <p className="text-lg font-semibold text-gray-900">{auction.case.locationName}</p>
-                  <p className="text-sm text-gray-600">
-                    Coordinates: {auction.case.gpsLocation.y.toFixed(6)}, {auction.case.gpsLocation.x.toFixed(6)}
-                  </p>
+                  {auction.case.gpsLocation?.y !== undefined && auction.case.gpsLocation?.x !== undefined ? (
+                    <p className="text-sm text-gray-600">
+                      Coordinates: {auction.case.gpsLocation.y.toFixed(6)}, {auction.case.gpsLocation.x.toFixed(6)}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-600">
+                      Coordinates: Not available
+                    </p>
+                  )}
                 </div>
               </div>
 
               {/* Google Maps Embed */}
-              <div className="relative h-64 bg-gray-200 rounded-lg overflow-hidden">
-                <iframe
-                  src={`https://www.google.com/maps?q=${auction.case.gpsLocation.y},${auction.case.gpsLocation.x}&output=embed`}
-                  width="100%"
-                  height="100%"
-                  style={{ border: 0 }}
-                  allowFullScreen
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  title="Asset location map"
-                />
-              </div>
+              {auction.case.gpsLocation?.y !== undefined && auction.case.gpsLocation?.x !== undefined ? (
+                <div className="relative h-64 bg-gray-200 rounded-lg overflow-hidden">
+                  <iframe
+                    src={`https://www.google.com/maps?q=${auction.case.gpsLocation.y},${auction.case.gpsLocation.x}&output=embed`}
+                    width="100%"
+                    height="100%"
+                    style={{ border: 0 }}
+                    allowFullScreen
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    title="Asset location map"
+                  />
+                </div>
+              ) : (
+                <div className="relative h-64 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
+                  <p className="text-gray-600">Location data not available</p>
+                </div>
+              )}
             </div>
 
             {/* Bid History Chart */}
@@ -682,9 +694,18 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         assetName={getAssetName()}
         isOpen={showBidForm}
         onClose={() => setShowBidForm(false)}
-        onSuccess={() => {
+        onSuccess={async () => {
           setShowBidForm(false);
-          // Auction will be updated via Socket.io
+          // Immediately fetch updated auction data
+          try {
+            const response = await fetch(`/api/auctions/${resolvedParams.id}`);
+            if (response.ok) {
+              const data = await response.json();
+              setAuction(data.auction);
+            }
+          } catch (error) {
+            console.error('Failed to refresh auction:', error);
+          }
         }}
       />
     </div>

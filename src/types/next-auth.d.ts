@@ -13,9 +13,13 @@ declare module 'next-auth' {
       role: string;
       status: string;
       phone?: string;
+      dateOfBirth?: string;
       requirePasswordChange?: boolean;
+      needsPhoneNumber?: boolean;
+      vendorId?: string;
     };
     accessToken?: string;
+    sessionId?: string; // Unique session identifier to prevent session hijacking
   }
 
   /**
@@ -28,8 +32,10 @@ declare module 'next-auth' {
     role?: string;
     status?: string;
     phone?: string;
+    dateOfBirth?: string;
     needsPhoneNumber?: boolean;
     requirePasswordChange?: boolean;
+    vendorId?: string;
   }
 }
 
@@ -43,8 +49,12 @@ declare module 'next-auth/jwt' {
     role: string;
     status: string;
     phone?: string;
+    dateOfBirth?: string;
     userAgent?: string;
     accessToken?: string;
     requirePasswordChange?: boolean;
+    needsPhoneNumber?: boolean;
+    sessionId?: string; // Unique session identifier to prevent token reuse
+    vendorId?: string;
   }
 }

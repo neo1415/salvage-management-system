@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -133,25 +133,25 @@ const navigationItems: NavItem[] = [
     label: 'Dashboard',
     href: '/admin/dashboard',
     icon: LayoutDashboard,
-    roles: ['system_admin'],
+    roles: ['system_admin', 'admin'],
   },
   {
     label: 'Users',
     href: '/admin/users',
     icon: Users,
-    roles: ['system_admin'],
+    roles: ['system_admin', 'admin'],
   },
   {
     label: 'Fraud Alerts',
     href: '/admin/fraud',
     icon: AlertTriangle,
-    roles: ['system_admin'],
+    roles: ['system_admin', 'admin'],
   },
   {
     label: 'Audit Logs',
     href: '/admin/audit-logs',
     icon: ClipboardList,
-    roles: ['system_admin'],
+    roles: ['system_admin', 'admin'],
   },
 ];
 
@@ -169,8 +169,18 @@ export default function DashboardSidebar() {
   );
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
+    try {
+      // Use NextAuth's built-in signOut function with redirect
+      // This will clear the session and redirect to login
+      await signOut({ 
+        callbackUrl: '/login',
+        redirect: true 
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Fallback: force navigation to login
+      window.location.href = '/login';
+    }
   };
 
   const NavLinks = () => (

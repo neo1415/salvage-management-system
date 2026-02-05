@@ -21,31 +21,55 @@ export default function FinanceDashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Wait for session to be fully loaded
+    if (status === 'loading') {
+      return;
+    }
+
     if (status === 'unauthenticated') {
       router.push('/login');
       return;
     }
 
-    if (session?.user?.role !== 'finance_officer') {
-      router.push('/vendor/dashboard');
-      return;
-    }
+    // Only check role after session is authenticated
+    if (status === 'authenticated') {
+      const userRole = session?.user?.role;
+      
+      if (userRole !== 'finance_officer') {
+        // Redirect to their correct dashboard
+        if (userRole === 'vendor') router.push('/vendor/dashboard');
+        else if (userRole === 'salvage_manager') router.push('/manager/dashboard');
+        else if (userRole === 'claims_adjuster') router.push('/adjuster/dashboard');
+        else if (userRole === 'system_admin' || userRole === 'admin') router.push('/admin/dashboard');
+        else router.push('/login');
+        return;
+      }
 
-    fetchDashboardStats();
+      // User has correct role, fetch dashboard data
+      fetchDashboardStats();
+    }
   }, [session, status, router]);
 
   const fetchDashboardStats = async () => {
     try {
-      // TODO: Create API endpoint for finance dashboard stats
-      setStats({
-        totalPayments: 127,
-        pendingVerification: 12,
-        verified: 108,
-        rejected: 7,
-        totalAmount: 45000000,
-      });
+      const response = await fetch('/api/dashboard/finance');
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch dashboard stats');
+      }
+
+      const data = await response.json();
+      setStats(data);
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error);
+      // Set default values on error
+      setStats({
+        totalPayments: 0,
+        pendingVerification: 0,
+        verified: 0,
+        rejected: 0,
+        totalAmount: 0,
+      });
     } finally {
       setLoading(false);
     }
@@ -59,7 +83,7 @@ export default function FinanceDashboardPage() {
     }).format(amount);
   };
 
-  if (loading) {
+  if (status === 'loading' || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020]"></div>
