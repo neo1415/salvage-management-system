@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 
-export default function CompleteOAuthPage() {
+/**
+ * Complete OAuth Form Component
+ * Separated to use useSearchParams with Suspense boundary
+ */
+function CompleteOAuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [phone, setPhone] = useState('');
@@ -111,5 +116,21 @@ export default function CompleteOAuthPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+/**
+ * Complete OAuth Page
+ * Collects phone number from OAuth users to complete registration
+ */
+export default function CompleteOAuthPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+      </div>
+    }>
+      <CompleteOAuthForm />
+    </Suspense>
   );
 }
