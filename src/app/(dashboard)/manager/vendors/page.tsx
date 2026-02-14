@@ -94,7 +94,7 @@ export default function Tier2ReviewQueuePage() {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/vendors?status=pending&tier=tier2');
+      const response = await fetch('/api/vendors?status=pending&tier=tier2_full');
       
       if (!response.ok) {
         throw new Error('Failed to fetch applications');

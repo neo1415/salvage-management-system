@@ -7,19 +7,32 @@
  * - Requirement 16: Mobile Auction Browsing
  * - NFR1.1: API response time <500ms
  * - Enterprise Standards Section 5: Business Logic Layer
+ * 
+ * Supports tabs:
+ * - active: Active and extended auctions (default)
+ * - my_bids: Auctions where vendor has placed bids (any status)
+ * - won: Auctions won by vendor (shows immediately after winning)
+ * - completed: Closed auctions with verified payments (Finance approved only)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { eq, and, gte, lte, or, like, desc, asc, sql } from 'drizzle-orm';
+import { bids } from '@/lib/db/schema/bids';
+import { payments } from '@/lib/db/schema/payments';
+import { eq, and, gte, lte, or, like, desc, asc, sql, inArray } from 'drizzle-orm';
+import { auth } from '@/lib/auth/next-auth.config';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
+    
+    // Get session for vendor-specific queries
+    const session = await auth();
+    const vendorId = session?.user?.vendorId;
     
     // Pagination
     const page = parseInt(searchParams.get('page') || '1');
@@ -33,17 +46,78 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'ending_soon';
     const location = searchParams.get('location') || '';
     const search = searchParams.get('search') || '';
+    const tab = searchParams.get('tab') || 'active';
 
     // Build where conditions
     const conditions = [];
 
-    // Only show active and extended auctions
-    conditions.push(
-      or(
-        eq(auctions.status, 'active'),
-        eq(auctions.status, 'extended')
-      )
-    );
+    // Tab-based filtering
+    if (tab === 'active') {
+      // Only show active and extended auctions
+      conditions.push(
+        or(
+          eq(auctions.status, 'active'),
+          eq(auctions.status, 'extended')
+        )
+      );
+    } else if (tab === 'my_bids' && vendorId) {
+      // Show auctions where vendor has placed bids (any status)
+      const vendorBids = await db
+        .selectDistinct({ auctionId: bids.auctionId })
+        .from(bids)
+        .where(eq(bids.vendorId, vendorId));
+      
+      const auctionIds = vendorBids.map(b => b.auctionId);
+      
+      if (auctionIds.length === 0) {
+        // No bids placed yet
+        return NextResponse.json({
+          success: true,
+          auctions: [],
+          hasMore: false,
+          page,
+          limit,
+        });
+      }
+      
+      conditions.push(inArray(auctions.id, auctionIds));
+    } else if (tab === 'won' && vendorId) {
+      // Show auctions won by vendor (closed with vendor as winner)
+      // Shows immediately after winning, regardless of payment status
+      conditions.push(
+        and(
+          eq(auctions.status, 'closed'),
+          eq(auctions.currentBidder, vendorId)
+        )
+      );
+    } else if (tab === 'completed') {
+      // Show only closed auctions where payment has been verified by Finance
+      // This ensures auctions only appear as "completed" after Finance approval
+      const verifiedAuctions = await db
+        .select({ auctionId: payments.auctionId })
+        .from(payments)
+        .where(eq(payments.status, 'verified'));
+      
+      const verifiedAuctionIds = verifiedAuctions.map(p => p.auctionId);
+      
+      if (verifiedAuctionIds.length === 0) {
+        // No verified payments yet
+        return NextResponse.json({
+          success: true,
+          auctions: [],
+          hasMore: false,
+          page,
+          limit,
+        });
+      }
+      
+      conditions.push(
+        and(
+          eq(auctions.status, 'closed'),
+          inArray(auctions.id, verifiedAuctionIds)
+        )
+      );
+    }
 
     // Asset type filter
     if (assetType) {
@@ -109,7 +183,12 @@ export async function GET(request: NextRequest) {
         break;
       case 'ending_soon':
       default:
-        orderBy = asc(auctions.endTime);
+        // For completed auctions, sort by end time descending (most recent first)
+        if (tab === 'completed' || tab === 'won') {
+          orderBy = desc(auctions.endTime);
+        } else {
+          orderBy = asc(auctions.endTime);
+        }
         break;
     }
 
@@ -124,6 +203,7 @@ export async function GET(request: NextRequest) {
         minimumIncrement: auctions.minimumIncrement,
         status: auctions.status,
         watchingCount: auctions.watchingCount,
+        currentBidder: auctions.currentBidder,
         case: {
           id: salvageCases.id,
           claimReference: salvageCases.claimReference,
@@ -148,9 +228,15 @@ export async function GET(request: NextRequest) {
     const hasMore = auctionsList.length > limit;
     const results = hasMore ? auctionsList.slice(0, limit) : auctionsList;
 
+    // For my_bids and won tabs, add flag to indicate if user won
+    const enrichedResults = results.map(auction => ({
+      ...auction,
+      isWinner: vendorId && auction.currentBidder === vendorId,
+    }));
+
     return NextResponse.json({
       success: true,
-      auctions: results,
+      auctions: enrichedResults,
       hasMore,
       page,
       limit,

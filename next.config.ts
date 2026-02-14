@@ -1,6 +1,11 @@
 // Next.js configuration file
 import type { NextConfig } from 'next';
 
+// Disable SSL verification in development for external image URLs
+if (process.env.NODE_ENV === 'development') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   
@@ -35,6 +40,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: '**.cloudinary.com',
         pathname: '/**',
+      },
+      // Allow all HTTPS domains for external images
+      {
+        protocol: 'https',
+        hostname: '**',
       },
     ],
     unoptimized: false,

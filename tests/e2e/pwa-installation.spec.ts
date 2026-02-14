@@ -1,9 +1,17 @@
-﻿import { test, expect } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 test.describe('PWA Installation', () => {
   test('should have valid manifest.json', async ({ page }) => {
     await page.goto('/');
-    const manifestLink = page.locator('link[rel=\"manifest\"]');
+    const manifestLink = page.locator('link[rel="manifest"]');
+    await expect(manifestLink).toHaveAttribute('href', '/manifest.json');
+  });
+});
+
+test.describe('PWA Installation', () => {
+  test('should have valid manifest.json', async ({ page }) => {
+    await page.goto('/');
+    const manifestLink = page.locator('link[rel="manifest"]');
     await expect(manifestLink).toHaveAttribute('href', '/manifest.json');
 
     const response = await page.goto('/manifest.json');
@@ -47,7 +55,7 @@ test.describe('PWA Installation', () => {
     await page.waitForLoadState('networkidle');
 
     const installPromptExists = await page.evaluate(() => {
-      return document.querySelector('[data-testid=\"install-prompt\"]') !== null ||
+      return document.querySelector('[data-testid="install-prompt"]') !== null ||
              document.querySelector('.install-prompt') !== null;
     });
 
@@ -79,7 +87,7 @@ test.describe('PWA Offline Functionality', () => {
     await page.waitForTimeout(1000);
 
     const offlineIndicatorVisible = await page.evaluate(() => {
-      const indicator = document.querySelector('[data-testid=\"offline-indicator\"]') ||
+      const indicator = document.querySelector('[data-testid="offline-indicator"]') ||
                        document.querySelector('.offline-indicator');
       return indicator !== null;
     });
@@ -114,13 +122,13 @@ test.describe('PWA Performance', () => {
   test('should have proper meta tags for PWA', async ({ page }) => {
     await page.goto('/');
 
-    const viewport = await page.locator('meta[name=\"viewport\"]').getAttribute('content');
+    const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
     expect(viewport).toContain('width=device-width');
 
-    const themeColor = await page.locator('meta[name=\"theme-color\"]').getAttribute('content');
+    const themeColor = await page.locator('meta[name="theme-color"]').getAttribute('content');
     expect(themeColor).toBeTruthy();
 
-    const appleMobileWebAppCapable = await page.locator('meta[name=\"apple-mobile-web-app-capable\"]').getAttribute('content');
+    const appleMobileWebAppCapable = await page.locator('meta[name="apple-mobile-web-app-capable"]').getAttribute('content');
     expect(appleMobileWebAppCapable).toBe('yes');
   });
 });

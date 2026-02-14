@@ -34,6 +34,7 @@ interface Auction {
   minimumIncrement: string;
   status: 'scheduled' | 'active' | 'extended' | 'closed' | 'cancelled';
   watchingCount: number;
+  isWinner?: boolean;
   case: {
     id: string;
     claimReference: string;
@@ -55,6 +56,7 @@ interface Filters {
   sortBy: 'ending_soon' | 'newest' | 'price_low' | 'price_high';
   location: string;
   search: string;
+  tab: 'active' | 'my_bids' | 'won' | 'completed';
 }
 
 export default function AuctionBrowsingPage() {
@@ -77,6 +79,7 @@ export default function AuctionBrowsingPage() {
     sortBy: 'ending_soon',
     location: '',
     search: '',
+    tab: 'active',
   });
 
   // Refs
@@ -89,6 +92,7 @@ export default function AuctionBrowsingPage() {
     try {
       if (reset) {
         setIsLoading(true);
+        setAuctions([]); // Clear immediately to prevent flickering
       } else {
         setIsLoadingMore(true);
       }
@@ -100,7 +104,12 @@ export default function AuctionBrowsingPage() {
         ...filters,
       });
 
-      const response = await fetch(`/api/auctions?${params}`);
+      const response = await fetch(`/api/auctions?${params}`, {
+        cache: 'no-store', // Prevent service worker from serving stale cache
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       
       if (!response.ok) {
         throw new Error('Failed to fetch auctions');
@@ -128,10 +137,11 @@ export default function AuctionBrowsingPage() {
     }
   }, [filters]);
 
-  // Initial load
+  // Initial load and filter changes
   useEffect(() => {
+    setPage(1);
     fetchAuctions(1, true);
-  }, [fetchAuctions]);
+  }, [filters.tab, filters.assetType, filters.priceMin, filters.priceMax, filters.sortBy, filters.location, filters.search]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -189,30 +199,28 @@ export default function AuctionBrowsingPage() {
   };
 
   const applyFilters = () => {
-    setPage(1);
-    fetchAuctions(1, true);
     setShowFilters(false);
+    // The useEffect will handle the fetch
   };
 
   const clearFilters = () => {
-    setFilters({
+    setFilters(prev => ({
       assetType: '',
       priceMin: '',
       priceMax: '',
       sortBy: 'ending_soon',
       location: '',
       search: '',
-    });
-    setPage(1);
-    fetchAuctions(1, true);
+      tab: prev.tab, // Keep the current tab
+    }));
     setShowFilters(false);
+    // The useEffect will handle the fetch
   };
 
   // Search handler
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setPage(1);
-    fetchAuctions(1, true);
+    // The useEffect will handle the fetch when search changes
   };
 
   return (
@@ -234,7 +242,7 @@ export default function AuctionBrowsingPage() {
       <div className="bg-white shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-gray-900">Browse Auctions</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Auctions</h1>
             <button
               onClick={() => setShowFilters(!showFilters)}
               className="p-2 rounded-lg border-2 border-gray-300 hover:bg-gray-50 transition-colors"
@@ -243,6 +251,50 @@ export default function AuctionBrowsingPage() {
               <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
+            </button>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+            <button
+              onClick={() => handleFilterChange('tab', 'active')}
+              className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-colors ${
+                filters.tab === 'active'
+                  ? 'bg-[#800020] text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              🟢 Active
+            </button>
+            <button
+              onClick={() => handleFilterChange('tab', 'my_bids')}
+              className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-colors ${
+                filters.tab === 'my_bids'
+                  ? 'bg-[#800020] text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              💰 My Bids
+            </button>
+            <button
+              onClick={() => handleFilterChange('tab', 'won')}
+              className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-colors ${
+                filters.tab === 'won'
+                  ? 'bg-[#800020] text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              🏆 Won
+            </button>
+            <button
+              onClick={() => handleFilterChange('tab', 'completed')}
+              className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-colors ${
+                filters.tab === 'completed'
+                  ? 'bg-[#800020] text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              📋 Completed
             </button>
           </div>
 
@@ -502,19 +554,25 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
         
         {/* Status Badge */}
         <div className="absolute top-2 right-2">
-          <span
-            className={`px-2 py-1 rounded-full text-xs font-semibold ${
-              auction.status === 'active'
-                ? 'bg-green-500 text-white'
-                : auction.status === 'extended'
-                ? 'bg-orange-500 text-white'
-                : 'bg-gray-500 text-white'
-            }`}
-          >
-            {auction.status === 'active' && '🟢 Active'}
-            {auction.status === 'extended' && '🟠 Extended'}
-            {auction.status === 'closed' && '⚫ Closed'}
-          </span>
+          {auction.isWinner && auction.status === 'closed' ? (
+            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-500 text-white">
+              🏆 Won
+            </span>
+          ) : (
+            <span
+              className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                auction.status === 'active'
+                  ? 'bg-green-500 text-white'
+                  : auction.status === 'extended'
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-500 text-white'
+              }`}
+            >
+              {auction.status === 'active' && '🟢 Active'}
+              {auction.status === 'extended' && '🟠 Extended'}
+              {auction.status === 'closed' && '⚫ Closed'}
+            </span>
+          )}
         </div>
 
         {/* Asset Type Badge */}
@@ -551,7 +609,9 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
 
         {/* Time Remaining */}
         <div className="mb-3">
-          <p className="text-xs text-gray-500 mb-1">Time Remaining</p>
+          <p className="text-xs text-gray-500 mb-1">
+            {auction.status === 'closed' ? 'Ended' : 'Time Remaining'}
+          </p>
           <p className={`text-sm font-semibold ${timerColor} ${timeRemaining.includes('m') && !timeRemaining.includes('h') && !timeRemaining.includes('d') ? 'animate-pulse' : ''}`}>
             ⏰ {timeRemaining}
           </p>

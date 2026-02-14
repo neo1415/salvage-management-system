@@ -36,8 +36,27 @@ if (workbox) {
 
   // Cache Strategy 2: NetworkFirst for API routes
   // API calls try network first, fall back to cache if offline
+  // Special handling for auction endpoints to prevent stale data
   workbox.routing.registerRoute(
-    ({ url }) => url.pathname.startsWith('/api/'),
+    ({ url }) => url.pathname.startsWith('/api/auctions'),
+    new workbox.strategies.NetworkFirst({
+      cacheName: 'auctions-api-cache',
+      plugins: [
+        new workbox.expiration.ExpirationPlugin({
+          maxEntries: 20,
+          maxAgeSeconds: 30, // Only 30 seconds for auction data
+        }),
+        new workbox.cacheableResponse.CacheableResponsePlugin({
+          statuses: [0, 200],
+        }),
+      ],
+      networkTimeoutSeconds: 5,
+    })
+  );
+
+  // Other API routes with longer cache
+  workbox.routing.registerRoute(
+    ({ url }) => url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auctions'),
     new workbox.strategies.NetworkFirst({
       cacheName: 'api-cache',
       plugins: [

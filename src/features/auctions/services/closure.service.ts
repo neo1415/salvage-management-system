@@ -230,6 +230,28 @@ export class AuctionClosureService {
       // Generate unique payment reference
       const reference = `PAY_${auctionId.substring(0, 8)}_${Date.now()}`;
 
+      // Try to freeze funds in escrow wallet first (Requirement 26.5)
+      let paymentMethod: 'escrow_wallet' | 'paystack' = 'paystack';
+      let escrowStatus: 'none' | 'frozen' = 'none';
+      
+      try {
+        await escrowService.freezeFunds(
+          vendor.id,
+          parseFloat(auction.currentBid),
+          auction.id,
+          vendor.userId
+        );
+        // Funds successfully frozen - use escrow wallet
+        paymentMethod = 'escrow_wallet';
+        escrowStatus = 'frozen';
+        console.log(`Funds frozen for vendor ${vendor.id}: ₦${parseFloat(auction.currentBid).toLocaleString()}`);
+      } catch (error) {
+        console.log(`Vendor ${vendor.id} has insufficient wallet balance. Will require external payment.`);
+        // Vendor doesn't have sufficient balance - will need to pay externally
+        paymentMethod = 'paystack';
+        escrowStatus = 'none';
+      }
+
       // Create payment record (invoice)
       const [payment] = await db
         .insert(payments)
@@ -237,7 +259,8 @@ export class AuctionClosureService {
           auctionId,
           vendorId: vendor.id,
           amount: auction.currentBid.toString(),
-          paymentMethod: 'paystack', // Default to Paystack
+          paymentMethod,
+          escrowStatus,
           paymentReference: reference,
           status: 'pending',
           paymentDeadline,
@@ -254,29 +277,9 @@ export class AuctionClosureService {
         })
         .where(eq(auctions.id, auctionId));
 
-      // Update case status to 'sold'
-      await db
-        .update(salvageCases)
-        .set({
-          status: 'sold',
-          updatedAt: new Date(),
-        })
-        .where(eq(salvageCases.id, auction.caseId));
-
-      // Freeze funds in escrow wallet (Requirement 26.5)
-      try {
-        await escrowService.freezeFunds(
-          vendor.id,
-          parseFloat(auction.currentBid),
-          auction.id,
-          vendor.userId
-        );
-        console.log(`Funds frozen for vendor ${vendor.id}: ₦${parseFloat(auction.currentBid).toLocaleString()}`);
-      } catch (error) {
-        console.error(`Failed to freeze funds for vendor ${vendor.id}:`, error);
-        // Log the error but don't fail the auction closure
-        // The payment can still be processed manually if needed
-      }
+      // Keep case status as 'active_auction' until payment is verified
+      // Case will be marked as 'sold' when payment is verified by finance officer
+      // This ensures accurate reporting and prevents showing items as sold before payment
 
       // Log auction closure
       await logAction({

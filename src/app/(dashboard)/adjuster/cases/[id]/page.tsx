@@ -81,12 +81,13 @@ export default function CaseDetailsPage() {
       draft: { label: 'Draft', color: 'bg-gray-100 text-gray-800' },
       pending_approval: { label: 'Pending Approval', color: 'bg-yellow-100 text-yellow-800' },
       approved: { label: 'Approved', color: 'bg-green-100 text-green-800' },
-      active_auction: { label: 'Active Auction', color: 'bg-blue-100 text-blue-800' },
+      active_auction: { label: 'Payment Pending', color: 'bg-orange-100 text-orange-800' },
       sold: { label: 'Sold', color: 'bg-purple-100 text-purple-800' },
       cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800' },
+      rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800' },
     };
 
-    const badge = badges[status];
+    const badge = badges[status] || badges.draft;
     return (
       <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.color}`}>
         {badge.label}

@@ -3,23 +3,25 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { payments } from '@/lib/db/schema/payments';
 import { vendors } from '@/lib/db/schema/vendors';
+import { users } from '@/lib/db/schema/users';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { eq, and, gte, sql } from 'drizzle-orm';
+import { eq, and, gte, lte, sql } from 'drizzle-orm';
 
 /**
  * GET /api/finance/payments
- * Fetch payments for Finance Officer dashboard
+ * Fetch payments for Finance Officer dashboard with flexible filtering
  * 
  * Requirements: 27 (Auto-Verified Payments Dashboard)
  * 
- * Acceptance Criteria:
- * - Display total payments today, auto-verified count, pending manual verification count, overdue count
- * - Display pie chart: auto-verified vs manual (target: 90%+ auto)
- * - Show uploaded payment receipts
- * - Show only bank transfer payments requiring manual review
+ * Query Parameters:
+ * - view: 'all' | 'today' | 'pending' | 'overdue' (default: 'all')
+ * - status: 'pending' | 'verified' | 'rejected' | 'overdue' (optional)
+ * - paymentMethod: 'paystack' | 'flutterwave' | 'bank_transfer' | 'escrow_wallet' (optional)
+ * - dateFrom: ISO date string (optional)
+ * - dateTo: ISO date string (optional)
  */
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
     const session = await auth();
 
@@ -35,50 +37,81 @@ export async function GET(_request: NextRequest) {
       );
     }
 
+    // Parse query parameters
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get('view') || 'all';
+    const statusFilter = searchParams.get('status');
+    const paymentMethodFilter = searchParams.get('paymentMethod');
+    const dateFrom = searchParams.get('dateFrom');
+    const dateTo = searchParams.get('dateTo');
+
     // Get today's date range (start of day to now)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Fetch all payments created today
-    const allPaymentsToday = await db
-      .select({
-        id: payments.id,
-        status: payments.status,
-        autoVerified: payments.autoVerified,
-      })
-      .from(payments)
-      .where(gte(payments.createdAt, today));
+    // Build dynamic where conditions for payments list
+    const conditions = [];
 
-    // Calculate stats
-    const totalToday = allPaymentsToday.length;
-    const autoVerified = allPaymentsToday.filter(p => p.autoVerified).length;
-    const pendingManual = allPaymentsToday.filter(
-      p => p.status === 'pending' && !p.autoVerified
-    ).length;
-    const overdue = allPaymentsToday.filter(p => p.status === 'overdue').length;
+    // Apply view-based filters
+    if (view === 'today') {
+      conditions.push(gte(payments.createdAt, today));
+    } else if (view === 'pending') {
+      conditions.push(eq(payments.status, 'pending'));
+    } else if (view === 'overdue') {
+      conditions.push(eq(payments.status, 'overdue'));
+    }
 
-    // Fetch pending payments requiring manual verification (bank transfers)
-    const pendingPayments = await db
+    // Apply status filter
+    if (statusFilter) {
+      conditions.push(eq(payments.status, statusFilter as any));
+    }
+
+    // Apply payment method filter
+    if (paymentMethodFilter) {
+      conditions.push(eq(payments.paymentMethod, paymentMethodFilter as any));
+    }
+
+    // Apply date range filters
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom);
+      fromDate.setHours(0, 0, 0, 0);
+      conditions.push(gte(payments.createdAt, fromDate));
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lte(payments.createdAt, toDate));
+    }
+
+    // Fetch payments with filters
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    
+    const filteredPayments = await db
       .select({
         payment: payments,
         vendor: vendors,
+        user: users,
         auction: auctions,
         case: salvageCases,
       })
       .from(payments)
       .innerJoin(vendors, eq(payments.vendorId, vendors.id))
+      .innerJoin(users, eq(vendors.userId, users.id))
       .innerJoin(auctions, eq(payments.auctionId, auctions.id))
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
-      .where(
-        and(
-          eq(payments.status, 'pending'),
-          eq(payments.paymentMethod, 'bank_transfer')
-        )
-      )
-      .orderBy(sql`${payments.createdAt} ASC`);
+      .where(whereClause)
+      .orderBy(sql`${payments.createdAt} DESC`);
+
+    // Calculate stats from filtered payments (not just today)
+    const totalFiltered = filteredPayments.length;
+    const autoVerified = filteredPayments.filter(p => p.payment.autoVerified).length;
+    const pendingManual = filteredPayments.filter(
+      p => p.payment.status === 'pending' && !p.payment.autoVerified
+    ).length;
+    const overdue = filteredPayments.filter(p => p.payment.status === 'overdue').length;
 
     // Format response
-    const formattedPayments = pendingPayments.map(({ payment, vendor, case: caseData }) => ({
+    const formattedPayments = filteredPayments.map(({ payment, vendor, user, case: caseData }) => ({
       id: payment.id,
       auctionId: payment.auctionId,
       vendorId: payment.vendorId,
@@ -91,9 +124,16 @@ export async function GET(_request: NextRequest) {
       paymentDeadline: payment.paymentDeadline.toISOString(),
       createdAt: payment.createdAt.toISOString(),
       vendor: {
+        id: vendor.id,
         businessName: vendor.businessName,
+        contactPersonName: user.fullName,
+        phoneNumber: user.phone,
+        email: user.email,
+        kycTier: vendor.tier === 'tier1_bvn' ? 'tier1' : vendor.tier === 'tier2_full' ? 'tier2' : null,
+        kycStatus: vendor.status,
         bankAccountNumber: vendor.bankAccountNumber,
         bankName: vendor.bankName,
+        bankAccountName: vendor.bankAccountName,
       },
       case: {
         claimReference: caseData.claimReference,
@@ -104,7 +144,7 @@ export async function GET(_request: NextRequest) {
 
     return NextResponse.json({
       stats: {
-        totalToday,
+        total: totalFiltered,
         autoVerified,
         pendingManual,
         overdue,

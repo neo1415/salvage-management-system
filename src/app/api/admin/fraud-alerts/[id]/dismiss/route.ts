@@ -36,14 +36,14 @@ export async function POST(
       );
     }
 
-    // Check if user is admin
+    // Check if user is admin or salvage manager
     const user = await db.query.users.findFirst({
       where: eq(users.id, session.user.id),
     });
 
-    if (!user || user.role !== 'system_admin') {
+    if (!user || !['system_admin', 'salvage_manager'].includes(user.role)) {
       return NextResponse.json(
-        { error: 'Forbidden: Admin access required' },
+        { error: 'Forbidden: Admin or Salvage Manager access required' },
         { status: 403 }
       );
     }

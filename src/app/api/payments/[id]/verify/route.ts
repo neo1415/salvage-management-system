@@ -216,6 +216,15 @@ export async function POST(
         .where(eq(payments.id, paymentId))
         .returning();
 
+      // Mark case as 'sold' now that payment is verified
+      await db
+        .update(salvageCases)
+        .set({
+          status: 'sold',
+          updatedAt: new Date(),
+        })
+        .where(eq(salvageCases.id, auction.caseId));
+
       // Send SMS notification
       const smsMessage = `Payment verified! Your pickup authorization code is: ${pickupAuthCode}. Item: ${caseDetails.assetType}. Amount: ₦${parseFloat(payment.amount).toLocaleString()}. Present this code at pickup location.`;
       

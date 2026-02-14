@@ -49,6 +49,8 @@ interface CaseData {
   createdBy: string;
   createdAt: string;
   adjusterName?: string;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
 }
 
 /**
@@ -61,7 +63,9 @@ export default function ApprovalsPage() {
   const { status } = useSession();
   
   // State
-  const [cases, setCases] = useState<CaseData[]>([]);
+  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [allCases, setAllCases] = useState<CaseData[]>([]); // Store all cases
+  const [cases, setCases] = useState<CaseData[]>([]); // Filtered cases for display
   const [selectedCase, setSelectedCase] = useState<CaseData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,13 +75,42 @@ export default function ApprovalsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   /**
-   * Fetch pending cases on mount
+   * Fetch all cases on mount only
    */
   useEffect(() => {
     if (status === 'authenticated') {
       fetchPendingCases();
     }
   }, [status]);
+
+  /**
+   * Filter cases based on active tab (client-side filtering)
+   */
+  useEffect(() => {
+    if (allCases.length === 0) {
+      setCases([]);
+      return;
+    }
+
+    let filtered: CaseData[] = [];
+    switch (activeTab) {
+      case 'pending':
+        filtered = allCases.filter(c => c.status === 'pending_approval');
+        break;
+      case 'approved':
+        // Show cases that have been approved (have approvedBy field)
+        // This includes cases in 'active_auction' and 'sold' status
+        filtered = allCases.filter(c => c.approvedBy !== null && c.approvedBy !== undefined);
+        break;
+      case 'rejected':
+        filtered = allCases.filter(c => c.status === 'rejected');
+        break;
+      case 'all':
+        filtered = allCases;
+        break;
+    }
+    setCases(filtered);
+  }, [activeTab, allCases]);
 
   /**
    * Request notification permission on mount
@@ -89,21 +122,21 @@ export default function ApprovalsPage() {
   }, []);
 
   /**
-   * Fetch pending cases from API
+   * Fetch all cases from API (no filtering - get everything)
    */
   const fetchPendingCases = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch('/api/cases?status=pending_approval');
+      const response = await fetch('/api/cases');
       
       if (!response.ok) {
         throw new Error('Failed to fetch cases');
       }
 
       const data = await response.json();
-      setCases(data.data || []);
+      setAllCases(data.data || []);
     } catch (err) {
       console.error('Error fetching cases:', err);
       setError(err instanceof Error ? err.message : 'Failed to load cases');
@@ -235,13 +268,47 @@ export default function ApprovalsPage() {
     }
   };
 
+  /**
+   * Get status badge with smart label mapping
+   * Maps 'active_auction' to 'Payment Pending' when auction is closed
+   */
+  const getStatusBadge = (caseData: CaseData) => {
+    const badges = {
+      draft: { label: 'Draft', color: 'bg-gray-100 text-gray-800' },
+      pending_approval: { label: 'Pending Approval', color: 'bg-yellow-100 text-yellow-800' },
+      approved: { label: 'Approved', color: 'bg-green-100 text-green-800' },
+      active_auction: { label: 'Active Auction', color: 'bg-blue-100 text-blue-800' },
+      sold: { label: 'Sold', color: 'bg-purple-100 text-purple-800' },
+      cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800' },
+      rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800' },
+    };
+
+    // Default badge based on status
+    const badge = badges[caseData.status as keyof typeof badges] || badges.draft;
+
+    // Smart label mapping: Show "Payment Pending" for closed auctions awaiting payment
+    // This happens when status is 'active_auction' but the auction has closed
+    // and payment is still pending verification
+    if (caseData.status === 'active_auction') {
+      // In this context, if a case is in 'active_auction' status but appears in the
+      // approved tab (has approvedBy), it likely means the auction has closed
+      // and we're waiting for payment. Show a more accurate label.
+      return {
+        label: 'Payment Pending',
+        color: 'bg-orange-100 text-orange-800'
+      };
+    }
+
+    return badge;
+  };
+
   // Loading state
   if (status === 'loading' || isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading cases...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading cases...</p>
         </div>
       </div>
     );
@@ -309,9 +376,14 @@ export default function ApprovalsPage() {
                 <h2 className="text-lg font-bold text-gray-900">{selectedCase.claimReference}</h2>
                 <p className="text-sm text-gray-600">Submitted {formatDate(selectedCase.createdAt)}</p>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(selectedCase.damageSeverity)}`}>
-                {selectedCase.damageSeverity.toUpperCase()}
-              </span>
+              <div className="flex flex-col gap-2">
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(selectedCase.damageSeverity)}`}>
+                  {selectedCase.damageSeverity.toUpperCase()}
+                </span>
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(selectedCase).color}`}>
+                  {getStatusBadge(selectedCase).label}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -512,7 +584,34 @@ export default function ApprovalsPage() {
 
         {/* Approval Actions - Fixed Bottom */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 space-y-3">
-          {!approvalAction ? (
+          {/* Check if case has already been approved */}
+          {selectedCase.approvedBy ? (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center justify-center text-green-800">
+                <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="font-medium">Case Already Approved</p>
+                  <p className="text-sm text-green-700">
+                    Approved on {selectedCase.approvedAt ? new Date(selectedCase.approvedAt).toLocaleDateString() : 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : selectedCase.status === 'rejected' ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center justify-center text-red-800">
+                <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <div>
+                  <p className="font-medium">Case Rejected</p>
+                  <p className="text-sm text-red-700">This case has been rejected</p>
+                </div>
+              </div>
+            </div>
+          ) : !approvalAction ? (
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => handleApprovalAction('reject')}
@@ -598,18 +697,136 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
+      {/* Stats Cards */}
+      <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-600">Pending</p>
+              <p className="text-2xl font-bold text-yellow-600 mt-1">
+                {allCases.filter(c => c.status === 'pending_approval').length}
+              </p>
+            </div>
+            <div className="p-2 bg-yellow-100 rounded-full">
+              <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-600">Approved</p>
+              <p className="text-2xl font-bold text-green-600 mt-1">
+                {allCases.filter(c => c.approvedBy !== null && c.approvedBy !== undefined).length}
+              </p>
+            </div>
+            <div className="p-2 bg-green-100 rounded-full">
+              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-600">Rejected</p>
+              <p className="text-2xl font-bold text-red-600 mt-1">
+                {allCases.filter(c => c.status === 'rejected').length}
+              </p>
+            </div>
+            <div className="p-2 bg-red-100 rounded-full">
+              <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-600">Total</p>
+              <p className="text-2xl font-bold text-blue-600 mt-1">
+                {allCases.length}
+              </p>
+            </div>
+            <div className="p-2 bg-blue-100 rounded-full">
+              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white border-b border-gray-200 sticky top-[60px] z-10">
+        <div className="flex overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`flex-1 min-w-[100px] px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'pending'
+                ? 'border-[#800020] text-[#800020]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Pending
+          </button>
+          <button
+            onClick={() => setActiveTab('approved')}
+            className={`flex-1 min-w-[100px] px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'approved'
+                ? 'border-[#800020] text-[#800020]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Approved
+          </button>
+          <button
+            onClick={() => setActiveTab('rejected')}
+            className={`flex-1 min-w-[100px] px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'rejected'
+                ? 'border-[#800020] text-[#800020]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Rejected
+          </button>
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`flex-1 min-w-[100px] px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'all'
+                ? 'border-[#800020] text-[#800020]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            All
+          </button>
+        </div>
+      </div>
+
       {/* Cases List */}
       <div className="p-4">
         {cases.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-6xl mb-4">✓</div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">All Caught Up!</h2>
-            <p className="text-gray-600">No cases pending approval</p>
+            <p className="text-gray-600">
+              {activeTab === 'pending' && 'No cases pending approval'}
+              {activeTab === 'approved' && 'No approved cases'}
+              {activeTab === 'rejected' && 'No rejected cases'}
+              {activeTab === 'all' && 'No cases found'}
+            </p>
           </div>
         ) : (
           <>
             <p className="text-sm text-gray-600 mb-4">
-              {cases.length} case{cases.length !== 1 ? 's' : ''} pending approval
+              {cases.length} case{cases.length !== 1 ? 's' : ''} {activeTab === 'all' ? 'total' : activeTab}
             </p>
             
             <div className="space-y-4">
@@ -624,9 +841,16 @@ export default function ApprovalsPage() {
                       <h3 className="font-bold text-gray-900">{caseData.claimReference}</h3>
                       <p className="text-sm text-gray-600">{formatDate(caseData.createdAt)}</p>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(caseData.damageSeverity)}`}>
-                      {caseData.damageSeverity.toUpperCase()}
-                    </span>
+                    <div className="flex flex-col items-end gap-2">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(caseData.damageSeverity)}`}>
+                        {caseData.damageSeverity.toUpperCase()}
+                      </span>
+                      {caseData.status !== 'pending_approval' && (
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(caseData).color}`}>
+                          {getStatusBadge(caseData).label}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 text-sm mb-3">

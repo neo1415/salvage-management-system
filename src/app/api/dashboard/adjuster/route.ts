@@ -67,21 +67,22 @@ export async function GET(request: NextRequest) {
 
     const pendingApproval = pendingApprovalResult[0]?.count || 0;
 
-    // Get approved cases
+    // Get approved cases (cases that have been approved, regardless of current status)
+    const { isNotNull } = await import('drizzle-orm');
     const approvedResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(salvageCases)
       .where(
         and(
           eq(salvageCases.createdBy, userId),
-          eq(salvageCases.status, 'approved')
+          isNotNull(salvageCases.approvedBy)
         )
       );
 
     const approved = approvedResult[0]?.count || 0;
 
     // Get cancelled cases (treating as "rejected")
-    const rejectedResult = await db
+    const cancelledResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(salvageCases)
       .where(
@@ -91,7 +92,33 @@ export async function GET(request: NextRequest) {
         )
       );
 
-    const rejected = rejectedResult[0]?.count || 0;
+    const rejected = cancelledResult[0]?.count || 0;
+
+    // Get active auction cases
+    const activeAuctionResult = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(salvageCases)
+      .where(
+        and(
+          eq(salvageCases.createdBy, userId),
+          eq(salvageCases.status, 'active_auction')
+        )
+      );
+
+    const activeAuction = activeAuctionResult[0]?.count || 0;
+
+    // Get sold cases
+    const soldResult = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(salvageCases)
+      .where(
+        and(
+          eq(salvageCases.createdBy, userId),
+          eq(salvageCases.status, 'sold')
+        )
+      );
+
+    const sold = soldResult[0]?.count || 0;
 
     return NextResponse.json(
       {
@@ -101,6 +128,8 @@ export async function GET(request: NextRequest) {
           pendingApproval,
           approved,
           rejected,
+          activeAuction,
+          sold,
         },
       },
       { status: 200 }

@@ -195,15 +195,20 @@ export async function GET(request: NextRequest) {
     const { db } = await import('@/lib/db/drizzle');
     const { salvageCases } = await import('@/lib/db/schema/cases');
     const { users } = await import('@/lib/db/schema/users');
-    const { eq, desc } = await import('drizzle-orm');
+    const { eq, desc, and } = await import('drizzle-orm');
+    const { alias } = await import('drizzle-orm/pg-core');
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get('status');
+    const createdByMe = searchParams.get('createdByMe') === 'true';
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    // Build base query
+    // Create table aliases for adjuster and approver
+    const adjusterUsers = alias(users, 'adjuster_users');
+    const approverUsers = alias(users, 'approver_users');
+    
     const baseQuery = db
       .select({
         id: salvageCases.id,
@@ -212,6 +217,7 @@ export async function GET(request: NextRequest) {
         assetDetails: salvageCases.assetDetails,
         marketValue: salvageCases.marketValue,
         estimatedSalvageValue: salvageCases.estimatedSalvageValue,
+        estimatedValue: salvageCases.estimatedSalvageValue,
         reservePrice: salvageCases.reservePrice,
         damageSeverity: salvageCases.damageSeverity,
         aiAssessment: salvageCases.aiAssessment,
@@ -224,16 +230,31 @@ export async function GET(request: NextRequest) {
         createdAt: salvageCases.createdAt,
         approvedBy: salvageCases.approvedBy,
         approvedAt: salvageCases.approvedAt,
-        adjusterName: users.fullName,
+        adjusterName: adjusterUsers.fullName,
+        approverName: approverUsers.fullName,
       })
       .from(salvageCases)
-      .leftJoin(users, eq(salvageCases.createdBy, users.id));
+      .leftJoin(adjusterUsers, eq(salvageCases.createdBy, adjusterUsers.id))
+      .leftJoin(approverUsers, eq(salvageCases.approvedBy, approverUsers.id));
 
-    // Apply status filter if provided
-    let query;
+    // Build where conditions
+    const whereConditions = [];
+    
+    // Filter by status if provided
     if (status) {
+      whereConditions.push(eq(salvageCases.status, status as 'draft' | 'pending_approval' | 'approved' | 'active_auction' | 'sold' | 'cancelled'));
+    }
+    
+    // Filter by creator if requested
+    if (createdByMe) {
+      whereConditions.push(eq(salvageCases.createdBy, session.user.id));
+    }
+
+    // Apply filters
+    let query;
+    if (whereConditions.length > 0) {
       query = baseQuery
-        .where(eq(salvageCases.status, status as 'draft' | 'pending_approval' | 'approved' | 'active_auction' | 'sold' | 'cancelled'))
+        .where(and(...whereConditions))
         .orderBy(desc(salvageCases.createdAt))
         .limit(limit)
         .offset(offset);

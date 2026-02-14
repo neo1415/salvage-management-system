@@ -19,7 +19,6 @@ import {
   LogOut,
   Menu,
   X,
-  ChevronLeft,
 } from 'lucide-react';
 
 interface NavItem {
@@ -94,6 +93,12 @@ const navigationItems: NavItem[] = [
     roles: ['salvage_manager'],
   },
   {
+    label: 'Fraud Alerts',
+    href: '/admin/fraud',
+    icon: AlertTriangle,
+    roles: ['salvage_manager'],
+  },
+  {
     label: 'Reports',
     href: '/manager/reports',
     icon: BarChart3,
@@ -111,6 +116,12 @@ const navigationItems: NavItem[] = [
     label: 'New Case',
     href: '/adjuster/cases/new',
     icon: FileText,
+    roles: ['claims_adjuster'],
+  },
+  {
+    label: 'My Cases',
+    href: '/adjuster/my-cases',
+    icon: ClipboardList,
     roles: ['claims_adjuster'],
   },
 
@@ -158,7 +169,6 @@ const navigationItems: NavItem[] = [
 export default function DashboardSidebar() {
   const { data: session } = useSession();
   const pathname = usePathname();
-  const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const userRole = session?.user?.role || 'vendor';
