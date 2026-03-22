@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { users, vendors, auditLogs } from '@/lib/db/schema';
+import { users, vendors, auditLogs, auctions } from '@/lib/db/schema';
 import { eq, and, gte, lt, sql, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 
@@ -26,6 +26,7 @@ interface DashboardStats {
   todayAuditLogs: number;
   userGrowth: number;
   systemHealth: 'healthy' | 'warning' | 'critical';
+  pendingPickupConfirmations: number;
 }
 
 export async function GET(request: NextRequest) {
@@ -116,6 +117,19 @@ async function calculateAdminStats(): Promise<DashboardStats> {
   // User growth (month-over-month)
   const userGrowth = await calculateUserGrowth();
 
+  // Pending pickup confirmations count
+  const pendingPickupConfirmationsResult = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(auctions)
+    .where(
+      and(
+        eq(auctions.pickupConfirmedVendor, true),
+        eq(auctions.pickupConfirmedAdmin, false)
+      )
+    );
+
+  const pendingPickupConfirmations = pendingPickupConfirmationsResult[0]?.count || 0;
+
   // System health (based on fraud alerts and system activity)
   let systemHealth: 'healthy' | 'warning' | 'critical' = 'healthy';
   
@@ -132,6 +146,7 @@ async function calculateAdminStats(): Promise<DashboardStats> {
     todayAuditLogs,
     userGrowth,
     systemHealth,
+    pendingPickupConfirmations,
   };
 }
 

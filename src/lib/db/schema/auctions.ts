@@ -1,8 +1,9 @@
-import { pgTable, uuid, timestamp, numeric, integer, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp, numeric, integer, pgEnum, boolean } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { salvageCases } from './cases';
 import { vendors } from './vendors';
 import { bids } from './bids';
+import { users } from './users';
 
 export const auctionStatusEnum = pgEnum('auction_status', [
   'scheduled',
@@ -10,6 +11,7 @@ export const auctionStatusEnum = pgEnum('auction_status', [
   'extended',
   'closed',
   'cancelled',
+  'forfeited',
 ]);
 
 export const auctions = pgTable('auctions', {
@@ -28,6 +30,11 @@ export const auctions = pgTable('auctions', {
     .default('10000.00'),
   status: auctionStatusEnum('status').notNull().default('scheduled'),
   watchingCount: integer('watching_count').notNull().default(0),
+  pickupConfirmedVendor: boolean('pickup_confirmed_vendor').default(false),
+  pickupConfirmedVendorAt: timestamp('pickup_confirmed_vendor_at'),
+  pickupConfirmedAdmin: boolean('pickup_confirmed_admin').default(false),
+  pickupConfirmedAdminAt: timestamp('pickup_confirmed_admin_at'),
+  pickupConfirmedAdminBy: uuid('pickup_confirmed_admin_by').references(() => users.id),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -41,6 +48,10 @@ export const auctionsRelations = relations(auctions, ({ one, many }) => ({
   currentBidderVendor: one(vendors, {
     fields: [auctions.currentBidder],
     references: [vendors.id],
+  }),
+  pickupConfirmedBy: one(users, {
+    fields: [auctions.pickupConfirmedAdminBy],
+    references: [users.id],
   }),
   bids: many(bids),
 }));

@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
   LayoutDashboard,
@@ -19,13 +19,24 @@ import {
   LogOut,
   Menu,
   X,
+  History,
+  Settings,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
+import NotificationBell from '@/components/notifications/notification-bell';
+
+interface SubMenuItem {
+  name: string;
+  href: string;
+}
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   roles: string[];
+  submenu?: SubMenuItem[];
 }
 
 const navigationItems: NavItem[] = [
@@ -49,28 +60,27 @@ const navigationItems: NavItem[] = [
     roles: ['vendor'],
   },
   {
+    label: 'Documents',
+    href: '/vendor/documents',
+    icon: FileText,
+    roles: ['vendor'],
+  },
+  {
     label: 'Leaderboard',
     href: '/vendor/leaderboard',
     icon: Trophy,
     roles: ['vendor'],
   },
   {
-    label: 'KYC Tier 1',
-    href: '/vendor/kyc/tier1',
-    icon: FileText,
+    label: 'Settings',
+    href: '/vendor/settings/profile',
+    icon: Settings,
     roles: ['vendor'],
-  },
-  {
-    label: 'KYC Tier 2',
-    href: '/vendor/kyc/tier2',
-    icon: FileText,
-    roles: ['vendor'],
-  },
-  {
-    label: 'Notifications',
-    href: '/vendor/settings/notifications',
-    icon: Bell,
-    roles: ['vendor'],
+    submenu: [
+      { name: 'Profile', href: '/vendor/settings/profile' },
+      { name: 'Notifications', href: '/vendor/settings/notifications' },
+      { name: 'Change Password', href: '/vendor/settings/change-password' },
+    ],
   },
 
   // Manager Navigation
@@ -84,6 +94,12 @@ const navigationItems: NavItem[] = [
     label: 'Approvals',
     href: '/manager/approvals',
     icon: ClipboardList,
+    roles: ['salvage_manager'],
+  },
+  {
+    label: 'Bid History',
+    href: '/bid-history',
+    icon: History,
     roles: ['salvage_manager'],
   },
   {
@@ -124,6 +140,12 @@ const navigationItems: NavItem[] = [
     icon: ClipboardList,
     roles: ['claims_adjuster'],
   },
+  {
+    label: 'Bid History',
+    href: '/bid-history',
+    icon: History,
+    roles: ['claims_adjuster'],
+  },
 
   // Finance Navigation
   {
@@ -138,6 +160,12 @@ const navigationItems: NavItem[] = [
     icon: CreditCard,
     roles: ['finance_officer'],
   },
+  {
+    label: 'Auction Management',
+    href: '/admin/auctions',
+    icon: Gavel,
+    roles: ['finance_officer'],
+  },
 
   // Admin Navigation
   {
@@ -150,6 +178,12 @@ const navigationItems: NavItem[] = [
     label: 'Users',
     href: '/admin/users',
     icon: Users,
+    roles: ['system_admin', 'admin'],
+  },
+  {
+    label: 'Bid History',
+    href: '/bid-history',
+    icon: History,
     roles: ['system_admin', 'admin'],
   },
   {
@@ -170,6 +204,7 @@ export default function DashboardSidebar() {
   const { data: session } = useSession();
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
   const userRole = session?.user?.role || 'vendor';
 
@@ -177,6 +212,13 @@ export default function DashboardSidebar() {
   const filteredNavItems = navigationItems.filter((item) =>
     item.roles.includes(userRole)
   );
+
+  const toggleSubmenu = (href: string) => {
+    setExpandedMenus((prev) => ({
+      ...prev,
+      [href]: !prev[href],
+    }));
+  };
 
   const handleLogout = async () => {
     try {
@@ -197,22 +239,69 @@ export default function DashboardSidebar() {
     <>
       {filteredNavItems.map((item) => {
         const Icon = item.icon;
-        const isActive = pathname === item.href;
+        const isActive = pathname === item.href || item.submenu?.some(sub => pathname === sub.href);
+        const isExpanded = expandedMenus[item.href];
+        const hasSubmenu = item.submenu && item.submenu.length > 0;
 
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={() => setIsMobileMenuOpen(false)}
-            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              isActive
-                ? 'bg-[#800020] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            <Icon className="w-5 h-5" />
-            <span className="font-medium">{item.label}</span>
-          </Link>
+          <div key={item.href}>
+            {hasSubmenu ? (
+              <>
+                <button
+                  onClick={() => toggleSubmenu(item.href)}
+                  className={`flex items-center justify-between w-full px-4 py-3 rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-[#800020] text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon className="w-5 h-5" />
+                    <span className="font-medium">{item.label}</span>
+                  </div>
+                  {isExpanded ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </button>
+                {isExpanded && item.submenu && (
+                  <div className="ml-4 mt-1 space-y-1">
+                    {item.submenu.map((subItem) => {
+                      const isSubActive = pathname === subItem.href;
+                      return (
+                        <Link
+                          key={subItem.href}
+                          href={subItem.href}
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm ${
+                            isSubActive
+                              ? 'bg-[#800020] text-white'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          <span>{subItem.name}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            ) : (
+              <Link
+                href={item.href}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                  isActive
+                    ? 'bg-[#800020] text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="font-medium">{item.label}</span>
+              </Link>
+            )}
+          </div>
         );
       })}
 
@@ -263,13 +352,20 @@ export default function DashboardSidebar() {
         }`}
       >
         <div className="p-4 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-[#800020]">NEM Salvage</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            {session?.user?.name || 'User'}
-          </p>
-          <p className="text-xs text-gray-500 capitalize">
-            {userRole.replace('_', ' ')}
-          </p>
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h2 className="text-xl font-bold text-[#800020]">NEM Salvage</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {session?.user?.name || 'User'}
+              </p>
+              <p className="text-xs text-gray-500 capitalize">
+                {userRole.replace('_', ' ')}
+              </p>
+            </div>
+            
+            {/* Notification Bell */}
+            <NotificationBell />
+          </div>
         </div>
 
         <nav className="p-4 flex flex-col gap-2">
@@ -280,13 +376,20 @@ export default function DashboardSidebar() {
       {/* Desktop Sidebar */}
       <aside className="hidden lg:block fixed top-0 left-0 bottom-0 w-64 bg-white border-r border-gray-200 z-30">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-2xl font-bold text-[#800020]">NEM Salvage</h2>
-          <p className="text-sm text-gray-600 mt-2">
-            {session?.user?.name || 'User'}
-          </p>
-          <p className="text-xs text-gray-500 capitalize mt-1">
-            {userRole.replace('_', ' ')}
-          </p>
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold text-[#800020]">NEM Salvage</h2>
+              <p className="text-sm text-gray-600 mt-2">
+                {session?.user?.name || 'User'}
+              </p>
+              <p className="text-xs text-gray-500 capitalize mt-1">
+                {userRole.replace('_', ' ')}
+              </p>
+            </div>
+            
+            {/* Notification Bell */}
+            <NotificationBell />
+          </div>
         </div>
 
         <nav className="p-4 flex flex-col gap-2">

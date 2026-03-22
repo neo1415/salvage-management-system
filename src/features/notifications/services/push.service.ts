@@ -385,51 +385,71 @@ export class PushNotificationService {
       };
     }
 
+    // Validate and sanitize inputs for fallback
+    const title = options.title?.trim();
+    const body = options.body?.trim();
+    
+    if (!title || !body || !options.userId) {
+      return {
+        success: false,
+        error: 'Invalid notification content for fallback',
+      };
+    }
+
     // Try SMS first if enabled
     if (fallbackContact.phone && (!preferences || preferences.smsEnabled)) {
-      const smsMessage = `${options.title}: ${options.body}`;
-      const smsResult = await smsService.sendSMS({
-        to: fallbackContact.phone,
-        message: smsMessage,
-        userId: options.userId,
-      });
+      try {
+        const smsMessage = `${title}: ${body}`;
+        const smsResult = await smsService.sendSMS({
+          to: fallbackContact.phone,
+          message: smsMessage,
+          userId: options.userId,
+        });
 
-      if (smsResult.success) {
-        console.log(`✅ Fallback SMS sent successfully`);
-        return {
-          success: true,
-          messageId: smsResult.messageId,
-          fallbackUsed: 'sms',
-        };
+        if (smsResult.success) {
+          console.log(`✅ Fallback SMS sent successfully`);
+          return {
+            success: true,
+            messageId: smsResult.messageId,
+            fallbackUsed: 'sms',
+          };
+        }
+      } catch (error) {
+        console.error('SMS fallback failed:', error);
+        // Continue to email fallback
       }
     }
 
     // Try Email if SMS failed or not available
     if (fallbackContact.email && (!preferences || preferences.emailEnabled)) {
-      const emailResult = await emailService.sendEmail({
-        to: fallbackContact.email,
-        subject: options.title,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #800020;">${options.title}</h2>
-            <p>${options.body}</p>
-            <hr style="border: 1px solid #eee; margin: 20px 0;">
-            <p style="color: #666; font-size: 12px;">
-              This is a notification from NEM Insurance Salvage Management System.
-              <br>
-              If you have questions, contact us at nemsupport@nem-insurance.com or 234-02-014489560.
-            </p>
-          </div>
-        `,
-      });
+      try {
+        const emailResult = await emailService.sendEmail({
+          to: fallbackContact.email,
+          subject: title,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #800020;">${title}</h2>
+              <p>${body}</p>
+              <hr style="border: 1px solid #eee; margin: 20px 0;">
+              <p style="color: #666; font-size: 12px;">
+                This is a notification from NEM Insurance Salvage Management System.
+                <br>
+                If you have questions, contact us at nemsupport@nem-insurance.com or 234-02-014489560.
+              </p>
+            </div>
+          `,
+        });
 
-      if (emailResult.success) {
-        console.log(`✅ Fallback email sent successfully`);
-        return {
-          success: true,
-          messageId: emailResult.messageId,
-          fallbackUsed: 'email',
-        };
+        if (emailResult.success) {
+          console.log(`✅ Fallback email sent successfully`);
+          return {
+            success: true,
+            messageId: emailResult.messageId,
+            fallbackUsed: 'email',
+          };
+        }
+      } catch (error) {
+        console.error('Email fallback failed:', error);
       }
     }
 

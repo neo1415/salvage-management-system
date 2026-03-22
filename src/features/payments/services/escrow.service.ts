@@ -2,7 +2,7 @@ import { db } from '@/lib/db/drizzle';
 import { escrowWallets, walletTransactions } from '@/lib/db/schema/escrow';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { kv } from '@vercel/kv';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 
@@ -358,6 +358,9 @@ export async function freezeFunds(
 /**
  * Release funds after pickup confirmation
  * Debits frozen amount and transfers to NEM Insurance via Paystack Transfers API
+ * 
+ * CRITICAL: This operation is ATOMIC - it unfreezes AND debits in ONE transaction
+ * to prevent the infinite money glitch where money exists in two places.
  */
 export async function releaseFunds(
   vendorId: string,
@@ -373,6 +376,28 @@ export async function releaseFunds(
     const currentAvailable = parseFloat(wallet.availableBalance);
     const currentFrozen = parseFloat(wallet.frozenAmount);
 
+    // CRITICAL CHECK: Verify this payment hasn't already been released
+    const [existingDebitTransaction] = await db
+      .select()
+      .from(walletTransactions)
+      .where(
+        and(
+          eq(walletTransactions.walletId, wallet.id),
+          eq(walletTransactions.type, 'debit'),
+          eq(walletTransactions.reference, `TRANSFER_${auctionId.substring(0, 8)}`)
+        )
+      )
+      .limit(1);
+
+    if (existingDebitTransaction) {
+      console.warn(`⚠️  Funds already released for auction ${auctionId}. Skipping duplicate release.`);
+      return {
+        balance: parseFloat(wallet.balance),
+        availableBalance: parseFloat(wallet.availableBalance),
+        frozenAmount: parseFloat(wallet.frozenAmount),
+      };
+    }
+
     // Check if sufficient frozen balance
     if (currentFrozen < amount) {
       throw new Error(
@@ -381,12 +406,18 @@ export async function releaseFunds(
     }
 
     // Calculate new balances
+    // ATOMIC OPERATION: Reduce BOTH balance AND frozen amount
     const newBalance = currentBalance - amount;
     const newFrozen = currentFrozen - amount;
 
     // Verify invariant: balance = availableBalance + frozenAmount
     if (Math.abs(newBalance - (currentAvailable + newFrozen)) > 0.01) {
       throw new Error('Balance invariant violation detected');
+    }
+
+    // CRITICAL: Verify frozen amount will be reduced
+    if (newFrozen >= currentFrozen) {
+      throw new Error('CRITICAL: Frozen amount not being reduced - infinite money glitch prevention');
     }
 
     // Generate transfer reference
@@ -426,7 +457,7 @@ export async function releaseFunds(
       console.log('Paystack transfer initiated:', transferData);
     }
 
-    // Update wallet
+    // ATOMIC UPDATE: Update wallet with BOTH balance and frozen amount reduced
     const [updatedWallet] = await db
       .update(escrowWallets)
       .set({
@@ -437,7 +468,7 @@ export async function releaseFunds(
       .where(eq(escrowWallets.id, wallet.id))
       .returning();
 
-    // Create transaction record
+    // Create debit transaction record
     await db.insert(walletTransactions).values({
       walletId: wallet.id,
       type: 'debit',
@@ -445,6 +476,16 @@ export async function releaseFunds(
       balanceAfter: newBalance.toFixed(2),
       reference: transferReference,
       description: `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to NEM Insurance via Paystack`,
+    });
+
+    // Create unfreeze transaction record (for audit trail)
+    await db.insert(walletTransactions).values({
+      walletId: wallet.id,
+      type: 'unfreeze',
+      amount: amount.toString(),
+      balanceAfter: newBalance.toFixed(2),
+      reference: `UNFREEZE_${auctionId}`,
+      description: `Funds unfrozen for auction ${auctionId.substring(0, 8)} - Part of atomic release operation`,
     });
 
     // Invalidate cache
@@ -461,16 +502,21 @@ export async function releaseFunds(
       userAgent: 'system',
       beforeState: {
         balance: currentBalance,
+        availableBalance: currentAvailable,
         frozenAmount: currentFrozen,
       },
       afterState: {
         balance: newBalance,
+        availableBalance: currentAvailable,
         frozenAmount: newFrozen,
         auctionId,
         amount,
         transferReference,
+        atomicOperation: true,
       },
     });
+
+    console.log(`✅ ATOMIC RELEASE: Balance ${currentBalance} → ${newBalance}, Frozen ${currentFrozen} → ${newFrozen}`);
 
     return {
       balance: parseFloat(updatedWallet.balance),

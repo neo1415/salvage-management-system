@@ -1,24 +1,42 @@
 /**
  * AI Damage Assessment Service
- * Uses Google Cloud Vision API to analyze damage from photos
  * 
- * Supports both:
- * - Base64 data URLs (data:image/jpeg;base64,...)
- * - Regular image URLs (https://...)
+ * Implements a three-tier fallback chain for damage assessment:
+ * 1. Gemini 2.0 Flash (primary) - Advanced multimodal AI with structured scoring
+ * 2. Google Cloud Vision API (fallback) - Keyword-based damage detection
+ * 3. Neutral scores (final fallback) - Safe defaults when all AI methods fail
  * 
- * Mock Mode: Set MOCK_AI_ASSESSMENT=true in .env to use mock data for testing
+ * Features:
+ * - Optional vehicle context for improved Gemini accuracy
+ * - Rate limiting to stay within Gemini free tier
+ * - Automatic fallback on errors or quota exhaustion
+ * - Backward compatible API (all existing fields preserved)
+ * - New optional fields for enhanced damage details
+ * 
+ * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 6.3, 9.3
  */
 
-import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
+import { 
+  assessDamageWithGemini, 
+  isGeminiEnabled,
+  type VehicleContext,
+} from '@/lib/integrations/gemini-damage-detection';
+import { 
+  assessDamageWithVision,
+} from '@/lib/integrations/vision-damage-detection';
+import { 
+  getGeminiRateLimiter 
+} from '@/lib/integrations/gemini-rate-limiter';
+import {
+  adaptGeminiResponse,
+  adaptVisionResponse,
+  generateNeutralResponse,
+} from './damage-response-adapter';
+import { type QualityTier } from '@/features/valuations/services/condition-mapping.service';
 
 // Check if we should use mock mode (for development without billing)
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
-
-// Initialize the Vision API client (only if not in mock mode)
-const visionClient = MOCK_MODE ? null : new ImageAnnotatorClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-});
 
 // Initialize the Document AI client (only if not in mock mode)
 const documentAIClient = MOCK_MODE ? null : new DocumentProcessorServiceClient({
@@ -36,6 +54,22 @@ export interface DamageAssessmentResult extends AIAssessment {
   damageSeverity: 'minor' | 'moderate' | 'severe';
   estimatedSalvageValue: number;
   reservePrice: number;
+  
+  // New optional fields (backward compatible)
+  method?: 'gemini' | 'vision' | 'neutral';
+  detailedScores?: {
+    structural: number;
+    mechanical: number;
+    cosmetic: number;
+    electrical: number;
+    interior: number;
+  };
+  airbagDeployed?: boolean;
+  totalLoss?: boolean;
+  summary?: string;
+  
+  // Quality tier assessment (Requirement 4.1)
+  qualityTier: QualityTier;
 }
 
 export interface OCRResult {
@@ -45,233 +79,216 @@ export interface OCRResult {
 }
 
 /**
- * Generate mock AI assessment for testing without Google Cloud billing
- */
-function generateMockAssessment(imageCount: number): Array<{ description: string; score: number }> {
-  const mockLabels = [
-    { description: 'Vehicle', score: 0.95 },
-    { description: 'Car', score: 0.92 },
-    { description: 'Damage', score: 0.88 },
-    { description: 'Dent', score: 0.85 },
-    { description: 'Broken', score: 0.82 },
-    { description: 'Collision', score: 0.78 },
-    { description: 'Accident', score: 0.75 },
-    { description: 'Scratch', score: 0.72 },
-    { description: 'Automotive', score: 0.70 },
-    { description: 'Metal', score: 0.68 },
-  ];
-  
-  // Return more damage labels for more images
-  return mockLabels.slice(0, Math.min(5 + imageCount, mockLabels.length));
-}
-
-/**
- * Assess damage from uploaded photos using Google Cloud Vision API
+ * Assess damage from uploaded photos with three-tier fallback chain
+ * 
+ * Fallback Chain:
+ * 1. Gemini 2.0 Flash (primary) - If enabled, rate limit not exceeded, and vehicle context provided
+ * 2. Google Cloud Vision API (fallback) - If Gemini fails or is unavailable
+ * 3. Neutral scores (final fallback) - If both Gemini and Vision fail
+ * 
+ * The function:
+ * - Checks rate limiter before attempting Gemini
+ * - Logs each fallback attempt with reason for failure
+ * - Adds method field to response indicating which service was used
+ * - Ensures total processing time does not exceed 30 seconds
+ * - Maintains backward compatibility (vehicleContext is optional)
+ * 
+ * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 6.3, 9.3
+ * 
  * @param imageUrls - Array of Cloudinary URLs or base64 data URLs for uploaded photos
  * @param marketValue - Market value of the asset
- * @returns Damage assessment with severity, estimated value, and reserve price
+ * @param vehicleContext - Optional vehicle context (make, model, year) for improved Gemini accuracy
+ * @returns Damage assessment with severity, estimated value, reserve price, and method used
  */
 export async function assessDamage(
   imageUrls: string[],
-  marketValue: number
+  marketValue: number,
+  vehicleContext?: VehicleContext
 ): Promise<DamageAssessmentResult> {
+  const requestId = `assess-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  const startTime = Date.now();
+  const timeoutMs = 30000; // 30 seconds total timeout
+  
+  // Track attempted methods for logging
+  const attemptedMethods: string[] = [];
+  const errors: Array<{ method: string; error: string }> = [];
+
   try {
     if (!imageUrls || imageUrls.length === 0) {
       throw new Error('At least one image URL is required for damage assessment');
     }
 
-    // Analyze all images and collect labels
-    const allLabels: Array<{ description: string; score: number }> = [];
-    let totalConfidence = 0;
-
-    // MOCK MODE: Generate fake data for testing
-    if (MOCK_MODE) {
-      console.log('🎭 MOCK MODE: Generating fake AI assessment data');
-      const mockLabels = generateMockAssessment(imageUrls.length);
-      allLabels.push(...mockLabels);
-      totalConfidence = mockLabels.reduce((sum, label) => sum + label.score, 0) / mockLabels.length * imageUrls.length;
-    } else {
-      // REAL MODE: Use Google Cloud Vision API
-      if (!visionClient) {
-        throw new Error('Vision API client not initialized');
-      }
-
-      for (const imageUrl of imageUrls) {
-        // Check if this is a base64 data URL or a regular URL
-        let result;
-        if (imageUrl.startsWith('data:image')) {
-          // Extract base64 data from data URL (format: data:image/jpeg;base64,...)
-          const base64Data = imageUrl.split(',')[1];
-          if (!base64Data) {
-            console.warn('Invalid base64 data URL, skipping image');
-            continue;
-          }
-          
-          // Convert base64 to Buffer for Vision API
-          const imageBuffer = Buffer.from(base64Data, 'base64');
-          
-          // Use buffer for label detection
-          [result] = await visionClient.labelDetection({
-            image: { content: imageBuffer },
-          });
-        } else {
-          // Regular URL - use as-is
-          [result] = await visionClient.labelDetection(imageUrl);
-        }
-        
-        const labels = result.labelAnnotations || [];
-
-      // Collect labels with their confidence scores
-      labels.forEach((label) => {
-        if (label.description && label.score !== undefined && label.score !== null && !isNaN(label.score)) {
-          allLabels.push({
-            description: label.description,
-            score: label.score,
-          });
-        }
-      });
-
-      // Calculate average confidence for this image
-      if (labels.length > 0) {
-        const validLabels = labels.filter(l => l.score !== undefined && l.score !== null && !isNaN(l.score));
-        if (validLabels.length > 0) {
-          const imageConfidence =
-            validLabels.reduce((sum, label) => sum + (label.score ?? 0), 0) / validLabels.length;
-          totalConfidence += imageConfidence;
-        }
-      }
-    }
-  }
-
-    // Calculate overall confidence score (0-100)
-    const confidenceScore =
-      imageUrls.length > 0 ? (totalConfidence / imageUrls.length) * 100 : 0;
-
-    // Extract unique damage-related labels
-    const damageKeywords = [
-      'damage',
-      'broken',
-      'crack',
-      'dent',
-      'scratch',
-      'shattered',
-      'bent',
-      'rust',
-      'collision',
-      'accident',
-      'wreck',
-      'destroyed',
-      'smashed',
-      'crushed',
-      'torn',
-      'burned',
-      'fire',
-      'water damage',
-      'flood',
-    ];
-
-    const damageLabels = allLabels
-      .filter((label) =>
-        damageKeywords.some((keyword) =>
-          label.description.toLowerCase().includes(keyword)
-        )
-      )
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10) // Top 10 damage-related labels
-      .map((label) => label.description);
-
-    // If no specific damage labels found, use general labels
-    const labels =
-      damageLabels.length > 0
-        ? damageLabels
-        : allLabels
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 10)
-            .map((label) => label.description);
-
-    // Calculate damage percentage based on label analysis
-    // More damage-related labels = higher damage percentage
-    const damagePercentage = calculateDamagePercentage(allLabels, damageKeywords);
-
-    // Determine damage severity based on percentage
-    // Minor: 40-60% of value remains (40-60% damage)
-    // Moderate: 20-40% of value remains (60-80% damage)
-    // Severe: 5-20% of value remains (80-95% damage)
-    let damageSeverity: 'minor' | 'moderate' | 'severe';
-    if (damagePercentage >= 40 && damagePercentage <= 60) {
-      damageSeverity = 'minor';
-    } else if (damagePercentage >= 60 && damagePercentage <= 80) {
-      damageSeverity = 'moderate';
-    } else {
-      damageSeverity = 'severe';
-    }
-
-    // Calculate estimated salvage value: marketValue × (100 - damagePercentage) / 100
-    const estimatedSalvageValue = marketValue * ((100 - damagePercentage) / 100);
-
-    // Calculate reserve price: estimatedValue × 0.7
-    const reservePrice = estimatedSalvageValue * 0.7;
-
-    return {
-      labels,
-      confidenceScore: Math.round(confidenceScore),
-      damagePercentage: Math.round(damagePercentage),
-      processedAt: new Date(),
-      damageSeverity,
-      estimatedSalvageValue: Math.round(estimatedSalvageValue * 100) / 100,
-      reservePrice: Math.round(reservePrice * 100) / 100,
-    };
-  } catch (error) {
-    console.error('Error assessing damage:', error);
-    throw new Error('Failed to assess damage from images');
-  }
-}
-
-/**
- * Calculate damage percentage based on label analysis
- * @param labels - All labels detected in images
- * @param damageKeywords - Keywords indicating damage
- * @returns Damage percentage (0-100)
- */
-function calculateDamagePercentage(
-  labels: Array<{ description: string; score: number }>,
-  damageKeywords: string[]
-): number {
-  // Count damage-related labels and their confidence
-  let damageScore = 0;
-  let damageCount = 0;
-
-  labels.forEach((label) => {
-    const isDamageRelated = damageKeywords.some((keyword) =>
-      label.description.toLowerCase().includes(keyword)
+    console.info(
+      `[AI Assessment] Starting damage assessment. Photos: ${imageUrls.length}. ` +
+      `Vehicle context: ${vehicleContext ? `${vehicleContext.year} ${vehicleContext.make} ${vehicleContext.model}` : 'not provided'}. ` +
+      `Request ID: ${requestId}`
     );
 
-    if (isDamageRelated) {
-      damageScore += label.score;
-      damageCount++;
+    // Helper function to check if we've exceeded timeout
+    const checkTimeout = () => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= timeoutMs) {
+        throw new Error(`Assessment timeout exceeded (${elapsed}ms >= ${timeoutMs}ms)`);
+      }
+    };
+
+    // ATTEMPT 1: Try Gemini 2.0 Flash (if enabled, rate limit allows, and vehicle context provided)
+    if (isGeminiEnabled() && vehicleContext) {
+      attemptedMethods.push('gemini');
+      
+      try {
+        checkTimeout();
+        
+        // Check rate limiter before attempting Gemini
+        const rateLimiter = getGeminiRateLimiter();
+        const quotaStatus = rateLimiter.checkQuota();
+        
+        if (!quotaStatus.allowed) {
+          const reason = quotaStatus.dailyRemaining === 0 
+            ? `Daily quota exhausted (${quotaStatus.dailyRemaining} remaining)`
+            : `Minute quota exhausted (${quotaStatus.minuteRemaining} remaining)`;
+          
+          console.warn(
+            `[AI Assessment] Gemini rate limit exceeded. ${reason}. ` +
+            `Falling back to Vision API. Request ID: ${requestId}`
+          );
+          
+          errors.push({
+            method: 'gemini',
+            error: `Rate limit exceeded: ${reason}`,
+          });
+        } else {
+          // Rate limit allows, attempt Gemini assessment
+          console.info(
+            `[AI Assessment] Attempting Gemini assessment. ` +
+            `Quota remaining: ${quotaStatus.minuteRemaining}/minute, ${quotaStatus.dailyRemaining}/day. ` +
+            `Request ID: ${requestId}`
+          );
+          
+          const geminiStartTime = Date.now();
+          const geminiAssessment = await assessDamageWithGemini(imageUrls, vehicleContext);
+          const geminiDuration = Date.now() - geminiStartTime;
+          
+          // Record successful request
+          rateLimiter.recordRequest();
+          
+          // Adapt Gemini response to unified format
+          const result = adaptGeminiResponse(geminiAssessment, marketValue, vehicleContext);
+          
+          const totalDuration = Date.now() - startTime;
+          console.info(
+            `[AI Assessment] Gemini assessment succeeded. ` +
+            `Severity: ${result.damageSeverity}. ` +
+            `Gemini duration: ${geminiDuration}ms. Total duration: ${totalDuration}ms. ` +
+            `Request ID: ${requestId}`
+          );
+          
+          return result;
+        }
+      } catch (geminiError: any) {
+        const geminiErrorMessage = geminiError?.message || 'Unknown error';
+        const geminiDuration = Date.now() - startTime;
+        
+        console.error(
+          `[AI Assessment] Gemini assessment failed after ${geminiDuration}ms. ` +
+          `Error: ${geminiErrorMessage}. ` +
+          `Falling back to Vision API. Request ID: ${requestId}`
+        );
+        
+        errors.push({
+          method: 'gemini',
+          error: geminiErrorMessage,
+        });
+      }
+    } else {
+      // Gemini not attempted - log reason
+      if (!isGeminiEnabled()) {
+        console.info(
+          `[AI Assessment] Gemini not enabled. Using Vision API. Request ID: ${requestId}`
+        );
+      } else if (!vehicleContext) {
+        console.info(
+          `[AI Assessment] Vehicle context not provided. Using Vision API. Request ID: ${requestId}`
+        );
+      }
     }
-  });
 
-  // If no damage labels found, assume minor damage (50%)
-  if (damageCount === 0) {
-    return 50;
+    // ATTEMPT 2: Try Vision API (fallback)
+    attemptedMethods.push('vision');
+    
+    try {
+      checkTimeout();
+      
+      console.info(
+        `[AI Assessment] Attempting Vision API assessment. Request ID: ${requestId}`
+      );
+      
+      const visionStartTime = Date.now();
+      const visionAssessment = await assessDamageWithVision(imageUrls);
+      const visionDuration = Date.now() - visionStartTime;
+      
+      // Adapt Vision response to unified format
+      const result = adaptVisionResponse(visionAssessment, marketValue, vehicleContext);
+      
+      const totalDuration = Date.now() - startTime;
+      console.info(
+        `[AI Assessment] Vision API assessment succeeded. ` +
+        `Severity: ${result.damageSeverity}. ` +
+        `Vision duration: ${visionDuration}ms. Total duration: ${totalDuration}ms. ` +
+        `Request ID: ${requestId}`
+      );
+      
+      return result;
+    } catch (visionError: any) {
+      const visionErrorMessage = visionError?.message || 'Unknown error';
+      const visionDuration = Date.now() - startTime;
+      
+      console.error(
+        `[AI Assessment] Vision API assessment failed after ${visionDuration}ms. ` +
+        `Error: ${visionErrorMessage}. ` +
+        `Falling back to neutral scores. Request ID: ${requestId}`
+      );
+      
+      errors.push({
+        method: 'vision',
+        error: visionErrorMessage,
+      });
+    }
+
+    // ATTEMPT 3: Return neutral scores (final fallback)
+    attemptedMethods.push('neutral');
+    
+    console.warn(
+      `[AI Assessment] All AI methods failed. Returning neutral scores. ` +
+      `Attempted methods: ${attemptedMethods.join(' → ')}. ` +
+      `Request ID: ${requestId}`
+    );
+    
+    const result = generateNeutralResponse(marketValue, vehicleContext);
+    
+    const totalDuration = Date.now() - startTime;
+    console.info(
+      `[AI Assessment] Neutral response generated. ` +
+      `Total duration: ${totalDuration}ms. ` +
+      `Request ID: ${requestId}`
+    );
+    
+    return result;
+  } catch (error: any) {
+    const errorMessage = error?.message || 'Unknown error';
+    const totalDuration = Date.now() - startTime;
+    
+    console.error(
+      `[AI Assessment] Assessment failed completely. ` +
+      `Error: ${errorMessage}. ` +
+      `Attempted methods: ${attemptedMethods.join(' → ')}. ` +
+      `Duration: ${totalDuration}ms. ` +
+      `Request ID: ${requestId}. ` +
+      `Errors: ${JSON.stringify(errors)}`
+    );
+    
+    throw new Error(`Failed to assess damage from images: ${errorMessage}`);
   }
-
-  // Calculate average damage confidence
-  const avgDamageConfidence = damageScore / damageCount;
-
-  // Map confidence to damage percentage
-  // High confidence in damage labels = high damage percentage
-  // Scale: 0.5 confidence = 50% damage, 1.0 confidence = 90% damage
-  const damagePercentage = 50 + avgDamageConfidence * 40;
-
-  // Also factor in the number of damage labels
-  // More damage labels = higher damage
-  const labelCountFactor = Math.min(damageCount / 5, 1); // Cap at 5 labels
-  const adjustedDamage = damagePercentage + labelCountFactor * 10;
-
-  // Ensure damage is within valid range (40-95%)
-  return Math.max(40, Math.min(95, adjustedDamage));
 }
 
 /**

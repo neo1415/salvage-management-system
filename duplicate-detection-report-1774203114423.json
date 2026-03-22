@@ -1,0 +1,188 @@
+{
+  "timestamp": "2026-03-22T18:11:54.423Z",
+  "summary": {
+    "totalIssues": 17,
+    "totalAffectedRecords": 52
+  },
+  "reports": [
+    {
+      "table": "payments",
+      "duplicateCount": 0,
+      "affectedRecords": 0,
+      "details": []
+    },
+    {
+      "table": "documents (release_forms)",
+      "duplicateCount": 0,
+      "affectedRecords": 0,
+      "details": []
+    },
+    {
+      "table": "auctions (active/extended)",
+      "duplicateCount": 0,
+      "affectedRecords": 0,
+      "details": []
+    },
+    {
+      "table": "wallet_transactions",
+      "duplicateCount": 17,
+      "affectedRecords": 52,
+      "details": [
+        {
+          "key": "reference: UNFREEZE_bc665614-6f4d-4e82-b368-bb4ee2a8f5e0",
+          "count": 4,
+          "ids": [
+            "e0530691-4905-4aec-813d-5d6873cb387a (unfreeze)",
+            "1173d7df-5736-439b-b0d4-ed31b090ca48 (unfreeze)",
+            "5da4c10f-3fdd-4c76-98fe-79c97e3731a5 (unfreeze)",
+            "b4640adf-fa7c-4a70-8f96-503abb29c91d (unfreeze)"
+          ]
+        },
+        {
+          "key": "reference: UNFREEZE_8170710b-49de-4a20-8b7e-926c50243a8d",
+          "count": 3,
+          "ids": [
+            "f34e6c71-822e-4bfc-9720-4653d39de8cf (unfreeze)",
+            "0cc86d5d-3ebe-457c-a80c-bd7371f1d958 (unfreeze)",
+            "100ca04e-edd1-44af-9df5-fbb5c1e3dcae (unfreeze)"
+          ]
+        },
+        {
+          "key": "reference: WALLET_f5711bb4_1770276874143",
+          "count": 2,
+          "ids": [
+            "18198077-1c0f-4cde-b956-1c12736bcc68 (credit)",
+            "970d2dbe-0b3a-49a0-9d13-3f4fb718b1fb (credit)"
+          ]
+        },
+        {
+          "key": "reference: WALLET_f5711bb4_1770276734156",
+          "count": 2,
+          "ids": [
+            "2ea909dd-3a2e-49d4-bcb3-b7feb72dcf4e (credit)",
+            "3801d06f-5047-49f8-9463-f1e6d7275151 (credit)"
+          ]
+        },
+        {
+          "key": "reference: FREEZE_ebe0b7e6-0665-48e7-a946-1fbecf7e29e6",
+          "count": 5,
+          "ids": [
+            "f6d09171-31fb-45bf-9e0b-3880e183279d (freeze)",
+            "91ec96bd-1197-4ce1-a038-4b2772f03295 (freeze)",
+            "d16a8766-b5ef-4fe2-b8fc-c5ea8bdd9f3f (freeze)",
+            "7c27dbe7-8c22-4b07-93c5-764fbcb06ebc (freeze)",
+            "af6df236-9051-42e9-88f0-73b4fe282fd1 (freeze)"
+          ]
+        },
+        {
+          "key": "reference: UNFREEZE_7757497f-b807-41af-a1a0-4b5104b7ae66",
+          "count": 3,
+          "ids": [
+            "a144b64a-79cf-4c8d-9f42-2b05bf48d8d0 (unfreeze)",
+            "76bed2e9-bd3a-4d66-a4e0-0499faf8b507 (unfreeze)",
+            "b7f616b2-81f4-42ab-ab73-a01c60ad6dfc (unfreeze)"
+          ]
+        },
+        {
+          "key": "reference: FREEZE_bc665614-6f4d-4e82-b368-bb4ee2a8f5e0",
+          "count": 5,
+          "ids": [
+            "d89354a8-3fbb-46c0-80e5-03df13f16b88 (freeze)",
+            "4288364b-4799-44fd-ba29-6ecba9a8d3df (freeze)",
+            "74eb3eb7-9453-4dbe-87c1-9610479b38e2 (freeze)",
+            "539dcacc-3b50-4959-a6d4-5a4f948bdc4c (freeze)",
+            "ca05da24-3a1a-47bc-b72c-91a56e0aa161 (freeze)"
+          ]
+        },
+        {
+          "key": "reference: WALLET_01afede1_1773783212950",
+          "count": 2,
+          "ids": [
+            "22e41cd3-7c2f-4a86-86fd-c81994367b03 (credit)",
+            "5d5a2102-7cf2-44cf-80fd-8d66700196d6 (credit)"
+          ]
+        },
+        {
+          "key": "reference: WALLET_bc23fa12_1770825134438",
+          "count": 2,
+          "ids": [
+            "c3d03b2e-5673-40a5-8415-c42a2bab6145 (credit)",
+            "152d9f68-dfb7-43c4-ad3a-fe04c31494c4 (credit)"
+          ]
+        },
+        {
+          "key": "reference: UNFREEZE_ebe0b7e6-0665-48e7-a946-1fbecf7e29e6",
+          "count": 5,
+          "ids": [
+            "4f7fd520-a279-44c8-b457-68b174389e02 (unfreeze)",
+            "d392f3b5-9a3c-4cef-ac29-f2ccdd295030 (unfreeze)",
+            "34678fbc-72f4-4cfd-8742-bf7678ca9008 (unfreeze)",
+            "6ec0dcaf-ae87-4e11-9b7b-6baadde62bc6 (unfreeze)",
+            "2323dbe0-470d-4020-9f97-e75f0b7e144e (unfreeze)"
+          ]
+        },
+        {
+          "key": "reference: WALLET_01afede1_1773832334343",
+          "count": 2,
+          "ids": [
+            "5bdecbb1-b198-49d0-bc7f-90767486b451 (credit)",
+            "491cd646-fd5f-4738-a7b4-ab59cfe3dd1a (credit)"
+          ]
+        },
+        {
+          "key": "reference: FREEZE_6fac712e-02ef-4001-96ea-0f9863c0e090",
+          "count": 3,
+          "ids": [
+            "0cc9a262-2b2e-4fdc-8d76-cb8072beab13 (freeze)",
+            "7878b0a7-4c8a-429d-a459-e54d9a0a5feb (freeze)",
+            "53f87dd8-eba8-4a4d-96c0-be84913f5b67 (freeze)"
+          ]
+        },
+        {
+          "key": "reference: FREEZE_8170710b-49de-4a20-8b7e-926c50243a8d",
+          "count": 3,
+          "ids": [
+            "f3f830a4-b187-43f4-b21b-cca064097ff6 (freeze)",
+            "1cac8d8b-f6c6-4a36-b281-f4ff4262e8e6 (freeze)",
+            "948b3bd2-4a58-4970-bfc9-29edeeaebf38 (freeze)"
+          ]
+        },
+        {
+          "key": "reference: WALLET_01afede1_1774093053377",
+          "count": 2,
+          "ids": [
+            "3faedc89-d61d-4ede-a17c-c7a1b5299aca (credit)",
+            "d2240a99-2421-4033-8fa5-aca5864e8f0c (credit)"
+          ]
+        },
+        {
+          "key": "reference: UNFREEZE_6fac712e-02ef-4001-96ea-0f9863c0e090",
+          "count": 3,
+          "ids": [
+            "bdccaaa6-bff5-4f4d-83a8-0aabedd57d56 (unfreeze)",
+            "9753aa97-37bf-4703-aa4c-6c6e5e73b35a (unfreeze)",
+            "b02cbd2c-e382-499d-9846-9e30ad46a2dc (unfreeze)"
+          ]
+        },
+        {
+          "key": "reference: FREEZE_7757497f-b807-41af-a1a0-4b5104b7ae66",
+          "count": 4,
+          "ids": [
+            "440a52dc-f5d7-4470-b50c-837040c598fe (freeze)",
+            "010745ae-568c-4a0e-841d-91311d69fc0f (freeze)",
+            "7d693eb9-cdff-429e-b8ce-703d61aa046a (freeze)",
+            "6546bcae-ce52-4bf7-b81c-400866e74b03 (freeze)"
+          ]
+        },
+        {
+          "key": "reference: WALLET_f5711bb4_1774197476212",
+          "count": 2,
+          "ids": [
+            "56d9e99a-b4d9-4c1f-8099-b08c385b8182 (credit)",
+            "accfdf89-d2b2-43fb-b247-99c22b62446c (credit)"
+          ]
+        }
+      ]
+    }
+  ]
+}

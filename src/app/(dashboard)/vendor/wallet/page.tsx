@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Wallet, Plus, TrendingUp, TrendingDown, Lock, Unlock, CreditCard } from 'lucide-react';
@@ -31,6 +31,57 @@ export default function WalletPage() {
   const [fundingAmount, setFundingAmount] = useState<string>('');
   const [isFunding, setIsFunding] = useState(false);
 
+  // FIXED: Wrap fetchWalletData in useCallback to prevent recreation on every render
+  const fetchWalletData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch balance
+      const balanceResponse = await fetch('/api/payments/wallet/balance');
+      if (!balanceResponse.ok) {
+        throw new Error('Failed to fetch wallet balance');
+      }
+      const balanceData = await balanceResponse.json();
+      
+      // FIXED: Only update state if values actually changed
+      setBalance(prev => {
+        if (!prev) return balanceData;
+        if (
+          prev.balance === balanceData.balance &&
+          prev.availableBalance === balanceData.availableBalance &&
+          prev.frozenAmount === balanceData.frozenAmount
+        ) {
+          return prev; // No change, prevent re-render
+        }
+        return balanceData;
+      });
+
+      // Fetch transactions
+      const transactionsResponse = await fetch('/api/payments/wallet/transactions');
+      if (!transactionsResponse.ok) {
+        throw new Error('Failed to fetch transactions');
+      }
+      const transactionsData = await transactionsResponse.json();
+      
+      // FIXED: Only update if transaction count changed
+      setTransactions(prev => {
+        if (prev.length === transactionsData.length && prev.length > 0) {
+          // Check if first transaction ID matches (most recent)
+          if (prev[0]?.id === transactionsData[0]?.id) {
+            return prev; // No new transactions, prevent re-render
+          }
+        }
+        return transactionsData;
+      });
+    } catch (err) {
+      console.error('Error fetching wallet data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load wallet data');
+    } finally {
+      setLoading(false);
+    }
+  }, []); // No dependencies - stable function
+
   // Redirect if not authenticated
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -38,14 +89,14 @@ export default function WalletPage() {
     }
   }, [status, router]);
 
-  // Fetch wallet balance and transactions
+  // Fetch wallet balance and transactions - FIXED: Only depend on user ID, not entire session object
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.id) {
       fetchWalletData();
     }
-  }, [status, session]);
+  }, [status, session?.user?.id]); // Only depend on user ID, not entire session
 
-  // Check for payment success callback
+  // Check for payment success callback - FIXED: Run only once on mount
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const paymentStatus = urlParams.get('status');
@@ -59,37 +110,10 @@ export default function WalletPage() {
       // Clear URL parameters
       window.history.replaceState({}, '', '/vendor/wallet');
     }
-  }, []);
+  }, []); // Empty dependency array - run only once on mount
 
-  const fetchWalletData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Fetch balance
-      const balanceResponse = await fetch('/api/payments/wallet/balance');
-      if (!balanceResponse.ok) {
-        throw new Error('Failed to fetch wallet balance');
-      }
-      const balanceData = await balanceResponse.json();
-      setBalance(balanceData);
-
-      // Fetch transactions
-      const transactionsResponse = await fetch('/api/payments/wallet/transactions');
-      if (!transactionsResponse.ok) {
-        throw new Error('Failed to fetch transactions');
-      }
-      const transactionsData = await transactionsResponse.json();
-      setTransactions(transactionsData);
-    } catch (err) {
-      console.error('Error fetching wallet data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load wallet data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAddFunds = async () => {
+  // FIXED: Wrap handleAddFunds in useCallback to prevent recreation
+  const handleAddFunds = useCallback(async () => {
     const amount = parseFloat(fundingAmount);
     
     // Validate amount
@@ -126,17 +150,18 @@ export default function WalletPage() {
       setError(err instanceof Error ? err.message : 'Failed to initiate funding');
       setIsFunding(false);
     }
-  };
+  }, [fundingAmount]); // Depend on fundingAmount
 
-  const formatCurrency = (amount: number) => {
+  // FIXED: Memoize helper functions to prevent recreation
+  const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('en-NG', {
       style: 'currency',
       currency: 'NGN',
       minimumFractionDigits: 2,
     }).format(amount);
-  };
+  }, []); // No dependencies - stable function
 
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleString('en-NG', {
       year: 'numeric',
       month: 'short',
@@ -144,9 +169,9 @@ export default function WalletPage() {
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
+  }, []); // No dependencies - stable function
 
-  const getTransactionIcon = (type: string) => {
+  const getTransactionIcon = useCallback((type: string) => {
     switch (type) {
       case 'credit':
         return <TrendingUp className="w-5 h-5 text-green-600" />;
@@ -159,9 +184,9 @@ export default function WalletPage() {
       default:
         return <Wallet className="w-5 h-5 text-gray-600" />;
     }
-  };
+  }, []); // No dependencies - stable function
 
-  const getTransactionColor = (type: string) => {
+  const getTransactionColor = useCallback((type: string) => {
     switch (type) {
       case 'credit':
         return 'text-green-600';
@@ -174,7 +199,7 @@ export default function WalletPage() {
       default:
         return 'text-gray-600';
     }
-  };
+  }, []); // No dependencies - stable function
 
   if (status === 'loading' || loading) {
     return (

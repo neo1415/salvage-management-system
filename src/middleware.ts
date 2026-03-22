@@ -101,7 +101,7 @@ export async function middleware(request: NextRequest) {
       "img-src 'self' data: https: blob:",
       "font-src 'self' data:",
       "connect-src 'self' https://www.googleapis.com https://nominatim.openstreetmap.org https://api.paystack.co https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com",
-      "frame-src 'self' https://js.paystack.co https://checkout.flutterwave.com",
+      "frame-src 'self' https://js.paystack.co https://checkout.flutterwave.com https://www.google.com https://maps.google.com https://www.google.com/maps/embed/",
       "worker-src 'self' blob:",
     ].join('; ')
   );

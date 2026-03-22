@@ -78,6 +78,14 @@ function notifySyncProgress(progress: SyncProgress): void {
   if (syncProgressCallback) {
     syncProgressCallback(progress);
   }
+  
+  // Also notify Service Worker for cross-tab sync
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'SYNC_PROGRESS',
+      progress,
+    });
+  }
 }
 
 /**
@@ -246,6 +254,15 @@ export async function syncOfflineCases(): Promise<SyncResult> {
 
     result.success = result.failed === 0;
     
+    // Notify Service Worker of completion
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: result.success ? 'SYNC_COMPLETE' : 'SYNC_ERROR',
+        result,
+        error: result.failed > 0 ? `${result.failed} cases failed to sync` : undefined,
+      });
+    }
+    
     return result;
   } finally {
     isSyncing = false;
@@ -344,11 +361,26 @@ export function setupAutoSync(): () => void {
     }
   };
 
+  // Listen for Service Worker sync messages
+  const handleServiceWorkerMessage = (event: MessageEvent) => {
+    if (event.data && event.data.type === 'SYNC_OFFLINE_CASES') {
+      console.log('Service Worker requested sync');
+      handleOnline();
+    }
+  };
+
   window.addEventListener('online', handleOnline);
+  
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
+  }
 
   // Return cleanup function
   return () => {
     window.removeEventListener('online', handleOnline);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
+    }
   };
 }
 

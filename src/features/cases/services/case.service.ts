@@ -8,12 +8,13 @@
 import { db } from '@/lib/db/drizzle';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { eq } from 'drizzle-orm';
-import { assessDamage, type DamageAssessmentResult } from './ai-assessment.service';
+import { assessDamageEnhanced, type EnhancedDamageAssessment, type VehicleInfo, type UniversalItemInfo } from './ai-assessment-enhanced.service';
 import { uploadFile, getSalvageCaseFolder, TRANSFORMATION_PRESETS } from '@/lib/storage/cloudinary';
 import { logAction, AuditActionType, AuditEntityType, type DeviceType } from '@/lib/utils/audit-logger';
+import { mapQualityToUniversalCondition } from '@/features/valuations/services/condition-mapping.service';
 
 /**
- * Asset types
+ * Asset types (must match database assetTypeEnum)
  */
 export type AssetType = 'vehicle' | 'property' | 'electronics';
 
@@ -25,6 +26,8 @@ export interface VehicleDetails {
   model: string;
   year: number;
   vin?: string;
+  mileage?: number;
+  condition?: 'excellent' | 'good' | 'fair' | 'poor' | 'Brand New' | 'Nigerian Used' | 'Foreign Used (Tokunbo)';
 }
 
 /**
@@ -40,13 +43,28 @@ export interface PropertyDetails {
  */
 export interface ElectronicsDetails {
   brand: string;
+  model: string;
+  storage?: string;
+  color?: string;
   serialNumber?: string;
+  condition?: 'Brand New' | 'Foreign Used (Tokunbo)' | 'Nigerian Used' | 'Heavily Used';
+}
+
+/**
+ * Appliance-specific details
+ */
+export interface ApplianceDetails {
+  brand: string;
+  model: string;
+  type?: string;
+  size?: string;
+  condition?: 'Brand New' | 'Foreign Used (Tokunbo)' | 'Nigerian Used' | 'Heavily Used';
 }
 
 /**
  * Asset details union type
  */
-export type AssetDetails = VehicleDetails | PropertyDetails | ElectronicsDetails;
+export type AssetDetails = VehicleDetails | PropertyDetails | ElectronicsDetails | ApplianceDetails;
 
 /**
  * GPS coordinates
@@ -70,6 +88,37 @@ export interface CreateCaseInput {
   voiceNotes?: string[]; // Voice-to-text transcriptions
   createdBy: string; // User ID
   status?: 'draft' | 'pending_approval';
+  // AI assessment results from frontend (optional - only present when frontend ran assessment)
+  aiAssessmentResult?: {
+    damageSeverity: 'minor' | 'moderate' | 'severe';
+    confidenceScore: number;
+    labels: string[];
+    estimatedSalvageValue: number;
+    reservePrice: number;
+    damageScore?: {
+      structural: number;
+      mechanical: number;
+      cosmetic: number;
+      electrical: number;
+      interior: number;
+    };
+    confidence?: {
+      overall: number;
+      vehicleDetection: number;
+      damageDetection: number;
+      valuationAccuracy: number;
+      photoQuality: number;
+      reasons: string[];
+    };
+    estimatedRepairCost?: number;
+    isRepairable?: boolean;
+    isTotalLoss?: boolean; // NEW: Total loss indicator
+    priceSource?: string; // NEW: Price source (database, internet_search, etc.)
+    recommendation?: string;
+    warnings?: string[];
+    analysisMethod?: 'gemini' | 'vision' | 'neutral' | 'mock';
+    qualityTier?: string;
+  };
 }
 
 /**
@@ -83,7 +132,7 @@ export interface CreateCaseResult {
   marketValue: number;
   estimatedSalvageValue: number;
   reservePrice: number;
-  damageSeverity: 'minor' | 'moderate' | 'severe';
+  damageSeverity: 'minor' | 'moderate' | 'severe' | 'none';
   aiAssessment: {
     labels: string[];
     confidenceScore: number;
@@ -262,41 +311,164 @@ export async function createCase(
       console.log(`Uploaded photo ${i + 1}/${input.photos.length}: ${uploadResult.secureUrl}`);
     }
 
-    // Call AI assessment service
-    console.log('Running AI damage assessment...');
-    const aiAssessment: DamageAssessmentResult = await assessDamage(
-      photoUrls,
-      input.marketValue
-    );
-    console.log(`AI assessment complete: ${aiAssessment.damageSeverity} damage, ${aiAssessment.confidenceScore}% confidence`);
-
-    // Create case record
+    // Determine case status
     const status = input.status || 'pending_approval';
+    const isDraft = status === 'draft';
+
+    // CRITICAL FIX: Use AI assessment from frontend if provided
+    // The frontend runs AI assessment in real-time during photo upload
+    // Backend should use those results instead of creating mock data
+    let aiAssessment: EnhancedDamageAssessment | null = null;
+    
+    // Only run AI assessment for draft cases that don't have assessment yet
+    // For non-draft cases, the frontend has already run the assessment
+    if (isDraft) {
+      console.log('⚠️ Skipping AI assessment for draft case - will be processed when submitted for approval');
+    } else if (input.aiAssessmentResult) {
+      console.log('✅ Using AI assessment from frontend:', {
+        severity: input.aiAssessmentResult.damageSeverity,
+        confidence: input.aiAssessmentResult.confidenceScore,
+        salvageValue: input.aiAssessmentResult.estimatedSalvageValue,
+      });
+      
+      // Use the REAL AI assessment results from frontend
+      aiAssessment = {
+        damageSeverity: input.aiAssessmentResult.damageSeverity,
+        confidenceScore: input.aiAssessmentResult.confidenceScore,
+        labels: input.aiAssessmentResult.labels,
+        damagePercentage: input.aiAssessmentResult.damageScore 
+          ? ((input.aiAssessmentResult.damageScore.structural || 0) + 
+             (input.aiAssessmentResult.damageScore.mechanical || 0) + 
+             (input.aiAssessmentResult.damageScore.cosmetic || 0) + 
+             (input.aiAssessmentResult.damageScore.electrical || 0) + 
+             (input.aiAssessmentResult.damageScore.interior || 0)) / 5
+          : 50,
+        processedAt: new Date(),
+        damageScore: input.aiAssessmentResult.damageScore || {
+          structural: 50,
+          mechanical: 50,
+          cosmetic: 50,
+          electrical: 50,
+          interior: 50,
+        },
+        confidence: input.aiAssessmentResult.confidence || {
+          overall: input.aiAssessmentResult.confidenceScore,
+          vehicleDetection: input.aiAssessmentResult.confidenceScore,
+          damageDetection: input.aiAssessmentResult.confidenceScore,
+          valuationAccuracy: input.aiAssessmentResult.confidenceScore,
+          photoQuality: input.aiAssessmentResult.confidenceScore,
+          reasons: ['Frontend assessment completed'],
+        },
+        estimatedSalvageValue: input.aiAssessmentResult.estimatedSalvageValue,
+        estimatedRepairCost: input.aiAssessmentResult.estimatedRepairCost || input.marketValue * 0.7,
+        reservePrice: input.aiAssessmentResult.reservePrice,
+        isRepairable: input.aiAssessmentResult.isRepairable ?? true,
+        isTotalLoss: input.aiAssessmentResult.isTotalLoss, // NEW: Store isTotalLoss field
+        priceSource: input.aiAssessmentResult.priceSource, // NEW: Store price source
+        recommendation: input.aiAssessmentResult.recommendation || 'Assess for salvage auction',
+        warnings: input.aiAssessmentResult.warnings || [],
+        analysisMethod: input.aiAssessmentResult.analysisMethod || 'gemini' as const,
+        photoCount: photoUrls.length,
+        qualityTier: (input.aiAssessmentResult.qualityTier || 'fair') as any,
+        marketValue: input.marketValue,
+      };
+      
+      console.log('🎯 Using frontend severity assessment:', aiAssessment.damageSeverity);
+    } else {
+      console.log('⚠️ No AI assessment from frontend - using fallback values');
+      
+      // Fallback: Create minimal assessment if frontend didn't provide one
+      aiAssessment = {
+        damageSeverity: 'moderate' as const,
+        confidenceScore: 50,
+        labels: [],
+        damagePercentage: 50,
+        processedAt: new Date(),
+        damageScore: {
+          structural: 50,
+          mechanical: 50,
+          cosmetic: 50,
+          electrical: 50,
+          interior: 50,
+        },
+        confidence: {
+          overall: 50,
+          vehicleDetection: 50,
+          damageDetection: 50,
+          valuationAccuracy: 50,
+          photoQuality: 50,
+          reasons: ['No frontend assessment available'],
+        },
+        estimatedSalvageValue: input.marketValue * 0.3,
+        estimatedRepairCost: input.marketValue * 0.7,
+        reservePrice: input.marketValue * 0.25,
+        isRepairable: true,
+        recommendation: 'Assess for salvage auction',
+        warnings: [],
+        analysisMethod: 'mock' as const,
+        photoCount: photoUrls.length,
+        qualityTier: 'fair' as const,
+        marketValue: input.marketValue,
+      };
+    }
+    
+    const caseValues = {
+      claimReference: input.claimReference,
+      assetType: input.assetType,
+      assetDetails: input.assetDetails,
+      marketValue: input.marketValue.toString(),
+      // AI assessment fields are nullable for draft cases
+      estimatedSalvageValue: aiAssessment ? aiAssessment.estimatedSalvageValue.toString() : null,
+      reservePrice: aiAssessment ? aiAssessment.reservePrice.toString() : null,
+      damageSeverity: aiAssessment?.damageSeverity || null,
+      aiAssessment: aiAssessment ? {
+        labels: aiAssessment.labels,
+        confidenceScore: aiAssessment.confidenceScore,
+        damagePercentage: aiAssessment.damagePercentage,
+        processedAt: aiAssessment.processedAt,
+        // Enhanced fields for accuracy
+        damageScore: aiAssessment.damageScore,
+        confidence: aiAssessment.confidence,
+        estimatedRepairCost: aiAssessment.estimatedRepairCost,
+        isRepairable: aiAssessment.isRepairable,
+        isTotalLoss: aiAssessment.isTotalLoss, // NEW: Store total loss indicator
+        priceSource: aiAssessment.priceSource, // NEW: Store price source
+        recommendation: aiAssessment.recommendation,
+        warnings: aiAssessment.warnings,
+        analysisMethod: aiAssessment.analysisMethod,
+        photoCount: aiAssessment.photoCount,
+      } : null,
+      gpsLocation: [input.gpsLocation.latitude, input.gpsLocation.longitude] as [number, number],
+      locationName: input.locationName,
+      photos: photoUrls,
+      voiceNotes: input.voiceNotes || [],
+      status,
+      createdBy: input.createdBy,
+    };
+    
+    // DEBUG: Log what we're about to store in database
+    console.log('💾 Storing case in database with values:', {
+      claimReference: caseValues.claimReference,
+      damageSeverity: caseValues.damageSeverity,
+      estimatedSalvageValue: caseValues.estimatedSalvageValue,
+      reservePrice: caseValues.reservePrice,
+      aiAssessmentConfidence: caseValues.aiAssessment?.confidenceScore,
+    });
     
     const [createdCase] = await db
       .insert(salvageCases)
-      .values({
-        claimReference: input.claimReference,
-        assetType: input.assetType,
-        assetDetails: input.assetDetails,
-        marketValue: input.marketValue.toString(),
-        estimatedSalvageValue: aiAssessment.estimatedSalvageValue.toString(),
-        reservePrice: aiAssessment.reservePrice.toString(),
-        damageSeverity: aiAssessment.damageSeverity,
-        aiAssessment: {
-          labels: aiAssessment.labels,
-          confidenceScore: aiAssessment.confidenceScore,
-          damagePercentage: aiAssessment.damagePercentage,
-          processedAt: aiAssessment.processedAt,
-        },
-        gpsLocation: [input.gpsLocation.latitude, input.gpsLocation.longitude] as [number, number],
-        locationName: input.locationName,
-        photos: photoUrls,
-        voiceNotes: input.voiceNotes || [],
-        status,
-        createdBy: input.createdBy,
-      })
+      .values(caseValues)
       .returning();
+    
+    // DEBUG: Verify what was actually stored in database
+    console.log('✅ Case stored successfully in database:', {
+      id: createdCase.id,
+      claimReference: createdCase.claimReference,
+      damageSeverity: createdCase.damageSeverity,
+      estimatedSalvageValue: createdCase.estimatedSalvageValue,
+      reservePrice: createdCase.reservePrice,
+      aiConfidence: (createdCase.aiAssessment as any)?.confidenceScore,
+    });
 
     // Create audit log entry
     await logAction({
@@ -312,24 +484,31 @@ export async function createCase(
         assetType: createdCase.assetType,
         marketValue: createdCase.marketValue,
         status: createdCase.status,
+        isDraft: isDraft,
       },
     });
 
-    // Log AI assessment completion
-    await logAction({
-      userId: input.createdBy,
-      actionType: AuditActionType.AI_ASSESSMENT_COMPLETED,
-      entityType: AuditEntityType.CASE,
-      entityId: createdCase.id,
-      ipAddress,
-      deviceType,
-      userAgent,
-      afterState: {
-        confidenceScore: aiAssessment.confidenceScore,
-        damageSeverity: aiAssessment.damageSeverity,
-        estimatedSalvageValue: aiAssessment.estimatedSalvageValue,
-      },
-    });
+    // Log AI assessment completion only if assessment was performed
+    if (aiAssessment) {
+      await logAction({
+        userId: input.createdBy,
+        actionType: AuditActionType.AI_ASSESSMENT_COMPLETED,
+        entityType: AuditEntityType.CASE,
+        entityId: createdCase.id,
+        ipAddress,
+        deviceType,
+        userAgent,
+        afterState: {
+          confidenceScore: aiAssessment.confidenceScore,
+          damageSeverity: aiAssessment.damageSeverity,
+          estimatedSalvageValue: aiAssessment.estimatedSalvageValue,
+          estimatedRepairCost: aiAssessment.estimatedRepairCost,
+          isRepairable: aiAssessment.isRepairable,
+          analysisMethod: aiAssessment.analysisMethod,
+          warnings: aiAssessment.warnings
+        },
+      });
+    }
 
     console.log(`Case created successfully: ${createdCase.id}`);
 
@@ -342,14 +521,20 @@ export async function createCase(
       assetType: createdCase.assetType as AssetType,
       assetDetails: createdCase.assetDetails as AssetDetails,
       marketValue: parseFloat(createdCase.marketValue),
-      estimatedSalvageValue: parseFloat(createdCase.estimatedSalvageValue),
-      reservePrice: parseFloat(createdCase.reservePrice),
-      damageSeverity: createdCase.damageSeverity as 'minor' | 'moderate' | 'severe',
+      // Handle nullable AI assessment fields for draft cases
+      estimatedSalvageValue: createdCase.estimatedSalvageValue ? parseFloat(createdCase.estimatedSalvageValue) : 0,
+      reservePrice: createdCase.reservePrice ? parseFloat(createdCase.reservePrice) : 0,
+      damageSeverity: (createdCase.damageSeverity || 'none') as 'none' | 'minor' | 'moderate' | 'severe',
       aiAssessment: createdCase.aiAssessment as {
         labels: string[];
         confidenceScore: number;
         damagePercentage: number;
         processedAt: Date;
+      } || {
+        labels: [],
+        confidenceScore: 0,
+        damagePercentage: 0,
+        processedAt: new Date(),
       },
       gpsLocation: {
         latitude,

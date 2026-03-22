@@ -24,22 +24,57 @@ export interface GeolocationError {
 }
 
 /**
- * Get accurate geolocation using Google Maps Geolocation API
- * Falls back to browser geolocation if API fails or is unavailable
+ * Get accurate geolocation using browser GPS first, then Google API fallback
+ * Browser GPS is more accurate (5-15m) than Google API (IP-based, 100km+)
  */
 export async function getAccurateGeolocation(): Promise<GeolocationResult> {
-  // Try Google API first if online and API key is available
-  if (navigator.onLine && process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  
+  // Log which method we're using
+  console.log('🌍 Geolocation API Key configured:', !!apiKey);
+  console.log('🌍 Online status:', navigator.onLine);
+  console.log('🌍 Browser geolocation available:', isGeolocationAvailable());
+  
+  // Try browser GPS first (more accurate: 5-15m vs 100km+ for Google API)
+  if (isGeolocationAvailable()) {
+    console.log('🌍 Attempting browser GPS first (more accurate)...');
     try {
-      const googleLocation = await getGoogleGeolocation();
-      return googleLocation;
+      const browserLocation = await getBrowserGeolocation();
+      console.log('✅ Browser GPS succeeded:', browserLocation);
+      
+      // Only use browser GPS if accuracy is reasonable (< 100km)
+      // This filters out poor WiFi-based positioning on laptops
+      if (browserLocation.accuracy < 100000) {
+        console.log('✅ Browser GPS accuracy acceptable:', browserLocation.accuracy + 'm');
+        return browserLocation;
+      } else {
+        console.warn('⚠️ Browser GPS accuracy too poor (' + browserLocation.accuracy + 'm), trying Google API...');
+      }
     } catch (error) {
-      console.warn('Google Geolocation API failed, falling back to browser geolocation:', error);
+      console.warn('⚠️ Browser GPS failed, falling back to Google Geolocation API:', error);
     }
+  } else {
+    console.log('⚠️ Browser geolocation not available');
   }
 
-  // Fallback to browser geolocation
-  return await getBrowserGeolocation();
+  // Fallback to Google API if browser GPS fails or is unavailable
+  if (navigator.onLine && apiKey && apiKey !== 'your-google-maps-api-key-here' && apiKey !== '') {
+    console.log('🌍 Using Google Geolocation API as fallback...');
+    try {
+      const googleLocation = await getGoogleGeolocation();
+      console.log('✅ Google Geolocation API succeeded:', googleLocation);
+      return googleLocation;
+    } catch (error) {
+      console.error('❌ Google Geolocation API also failed:', error);
+      throw error;
+    }
+  } else {
+    console.error('❌ No geolocation methods available. Reason:', 
+      !navigator.onLine ? 'Offline' : 
+      !apiKey || apiKey === 'your-google-maps-api-key-here' || apiKey === '' ? 'API key not configured' : 
+      'Unknown');
+    throw new Error('No geolocation methods available');
+  }
 }
 
 /**
@@ -114,7 +149,7 @@ async function getBrowserGeolocation(): Promise<GeolocationResult> {
     const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
         enableHighAccuracy: true,
-        timeout: 30000, // 30 seconds
+        timeout: 10000, // 10 seconds (reduced from 30s for faster fallback)
         maximumAge: 0, // No cache
       });
     });

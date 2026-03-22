@@ -225,6 +225,42 @@ export async function POST(
         })
         .where(eq(salvageCases.id, auction.caseId));
 
+      // Generate pickup authorization document
+      const { generateDocument } = await import('@/features/documents/services/document.service');
+      const { notifyPickupAuthReady } = await import('@/features/notifications/services/notification.service');
+      const { documentReadyTemplate } = await import('@/features/notifications/templates/document-ready.template');
+      
+      try {
+        const pickupAuthDocument = await generateDocument(
+          payment.auctionId,
+          payment.vendorId,
+          'pickup_authorization',
+          'system'
+        );
+
+        // Send notification about pickup authorization
+        await notifyPickupAuthReady(vendorUser.id, pickupAuthDocument.id);
+
+        // Send email with pickup authorization
+        await emailService.sendEmail({
+          to: vendorUser.email,
+          subject: 'Pickup Authorization Ready - NEM Insurance',
+          html: documentReadyTemplate({
+            vendorName: vendorUser.fullName,
+            documentType: 'Pickup Authorization',
+            documentTitle: 'Vehicle Pickup Authorization',
+            auctionId: payment.auctionId,
+            assetDescription: `${caseDetails.assetType.toUpperCase()} - ${caseDetails.claimReference}`,
+            downloadUrl: `${process.env.NEXTAUTH_URL}/vendor/documents`,
+          }),
+        });
+
+        console.log(`✅ Pickup authorization generated for auction ${payment.auctionId}`);
+      } catch (docError) {
+        console.error('Failed to generate pickup authorization:', docError);
+        // Don't fail the payment verification if document generation fails
+      }
+
       // Send SMS notification
       const smsMessage = `Payment verified! Your pickup authorization code is: ${pickupAuthCode}. Item: ${caseDetails.assetType}. Amount: ₦${parseFloat(payment.amount).toLocaleString()}. Present this code at pickup location.`;
       

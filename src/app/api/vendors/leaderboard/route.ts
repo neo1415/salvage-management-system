@@ -73,7 +73,7 @@ async function calculateLeaderboard(): Promise<LeaderboardEntry[]> {
     .from(vendors)
     .innerJoin(users, eq(vendors.userId, users.id))
     .where(eq(vendors.status, 'approved'))
-    .orderBy(desc(sql`(${vendors.performanceStats}->>'totalWins')::int`))
+    .orderBy(desc(sql`COALESCE((${vendors.performanceStats}->>'totalWins')::int, 0)`))
     .limit(10);
 
   // For each vendor, calculate total spent this month
@@ -85,7 +85,7 @@ async function calculateLeaderboard(): Promise<LeaderboardEntry[]> {
     // Calculate total spent this month from closed auctions where vendor won
     const totalSpentResult = await db
       .select({
-        totalSpent: sql<string>`COALESCE(SUM(${auctions.currentBid}), 0)`,
+        totalSpent: sql<string>`COALESCE(SUM(CAST(${auctions.currentBid} AS NUMERIC)), 0)`,
       })
       .from(auctions)
       .where(
@@ -98,15 +98,15 @@ async function calculateLeaderboard(): Promise<LeaderboardEntry[]> {
 
     const totalSpent = totalSpentResult[0]?.totalSpent || '0';
 
-    // Get performance stats
-    const stats = vendor.performanceStats as {
-      totalBids: number;
-      totalWins: number;
-      winRate: number;
-      avgPaymentTimeHours: number;
-      onTimePickupRate: number;
-      fraudFlags: number;
-    };
+    // Get performance stats with safe defaults
+    const stats = (vendor.performanceStats as {
+      totalBids?: number;
+      totalWins?: number;
+      winRate?: number;
+      avgPaymentTimeHours?: number;
+      onTimePickupRate?: number;
+      fraudFlags?: number;
+    }) || {};
 
     leaderboardEntries.push({
       rank: i + 1,

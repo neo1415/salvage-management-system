@@ -13,7 +13,7 @@ import { openDB, DBSchema, IDBPDatabase } from 'idb';
 export interface OfflineCase {
   id: string; // Temporary ID for offline case
   claimReference: string;
-  assetType: 'vehicle' | 'property' | 'electronics';
+  assetType: 'vehicle' | 'property' | 'electronics' | 'appliance' | 'jewelry' | 'furniture' | 'machinery';
   assetDetails: Record<string, unknown>;
   marketValue: number;
   photos: string[]; // Base64 encoded images

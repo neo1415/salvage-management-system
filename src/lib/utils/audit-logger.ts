@@ -32,6 +32,7 @@ export enum AuditActionType {
   CASE_CREATED_OFFLINE = 'case_created_offline',
   CASE_SYNCED = 'case_synced',
   AI_ASSESSMENT_COMPLETED = 'ai_assessment_completed',
+  PRICE_OVERRIDE = 'price_override',
   
   // Bidding actions
   BID_PLACED = 'bid_placed',
@@ -84,6 +85,21 @@ export enum AuditActionType {
   OUTBID_NOTIFICATION_SENT = 'outbid_notification_sent',
   NOTIFICATION_SENT = 'notification_sent',
   
+  // Document actions
+  DOCUMENT_GENERATED = 'document_generated',
+  DOCUMENT_SIGNED = 'document_signed',
+  DOCUMENT_DOWNLOADED = 'document_downloaded',
+  DOCUMENT_VOIDED = 'document_voided',
+  PAYMENT_BLOCKED_NO_WAIVER = 'payment_blocked_no_waiver',
+  PAYMENT_UNLOCKED_WAIVER_SIGNED = 'payment_unlocked_waiver_signed',
+  NOTIFICATION_FAILED = 'notification_failed',
+  DOCUMENT_GENERATION_FAILED = 'document_generation_failed',
+  DOCUMENT_SIGNING_PROGRESS = 'document_signing_progress',
+  
+  // Pickup actions
+  PICKUP_CONFIRMED_VENDOR = 'pickup_confirmed_vendor',
+  PICKUP_CONFIRMED_ADMIN = 'pickup_confirmed_admin',
+  
   // Reporting actions
   LEADERBOARD_VIEWED = 'leaderboard_viewed',
   REPORT_GENERATED = 'report_generated',
@@ -105,6 +121,7 @@ export enum AuditEntityType {
   WALLET = 'wallet',
   KYC = 'kyc',
   NOTIFICATION = 'notification',
+  DOCUMENT = 'document',
   REPORT = 'report',
   RATING = 'rating',
   FRAUD_FLAG = 'fraud_flag',

@@ -18,13 +18,35 @@ import { eq, and, arrayContains } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { validatePriceOverrides } from '@/lib/validation/price-validation';
+
+/**
+ * Price override data structure
+ * Allows managers to override AI-estimated prices
+ */
+interface PriceOverrides {
+  marketValue?: number;
+  repairCost?: number;
+  salvageValue?: number;
+  reservePrice?: number;
+}
 
 /**
  * Approval request body
+ * 
+ * API Contract:
+ * - action: 'approve' or 'reject'
+ * - comment: Optional for approval, required for rejection (min 10 chars)
+ * - priceOverrides: Optional price adjustments (requires comment if provided)
+ * - auctionDurationHours: Optional custom auction duration in hours (default: 120 hours = 5 days)
+ * 
+ * Requirements: 11.1
  */
 interface ApprovalRequest {
   action: 'approve' | 'reject';
   comment?: string;
+  priceOverrides?: PriceOverrides;
+  auctionDurationHours?: number;
 }
 
 /**
@@ -79,6 +101,20 @@ export async function POST(
       );
     }
 
+    // Validate price overrides if provided (Requirements: 11.2, 11.5)
+    if (body.priceOverrides && Object.keys(body.priceOverrides).length > 0) {
+      // Require comment when overrides are provided (Requirement: 11.2)
+      if (!body.comment || body.comment.trim().length < 10) {
+        return NextResponse.json(
+          { 
+            error: 'Comment is required when overriding prices (minimum 10 characters)',
+            details: 'Please explain why you are adjusting these prices'
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Get case by ID
     const caseId = params.id;
     const [caseRecord] = await db
@@ -102,6 +138,28 @@ export async function POST(
       );
     }
 
+    // Validate price override relationships if provided (Requirements: 11.2, 11.5)
+    if (body.priceOverrides && Object.keys(body.priceOverrides).length > 0) {
+      const aiEstimates = {
+        marketValue: parseFloat(caseRecord.marketValue),
+        salvageValue: parseFloat(caseRecord.estimatedSalvageValue),
+        reservePrice: parseFloat(caseRecord.reservePrice),
+      };
+
+      const validationResult = validatePriceOverrides(body.priceOverrides, aiEstimates);
+
+      if (!validationResult.isValid) {
+        return NextResponse.json(
+          { 
+            error: 'Price override validation failed',
+            details: validationResult.errors,
+            warnings: validationResult.warnings,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Get case creator details for notifications
     const [creator] = await db
       .select()
@@ -112,10 +170,38 @@ export async function POST(
     if (body.action === 'approve') {
       // APPROVE CASE
       
-      // Update case status to 'approved'
+      // Determine final values to use (Requirements: 6.1, 6.2, 6.3, 11.3, 11.4)
+      const aiEstimates = {
+        marketValue: parseFloat(caseRecord.marketValue),
+        repairCost: caseRecord.aiAssessment?.estimatedRepairCost || 0,
+        salvageValue: parseFloat(caseRecord.estimatedSalvageValue),
+        reservePrice: parseFloat(caseRecord.reservePrice),
+        confidence: caseRecord.aiAssessment?.confidence?.overall || caseRecord.aiAssessment?.confidenceScore || 0,
+      };
+
+      // Use overridden prices if provided, else AI estimates
+      const finalMarketValue = body.priceOverrides?.marketValue ?? aiEstimates.marketValue;
+      const finalRepairCost = body.priceOverrides?.repairCost ?? aiEstimates.repairCost;
+      const finalSalvageValue = body.priceOverrides?.salvageValue ?? aiEstimates.salvageValue;
+      const finalReservePrice = body.priceOverrides?.reservePrice ?? aiEstimates.reservePrice;
+
+      // Update case status to 'approved' and store both AI estimates and overrides
       const [updatedCase] = await db
         .update(salvageCases)
         .set({
+          // Update with final values
+          marketValue: finalMarketValue.toString(),
+          estimatedSalvageValue: finalSalvageValue.toString(),
+          reservePrice: finalReservePrice.toString(),
+          // Store original AI estimates for audit trail (Requirement: 6.4, 11.4)
+          aiEstimates: aiEstimates,
+          // Store manager overrides if any (Requirement: 6.4, 11.4)
+          managerOverrides: body.priceOverrides ? {
+            ...body.priceOverrides,
+            reason: body.comment!,
+            overriddenBy: session.user.id,
+            overriddenAt: new Date().toISOString(),
+          } : null,
           status: 'approved',
           approvedBy: session.user.id,
           approvedAt: new Date(),
@@ -137,9 +223,36 @@ export async function POST(
         )
       );
 
-      // Auto-create auction
+      // Create audit log for price overrides if any (Requirement: 7.1, 7.2, 7.3)
+      if (body.priceOverrides && Object.keys(body.priceOverrides).length > 0) {
+        await logAction(
+          createAuditLogData(
+            request,
+            session.user.id,
+            AuditActionType.PRICE_OVERRIDE,
+            AuditEntityType.CASE,
+            caseId,
+            {
+              aiEstimates: aiEstimates,
+            },
+            {
+              managerOverrides: body.priceOverrides,
+              reason: body.comment,
+              finalValues: {
+                marketValue: finalMarketValue,
+                repairCost: finalRepairCost,
+                salvageValue: finalSalvageValue,
+                reservePrice: finalReservePrice,
+              },
+            }
+          )
+        );
+      }
+
+      // Auto-create auction with custom duration
       const now = new Date();
-      const endTime = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000); // 5 days from now
+      const auctionDurationHours = body.auctionDurationHours || 120; // Default to 5 days (120 hours)
+      const endTime = new Date(now.getTime() + auctionDurationHours * 60 * 60 * 1000);
 
       const [auction] = await db
         .insert(auctions)
@@ -170,6 +283,7 @@ export async function POST(
             caseId: caseId,
             startTime: auction.startTime,
             endTime: auction.endTime,
+            durationHours: auctionDurationHours,
             status: auction.status,
           }
         )
@@ -207,10 +321,13 @@ export async function POST(
 
       // Send notifications to matching vendors
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      const durationText = auctionDurationHours < 24 
+        ? `${auctionDurationHours} hour${auctionDurationHours !== 1 ? 's' : ''}`
+        : `${Math.round(auctionDurationHours / 24)} day${Math.round(auctionDurationHours / 24) !== 1 ? 's' : ''}`;
 
       for (const vendor of matchingVendors) {
         // Send SMS notification
-        const smsMessage = `New auction available! ${assetType.toUpperCase()} - Reserve: ₦${caseRecord.reservePrice}. Ends in 5 days. Bid now: ${appUrl}/vendor/auctions/${auction.id}`;
+        const smsMessage = `New auction available! ${assetType.toUpperCase()} - Reserve: ₦${caseRecord.reservePrice}. Ends in ${durationText}. Bid now: ${appUrl}/vendor/auctions/${auction.id}`;
         
         try {
           await smsService.sendSMS({
@@ -239,9 +356,75 @@ export async function POST(
         }
       }
 
+      // Notify case creator (adjuster) about approval (Requirement: 6.5)
+      if (creator) {
+        const hasOverrides = body.priceOverrides && Object.keys(body.priceOverrides).length > 0;
+        
+        // Send SMS notification
+        const smsMessage = hasOverrides
+          ? `Your case ${caseRecord.claimReference} was approved with price adjustments by ${user.fullName}. Check your email for details.`
+          : `Your case ${caseRecord.claimReference} was approved by ${user.fullName}. Auction is now live!`;
+        
+        try {
+          await smsService.sendSMS({
+            to: creator.phone,
+            message: smsMessage,
+          });
+        } catch (error) {
+          console.error(`Failed to send SMS to adjuster ${creator.id}:`, error);
+        }
+
+        // Send email notification with price adjustment details
+        try {
+          // Build price adjustments object if overrides exist
+          const priceAdjustments = hasOverrides ? {
+            ...(body.priceOverrides!.marketValue !== undefined && {
+              marketValue: {
+                original: aiEstimates.marketValue,
+                adjusted: body.priceOverrides!.marketValue,
+              },
+            }),
+            ...(body.priceOverrides!.repairCost !== undefined && {
+              repairCost: {
+                original: aiEstimates.repairCost,
+                adjusted: body.priceOverrides!.repairCost,
+              },
+            }),
+            ...(body.priceOverrides!.salvageValue !== undefined && {
+              salvageValue: {
+                original: aiEstimates.salvageValue,
+                adjusted: body.priceOverrides!.salvageValue,
+              },
+            }),
+            ...(body.priceOverrides!.reservePrice !== undefined && {
+              reservePrice: {
+                original: aiEstimates.reservePrice,
+                adjusted: body.priceOverrides!.reservePrice,
+              },
+            }),
+          } : undefined;
+
+          await emailService.sendCaseApprovalEmail(creator.email, {
+            adjusterName: creator.fullName,
+            caseId: caseId,
+            claimReference: caseRecord.claimReference,
+            assetType: caseRecord.assetType,
+            status: 'approved',
+            comment: body.comment,
+            managerName: user.fullName,
+            appUrl: appUrl,
+            priceAdjustments: priceAdjustments,
+          });
+        } catch (error) {
+          console.error(`Failed to send email to adjuster ${creator.id}:`, error);
+        }
+      }
+
       return NextResponse.json({
         success: true,
-        message: 'Case approved and auction created successfully',
+        message: body.priceOverrides 
+          ? 'Case approved with price adjustments and auction created successfully'
+          : 'Case approved and auction created successfully',
         data: {
           case: {
             id: updatedCase.id,
@@ -249,12 +432,14 @@ export async function POST(
             status: 'active_auction',
             approvedBy: updatedCase.approvedBy,
             approvedAt: updatedCase.approvedAt,
+            priceOverridesApplied: !!body.priceOverrides,
           },
           auction: {
             id: auction.id,
             startTime: auction.startTime,
             endTime: auction.endTime,
             status: auction.status,
+            reservePrice: finalReservePrice,
           },
           notifiedVendors: matchingVendors.length,
         },

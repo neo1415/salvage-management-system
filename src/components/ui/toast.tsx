@@ -75,12 +75,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ showToast, success, error, warning, info }}>
       {children}
       
-      {/* Toast Container */}
-      <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm w-full pointer-events-none">
+      {/* Toast Container - Top Right Corner, Always Visible */}
+      <div className="fixed top-4 right-4 z-[9999] space-y-2 max-w-sm w-full pointer-events-none px-4 sm:px-0">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className="pointer-events-auto bg-white rounded-lg shadow-lg border-l-4 p-4 animate-slide-in"
+            className="pointer-events-auto bg-white rounded-lg shadow-2xl border-l-4 p-4 animate-slide-in"
             style={{
               borderLeftColor:
                 toast.type === 'success' ? '#10b981' :

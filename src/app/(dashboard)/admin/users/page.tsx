@@ -12,27 +12,13 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import ActionModal from './action-modal';
-
-interface User {
-  id: string;
-  email: string;
-  phone: string;
-  fullName: string;
-  role: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-  lastLoginAt: string | null;
-  loginDeviceType: string | null;
-}
+import { VirtualizedList } from '@/components/ui/virtualized-list';
+import { useVirtualizedList } from '@/hooks/use-virtualized-list';
+import { User } from '@/hooks/queries/use-users';
 
 type ActionModalType = 'suspend' | 'unsuspend' | 'delete' | 'resetPassword' | 'changeRole' | 'view' | null;
 
 export default function AdminUserManagement() {
-  
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   
   // Filter states
   const [roleFilter, setRoleFilter] = useState<string>('all');
@@ -58,12 +44,21 @@ export default function AdminUserManagement() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
-  const fetchUsers = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const params = new URLSearchParams();
+  // Virtualized list for users
+  const {
+    items: users,
+    isLoading,
+    isFetching,
+    hasMore,
+    loadMore,
+    reset,
+  } = useVirtualizedList<User>({
+    queryKey: ['users', { role: roleFilter, status: statusFilter, search: searchQuery }],
+    fetchFn: async (page) => {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        pageSize: '50',
+      });
       if (roleFilter !== 'all') params.append('role', roleFilter);
       if (statusFilter !== 'all') params.append('status', statusFilter);
       if (searchQuery) params.append('search', searchQuery);
@@ -76,17 +71,18 @@ export default function AdminUserManagement() {
       }
 
       const data = await response.json();
-      setUsers(data.users || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch users');
-    } finally {
-      setLoading(false);
-    }
-  }, [roleFilter, statusFilter, searchQuery]);
+      return {
+        data: data.users || [],
+        hasMore: data.hasMore || false,
+      };
+    },
+    pageSize: 50,
+  });
 
+  // Reset list when filters change
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    reset();
+  }, [roleFilter, statusFilter, searchQuery, reset]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,7 +147,7 @@ export default function AdminUserManagement() {
       });
 
       // Refresh user list
-      fetchUsers();
+      reset();
 
       // Auto-close modal after 10 seconds
       setTimeout(() => {
@@ -222,6 +218,10 @@ export default function AdminUserManagement() {
     setActionModal(null);
     setSelectedUser(null);
   }, []);
+
+  const handleActionSuccess = useCallback(() => {
+    reset();
+  }, [reset]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
@@ -302,14 +302,14 @@ export default function AdminUserManagement() {
       </div>
 
       {/* Error Message */}
-      {error && (
+      {!isLoading && users.length === 0 && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-          {error}
+          No users found matching your filters
         </div>
       )}
 
       {/* Loading State */}
-      {loading && (
+      {isLoading && users.length === 0 && (
         <div className="bg-white rounded-lg shadow-sm p-12 text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-600"></div>
           <p className="mt-4 text-gray-600">Loading users...</p>
@@ -317,138 +317,165 @@ export default function AdminUserManagement() {
       )}
 
       {/* Users Table */}
-      {!loading && users.length > 0 && (
+      {users.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    User
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contact
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Role
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Last Login
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Created
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {users.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
-                      <div className="text-sm text-gray-500">{user.id.substring(0, 8)}...</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{user.email}</div>
-                      <div className="text-sm text-gray-500">{user.phone}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getRoleColor(user.role)}`}>
-                        {getRoleDisplayName(user.role)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.status)}`}>
-                        {getStatusDisplayName(user.status)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {user.lastLoginAt ? (
-                        <>
-                          <div>{new Date(user.lastLoginAt).toLocaleDateString()}</div>
-                          <div className="text-xs">{user.loginDeviceType || 'Unknown'}</div>
-                        </>
-                      ) : (
-                        <span className="text-gray-400">Never</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(user.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="relative inline-block text-left">
-                        <button
-                          onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
-                          className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-burgundy-500"
-                        >
-                          Actions
-                          <svg className="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-
-                        {openDropdownId === user.id && (
-                          <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
-                            <div className="py-1" role="menu">
-                              <button
-                                onClick={() => handleAction('view', user)}
-                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                              >
-                                👁️ View Details
-                              </button>
-                              <button
-                                onClick={() => handleAction('changeRole', user)}
-                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                              >
-                                🔄 Change Role
-                              </button>
-                              <button
-                                onClick={() => handleAction('resetPassword', user)}
-                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                              >
-                                🔑 Reset Password
-                              </button>
-                              {user.status === 'suspended' ? (
-                                <button
-                                  onClick={() => handleAction('unsuspend', user)}
-                                  className="block w-full text-left px-4 py-2 text-sm text-green-700 hover:bg-green-50"
-                                >
-                                  ✅ Unsuspend Account
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => handleAction('suspend', user)}
-                                  className="block w-full text-left px-4 py-2 text-sm text-orange-700 hover:bg-orange-50"
-                                >
-                                  ⚠️ Suspend Account
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleAction('delete', user)}
-                                className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50"
-                              >
-                                🗑️ Delete User
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </td>
+          {users.length > 50 ? (
+            // Use virtualization for large lists (> 50 items)
+            <div className="h-[calc(100vh-400px)]">
+              <VirtualizedList
+                items={users}
+                renderItem={(user) => (
+                  <UserRow
+                    key={user.id}
+                    user={user}
+                    openDropdownId={openDropdownId}
+                    setOpenDropdownId={setOpenDropdownId}
+                    handleAction={handleAction}
+                    getRoleDisplayName={getRoleDisplayName}
+                    getStatusDisplayName={getStatusDisplayName}
+                    getStatusColor={getStatusColor}
+                    getRoleColor={getRoleColor}
+                  />
+                )}
+                estimateSize={80}
+                onLoadMore={loadMore}
+                hasMore={hasMore}
+                isLoading={isFetching}
+              />
+            </div>
+          ) : (
+            // Regular table rendering for small lists (<= 50 items)
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      User
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Contact
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Role
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Last Login
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Created
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {users.map((user) => (
+                    <tr key={user.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
+                        <div className="text-sm text-gray-500">{user.id.substring(0, 8)}...</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{user.email}</div>
+                        <div className="text-sm text-gray-500">{user.phone}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getRoleColor(user.role)}`}>
+                          {getRoleDisplayName(user.role)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.status)}`}>
+                          {getStatusDisplayName(user.status)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {user.lastLoginAt ? (
+                          <>
+                            <div>{new Date(user.lastLoginAt).toLocaleDateString()}</div>
+                            <div className="text-xs">{user.loginDeviceType || 'Unknown'}</div>
+                          </>
+                        ) : (
+                          <span className="text-gray-400">Never</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(user.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="relative inline-block text-left">
+                          <button
+                            onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
+                            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-burgundy-500"
+                          >
+                            Actions
+                            <svg className="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+
+                          {openDropdownId === user.id && (
+                            <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                              <div className="py-1" role="menu">
+                                <button
+                                  onClick={() => handleAction('view', user)}
+                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                >
+                                  👁️ View Details
+                                </button>
+                                <button
+                                  onClick={() => handleAction('changeRole', user)}
+                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                >
+                                  🔄 Change Role
+                                </button>
+                                <button
+                                  onClick={() => handleAction('resetPassword', user)}
+                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                >
+                                  🔑 Reset Password
+                                </button>
+                                {user.status === 'suspended' ? (
+                                  <button
+                                    onClick={() => handleAction('unsuspend', user)}
+                                    className="block w-full text-left px-4 py-2 text-sm text-green-700 hover:bg-green-50"
+                                  >
+                                    ✅ Unsuspend Account
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleAction('suspend', user)}
+                                    className="block w-full text-left px-4 py-2 text-sm text-orange-700 hover:bg-orange-50"
+                                  >
+                                    ⚠️ Suspend Account
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleAction('delete', user)}
+                                  className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                                >
+                                  🗑️ Delete User
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
       {/* Empty State */}
-      {!loading && users.length === 0 && (
+      {!isLoading && users.length === 0 && (
         <div className="bg-white rounded-lg shadow-sm p-12 text-center">
           <svg
             className="mx-auto h-12 w-12 text-gray-400"
@@ -639,8 +666,126 @@ export default function AdminUserManagement() {
         actionModal={actionModal}
         selectedUser={selectedUser}
         onClose={closeActionModal}
-        onSuccess={fetchUsers}
+        onSuccess={handleActionSuccess}
       />
+    </div>
+  );
+}
+
+// UserRow Component (for virtualized rendering)
+function UserRow({
+  user,
+  openDropdownId,
+  setOpenDropdownId,
+  handleAction,
+  getRoleDisplayName,
+  getStatusDisplayName,
+  getStatusColor,
+  getRoleColor,
+}: {
+  user: User;
+  openDropdownId: string | null;
+  setOpenDropdownId: (id: string | null) => void;
+  handleAction: (action: ActionModalType, user: User) => void;
+  getRoleDisplayName: (role: string) => string;
+  getStatusDisplayName: (status: string) => string;
+  getStatusColor: (status: string) => string;
+  getRoleColor: (role: string) => string;
+}) {
+  return (
+    <div className="border-b border-gray-200 hover:bg-gray-50 px-6 py-4">
+      <div className="grid grid-cols-7 gap-4 items-center">
+        <div>
+          <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
+          <div className="text-sm text-gray-500">{user.id.substring(0, 8)}...</div>
+        </div>
+        <div>
+          <div className="text-sm text-gray-900">{user.email}</div>
+          <div className="text-sm text-gray-500">{user.phone}</div>
+        </div>
+        <div>
+          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getRoleColor(user.role)}`}>
+            {getRoleDisplayName(user.role)}
+          </span>
+        </div>
+        <div>
+          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.status)}`}>
+            {getStatusDisplayName(user.status)}
+          </span>
+        </div>
+        <div className="text-sm text-gray-500">
+          {user.lastLoginAt ? (
+            <>
+              <div>{new Date(user.lastLoginAt).toLocaleDateString()}</div>
+              <div className="text-xs">{user.loginDeviceType || 'Unknown'}</div>
+            </>
+          ) : (
+            <span className="text-gray-400">Never</span>
+          )}
+        </div>
+        <div className="text-sm text-gray-500">
+          {new Date(user.createdAt).toLocaleDateString()}
+        </div>
+        <div className="text-right">
+          <div className="relative inline-block text-left">
+            <button
+              onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-burgundy-500"
+            >
+              Actions
+              <svg className="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+
+            {openDropdownId === user.id && (
+              <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                <div className="py-1" role="menu">
+                  <button
+                    onClick={() => handleAction('view', user)}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    👁️ View Details
+                  </button>
+                  <button
+                    onClick={() => handleAction('changeRole', user)}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    🔄 Change Role
+                  </button>
+                  <button
+                    onClick={() => handleAction('resetPassword', user)}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    🔑 Reset Password
+                  </button>
+                  {user.status === 'suspended' ? (
+                    <button
+                      onClick={() => handleAction('unsuspend', user)}
+                      className="block w-full text-left px-4 py-2 text-sm text-green-700 hover:bg-green-50"
+                    >
+                      ✅ Unsuspend Account
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleAction('suspend', user)}
+                      className="block w-full text-left px-4 py-2 text-sm text-orange-700 hover:bg-orange-50"
+                    >
+                      ⚠️ Suspend Account
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleAction('delete', user)}
+                    className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                  >
+                    🗑️ Delete User
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -20,7 +20,23 @@ export async function POST(request: NextRequest) {
   try {
     // Parse request body
     const body = await request.json();
-    const { phone } = body;
+    const { phone, context = 'authentication', auctionId } = body;
+
+    // Validate context
+    if (context !== 'authentication' && context !== 'bidding') {
+      return NextResponse.json(
+        { success: false, message: 'Invalid OTP context' },
+        { status: 400 }
+      );
+    }
+
+    // For bidding context, auctionId is required
+    if (context === 'bidding' && !auctionId) {
+      return NextResponse.json(
+        { success: false, message: 'Auction ID is required for bidding OTP' },
+        { status: 400 }
+      );
+    }
 
     // If phone is not provided, try to get it from session
     let phoneNumber = phone;
@@ -70,13 +86,15 @@ export async function POST(request: NextRequest) {
     const userAgent = request.headers.get('user-agent') || 'unknown';
     const deviceType = getDeviceType(userAgent);
 
-    // Send OTP with email backup if available
+    // Send OTP with context-aware rate limiting
     const result = await otpService.sendOTP(
       phoneNumber, 
       ipAddress, 
       deviceType,
       userEmail,
-      userFullName
+      userFullName,
+      context,
+      auctionId
     );
 
     if (!result.success) {

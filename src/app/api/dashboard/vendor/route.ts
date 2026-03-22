@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { auctions, bids, payments, vendors } from '@/lib/db/schema';
+import { auctions, bids, payments, vendors, salvageCases } from '@/lib/db/schema';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 
@@ -50,6 +50,20 @@ interface VendorDashboardData {
   badges: Badge[];
   comparisons: Comparison[];
   lastUpdated: string;
+  vendorTier: 'tier1_bvn' | 'tier2_full';
+  bidLimit?: number;
+  pendingPickupConfirmations: PendingPickupConfirmation[];
+}
+
+interface PendingPickupConfirmation {
+  auctionId: string;
+  pickupConfirmedVendor: boolean;
+  pickupConfirmedAdmin: boolean;
+  case: {
+    claimReference: string;
+    assetType: string;
+    assetDetails: Record<string, unknown>;
+  };
 }
 
 export async function GET() {
@@ -103,7 +117,11 @@ export async function GET() {
 
       if (cachedData) {
         console.log('[Dashboard API] Returning cached data');
-        return NextResponse.json(cachedData);
+        // Backward compatibility: older cache entries won't have this field.
+        return NextResponse.json({
+          ...cachedData,
+          pendingPickupConfirmations: cachedData.pendingPickupConfirmations ?? [],
+        });
       }
     } catch (cacheError) {
       console.warn('[Dashboard API] Cache read error (continuing without cache):', cacheError);
@@ -121,11 +139,52 @@ export async function GET() {
     // Calculate comparison to last month
     const comparisons = await calculateComparisons(vendor.id, performanceStats);
 
+    console.log('[Dashboard API] Fetching pending pickup confirmations...');
+    // Pending means vendor has not confirmed pickup yet.
+    // Additionally gate to escrow_wallet payments that are verified, so pickup UI only
+    // appears when pickup authorization should already exist.
+    const pendingPickupConfirmations = await db
+      .select({
+        auctionId: auctions.id,
+        pickupConfirmedVendor: auctions.pickupConfirmedVendor,
+        pickupConfirmedAdmin: auctions.pickupConfirmedAdmin,
+        case: {
+          claimReference: salvageCases.claimReference,
+          assetType: salvageCases.assetType,
+          assetDetails: salvageCases.assetDetails,
+        },
+      })
+      .from(auctions)
+      .innerJoin(
+        payments,
+        and(
+          eq(payments.auctionId, auctions.id),
+          eq(payments.vendorId, vendor.id)
+        )
+      )
+      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+      .where(
+        and(
+          eq(auctions.currentBidder, vendor.id),
+          eq(auctions.pickupConfirmedVendor, false),
+          eq(payments.paymentMethod, 'escrow_wallet'),
+          eq(payments.status, 'verified')
+        )
+      );
+
+    // Ensure one entry per auction (join duplication guard).
+    const pendingPickupConfirmationsUnique = Array.from(
+      new Map(pendingPickupConfirmations.map((p) => [p.auctionId, p])).values()
+    );
+
     const dashboardData: VendorDashboardData = {
       performanceStats,
       badges,
       comparisons,
       lastUpdated: new Date().toISOString(),
+      vendorTier: vendor.tier as 'tier1_bvn' | 'tier2_full',
+      bidLimit: vendor.tier === 'tier1_bvn' ? 500000 : undefined, // ₦500k limit for Tier 1
+      pendingPickupConfirmations: pendingPickupConfirmationsUnique,
     };
 
     // Cache the data for 5 minutes (300 seconds)

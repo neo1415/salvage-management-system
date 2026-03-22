@@ -5,6 +5,8 @@ import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register'
 import { InstallPrompt } from '@/components/pwa/install-prompt';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { AuthProvider } from '@/lib/auth/auth-provider';
+import { QueryProvider } from '@/lib/query-provider';
+import { ToastProvider } from '@/components/ui/toast';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
@@ -111,10 +113,14 @@ export default function RootLayout({
       </head>
       <body className={inter.className} suppressHydrationWarning>
         <AuthProvider>
-          <ServiceWorkerRegister />
-          <OfflineIndicator />
-          <InstallPrompt />
-          {children}
+          <QueryProvider>
+            <ToastProvider>
+              <ServiceWorkerRegister />
+              <OfflineIndicator />
+              <InstallPrompt />
+              {children}
+            </ToastProvider>
+          </QueryProvider>
         </AuthProvider>
       </body>
     </html>

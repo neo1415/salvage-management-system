@@ -66,7 +66,7 @@ export async function trackAuctionView(
 
 /**
  * Increment watching count for an auction
- * Called after vendor has viewed auction for >10 seconds
+ * Called when vendor starts watching an auction
  * 
  * @param auctionId - Auction ID
  * @param vendorId - Vendor ID
@@ -80,24 +80,12 @@ export async function incrementWatchingCount(
 ): Promise<number> {
   try {
     const watchingKey = `${WATCHING_KEY_PREFIX}${auctionId}`;
-    const viewerKey = `${VIEWER_KEY_PREFIX}${auctionId}:${vendorId}`;
 
-    // Check if vendor has been viewing for at least 10 seconds
-    const viewStartTime = await kv.get<number>(viewerKey);
-    if (!viewStartTime) {
-      return await getWatchingCount(auctionId);
-    }
-
-    const viewDuration = Date.now() - viewStartTime;
-    if (viewDuration < WATCHING_THRESHOLD_MS) {
-      return await getWatchingCount(auctionId);
-    }
-
-    // Add vendor to watching set
+    // Add vendor to watching set (Redis SET automatically handles duplicates)
     await kv.sadd(watchingKey, vendorId);
 
-    // Set expiry on watching set (1 hour)
-    await kv.expire(watchingKey, 3600);
+    // Set expiry on watching set (24 hours for persistence across page refreshes)
+    await kv.expire(watchingKey, 86400);
 
     // Get updated count
     const count = await getWatchingCount(auctionId);
@@ -121,10 +109,12 @@ export async function incrementWatchingCount(
       },
     });
 
+    console.log(`✅ Vendor ${vendorId} started watching auction ${auctionId}, count: ${count}`);
     return count;
   } catch (error) {
     console.error('Error incrementing watching count:', error);
-    throw new Error('Failed to increment watching count');
+    // Return 1 as fallback (at least this vendor is watching)
+    return 1;
   }
 }
 
@@ -174,10 +164,12 @@ export async function decrementWatchingCount(
       },
     });
 
+    console.log(`✅ Vendor ${vendorId} stopped watching auction ${auctionId}, count: ${count}`);
     return count;
   } catch (error) {
     console.error('Error decrementing watching count:', error);
-    throw new Error('Failed to decrement watching count');
+    // Return 0 as fallback
+    return 0;
   }
 }
 

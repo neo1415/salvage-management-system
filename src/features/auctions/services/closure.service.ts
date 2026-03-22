@@ -21,6 +21,11 @@ import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/u
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { escrowService } from '@/features/payments/services/escrow.service';
+import {
+  createAuctionWonNotification,
+  createAuctionLostNotification,
+} from '@/features/notifications/services/notification.service';
+import { generateDocument } from '@/features/documents/services/document.service';
 
 /**
  * Auction closure result
@@ -116,6 +121,9 @@ export class AuctionClosureService {
    * - Send SMS + Email + Push notification with payment link
    * - Create audit log entry
    * 
+   * IDEMPOTENCY: Safe to call multiple times. If auction is already closed,
+   * returns success without re-processing. Prevents duplicate closures.
+   * 
    * @param auctionId - Auction ID
    * @returns Auction closure result
    */
@@ -136,14 +144,28 @@ export class AuctionClosureService {
         };
       }
 
-      // Check if auction has already been closed
+      // IDEMPOTENCY CHECK: If auction is already closed, return success
       if (auction.status === 'closed') {
-        console.log(`Auction ${auctionId} is already closed`);
+        console.log(`✅ Auction ${auctionId} is already closed (idempotent check)`);
+        console.log(`   - Status: ${auction.status}`);
+        console.log(`   - Winner: ${auction.currentBidder || 'No winner'}`);
+        console.log(`   - Winning Bid: ${auction.currentBid ? `₦${parseFloat(auction.currentBid).toLocaleString()}` : 'N/A'}`);
+        console.log(`   - Skipping duplicate closure`);
         return {
           success: true,
           auctionId,
           winnerId: auction.currentBidder || undefined,
           winningBid: auction.currentBid ? parseFloat(auction.currentBid) : undefined,
+        };
+      }
+
+      // IDEMPOTENCY CHECK: If auction is forfeited, don't try to close it
+      if (auction.status === 'forfeited') {
+        console.log(`⏸️  Auction ${auctionId} is forfeited. Cannot close.`);
+        return {
+          success: false,
+          auctionId,
+          error: 'Auction is forfeited',
         };
       }
 
@@ -171,7 +193,7 @@ export class AuctionClosureService {
           afterState: { status: 'closed', winner: null },
         });
 
-        console.log(`Auction ${auctionId} closed with no bids`);
+        console.log(`✅ Auction ${auctionId} closed with no bids`);
         return {
           success: true,
           auctionId,
@@ -227,46 +249,50 @@ export class AuctionClosureService {
       const paymentDeadline = new Date();
       paymentDeadline.setHours(paymentDeadline.getHours() + 24);
 
-      // Generate unique payment reference
-      const reference = `PAY_${auctionId.substring(0, 8)}_${Date.now()}`;
+      // IDEMPOTENCY CHECK: Check if payment already exists for this auction
+      const [existingPayment] = await db
+        .select()
+        .from(payments)
+        .where(eq(payments.auctionId, auctionId))
+        .limit(1);
 
-      // Try to freeze funds in escrow wallet first (Requirement 26.5)
-      let paymentMethod: 'escrow_wallet' | 'paystack' = 'paystack';
-      let escrowStatus: 'none' | 'frozen' = 'none';
-      
-      try {
-        await escrowService.freezeFunds(
-          vendor.id,
-          parseFloat(auction.currentBid),
-          auction.id,
-          vendor.userId
-        );
-        // Funds successfully frozen - use escrow wallet
-        paymentMethod = 'escrow_wallet';
-        escrowStatus = 'frozen';
-        console.log(`Funds frozen for vendor ${vendor.id}: ₦${parseFloat(auction.currentBid).toLocaleString()}`);
-      } catch (error) {
-        console.log(`Vendor ${vendor.id} has insufficient wallet balance. Will require external payment.`);
-        // Vendor doesn't have sufficient balance - will need to pay externally
-        paymentMethod = 'paystack';
-        escrowStatus = 'none';
+      let payment: typeof payments.$inferSelect;
+
+      if (existingPayment) {
+        console.log(`✅ Payment already exists for auction ${auctionId} (idempotent check)`);
+        console.log(`   - Payment ID: ${existingPayment.id}`);
+        console.log(`   - Status: ${existingPayment.status}`);
+        console.log(`   - Amount: ₦${parseFloat(existingPayment.amount).toLocaleString()}`);
+        console.log(`   - Skipping duplicate payment creation`);
+        payment = existingPayment;
+      } else {
+        // Generate unique payment reference
+        const reference = `PAY_${auctionId.substring(0, 8)}_${Date.now()}`;
+
+        // Funds should already be frozen from bidding - use escrow wallet payment method
+        const paymentMethod: 'escrow_wallet' = 'escrow_wallet';
+        const escrowStatus: 'frozen' = 'frozen';
+
+        // Create payment record (invoice)
+        [payment] = await db
+          .insert(payments)
+          .values({
+            auctionId,
+            vendorId: vendor.id,
+            amount: auction.currentBid.toString(),
+            paymentMethod,
+            escrowStatus,
+            paymentReference: reference,
+            status: 'pending',
+            paymentDeadline,
+            autoVerified: false,
+          })
+          .returning();
+
+        console.log(`✅ Payment record created for auction ${auctionId}`);
+        console.log(`   - Payment ID: ${payment.id}`);
+        console.log(`   - Reference: ${reference}`);
       }
-
-      // Create payment record (invoice)
-      const [payment] = await db
-        .insert(payments)
-        .values({
-          auctionId,
-          vendorId: vendor.id,
-          amount: auction.currentBid.toString(),
-          paymentMethod,
-          escrowStatus,
-          paymentReference: reference,
-          status: 'pending',
-          paymentDeadline,
-          autoVerified: false,
-        })
-        .returning();
 
       // Update auction status to 'closed'
       await db
@@ -299,10 +325,60 @@ export class AuctionClosureService {
         },
       });
 
+      // Generate required documents automatically (async, don't block closure)
+      this.generateWinnerDocuments(auctionId, vendor.id).catch(async (error) => {
+        console.error(`❌ CRITICAL: Failed to generate documents for auction ${auctionId}:`, error);
+        console.error(`   - Vendor ID: ${vendor.id}`);
+        console.error(`   - Error details:`, error instanceof Error ? error.message : 'Unknown error');
+        
+        // Log failure to audit log so admins/finance can see it
+        try {
+          await logAction({
+            userId: vendor.userId,
+            actionType: AuditActionType.DOCUMENT_GENERATION_FAILED,
+            entityType: AuditEntityType.AUCTION,
+            entityId: auctionId,
+            ipAddress: '0.0.0.0',
+            deviceType: DeviceType.DESKTOP,
+            userAgent: 'cron-job',
+            afterState: {
+              error: error instanceof Error ? error.message : 'Unknown error',
+              vendorId: vendor.id,
+              timestamp: new Date().toISOString(),
+            },
+          });
+        } catch (logError) {
+          console.error('Failed to log document generation failure:', logError);
+        }
+      });
+
       // Send notifications to winner (async, don't wait)
       this.notifyWinner(user, vendor, auction, salvageCase, payment, paymentDeadline).catch(
-        (error) => {
-          console.error(`Failed to notify winner for auction ${auctionId}:`, error);
+        async (error) => {
+          console.error(`❌ CRITICAL: Failed to notify winner for auction ${auctionId}:`, error);
+          console.error(`   - Vendor ID: ${vendor.id}`);
+          console.error(`   - Error details:`, error instanceof Error ? error.message : 'Unknown error');
+          
+          // Log failure to audit log so admins/finance can see it
+          try {
+            await logAction({
+              userId: vendor.userId,
+              actionType: AuditActionType.NOTIFICATION_FAILED,
+              entityType: AuditEntityType.AUCTION,
+              entityId: auctionId,
+              ipAddress: '0.0.0.0',
+              deviceType: DeviceType.DESKTOP,
+              userAgent: 'cron-job',
+              afterState: {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                vendorId: vendor.id,
+                paymentId: payment.id,
+                timestamp: new Date().toISOString(),
+              },
+            });
+          } catch (logError) {
+            console.error('Failed to log notification failure:', logError);
+          }
         }
       );
 
@@ -330,8 +406,101 @@ export class AuctionClosureService {
   }
 
   /**
+   * Generate required documents for auction winner
+   * Generates: Bill of Sale, Liability Waiver (2 documents)
+   * 
+   * SECURITY FIX: Pickup Authorization is NOT generated here.
+   * It will be generated and sent AFTER payment is complete to prevent
+   * vendors from seeing the pickup code before payment.
+   * 
+   * IDEMPOTENCY: Checks if documents already exist before generating.
+   * Safe to call multiple times - won't create duplicates.
+   * 
+   * @param auctionId - Auction ID
+   * @param vendorId - Vendor ID
+   */
+  private async generateWinnerDocuments(
+    auctionId: string,
+    vendorId: string
+  ): Promise<void> {
+    try {
+      console.log(`📄 Starting document generation for auction ${auctionId}, vendor ${vendorId}`);
+
+      // Check if documents already exist (duplicate prevention)
+      const { releaseForms } = await import('@/lib/db/schema/release-forms');
+      const existingDocuments = await db
+        .select()
+        .from(releaseForms)
+        .where(
+          and(
+            eq(releaseForms.auctionId, auctionId),
+            eq(releaseForms.vendorId, vendorId)
+          )
+        );
+
+      const existingTypes = existingDocuments.map(doc => doc.documentType);
+      const hasBillOfSale = existingTypes.includes('bill_of_sale');
+      const hasLiabilityWaiver = existingTypes.includes('liability_waiver');
+
+      if (hasBillOfSale && hasLiabilityWaiver) {
+        console.log(`✅ All documents already exist for auction ${auctionId}. Skipping generation.`);
+        console.log(`   - Bill of Sale: ${existingDocuments.find(d => d.documentType === 'bill_of_sale')?.id}`);
+        console.log(`   - Liability Waiver: ${existingDocuments.find(d => d.documentType === 'liability_waiver')?.id}`);
+        return;
+      }
+
+      const results = {
+        billOfSale: hasBillOfSale,
+        liabilityWaiver: hasLiabilityWaiver,
+      };
+
+      // Generate Bill of Sale (only if it doesn't exist)
+      if (!hasBillOfSale) {
+        try {
+          await generateDocument(auctionId, vendorId, 'bill_of_sale', 'system');
+          results.billOfSale = true;
+          console.log(`✅ Bill of Sale generated for auction ${auctionId}`);
+        } catch (error) {
+          console.error(`❌ Failed to generate Bill of Sale for auction ${auctionId}:`, error);
+        }
+      } else {
+        console.log(`⏭️  Bill of Sale already exists for auction ${auctionId}. Skipping.`);
+      }
+
+      // Generate Liability Waiver (only if it doesn't exist)
+      if (!hasLiabilityWaiver) {
+        try {
+          await generateDocument(auctionId, vendorId, 'liability_waiver', 'system');
+          results.liabilityWaiver = true;
+          console.log(`✅ Liability Waiver generated for auction ${auctionId}`);
+        } catch (error) {
+          console.error(`❌ Failed to generate Liability Waiver for auction ${auctionId}:`, error);
+        }
+      } else {
+        console.log(`⏭️  Liability Waiver already exists for auction ${auctionId}. Skipping.`);
+      }
+
+      const successCount = Object.values(results).filter(Boolean).length;
+      const totalCount = Object.keys(results).length;
+
+      console.log(`📄 Document generation complete: ${successCount}/${totalCount} successful for auction ${auctionId}`);
+      
+      if (successCount === 0) {
+        throw new Error('Failed to generate any documents');
+      }
+      
+      if (successCount < totalCount) {
+        console.warn(`⚠️ Partial document generation: Only ${successCount}/${totalCount} documents generated for auction ${auctionId}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error in generateWinnerDocuments for auction ${auctionId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Notify auction winner
-   * Sends SMS + Email + Push notification with payment link
+   * Sends SMS + Email + Push notification with link to sign documents
    * 
    * @param user - User details
    * @param vendor - Vendor details
@@ -350,7 +519,8 @@ export class AuctionClosureService {
   ): Promise<void> {
     try {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
-      const paymentUrl = `${appUrl}/vendor/payments/${payment.id}`;
+      // FIXED: Link to auction details page where documents can be signed
+      const auctionDetailsUrl = `${appUrl}/vendor/auctions/${auction.id}`;
 
       const winningBid = parseFloat(auction.currentBid!);
       const formattedAmount = winningBid.toLocaleString();
@@ -358,28 +528,23 @@ export class AuctionClosureService {
       // Format asset name
       const assetName = this.formatAssetName(salvageCase);
 
-      // Calculate hours until deadline
-      const hoursUntilDeadline = Math.round(
-        (paymentDeadline.getTime() - new Date().getTime()) / (1000 * 60 * 60)
-      );
-
-      // Send SMS notification
-      const smsMessage = `Congratulations! You won the auction for ${assetName}. Winning bid: ₦${formattedAmount}. Pay within ${hoursUntilDeadline} hours to secure your item: ${paymentUrl}`;
+      // Send SMS notification with link to sign documents
+      const smsMessage = `🎉 Congratulations! You won ${assetName} for ₦${formattedAmount}. Sign 3 documents to complete payment: ${auctionDetailsUrl}`;
 
       await smsService.sendSMS({
         to: user.phone,
         message: smsMessage,
       });
 
-      // Send Email notification
-      const emailSubject = `🎉 You Won! Pay Within 24 Hours - ${assetName}`;
+      // Send Email notification with link to sign documents
+      const emailSubject = `🎉 You Won! Sign Documents to Complete Payment - ${assetName}`;
       const emailHtml = this.getWinnerNotificationEmailTemplate(
         user.fullName,
         assetName,
         salvageCase,
         winningBid,
         paymentDeadline,
-        paymentUrl
+        auctionDetailsUrl
       );
 
       await emailService.sendEmail({
@@ -399,13 +564,27 @@ export class AuctionClosureService {
         userAgent: 'notification-service',
         afterState: {
           type: 'auction_won',
-          channels: ['sms', 'email'],
+          channels: ['sms', 'email', 'push'],
           auctionId: auction.id,
           paymentId: payment.id,
+          auctionDetailsUrl,
         },
       });
 
-      console.log(`Winner notifications sent to vendor ${vendor.id} for auction ${auction.id}`);
+      // FIXED: Create in-app notification with link to auction details page
+      await createAuctionWonNotification(
+        user.id,
+        auction.id,
+        winningBid,
+        assetName,
+        payment.id,
+        auctionDetailsUrl
+      );
+
+      console.log(`✅ Winner notifications sent to vendor ${vendor.id} for auction ${auction.id}`);
+      console.log(`   - SMS: Sign documents link sent`);
+      console.log(`   - Email: Sign documents link sent`);
+      console.log(`   - Push: Auction won notification with link to ${auctionDetailsUrl}`);
     } catch (error) {
       console.error('Failed to send winner notifications:', error);
       throw error;
@@ -441,7 +620,7 @@ export class AuctionClosureService {
    * @param salvageCase - Salvage case data
    * @param winningBid - Winning bid amount
    * @param paymentDeadline - Payment deadline
-   * @param paymentUrl - Payment URL
+   * @param auctionDetailsUrl - Auction details URL where documents can be signed
    * @returns HTML email template
    */
   private getWinnerNotificationEmailTemplate(
@@ -450,7 +629,7 @@ export class AuctionClosureService {
     salvageCase: typeof salvageCases.$inferSelect,
     winningBid: number,
     paymentDeadline: Date,
-    paymentUrl: string
+    auctionDetailsUrl: string
   ): string {
     const formattedAmount = winningBid.toLocaleString();
     const deadlineFormatted = paymentDeadline.toLocaleString('en-NG', {
@@ -618,7 +797,7 @@ export class AuctionClosureService {
             <div class="content">
               <p><strong>Dear ${this.escapeHtml(fullName)},</strong></p>
               
-              <p>Great news! You are the winning bidder for the following salvage item:</p>
+              <p>🎉 Congratulations! You are the winning bidder for the following salvage item:</p>
               
               <div class="winning-details">
                 <h2>Your Winning Bid</h2>
@@ -641,7 +820,7 @@ export class AuctionClosureService {
                 
                 <div class="detail-row">
                   <span class="detail-label">Damage Severity:</span>
-                  <span class="detail-value">${this.escapeHtml(salvageCase.damageSeverity.toUpperCase())}</span>
+                  <span class="detail-value">${this.escapeHtml((salvageCase.damageSeverity || 'unknown').toUpperCase())}</span>
                 </div>
                 
                 <div class="detail-row">
@@ -651,20 +830,24 @@ export class AuctionClosureService {
               </div>
               
               <div class="deadline-warning">
-                <h3>⏰ Payment Deadline</h3>
-                <p style="margin: 5px 0;">You must complete payment by:</p>
-                <div class="deadline-time">${deadlineFormatted}</div>
+                <h3>📝 Next Steps: Sign Documents</h3>
+                <p style="margin: 5px 0;">Before payment can be processed, you must sign 3 required documents:</p>
+                <ul style="text-align: left; margin: 15px auto; max-width: 400px; color: #856404;">
+                  <li><strong>Bill of Sale</strong></li>
+                  <li><strong>Release & Waiver of Liability</strong></li>
+                  <li><strong>Pickup Authorization</strong></li>
+                </ul>
                 <p style="margin: 10px 0 0 0; font-weight: 600; color: #856404;">
-                  That's 24 hours from now!
+                  All documents must be signed within 24 hours!
                 </p>
               </div>
               
               <div class="button-container">
-                <a href="${paymentUrl}" class="button">Pay Now with Paystack</a>
+                <a href="${auctionDetailsUrl}" class="button">Sign Documents Now</a>
               </div>
               
               <div class="important-note">
-                <strong>⚠️ Important:</strong> Failure to complete payment within 24 hours will result in:
+                <strong>⚠️ Important:</strong> Failure to sign all documents within 24 hours will result in:
                 <ul style="margin: 10px 0 0 0; padding-left: 20px;">
                   <li>Forfeiture of your winning bid</li>
                   <li>Item will be re-listed for auction</li>
@@ -673,17 +856,17 @@ export class AuctionClosureService {
               </div>
               
               <p style="margin-top: 30px; color: #666; font-size: 14px;">
-                <strong>Payment Options:</strong>
+                <strong>What Happens After Signing:</strong>
               </p>
-              <ul style="color: #666; font-size: 14px;">
-                <li>Card Payment (Instant verification)</li>
-                <li>Bank Transfer (Manual verification within 4 hours)</li>
-                <li>USSD Payment</li>
-                <li>Bank Account Debit</li>
-              </ul>
+              <ol style="color: #666; font-size: 14px;">
+                <li>Payment will be automatically processed from your escrow wallet</li>
+                <li>You'll receive a pickup authorization code via SMS and email</li>
+                <li>You can schedule pickup at ${this.escapeHtml(salvageCase.locationName)}</li>
+                <li>Bring valid ID and your pickup code to collect the item</li>
+              </ol>
               
               <p style="margin-top: 30px;">
-                Once payment is confirmed, you will receive a pickup authorization code via SMS and email.
+                Click the button above to view the auction details and sign all required documents.
               </p>
               
               <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Team</strong></p>

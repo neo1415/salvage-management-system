@@ -153,6 +153,49 @@ if (workbox) {
     }
   });
 
+  // Enhanced sync progress reporting
+  // Listen for messages from clients to report sync progress
+  self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SYNC_PROGRESS') {
+      // Broadcast sync progress to all clients
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'SYNC_PROGRESS_UPDATE',
+            progress: event.data.progress,
+            timestamp: Date.now(),
+          });
+        });
+      });
+    }
+    
+    if (event.data && event.data.type === 'SYNC_COMPLETE') {
+      // Broadcast sync completion to all clients
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'SYNC_COMPLETED',
+            result: event.data.result,
+            timestamp: Date.now(),
+          });
+        });
+      });
+    }
+    
+    if (event.data && event.data.type === 'SYNC_ERROR') {
+      // Broadcast sync error to all clients
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'SYNC_FAILED',
+            error: event.data.error,
+            timestamp: Date.now(),
+          });
+        });
+      });
+    }
+  });
+
   // Skip waiting and claim clients immediately
   workbox.core.skipWaiting();
   workbox.core.clientsClaim();

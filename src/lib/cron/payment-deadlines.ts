@@ -150,7 +150,7 @@ async function markPaymentsOverdue(now: Date, results: EnforcementResults) {
 }
 
 async function forfeitAuctionWinners(now: Date, results: EnforcementResults) {
-  const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+  const seventyTwoHoursAgo = new Date(now.getTime() - 72 * 60 * 60 * 1000);
 
   try {
     const forfeitPayments = await db
@@ -167,34 +167,86 @@ async function forfeitAuctionWinners(now: Date, results: EnforcementResults) {
       .where(
         and(
           eq(payments.status, 'overdue'),
-          lte(payments.paymentDeadline, fortyEightHoursAgo)
+          lte(payments.paymentDeadline, seventyTwoHoursAgo)
         )
       );
 
     for (const { payment, auction, vendor, user } of forfeitPayments) {
       try {
-        const suspensionEndDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        // Mark auction as forfeited
         await db
-          .update(vendors)
-          .set({ 
-            status: 'suspended',
+          .update(auctions)
+          .set({
+            status: 'forfeited',
             updatedAt: now,
           })
-          .where(eq(vendors.id, vendor.id));
+          .where(eq(auctions.id, auction.id));
 
+        // Disable documents for this auction
+        const { releaseForms } = await import('@/lib/db/schema/release-forms');
+        await db
+          .update(releaseForms)
+          .set({
+            disabled: true,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(releaseForms.auctionId, auction.id),
+              eq(releaseForms.vendorId, vendor.id)
+            )
+          );
+
+        // Update payment status to forfeited
+        await db
+          .update(payments)
+          .set({
+            status: 'forfeited',
+            updatedAt: now,
+          })
+          .where(eq(payments.id, payment.id));
+
+        // Send notification to vendor (NO suspension)
         await smsService.sendSMS({
           to: user.phone,
-          message: `FORFEITED: Your auction win #${auction.id} has been forfeited. Account suspended for 7 days.`,
+          message: `Auction forfeited after 72 hours. Your funds remain frozen. Contact support at ${process.env.SUPPORT_PHONE || '234-02-014489560'} if still interested.`,
         });
 
         await emailService.sendEmail({
           to: user.email,
-          subject: 'Auction Forfeited - Account Suspended',
-          html: `<p>Your auction win has been forfeited. Account suspended until ${suspensionEndDate.toLocaleString()}.</p>`,
+          subject: 'Auction Forfeited - Contact Support',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #dc2626;">Auction Forfeited</h2>
+              <p>Dear ${user.fullName},</p>
+              <p>Your auction win for auction #${auction.id} has been forfeited after 72 hours without payment completion.</p>
+              
+              <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0;">
+                <h3 style="margin-top: 0; color: #991b1b;">What This Means</h3>
+                <p><strong>Amount:</strong> ₦${parseFloat(payment.amount).toLocaleString()}</p>
+                <p><strong>Status:</strong> Forfeited</p>
+                <p><strong>Funds:</strong> Frozen in your wallet</p>
+                <p><strong>Documents:</strong> Disabled</p>
+              </div>
+
+              <h3>Next Steps</h3>
+              <p>If you are still interested in this item, please contact our support team immediately:</p>
+              <ul>
+                <li>Phone: ${process.env.SUPPORT_PHONE || '234-02-014489560'}</li>
+                <li>Email: ${process.env.SUPPORT_EMAIL || 'nemsupport@nem-insurance.com'}</li>
+              </ul>
+              
+              <p>A Finance Officer will review your case and may grant a grace period to restore document access.</p>
+
+              <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Team</strong></p>
+            </div>
+          `,
         });
 
+        // Alert Finance Officers for manual review
+        await alertFinanceOfficersForForfeiture(payment, auction, vendor, user);
+
         results.winnersForfeited++;
-        results.vendorsSuspended++;
       } catch (error) {
         console.error(`Error forfeiting payment ${payment.id}:`, error);
         results.errors.push(`Failed to forfeit payment ${payment.id}`);
@@ -203,5 +255,86 @@ async function forfeitAuctionWinners(now: Date, results: EnforcementResults) {
   } catch (error) {
     console.error('Error in forfeitAuctionWinners:', error);
     results.errors.push('Failed to forfeit auction winners');
+  }
+}
+
+/**
+ * Alert Finance Officers when an auction is forfeited
+ */
+async function alertFinanceOfficersForForfeiture(
+  payment: typeof payments.$inferSelect,
+  auction: typeof auctions.$inferSelect,
+  vendor: typeof vendors.$inferSelect,
+  user: typeof users.$inferSelect
+): Promise<void> {
+  try {
+    // Get Finance Officer users
+    const financeOfficers = await db
+      .select()
+      .from(users)
+      .where(eq(users.role, 'finance_officer'))
+      .limit(5);
+
+    if (financeOfficers.length === 0) {
+      console.warn('⚠️  No Finance Officers found for forfeiture alert');
+      return;
+    }
+
+    for (const officer of financeOfficers) {
+      await emailService.sendEmail({
+        to: officer.email,
+        subject: `🚨 Auction Forfeited - Manual Review Required - ${auction.id.substring(0, 8)}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #dc2626;">Auction Forfeited - Manual Review Required</h2>
+            <p>Dear ${officer.fullName},</p>
+            <p>An auction has been automatically forfeited after 72 hours without payment completion.</p>
+            
+            <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0;">
+              <h3 style="margin-top: 0; color: #991b1b;">Forfeiture Details</h3>
+              <p><strong>Auction ID:</strong> ${auction.id}</p>
+              <p><strong>Payment ID:</strong> ${payment.id}</p>
+              <p><strong>Amount:</strong> ₦${parseFloat(payment.amount).toLocaleString()}</p>
+              <p><strong>Vendor:</strong> ${user.fullName} (${user.email})</p>
+              <p><strong>Vendor Phone:</strong> ${user.phone}</p>
+              <p><strong>Forfeited At:</strong> ${new Date().toLocaleString('en-NG')}</p>
+            </div>
+
+            <h3>Actions Taken</h3>
+            <ul>
+              <li>Auction status changed to 'forfeited'</li>
+              <li>Documents disabled (cannot be signed)</li>
+              <li>Funds remain frozen in vendor wallet</li>
+              <li>Vendor notified to contact support</li>
+              <li>NO account suspension applied</li>
+            </ul>
+
+            <h3>Manual Review Required</h3>
+            <p>Please review this case and decide:</p>
+            <ol>
+              <li>Grant grace period to restore documents (if vendor contacts support)</li>
+              <li>Unfreeze funds and re-list item for auction</li>
+              <li>Other action as appropriate</li>
+            </ol>
+
+            <p style="margin-top: 30px;">
+              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com'}/finance/payments" 
+                 style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                Review Payment
+              </a>
+            </p>
+
+            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+              This is an automated alert from the NEM Salvage Management System.
+            </p>
+          </div>
+        `,
+      });
+    }
+
+    console.log(`✅ Forfeiture alerts sent to ${financeOfficers.length} Finance Officers`);
+  } catch (error) {
+    console.error('❌ Error sending forfeiture alerts:', error);
+    // Don't throw - best effort
   }
 }

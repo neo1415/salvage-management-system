@@ -1,0 +1,56 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - heading "Welcome Back" [level=1] [ref=e10]
+      - paragraph [ref=e11]: Sign in to access your account
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - img [ref=e14]
+        - generic [ref=e18]:
+          - heading "Login Failed" [level=3] [ref=e19]
+          - paragraph [ref=e20]: Configuration
+      - generic [ref=e21]:
+        - button "Sign in with Google" [ref=e22] [cursor=pointer]:
+          - img [ref=e23]
+          - generic [ref=e28]: Sign in with Google
+        - button "Sign in with Facebook" [ref=e29] [cursor=pointer]:
+          - img [ref=e30]
+          - generic [ref=e32]: Sign in with Facebook
+        - generic [ref=e37]: Or continue with email/phone
+      - generic [ref=e38]:
+        - generic [ref=e39]:
+          - generic [ref=e40]: Email or Phone Number *
+          - textbox "Email or Phone Number *" [ref=e41]:
+            - /placeholder: your.email@example.com or +234XXXXXXXXXX
+            - text: adjuster@test.com
+        - generic [ref=e42]:
+          - generic [ref=e43]: Password *
+          - generic [ref=e44]:
+            - textbox "Password *" [ref=e45]:
+              - /placeholder: Enter your password
+              - text: Test123!@#
+            - button [ref=e46] [cursor=pointer]:
+              - img [ref=e47]
+        - generic [ref=e50]:
+          - generic [ref=e51] [cursor=pointer]:
+            - checkbox "Remember me" [ref=e52]
+            - generic [ref=e53]: Remember me
+          - link "Forgot password?" [ref=e54] [cursor=pointer]:
+            - /url: /forgot-password
+        - button "Sign In" [ref=e55] [cursor=pointer]
+      - paragraph [ref=e56]:
+        - text: Don't have an account?
+        - link "Sign up" [ref=e57] [cursor=pointer]:
+          - /url: /register
+    - paragraph [ref=e59]:
+      - text: Need help?
+      - link "Contact Support" [ref=e60] [cursor=pointer]:
+        - /url: /contact
+  - button "Open Next.js Dev Tools" [ref=e66] [cursor=pointer]:
+    - img [ref=e67]
+  - alert [ref=e71]
+```

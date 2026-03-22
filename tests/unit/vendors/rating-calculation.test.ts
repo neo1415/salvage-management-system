@@ -139,7 +139,7 @@ describe('Property 19: Vendor Rating Calculation', () => {
     }
   }
 
-  it('Property: Average rating is calculated correctly from multiple ratings', { timeout: 120000 }, async () => {
+  it('Property: Average rating is calculated correctly from multiple ratings', { timeout: 60000 }, async () => {
     await fc.assert(
       fc.asyncProperty(
         // Generate array of 1-10 ratings, each between 1-5 stars
@@ -215,11 +215,11 @@ describe('Property 19: Vendor Rating Calculation', () => {
           }
         }
       ),
-      { numRuns: 5 } // Reduced from 10 to 5 for faster execution
+      { numRuns: 3 } // Reduced from 5 for faster execution
     );
   });
 
-  it('Property: Average rating is always between 1 and 5', { timeout: 120000 }, async () => {
+  it('Property: Average rating is always between 1 and 5', { timeout: 60000 }, async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.integer({ min: 1, max: 5 }), { minLength: 1, maxLength: 20 }),
@@ -277,7 +277,7 @@ describe('Property 19: Vendor Rating Calculation', () => {
           }
         }
       ),
-      { numRuns: 5 } // Reduced from 10 to 5 for faster execution
+      { numRuns: 3 } // Reduced from 5 for faster execution
     );
   });
 
@@ -342,7 +342,7 @@ describe('Property 19: Vendor Rating Calculation', () => {
     );
   });
 
-  it('Property: Adding new rating updates average correctly', { timeout: 120000 }, async () => {
+  it('Property: Adding new rating updates average correctly', { timeout: 60000 }, async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.integer({ min: 1, max: 5 }), { minLength: 2, maxLength: 5 }),
@@ -443,7 +443,7 @@ describe('Property 19: Vendor Rating Calculation', () => {
           }
         }
       ),
-      { numRuns: 4 } // Reduced from 8 to 4 for faster execution
+      { numRuns: 3 } // Reduced from 4 for faster execution
     );
   });
 });

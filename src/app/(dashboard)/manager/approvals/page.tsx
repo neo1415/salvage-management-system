@@ -19,6 +19,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
+import { PriceField } from '@/components/manager/price-field';
+import { validatePriceOverrides as validatePrices, type PriceOverrides } from '@/lib/validation/price-validation';
+import { formatConditionForDisplay } from '@/features/valuations/services/condition-mapping.service';
+import { AuctionDurationSelector } from '@/components/ui/auction-duration-selector';
+import { LocationMap } from '@/components/ui/location-map';
+import { ConfirmationModal } from '@/components/ui/confirmation-modal';
+import { ResultModal } from '@/components/ui/result-modal';
+import { Star, DollarSign, Check, X, CheckCircle } from 'lucide-react';
 
 /**
  * Case data structure
@@ -37,7 +45,16 @@ interface CaseData {
     confidenceScore: number;
     damagePercentage: number;
     processedAt: string;
-  };
+    warnings?: string[];
+    confidence?: {
+      overall: number;
+      vehicleDetection: number;
+      damageDetection: number;
+      valuationAccuracy: number;
+      photoQuality: number;
+      reasons: string[];
+    };
+  } | null;
   gpsLocation?: {
     x: number; // longitude
     y: number; // latitude
@@ -51,6 +68,8 @@ interface CaseData {
   adjusterName?: string;
   approvedBy?: string | null;
   approvedAt?: string | null;
+  vehicleMileage?: number;
+  vehicleCondition?: 'excellent' | 'good' | 'fair' | 'poor';
 }
 
 /**
@@ -73,6 +92,30 @@ export default function ApprovalsPage() {
   const [approvalAction, setApprovalAction] = useState<ApprovalAction>(null);
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Price override state
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [priceOverrides, setPriceOverrides] = useState<PriceOverrides>({});
+  const [overrideComment, setOverrideComment] = useState('');
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  
+  // Auction duration state
+  const [auctionDurationHours, setAuctionDurationHours] = useState<number>(120); // Default 5 days
+  
+  // Modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [resultModalData, setResultModalData] = useState<{
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+    details?: string[];
+  }>({
+    type: 'success',
+    title: '',
+    message: '',
+  });
 
   /**
    * Fetch all cases on mount only
@@ -122,6 +165,15 @@ export default function ApprovalsPage() {
   }, []);
 
   /**
+   * Validate whenever price overrides change
+   */
+  useEffect(() => {
+    if (isEditMode && selectedCase) {
+      validatePriceOverridesLocal();
+    }
+  }, [priceOverrides, isEditMode, selectedCase]);
+
+  /**
    * Fetch all cases from API (no filtering - get everything)
    */
   const fetchPendingCases = async () => {
@@ -153,6 +205,17 @@ export default function ApprovalsPage() {
     setCurrentPhotoIndex(0);
     setApprovalAction(null);
     setComment('');
+    // Reset price override state
+    setIsEditMode(false);
+    setPriceOverrides({});
+    setOverrideComment('');
+    setValidationErrors([]);
+    setValidationWarnings([]);
+    // Reset auction duration to default
+    setAuctionDurationHours(120);
+    // Reset modal state
+    setShowConfirmModal(false);
+    setShowResultModal(false);
   };
 
   /**
@@ -169,10 +232,134 @@ export default function ApprovalsPage() {
   };
 
   /**
-   * Handle approval action
+   * Handle approval action - Show confirmation modal
    */
   const handleApprovalAction = (action: 'approve' | 'reject') => {
     setApprovalAction(action);
+    
+    // For approval, show confirmation modal immediately
+    if (action === 'approve') {
+      setShowConfirmModal(true);
+    }
+  };
+
+  /**
+   * Validate price overrides using extracted utility
+   */
+  const validatePriceOverridesLocal = (): void => {
+    if (!selectedCase) {
+      setValidationErrors([]);
+      setValidationWarnings([]);
+      return;
+    }
+    
+    const result = validatePrices(
+      priceOverrides,
+      {
+        marketValue: parseFloat(selectedCase.marketValue),
+        salvageValue: parseFloat(selectedCase.estimatedSalvageValue),
+        reservePrice: parseFloat(selectedCase.reservePrice),
+      }
+    );
+    
+    // Separate errors and warnings
+    setValidationErrors(result.errors);
+    setValidationWarnings(result.warnings);
+  };
+
+  /**
+   * Handle price change
+   */
+  const handlePriceChange = (field: keyof PriceOverrides, value: number) => {
+    setPriceOverrides(prev => ({
+      ...prev,
+      [field]: value,
+    }));
+    // Validation will be triggered by useEffect
+  };
+
+  /**
+   * Handle edit mode toggle
+   */
+  const handleEditModeToggle = () => {
+    if (isEditMode) {
+      // Exiting edit mode - reset overrides
+      setPriceOverrides({});
+      setOverrideComment('');
+      setValidationErrors([]);
+      setValidationWarnings([]);
+    }
+    setIsEditMode(!isEditMode);
+  };
+
+  /**
+   * Check if there are any overrides
+   */
+  const hasOverrides = Object.keys(priceOverrides).length > 0;
+
+  /**
+   * Check if can approve with changes
+   */
+  const canApproveWithChanges = (() => {
+    if (!hasOverrides || overrideComment.trim().length < 10 || !selectedCase) {
+      return false;
+    }
+    
+    // Only check for errors, not warnings
+    const result = validatePrices(
+      priceOverrides,
+      {
+        marketValue: parseFloat(selectedCase.marketValue),
+        salvageValue: parseFloat(selectedCase.estimatedSalvageValue),
+        reservePrice: parseFloat(selectedCase.reservePrice),
+      }
+    );
+    
+    return result.isValid;
+  })();
+
+  /**
+   * Handle result modal close
+   */
+  const handleResultModalClose = () => {
+    setShowResultModal(false);
+    
+    // If it was a success, close the detail view
+    if (resultModalData.type === 'success') {
+      setSelectedCase(null);
+      setApprovalAction(null);
+      setComment('');
+      setIsEditMode(false);
+      setPriceOverrides({});
+      setOverrideComment('');
+      setValidationErrors([]);
+      setValidationWarnings([]);
+      setAuctionDurationHours(120);
+    }
+  };
+
+  /**
+   * Get confirmation modal content
+   */
+  const getConfirmationContent = () => {
+    if (!selectedCase) return { title: '', message: '' };
+    
+    if (approvalAction === 'approve') {
+      const hasChanges = hasOverrides;
+      return {
+        title: hasChanges ? 'Approve with Price Changes?' : 'Approve Case?',
+        message: hasChanges
+          ? `You are about to approve case ${selectedCase.claimReference} with price adjustments.\n\nThis will:\n• Apply your price changes\n• Create an auction\n• Notify matching vendors\n\nAre you sure you want to proceed?`
+          : `You are about to approve case ${selectedCase.claimReference}.\n\nThis will:\n• Create an auction with AI-estimated prices\n• Notify matching vendors\n\nAre you sure you want to proceed?`,
+      };
+    } else if (approvalAction === 'reject') {
+      return {
+        title: 'Reject Case?',
+        message: `You are about to reject case ${selectedCase.claimReference}.\n\nThis will:\n• Return the case to the adjuster\n• Notify the adjuster of rejection\n• Include your rejection reason\n\nAre you sure you want to proceed?`,
+      };
+    }
+    
+    return { title: '', message: '' };
   };
 
   /**
@@ -183,12 +370,53 @@ export default function ApprovalsPage() {
 
     // Validate comment for rejection
     if (approvalAction === 'reject' && comment.trim().length < 10) {
-      alert('Please provide a detailed reason for rejection (minimum 10 characters)');
+      setResultModalData({
+        type: 'error',
+        title: 'Validation Error',
+        message: 'Please provide a detailed reason for rejection (minimum 10 characters)',
+      });
+      setShowResultModal(true);
       return;
+    }
+
+    // Validate price overrides if in edit mode
+    if (isEditMode && hasOverrides) {
+      const result = validatePrices(
+        priceOverrides,
+        {
+          marketValue: parseFloat(selectedCase.marketValue),
+          salvageValue: parseFloat(selectedCase.estimatedSalvageValue),
+          reservePrice: parseFloat(selectedCase.reservePrice),
+        }
+      );
+      
+      if (!result.isValid) {
+        setValidationErrors(result.errors);
+        setValidationWarnings(result.warnings);
+        setResultModalData({
+          type: 'error',
+          title: 'Validation Error',
+          message: 'Please fix validation errors before submitting',
+          details: result.errors,
+        });
+        setShowResultModal(true);
+        return;
+      }
+      
+      if (overrideComment.trim().length < 10) {
+        setResultModalData({
+          type: 'error',
+          title: 'Validation Error',
+          message: 'Please provide a reason for price changes (minimum 10 characters)',
+        });
+        setShowResultModal(true);
+        return;
+      }
     }
 
     try {
       setIsSubmitting(true);
+      setShowConfirmModal(false); // Close confirmation modal
 
       const response = await fetch(`/api/cases/${selectedCase.id}/approve`, {
         method: 'POST',
@@ -197,7 +425,9 @@ export default function ApprovalsPage() {
         },
         body: JSON.stringify({
           action: approvalAction,
-          comment: comment.trim() || undefined,
+          comment: comment.trim() || overrideComment.trim() || undefined,
+          priceOverrides: hasOverrides ? priceOverrides : undefined,
+          auctionDurationHours: approvalAction === 'approve' ? auctionDurationHours : undefined,
         }),
       });
 
@@ -208,23 +438,48 @@ export default function ApprovalsPage() {
 
       const result = await response.json();
 
-      // Show success message
-      alert(
-        approvalAction === 'approve'
-          ? `Case approved! Auction created and ${result.data.notifiedVendors} vendors notified.`
-          : 'Case rejected and returned to adjuster.'
-      );
+      // Show success message in modal
+      if (approvalAction === 'approve') {
+        setResultModalData({
+          type: 'success',
+          title: 'Case Approved',
+          message: hasOverrides
+            ? `Case approved with price adjustments! Auction created and ${result.data.notifiedVendors} vendors notified.`
+            : `Case approved! Auction created and ${result.data.notifiedVendors} vendors notified.`,
+          details: hasOverrides ? [
+            'Price adjustments have been applied',
+            `${result.data.notifiedVendors} vendors have been notified`,
+            'Auction is now live',
+          ] : [
+            `${result.data.notifiedVendors} vendors have been notified`,
+            'Auction is now live',
+          ],
+        });
+      } else {
+        setResultModalData({
+          type: 'success',
+          title: 'Case Rejected',
+          message: 'Case rejected and returned to adjuster.',
+          details: [
+            'The adjuster has been notified',
+            'Case status updated to draft',
+          ],
+        });
+      }
+      setShowResultModal(true);
 
       // Refresh cases list
       await fetchPendingCases();
       
-      // Close detail view
-      setSelectedCase(null);
-      setApprovalAction(null);
-      setComment('');
+      // Reset state (will be done when modal closes)
     } catch (err) {
       console.error('Error submitting approval:', err);
-      alert(err instanceof Error ? err.message : 'Failed to submit approval');
+      setResultModalData({
+        type: 'error',
+        title: 'Submission Failed',
+        message: err instanceof Error ? err.message : 'Failed to submit approval',
+      });
+      setShowResultModal(true);
     } finally {
       setIsSubmitting(false);
     }
@@ -378,7 +633,7 @@ export default function ApprovalsPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(selectedCase.damageSeverity)}`}>
-                  {selectedCase.damageSeverity.toUpperCase()}
+                  {selectedCase.damageSeverity ? selectedCase.damageSeverity.toUpperCase() : 'UNKNOWN'}
                 </span>
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(selectedCase).color}`}>
                   {getStatusBadge(selectedCase).label}
@@ -408,13 +663,13 @@ export default function ApprovalsPage() {
 
           {/* Swipeable Photo Gallery */}
           <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="relative">
+            <div className="relative w-full aspect-[4/3] bg-gray-200">
               <Image
                 src={selectedCase.photos[currentPhotoIndex]}
                 alt={`Photo ${currentPhotoIndex + 1}`}
-                width={800}
-                height={600}
-                className="w-full h-64 object-cover"
+                fill
+                className="object-contain"
+                sizes="(max-width: 768px) 100vw, 800px"
               />
               
               {/* Photo Navigation */}
@@ -422,14 +677,14 @@ export default function ApprovalsPage() {
                 <button
                   onClick={() => handlePhotoSwipe('right')}
                   disabled={currentPhotoIndex === 0}
-                  className="bg-black bg-opacity-50 text-white rounded-full w-10 h-10 flex items-center justify-center disabled:opacity-30"
+                  className="bg-black bg-opacity-50 text-white rounded-full w-10 h-10 flex items-center justify-center disabled:opacity-30 hover:bg-opacity-70 transition-all"
                 >
                   ←
                 </button>
                 <button
                   onClick={() => handlePhotoSwipe('left')}
                   disabled={currentPhotoIndex === selectedCase.photos.length - 1}
-                  className="bg-black bg-opacity-50 text-white rounded-full w-10 h-10 flex items-center justify-center disabled:opacity-30"
+                  className="bg-black bg-opacity-50 text-white rounded-full w-10 h-10 flex items-center justify-center disabled:opacity-30 hover:bg-opacity-70 transition-all"
                 >
                   →
                 </button>
@@ -437,7 +692,7 @@ export default function ApprovalsPage() {
 
               {/* Photo Counter */}
               <div className="absolute bottom-4 left-0 right-0 text-center">
-                <span className="bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
+                <span className="bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm backdrop-blur-sm">
                   {currentPhotoIndex + 1} / {selectedCase.photos.length}
                 </span>
               </div>
@@ -449,8 +704,8 @@ export default function ApprovalsPage() {
                 <button
                   key={index}
                   onClick={() => setCurrentPhotoIndex(index)}
-                  className={`flex-shrink-0 ${
-                    index === currentPhotoIndex ? 'ring-2 ring-[#800020]' : ''
+                  className={`flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
+                    index === currentPhotoIndex ? 'ring-2 ring-[#800020] border-[#800020]' : 'border-gray-300'
                   }`}
                 >
                   <Image
@@ -458,7 +713,7 @@ export default function ApprovalsPage() {
                     alt={`Thumbnail ${index + 1}`}
                     width={80}
                     height={60}
-                    className="w-20 h-16 object-cover rounded"
+                    className="w-20 h-16 object-cover"
                   />
                 </button>
               ))}
@@ -472,39 +727,232 @@ export default function ApprovalsPage() {
               AI Damage Assessment
             </h3>
             
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Confidence Score</span>
-                <div className="flex items-center">
-                  <div className="w-32 h-2 bg-gray-200 rounded-full mr-2">
-                    <div
-                      className="h-2 bg-[#FFD700] rounded-full"
-                      style={{ width: `${selectedCase.aiAssessment.confidenceScore}%` }}
-                    />
-                  </div>
-                  <span className="font-medium">{selectedCase.aiAssessment.confidenceScore}%</span>
-                </div>
+            {!selectedCase.aiAssessment ? (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  <span className="font-medium">⚠️ No AI Assessment Available</span>
+                  <br />
+                  AI assessment data is not available for this case. Manual review required.
+                </p>
               </div>
-
-              <div className="flex justify-between">
-                <span className="text-gray-600">Damage Percentage</span>
-                <span className="font-medium">{selectedCase.aiAssessment.damagePercentage}%</span>
-              </div>
-
-              <div>
-                <p className="text-gray-600 mb-2">Detected Damage</p>
-                <div className="flex flex-wrap gap-2">
-                  {selectedCase.aiAssessment.labels.map((label, index) => (
-                    <span
-                      key={index}
-                      className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium"
-                    >
-                      {label}
+            ) : (
+              <div className="space-y-3">
+                {/* Overall Confidence Score - Prominent Display */}
+                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                  <span className="text-gray-700 font-medium">Overall Confidence</span>
+                  <div className="flex items-center">
+                    <div className="w-32 h-3 bg-gray-200 rounded-full mr-3">
+                      <div
+                        className={`h-3 rounded-full ${
+                          selectedCase.aiAssessment.confidenceScore >= 80 ? 'bg-green-500' :
+                          selectedCase.aiAssessment.confidenceScore >= 70 ? 'bg-yellow-500' :
+                          'bg-red-500'
+                        }`}
+                        style={{ width: `${selectedCase.aiAssessment.confidenceScore}%` }}
+                      />
+                    </div>
+                    <span className={`font-bold text-lg ${
+                      selectedCase.aiAssessment.confidenceScore >= 80 ? 'text-green-600' :
+                      selectedCase.aiAssessment.confidenceScore >= 70 ? 'text-yellow-600' :
+                      'text-red-600'
+                    }`}>
+                      {selectedCase.aiAssessment.confidenceScore}%
                     </span>
-                  ))}
+                  </div>
+                </div>
+
+                {/* Low Confidence Warning */}
+                {selectedCase.aiAssessment.confidenceScore < 70 && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start">
+                    <svg className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div>
+                      <p className="font-medium text-red-800">Low Confidence Score</p>
+                      <p className="text-sm text-red-700 mt-1">Manual review strongly recommended. The AI assessment may be less accurate.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Mileage and Condition Info */}
+                {selectedCase.assetType === 'vehicle' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-blue-50 rounded-lg">
+                      <p className="text-xs text-blue-600 font-medium mb-1">📊 Mileage</p>
+                      <p className="text-sm font-bold text-blue-900">
+                        {selectedCase.vehicleMileage 
+                          ? `${selectedCase.vehicleMileage.toLocaleString()} km`
+                          : 'Not provided'}
+                      </p>
+                      {!selectedCase.vehicleMileage && (
+                        <p className="text-xs text-blue-700 mt-1">Estimated from vehicle age</p>
+                      )}
+                    </div>
+                    <div className="p-3 bg-purple-50 rounded-lg">
+                      <p className="text-xs text-purple-600 font-medium mb-1 flex items-center gap-1">
+                        <Star className="w-4 h-4" aria-hidden="true" />
+                        <span>Condition</span>
+                      </p>
+                      <p className="text-sm font-bold text-purple-900">
+                        {selectedCase.vehicleCondition 
+                          ? formatConditionForDisplay(selectedCase.vehicleCondition).label
+                          : 'Good (Foreign Used) (default)'}
+                      </p>
+                      {!selectedCase.vehicleCondition && (
+                        <p className="text-xs text-purple-700 mt-1">Default assumption</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Missing Data Notices */}
+                {selectedCase.assetType === 'vehicle' && (!selectedCase.vehicleMileage || !selectedCase.vehicleCondition) && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      <span className="font-medium">ℹ️ Note:</span> {' '}
+                      {!selectedCase.vehicleMileage && !selectedCase.vehicleCondition 
+                        ? 'Mileage and condition data not provided. Estimates may be less accurate.'
+                        : !selectedCase.vehicleMileage
+                        ? 'Mileage data not provided. Using estimated mileage based on vehicle age.'
+                        : 'Condition data not provided. Assuming "good" condition.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* AI Warnings */}
+                {selectedCase.aiAssessment.warnings && selectedCase.aiAssessment.warnings.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-700">⚠️ AI Warnings:</p>
+                    {selectedCase.aiAssessment.warnings.map((warning, index) => (
+                      <div key={index} className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                        <p className="text-sm text-orange-800">{warning}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Damage Percentage */}
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Damage Percentage</span>
+                  <span className="font-medium">{selectedCase.aiAssessment.damagePercentage}%</span>
+                </div>
+
+                {/* Detected Damage */}
+                <div>
+                  <p className="text-gray-600 mb-2">Detected Damage</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedCase.aiAssessment.labels.map((label, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
+            )}
+          </div>
+
+          {/* Price Override Section */}
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                <DollarSign className="w-5 h-5" aria-hidden="true" />
+                <span>Valuation</span>
+              </h3>
+              {!isEditMode && !selectedCase.approvedBy && (
+                <button
+                  onClick={handleEditModeToggle}
+                  className="text-sm text-[#800020] font-medium hover:text-[#600018]"
+                >
+                  ✏️ Edit Prices
+                </button>
+              )}
+              {isEditMode && (
+                <button
+                  onClick={handleEditModeToggle}
+                  className="text-sm text-gray-600 font-medium hover:text-gray-800"
+                >
+                  ✕ Cancel
+                </button>
+              )}
             </div>
+            
+            {/* Price Fields */}
+            <div className="space-y-3">
+              <PriceField
+                label="Market Value"
+                aiValue={parseFloat(selectedCase.marketValue)}
+                overrideValue={priceOverrides.marketValue}
+                isEditMode={isEditMode}
+                onChange={(value) => handlePriceChange('marketValue', value)}
+                confidence={selectedCase.aiAssessment?.confidenceScore ?? 0}
+              />
+              
+              <PriceField
+                label="Estimated Salvage Value"
+                aiValue={parseFloat(selectedCase.estimatedSalvageValue)}
+                overrideValue={priceOverrides.salvageValue}
+                isEditMode={isEditMode}
+                onChange={(value) => handlePriceChange('salvageValue', value)}
+              />
+              
+              <PriceField
+                label="Reserve Price"
+                aiValue={parseFloat(selectedCase.reservePrice)}
+                overrideValue={priceOverrides.reservePrice}
+                isEditMode={isEditMode}
+                onChange={(value) => handlePriceChange('reservePrice', value)}
+              />
+            </div>
+            
+            {/* Comment Field (shown in edit mode with overrides) */}
+            {isEditMode && hasOverrides && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason for Changes <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={overrideComment}
+                  onChange={(e) => setOverrideComment(e.target.value)}
+                  placeholder="Explain why you're adjusting these prices (minimum 10 characters)..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                />
+                {overrideComment.trim().length > 0 && overrideComment.trim().length < 10 && (
+                  <p className="text-xs text-red-600 mt-1">
+                    Comment must be at least 10 characters (currently {overrideComment.trim().length})
+                  </p>
+                )}
+              </div>
+            )}
+            
+            {/* Validation Errors and Warnings */}
+            {(validationErrors.length > 0 || validationWarnings.length > 0) && (
+              <div className="mt-4 space-y-2">
+                {/* Errors */}
+                {validationErrors.map((error, i) => (
+                  <div key={`error-${i}`} className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700 flex items-start">
+                    <svg className="w-4 h-4 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {error}
+                  </div>
+                ))}
+                
+                {/* Warnings */}
+                {validationWarnings.map((warning, i) => (
+                  <div key={`warning-${i}`} className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-700 flex items-start">
+                    <svg className="w-4 h-4 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* GPS Location */}
@@ -516,51 +964,47 @@ export default function ApprovalsPage() {
             
             <p className="text-gray-700 mb-3">{selectedCase.locationName || 'Location not specified'}</p>
             
-            {/* Map */}
-            {selectedCase.gpsLocation?.x && selectedCase.gpsLocation?.y ? (
-              <>
-                <div className="w-full h-48 bg-gray-200 rounded-lg overflow-hidden">
-                  <iframe
-                    width="100%"
-                    height="100%"
-                    style={{ border: 0 }}
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedCase.gpsLocation.x - 0.01},${selectedCase.gpsLocation.y - 0.01},${selectedCase.gpsLocation.x + 0.01},${selectedCase.gpsLocation.y + 0.01}&layer=mapnik&marker=${selectedCase.gpsLocation.y},${selectedCase.gpsLocation.x}`}
-                    allowFullScreen
-                  />
-                </div>
-                
-                {selectedCase.gpsLocation.y !== undefined && selectedCase.gpsLocation.x !== undefined ? (
-                  <p className="text-sm text-gray-600 mt-2">
-                    Coordinates: {selectedCase.gpsLocation.y.toFixed(6)}, {selectedCase.gpsLocation.x.toFixed(6)}
-                  </p>
-                ) : (
-                  <p className="text-sm text-gray-600 mt-2">
-                    Coordinates: Not available
-                  </p>
-                )}
-              </>
-            ) : (
-              <div className="w-full h-48 bg-gray-100 rounded-lg flex items-center justify-center">
-                <div className="text-center text-gray-500">
-                  <span className="text-4xl mb-2 block">📍</span>
-                  <p className="text-sm">GPS location data unavailable</p>
-                </div>
-              </div>
+            {/* Coordinates */}
+            {selectedCase.gpsLocation?.y !== undefined && selectedCase.gpsLocation?.x !== undefined && (
+              <p className="text-sm text-gray-600 mb-3">
+                Coordinates: {selectedCase.gpsLocation.y.toFixed(6)}, {selectedCase.gpsLocation.x.toFixed(6)}
+              </p>
             )}
+            
+            {/* Embedded Google Map */}
+            <LocationMap
+              latitude={selectedCase.gpsLocation?.y}
+              longitude={selectedCase.gpsLocation?.x}
+              address={selectedCase.locationName}
+              height="192px"
+            />
           </div>
 
           {/* Asset Details */}
           <div className="bg-white rounded-lg shadow-md p-4">
             <h3 className="font-bold text-gray-900 mb-3">Asset Details</h3>
             <div className="space-y-2 text-sm">
-              {Object.entries(selectedCase.assetDetails).map(([key, value]) => (
-                value && (
+              {Object.entries(selectedCase.assetDetails).map(([key, value]) => {
+                if (!value) return null;
+                
+                // Format the value based on type
+                let displayValue = value;
+                if (typeof value === 'number') {
+                  // Check if it's a currency value (large numbers)
+                  if (value >= 1000) {
+                    displayValue = `₦${value.toLocaleString()}`;
+                  } else {
+                    displayValue = value.toLocaleString();
+                  }
+                }
+                
+                return (
                   <div key={key} className="flex justify-between">
                     <span className="text-gray-600 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                    <span className="font-medium">{value}</span>
+                    <span className="font-medium">{displayValue}</span>
                   </div>
-                )
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -578,6 +1022,21 @@ export default function ApprovalsPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Auction Duration Settings - Only show for pending approval cases */}
+          {selectedCase.status === 'pending_approval' && !selectedCase.approvedBy && (
+            <div className="bg-white rounded-lg shadow-md p-4">
+              <h3 className="font-bold text-gray-900 mb-3 flex items-center">
+                <span className="mr-2">⏰</span>
+                Auction Settings
+              </h3>
+              <AuctionDurationSelector
+                value={auctionDurationHours}
+                onChange={setAuctionDurationHours}
+                disabled={isSubmitting}
+              />
             </div>
           )}
         </div>
@@ -611,26 +1070,64 @@ export default function ApprovalsPage() {
                 </div>
               </div>
             </div>
+          ) : isEditMode ? (
+            // Edit Mode Actions - Show "Approve with Changes" and "Cancel Edits"
+            <div className="flex flex-col items-center gap-3">
+              <button
+                onClick={handleEditModeToggle}
+                disabled={isSubmitting}
+                className="inline-flex items-center justify-center px-8 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 disabled:bg-gray-50 disabled:cursor-not-allowed transition-all duration-200 border-2 border-gray-300 min-w-[200px] max-w-xs"
+              >
+                Cancel Edits
+              </button>
+              <button
+                onClick={() => {
+                  setApprovalAction('approve');
+                  setShowConfirmModal(true);
+                }}
+                disabled={!canApproveWithChanges || isSubmitting}
+                className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold hover:from-green-600 hover:to-green-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200 min-w-[200px] max-w-xs"
+              >
+                <CheckCircle className="w-5 h-5" aria-hidden="true" />
+                <span>{isSubmitting ? 'Processing...' : 'Approve with Changes'}</span>
+              </button>
+            </div>
           ) : !approvalAction ? (
-            <div className="grid grid-cols-2 gap-3">
+            // Normal Mode Actions - Show "Approve" and "Reject"
+            <div className="flex justify-center gap-4">
               <button
                 onClick={() => handleApprovalAction('reject')}
-                className="px-4 py-3 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600"
+                disabled={isSubmitting}
+                className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-semibold hover:from-red-600 hover:to-red-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200 min-w-[140px] max-w-[200px]"
               >
-                ✕ Reject
+                <X className="w-5 h-5" aria-hidden="true" />
+                <span>Reject</span>
               </button>
               <button
                 onClick={() => handleApprovalAction('approve')}
-                className="px-4 py-3 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600"
+                disabled={isSubmitting}
+                className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold hover:from-green-600 hover:to-green-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200 min-w-[140px] max-w-[200px]"
               >
-                ✓ Approve
+                <CheckCircle className="w-5 h-5" aria-hidden="true" />
+                <span>Approve</span>
               </button>
             </div>
           ) : (
+            // Approval/Rejection Confirmation - Show comment field and confirm/cancel
             <>
               <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-sm font-medium text-gray-700 mb-2">
-                  {approvalAction === 'approve' ? '✓ Approving Case' : '✕ Rejecting Case'}
+                <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                  {approvalAction === 'approve' ? (
+                    <>
+                      <Check className="w-5 h-5 text-green-600" aria-hidden="true" />
+                      <span>Approving Case</span>
+                    </>
+                  ) : (
+                    <>
+                      <X className="w-5 h-5 text-red-600" aria-hidden="true" />
+                      <span>Rejecting Case</span>
+                    </>
+                  )}
                 </p>
                 <textarea
                   value={comment}
@@ -645,32 +1142,60 @@ export default function ApprovalsPage() {
                 />
               </div>
               
-              <div className="grid grid-cols-2 gap-3">
+              <div className="flex justify-center gap-4">
                 <button
                   onClick={() => {
                     setApprovalAction(null);
                     setComment('');
                   }}
                   disabled={isSubmitting}
-                  className="px-4 py-3 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 disabled:bg-gray-100"
+                  className="inline-flex items-center justify-center px-8 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 disabled:bg-gray-50 disabled:cursor-not-allowed transition-all duration-200 border-2 border-gray-300 min-w-[120px] max-w-[180px]"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleSubmit}
+                  onClick={() => setShowConfirmModal(true)}
                   disabled={isSubmitting || (approvalAction === 'reject' && comment.trim().length < 10)}
-                  className={`px-4 py-3 rounded-lg font-medium text-white ${
+                  className={`inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl font-semibold text-white disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200 min-w-[120px] max-w-[180px] ${
                     approvalAction === 'approve'
-                      ? 'bg-green-500 hover:bg-green-600 disabled:bg-gray-400'
-                      : 'bg-red-500 hover:bg-red-600 disabled:bg-gray-400'
+                      ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 disabled:from-gray-400 disabled:to-gray-400'
+                      : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 disabled:from-gray-400 disabled:to-gray-400'
                   }`}
                 >
-                  {isSubmitting ? 'Processing...' : 'Confirm'}
+                  {approvalAction === 'approve' ? (
+                    <CheckCircle className="w-5 h-5" aria-hidden="true" />
+                  ) : (
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  )}
+                  <span>{isSubmitting ? 'Processing...' : 'Confirm'}</span>
                 </button>
               </div>
             </>
           )}
         </div>
+
+        {/* Confirmation Modal */}
+        <ConfirmationModal
+          isOpen={showConfirmModal}
+          onClose={() => setShowConfirmModal(false)}
+          onConfirm={handleSubmit}
+          title={getConfirmationContent().title}
+          message={getConfirmationContent().message}
+          confirmText={approvalAction === 'approve' ? 'Yes, Approve' : 'Yes, Reject'}
+          cancelText="Cancel"
+          type={approvalAction === 'approve' ? 'warning' : 'danger'}
+          isLoading={isSubmitting}
+        />
+
+        {/* Result Modal */}
+        <ResultModal
+          isOpen={showResultModal}
+          onClose={handleResultModalClose}
+          type={resultModalData.type}
+          title={resultModalData.title}
+          message={resultModalData.message}
+          details={resultModalData.details}
+        />
       </div>
     );
   }
@@ -814,7 +1339,7 @@ export default function ApprovalsPage() {
       <div className="p-4">
         {cases.length === 0 ? (
           <div className="text-center py-12">
-            <div className="text-6xl mb-4">✓</div>
+            <CheckCircle className="w-16 h-16 mx-auto mb-4 text-green-600" aria-label="All caught up" />
             <h2 className="text-xl font-bold text-gray-900 mb-2">All Caught Up!</h2>
             <p className="text-gray-600">
               {activeTab === 'pending' && 'No cases pending approval'}
@@ -843,7 +1368,7 @@ export default function ApprovalsPage() {
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(caseData.damageSeverity)}`}>
-                        {caseData.damageSeverity.toUpperCase()}
+                        {caseData.damageSeverity ? caseData.damageSeverity.toUpperCase() : 'UNKNOWN'}
                       </span>
                       {caseData.status !== 'pending_approval' && (
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(caseData).color}`}>
@@ -867,7 +1392,7 @@ export default function ApprovalsPage() {
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center text-gray-600">
                       <span className="mr-1">🤖</span>
-                      <span>AI Confidence: {caseData.aiAssessment.confidenceScore}%</span>
+                      <span>AI Confidence: {caseData.aiAssessment?.confidenceScore ?? 'N/A'}%</span>
                     </div>
                     <div className="flex items-center text-gray-600">
                       <span className="mr-1">📷</span>

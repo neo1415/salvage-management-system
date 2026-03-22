@@ -1,0 +1,54 @@
+[
+  {
+    "auctionId": "bc665614-6f4d-4e82-b368-bb4ee2a8f5e0",
+    "vendorId": "5e4eaa5f-7438-4c4f-bc8a-59db91d4a8c3",
+    "documentType": "bill_of_sale",
+    "deletedIds": [
+      "7511710c-8746-4af3-89bf-68f15a9b5da8"
+    ],
+    "keptId": "0c86f436-b027-41f1-a962-8f53a8f668fb",
+    "keptCreatedAt": "2026-03-18T16:59:16.997Z"
+  },
+  {
+    "auctionId": "8170710b-49de-4a20-8b7e-926c50243a8d",
+    "vendorId": "5e4eaa5f-7438-4c4f-bc8a-59db91d4a8c3",
+    "documentType": "liability_waiver",
+    "deletedIds": [
+      "3c83a6ae-baaf-4dad-87a8-6c7eaf49a284"
+    ],
+    "keptId": "8a225cbe-7586-44b4-8386-6aa4c66d513a",
+    "keptCreatedAt": "2026-03-22T17:03:06.993Z"
+  },
+  {
+    "auctionId": "8170710b-49de-4a20-8b7e-926c50243a8d",
+    "vendorId": "5e4eaa5f-7438-4c4f-bc8a-59db91d4a8c3",
+    "documentType": "bill_of_sale",
+    "deletedIds": [
+      "fec16ed7-f30a-4fbf-9f71-e6eaa910534e"
+    ],
+    "keptId": "48a61d6b-4359-4643-bf5a-82d92e068bdd",
+    "keptCreatedAt": "2026-03-22T17:03:04.438Z"
+  },
+  {
+    "auctionId": "bc665614-6f4d-4e82-b368-bb4ee2a8f5e0",
+    "vendorId": "5e4eaa5f-7438-4c4f-bc8a-59db91d4a8c3",
+    "documentType": "liability_waiver",
+    "deletedIds": [
+      "ca1136a3-3955-4b51-8b54-e4c6ebf16d01",
+      "86ada850-6e53-41c8-89d0-c375fcbccf64",
+      "1de3192e-0fbb-496a-80f8-bcaac1ad1aad"
+    ],
+    "keptId": "31c57847-95f8-4c01-a441-beb7d49b1857",
+    "keptCreatedAt": "2026-03-18T16:59:18.810Z"
+  },
+  {
+    "auctionId": "bc665614-6f4d-4e82-b368-bb4ee2a8f5e0",
+    "vendorId": "5e4eaa5f-7438-4c4f-bc8a-59db91d4a8c3",
+    "documentType": "pickup_authorization",
+    "deletedIds": [
+      "07a75e3a-a090-42d0-8bd6-ddc6169abbca"
+    ],
+    "keptId": "c2d68289-ad09-4caa-bde6-8a3c6ac4f9a2",
+    "keptCreatedAt": "2026-03-18T16:59:20.528Z"
+  }
+]

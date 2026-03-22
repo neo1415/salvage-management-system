@@ -303,12 +303,19 @@ export async function broadcastNewBid(auctionId: string, bid: any) {
     return;
   }
 
+  // Calculate new minimum bid (current bid + ₦20,000)
+  const currentBid = Number(bid.amount);
+  const minimumBid = currentBid + 20000;
+
   io.to(`auction:${auctionId}`).emit('auction:new-bid', {
     auctionId,
-    bid,
+    bid: {
+      ...bid,
+      minimumBid, // Include the new minimum bid for realtime updates
+    },
   });
 
-  console.log(`📢 Broadcasted new bid for auction ${auctionId}`);
+  console.log(`📢 Broadcasted new bid for auction ${auctionId} with minimum bid ₦${minimumBid.toLocaleString()}`);
 }
 
 /**

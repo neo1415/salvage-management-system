@@ -81,6 +81,14 @@ export async function GET(request: NextRequest) {
 
     const approved = approvedResult[0]?.count || 0;
 
+    console.log('Adjuster dashboard stats:', {
+      userId,
+      totalCases,
+      pendingApproval,
+      approved,
+      approvedQuery: 'Cases with approvedBy IS NOT NULL',
+    });
+
     // Get cancelled cases (treating as "rejected")
     const cancelledResult = await db
       .select({ count: sql<number>`count(*)::int` })

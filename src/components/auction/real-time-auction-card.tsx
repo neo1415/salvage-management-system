@@ -139,7 +139,7 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
       <BidForm
         auctionId={auctionId}
         currentBid={currentBid}
-        minimumIncrement={10000}
+        minimumBid={currentBid ? currentBid + 20000 : 20000} // ₦20,000 minimum increment
         assetName="Asset Name"
         isOpen={showBidForm}
         onClose={() => setShowBidForm(false)}
@@ -147,6 +147,8 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
           // Refresh auction data
           console.log('Bid placed successfully!');
         }}
+        vendorTier="tier1_bvn" // TODO: Get from user session/context
+        auctionValue={currentBid || 20000}
       />
     </div>
   );

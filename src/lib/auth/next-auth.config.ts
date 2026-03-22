@@ -4,7 +4,7 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import FacebookProvider from 'next-auth/providers/facebook';
 import { compare } from 'bcryptjs';
-import { db } from '@/lib/db/drizzle';
+import { db, withRetry } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq, or } from 'drizzle-orm';
@@ -123,17 +123,19 @@ export const authConfig: NextAuthConfig = {
           throw new Error(`Account locked due to too many failed login attempts. Please try again in ${remainingMinutes} minutes.`);
         }
 
-        // Find user by email OR phone
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(
-            or(
-              eq(users.email, emailOrPhone),
-              eq(users.phone, emailOrPhone)
+        // Find user by email OR phone with retry logic
+        const [user] = await withRetry(async () => {
+          return await db
+            .select()
+            .from(users)
+            .where(
+              or(
+                eq(users.email, emailOrPhone),
+                eq(users.phone, emailOrPhone)
+              )
             )
-          )
-          .limit(1);
+            .limit(1);
+        });
 
         if (!user) {
           // Record failed login attempt
@@ -182,29 +184,33 @@ export const authConfig: NextAuthConfig = {
         // Reset failed login attempts on successful login
         await resetFailedLogins(emailOrPhone);
 
-        // Fetch vendor profile if user is a vendor
+        // Fetch vendor profile if user is a vendor with retry logic
         let vendorId: string | undefined;
         if (user.role === 'vendor') {
           const { vendors } = await import('@/lib/db/schema/vendors');
-          const [vendor] = await db
-            .select({ id: vendors.id })
-            .from(vendors)
-            .where(eq(vendors.userId, user.id))
-            .limit(1);
+          const [vendor] = await withRetry(async () => {
+            return await db
+              .select({ id: vendors.id })
+              .from(vendors)
+              .where(eq(vendors.userId, user.id))
+              .limit(1);
+          });
           
           vendorId = vendor?.id;
         }
 
-        // Update last login timestamp and device type
+        // Update last login timestamp and device type with retry logic
         const deviceType = getDeviceType(userAgent);
-        await db
-          .update(users)
-          .set({
-            lastLoginAt: new Date(),
-            loginDeviceType: deviceType,
-            updatedAt: new Date(),
-          })
-          .where(eq(users.id, user.id));
+        await withRetry(async () => {
+          await db
+            .update(users)
+            .set({
+              lastLoginAt: new Date(),
+              loginDeviceType: deviceType,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, user.id));
+        });
 
         // Create audit log for successful login
         await createAuditLog(
@@ -530,6 +536,33 @@ export const authConfig: NextAuthConfig = {
     },
   },
 
+  // Custom error logging that NEVER exposes credentials
+  logger: {
+    error(error: Error) {
+      // Sanitize error message and stack to remove any sensitive data
+      const sanitizedMessage = error.message
+        .replace(/password[=:]\s*[^\s&]+/gi, 'password=***')
+        .replace(/credentials[=:]\s*[^\s&]+/gi, 'credentials=***')
+        .replace(/token[=:]\s*[^\s&]+/gi, 'token=***');
+      
+      console.error('[NextAuth Error]', sanitizedMessage);
+      
+      // Log stack trace in development only (without sensitive data)
+      if (process.env.NODE_ENV === 'development' && error.stack) {
+        const sanitizedStack = error.stack
+          .replace(/password[=:]\s*[^\s&]+/gi, 'password=***')
+          .replace(/credentials[=:]\s*[^\s&]+/gi, 'credentials=***');
+        console.error(sanitizedStack);
+      }
+    },
+    warn(code: string) {
+      console.warn(`[NextAuth Warning] ${code}`);
+    },
+    debug() {
+      // Disable debug logging completely
+    },
+  },
+
   events: {
     async signIn({ user, account, isNewUser: _isNewUser }) {
       // Update last login timestamp (already done in authorize for credentials)
@@ -583,7 +616,9 @@ export const authConfig: NextAuthConfig = {
     },
   },
 
-  debug: process.env.NODE_ENV === 'development',
+  // SECURITY: Debug mode disabled to prevent password logging
+  // NextAuth debug mode logs the entire request body including passwords
+  debug: false,
 };
 
 // Export NextAuth instance for use in API routes and server components

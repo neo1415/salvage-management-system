@@ -14,15 +14,26 @@ export interface CaseApprovalTemplateData {
   comment?: string;
   managerName: string;
   appUrl: string;
+  priceAdjustments?: {
+    marketValue?: { original: number; adjusted: number };
+    repairCost?: { original: number; adjusted: number };
+    salvageValue?: { original: number; adjusted: number };
+    reservePrice?: { original: number; adjusted: number };
+  };
 }
 
 export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): string {
-  const { adjusterName, caseId, claimReference, assetType, status, comment, managerName, appUrl } = data;
+  const { adjusterName, caseId, claimReference, assetType, status, comment, managerName, appUrl, priceAdjustments } = data;
   
   const isApproved = status === 'approved';
   const statusColor = isApproved ? '#28a745' : '#dc3545';
   const statusIcon = isApproved ? '✅' : '❌';
   const statusText = isApproved ? 'APPROVED' : 'REJECTED';
+  const hasAdjustments = priceAdjustments && Object.keys(priceAdjustments).length > 0;
+  
+  const formatCurrency = (amount: number) => {
+    return `₦${amount.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
   
   const content = `
     <p style="font-size: 18px; color: #800020; font-weight: 600; margin-bottom: 20px;">
@@ -36,10 +47,10 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     <div style="background-color: ${isApproved ? '#d4edda' : '#f8d7da'}; border: 3px solid ${statusColor}; padding: 30px; text-align: center; border-radius: 12px; margin: 35px 0; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);">
       <div style="font-size: 48px; margin-bottom: 15px;">${statusIcon}</div>
       <div style="font-size: 28px; font-weight: 700; color: ${statusColor}; margin-bottom: 10px;">
-        Case ${statusText}
+        Case ${statusText}${hasAdjustments ? ' with Price Adjustments' : ''}
       </div>
       <div style="font-size: 16px; color: ${statusColor}; opacity: 0.9;">
-        ${isApproved ? 'Your case has been approved and an auction will be created' : 'Please review the feedback and resubmit'}
+        ${isApproved ? (hasAdjustments ? 'Your case has been approved with price adjustments and an auction will be created' : 'Your case has been approved and an auction will be created') : 'Please review the feedback and resubmit'}
       </div>
     </div>
     
@@ -65,9 +76,56 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
       </table>
     </div>
     
+    ${hasAdjustments ? `
+    <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; border-radius: 8px; margin: 30px 0;">
+      <h3 style="margin: 0 0 15px 0; color: #856404; font-size: 16px;">💰 Price Adjustments Made:</h3>
+      <p style="margin: 0 0 15px 0; color: #856404; line-height: 1.6;">
+        The manager has adjusted the following prices based on market expertise:
+      </p>
+      <table style="width: 100%; border-collapse: collapse;">
+        ${priceAdjustments!.marketValue ? `
+        <tr style="border-bottom: 1px solid #ffeaa7;">
+          <td style="padding: 10px 0; font-weight: 600; color: #856404;">Market Value:</td>
+          <td style="padding: 10px 0; text-align: right;">
+            <span style="text-decoration: line-through; color: #999;">${formatCurrency(priceAdjustments!.marketValue.original)}</span>
+            <span style="margin-left: 10px; color: #28a745; font-weight: 700;">${formatCurrency(priceAdjustments!.marketValue.adjusted)}</span>
+          </td>
+        </tr>
+        ` : ''}
+        ${priceAdjustments!.repairCost ? `
+        <tr style="border-bottom: 1px solid #ffeaa7;">
+          <td style="padding: 10px 0; font-weight: 600; color: #856404;">Repair Cost:</td>
+          <td style="padding: 10px 0; text-align: right;">
+            <span style="text-decoration: line-through; color: #999;">${formatCurrency(priceAdjustments!.repairCost.original)}</span>
+            <span style="margin-left: 10px; color: #28a745; font-weight: 700;">${formatCurrency(priceAdjustments!.repairCost.adjusted)}</span>
+          </td>
+        </tr>
+        ` : ''}
+        ${priceAdjustments!.salvageValue ? `
+        <tr style="border-bottom: 1px solid #ffeaa7;">
+          <td style="padding: 10px 0; font-weight: 600; color: #856404;">Salvage Value:</td>
+          <td style="padding: 10px 0; text-align: right;">
+            <span style="text-decoration: line-through; color: #999;">${formatCurrency(priceAdjustments!.salvageValue.original)}</span>
+            <span style="margin-left: 10px; color: #28a745; font-weight: 700;">${formatCurrency(priceAdjustments!.salvageValue.adjusted)}</span>
+          </td>
+        </tr>
+        ` : ''}
+        ${priceAdjustments!.reservePrice ? `
+        <tr>
+          <td style="padding: 10px 0; font-weight: 600; color: #856404;">Reserve Price:</td>
+          <td style="padding: 10px 0; text-align: right;">
+            <span style="text-decoration: line-through; color: #999;">${formatCurrency(priceAdjustments!.reservePrice.original)}</span>
+            <span style="margin-left: 10px; color: #28a745; font-weight: 700;">${formatCurrency(priceAdjustments!.reservePrice.adjusted)}</span>
+          </td>
+        </tr>
+        ` : ''}
+      </table>
+    </div>
+    ` : ''}
+    
     ${comment ? `
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; border-radius: 8px; margin: 30px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #856404; font-size: 16px;">💬 Manager's Feedback:</h3>
+      <h3 style="margin: 0 0 15px 0; color: #856404; font-size: 16px;">💬 Manager's ${hasAdjustments ? 'Explanation' : 'Feedback'}:</h3>
       <p style="margin: 0; color: #856404; line-height: 1.6;">
         ${comment}
       </p>
@@ -79,6 +137,7 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
       <h3 style="margin: 0 0 15px 0; color: #0c5460; font-size: 16px;">🎉 Next Steps:</h3>
       <ul style="margin: 0; padding-left: 20px; color: #0c5460; line-height: 1.8;">
         <li style="margin: 8px 0;">An auction has been automatically created for this case</li>
+        ${hasAdjustments ? '<li style="margin: 8px 0;">The auction will use the adjusted prices set by the manager</li>' : ''}
         <li style="margin: 8px 0;">Vendors matching the asset category will be notified</li>
         <li style="margin: 8px 0;">You can monitor the auction progress in your dashboard</li>
         <li style="margin: 8px 0;">You'll receive updates when bids are placed</li>

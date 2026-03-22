@@ -26,16 +26,32 @@ export async function POST(
 
     const { id: auctionId } = await context.params;
 
+    // Get vendor ID from user ID
+    const { db } = await import('@/lib/db/drizzle');
+    const { vendors } = await import('@/lib/db/schema/vendors');
+    const { eq } = await import('drizzle-orm');
+
+    const vendor = await db.query.vendors.findFirst({
+      where: eq(vendors.userId, session.user.id),
+    });
+
+    if (!vendor) {
+      return NextResponse.json(
+        { success: false, error: 'Vendor profile not found' },
+        { status: 404 }
+      );
+    }
+
     // Start watching - increment count
-    const watchingCount = await incrementWatchingCount(
+    const result = await incrementWatchingCount(
       auctionId,
-      session.user.id,
+      vendor.id,
       session.user.id
     );
 
     return NextResponse.json({
       success: true,
-      watchingCount,
+      watchingCount: result,
     });
   } catch (error) {
     console.error('Error starting watch:', error);
@@ -65,16 +81,32 @@ export async function DELETE(
 
     const { id: auctionId } = await context.params;
 
+    // Get vendor ID from user ID
+    const { db } = await import('@/lib/db/drizzle');
+    const { vendors } = await import('@/lib/db/schema/vendors');
+    const { eq } = await import('drizzle-orm');
+
+    const vendor = await db.query.vendors.findFirst({
+      where: eq(vendors.userId, session.user.id),
+    });
+
+    if (!vendor) {
+      return NextResponse.json(
+        { success: false, error: 'Vendor profile not found' },
+        { status: 404 }
+      );
+    }
+
     // Stop watching - decrement count
-    const watchingCount = await decrementWatchingCount(
+    const result = await decrementWatchingCount(
       auctionId,
-      session.user.id,
+      vendor.id,
       session.user.id
     );
 
     return NextResponse.json({
       success: true,
-      watchingCount,
+      watchingCount: result,
     });
   } catch (error) {
     console.error('Error stopping watch:', error);

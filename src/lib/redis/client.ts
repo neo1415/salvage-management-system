@@ -252,6 +252,20 @@ export const rateLimiter = {
   },
 
   /**
+   * Increment counter and return new value
+   * Used for fraud monitoring
+   */
+  async increment(key: string, windowSeconds: number): Promise<number> {
+    const attempts = await redis.incr(key);
+    
+    if (attempts === 1) {
+      await redis.expire(key, windowSeconds);
+    }
+
+    return attempts;
+  },
+
+  /**
    * Reset rate limit
    */
   async reset(key: string): Promise<void> {

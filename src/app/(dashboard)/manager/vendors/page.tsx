@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { 
@@ -22,13 +22,20 @@ import {
   Calendar,
   ExternalLink
 } from 'lucide-react';
+import { VirtualizedList } from '@/components/ui/virtualized-list';
+import { useVirtualizedList } from '@/hooks/use-virtualized-list';
+import { Vendor } from '@/hooks/queries/use-vendors';
+import { FilterChip } from '@/components/ui/filters/filter-chip';
+import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
+import { SearchInput } from '@/components/ui/filters/search-input';
+import { Filter as FilterIcon, X } from 'lucide-react';
 
 /**
  * Tier 2 KYC Review Queue for Salvage Manager
  * 
  * Allows Salvage Manager to review and approve/reject Tier 2 vendor applications
  * Features:
- * - Display Tier 2 KYC review queue
+ * - Display Tier 2 KYC review queue with virtualization for large lists
  * - Show vendor details and uploaded documents
  * - Display verification statuses (BVN ✓, NIN ✓, Bank Account ✓, CAC pending)
  * - Add approve/reject buttons with comment field
@@ -36,44 +43,116 @@ import {
  * Requirements: 7, NFR5.3
  */
 
-interface VendorApplication {
-  id: string;
-  userId: string;
-  businessName: string;
-  cacNumber: string;
-  tin: string;
-  bankAccountNumber: string;
-  bankName: string;
-  bankAccountName: string;
-  tier: string;
-  status: string;
-  bvnVerified: boolean;
-  ninVerified: boolean;
-  bankAccountVerified: boolean;
-  cacVerified: boolean;
-  cacCertificateUrl: string;
-  bankStatementUrl: string;
-  ninCardUrl: string;
-  createdAt: string;
-  user: {
-    fullName: string;
-    email: string;
-    phone: string;
-  };
-}
+interface VendorApplication extends Vendor {}
 
 export default function Tier2ReviewQueuePage() {
   const router = useRouter();
   const { status: sessionStatus } = useSession();
+  const searchParams = useSearchParams();
 
   // State
-  const [applications, setApplications] = useState<VendorApplication[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedApplication, setSelectedApplication] = useState<VendorApplication | null>(null);
   const [reviewAction, setReviewAction] = useState<'approve' | 'reject' | null>(null);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filter state with URL persistence
+  const [verificationFilter, setVerificationFilter] = useState<string[]>(
+    searchParams.get('verification')?.split(',').filter(Boolean) || []
+  );
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Update URL when filters change
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (verificationFilter.length > 0) params.set('verification', verificationFilter.join(','));
+    if (searchQuery) params.set('search', searchQuery);
+    
+    const newUrl = params.toString() ? `?${params.toString()}` : '';
+    window.history.replaceState(null, '', `/manager/vendors${newUrl}`);
+  }, [verificationFilter, searchQuery]);
+
+  // Check if any filters are active
+  const hasActiveFilters = verificationFilter.length > 0 || searchQuery !== '';
+  const activeFilterCount = verificationFilter.length + (searchQuery ? 1 : 0);
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setVerificationFilter([]);
+    setSearchQuery('');
+  };
+
+  // Virtualized list for vendors
+  const {
+    items: allApplications,
+    isLoading,
+    isFetching,
+    hasMore,
+    loadMore,
+    reset,
+  } = useVirtualizedList<VendorApplication>({
+    queryKey: ['vendors', { status: 'pending', tier: 'tier2_full' }],
+    fetchFn: async (page) => {
+      const params = new URLSearchParams({
+        status: 'pending',
+        tier: 'tier2_full',
+        page: page.toString(),
+        pageSize: '50',
+      });
+      
+      const response = await fetch(`/api/vendors?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch applications');
+      
+      const data = await response.json();
+      return {
+        data: data.vendors || [],
+        hasMore: data.hasMore || false,
+      };
+    },
+    pageSize: 50,
+  });
+
+  // Client-side filtering
+  const applications = allApplications.filter(app => {
+    // Verification filter
+    if (verificationFilter.length > 0) {
+      const hasAllVerifications = verificationFilter.every(filter => {
+        switch (filter) {
+          case 'bvn': return app.bvnVerified;
+          case 'nin': return app.ninVerified;
+          case 'bank': return app.bankAccountVerified;
+          case 'cac': return app.cacVerified;
+          default: return true;
+        }
+      });
+      if (!hasAllVerifications) return false;
+    }
+
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesBusinessName = app.businessName.toLowerCase().includes(query);
+      const matchesFullName = app.user.fullName.toLowerCase().includes(query);
+      const matchesEmail = app.user.email.toLowerCase().includes(query);
+      const matchesCac = app.cacNumber?.toLowerCase().includes(query);
+      
+      if (!matchesBusinessName && !matchesFullName && !matchesEmail && !matchesCac) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  // Verification filter options
+  const verificationOptions: FilterOption[] = [
+    { value: 'bvn', label: 'BVN Verified', count: allApplications.filter(a => a.bvnVerified).length },
+    { value: 'nin', label: 'NIN Verified', count: allApplications.filter(a => a.ninVerified).length },
+    { value: 'bank', label: 'Bank Verified', count: allApplications.filter(a => a.bankAccountVerified).length },
+    { value: 'cac', label: 'CAC Verified', count: allApplications.filter(a => a.cacVerified).length },
+  ];
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -81,33 +160,6 @@ export default function Tier2ReviewQueuePage() {
       router.push('/login');
     }
   }, [sessionStatus, router]);
-
-  // Fetch pending applications
-  useEffect(() => {
-    if (sessionStatus === 'authenticated') {
-      fetchApplications();
-    }
-  }, [sessionStatus]);
-
-  const fetchApplications = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch('/api/vendors?status=pending&tier=tier2_full');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch applications');
-      }
-
-      const data = await response.json();
-      setApplications(data.vendors || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load applications');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Handle review submission
   const handleReviewSubmit = async () => {
@@ -141,7 +193,7 @@ export default function Tier2ReviewQueuePage() {
       }
 
       // Success - refresh list and close modal
-      await fetchApplications();
+      reset();
       setSelectedApplication(null);
       setReviewAction(null);
       setComment('');
@@ -153,7 +205,7 @@ export default function Tier2ReviewQueuePage() {
   };
 
   // Loading state
-  if (sessionStatus === 'loading' || loading) {
+  if (sessionStatus === 'loading' || (isLoading && applications.length === 0)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-[#800020] animate-spin" />
@@ -176,7 +228,7 @@ export default function Tier2ReviewQueuePage() {
             </button>
           </div>
           
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 bg-[#800020] rounded-full flex items-center justify-center">
               <Shield className="w-6 h-6 text-white" />
             </div>
@@ -185,6 +237,96 @@ export default function Tier2ReviewQueuePage() {
               <p className="text-gray-600">Review and approve vendor applications</p>
             </div>
           </div>
+
+          {/* Search Bar */}
+          <SearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search by business name, contact name, email, or CAC number..."
+            className="w-full mb-4"
+          />
+
+          {/* Filter Bar */}
+          <div className="flex items-center gap-2 flex-wrap mb-4">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2"
+              aria-label="Toggle filters"
+              aria-expanded={showFilters}
+            >
+              <FilterIcon size={18} aria-hidden="true" />
+              <span className="text-sm font-medium">Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-medium">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Active Filter Chips */}
+            {verificationFilter.map(filter => {
+              const labels: Record<string, string> = {
+                bvn: 'BVN Verified',
+                nin: 'NIN Verified',
+                bank: 'Bank Verified',
+                cac: 'CAC Verified',
+              };
+              return (
+                <FilterChip
+                  key={filter}
+                  label={labels[filter]}
+                  onRemove={() => setVerificationFilter(verificationFilter.filter(f => f !== filter))}
+                />
+              );
+            })}
+            {searchQuery && (
+              <FilterChip
+                label={`Search: "${searchQuery}"`}
+                onRemove={() => setSearchQuery('')}
+              />
+            )}
+
+            {/* Clear All Filters */}
+            {hasActiveFilters && (
+              <button
+                onClick={clearAllFilters}
+                className="flex items-center gap-1 px-3 py-1 text-sm text-gray-600 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2 rounded"
+                aria-label="Clear all filters"
+              >
+                <X size={14} aria-hidden="true" />
+                <span>Clear all</span>
+              </button>
+            )}
+          </div>
+
+          {/* Expandable Filters Panel */}
+          {showFilters && (
+            <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-900">Filter Options</h3>
+                <span className="text-xs text-gray-500">
+                  {applications.length} of {allApplications.length} applications
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                {/* Verification Status Faceted Filter */}
+                <FacetedFilter
+                  title="Verification Status"
+                  options={verificationOptions}
+                  selected={verificationFilter}
+                  onChange={setVerificationFilter}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Results Count */}
+          {hasActiveFilters && (
+            <div className="text-sm text-gray-600">
+              Showing <span className="font-semibold text-gray-900">{applications.length}</span> of <span className="font-semibold text-gray-900">{allApplications.length}</span> applications
+            </div>
+          )}
         </div>
 
         {/* Error Message */}
@@ -201,17 +343,51 @@ export default function Tier2ReviewQueuePage() {
         )}
 
         {/* Applications List */}
-        {applications.length === 0 ? (
+        {applications.length === 0 && !isLoading ? (
           <div className="bg-white rounded-lg shadow-sm p-12 text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
               <CheckCircle2 className="w-8 h-8 text-gray-400" />
             </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">No Pending Applications</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">
+              {hasActiveFilters ? 'No applications match your filters' : 'No Pending Applications'}
+            </h2>
             <p className="text-gray-600">
-              All Tier 2 applications have been reviewed. Check back later for new submissions.
+              {hasActiveFilters 
+                ? 'Try adjusting your filters to see more results.' 
+                : 'All Tier 2 applications have been reviewed. Check back later for new submissions.'
+              }
             </p>
+            {hasActiveFilters && (
+              <button
+                onClick={clearAllFilters}
+                className="mt-4 px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+        ) : applications.length > 50 ? (
+          // Use virtualization for large lists (> 50 items)
+          <div className="h-[calc(100vh-300px)]">
+            <VirtualizedList
+              items={applications}
+              renderItem={(application) => (
+                <div className="px-4 py-2">
+                  <ApplicationCard
+                    application={application}
+                    onReview={() => setSelectedApplication(application)}
+                  />
+                </div>
+              )}
+              estimateSize={280}
+              onLoadMore={loadMore}
+              hasMore={hasMore}
+              isLoading={isFetching}
+              className="pb-4"
+            />
           </div>
         ) : (
+          // Regular rendering for small lists (<= 50 items)
           <div className="grid grid-cols-1 gap-6">
             {applications.map((application) => (
               <ApplicationCard

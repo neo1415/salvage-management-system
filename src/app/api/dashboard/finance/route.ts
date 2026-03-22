@@ -23,6 +23,13 @@ interface DashboardStats {
   verified: number;
   rejected: number;
   totalAmount: number;
+  escrowWalletPayments: number;
+  escrowWalletPercentage: number;
+  paymentMethodBreakdown: {
+    paystack: number;
+    bank_transfer: number;
+    escrow_wallet: number;
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -45,16 +52,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Try to get cached data
-    const cacheKey = 'dashboard:finance';
-    const cachedData = await cache.get<DashboardStats>(cacheKey);
+    // Check if cache should be bypassed (for debugging)
+    const { searchParams } = new URL(request.url);
+    const bypassCache = searchParams.get('bypass') === 'true';
 
-    if (cachedData) {
-      return NextResponse.json(cachedData);
+    // Try to get cached data (unless bypassed)
+    const cacheKey = 'dashboard:finance';
+    if (!bypassCache) {
+      const cachedData = await cache.get<DashboardStats>(cacheKey);
+
+      if (cachedData) {
+        console.log('Finance dashboard: Returning cached data');
+        return NextResponse.json(cachedData);
+      }
     }
 
     // Calculate dashboard stats
+    console.log('Finance dashboard: Calculating fresh stats');
     const stats = await calculateFinanceStats();
+
+    // Log stats for debugging
+    console.log('Finance dashboard stats:', stats);
 
     // Cache the data for 5 minutes (300 seconds)
     await cache.set(cacheKey, stats, 300);
@@ -104,15 +122,45 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
 
   const rejected = rejectedResult[0]?.count || 0;
 
-  // Total amount (sum of all verified payments)
+  // Total amount (sum of ALL payments regardless of status)
+  // This includes pending, verified, and frozen payments
   const totalAmountResult = await db
     .select({ 
       total: sql<number>`COALESCE(SUM(${payments.amount}::numeric), 0)::numeric` 
     })
-    .from(payments)
-    .where(eq(payments.status, 'verified'));
+    .from(payments);
 
   const totalAmount = parseFloat(totalAmountResult[0]?.total?.toString() || '0');
+
+  // Escrow wallet payments count
+  const escrowWalletResult = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(payments)
+    .where(eq(payments.paymentMethod, 'escrow_wallet'));
+
+  const escrowWalletPayments = escrowWalletResult[0]?.count || 0;
+
+  // Calculate escrow wallet percentage
+  const escrowWalletPercentage = totalPayments > 0 
+    ? Math.round((escrowWalletPayments / totalPayments) * 100) 
+    : 0;
+
+  // Payment method breakdown
+  const paystackResult = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(payments)
+    .where(eq(payments.paymentMethod, 'paystack'));
+
+  const bankTransferResult = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(payments)
+    .where(eq(payments.paymentMethod, 'bank_transfer'));
+
+  const paymentMethodBreakdown = {
+    paystack: paystackResult[0]?.count || 0,
+    bank_transfer: bankTransferResult[0]?.count || 0,
+    escrow_wallet: escrowWalletPayments,
+  };
 
   return {
     totalPayments,
@@ -120,5 +168,8 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
     verified,
     rejected,
     totalAmount,
+    escrowWalletPayments,
+    escrowWalletPercentage,
+    paymentMethodBreakdown,
   };
 }

@@ -7,6 +7,8 @@ import { users } from '@/lib/db/schema/users';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { escrowService } from '@/features/payments/services/escrow.service';
+import { getDocumentProgress } from '@/features/documents/services/document.service';
 
 /**
  * GET /api/finance/payments
@@ -102,6 +104,27 @@ export async function GET(request: NextRequest) {
       .where(whereClause)
       .orderBy(sql`${payments.createdAt} DESC`);
 
+    // Update payment status to 'overdue' if past deadline (real-time check)
+    const now = new Date();
+    for (const { payment } of filteredPayments) {
+      if (
+        payment.status === 'pending' &&
+        payment.paymentDeadline < now
+      ) {
+        // Update status to overdue in database
+        await db
+          .update(payments)
+          .set({
+            status: 'overdue',
+            updatedAt: new Date(),
+          })
+          .where(eq(payments.id, payment.id));
+        
+        // Update in-memory object for response
+        payment.status = 'overdue';
+      }
+    }
+
     // Calculate stats from filtered payments (not just today)
     const totalFiltered = filteredPayments.length;
     const autoVerified = filteredPayments.filter(p => p.payment.autoVerified).length;
@@ -111,36 +134,63 @@ export async function GET(request: NextRequest) {
     const overdue = filteredPayments.filter(p => p.payment.status === 'overdue').length;
 
     // Format response
-    const formattedPayments = filteredPayments.map(({ payment, vendor, user, case: caseData }) => ({
-      id: payment.id,
-      auctionId: payment.auctionId,
-      vendorId: payment.vendorId,
-      amount: payment.amount,
-      paymentMethod: payment.paymentMethod,
-      paymentReference: payment.paymentReference,
-      paymentProofUrl: payment.paymentProofUrl,
-      status: payment.status,
-      autoVerified: payment.autoVerified,
-      paymentDeadline: payment.paymentDeadline.toISOString(),
-      createdAt: payment.createdAt.toISOString(),
-      vendor: {
-        id: vendor.id,
-        businessName: vendor.businessName,
-        contactPersonName: user.fullName,
-        phoneNumber: user.phone,
-        email: user.email,
-        kycTier: vendor.tier === 'tier1_bvn' ? 'tier1' : vendor.tier === 'tier2_full' ? 'tier2' : null,
-        kycStatus: vendor.status,
-        bankAccountNumber: vendor.bankAccountNumber,
-        bankName: vendor.bankName,
-        bankAccountName: vendor.bankAccountName,
-      },
-      case: {
-        claimReference: caseData.claimReference,
-        assetType: caseData.assetType,
-        assetDetails: caseData.assetDetails,
-      },
-    }));
+    const formattedPayments = await Promise.all(
+      filteredPayments.map(async ({ payment, vendor, user, case: caseData }) => {
+        const base = {
+          id: payment.id,
+          auctionId: payment.auctionId,
+          vendorId: payment.vendorId,
+          amount: payment.amount,
+          paymentMethod: payment.paymentMethod,
+          paymentReference: payment.paymentReference,
+          paymentProofUrl: payment.paymentProofUrl,
+          status: payment.status,
+          autoVerified: payment.autoVerified,
+          paymentDeadline: payment.paymentDeadline.toISOString(),
+          createdAt: payment.createdAt.toISOString(),
+          escrowStatus: payment.escrowStatus,
+          vendor: {
+            id: vendor.id,
+            businessName: vendor.businessName,
+            contactPersonName: user.fullName,
+            phoneNumber: user.phone,
+            email: user.email,
+            kycTier: vendor.tier === 'tier1_bvn' ? 'tier1' : vendor.tier === 'tier2_full' ? 'tier2' : null,
+            kycStatus: vendor.status,
+            bankAccountNumber: vendor.bankAccountNumber,
+            bankName: vendor.bankName,
+            bankAccountName: vendor.bankAccountName,
+          },
+          case: {
+            claimReference: caseData.claimReference,
+            assetType: caseData.assetType,
+            assetDetails: caseData.assetDetails,
+          },
+        };
+
+        if (payment.paymentMethod !== 'escrow_wallet') {
+          return base;
+        }
+
+        // Enrich escrow wallet payments with wallet + document progress for Phase 4 UI.
+        const wallet = await escrowService.getBalance(payment.vendorId);
+        const progress = await getDocumentProgress(payment.auctionId, payment.vendorId);
+
+        return {
+          ...base,
+          walletBalance: {
+            availableBalance: wallet.availableBalance,
+            frozenAmount: wallet.frozenAmount,
+          },
+          documentProgress: {
+            signedDocuments: progress.signedDocuments,
+            totalDocuments: progress.totalDocuments,
+            progress: progress.progress,
+            allSigned: progress.allSigned,
+          },
+        };
+      })
+    );
 
     return NextResponse.json({
       stats: {

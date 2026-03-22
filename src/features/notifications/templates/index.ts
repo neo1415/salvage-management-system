@@ -23,3 +23,9 @@ export type { BidAlertTemplateData } from './bid-alert.template';
 
 export { getPaymentConfirmationEmailTemplate } from './payment-confirmation.template';
 export type { PaymentConfirmationTemplateData } from './payment-confirmation.template';
+
+export { documentReadyTemplate } from './document-ready.template';
+export type { DocumentReadyTemplateData } from './document-ready.template';
+
+export { documentSignedTemplate } from './document-signed.template';
+export type { DocumentSignedTemplateData } from './document-signed.template';

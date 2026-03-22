@@ -159,7 +159,7 @@ async function sendTemporaryPasswordEmail(
 
 /**
  * GET /api/admin/users
- * List all users with optional filters
+ * List all users with optional filters and pagination
  * Only accessible by System Admins
  */
 export async function GET(request: NextRequest) {
@@ -186,6 +186,8 @@ export async function GET(request: NextRequest) {
     const roleFilter = searchParams.get('role');
     const statusFilter = searchParams.get('status');
     const searchQuery = searchParams.get('search');
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
 
     // Build query conditions
     const conditions = [];
@@ -213,7 +215,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch users
+    // Calculate offset
+    const offset = (page - 1) * pageSize;
+
+    // Fetch users with pagination
     const usersList = await db.query.users.findMany({
       where: conditions.length > 0 ? and(...conditions) : undefined,
       orderBy: (users, { desc }) => [desc(users.createdAt)],
@@ -229,12 +234,21 @@ export async function GET(request: NextRequest) {
         lastLoginAt: true,
         loginDeviceType: true,
       },
+      limit: pageSize + 1,
+      offset,
     });
+
+    // Check if there are more items
+    const hasMore = usersList.length > pageSize;
+    const data = hasMore ? usersList.slice(0, pageSize) : usersList;
 
     return NextResponse.json({
       success: true,
-      users: usersList,
-      count: usersList.length,
+      users: data,
+      count: data.length,
+      hasMore,
+      page,
+      pageSize,
     });
   } catch (error) {
     console.error('Failed to fetch users:', error);

@@ -8,6 +8,26 @@ import PaymentPage from '@/app/(dashboard)/vendor/payments/[id]/page';
 vi.mock('next-auth/react');
 vi.mock('next/navigation');
 
+// Mock WalletPaymentConfirmation component
+vi.mock('@/components/payments/wallet-payment-confirmation', () => ({
+  WalletPaymentConfirmation: ({ onConfirm }: { onConfirm: () => Promise<void> }) => (
+    <div data-testid="wallet-payment-confirmation">
+      <button 
+        onClick={async () => {
+          try {
+            await onConfirm();
+          } catch (error) {
+            // Error is handled by parent component
+          }
+        }} 
+        data-testid="mock-confirm-wallet"
+      >
+        Confirm Payment from Wallet
+      </button>
+    </div>
+  ),
+}));
+
 // Mock fetch
 global.fetch = vi.fn();
 
@@ -17,6 +37,7 @@ describe('PaymentPage Component', () => {
       id: 'user-123',
       email: 'vendor@test.com',
       name: 'Test Vendor',
+      vendorId: 'vendor-123',
     },
   };
 
@@ -273,6 +294,168 @@ describe('PaymentPage Component', () => {
       // The code throws "Invalid payment URL format" for malformed URLs
       // and "Invalid payment URL domain" for valid URLs with wrong domain
       expect(screen.getByText(/Invalid payment URL/i)).toBeInTheDocument();
+    });
+  });
+
+  // Integration tests for escrow_wallet payment method
+  describe('Escrow Wallet Payment', () => {
+    const mockEscrowWalletPayment = {
+      ...mockPaymentData,
+      paymentMethod: 'escrow_wallet',
+      escrowStatus: 'frozen',
+    };
+
+    const mockWalletBalance = {
+      availableBalance: '1000000',
+      balance: '1000000',
+      frozenAmount: '500000',
+    };
+
+    it('should render WalletPaymentConfirmation for escrow_wallet payment', async () => {
+      (global.fetch as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockEscrowWalletPayment,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockWalletBalance,
+        });
+
+      render(<PaymentPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('wallet-payment-confirmation')).toBeInTheDocument();
+      });
+
+      // Should not show Paystack or Bank Transfer options
+      expect(screen.queryByText(/Pay Now with Paystack/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Pay via Bank Transfer/i)).not.toBeInTheDocument();
+    });
+
+    it('should fetch wallet balance for escrow_wallet payment', async () => {
+      const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+      
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockEscrowWalletPayment,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockWalletBalance,
+        });
+
+      render(<PaymentPage />);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith('/api/payments/wallet/balance');
+      });
+    });
+
+    it('should call confirm-wallet API when wallet confirmation is triggered', async () => {
+      const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+      
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockEscrowWalletPayment,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockWalletBalance,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            message: 'Wallet payment confirmed',
+            documentsUrl: '/vendor/documents?auctionId=auction-123',
+          }),
+        });
+
+      render(<PaymentPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('wallet-payment-confirmation')).toBeInTheDocument();
+      });
+
+      const confirmButton = screen.getByTestId('mock-confirm-wallet');
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          '/api/payments/payment-123/confirm-wallet',
+          expect.objectContaining({
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ vendorId: 'vendor-123' }),
+          })
+        );
+      });
+    });
+
+    it('should not show wallet confirmation if wallet balance fails to load', async () => {
+      const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+      
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockEscrowWalletPayment,
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          json: async () => ({ error: 'Wallet not found' }),
+        });
+
+      render(<PaymentPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Payment Details')).toBeInTheDocument();
+      });
+
+      // Should show loading message instead of WalletPaymentConfirmation
+      expect(screen.getByText(/Loading wallet balance/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('wallet-payment-confirmation')).not.toBeInTheDocument();
+    });
+
+    it('should render Paystack payment for non-escrow_wallet payment', async () => {
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockPaymentData, // paymentMethod: 'paystack'
+      });
+
+      render(<PaymentPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Payment Details')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Pay Now with Paystack/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('wallet-payment-confirmation')).not.toBeInTheDocument();
+    });
+
+    it('should render Bank Transfer for bank_transfer payment method', async () => {
+      const bankTransferPayment = {
+        ...mockPaymentData,
+        paymentMethod: 'bank_transfer',
+      };
+
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: async () => bankTransferPayment,
+      });
+
+      render(<PaymentPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Payment Details')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Pay via Bank Transfer/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('wallet-payment-confirmation')).not.toBeInTheDocument();
     });
   });
 });

@@ -2,6 +2,20 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import dynamic from 'next/dynamic';
+import { EscrowPaymentDetails } from '@/components/finance/escrow-payment-details';
+import { EscrowPaymentAuditTrail } from '@/components/finance/escrow-payment-audit-trail';
+import { ClipboardList, Star } from 'lucide-react';
+
+const SuccessModal = dynamic(
+  () => import('@/components/modals/success-modal').then(mod => ({ default: mod.SuccessModal })),
+  { ssr: false }
+);
+
+const ErrorModal = dynamic(
+  () => import('@/components/modals/error-modal').then(mod => ({ default: mod.ErrorModal })),
+  { ssr: false }
+);
 
 interface Payment {
   id: string;
@@ -15,6 +29,17 @@ interface Payment {
   autoVerified: boolean;
   paymentDeadline: string;
   createdAt: string;
+  escrowStatus?: 'frozen' | 'released' | 'failed' | null;
+  walletBalance?: {
+    availableBalance: number;
+    frozenAmount: number;
+  };
+  documentProgress?: {
+    signedDocuments: number;
+    totalDocuments: number;
+    progress: number;
+    allSigned: boolean;
+  };
   vendor: {
     id: string;
     businessName: string | null;
@@ -61,6 +86,28 @@ export default function FinancePaymentsPage() {
   const [comment, setComment] = useState('');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Success/Error modal states
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [errorDetails, setErrorDetails] = useState<string | undefined>();
+  
+  // Audit trail states
+  const [auditLogs, setAuditLogs] = useState<Array<{
+    id: string;
+    actionType: string;
+    userId: string;
+    userName?: string;
+    ipAddress: string;
+    deviceType: 'mobile' | 'desktop' | 'tablet';
+    userAgent: string;
+    beforeState?: Record<string, unknown>;
+    afterState?: Record<string, unknown>;
+    createdAt: string;
+  }>>([]);
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
 
   // Filter states
   const [activeTab, setActiveTab] = useState<ViewTab>('all');
@@ -156,24 +203,33 @@ export default function FinancePaymentsPage() {
 
       const result = await response.json();
 
-      // Show success message
-      const successMessage = action === 'approve' 
-        ? `Payment verified successfully! ₦${parseFloat(selectedPayment.amount).toLocaleString()} released to vendor.`
-        : 'Payment rejected successfully.';
-      
-      alert(successMessage); // Simple alert for now
-
-      // Refresh payments list
-      await fetchPayments();
-
-      // Close modal
+      // Close verification modal first
       setShowModal(false);
       setSelectedPayment(null);
       setAction(null);
       setComment('');
+
+      // Show success modal
+      const message = action === 'approve' 
+        ? `Payment verified successfully! ₦${parseFloat(selectedPayment.amount).toLocaleString()} released to vendor.`
+        : 'Payment rejected successfully.';
+      
+      setSuccessMessage(message);
+      setShowSuccessModal(true);
+
+      // Refresh payments list
+      await fetchPayments();
     } catch (err) {
       console.error('Error verifying payment:', err);
-      setError(err instanceof Error ? err.message : 'Failed to verify payment');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to verify payment';
+      
+      // Show error modal instead of inline error
+      setErrorMessage('Payment Verification Failed');
+      setErrorDetails(errorMsg);
+      setShowErrorModal(true);
+      
+      // Also set inline error for the verification modal
+      setError(errorMsg);
     } finally {
       setProcessing(false);
     }
@@ -208,6 +264,222 @@ export default function FinancePaymentsPage() {
   const manualVerificationPercentage = stats.total > 0
     ? Math.round((stats.pendingManual / stats.total) * 100)
     : 0;
+
+  const getPaymentSourceLabel = (method: string) => {
+    switch (method) {
+      case 'paystack':
+        return 'Paystack';
+      case 'flutterwave':
+        return 'Flutterwave';
+      case 'bank_transfer':
+        return 'Bank Transfer';
+      case 'escrow_wallet':
+        return 'Escrow Wallet';
+      default:
+        return method;
+    }
+  };
+
+  const getEscrowStatusBadge = (status?: string | null) => {
+    if (!status) return null;
+    
+    const classes = {
+      frozen: 'bg-yellow-100 text-yellow-800',
+      released: 'bg-green-100 text-green-800',
+      failed: 'bg-red-100 text-red-800',
+    }[status] || 'bg-gray-100 text-gray-800';
+
+    const labels = {
+      frozen: '🔒 Frozen',
+      released: '✅ Released',
+      failed: '❌ Failed',
+    }[status] || status;
+
+    return (
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${classes}`}>
+        {labels}
+      </span>
+    );
+  };
+
+  const handleManualRelease = async (paymentId: string) => {
+    if (!selectedPayment) return;
+    
+    try {
+      setProcessing(true);
+      setError(null);
+
+      const response = await fetch(`/api/payments/${paymentId}/release-funds`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          financeOfficerId: session?.user?.id,
+          reason: 'Manual release by Finance Officer',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to release funds');
+      }
+
+      const result = await response.json();
+
+      // Show success modal
+      setSuccessMessage(`Funds released successfully! ₦${parseFloat(selectedPayment.amount).toLocaleString()} transferred to NEM Insurance.`);
+      setShowSuccessModal(true);
+      
+      // Refresh payments list
+      await fetchPayments();
+    } catch (err) {
+      console.error('Error releasing funds:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Failed to release funds';
+      
+      // Show error modal
+      setErrorMessage('Fund Release Failed');
+      setErrorDetails(errorMsg);
+      setShowErrorModal(true);
+      
+      setError(errorMsg);
+      throw err;
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleGrantGracePeriod = async (paymentId: string) => {
+    try {
+      setProcessing(true);
+      setError(null);
+
+      const response = await fetch(`/api/payments/${paymentId}/grant-grace-period`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to grant grace period');
+      }
+
+      // Show success modal
+      setSuccessMessage('Grace period granted successfully! Vendor has been notified of the 3-day extension.');
+      setShowSuccessModal(true);
+      
+      // Close details modal
+      closeModal();
+      
+      // Refresh payments list
+      await fetchPayments();
+    } catch (err) {
+      console.error('Error granting grace period:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Failed to grant grace period';
+      
+      // Show error modal
+      setErrorMessage('Grace Period Failed');
+      setErrorDetails(errorMsg);
+      setShowErrorModal(true);
+      
+      setError(errorMsg);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const fetchAuditLogs = async (paymentId: string) => {
+    try {
+      setLoadingAuditLogs(true);
+      const response = await fetch(`/api/payments/${paymentId}/audit-logs`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch audit logs');
+      }
+
+      const data = await response.json();
+      setAuditLogs(data.auditLogs || []);
+    } catch (err) {
+      console.error('Error fetching audit logs:', err);
+      setAuditLogs([]);
+    } finally {
+      setLoadingAuditLogs(false);
+    }
+  };
+
+  const exportAuditLogsToCSV = () => {
+    if (!selectedPayment || auditLogs.length === 0) return;
+
+    // CSV headers
+    const headers = ['Timestamp', 'Action', 'User', 'IP Address', 'Device', 'Details'];
+    
+    // CSV rows
+    const rows = auditLogs.map((log) => {
+      const timestamp = new Date(log.createdAt).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      
+      const action = log.actionType.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+      const user = log.userName || 'Unknown User';
+      const ipAddress = log.ipAddress;
+      const device = log.deviceType.charAt(0).toUpperCase() + log.deviceType.slice(1);
+      
+      // Extract details from afterState
+      let details = '';
+      if (log.afterState) {
+        const detailParts: string[] = [];
+        if (log.afterState.amount) {
+          detailParts.push(`Amount: ₦${Number(log.afterState.amount).toLocaleString()}`);
+        }
+        if (log.afterState.escrowStatus) {
+          detailParts.push(`Status: ${log.afterState.escrowStatus}`);
+        }
+        if (log.afterState.autoVerified) {
+          detailParts.push('Auto-verified');
+        }
+        if (log.afterState.error) {
+          detailParts.push(`Error: ${log.afterState.error}`);
+        }
+        details = detailParts.join(' | ');
+      }
+      
+      return [timestamp, action, user, ipAddress, device, details];
+    });
+
+    // Combine headers and rows
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `audit-trail-${selectedPayment.id}-${Date.now()}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const openDetailsModalWithAuditLogs = async (payment: Payment) => {
+    setSelectedPayment(payment);
+    setShowDetailsModal(true);
+    
+    // Fetch audit logs if it's an escrow wallet payment
+    if (payment.paymentMethod === 'escrow_wallet') {
+      await fetchAuditLogs(payment.id);
+    }
+  };
 
   if (loading) {
     return (
@@ -405,13 +677,14 @@ export default function FinancePaymentsPage() {
                 e.stopPropagation();
                 setActiveTab('all');
               }}
-              className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors ${
+              className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors flex items-center gap-2 ${
                 activeTab === 'all'
                   ? 'bg-[#800020] text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              📋 All Payments
+              <ClipboardList className="w-4 h-4" aria-hidden="true" />
+              <span>All Payments</span>
             </button>
             <button
               type="button"
@@ -632,15 +905,36 @@ export default function FinancePaymentsPage() {
                         </p>
                       </div>
                       <div>
+                        <p className="text-gray-500">Payment Source</p>
+                        <p className="font-medium text-gray-900">
+                          {getPaymentSourceLabel(payment.paymentMethod)}
+                        </p>
+                        {payment.paymentMethod === 'escrow_wallet' && payment.escrowStatus && (
+                          <div className="mt-1">
+                            {getEscrowStatusBadge(payment.escrowStatus)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
                         <p className="text-gray-500">Vendor Business</p>
                         <p className="font-medium text-gray-900">
                           {payment.vendor.businessName || 'Individual Vendor'}
                         </p>
                         {payment.vendor.kycTier && (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mt-1 ${
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium mt-1 ${
                             payment.vendor.kycTier === 'tier2' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
                           }`}>
-                            {payment.vendor.kycTier === 'tier2' ? '⭐ Tier 2' : '📋 Tier 1'}
+                            {payment.vendor.kycTier === 'tier2' ? (
+                              <>
+                                <Star className="w-3 h-3" aria-hidden="true" />
+                                <span>Tier 2</span>
+                              </>
+                            ) : (
+                              <>
+                                <ClipboardList className="w-3 h-3" aria-hidden="true" />
+                                <span>Tier 1</span>
+                              </>
+                            )}
                           </span>
                         )}
                       </div>
@@ -660,12 +954,6 @@ export default function FinancePaymentsPage() {
                         <p className="text-gray-500">Email</p>
                         <p className="font-medium text-gray-900 text-xs truncate" title={payment.vendor.email || 'N/A'}>
                           {payment.vendor.email || 'N/A'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Payment Method</p>
-                        <p className="font-medium text-gray-900 capitalize">
-                          {payment.paymentMethod.replace('_', ' ')}
                         </p>
                       </div>
                       <div>
@@ -709,7 +997,7 @@ export default function FinancePaymentsPage() {
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
-                          openDetailsModal(payment);
+                          openDetailsModalWithAuditLogs(payment);
                         }}
                         className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                       >
@@ -735,7 +1023,7 @@ export default function FinancePaymentsPage() {
                     </div>
                   </div>
 
-                  {/* Action Buttons - Only show for pending payments */}
+                  {/* Action Buttons - Show for pending and overdue payments */}
                   {payment.status === 'pending' && (
                     <div className="ml-4 flex flex-col space-y-2">
                       <button
@@ -757,6 +1045,21 @@ export default function FinancePaymentsPage() {
                         className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
                       >
                         Reject
+                      </button>
+                    </div>
+                  )}
+                  {payment.status === 'overdue' && (
+                    <div className="ml-4 flex flex-col space-y-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleGrantGracePeriod(payment.id);
+                        }}
+                        disabled={processing}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Grant Grace Period
                       </button>
                     </div>
                   )}
@@ -900,10 +1203,15 @@ export default function FinancePaymentsPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 mb-1">Payment Method</p>
-                    <p className="font-medium text-gray-900 capitalize">
-                      {selectedPayment.paymentMethod.replace('_', ' ')}
+                    <p className="text-xs text-gray-500 mb-1">Payment Source</p>
+                    <p className="font-medium text-gray-900">
+                      {getPaymentSourceLabel(selectedPayment.paymentMethod)}
                     </p>
+                    {selectedPayment.paymentMethod === 'escrow_wallet' && selectedPayment.escrowStatus && (
+                      <div className="mt-1">
+                        {getEscrowStatusBadge(selectedPayment.escrowStatus)}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Status</p>
@@ -998,10 +1306,20 @@ export default function FinancePaymentsPage() {
                     <div>
                       <p className="text-xs text-gray-500 mb-1">KYC Tier</p>
                       {selectedPayment.vendor.kycTier ? (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           selectedPayment.vendor.kycTier === 'tier2' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
                         }`}>
-                          {selectedPayment.vendor.kycTier === 'tier2' ? '⭐ Tier 2 Verified' : '📋 Tier 1 Verified'}
+                          {selectedPayment.vendor.kycTier === 'tier2' ? (
+                            <>
+                              <Star className="w-3 h-3" aria-hidden="true" />
+                              <span>Tier 2 Verified</span>
+                            </>
+                          ) : (
+                            <>
+                              <ClipboardList className="w-3 h-3" aria-hidden="true" />
+                              <span>Tier 1 Verified</span>
+                            </>
+                          )}
                         </span>
                       ) : (
                         <p className="text-sm text-gray-500">Not verified</p>
@@ -1070,6 +1388,73 @@ export default function FinancePaymentsPage() {
                 </div>
               </div>
 
+              {/* Escrow Payment Details - Only for escrow_wallet payments */}
+              {selectedPayment.paymentMethod === 'escrow_wallet' && 
+               selectedPayment.walletBalance && 
+               selectedPayment.documentProgress && (
+                <>
+                  <div>
+                    <EscrowPaymentDetails
+                      payment={{
+                        id: selectedPayment.id,
+                        amount: parseFloat(selectedPayment.amount),
+                        escrowStatus: selectedPayment.escrowStatus || 'frozen',
+                        status: selectedPayment.status,
+                      }}
+                      documentProgress={{
+                        signedDocuments: selectedPayment.documentProgress.signedDocuments,
+                        totalDocuments: selectedPayment.documentProgress.totalDocuments,
+                      }}
+                      walletBalance={{
+                        balance: selectedPayment.walletBalance.availableBalance,
+                        frozenAmount: selectedPayment.walletBalance.frozenAmount,
+                      }}
+                      onManualRelease={async () => {
+                        await handleManualRelease(selectedPayment.id);
+                        closeModal();
+                      }}
+                    />
+                  </div>
+
+                  {/* Audit Trail Section */}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-sm font-semibold text-gray-900 flex items-center">
+                        <svg className="w-5 h-5 mr-2 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Audit Trail
+                      </h4>
+                      {auditLogs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={exportAuditLogsToCSV}
+                          className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                          data-testid="export-csv-button"
+                        >
+                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Export CSV
+                        </button>
+                      )}
+                    </div>
+                    
+                    {loadingAuditLogs ? (
+                      <div className="bg-white rounded-lg shadow-md p-6 text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#800020] mx-auto"></div>
+                        <p className="mt-2 text-sm text-gray-600">Loading audit trail...</p>
+                      </div>
+                    ) : (
+                      <EscrowPaymentAuditTrail
+                        auditLogs={auditLogs}
+                        paymentId={selectedPayment.id}
+                      />
+                    )}
+                  </div>
+                </>
+              )}
+
               {/* Actions */}
               {selectedPayment.status === 'pending' && (
                 <div className="flex gap-3 pt-4 border-t border-gray-200">
@@ -1101,6 +1486,23 @@ export default function FinancePaymentsPage() {
           </div>
         </div>
       )}
+
+      {/* Success Modal */}
+      <SuccessModal
+        isOpen={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        title="Success!"
+        message={successMessage}
+      />
+
+      {/* Error Modal */}
+      <ErrorModal
+        isOpen={showErrorModal}
+        onClose={() => setShowErrorModal(false)}
+        title={errorMessage}
+        message="An error occurred while processing your request."
+        details={errorDetails}
+      />
     </div>
   );
 }

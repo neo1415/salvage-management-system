@@ -133,7 +133,17 @@ export async function POST(request: NextRequest) {
       voiceNotes: body.voiceNotes,
       createdBy: session.user.id,
       status: body.status || 'pending_approval',
+      // CRITICAL: Pass AI assessment results from frontend
+      aiAssessmentResult: body.aiAssessmentResult,
     };
+    
+    // DEBUG: Log what we received from frontend
+    console.log('📥 Backend received AI assessment from frontend:', {
+      hasAssessment: !!body.aiAssessmentResult,
+      severity: body.aiAssessmentResult?.damageSeverity,
+      confidence: body.aiAssessmentResult?.confidenceScore,
+      salvageValue: body.aiAssessmentResult?.estimatedSalvageValue,
+    });
 
     // Create case
     const result = await createCase(input, ipAddress, deviceType, userAgent);
@@ -267,6 +277,13 @@ export async function GET(request: NextRequest) {
 
     // Execute query
     const cases = await query;
+    
+    // DEBUG: Log severity values being returned
+    console.log('📋 Returning cases with severities:', cases.map(c => ({ 
+      id: c.id, 
+      claimRef: c.claimReference,
+      severity: c.damageSeverity 
+    })));
 
     return NextResponse.json(
       {

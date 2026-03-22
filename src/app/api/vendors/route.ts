@@ -7,11 +7,13 @@ import { eq, and } from 'drizzle-orm';
 
 /**
  * Vendors API - Get vendors list
- * Supports filtering by status and tier
+ * Supports filtering by status and tier, with pagination
  * 
  * Query Parameters:
  * - status: Filter by vendor status (pending, approved, suspended)
  * - tier: Filter by vendor tier (tier1_bvn, tier2_full)
+ * - page: Page number (default: 1)
+ * - pageSize: Items per page (default: 50)
  * 
  * Requirements: 7, NFR5.3
  */
@@ -45,6 +47,8 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const statusFilter = searchParams.get('status');
     const tierFilter = searchParams.get('tier');
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
 
     // Build query conditions
     const conditions = [];
@@ -55,7 +59,10 @@ export async function GET(request: NextRequest) {
       conditions.push(eq(vendors.tier, tierFilter as 'tier1_bvn' | 'tier2_full'));
     }
 
-    // Fetch vendors with user details
+    // Calculate offset
+    const offset = (page - 1) * pageSize;
+
+    // Fetch vendors with user details (paginated)
     const vendorsList = await db
       .select({
         id: vendors.id,
@@ -84,10 +91,16 @@ export async function GET(request: NextRequest) {
       .from(vendors)
       .innerJoin(users, eq(vendors.userId, users.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(vendors.createdAt);
+      .orderBy(vendors.createdAt)
+      .limit(pageSize + 1)
+      .offset(offset);
+
+    // Check if there are more items
+    const hasMore = vendorsList.length > pageSize;
+    const data = hasMore ? vendorsList.slice(0, pageSize) : vendorsList;
 
     // For Tier 2 pending applications, return verification statuses from database
-    const vendorsWithVerification = vendorsList.map((vendor) => ({
+    const vendorsWithVerification = data.map((vendor) => ({
       ...vendor,
       // BVN is verified if bvnVerifiedAt is set
       bvnVerified: !!vendor.bvnVerifiedAt,
@@ -106,6 +119,9 @@ export async function GET(request: NextRequest) {
       success: true,
       vendors: vendorsWithVerification,
       count: vendorsWithVerification.length,
+      hasMore,
+      page,
+      pageSize,
     });
   } catch (error) {
     console.error('Error fetching vendors:', error);

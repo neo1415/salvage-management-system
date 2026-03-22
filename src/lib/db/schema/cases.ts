@@ -1,8 +1,8 @@
-import { pgTable, uuid, varchar, timestamp, numeric, jsonb, point, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, numeric, jsonb, point, pgEnum, integer } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { assetTypeEnum } from './vendors';
 
-export const damageSeverityEnum = pgEnum('damage_severity', ['minor', 'moderate', 'severe']);
+export const damageSeverityEnum = pgEnum('damage_severity', ['none', 'minor', 'moderate', 'severe']);
 export const caseStatusEnum = pgEnum('case_status', [
   'draft',
   'pending_approval',
@@ -32,16 +32,39 @@ export const salvageCases = pgTable('salvage_cases', {
       serialNumber?: string;
     }>(),
   marketValue: numeric('market_value', { precision: 12, scale: 2 }).notNull(),
-  estimatedSalvageValue: numeric('estimated_salvage_value', { precision: 12, scale: 2 }).notNull(),
-  reservePrice: numeric('reserve_price', { precision: 12, scale: 2 }).notNull(),
-  damageSeverity: damageSeverityEnum('damage_severity').notNull(),
+  estimatedSalvageValue: numeric('estimated_salvage_value', { precision: 12, scale: 2 }),
+  reservePrice: numeric('reserve_price', { precision: 12, scale: 2 }),
+  damageSeverity: damageSeverityEnum('damage_severity'),
   aiAssessment: jsonb('ai_assessment')
-    .notNull()
     .$type<{
+      // Basic info
       labels: string[];
       confidenceScore: number;
       damagePercentage: number;
       processedAt: Date;
+      
+      // Enhanced fields for accuracy and transparency
+      damageScore?: {
+        structural: number;
+        mechanical: number;
+        cosmetic: number;
+        electrical: number;
+        interior: number;
+      };
+      confidence?: {
+        overall: number;
+        vehicleDetection: number;
+        damageDetection: number;
+        valuationAccuracy: number;
+        photoQuality: number;
+        reasons: string[];
+      };
+      estimatedRepairCost?: number;
+      isRepairable?: boolean;
+      recommendation?: string;
+      warnings?: string[];
+      analysisMethod?: 'gemini' | 'vision' | 'neutral' | 'mock' | 'google-vision';
+      photoCount?: number;
     }>(),
   gpsLocation: point('gps_location').notNull(),
   locationName: varchar('location_name', { length: 255 }).notNull(),
@@ -55,6 +78,28 @@ export const salvageCases = pgTable('salvage_cases', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   approvedAt: timestamp('approved_at'),
+  
+  // NEW: Vehicle mileage and condition for enhanced AI assessment
+  vehicleMileage: integer('vehicle_mileage'),
+  vehicleCondition: varchar('vehicle_condition', { length: 20 }),
+  
+  // NEW: Price tracking for manager overrides
+  aiEstimates: jsonb('ai_estimates').$type<{
+    marketValue: number;
+    repairCost: number;
+    salvageValue: number;
+    reservePrice: number;
+    confidence: number;
+  }>(),
+  managerOverrides: jsonb('manager_overrides').$type<{
+    marketValue?: number;
+    repairCost?: number;
+    salvageValue?: number;
+    reservePrice?: number;
+    reason: string;
+    overriddenBy: string;
+    overriddenAt: string;
+  }>(),
 });
 
 // Indexes are created via SQL in migrations
@@ -63,3 +108,5 @@ export const salvageCases = pgTable('salvage_cases', {
 // CREATE INDEX idx_cases_created_by ON salvage_cases(created_by);
 // CREATE INDEX idx_cases_asset_type ON salvage_cases(asset_type);
 // CREATE INDEX idx_cases_created_at ON salvage_cases(created_at DESC);
+// CREATE INDEX idx_salvage_cases_mileage ON salvage_cases(vehicle_mileage);
+// CREATE INDEX idx_salvage_cases_condition ON salvage_cases(vehicle_condition);

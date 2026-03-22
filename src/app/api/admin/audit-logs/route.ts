@@ -11,16 +11,17 @@ import { eq, and, gte, lte, desc, sql, or } from 'drizzle-orm';
  * Retrieve audit logs with filtering, pagination, and export support
  * 
  * Query Parameters:
- * - userId: Filter by user ID
- * - actionType: Filter by action type
- * - entityType: Filter by entity type
+ * - userId: Filter by user ID (e.g., manager ID)
+ * - actionType: Filter by action type (e.g., 'price_override')
+ * - entityType: Filter by entity type (e.g., 'case')
+ * - entityId: Filter by entity ID (e.g., case ID)
  * - startDate: Filter by start date (ISO 8601)
  * - endDate: Filter by end date (ISO 8601)
  * - page: Page number (default: 1)
  * - limit: Items per page (default: 50, max: 100)
  * - export: Export format ('csv' or 'excel')
  * 
- * Requirements: 11, Enterprise Standards Section 6.4
+ * Requirements: 7.5, 11, Enterprise Standards Section 6.4
  */
 export async function GET(request: NextRequest) {
   try {
@@ -47,6 +48,7 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId');
     const actionType = searchParams.get('actionType');
     const entityType = searchParams.get('entityType');
+    const entityId = searchParams.get('entityId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const page = parseInt(searchParams.get('page') || '1', 10);
@@ -66,6 +68,10 @@ export async function GET(request: NextRequest) {
     
     if (entityType) {
       conditions.push(eq(auditLogs.entityType, entityType));
+    }
+    
+    if (entityId) {
+      conditions.push(eq(auditLogs.entityId, entityId));
     }
     
     if (startDate) {

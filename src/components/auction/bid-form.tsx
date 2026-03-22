@@ -20,27 +20,35 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { TierUpgradeModal } from '@/components/ui/tier-upgrade-modal';
+import { useTierUpgrade, type VendorTier } from '@/hooks/use-tier-upgrade';
+import { useToast } from '@/components/ui/toast';
 
 interface BidFormProps {
   auctionId: string;
   currentBid: number | null;
-  minimumIncrement: number;
+  minimumBid: number; // This is the actual minimum bid amount (reserve price or current bid + ₦20,000)
   assetName: string;
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  vendorTier?: VendorTier;
+  auctionValue?: number; // For tier upgrade checks
 }
 
 export function BidForm({
   auctionId,
   currentBid,
-  minimumIncrement,
+  minimumBid, // This is the actual minimum bid amount (reserve price or current bid + ₦20,000)
   assetName,
   isOpen,
   onClose,
   onSuccess,
+  vendorTier = 'tier1_bvn',
+  auctionValue,
 }: BidFormProps) {
   const { data: session } = useSession();
+  const toast = useToast();
   const [step, setStep] = useState<'bid' | 'otp'>('bid');
   const [bidAmount, setBidAmount] = useState<string>('');
   const [otp, setOtp] = useState<string>('');
@@ -49,8 +57,22 @@ export function BidForm({
   const [otpTimer, setOtpTimer] = useState(180); // 3 minutes in seconds
   const [startTime, setStartTime] = useState<number | null>(null);
 
-  // Calculate minimum bid
-  const minimumBid = (currentBid || 0) + minimumIncrement;
+  // Tier upgrade functionality
+  const {
+    checkAuctionAccess,
+    showUpgradeModal,
+    closeUpgradeModal,
+    blockedAuctionValue,
+    getTierLimit,
+  } = useTierUpgrade({
+    currentTier: vendorTier,
+    onUpgradeRequired: (value) => {
+      console.log(`Tier upgrade required for auction value: ₦${value.toLocaleString()}`);
+    },
+  });
+
+  // Calculate minimum bid (minimumBid is the actual minimum bid amount)
+  const minimumBidAmount = minimumBid;
 
   // Reset form when modal opens
   useEffect(() => {
@@ -94,12 +116,18 @@ export function BidForm({
       return 'Invalid bid amount';
     }
 
-    if (numAmount < minimumBid) {
-      return `Minimum bid: ₦${minimumBid.toLocaleString()}`;
+    if (numAmount < minimumBidAmount) {
+      return `Minimum bid: ₦${minimumBidAmount.toLocaleString()}`;
+    }
+
+    // Check tier limits
+    const tierLimit = getTierLimit();
+    if (tierLimit && numAmount > tierLimit) {
+      return `Tier ${vendorTier === 'tier1_bvn' ? '1' : '2'} limit: ₦${tierLimit.toLocaleString()}. Upgrade to bid higher.`;
     }
 
     return null;
-  }, [minimumBid]);
+  }, [minimumBidAmount, getTierLimit, vendorTier]);
 
   // Handle bid amount change with real-time validation
   const handleBidAmountChange = (value: string) => {
@@ -128,11 +156,19 @@ export function BidForm({
       return;
     }
 
+    const numAmount = parseFloat(bidAmount);
+
+    // Check tier access before proceeding
+    if (!checkAuctionAccess(numAmount)) {
+      // Tier upgrade modal will be shown automatically
+      return;
+    }
+
     setIsLoading(true);
     setError('');
 
     try {
-      // Send OTP
+      // Send OTP with bidding context
       const response = await fetch('/api/auth/resend-otp', {
         method: 'POST',
         headers: {
@@ -140,6 +176,8 @@ export function BidForm({
         },
         body: JSON.stringify({
           phone: session?.user?.phone,
+          context: 'bidding',
+          auctionId: auctionId,
         }),
       });
 
@@ -204,12 +242,23 @@ export function BidForm({
       const data = await response.json();
 
       if (!response.ok || !data.success) {
+        // Show error toast for bid placement failures
+        toast.error(
+          'Bid placement failed',
+          data.error || 'Please try again'
+        );
         throw new Error(data.error || 'Failed to place bid');
       }
 
       // Calculate total time
       const totalTime = startTime ? (Date.now() - startTime) / 1000 : 0;
       console.log(`✅ Bid placed in ${totalTime.toFixed(1)} seconds`);
+
+      // Show success toast
+      toast.success(
+        'Bid placed successfully!',
+        `Your bid of ₦${parseFloat(bidAmount).toLocaleString()} has been placed`
+      );
 
       // Show success message and trigger refresh
       setStep('bid');
@@ -241,6 +290,8 @@ export function BidForm({
         },
         body: JSON.stringify({
           phone: session?.user?.phone,
+          context: 'bidding',
+          auctionId: auctionId,
         }),
       });
 
@@ -324,12 +375,21 @@ export function BidForm({
                   ₦{(currentBid || 0).toLocaleString()}
                 </span>
               </div>
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-gray-600">Minimum Bid:</span>
                 <span className="text-lg font-bold text-burgundy-900">
-                  ₦{minimumBid.toLocaleString()}
+                  ₦{minimumBidAmount.toLocaleString()}
                 </span>
               </div>
+              {/* Tier Limit Display */}
+              {getTierLimit() && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Your Bid Limit:</span>
+                  <span className="text-sm font-bold text-orange-600">
+                    ₦{getTierLimit()!.toLocaleString()}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Bid Amount Step */}
@@ -352,7 +412,7 @@ export function BidForm({
                       inputMode="numeric"
                       value={bidAmount}
                       onChange={(e) => handleBidAmountChange(e.target.value)}
-                      placeholder={minimumBid.toLocaleString()}
+                      placeholder={minimumBidAmount.toLocaleString()}
                       className={`w-full pl-8 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
                         error
                           ? 'border-red-500 focus:ring-red-500'
@@ -366,6 +426,26 @@ export function BidForm({
                     <p className="mt-2 text-sm text-red-600 animate-pulse">
                       {error}
                     </p>
+                  )}
+                  
+                  {/* Tier upgrade prompt for errors */}
+                  {error && error.includes('Upgrade to bid higher') && (
+                    <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                      <p className="text-sm text-orange-800 mb-2">
+                        💡 Want to bid higher? Upgrade to Tier 2 for unlimited bidding!
+                      </p>
+                      <button
+                        onClick={() => {
+                          const numAmount = parseFloat(bidAmount);
+                          if (!isNaN(numAmount)) {
+                            checkAuctionAccess(numAmount);
+                          }
+                        }}
+                        className="text-sm text-[#800020] font-medium hover:text-[#600018] underline"
+                      >
+                        Learn More About Tier 2
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -471,6 +551,13 @@ export function BidForm({
           </div>
         </div>
       </div>
+
+      {/* Tier Upgrade Modal */}
+      <TierUpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={closeUpgradeModal}
+        auctionValue={blockedAuctionValue}
+      />
     </>
   );
 }

@@ -48,6 +48,7 @@ export function useSocket(): UseSocketReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const socketRef = useRef<SocketClient | null>(null);
+  const isConnectingRef = useRef(false);
 
   useEffect(() => {
     // Don't connect if not authenticated
@@ -56,7 +57,7 @@ export function useSocket(): UseSocketReturn {
     }
 
     // Don't create multiple connections
-    if (socketRef.current) {
+    if (socketRef.current || isConnectingRef.current) {
       return;
     }
 
@@ -67,10 +68,13 @@ export function useSocket(): UseSocketReturn {
       return;
     }
 
+    // Mark as connecting to prevent duplicate connections
+    isConnectingRef.current = true;
+
     // Get Socket.io URL from environment or default to current origin
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
 
-    // Create Socket.io client
+    // Create Socket.io client with exponential backoff
     const newSocket: SocketClient = io(socketUrl, {
       auth: {
         token: session.accessToken,
@@ -79,8 +83,9 @@ export function useSocket(): UseSocketReturn {
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10000, // Increased from 5000 to 10000
       timeout: 20000,
+      randomizationFactor: 0.5, // Add jitter to prevent thundering herd
     });
 
     // Connection event handlers
@@ -88,15 +93,22 @@ export function useSocket(): UseSocketReturn {
       console.log('✅ Socket.io connected');
       setIsConnected(true);
       setError(null);
+      isConnectingRef.current = false;
     });
 
     newSocket.on('disconnect', (reason) => {
       console.log('❌ Socket.io disconnected:', reason);
       setIsConnected(false);
 
-      // Attempt to reconnect if disconnected unexpectedly
+      // Only attempt manual reconnect if server initiated disconnect
+      // Socket.io will handle automatic reconnection for other cases
       if (reason === 'io server disconnect') {
-        newSocket.connect();
+        // Add delay before reconnecting to prevent rapid reconnection
+        setTimeout(() => {
+          if (socketRef.current && !socketRef.current.connected) {
+            newSocket.connect();
+          }
+        }, 2000);
       }
     });
 
@@ -104,6 +116,7 @@ export function useSocket(): UseSocketReturn {
       console.error('Socket.io connection error:', err);
       setError(err);
       setIsConnected(false);
+      isConnectingRef.current = false;
     });
 
     // Store socket reference
@@ -118,6 +131,7 @@ export function useSocket(): UseSocketReturn {
         socketRef.current = null;
         setSocket(null);
         setIsConnected(false);
+        isConnectingRef.current = false;
       }
     };
   }, [session?.accessToken, status]);
@@ -168,6 +182,10 @@ export function useAuctionUpdates(auctionId: string | null) {
   const [latestBid, setLatestBid] = useState<any>(null);
   const [isExtended, setIsExtended] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
+  
+  // Track last processed event IDs to prevent duplicate processing
+  const lastBidIdRef = useRef<string | null>(null);
+  const lastAuctionUpdateRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!socket || !isConnected || !auctionId) {
@@ -177,12 +195,24 @@ export function useAuctionUpdates(auctionId: string | null) {
     // Listen for auction updates
     const handleAuctionUpdate = (data: { auctionId: string; auction: any }) => {
       if (data.auctionId === auctionId) {
-        setAuction(data.auction);
+        // Create a hash of the auction data to detect actual changes
+        const updateHash = JSON.stringify({
+          currentBid: data.auction.currentBid,
+          status: data.auction.status,
+          endTime: data.auction.endTime,
+        });
+        
+        // Only update if data actually changed
+        if (lastAuctionUpdateRef.current !== updateHash) {
+          lastAuctionUpdateRef.current = updateHash;
+          setAuction(data.auction);
+        }
       }
     };
 
     const handleNewBid = (data: { auctionId: string; bid: any }) => {
-      if (data.auctionId === auctionId) {
+      if (data.auctionId === auctionId && data.bid.id !== lastBidIdRef.current) {
+        lastBidIdRef.current = data.bid.id;
         setLatestBid(data.bid);
       }
     };

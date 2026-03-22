@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { WalletPaymentConfirmation } from '@/components/payments/wallet-payment-confirmation';
 
 interface PaymentDetails {
   id: string;
@@ -13,6 +14,7 @@ interface PaymentDetails {
   paymentMethod: string;
   paymentReference: string | null;
   paymentProofUrl: string | null;
+  escrowStatus?: 'none' | 'frozen' | 'released';
   createdAt: string;
   auction: {
     id: string;
@@ -30,17 +32,34 @@ interface PaymentDetails {
   };
 }
 
+interface WalletBalance {
+  availableBalance: number;
+  frozenAmount: number;
+}
+
 export default function PaymentPage() {
   const params = useParams();
   const router = useRouter();
-  const { data: _session } = useSession(); // Prefixed with _ to indicate intentionally unused for now
+  const { data: session } = useSession();
   const [payment, setPayment] = useState<PaymentDetails | null>(null);
+  const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [walletConfirmed, setWalletConfirmed] = useState(false);
+  const [documentsUrl, setDocumentsUrl] = useState<string | null>(null);
 
   const paymentId = params.id as string;
+
+  // Clear localStorage entry when payment page is visited
+  useEffect(() => {
+    if (paymentId) {
+      localStorage.setItem(`payment-visited-${paymentId}`, 'true');
+      // Also clear any dismissal entries
+      localStorage.removeItem(`payment-unlocked-modal-${paymentId}-dismissed`);
+    }
+  }, [paymentId]);
 
   // Fetch payment details
   useEffect(() => {
@@ -52,6 +71,22 @@ export default function PaymentPage() {
         }
         const data = await response.json();
         setPayment(data);
+
+        // Fetch wallet balance if payment method is escrow_wallet
+        if (data.paymentMethod === 'escrow_wallet') {
+          try {
+            const walletResponse = await fetch('/api/payments/wallet/balance');
+            if (walletResponse.ok) {
+              const walletData = await walletResponse.json();
+              setWalletBalance({
+                availableBalance: parseFloat(walletData.availableBalance || walletData.balance || '0'),
+                frozenAmount: parseFloat(walletData.frozenAmount || '0'),
+              });
+            }
+          } catch (walletError) {
+            console.error('Failed to fetch wallet balance:', walletError);
+          }
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
       } finally {
@@ -127,6 +162,45 @@ export default function PaymentPage() {
       window.location.href = data.paymentUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to initiate payment');
+    }
+  };
+
+  // Handle wallet payment confirmation (escrow_wallet flow)
+  const handleWalletConfirm = async () => {
+    try {
+      if (!payment) throw new Error('Payment details not loaded yet');
+
+      const vendorId = (session as any)?.user?.vendorId;
+      if (!vendorId) throw new Error('Vendor ID not found in session');
+
+      const response = await fetch(`/api/payments/${paymentId}/confirm-wallet`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ vendorId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || errorData?.message || 'Failed to confirm wallet payment');
+      }
+
+      const data = await response.json();
+      
+      // Update state to show success message with documents link
+      setWalletConfirmed(true);
+      setDocumentsUrl(data.documentsUrl || `/vendor/documents?auctionId=${payment.auctionId}`);
+      
+      // Auto-redirect after 3 seconds
+      setTimeout(() => {
+        if (data.documentsUrl) {
+          window.location.href = data.documentsUrl;
+        }
+      }, 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to confirm wallet payment');
+      throw err;
     }
   };
 
@@ -295,6 +369,33 @@ export default function PaymentPage() {
           </div>
         </div>
 
+        {/* Wallet Payment Confirmed Banner */}
+        {walletConfirmed && documentsUrl && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6" data-testid="wallet-confirmed-banner">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 text-green-500 text-3xl">✓</div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-green-900 mb-2">
+                  Wallet Payment Confirmed!
+                </h3>
+                <p className="text-green-800 mb-4">
+                  Your payment has been confirmed. Please sign all 3 documents to complete the payment process.
+                </p>
+                <a
+                  href={documentsUrl}
+                  className="inline-flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                  data-testid="documents-link"
+                >
+                  Sign Documents Now →
+                </a>
+                <p className="text-sm text-green-700 mt-3">
+                  Redirecting automatically in 3 seconds...
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Payment Deadline Countdown */}
         {payment.status === 'pending' && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -398,79 +499,102 @@ export default function PaymentPage() {
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Payment Options</h2>
 
-            {/* Paystack Payment */}
-            <div className="mb-6">
-              <button
-                onClick={handlePayWithPaystack}
-                className="w-full bg-burgundy-900 text-white py-4 px-6 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors flex items-center justify-center gap-2"
-              >
-                <span>💳</span>
-                Pay Now with Paystack
-              </button>
-              <p className="text-sm text-gray-600 mt-2 text-center">
-                Instant verification • Card, Bank Transfer, USSD
-              </p>
-            </div>
+            {payment.paymentMethod === 'escrow_wallet' ? (
+              walletBalance ? (
+                <WalletPaymentConfirmation
+                  payment={{
+                    id: payment.id,
+                    amount: parseFloat(payment.amount),
+                    escrowStatus: payment.escrowStatus,
+                  }}
+                  walletBalance={{
+                    frozenAmount: walletBalance.frozenAmount,
+                    availableBalance: walletBalance.availableBalance,
+                  }}
+                  onConfirm={handleWalletConfirm}
+                />
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-6">
+                  <p className="text-sm text-gray-600">Loading wallet balance...</p>
+                </div>
+              )
+            ) : (
+              <>
+                {/* Paystack Payment */}
+                <div className="mb-6">
+                  <button
+                    onClick={handlePayWithPaystack}
+                    className="w-full bg-burgundy-900 text-white py-4 px-6 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span>💳</span>
+                    Pay Now with Paystack
+                  </button>
+                  <p className="text-sm text-gray-600 mt-2 text-center">
+                    Instant verification • Card, Bank Transfer, USSD
+                  </p>
+                </div>
 
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">OR</span>
-              </div>
-            </div>
-
-            {/* Bank Transfer */}
-            <div className="border border-gray-300 rounded-lg p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Pay via Bank Transfer</h3>
-              <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                <p className="text-sm text-gray-600 mb-2">Transfer to:</p>
-                <div className="space-y-2">
-                  <div>
-                    <p className="text-xs text-gray-500">Bank Name</p>
-                    <p className="font-semibold text-gray-900">Access Bank</p>
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-300"></div>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Account Number</p>
-                    <p className="font-semibold text-gray-900">0123456789</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Account Name</p>
-                    <p className="font-semibold text-gray-900">NEM Insurance Plc - Salvage</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Reference</p>
-                    <p className="font-semibold text-gray-900">{payment.id.substring(0, 8)}</p>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-2 bg-white text-gray-500">OR</span>
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Upload Payment Proof (Receipt/Screenshot)
-                </label>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/jpg,image/png,application/pdf"
-                  onChange={handleProofUpload}
-                  disabled={uploadingProof}
-                  className="block w-full text-sm text-gray-500
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded-lg file:border-0
-                    file:text-sm file:font-semibold
-                    file:bg-burgundy-50 file:text-burgundy-900
-                    hover:file:bg-burgundy-100
-                    disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  JPG, PNG, or PDF • Max 5MB • Verification within 4 hours
-                </p>
-                {uploadingProof && (
-                  <p className="text-sm text-burgundy-900 mt-2">Uploading...</p>
-                )}
-              </div>
-            </div>
+                {/* Bank Transfer */}
+                <div className="border border-gray-300 rounded-lg p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3">Pay via Bank Transfer</h3>
+                  <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-gray-600 mb-2">Transfer to:</p>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-gray-500">Bank Name</p>
+                        <p className="font-semibold text-gray-900">Access Bank</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Account Number</p>
+                        <p className="font-semibold text-gray-900">0123456789</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Account Name</p>
+                        <p className="font-semibold text-gray-900">NEM Insurance Plc - Salvage</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Reference</p>
+                        <p className="font-semibold text-gray-900">{payment.id.substring(0, 8)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Upload Payment Proof (Receipt/Screenshot)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,application/pdf"
+                      onChange={handleProofUpload}
+                      disabled={uploadingProof}
+                      className="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-lg file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-burgundy-50 file:text-burgundy-900
+                        hover:file:bg-burgundy-100
+                        disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      JPG, PNG, or PDF • Max 5MB • Verification within 4 hours
+                    </p>
+                    {uploadingProof && (
+                      <p className="text-sm text-burgundy-900 mt-2">Uploading...</p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 

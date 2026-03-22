@@ -8,12 +8,27 @@ import { eq } from 'drizzle-orm';
  * OTP Service
  * Handles SMS OTP generation, sending, and verification using Termii REST API
  */
+// OTP Context Types
+export type OTPContext = 'authentication' | 'bidding';
+
+// Rate limit configurations
+const RATE_LIMITS = {
+  authentication: {
+    maxAttempts: 3,
+    windowSeconds: 30 * 60, // 30 minutes
+  },
+  bidding: {
+    maxAttempts: 15, // Allow 15 bids per 30 minutes
+    windowSeconds: 30 * 60, // 30 minutes
+    perAuctionMax: 5, // Max 5 bids per auction per 5 minutes
+    perAuctionWindowSeconds: 5 * 60, // 5 minutes
+  },
+};
+
 export class OTPService {
   private termiiApiKey: string | null;
   private readonly OTP_EXPIRY_SECONDS = 5 * 60; // 5 minutes
   private readonly MAX_ATTEMPTS = 3;
-  private readonly RATE_LIMIT_WINDOW = 30 * 60; // 30 minutes
-  private readonly MAX_RESEND_ATTEMPTS = 3;
   private readonly TERMII_API_URL = 'https://api.ng.termii.com/api/sms/send';
 
   constructor() {
@@ -44,6 +59,8 @@ export class OTPService {
    * @param deviceType - Device type
    * @param email - Email address (optional, for backup OTP delivery)
    * @param fullName - User full name (optional, for email personalization)
+   * @param context - Context of OTP request ('authentication' or 'bidding')
+   * @param auctionId - Auction ID (required for bidding context)
    * @returns Success status and message
    */
   async sendOTP(
@@ -51,23 +68,49 @@ export class OTPService {
     ipAddress: string,
     deviceType: 'mobile' | 'desktop' | 'tablet',
     email?: string,
-    fullName?: string
+    fullName?: string,
+    context: OTPContext = 'authentication',
+    auctionId?: string
   ): Promise<{ success: boolean; message: string }> {
     try {
-      // Check rate limiting (max 3 OTP requests per 30 minutes per phone)
-      const rateLimitKey = `otp:ratelimit:${phone}`;
+      // Context-aware rate limiting
+      const limits = RATE_LIMITS[context];
+      const rateLimitKey = `otp:ratelimit:${context}:${phone}`;
+      
       const isLimited = await rateLimiter.isLimited(
         rateLimitKey,
-        this.MAX_RESEND_ATTEMPTS,
-        this.RATE_LIMIT_WINDOW
+        limits.maxAttempts,
+        limits.windowSeconds
       );
 
       if (isLimited) {
+        const minutes = Math.ceil(limits.windowSeconds / 60);
         return {
           success: false,
-          message: 'Too many OTP requests. Please try again in 30 minutes.',
+          message: `Too many OTP requests. Please try again in ${minutes} minutes.`,
         };
       }
+
+      // For bidding context, check per-auction rate limit
+      if (context === 'bidding' && auctionId) {
+        const biddingLimits = RATE_LIMITS.bidding;
+        const auctionRateLimitKey = `otp:auction:${auctionId}:${phone}`;
+        const isAuctionLimited = await rateLimiter.isLimited(
+          auctionRateLimitKey,
+          biddingLimits.perAuctionMax,
+          biddingLimits.perAuctionWindowSeconds
+        );
+
+        if (isAuctionLimited) {
+          return {
+            success: false,
+            message: `Too many bid attempts for this auction. Please wait ${Math.ceil(biddingLimits.perAuctionWindowSeconds / 60)} minutes.`,
+          };
+        }
+      }
+
+      // Fraud detection monitoring (log but don't block)
+      await this.monitorFraudPatterns(phone, ipAddress, context, auctionId);
 
       // Generate OTP
       const otp = this.generateOTP();
@@ -326,6 +369,91 @@ export class OTPService {
 
     return this.MAX_ATTEMPTS - otpData.attempts;
   }
+
+  /**
+   * Monitor fraud patterns without blocking legitimate users
+   * Logs suspicious activity for admin review
+   * @param phone - Phone number
+   * @param ipAddress - IP address
+   * @param context - OTP context
+   * @param auctionId - Auction ID (optional)
+   */
+  private async monitorFraudPatterns(
+    phone: string,
+    ipAddress: string,
+    context: OTPContext,
+    auctionId?: string
+  ): Promise<void> {
+    try {
+      // Track OTP requests in Redis for fraud analysis
+      const fraudKey = `fraud:otp:${ipAddress}:${phone}`;
+      const count = await rateLimiter.increment(fraudKey, 60 * 60); // 1 hour window
+
+      // Log suspicious patterns (>20 OTP requests from same IP+phone in 1 hour)
+      if (count > 20) {
+        console.warn(`⚠️ Suspicious OTP activity detected:`, {
+          phone,
+          ipAddress,
+          context,
+          auctionId,
+          count,
+          timestamp: new Date().toISOString(),
+        });
+
+        // Create fraud alert in database (non-blocking)
+        this.createFraudAlert(phone, ipAddress, context, count, auctionId).catch(err => {
+          console.error('Failed to create fraud alert:', err);
+        });
+      }
+    } catch (error) {
+      // Don't block OTP send if fraud monitoring fails
+      console.error('Fraud monitoring error:', error);
+    }
+  }
+
+  /**
+   * Create fraud alert in database
+   * @param phone - Phone number
+   * @param ipAddress - IP address
+   * @param context - OTP context
+   * @param requestCount - Number of requests
+   * @param auctionId - Auction ID (optional)
+   */
+  private async createFraudAlert(
+    phone: string,
+    ipAddress: string,
+    context: OTPContext,
+    requestCount: number,
+    auctionId?: string
+  ): Promise<void> {
+    try {
+      const { db } = await import('@/lib/db/drizzle');
+      const { auditLogs } = await import('@/lib/db/schema/audit-logs');
+
+      await db.insert(auditLogs).values({
+        userId: 'system',
+        actionType: 'fraud_alert',
+        entityType: 'otp_request',
+        entityId: phone,
+        ipAddress,
+        deviceType: 'desktop' as const,
+        userAgent: 'system',
+        afterState: {
+          phone,
+          context,
+          auctionId,
+          requestCount,
+          severity: requestCount > 50 ? 'high' : 'medium',
+          detectedAt: new Date().toISOString(),
+        },
+      });
+
+      console.log(`🚨 Fraud alert logged for ${phone} (${requestCount} OTP requests)`);
+    } catch (error) {
+      console.error('Failed to create fraud alert:', error);
+    }
+  }
 }
 
+// Export singleton instance
 export const otpService = new OTPService();

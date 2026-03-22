@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Trophy, DollarSign } from 'lucide-react';
 
 /**
  * Manager Reports Page
@@ -42,13 +43,13 @@ export default function ReportsPage() {
       value: 'vendor-rankings',
       label: 'Vendor Rankings',
       description: 'Top vendors by bids, wins, and performance',
-      icon: '🏆',
+      icon: <Trophy className="w-6 h-6" aria-hidden="true" />,
     },
     {
       value: 'payment-aging',
       label: 'Payment Aging',
       description: 'Payment status, overdue analysis, and aging buckets',
-      icon: '💰',
+      icon: <DollarSign className="w-6 h-6" aria-hidden="true" />,
     },
   ];
 

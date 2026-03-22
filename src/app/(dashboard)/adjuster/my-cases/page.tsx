@@ -13,8 +13,12 @@ import {
   DollarSign,
   Package,
   Search,
-  Filter
+  MapPin,
+  ChevronDown,
+  ChevronUp,
+  Trash2
 } from 'lucide-react';
+import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
 
 interface Case {
   id: string;
@@ -263,54 +267,162 @@ export default function AdjusterMyCasesPage() {
           ) : (
             <div className="space-y-4">
               {filteredCases.map((caseItem) => (
-                <Link
+                <CaseCard
                   key={caseItem.id}
-                  href={`/adjuster/cases/${caseItem.id}`}
-                  className="block bg-gray-50 rounded-lg p-6 hover:bg-gray-100 transition-colors border border-gray-200"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {caseItem.claimReference}
-                        </h3>
-                        {getStatusBadge(caseItem.status)}
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                        <div>
-                          <p className="text-sm text-gray-600">Asset Type</p>
-                          <p className="font-medium text-gray-900">{caseItem.assetType}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Estimated Value</p>
-                          <p className="font-medium text-gray-900">
-                            ₦{parseFloat(caseItem.estimatedValue).toLocaleString()}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Location</p>
-                          <p className="font-medium text-gray-900">{caseItem.locationName}</p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex items-center gap-6 text-sm text-gray-600">
-                        <span>Created: {new Date(caseItem.createdAt).toLocaleDateString()}</span>
-                        {caseItem.approvedAt && (
-                          <span className="text-green-600">
-                            Approved: {new Date(caseItem.approvedAt).toLocaleDateString()}
-                            {caseItem.approverName && ` by ${caseItem.approverName}`}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </Link>
+                  caseItem={caseItem}
+                  onDelete={caseItem.status === 'draft' ? fetchMyCases : undefined}
+                  getStatusBadge={getStatusBadge}
+                />
               ))}
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Compact Case Card Component with max 5 fields and expandable sections
+interface CaseCardProps {
+  caseItem: Case;
+  onDelete?: () => void;
+  getStatusBadge: (status: string) => JSX.Element;
+}
+
+function CaseCard({ caseItem, onDelete, getStatusBadge }: CaseCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const router = useRouter();
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (confirm('Delete this draft case? This cannot be undone.')) {
+      try {
+        const response = await fetch(`/api/cases/${caseItem.id}`, {
+          method: 'DELETE',
+        });
+        
+        if (response.ok) {
+          alert('Draft deleted successfully');
+          onDelete?.();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to delete case');
+        }
+      } catch (error) {
+        console.error('Error deleting case:', error);
+        alert('Error deleting case');
+      }
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+      <Link
+        href={`/adjuster/cases/${caseItem.id}`}
+        className="block p-4"
+      >
+        {/* Header: Claim Reference + Status Badge */}
+        <div className="flex items-start justify-between mb-3">
+          <h3 className="text-lg font-semibold text-gray-900 flex-1">
+            {caseItem.claimReference}
+          </h3>
+          {getStatusBadge(caseItem.status)}
+        </div>
+
+        {/* Core Fields (Max 5) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          {/* Field 1: Asset Type with icon */}
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4 text-gray-400 flex-shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Asset</p>
+              <p className="font-medium text-gray-900 truncate">{caseItem.assetType}</p>
+            </div>
+          </div>
+
+          {/* Field 2: Value with compact format */}
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-gray-400 flex-shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Value</p>
+              <p className="font-medium text-[#800020]">
+                {formatCompactCurrency(caseItem.estimatedValue)}
+              </p>
+            </div>
+          </div>
+
+          {/* Field 3: Location with icon */}
+          <div className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Location</p>
+              <p className="font-medium text-gray-900 truncate">{caseItem.locationName}</p>
+            </div>
+          </div>
+
+          {/* Field 4: Created date with relative format */}
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Created</p>
+              <p className="font-medium text-gray-900">
+                {formatRelativeDate(caseItem.createdAt)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Expandable Section for Optional Details */}
+        {(caseItem.approvedAt || caseItem.status === 'draft') && (
+          <div className="border-t border-gray-100 pt-3">
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsExpanded(!isExpanded);
+              }}
+              className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors w-full"
+            >
+              {isExpanded ? (
+                <ChevronUp className="w-4 h-4" aria-hidden="true" />
+              ) : (
+                <ChevronDown className="w-4 h-4" aria-hidden="true" />
+              )}
+              <span>{isExpanded ? 'Hide' : 'Show'} details</span>
+            </button>
+
+            {isExpanded && (
+              <div className="mt-3 space-y-2 text-sm">
+                {caseItem.approvedAt && (
+                  <div className="flex items-start gap-2 text-green-600">
+                    <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
+                    <div>
+                      <p className="font-medium">
+                        Approved {formatRelativeDate(caseItem.approvedAt)}
+                      </p>
+                      {caseItem.approverName && (
+                        <p className="text-xs text-gray-600">by {caseItem.approverName}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {caseItem.status === 'draft' && onDelete && (
+                  <button
+                    onClick={handleDelete}
+                    className="flex items-center gap-2 text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors w-full"
+                  >
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
+                    <span>Delete draft</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Link>
     </div>
   );
 }
