@@ -61,7 +61,7 @@ When you use this test BVN, the system will:
 ## Current Configuration
 Your current `.env` has:
 ```env
-PAYSTACK_SECRET_KEY=sk_test_45ca11545148bed4becda5de54198e677eecbcbf
+PAYSTACK_SECRET_KEY=sk_test_your-paystack-secret-key
 ```
 
 This is a **test key**, so only the test BVN `12345678901` will work.

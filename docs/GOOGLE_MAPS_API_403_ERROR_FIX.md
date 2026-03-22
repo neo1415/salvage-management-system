@@ -55,7 +55,7 @@ Based on code analysis, your application uses these Google Maps APIs:
 
 ### Step 2: Verify API Key Restrictions
 
-Your current API key: `AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM`
+Your current API key: `your-google-maps-api-key-here`
 
 1. **Go to Credentials**:
    - Visit: https://console.cloud.google.com/apis/credentials
@@ -87,7 +87,7 @@ After enabling the APIs, test the Maps Embed functionality:
 
 ```bash
 # Test Maps Embed API (should work after enabling)
-curl -I "https://www.google.com/maps/embed/v1/place?key=AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM&q=Igbogbo,Ikorodu,Lagos"
+curl -I "https://www.google.com/maps/embed/v1/place?key=your-google-maps-api-key-here&q=Igbogbo,Ikorodu,Lagos"
 ```
 
 Expected result: HTTP 200 OK (instead of 403 Forbidden)
@@ -165,7 +165,7 @@ Your current usage should remain within free tiers.
 3. **Verify Environment Variables**:
    ```bash
    # Check your .env file has the correct API key
-   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM
+   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your-google-maps-api-key-here
    ```
 
 4. **Test API Key Directly**:

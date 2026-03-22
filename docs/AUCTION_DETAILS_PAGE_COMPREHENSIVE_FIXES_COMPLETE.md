@@ -55,7 +55,7 @@ Successfully investigated and fixed multiple issues with the auction details pag
 - `src/app/(dashboard)/vendor/auctions/[id]/page.tsx` - Enhanced Google Maps integration
 
 **API Configuration:**
-- Google Maps API key is properly configured: `AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM`
+- Google Maps API key is properly configured: `your-google-maps-api-key-here`
 
 ### 4. ✅ Bidding Logic Issues
 

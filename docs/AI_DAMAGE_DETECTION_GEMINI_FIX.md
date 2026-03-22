@@ -116,7 +116,7 @@ After fixing the fallback chain, a new issue was discovered: image format valida
    grep GEMINI_API_KEY .env
    ```
    
-   Expected: `GEMINI_API_KEY=AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE`
+   Expected: `GEMINI_API_KEY=your-gemini-api-key-here`
 
 2. **Check Gemini service status:**
    - Gemini auto-initializes on module load

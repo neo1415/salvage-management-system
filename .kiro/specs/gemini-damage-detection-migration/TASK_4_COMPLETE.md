@@ -132,7 +132,7 @@ The foundation is now in place for the full Gemini damage assessment implementat
 
 ## Notes
 
-- The API key used for testing (`AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE`) is valid but may have quota limits
+- The API key used for testing (`your-gemini-api-key-here`) is valid but may have quota limits
 - Connection validation may fail if quota is exceeded, but this is handled gracefully
 - The service automatically initializes on module load for convenience
 - All initialization is async to support future connection validation enhancements

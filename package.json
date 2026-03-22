@@ -9,6 +9,7 @@
     "start": "next start",
     "start:custom": "NODE_ENV=production tsx server.ts",
     "lint": "next lint",
+    "security:scan": "tsx scripts/scan-for-secrets.ts",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",

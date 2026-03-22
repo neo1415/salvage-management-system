@@ -62,7 +62,7 @@ Base Value (from lookup table)
 MOCK_AI_ASSESSMENT=false  # ✅ Using real Google Vision API
 GOOGLE_CLOUD_PROJECT_ID=nem-salvage
 GOOGLE_APPLICATION_CREDENTIALS=./google-cloud-credentials.json
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your-google-maps-api-key-here
 ```
 
 ## API Usage

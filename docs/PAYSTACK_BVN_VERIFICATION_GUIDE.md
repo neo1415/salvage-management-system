@@ -307,22 +307,22 @@ export const bvnVerificationService = new BVNVerificationService();
 
 1. Go to https://dashboard.paystack.com/
 2. Navigate to **Settings** → **API Keys & Webhooks**
-3. Your secret key is already configured: `sk_test_45ca11545148bed4becda5de54198e677eecbcbf`
+3. Your secret key is already configured: `sk_test_your-paystack-secret-key`
 4. Identity API is automatically enabled
 
 ### 2. Test BVN Verification
 
 ```bash
 curl https://api.paystack.co/bank/resolve_bvn/12345678901 \
-  -H "Authorization: Bearer sk_test_45ca11545148bed4becda5de54198e677eecbcbf"
+  -H "Authorization: Bearer sk_test_your-paystack-secret-key"
 ```
 
 ### 3. Update Environment Variables
 
 Already configured in `.env`:
 ```env
-PAYSTACK_SECRET_KEY=sk_test_45ca11545148bed4becda5de54198e677eecbcbf
-PAYSTACK_PUBLIC_KEY=pk_test_63c9956f1d439a47108783b246f43ea955acb806
+PAYSTACK_SECRET_KEY=sk_test_your-paystack-secret-key
+PAYSTACK_PUBLIC_KEY=pk_test_your-paystack-public-key
 ```
 
 ## Testing

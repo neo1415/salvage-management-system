@@ -28,8 +28,8 @@ describe('Property 12: Photo Format Validation', () => {
     // Save original environment
     originalEnv = { ...process.env };
     
-    // Set up valid API key for tests
-    process.env.GEMINI_API_KEY = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+    // Set up mock API key for tests (use real key from .env in actual tests)
+    process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
     
     // Clear module cache to force re-initialization
     vi.resetModules();

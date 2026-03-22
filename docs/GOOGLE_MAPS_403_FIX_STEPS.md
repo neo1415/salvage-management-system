@@ -20,7 +20,7 @@ Your Google Maps are showing 403 error: "This API is not activated on your API p
 
 ### Step 3: Update API Key Restrictions
 1. **Go to**: https://console.cloud.google.com/apis/credentials
-2. **Find your API key**: `AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM`
+2. **Find your API key**: `your-google-maps-api-key-here`
 3. **Click on it** to edit
 4. **Under "API restrictions"**, add:
    - ✅ Maps Embed API

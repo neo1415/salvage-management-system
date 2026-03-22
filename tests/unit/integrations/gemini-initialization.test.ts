@@ -86,7 +86,7 @@ describe('Gemini API Client Initialization', () => {
 
     it('should enable service when GEMINI_API_KEY is valid format', async () => {
       // Arrange
-      process.env.GEMINI_API_KEY = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+      process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
       
       // Act
       const { initializeGeminiService, isGeminiEnabled } = await import(
@@ -104,7 +104,7 @@ describe('Gemini API Client Initialization', () => {
   describe('Service Configuration', () => {
     it('should configure gemini-2.0-flash model', async () => {
       // Arrange
-      process.env.GEMINI_API_KEY = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+      process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
       
       // Act
       const { initializeGeminiService, getGeminiServiceConfig } = await import(
@@ -119,7 +119,7 @@ describe('Gemini API Client Initialization', () => {
 
     it('should mask API key in configuration', async () => {
       // Arrange
-      const apiKey = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+      const apiKey = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
       process.env.GEMINI_API_KEY = apiKey;
       
       // Act
@@ -172,7 +172,7 @@ describe('Gemini API Client Initialization', () => {
 
     it('should include request ID in error messages for missing images', async () => {
       // Arrange
-      process.env.GEMINI_API_KEY = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+      process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
       const { initializeGeminiService, assessDamageWithGemini } = await import(
         '../../../src/lib/integrations/gemini-damage-detection'
       );
@@ -189,7 +189,7 @@ describe('Gemini API Client Initialization', () => {
 
     it('should include request ID in error messages for missing vehicle context', async () => {
       // Arrange
-      process.env.GEMINI_API_KEY = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+      process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
       const { initializeGeminiService, assessDamageWithGemini } = await import(
         '../../../src/lib/integrations/gemini-damage-detection'
       );
@@ -206,7 +206,7 @@ describe('Gemini API Client Initialization', () => {
 
     it('should include vehicle context in error messages', async () => {
       // Arrange
-      process.env.GEMINI_API_KEY = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+      process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
       const { initializeGeminiService, assessDamageWithGemini } = await import(
         '../../../src/lib/integrations/gemini-damage-detection'
       );
@@ -225,7 +225,7 @@ describe('Gemini API Client Initialization', () => {
   describe('Model Initialization', () => {
     it('should initialize Gemini model when API key is valid', async () => {
       // Arrange
-      process.env.GEMINI_API_KEY = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+      process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
       
       // Act
       const { initializeGeminiService, getGeminiModel } = await import(
@@ -259,7 +259,7 @@ describe('Gemini API Client Initialization', () => {
   describe('Service Reset', () => {
     it('should reset service state', async () => {
       // Arrange
-      process.env.GEMINI_API_KEY = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+      process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
       const { initializeGeminiService, resetGeminiService, isGeminiEnabled } = await import(
         '../../../src/lib/integrations/gemini-damage-detection'
       );
@@ -274,7 +274,7 @@ describe('Gemini API Client Initialization', () => {
 
     it('should clear model after reset', async () => {
       // Arrange
-      process.env.GEMINI_API_KEY = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+      process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-mock-api-key-for-unit-tests';
       const { initializeGeminiService, resetGeminiService, getGeminiModel } = await import(
         '../../../src/lib/integrations/gemini-damage-detection'
       );
