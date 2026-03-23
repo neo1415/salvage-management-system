@@ -9,25 +9,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Map of real secrets to placeholders
+// Map of real secrets to placeholders (using generic patterns)
 const REDACTIONS = [
   {
-    pattern: /AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE/g,
-    replacement: 'your-gemini-api-key-here',
-    name: 'Gemini API Key',
+    pattern: /AIzaSy[A-Za-z0-9_-]{33}/g,
+    replacement: 'your-google-api-key-here',
+    name: 'Google API Key (Gemini/Maps)',
   },
   {
-    pattern: /AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM/g,
-    replacement: 'your-google-maps-api-key-here',
-    name: 'Google Maps API Key',
-  },
-  {
-    pattern: /sk_test_45ca11545148bed4becda5de54198e677eecbcbf/g,
+    pattern: /sk_test_[a-f0-9]{40}/g,
     replacement: 'sk_test_your-paystack-secret-key',
     name: 'Paystack Test Secret Key',
   },
   {
-    pattern: /pk_test_63c9956f1d439a47108783b246f43ea955acb806/g,
+    pattern: /pk_test_[a-f0-9]{40}/g,
     replacement: 'pk_test_your-paystack-public-key',
     name: 'Paystack Test Public Key',
   },

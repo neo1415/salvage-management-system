@@ -81,9 +81,9 @@ Your secrets are in git history. You need to remove them:
 
 # 2. Create a file with secrets to remove
 cat > secrets.txt << EOF
-AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE
-AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM
-sk_test_45ca11545148bed4becda5de54198e677eecbcbf
+[REDACTED - Your exposed Gemini API key]
+[REDACTED - Your exposed Google Maps API key]
+[REDACTED - Your exposed Paystack test key]
 EOF
 
 # 3. Run BFG (replace with actual path to bfg.jar)

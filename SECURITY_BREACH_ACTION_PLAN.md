@@ -3,19 +3,19 @@
 ## Exposed API Keys Found
 
 ### 1. Google Gemini API Key (CRITICAL - Already Flagged by Google)
-- **Key**: `AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE`
+- **Key**: `[REDACTED - Ends in ...bQNE]`
 - **Location**: Multiple test files and docs
 - **Status**: ⚠️ PUBLICLY EXPOSED ON GITHUB
 - **Action**: REVOKE IMMEDIATELY
 
 ### 2. Google Maps API Key (CRITICAL)
-- **Key**: `AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM`
+- **Key**: `[REDACTED - Ends in ...mKkM]`
 - **Location**: Multiple docs files
 - **Status**: ⚠️ PUBLICLY EXPOSED ON GITHUB
 - **Action**: REVOKE IMMEDIATELY
 
 ### 3. Paystack Test Keys (MEDIUM RISK)
-- **Key**: `sk_test_45ca11545148bed4becda5de54198e677eecbcbf`
+- **Key**: `[REDACTED - Test key starting with sk_test_...]`
 - **Location**: docs folder
 - **Status**: ⚠️ Test keys exposed (lower risk but still bad practice)
 
@@ -25,14 +25,14 @@
 
 #### Revoke Gemini API Key:
 1. Go to: https://aistudio.google.com/apikey
-2. Find key: `AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE`
+2. Find key: `[Your exposed key ending in ...bQNE]`
 3. Click "Delete" or "Revoke"
 4. Generate NEW key
 5. Update `.env` file with new key
 
 #### Revoke Google Maps API Key:
 1. Go to: https://console.cloud.google.com/apis/credentials
-2. Find key: `AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM`
+2. Find key: `[Your exposed key ending in ...mKkM]`
 3. Click "Delete" or "Regenerate"
 4. Generate NEW key with proper restrictions:
    - HTTP referrers: `localhost:3000`, `*.vercel.app`, your production domain
@@ -97,7 +97,7 @@ I'll help you clean these files right now.
 const apiKey = process.env.GEMINI_API_KEY || 'mock-key-for-tests';
 
 // BAD
-const apiKey = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+const apiKey = '[REDACTED - Never hardcode API keys]';
 ```
 
 ### 2. Add Pre-commit Hooks

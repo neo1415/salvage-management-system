@@ -15,7 +15,7 @@ All sensitive data MUST be stored in environment variables, never hardcoded:
 const apiKey = process.env.GEMINI_API_KEY;
 
 // ❌ BAD
-const apiKey = 'AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE';
+const apiKey = '[REDACTED - Never hardcode API keys]';
 ```
 
 ### 2. .gitignore Configuration
@@ -55,7 +55,7 @@ Never include real API keys in documentation:
 GEMINI_API_KEY=your-api-key-here
 
 <!-- ❌ BAD -->
-GEMINI_API_KEY=AIzaSyD-bn93qeRCc3YsnmOOAw8TUu7hR9ObQNE
+GEMINI_API_KEY=[REDACTED - Never commit .env files]
 ```
 
 ## 🔍 Security Scanning
