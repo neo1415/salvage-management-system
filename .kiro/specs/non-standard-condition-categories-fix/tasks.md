@@ -1,0 +1,116 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Fault Condition** - Inconsistent Condition Categories Per Make
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the bug exists
+  - **Scoped PBT Approach**: Test concrete failing cases across different makes to ensure reproducibility
+  - Test that querying "Brand New" for Nissan returns NO RESULTS (bug condition from requirements 1.2)
+  - Test that querying "Foreign Used" for a make where only "Nigerian Used" exists returns NO RESULTS (bug condition from requirements 1.3)
+  - Test that UI shows different condition options for different makes (bug condition from requirements 1.1)
+  - Test that mileage data is NOT used to determine quality within condition categories (bug condition from requirements 1.5)
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bug exists)
+  - Document counterexamples found to understand root cause:
+    - Example 1: Nissan with "Brand New" returns empty instead of falling back
+    - Example 2: Mercedes shows different conditions than Nissan in UI
+    - Example 3: High mileage doesn't affect condition mapping
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Existing Valuation Data and Queries
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe: Existing database records have condition values (tokunbo_low, nig_used_low, etc.) on unfixed code
+  - Observe: Valuation queries for existing conditions return correct base_price, mileage_range, year on unfixed code
+  - Observe: Damage deduction calculations work correctly on unfixed code
+  - Observe: Vehicle detail fields (make, model, year, mileage) function correctly on unfixed code
+  - Write property-based test: for all existing valuation records, condition values remain unchanged after fix (from Preservation Requirements 3.3)
+  - Write property-based test: for all valuation queries where condition exists, same data is returned (from Preservation Requirements 3.1)
+  - Write property-based test: for all damage deduction calculations, results remain unchanged (from Preservation Requirements 3.2, 3.4)
+  - Write property-based test: for all vehicle input fields, functionality remains unchanged (from Preservation Requirements 3.5)
+  - Verify tests pass on UNFIXED code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+
+- [x] 3. Fix for inconsistent condition categories and missing fallback logic
+
+  - [x] 3.1 Create condition mapping service with universal categories
+    - Create `src/features/valuations/services/condition-mapping.service.ts`
+    - Define 3 universal condition categories: "Brand New", "Nigerian Used", "Foreign Used (Tokunbo)"
+    - Implement `mapUserConditionToDbConditions(userCondition, mileage)` function
+    - Map "Brand New" → ["brand_new"] with fallback to ["tokunbo_low", "tokunbo_high", "nig_used_low", "nig_used_high"]
+    - Map "Foreign Used" → ["tokunbo_low", "tokunbo_high"] (order based on mileage) with fallback to ["nig_used_low", "nig_used_high", "brand_new"]
+    - Map "Nigerian Used" → ["nig_used_low", "nig_used_high"] (order based on mileage) with fallback to ["tokunbo_low", "tokunbo_high", "brand_new"]
+    - Use mileage threshold of 100,000 km to determine low vs high priority
+    - _Bug_Condition: isBugCondition(input) where requested_condition NOT IN available_conditions AND no_fallback_attempted_
+    - _Expected_Behavior: Universal UI shows same 3 options for all makes, fallback logic tries alternative conditions when primary unavailable_
+    - _Preservation: Existing database condition values remain unchanged, no data migration required_
+    - _Requirements: 2.1, 2.5, 2.6, 2.7_
+
+  - [x] 3.2 Implement intelligent fallback query logic
+    - Update `src/features/valuations/services/valuation-query.service.ts`
+    - Implement `queryWithFallback(userCondition, vehicle, mileage)` function
+    - Try primary conditions first (based on user selection and mileage)
+    - If no results, iterate through fallback conditions in priority order
+    - Log when fallback is used for monitoring and debugging
+    - Return null only when all conditions exhausted
+    - _Bug_Condition: System returns empty results when specific condition unavailable instead of trying alternatives_
+    - _Expected_Behavior: System tries fallback conditions in priority order, returns valuation when any condition matches_
+    - _Preservation: Valuation query results return same data attributes (base_price, mileage_range, etc.)_
+    - _Requirements: 2.2, 2.3, 2.4, 2.8_
+
+  - [x] 3.3 Update UI to show universal condition categories
+    - Update case creation form component (likely in `src/app/(dashboard)/adjuster/cases/new/page.tsx` or related component)
+    - Replace make-specific condition dropdowns with universal 3-option dropdown
+    - Show: "Brand New", "Nigerian Used", "Foreign Used (Tokunbo)" for ALL makes
+    - Remove any logic that changes condition options based on selected make
+    - Ensure mileage field is captured for quality determination
+    - _Bug_Condition: UI shows different condition options per make, creating inconsistent UX_
+    - _Expected_Behavior: UI shows same 3 condition options for all makes, enabling consistent cross-make comparison_
+    - _Preservation: Other vehicle input fields (make, model, year, mileage) remain unchanged_
+    - _Requirements: 2.1, 2.9_
+
+  - [x] 3.4 Integrate condition mapping service with AI assessment
+    - Update `src/features/cases/services/ai-assessment.service.ts` or related service
+    - Use condition mapping service when querying valuations
+    - Pass user-selected condition and mileage to `queryWithFallback`
+    - Handle null response (all conditions exhausted) with appropriate error message
+    - Ensure damage deduction calculations continue to work correctly
+    - _Bug_Condition: System doesn't use mileage to determine quality, no fallback when condition unavailable_
+    - _Expected_Behavior: System uses mileage for quality determination, gracefully falls back when needed_
+    - _Preservation: AI assessment damage deduction calculations remain unchanged_
+    - _Requirements: 2.5, 2.6, 2.7, 2.8, 3.4_
+
+  - [x] 3.5 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Universal Categories with Intelligent Fallback
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - Verify "Brand New" for Nissan now returns results via fallback
+    - Verify "Foreign Used" for makes with only "Nigerian Used" returns results via fallback
+    - Verify UI shows same 3 condition options for all makes
+    - Verify mileage is used to determine low/high quality within conditions
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.9_
+
+  - [x] 3.6 Verify preservation tests still pass
+    - **Property 2: Preservation** - Existing Functionality Unchanged
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm existing database condition values remain unchanged
+    - Confirm valuation queries return same data attributes
+    - Confirm damage deduction calculations produce same results
+    - Confirm vehicle input fields function identically
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+
+- [x] 4. Checkpoint - Ensure all tests pass
+  - Run all exploration tests - should PASS (bug is fixed)
+  - Run all preservation tests - should PASS (no regressions)
+  - Run existing valuation and AI assessment test suites
+  - Verify UI shows universal condition categories for all makes
+  - Test fallback logic with real database queries
+  - Ensure all tests pass, ask the user if questions arise

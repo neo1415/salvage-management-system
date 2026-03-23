@@ -1,0 +1,25 @@
+[
+  {
+    "auctionId": "8170710b-49de-4a20-8b7e-926c50243a8d",
+    "deletedPayments": [
+      {
+        "id": "38ecaca6-fa66-4f4a-b0ec-e9af930ea9be",
+        "vendorId": "5e4eaa5f-7438-4c4f-bc8a-59db91d4a8c3",
+        "amount": "370000.00",
+        "status": "verified",
+        "escrowStatus": "released",
+        "paymentReference": "PAY_8170710b_1774198978061",
+        "createdAt": "2026-03-22T17:02:57.014Z"
+      }
+    ],
+    "keptPayment": {
+      "id": "e132a42e-7383-4de8-a543-3010f1ab53d4",
+      "vendorId": "5e4eaa5f-7438-4c4f-bc8a-59db91d4a8c3",
+      "amount": "370000.00",
+      "status": "pending",
+      "escrowStatus": "frozen",
+      "paymentReference": "PAY_8170710b_1774198978065",
+      "createdAt": "2026-03-22T17:02:57.014Z"
+    }
+  }
+]

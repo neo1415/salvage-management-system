@@ -1,0 +1,2 @@
+# Auth Services
+This directory contains authentication services (auth.service.ts, otp.service.ts, etc.)

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Controls Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .voice-button {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 24px;
+            margin: 20px;
+            transition: all 0.3s ease;
+        }
+        .recording {
+            background: linear-gradient(135deg, #dc2626, #ef4444);
+            color: white;
+            animation: pulse 2s infinite;
+        }
+        .idle {
+            background: linear-gradient(135deg, #800020, #a0002a);
+            color: white;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 8px;
+            background: #f3f4f6;
+        }
+        .transcript {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            min-height: 100px;
+            background: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Voice Controls Test</h1>
+    <p>This test verifies that voice recording can be properly started and stopped.</p>
+    
+    <div class="status" id="status">
+        Status: Ready to record
+    </div>
+    
+    <div style="text-align: center;">
+        <button id="voiceButton" class="voice-button idle" onclick="toggleRecording()">
+            🎤
+        </button>
+        <br>
+        <button id="stopButton" onclick="forceStop()" style="margin-top: 10px; padding: 10px 20px;">
+            Force Stop (Test Fix)
+        </button>
+    </div>
+    
+    <div class="transcript" id="transcript">
+        Transcript will appear here...
+    </div>
+    
+    <div id="log" style="margin-top: 20px; font-family: monospace; font-size: 12px; background: #f9f9f9; padding: 10px; border-radius: 4px;">
+        <strong>Debug Log:</strong><br>
+    </div>
+
+    <script>
+        let recognition = null;
+        let isRecording = false;
+        
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function updateStatus(status) {
+            document.getElementById('status').textContent = 'Status: ' + status;
+            log('Status changed to: ' + status);
+        }
+        
+        function initializeSpeechRecognition() {
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                const SpeechRecognitionConstructor = window.webkitSpeechRecognition || window.SpeechRecognition;
+                recognition = new SpeechRecognitionConstructor();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+                
+                recognition.onstart = function() {
+                    log('Speech recognition started successfully');
+                    updateStatus('Recording...');
+                };
+                
+                recognition.onresult = function(event) {
+                    let transcript = '';
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        transcript += event.results[i][0].transcript;
+                    }
+                    document.getElementById('transcript').textContent = transcript;
+                    log('Transcript updated: ' + transcript.substring(0, 50) + '...');
+                };
+                
+                recognition.onerror = function(event) {
+                    log('Speech recognition error: ' + event.error);
+                    updateStatus('Error: ' + event.error);
+                    resetRecordingState();
+                };
+                
+                recognition.onend = function() {
+                    log('Speech recognition ended');
+                    updateStatus('Recording stopped');
+                    resetRecordingState();
+                };
+                
+                log('Speech recognition initialized successfully');
+                return true;
+            } else {
+                log('Speech recognition not supported in this browser');
+                updateStatus('Speech recognition not supported');
+                return false;
+            }
+        }
+        
+        function resetRecordingState() {
+            isRecording = false;
+            const button = document.getElementById('voiceButton');
+            button.className = 'voice-button idle';
+            button.textContent = '🎤';
+        }
+        
+        function startRecording() {
+            if (!recognition) {
+                log('Recognition not initialized');
+                return;
+            }
+            
+            try {
+                recognition.start();
+                isRecording = true;
+                const button = document.getElementById('voiceButton');
+                button.className = 'voice-button recording';
+                button.textContent = '⏹️';
+                log('Attempting to start recording...');
+            } catch (error) {
+                log('Error starting recording: ' + error.message);
+                updateStatus('Failed to start recording');
+            }
+        }
+        
+        function stopRecording() {
+            if (!recognition) {
+                log('Recognition not initialized');
+                return;
+            }
+            
+            try {
+                log('Attempting to stop recording...');
+                recognition.stop();
+                log('recognition.stop() called successfully');
+            } catch (error) {
+                log('Error stopping recording: ' + error.message);
+            }
+        }
+        
+        function forceStop() {
+            log('Force stop button clicked');
+            stopRecording();
+            // Force reset state after a short delay
+            setTimeout(() => {
+                if (isRecording) {
+                    log('Force resetting recording state');
+                    resetRecordingState();
+                    updateStatus('Force stopped');
+                }
+            }, 1000);
+        }
+        
+        function toggleRecording() {
+            log('Voice button clicked, current state: ' + (isRecording ? 'recording' : 'idle'));
+            
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        }
+        
+        // Initialize on page load
+        window.onload = function() {
+            log('Page loaded, initializing...');
+            if (initializeSpeechRecognition()) {
+                updateStatus('Ready to record');
+            } else {
+                updateStatus('Speech recognition not available');
+            }
+        };
+    </script>
+</body>
+</html>

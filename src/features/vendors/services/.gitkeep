@@ -1,0 +1,2 @@
+# Vendor Services
+This directory contains vendor services (vendor.service.ts, bvn-verification.service.ts, kyc.service.ts, etc.)

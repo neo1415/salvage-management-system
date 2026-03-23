@@ -1,0 +1,2 @@
+# Auth Hooks
+This directory contains authentication custom hooks (use-auth.ts, etc.)

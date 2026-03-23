@@ -1,0 +1,249 @@
+/**
+ * Vision API Damage Detection Service
+ * Extracted from ai-assessment.service.ts for use as fallback in Gemini migration
+ * 
+ * Uses Google Cloud Vision API to analyze damage from photos with keyword matching
+ * 
+ * Supports both:
+ * - Base64 data URLs (data:image/jpeg;base64,...)
+ * - Regular image URLs (https://...)
+ * 
+ * Mock Mode: Set MOCK_AI_ASSESSMENT=true in .env to use mock data for testing
+ */
+
+import { ImageAnnotatorClient } from '@google-cloud/vision';
+
+// Check if we should use mock mode (for development without billing)
+const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
+
+// Initialize the Vision API client (only if not in mock mode)
+const visionClient = MOCK_MODE ? null : new ImageAnnotatorClient({
+  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+});
+
+export interface VisionDamageAssessment {
+  labels: string[];
+  confidenceScore: number; // 0-100
+  damagePercentage: number; // 0-100
+  method: 'vision';
+}
+
+/**
+ * Generate mock AI assessment for testing without Google Cloud billing
+ */
+function generateMockAssessment(imageCount: number): Array<{ description: string; score: number }> {
+  const mockLabels = [
+    { description: 'Vehicle', score: 0.95 },
+    { description: 'Car', score: 0.92 },
+    { description: 'Damage', score: 0.88 },
+    { description: 'Dent', score: 0.85 },
+    { description: 'Broken', score: 0.82 },
+    { description: 'Collision', score: 0.78 },
+    { description: 'Accident', score: 0.75 },
+    { description: 'Scratch', score: 0.72 },
+    { description: 'Automotive', score: 0.70 },
+    { description: 'Metal', score: 0.68 },
+  ];
+  
+  // Return more damage labels for more images
+  return mockLabels.slice(0, Math.min(5 + imageCount, mockLabels.length));
+}
+
+/**
+ * Calculate damage percentage based on label analysis
+ * @param labels - All labels detected in images
+ * @param damageKeywords - Keywords indicating damage
+ * @returns Damage percentage (0-100)
+ */
+function calculateDamagePercentage(
+  labels: Array<{ description: string; score: number }>,
+  damageKeywords: string[]
+): number {
+  // Count damage-related labels and their confidence
+  let damageScore = 0;
+  let damageCount = 0;
+
+  labels.forEach((label) => {
+    const isDamageRelated = damageKeywords.some((keyword) =>
+      label.description.toLowerCase().includes(keyword)
+    );
+
+    if (isDamageRelated) {
+      damageScore += label.score;
+      damageCount++;
+    }
+  });
+
+  // If no damage labels found, assume NO damage (0%)
+  if (damageCount === 0) {
+    console.log('✅ No damage keywords detected - item appears to be in good condition');
+    return 0;
+  }
+
+  // Calculate average damage confidence
+  const avgDamageConfidence = damageScore / damageCount;
+
+  // Map confidence to damage percentage
+  // High confidence in damage labels = high damage percentage
+  // Scale: 0.5 confidence = 50% damage, 1.0 confidence = 90% damage
+  const damagePercentage = 50 + avgDamageConfidence * 40;
+
+  // Also factor in the number of damage labels
+  // More damage labels = higher damage
+  const labelCountFactor = Math.min(damageCount / 5, 1); // Cap at 5 labels
+  const adjustedDamage = damagePercentage + labelCountFactor * 10;
+
+  // Ensure damage is within valid range (40-95%)
+  return Math.max(40, Math.min(95, adjustedDamage));
+}
+
+/**
+ * Assess damage from uploaded photos using Google Cloud Vision API
+ * @param imageUrls - Array of Cloudinary URLs or base64 data URLs for uploaded photos
+ * @returns Vision API damage assessment with labels, confidence, and damage percentage
+ */
+export async function assessDamageWithVision(
+  imageUrls: string[]
+): Promise<VisionDamageAssessment> {
+  try {
+    if (!imageUrls || imageUrls.length === 0) {
+      throw new Error('At least one image URL is required for damage assessment');
+    }
+
+    // Analyze all images and collect labels
+    const allLabels: Array<{ description: string; score: number }> = [];
+    let totalConfidence = 0;
+
+    // MOCK MODE: Generate fake data for testing
+    if (MOCK_MODE) {
+      console.log('🎭 MOCK MODE: Generating fake Vision API assessment data');
+      const mockLabels = generateMockAssessment(imageUrls.length);
+      allLabels.push(...mockLabels);
+      // Fix: Simulate the real API behavior - calculate average confidence per image, then sum for all images
+      const avgConfidencePerImage = mockLabels.reduce((sum, label) => sum + label.score, 0) / mockLabels.length;
+      totalConfidence = avgConfidencePerImage * imageUrls.length;
+    } else {
+      // REAL MODE: Use Google Cloud Vision API
+      if (!visionClient) {
+        throw new Error('Vision API client not initialized');
+      }
+
+      for (const imageUrl of imageUrls) {
+        // Check if this is a base64 data URL or a regular URL
+        let result;
+        if (imageUrl.startsWith('data:image')) {
+          // Extract base64 data from data URL (format: data:image/jpeg;base64,...)
+          const base64Data = imageUrl.split(',')[1];
+          if (!base64Data) {
+            console.warn('Invalid base64 data URL, skipping image');
+            continue;
+          }
+          
+          // Convert base64 to Buffer for Vision API
+          const imageBuffer = Buffer.from(base64Data, 'base64');
+          
+          // Use buffer for label detection
+          [result] = await visionClient.labelDetection({
+            image: { content: imageBuffer },
+          });
+        } else {
+          // Regular URL - use as-is
+          [result] = await visionClient.labelDetection(imageUrl);
+        }
+        
+        const labels = result.labelAnnotations || [];
+
+        // Collect labels with their confidence scores
+        labels.forEach((label) => {
+          if (label.description && label.score !== undefined && label.score !== null && !isNaN(label.score)) {
+            allLabels.push({
+              description: label.description,
+              score: label.score,
+            });
+          }
+        });
+
+        // Calculate average confidence for this image
+        if (labels.length > 0) {
+          const validLabels = labels.filter(l => l.score !== undefined && l.score !== null && !isNaN(l.score));
+          if (validLabels.length > 0) {
+            const imageConfidence =
+              validLabels.reduce((sum, label) => sum + (label.score ?? 0), 0) / validLabels.length;
+            totalConfidence += imageConfidence;
+          }
+        }
+      }
+    }
+
+    // Calculate overall confidence score (0-100)
+    const confidenceScore =
+      imageUrls.length > 0 ? (totalConfidence / imageUrls.length) * 100 : 0;
+    
+    // CRITICAL FIX: Cap confidence score at 100% to prevent invalid values
+    const cappedConfidenceScore = Math.min(100, Math.max(0, confidenceScore));
+    
+    // Debug logging to track confidence calculation
+    console.log(`🔍 Vision API confidence calculation:`, {
+      totalConfidence,
+      imageCount: imageUrls.length,
+      rawConfidenceScore: confidenceScore,
+      cappedConfidenceScore
+    });
+
+    // Extract unique damage-related labels
+    const damageKeywords = [
+      'damage',
+      'broken',
+      'crack',
+      'dent',
+      'scratch',
+      'shattered',
+      'bent',
+      'rust',
+      'collision',
+      'accident',
+      'wreck',
+      'destroyed',
+      'smashed',
+      'crushed',
+      'torn',
+      'burned',
+      'fire',
+      'water damage',
+      'flood',
+    ];
+
+    const damageLabels = allLabels
+      .filter((label) =>
+        damageKeywords.some((keyword) =>
+          label.description.toLowerCase().includes(keyword)
+        )
+      )
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10) // Top 10 damage-related labels
+      .map((label) => label.description);
+
+    // If no specific damage labels found, use general labels
+    const labels =
+      damageLabels.length > 0
+        ? damageLabels
+        : allLabels
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 10)
+            .map((label) => label.description);
+
+    // Calculate damage percentage based on label analysis
+    // More damage-related labels = higher damage percentage
+    const damagePercentage = calculateDamagePercentage(allLabels, damageKeywords);
+
+    return {
+      labels,
+      confidenceScore: Math.round(cappedConfidenceScore),
+      damagePercentage: Math.round(damagePercentage),
+      method: 'vision',
+    };
+  } catch (error) {
+    console.error('Error assessing damage with Vision API:', error);
+    throw new Error('Failed to assess damage from images using Vision API');
+  }
+}

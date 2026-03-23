@@ -1,0 +1,2 @@
+# Database
+This directory contains database configuration and schema files (drizzle.ts, schema/, migrations/)

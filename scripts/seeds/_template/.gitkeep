@@ -1,0 +1,5 @@
+# Template Directory
+
+This directory contains template seed scripts for adding new vehicle makes to the system.
+
+See the README.md in scripts/seeds/ for instructions on using these templates.

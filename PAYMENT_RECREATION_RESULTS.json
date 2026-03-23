@@ -1,0 +1,82 @@
+{
+  "summary": {
+    "totalNotifications": 46,
+    "uniquePayments": 10,
+    "created": 0,
+    "skipped": 3,
+    "failed": 7,
+    "totalAmount": 1570000
+  },
+  "results": [
+    {
+      "success": false,
+      "paymentId": "8e8e6602-cb84-4314-92f9-f57e598d0995",
+      "auctionId": "185c0657-4b15-40fd-96f5-0c4acc02d966",
+      "amount": 150000,
+      "error": "Auction not found"
+    },
+    {
+      "success": false,
+      "paymentId": "f53ae2d4-e167-4ab9-9c13-9ea580d96222",
+      "auctionId": "795d7412-147e-4163-94e9-0513fcf3a346",
+      "amount": 150000,
+      "error": "Auction not found"
+    },
+    {
+      "success": true,
+      "paymentId": "4c0805f6-e4da-4dd0-a368-d72ce4630d35",
+      "auctionId": "ebe0b7e6-0665-48e7-a946-1fbecf7e29e6",
+      "amount": 480000,
+      "error": "Already exists"
+    },
+    {
+      "success": true,
+      "paymentId": "a29e03f9-0faf-4b2a-acad-4505d2e01959",
+      "auctionId": "6fac712e-02ef-4001-96ea-0f9863c0e090",
+      "amount": 320000,
+      "error": "Already exists"
+    },
+    {
+      "success": true,
+      "paymentId": "6456fde7-9906-4ff2-b3ce-9aacadcbffe0",
+      "auctionId": "cc350b7c-bc72-4692-9f6c-669e4b79f7ca",
+      "amount": 30000,
+      "error": "Already exists"
+    },
+    {
+      "success": false,
+      "paymentId": "517d83ad-38b8-4257-a2f7-f471246c6305",
+      "auctionId": "112ba03e-65d0-4d24-9baa-d8cd1532d62f",
+      "amount": 150000,
+      "error": "Auction not found"
+    },
+    {
+      "success": false,
+      "paymentId": "89712f87-0fee-47df-a210-c5f66dd0079d",
+      "auctionId": "44032670-61be-4a78-b293-0ed85c601b09",
+      "amount": 150000,
+      "error": "Auction not found"
+    },
+    {
+      "success": false,
+      "paymentId": "b8f3ca3e-58f5-43be-8977-65138b6ad569",
+      "auctionId": "59b36e29-1c2d-4cc9-ba7e-a7acce44e4e5",
+      "amount": 150000,
+      "error": "Auction not found"
+    },
+    {
+      "success": false,
+      "paymentId": "0c17fcdb-2a36-4028-84cb-dbccfccf13e0",
+      "auctionId": "42713765-5dc9-4d18-aa6e-66487c64ba01",
+      "amount": 150000,
+      "error": "Auction not found"
+    },
+    {
+      "success": false,
+      "paymentId": "80470bf5-f638-4d27-818d-451dcc1e6242",
+      "auctionId": "2474b8f4-eafa-4e3a-86d8-00cbf7271fbe",
+      "amount": 150000,
+      "error": "Auction not found"
+    }
+  ]
+}
