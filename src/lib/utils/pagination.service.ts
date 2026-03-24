@@ -67,15 +67,18 @@ export class PaginationService {
    * Validate and sanitize pagination parameters
    * Ensures page and limit are within valid ranges
    * 
+   * SCALABILITY: Phase 1 - Enforce maximum 100 results per query
+   * This prevents memory exhaustion from large result sets at scale
+   * 
    * @param page - Page number from request (string or null)
    * @param limit - Limit from request (string or null)
-   * @param maxLimit - Maximum allowed limit (default: 100)
+   * @param maxLimit - Maximum allowed limit (default: 100, enforced for scalability)
    * @returns Validated pagination options
    */
   static validateParams(
     page: string | null | undefined,
     limit: string | null | undefined,
-    maxLimit: number = 100
+    maxLimit: number = 100 // SCALABILITY: Hard limit to prevent memory exhaustion
   ): PaginationOptions {
     const pageNum = Math.max(1, parseInt(page || '1') || 1);
     const limitNum = Math.min(

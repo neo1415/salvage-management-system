@@ -27,6 +27,7 @@ import {
 import { formatNaira } from '@/lib/utils/currency-formatter';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { useToast } from '@/components/ui/toast';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 interface BidHistoryItem {
   auction: {
@@ -62,6 +63,7 @@ interface BidHistoryItem {
       id: string;
       businessName: string;
       tier: string;
+      profilePictureUrl?: string | null;
     };
     user: {
       id: string;
@@ -77,6 +79,7 @@ interface BidHistoryItem {
       id: string;
       businessName: string;
       tier: string;
+      profilePictureUrl?: string | null;
     };
     user: {
       id: string;

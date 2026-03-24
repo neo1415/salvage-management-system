@@ -15,6 +15,7 @@ import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { bids } from '@/lib/db/schema/bids';
 import { eq, desc } from 'drizzle-orm';
+import { cache } from '@/lib/redis/client';
 
 export async function GET(
   _request: NextRequest, // Required by Next.js API route signature
@@ -30,6 +31,17 @@ export async function GET(
         { status: 400 }
       );
     }
+
+    // SCALABILITY: Cache auction details for 5 minutes
+    // Auction details change less frequently than list
+    const cacheKey = `auction:details:${id}`;
+    const cached = await cache.get(cacheKey);
+    
+    if (cached) {
+      console.log(`✅ Cache HIT: ${cacheKey}`);
+      return NextResponse.json(cached);
+    }
+    console.log(`❌ Cache MISS: ${cacheKey}`);
 
     // Fetch auction with case details
     const auction = await db.query.auctions.findFirst({
@@ -66,6 +78,10 @@ export async function GET(
         bids: bidHistory,
       },
     };
+
+    // SCALABILITY: Cache for 5 minutes (300 seconds)
+    await cache.set(cacheKey, response, 300);
+    console.log(`✅ Cached response: ${cacheKey}`);
 
     return NextResponse.json(response);
   } catch (error) {

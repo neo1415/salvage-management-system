@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { rateLimiter } from '@/lib/redis/client';
+
+// SCALABILITY: Rate limiting configuration
+const RATE_LIMITS = {
+  general: { maxAttempts: 100, windowSeconds: 60 }, // 100 req/min for general routes
+  bidding: { maxAttempts: 10, windowSeconds: 60 },  // 10 req/min for bidding
+  api: { maxAttempts: 100, windowSeconds: 60 },     // 100 req/min for API routes
+} as const;
 
 // Routes that require authentication
 const protectedRoutes = [
@@ -16,6 +24,53 @@ const authRoutes = ['/login', '/register'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // SCALABILITY: Apply rate limiting to prevent abuse and DDoS
+  // Get client identifier (IP address or user ID if authenticated)
+  const ip = request.ip ?? request.headers.get('x-forwarded-for') ?? '127.0.0.1';
+  
+  // Determine rate limit based on route
+  let rateLimit = RATE_LIMITS.general;
+  let rateLimitKey = `ratelimit:${ip}:general`;
+  
+  // Stricter limits for bidding endpoints
+  if (pathname.includes('/bids') || pathname.includes('/bid')) {
+    rateLimit = RATE_LIMITS.bidding;
+    rateLimitKey = `ratelimit:${ip}:bidding`;
+  }
+  // API routes get their own limit
+  else if (pathname.startsWith('/api')) {
+    rateLimit = RATE_LIMITS.api;
+    rateLimitKey = `ratelimit:${ip}:api`;
+  }
+  
+  // Check rate limit
+  try {
+    const isLimited = await rateLimiter.isLimited(
+      rateLimitKey,
+      rateLimit.maxAttempts,
+      rateLimit.windowSeconds
+    );
+    
+    if (isLimited) {
+      return new NextResponse(
+        JSON.stringify({
+          error: 'Too Many Requests',
+          message: 'You have exceeded the rate limit. Please try again later.',
+        }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': String(rateLimit.windowSeconds),
+          },
+        }
+      );
+    }
+  } catch (error) {
+    // If rate limiting fails, log but don't block the request
+    console.error('[Middleware] Rate limiting error:', error);
+  }
 
   // Get the token from the request
   // For NextAuth v5, getToken automatically handles __Secure- prefix in production

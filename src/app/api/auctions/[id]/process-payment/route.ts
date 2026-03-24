@@ -6,13 +6,15 @@
  * 
  * POST /api/auctions/[id]/process-payment
  * 
+ * SCALABILITY: Uses queue-based processing to prevent timeouts and enable retries
+ * 
  * Features:
  * - Verify auction exists and is closed
  * - Verify user is the winner
  * - Check if all 3 documents are signed
  * - Check if payment already processed (duplicate prevention)
- * - Trigger fund release and payment verification
- * - Return success/error response
+ * - Queue payment for background processing
+ * - Return job ID for status tracking
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -20,8 +22,9 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { eq } from 'drizzle-orm';
-import { checkAllDocumentsSigned, triggerFundReleaseOnDocumentCompletion } from '@/features/documents/services/document.service';
+import { checkAllDocumentsSigned } from '@/features/documents/services/document.service';
 import { checkPaymentProcessed } from '@/features/payments/utils/payment-status-checker';
+import { paymentQueue } from '@/lib/queue/payment-queue';
 
 export async function POST(
   request: NextRequest,
@@ -81,19 +84,22 @@ export async function POST(
       });
     }
 
-    // Step 6: Trigger payment processing
-    console.log(`🔄 Triggering retroactive payment processing for auction ${auctionId}...`);
-    await triggerFundReleaseOnDocumentCompletion(
+    // Step 6: Queue payment processing (SCALABILITY: Async processing)
+    console.log(`🔄 Queueing payment processing for auction ${auctionId}...`);
+    
+    const jobId = await paymentQueue.queuePayment(
       auctionId,
       session.user.vendorId,
-      session.user.id
+      session.user.id,
+      parseFloat(auction.currentBid || '0')
     );
 
-    console.log(`✅ Retroactive payment processing completed for auction ${auctionId}`);
+    console.log(`✅ Payment queued for processing: ${jobId}`);
 
     return NextResponse.json({
       success: true,
-      message: 'Payment processed successfully',
+      message: 'Payment queued for processing',
+      jobId,
       alreadyProcessed: false,
     });
   } catch (error) {

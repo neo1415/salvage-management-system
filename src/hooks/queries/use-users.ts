@@ -24,6 +24,7 @@ export interface User {
   updatedAt: string;
   lastLoginAt: string | null;
   loginDeviceType: string | null;
+  profilePictureUrl: string | null;
 }
 
 interface UsersResponse {

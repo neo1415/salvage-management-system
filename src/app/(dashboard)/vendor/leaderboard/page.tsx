@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/use-auth';
 import { TrustBadges } from '@/components/vendor/trust-badges';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 interface LeaderboardEntry {
   rank: number;
   vendorId: string;
   vendorName: string;
   businessName: string | null;
+  profilePictureUrl?: string | null;
   tier: string;
   totalBids: number;
   wins: number;
@@ -278,18 +280,25 @@ export default function VendorLeaderboardPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div>
-                        <p className="font-semibold text-gray-900">{entry.vendorName}</p>
-                        {entry.businessName && (
-                          <p className="text-sm text-gray-500">{entry.businessName}</p>
-                        )}
-                        <div className="mt-2">
-                          <TrustBadges
-                            tier={entry.tier as 'tier1_bvn' | 'tier2_full'}
-                            rating={parseFloat(entry.rating)}
-                            avgPaymentTimeHours={0}
-                            size="sm"
-                          />
+                      <div className="flex items-center gap-3">
+                        <UserAvatar
+                          profilePictureUrl={entry.profilePictureUrl}
+                          userName={entry.vendorName}
+                          size="lg"
+                        />
+                        <div>
+                          <p className="font-semibold text-gray-900">{entry.vendorName}</p>
+                          {entry.businessName && (
+                            <p className="text-sm text-gray-500">{entry.businessName}</p>
+                          )}
+                          <div className="mt-2">
+                            <TrustBadges
+                              tier={entry.tier as 'tier1_bvn' | 'tier2_full'}
+                              rating={parseFloat(entry.rating)}
+                              avgPaymentTimeHours={0}
+                              size="sm"
+                            />
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -349,6 +358,11 @@ export default function VendorLeaderboardPage() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   {getTrophyIcon(entry.rank)}
+                  <UserAvatar
+                    profilePictureUrl={entry.profilePictureUrl}
+                    userName={entry.vendorName}
+                    size="md"
+                  />
                   <div>
                     <p className="font-bold text-gray-900">{entry.vendorName}</p>
                     {entry.businessName && (

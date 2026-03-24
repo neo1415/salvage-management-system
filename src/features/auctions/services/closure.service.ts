@@ -327,14 +327,22 @@ export class AuctionClosureService {
 
       // Generate required documents automatically (WAIT for completion to avoid race condition)
       try {
-        await this.generateWinnerDocuments(auctionId, vendor.id);
+        await this.generateWinnerDocuments(auctionId, vendor.id, vendor.userId);
         console.log(`✅ Documents generated successfully for auction ${auctionId}`);
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const stackTrace = error instanceof Error ? error.stack : undefined;
+        
         console.error(`❌ CRITICAL: Failed to generate documents for auction ${auctionId}:`, error);
         console.error(`   - Vendor ID: ${vendor.id}`);
-        console.error(`   - Error details:`, error instanceof Error ? error.message : 'Unknown error');
+        console.error(`   - User ID: ${vendor.userId}`);
+        console.error(`   - Error details:`, errorMessage);
+        if (stackTrace) {
+          console.error(`   - Stack trace:`, stackTrace);
+        }
         
-        // Log failure to audit log so admins/finance can see it
+        // Log overall document generation failure to audit trail
+        // Individual document failures are already logged in generateDocumentWithRetry
         try {
           await logAction({
             userId: vendor.userId,
@@ -345,23 +353,36 @@ export class AuctionClosureService {
             deviceType: DeviceType.DESKTOP,
             userAgent: 'cron-job',
             afterState: {
-              error: error instanceof Error ? error.message : 'Unknown error',
+              error: errorMessage,
+              stackTrace,
               vendorId: vendor.id,
               timestamp: new Date().toISOString(),
+              phase: 'overall_document_generation',
+              context: 'auction_closure',
             },
           });
         } catch (logError) {
-          console.error('Failed to log document generation failure:', logError);
+          console.error('Failed to log document generation failure to audit trail:', logError);
         }
+        
         // Don't throw - continue with notifications even if documents fail
       }
 
       // Send notifications to winner (async, don't wait)
       this.notifyWinner(user, vendor, auction, salvageCase, payment, paymentDeadline).catch(
         async (error) => {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const stackTrace = error instanceof Error ? error.stack : undefined;
+          
           console.error(`❌ CRITICAL: Failed to notify winner for auction ${auctionId}:`, error);
           console.error(`   - Vendor ID: ${vendor.id}`);
-          console.error(`   - Error details:`, error instanceof Error ? error.message : 'Unknown error');
+          console.error(`   - User ID: ${vendor.userId}`);
+          console.error(`   - User Email: ${user.email}`);
+          console.error(`   - User Phone: ${user.phone}`);
+          console.error(`   - Error details:`, errorMessage);
+          if (stackTrace) {
+            console.error(`   - Stack trace:`, stackTrace);
+          }
           
           // Log failure to audit log so admins/finance can see it
           try {
@@ -374,14 +395,18 @@ export class AuctionClosureService {
               deviceType: DeviceType.DESKTOP,
               userAgent: 'cron-job',
               afterState: {
-                error: error instanceof Error ? error.message : 'Unknown error',
+                error: errorMessage,
+                stackTrace,
                 vendorId: vendor.id,
                 paymentId: payment.id,
+                userEmail: user.email,
+                userPhone: user.phone,
                 timestamp: new Date().toISOString(),
+                context: 'auction_closure_winner_notification',
               },
             });
           } catch (logError) {
-            console.error('Failed to log notification failure:', logError);
+            console.error('Failed to log notification failure to audit trail:', logError);
           }
         }
       );
@@ -410,6 +435,96 @@ export class AuctionClosureService {
   }
 
   /**
+   * Generate a document with retry logic and exponential backoff
+   * Retries up to 3 times on failure with delays: 2s, 4s, 8s
+   * 
+   * @param auctionId - Auction ID
+   * @param vendorId - Vendor ID
+   * @param documentType - Document type to generate
+   * @param createdBy - User ID who created the document
+   * @param userId - User ID for audit logging
+   * @param maxRetries - Maximum number of retries (default: 3)
+   * @returns Generated document
+   */
+  private async generateDocumentWithRetry(
+    auctionId: string,
+    vendorId: string,
+    documentType: 'bill_of_sale' | 'liability_waiver' | 'pickup_authorization',
+    createdBy: string,
+    userId: string,
+    maxRetries = 3
+  ): Promise<any> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const document = await generateDocument(auctionId, vendorId, documentType, createdBy);
+        
+        // Log successful document generation to audit log
+        await logAction({
+          userId,
+          actionType: AuditActionType.DOCUMENT_GENERATED,
+          entityType: AuditEntityType.AUCTION,
+          entityId: auctionId,
+          ipAddress: '0.0.0.0',
+          deviceType: DeviceType.DESKTOP,
+          userAgent: 'cron-job',
+          afterState: {
+            documentType,
+            documentId: document.id,
+            vendorId,
+            timestamp: new Date().toISOString(),
+            retryAttempt: attempt > 1 ? attempt : undefined,
+            success: true,
+          },
+        });
+        
+        return document;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const stackTrace = error instanceof Error ? error.stack : undefined;
+        
+        console.error(`❌ Failed to generate ${documentType} (attempt ${attempt}/${maxRetries}):`, error);
+        console.error(`   - Auction ID: ${auctionId}`);
+        console.error(`   - Vendor ID: ${vendorId}`);
+        console.error(`   - Error: ${errorMessage}`);
+        if (stackTrace) {
+          console.error(`   - Stack trace:`, stackTrace);
+        }
+        
+        // Log failure to audit log for each retry attempt
+        await logAction({
+          userId,
+          actionType: AuditActionType.DOCUMENT_GENERATION_FAILED,
+          entityType: AuditEntityType.AUCTION,
+          entityId: auctionId,
+          ipAddress: '0.0.0.0',
+          deviceType: DeviceType.DESKTOP,
+          userAgent: 'cron-job',
+          afterState: {
+            error: errorMessage,
+            stackTrace,
+            documentType,
+            vendorId,
+            timestamp: new Date().toISOString(),
+            retryAttempt: attempt,
+            maxRetries,
+            willRetry: attempt < maxRetries,
+            context: 'document_generation_with_retry',
+          },
+        });
+        
+        if (attempt === maxRetries) {
+          console.error(`❌ Max retries (${maxRetries}) exceeded for ${documentType}`);
+          throw error;
+        }
+        const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+        console.log(`⚠️  Retry ${attempt}/${maxRetries} for ${documentType} after ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    throw new Error('Max retries exceeded');
+  }
+
+  /**
    * Generate required documents for auction winner
    * Generates: Bill of Sale, Liability Waiver (2 documents)
    * 
@@ -422,10 +537,12 @@ export class AuctionClosureService {
    * 
    * @param auctionId - Auction ID
    * @param vendorId - Vendor ID
+   * @param userId - User ID for audit logging
    */
   private async generateWinnerDocuments(
     auctionId: string,
-    vendorId: string
+    vendorId: string,
+    userId: string
   ): Promise<void> {
     try {
       console.log(`📄 Starting document generation for auction ${auctionId}, vendor ${vendorId}`);
@@ -458,56 +575,109 @@ export class AuctionClosureService {
         liabilityWaiver: hasLiabilityWaiver,
       };
 
-      // Generate Bill of Sale and Liability Waiver in parallel (faster)
-      const documentPromises = [];
-      
+      const errors: Array<{ documentType: string; error: string; stackTrace?: string }> = [];
+
+      // Generate Bill of Sale first (sequential to avoid race conditions)
       if (!hasBillOfSale) {
-        documentPromises.push(
-          generateDocument(auctionId, vendorId, 'bill_of_sale', 'system')
-            .then(() => {
-              results.billOfSale = true;
-              console.log(`✅ Bill of Sale generated for auction ${auctionId}`);
-            })
-            .catch((error) => {
-              console.error(`❌ Failed to generate Bill of Sale for auction ${auctionId}:`, error);
-            })
-        );
+        try {
+          await this.generateDocumentWithRetry(auctionId, vendorId, 'bill_of_sale', 'system', userId);
+          results.billOfSale = true;
+          console.log(`✅ Bill of Sale generated for auction ${auctionId}`);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const stackTrace = error instanceof Error ? error.stack : undefined;
+          
+          console.error(`❌ Failed to generate Bill of Sale for auction ${auctionId}:`, error);
+          console.error(`   - Vendor ID: ${vendorId}`);
+          console.error(`   - Error: ${errorMessage}`);
+          if (stackTrace) {
+            console.error(`   - Stack trace:`, stackTrace);
+          }
+          
+          errors.push({
+            documentType: 'bill_of_sale',
+            error: errorMessage,
+            stackTrace,
+          });
+        }
       } else {
         console.log(`⏭️  Bill of Sale already exists for auction ${auctionId}. Skipping.`);
       }
 
+      // Then generate Liability Waiver (sequential to avoid race conditions)
       if (!hasLiabilityWaiver) {
-        documentPromises.push(
-          generateDocument(auctionId, vendorId, 'liability_waiver', 'system')
-            .then(() => {
-              results.liabilityWaiver = true;
-              console.log(`✅ Liability Waiver generated for auction ${auctionId}`);
-            })
-            .catch((error) => {
-              console.error(`❌ Failed to generate Liability Waiver for auction ${auctionId}:`, error);
-            })
-        );
+        try {
+          await this.generateDocumentWithRetry(auctionId, vendorId, 'liability_waiver', 'system', userId);
+          results.liabilityWaiver = true;
+          console.log(`✅ Liability Waiver generated for auction ${auctionId}`);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const stackTrace = error instanceof Error ? error.stack : undefined;
+          
+          console.error(`❌ Failed to generate Liability Waiver for auction ${auctionId}:`, error);
+          console.error(`   - Vendor ID: ${vendorId}`);
+          console.error(`   - Error: ${errorMessage}`);
+          if (stackTrace) {
+            console.error(`   - Stack trace:`, stackTrace);
+          }
+          
+          errors.push({
+            documentType: 'liability_waiver',
+            error: errorMessage,
+            stackTrace,
+          });
+        }
       } else {
         console.log(`⏭️  Liability Waiver already exists for auction ${auctionId}. Skipping.`);
       }
-
-      // Wait for all documents to be generated in parallel
-      await Promise.all(documentPromises);
 
       const successCount = Object.values(results).filter(Boolean).length;
       const totalCount = Object.keys(results).length;
 
       console.log(`📄 Document generation complete: ${successCount}/${totalCount} successful for auction ${auctionId}`);
       
-      if (successCount === 0) {
-        throw new Error('Failed to generate any documents');
-      }
-      
-      if (successCount < totalCount) {
-        console.warn(`⚠️ Partial document generation: Only ${successCount}/${totalCount} documents generated for auction ${auctionId}`);
+      // Log overall generation result to audit log
+      if (errors.length > 0) {
+        // Log overall failure with all error details
+        await logAction({
+          userId,
+          actionType: AuditActionType.DOCUMENT_GENERATION_FAILED,
+          entityType: AuditEntityType.AUCTION,
+          entityId: auctionId,
+          ipAddress: '0.0.0.0',
+          deviceType: DeviceType.DESKTOP,
+          userAgent: 'cron-job',
+          afterState: {
+            error: 'One or more documents failed to generate',
+            vendorId,
+            timestamp: new Date().toISOString(),
+            successCount,
+            totalCount,
+            failedDocuments: errors,
+            context: 'generate_winner_documents',
+          },
+        });
+        
+        if (successCount === 0) {
+          throw new Error('Failed to generate any documents');
+        }
+        
+        if (successCount < totalCount) {
+          console.warn(`⚠️ Partial document generation: Only ${successCount}/${totalCount} documents generated for auction ${auctionId}`);
+          throw new Error(`Partial document generation: ${errors.map(e => e.documentType).join(', ')} failed`);
+        }
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const stackTrace = error instanceof Error ? error.stack : undefined;
+      
       console.error(`❌ Error in generateWinnerDocuments for auction ${auctionId}:`, error);
+      console.error(`   - Vendor ID: ${vendorId}`);
+      console.error(`   - Error: ${errorMessage}`);
+      if (stackTrace) {
+        console.error(`   - Stack trace:`, stackTrace);
+      }
+      
       throw error;
     }
   }

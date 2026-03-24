@@ -17,6 +17,7 @@ declare module 'next-auth' {
       requirePasswordChange?: boolean;
       needsPhoneNumber?: boolean;
       vendorId?: string;
+      profilePictureUrl?: string;
     };
     accessToken?: string;
     sessionId?: string; // Unique session identifier to prevent session hijacking
@@ -36,6 +37,7 @@ declare module 'next-auth' {
     needsPhoneNumber?: boolean;
     requirePasswordChange?: boolean;
     vendorId?: string;
+    profilePictureUrl?: string;
   }
 }
 
@@ -56,5 +58,6 @@ declare module 'next-auth/jwt' {
     needsPhoneNumber?: boolean;
     sessionId?: string; // Unique session identifier to prevent token reuse
     vendorId?: string;
+    profilePictureUrl?: string;
   }
 }

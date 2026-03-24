@@ -29,6 +29,7 @@ cloudinary.config({
 export const CLOUDINARY_FOLDERS = {
   SALVAGE_CASES: 'salvage-cases',
   KYC_DOCUMENTS: 'kyc-documents',
+  PROFILE_PICTURES: 'profile-pictures',
 } as const;
 
 /**
@@ -64,6 +65,39 @@ export const TRANSFORMATION_PRESETS = {
     quality: 'auto:eco',
     fetch_format: 'auto',
     flags: 'lossy',
+  },
+} as const;
+
+/**
+ * Profile picture transformation presets
+ */
+export const PROFILE_PICTURE_PRESETS = {
+  // Avatar for sidebar/header (80x80, circular crop)
+  AVATAR: {
+    width: 80,
+    height: 80,
+    crop: 'fill',
+    gravity: 'face',
+    quality: 'auto:good',
+    fetch_format: 'auto',
+    radius: 'max', // Circular
+  },
+  // Medium for profile page (200x200)
+  MEDIUM: {
+    width: 200,
+    height: 200,
+    crop: 'fill',
+    gravity: 'face',
+    quality: 'auto:good',
+    fetch_format: 'auto',
+  },
+  // Large for full view (800x800)
+  LARGE: {
+    width: 800,
+    height: 800,
+    crop: 'fit',
+    quality: 'auto:best',
+    fetch_format: 'auto',
   },
 } as const;
 
@@ -421,6 +455,24 @@ export function getSalvageCaseFolder(caseId: string): string {
  */
 export function getKycDocumentFolder(vendorId: string): string {
   return `${CLOUDINARY_FOLDERS.KYC_DOCUMENTS}/${vendorId}`;
+}
+
+/**
+ * Helper function to build folder path for profile pictures
+ * 
+ * @param userId - The user ID
+ * @param role - The user role
+ * @returns Folder path for the user's profile picture
+ * 
+ * @example
+ * ```typescript
+ * const folder = getProfilePictureFolder('user-123', 'vendor');
+ * // Returns: 'profile-pictures/vendors/user-123'
+ * ```
+ */
+export function getProfilePictureFolder(userId: string, role: string): string {
+  const roleFolder = role.replace('_', '-'); // e.g., 'claims_adjuster' -> 'claims-adjuster'
+  return `${CLOUDINARY_FOLDERS.PROFILE_PICTURES}/${roleFolder}s/${userId}`;
 }
 
 /**

@@ -353,25 +353,33 @@ function AuctionManagementCard({
         {/* Winner Details */}
         <div>
           <h3 className="font-semibold text-gray-900 mb-2">Winner</h3>
-          {auction.vendor ? (
-            <div className="space-y-1 text-sm">
-              <p>
-                <span className="text-gray-600">Name:</span>{' '}
-                <span className="font-medium">{auction.vendor.user.fullName}</span>
-              </p>
-              <p>
-                <span className="text-gray-600">Business:</span>{' '}
-                <span className="font-medium">{auction.vendor.businessName}</span>
-              </p>
-              <p>
-                <span className="text-gray-600">Email:</span>{' '}
-                <span className="font-medium">{auction.vendor.user.email}</span>
-              </p>
-              <p>
-                <span className="text-gray-600">Phone:</span>{' '}
-                <span className="font-medium">{auction.vendor.user.phone}</span>
-              </p>
-            </div>
+          {auction.currentBidder ? (
+            auction.vendor ? (
+              <div className="space-y-1 text-sm">
+                <p>
+                  <span className="text-gray-600">Name:</span>{' '}
+                  <span className="font-medium">{auction.vendor.user.fullName}</span>
+                </p>
+                <p>
+                  <span className="text-gray-600">Business:</span>{' '}
+                  <span className="font-medium">{auction.vendor.businessName || 'Not provided'}</span>
+                </p>
+                <p>
+                  <span className="text-gray-600">Email:</span>{' '}
+                  <span className="font-medium">{auction.vendor.user.email}</span>
+                </p>
+                <p>
+                  <span className="text-gray-600">Phone:</span>{' '}
+                  <span className="font-medium">{auction.vendor.user.phone}</span>
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1 text-sm">
+                <p className="text-yellow-600 font-medium">⚠️ Winner data incomplete</p>
+                <p className="text-xs text-gray-500">Vendor ID: {auction.currentBidder}</p>
+                <p className="text-xs text-gray-500">Vendor profile may be suspended or incomplete</p>
+              </div>
+            )
           ) : (
             <p className="text-sm text-gray-500">No winner</p>
           )}
@@ -423,7 +431,7 @@ function AuctionManagementCard({
             )}
 
             {/* Action Buttons */}
-            {auction.vendor && (
+            {auction.currentBidder && (
               <div className="space-y-2 pt-2">
                 {(docStatus.status !== 'complete' || auction.documentGenerationFailed) && (
                   <button

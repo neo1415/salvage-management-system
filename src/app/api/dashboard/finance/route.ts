@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { payments } from '@/lib/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, and, or, ne } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 
 /**
@@ -99,10 +99,21 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
   const totalPayments = totalPaymentsResult[0]?.count || 0;
 
   // Pending verification count
+  // CRITICAL FIX: Exclude escrow_wallet payments with frozen status
+  // These are waiting for vendor to sign documents and shouldn't show in finance dashboard yet
   const pendingVerificationResult = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(payments)
-    .where(eq(payments.status, 'pending'));
+    .where(
+      and(
+        eq(payments.status, 'pending'),
+        // Exclude escrow wallet payments that are waiting for document signing
+        or(
+          ne(payments.paymentMethod, 'escrow_wallet'),
+          ne(payments.escrowStatus, 'frozen')
+        )
+      )
+    );
 
   const pendingVerification = pendingVerificationResult[0]?.count || 0;
 
@@ -122,13 +133,20 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
 
   const rejected = rejectedResult[0]?.count || 0;
 
-  // Total amount (sum of ALL payments regardless of status)
-  // This includes pending, verified, and frozen payments
+  // Total amount (sum of payments EXCLUDING frozen escrow)
+  // CRITICAL FIX: Don't count frozen escrow funds that are waiting for document signing
+  // These funds haven't been released yet and shouldn't appear in finance dashboard
   const totalAmountResult = await db
     .select({ 
       total: sql<number>`COALESCE(SUM(${payments.amount}::numeric), 0)::numeric` 
     })
-    .from(payments);
+    .from(payments)
+    .where(
+      or(
+        ne(payments.paymentMethod, 'escrow_wallet'),
+        ne(payments.escrowStatus, 'frozen')
+      )
+    );
 
   const totalAmount = parseFloat(totalAmountResult[0]?.total?.toString() || '0');
 

@@ -11,6 +11,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Image from 'next/image';
+import { User as UserIcon } from 'lucide-react';
 import ActionModal from './action-modal';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { useVirtualizedList } from '@/hooks/use-virtualized-list';
@@ -419,8 +421,28 @@ export default function AdminUserManagement() {
                   {users.map((user) => (
                     <tr key={user.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
-                        <div className="text-sm text-gray-500">{user.id.substring(0, 8)}...</div>
+                        <div className="flex items-center gap-3">
+                          {/* Profile Picture */}
+                          <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 flex-shrink-0">
+                            {user.profilePictureUrl ? (
+                              <Image
+                                src={user.profilePictureUrl}
+                                alt={user.fullName}
+                                fill
+                                className="object-cover"
+                                sizes="40px"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                <UserIcon className="w-5 h-5 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
+                            <div className="text-sm text-gray-500">{user.id.substring(0, 8)}...</div>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{user.email}</div>
@@ -740,9 +762,27 @@ function UserRow({
   return (
     <div className="border-b border-gray-200 hover:bg-gray-50 px-6 py-4">
       <div className="grid grid-cols-7 gap-4 items-center">
-        <div>
-          <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
-          <div className="text-sm text-gray-500">{user.id.substring(0, 8)}...</div>
+        <div className="flex items-center gap-3">
+          {/* Profile Picture */}
+          <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 flex-shrink-0">
+            {user.profilePictureUrl ? (
+              <Image
+                src={user.profilePictureUrl}
+                alt={user.fullName}
+                fill
+                className="object-cover"
+                sizes="40px"
+              />
+            ) : (
+              <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                <UserIcon className="w-5 h-5 text-gray-400" />
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
+            <div className="text-sm text-gray-500">{user.id.substring(0, 8)}...</div>
+          </div>
         </div>
         <div>
           <div className="text-sm text-gray-900">{user.email}</div>

@@ -4,6 +4,7 @@ import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq, and, or, sql } from 'drizzle-orm';
+import { cache } from '@/lib/redis/client';
 
 /**
  * Vendors API - Get vendors list
@@ -50,6 +51,17 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || '';
     const page = parseInt(searchParams.get('page') || '1', 10);
     const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
+
+    // SCALABILITY: Cache key for this specific query
+    // Cache for 10 minutes to balance freshness with performance
+    const cacheKey = `vendors:list:${statusFilter}:${tierFilter}:${search}:${page}:${pageSize}`;
+    const cached = await cache.get(cacheKey);
+    
+    if (cached) {
+      console.log(`✅ Cache HIT: ${cacheKey}`);
+      return NextResponse.json(cached);
+    }
+    console.log(`❌ Cache MISS: ${cacheKey}`);
 
     // Build query conditions
     const conditions = [];
@@ -129,14 +141,20 @@ export async function GET(request: NextRequest) {
       ninCardUrl: vendor.ninCardUrl || '',
     }));
 
-    return NextResponse.json({
+    const response = {
       success: true,
       vendors: vendorsWithVerification,
       count: vendorsWithVerification.length,
       hasMore,
       page,
       pageSize,
-    });
+    };
+
+    // SCALABILITY: Cache the response for 10 minutes (600 seconds)
+    await cache.set(cacheKey, response, 600);
+    console.log(`✅ Cached response: ${cacheKey}`);
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Error fetching vendors:', error);
     return NextResponse.json(

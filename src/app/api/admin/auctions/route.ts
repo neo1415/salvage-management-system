@@ -93,72 +93,80 @@ export async function GET(request: NextRequest) {
       failureMap.set(log.entityId, existingFailure);
     }
 
-    // Fetch documents for each auction
-    const auctionsWithDetails = await Promise.all(
-      closedAuctions.map(async (row) => {
-        const { auction, case: caseData, vendor, vendorUser, payment } = row;
+    // CRITICAL FIX: Batch fetch all documents in ONE query instead of N queries
+    // This prevents connection pool exhaustion when there are many closed auctions
+    const allDocuments = auctionIds.length > 0
+      ? await db
+          .select()
+          .from(releaseForms)
+          .where(inArray(releaseForms.auctionId, auctionIds))
+          .orderBy(desc(releaseForms.createdAt))
+      : [];
 
-        // Get documents for this auction
-        const documents = vendor
-          ? await db
-              .select()
-              .from(releaseForms)
-              .where(eq(releaseForms.auctionId, auction.id))
-              .orderBy(desc(releaseForms.createdAt))
-          : [];
+    // Create a map of documents by auction ID for fast lookup
+    const documentsMap = new Map<string, typeof allDocuments>();
+    for (const doc of allDocuments) {
+      const existing = documentsMap.get(doc.auctionId) || [];
+      existing.push(doc);
+      documentsMap.set(doc.auctionId, existing);
+    }
 
-        // Check if notification was sent by looking at audit logs
-        // If notification_sent event exists, it was sent successfully
-        // If notification_failed event exists without notification_sent, it failed
-        const notificationStatus = notificationStatusMap.get(auction.id) || { sent: false, failed: false };
-        const notificationSent = notificationStatus.sent;
+    // Build auction details without additional queries
+    const auctionsWithDetails = closedAuctions.map((row) => {
+      const { auction, case: caseData, vendor, vendorUser, payment } = row;
 
-        // Get failure status from audit logs
-        const failures = failureMap.get(auction.id) || { notificationFailed: false, documentFailed: false };
+      // Get documents from map (no query needed)
+      const documents = documentsMap.get(auction.id) || [];
 
-        return {
-          id: auction.id,
-          caseId: auction.caseId,
-          status: auction.status,
-          currentBid: auction.currentBid,
-          currentBidder: auction.currentBidder,
-          endTime: auction.endTime,
-          createdAt: auction.createdAt,
-          case: {
-            claimReference: caseData.claimReference,
-            assetType: caseData.assetType,
-            assetDetails: caseData.assetDetails,
-          },
-          vendor: vendor && vendorUser
-            ? {
-                id: vendor.id,
-                businessName: vendor.businessName,
-                user: {
-                  fullName: vendorUser.fullName,
-                  email: vendorUser.email,
-                  phone: vendorUser.phone,
-                },
-              }
-            : null,
-          payment: payment
-            ? {
-                id: payment.id,
-                status: payment.status,
-                amount: payment.amount,
-              }
-            : null,
-          documents: documents.map((doc) => ({
-            id: doc.id,
-            documentType: doc.documentType,
-            status: doc.status,
-            createdAt: doc.createdAt,
-          })),
-          notificationSent,
-          notificationFailed: failures.notificationFailed,
-          documentGenerationFailed: failures.documentFailed,
-        };
-      })
-    );
+      // Check if notification was sent by looking at audit logs
+      const notificationStatus = notificationStatusMap.get(auction.id) || { sent: false, failed: false };
+      const notificationSent = notificationStatus.sent;
+
+      // Get failure status from audit logs
+      const failures = failureMap.get(auction.id) || { notificationFailed: false, documentFailed: false };
+
+      return {
+        id: auction.id,
+        caseId: auction.caseId,
+        status: auction.status,
+        currentBid: auction.currentBid,
+        currentBidder: auction.currentBidder,
+        endTime: auction.endTime,
+        createdAt: auction.createdAt,
+        case: {
+          claimReference: caseData.claimReference,
+          assetType: caseData.assetType,
+          assetDetails: caseData.assetDetails,
+        },
+        vendor: vendor && vendorUser
+          ? {
+              id: vendor.id,
+              businessName: vendor.businessName,
+              user: {
+                fullName: vendorUser.fullName,
+                email: vendorUser.email,
+                phone: vendorUser.phone,
+              },
+            }
+          : null,
+        payment: payment
+          ? {
+              id: payment.id,
+              status: payment.status,
+              amount: payment.amount,
+            }
+          : null,
+        documents: documents.map((doc) => ({
+          id: doc.id,
+          documentType: doc.documentType,
+          status: doc.status,
+          createdAt: doc.createdAt,
+        })),
+        notificationSent,
+        notificationFailed: failures.notificationFailed,
+        documentGenerationFailed: failures.documentFailed,
+      };
+    });
 
     return NextResponse.json({
       auctions: auctionsWithDetails,

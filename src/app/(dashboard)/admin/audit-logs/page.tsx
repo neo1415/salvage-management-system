@@ -11,6 +11,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 interface AuditLog {
   id: string;
@@ -18,6 +19,7 @@ interface AuditLog {
   userName: string | null;
   userEmail: string | null;
   userRole: string | null;
+  profilePictureUrl?: string | null;
   actionType: string;
   entityType: string;
   entityId: string;
@@ -638,13 +640,22 @@ export default function AuditLogViewer() {
                         {formatTimestamp(log.createdAt)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-                          {log.userName || 'Unknown User'}
+                        <div className="flex items-center gap-3">
+                          <UserAvatar
+                            profilePictureUrl={log.profilePictureUrl}
+                            userName={log.userName || 'Unknown User'}
+                            size="md"
+                          />
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {log.userName || 'Unknown User'}
+                            </div>
+                            <div className="text-sm text-gray-500">{log.userEmail || log.userId.substring(0, 8) + '...'}</div>
+                            {log.userRole && (
+                              <div className="text-xs text-gray-400 mt-1">{log.userRole}</div>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-sm text-gray-500">{log.userEmail || log.userId.substring(0, 8) + '...'}</div>
-                        {log.userRole && (
-                          <div className="text-xs text-gray-400 mt-1">{log.userRole}</div>
-                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getActionTypeColor(log.actionType)}`}>

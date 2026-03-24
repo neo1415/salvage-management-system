@@ -36,6 +36,7 @@ import { formatNaira } from '@/lib/utils/currency-formatter';
 import { BidHistoryChart } from '@/components/charts/bid-history-chart';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { useToast } from '@/components/ui/toast';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 interface DetailedAuctionData {
   auction: {
@@ -73,6 +74,7 @@ interface DetailedAuctionData {
       id: string;
       businessName: string;
       tier: string;
+      profilePictureUrl?: string | null;
     };
     user: {
       id: string;
@@ -88,6 +90,7 @@ interface DetailedAuctionData {
       id: string;
       businessName: string;
       tier: string;
+      profilePictureUrl?: string | null;
     };
     user: {
       id: string;
@@ -737,9 +740,11 @@ export default function AuctionDetailPage() {
               {data.currentBidder ? (
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
-                    <div className="w-12 h-12 bg-[#800020] rounded-full flex items-center justify-center">
-                      <Building className="w-6 h-6 text-white" />
-                    </div>
+                    <UserAvatar 
+                      profilePictureUrl={data.currentBidder.vendor.profilePictureUrl}
+                      userName={data.currentBidder.user.fullName}
+                      size="lg"
+                    />
                     <div className="flex-1">
                       <div className="font-semibold text-gray-900">
                         {data.currentBidder.vendor.businessName}
@@ -845,9 +850,11 @@ export default function AuctionDetailPage() {
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                          <Building className="w-4 h-4 text-gray-600" />
-                        </div>
+                        <UserAvatar
+                          profilePictureUrl={bid.vendor.profilePictureUrl}
+                          userName={bid.user.fullName}
+                          size="sm"
+                        />
                         <div>
                           <div className="font-semibold text-gray-900">
                             {bid.vendor.businessName}

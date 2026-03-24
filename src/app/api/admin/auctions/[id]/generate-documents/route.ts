@@ -4,6 +4,7 @@ import { db } from '@/lib/db/drizzle';
 import { auctions, vendors } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { generateDocument } from '@/features/documents/services/document.service';
+import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
 
 /**
  * Admin Manual Document Generation API
@@ -71,36 +72,174 @@ export async function POST(
     }
 
     const results = {
-      billOfSale: { success: false, error: '' },
-      liabilityWaiver: { success: false, error: '' },
-      pickupAuthorization: { success: false, error: '' },
+      billOfSale: { success: false, error: '', documentId: '' },
+      liabilityWaiver: { success: false, error: '', documentId: '' },
+      pickupAuthorization: { success: false, error: '', documentId: '' },
     };
 
     // Generate Bill of Sale
     try {
-      await generateDocument(auctionId, vendor.id, 'bill_of_sale', session.user.id);
+      const document = await generateDocument(auctionId, vendor.id, 'bill_of_sale', session.user.id);
       results.billOfSale.success = true;
+      results.billOfSale.documentId = document.id;
+
+      // Log successful generation
+      await logAction(
+        createAuditLogData(
+          request,
+          vendor.userId,
+          AuditActionType.DOCUMENT_GENERATED,
+          AuditEntityType.AUCTION,
+          auctionId,
+          undefined,
+          {
+            documentType: 'bill_of_sale',
+            documentId: document.id,
+            vendorId: vendor.id,
+            timestamp: new Date().toISOString(),
+            context: 'admin_manual_generation',
+            adminUserId: session.user.id,
+          }
+        )
+      );
     } catch (error) {
-      results.billOfSale.error = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const stackTrace = error instanceof Error ? error.stack : undefined;
+      
+      results.billOfSale.error = errorMessage;
+      console.error('Failed to generate Bill of Sale:', error);
+
+      // Log failure to audit trail
+      await logAction(
+        createAuditLogData(
+          request,
+          vendor.userId,
+          AuditActionType.DOCUMENT_GENERATION_FAILED,
+          AuditEntityType.AUCTION,
+          auctionId,
+          undefined,
+          {
+            error: errorMessage,
+            stackTrace,
+            documentType: 'bill_of_sale',
+            vendorId: vendor.id,
+            timestamp: new Date().toISOString(),
+            context: 'admin_manual_generation',
+            adminUserId: session.user.id,
+          }
+        )
+      );
     }
 
     // Generate Liability Waiver
     try {
-      await generateDocument(auctionId, vendor.id, 'liability_waiver', session.user.id);
+      const document = await generateDocument(auctionId, vendor.id, 'liability_waiver', session.user.id);
       results.liabilityWaiver.success = true;
+      results.liabilityWaiver.documentId = document.id;
+
+      // Log successful generation
+      await logAction(
+        createAuditLogData(
+          request,
+          vendor.userId,
+          AuditActionType.DOCUMENT_GENERATED,
+          AuditEntityType.AUCTION,
+          auctionId,
+          undefined,
+          {
+            documentType: 'liability_waiver',
+            documentId: document.id,
+            vendorId: vendor.id,
+            timestamp: new Date().toISOString(),
+            context: 'admin_manual_generation',
+            adminUserId: session.user.id,
+          }
+        )
+      );
     } catch (error) {
-      results.liabilityWaiver.error = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const stackTrace = error instanceof Error ? error.stack : undefined;
+      
+      results.liabilityWaiver.error = errorMessage;
+      console.error('Failed to generate Liability Waiver:', error);
+
+      // Log failure to audit trail
+      await logAction(
+        createAuditLogData(
+          request,
+          vendor.userId,
+          AuditActionType.DOCUMENT_GENERATION_FAILED,
+          AuditEntityType.AUCTION,
+          auctionId,
+          undefined,
+          {
+            error: errorMessage,
+            stackTrace,
+            documentType: 'liability_waiver',
+            vendorId: vendor.id,
+            timestamp: new Date().toISOString(),
+            context: 'admin_manual_generation',
+            adminUserId: session.user.id,
+          }
+        )
+      );
     }
 
     // Generate Pickup Authorization
     // WARNING: Pickup authorization should normally only be generated AFTER payment is complete.
     // This manual generation is for admin override purposes only (e.g., fixing data issues).
     try {
-      await generateDocument(auctionId, vendor.id, 'pickup_authorization', session.user.id);
+      const document = await generateDocument(auctionId, vendor.id, 'pickup_authorization', session.user.id);
       results.pickupAuthorization.success = true;
+      results.pickupAuthorization.documentId = document.id;
+
+      // Log successful generation
+      await logAction(
+        createAuditLogData(
+          request,
+          vendor.userId,
+          AuditActionType.DOCUMENT_GENERATED,
+          AuditEntityType.AUCTION,
+          auctionId,
+          undefined,
+          {
+            documentType: 'pickup_authorization',
+            documentId: document.id,
+            vendorId: vendor.id,
+            timestamp: new Date().toISOString(),
+            context: 'admin_manual_generation',
+            adminUserId: session.user.id,
+            warning: 'Manual pickup authorization generation - normally only after payment',
+          }
+        )
+      );
     } catch (error) {
-      results.pickupAuthorization.error =
-        error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const stackTrace = error instanceof Error ? error.stack : undefined;
+      
+      results.pickupAuthorization.error = errorMessage;
+      console.error('Failed to generate Pickup Authorization:', error);
+
+      // Log failure to audit trail
+      await logAction(
+        createAuditLogData(
+          request,
+          vendor.userId,
+          AuditActionType.DOCUMENT_GENERATION_FAILED,
+          AuditEntityType.AUCTION,
+          auctionId,
+          undefined,
+          {
+            error: errorMessage,
+            stackTrace,
+            documentType: 'pickup_authorization',
+            vendorId: vendor.id,
+            timestamp: new Date().toISOString(),
+            context: 'admin_manual_generation',
+            adminUserId: session.user.id,
+          }
+        )
+      );
     }
 
     const successCount = Object.values(results).filter((r) => r.success).length;

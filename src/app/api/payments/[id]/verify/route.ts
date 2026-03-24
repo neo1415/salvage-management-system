@@ -256,8 +256,58 @@ export async function POST(
         });
 
         console.log(`✅ Pickup authorization generated for auction ${payment.auctionId}`);
+
+        // Log successful generation to audit trail
+        await logAction({
+          userId: vendorUser.id,
+          actionType: AuditActionType.DOCUMENT_GENERATED,
+          entityType: AuditEntityType.AUCTION,
+          entityId: payment.auctionId,
+          ipAddress: getIpAddress(request.headers),
+          deviceType: getDeviceTypeFromUserAgent(request.headers.get('user-agent') || ''),
+          userAgent: request.headers.get('user-agent') || 'unknown',
+          afterState: {
+            documentType: 'pickup_authorization',
+            documentId: pickupAuthDocument.id,
+            vendorId: payment.vendorId,
+            timestamp: new Date().toISOString(),
+            context: 'payment_verification_pickup_auth',
+            paymentId: payment.id,
+          },
+        });
       } catch (docError) {
+        const errorMessage = docError instanceof Error ? docError.message : 'Unknown error';
+        const stackTrace = docError instanceof Error ? docError.stack : undefined;
+        
         console.error('Failed to generate pickup authorization:', docError);
+        console.error(`   - Auction ID: ${payment.auctionId}`);
+        console.error(`   - Vendor ID: ${payment.vendorId}`);
+        console.error(`   - Payment ID: ${payment.id}`);
+        console.error(`   - Error: ${errorMessage}`);
+        if (stackTrace) {
+          console.error(`   - Stack trace:`, stackTrace);
+        }
+
+        // Log failure to audit trail
+        await logAction({
+          userId: vendorUser.id,
+          actionType: AuditActionType.DOCUMENT_GENERATION_FAILED,
+          entityType: AuditEntityType.AUCTION,
+          entityId: payment.auctionId,
+          ipAddress: getIpAddress(request.headers),
+          deviceType: getDeviceTypeFromUserAgent(request.headers.get('user-agent') || ''),
+          userAgent: request.headers.get('user-agent') || 'unknown',
+          afterState: {
+            error: errorMessage,
+            stackTrace,
+            documentType: 'pickup_authorization',
+            vendorId: payment.vendorId,
+            timestamp: new Date().toISOString(),
+            context: 'payment_verification_pickup_auth',
+            paymentId: payment.id,
+          },
+        });
+
         // Don't fail the payment verification if document generation fails
       }
 

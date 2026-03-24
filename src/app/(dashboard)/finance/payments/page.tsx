@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { EscrowPaymentDetails } from '@/components/finance/escrow-payment-details';
 import { EscrowPaymentAuditTrail } from '@/components/finance/escrow-payment-audit-trail';
 import { ClipboardList, Star } from 'lucide-react';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 const SuccessModal = dynamic(
   () => import('@/components/modals/success-modal').then(mod => ({ default: mod.SuccessModal })),
@@ -46,6 +47,7 @@ interface Payment {
     contactPersonName: string | null;
     phoneNumber: string | null;
     email: string | null;
+    profilePictureUrl?: string | null;
     kycTier: 'tier1' | 'tier2' | null;
     kycStatus: 'pending' | 'approved' | 'rejected' | null;
     bankAccountNumber: string | null;
@@ -1207,26 +1209,35 @@ export default function FinancePaymentsPage() {
                       </div>
                       <div>
                         <p className="text-gray-500">Vendor Business</p>
-                        <p className="font-medium text-gray-900">
-                          {payment.vendor.businessName || 'Individual Vendor'}
-                        </p>
-                        {payment.vendor.kycTier && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium mt-1 ${
-                            payment.vendor.kycTier === 'tier2' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {payment.vendor.kycTier === 'tier2' ? (
-                              <>
-                                <Star className="w-3 h-3" aria-hidden="true" />
-                                <span>Tier 2</span>
-                              </>
-                            ) : (
-                              <>
-                                <ClipboardList className="w-3 h-3" aria-hidden="true" />
-                                <span>Tier 1</span>
-                              </>
+                        <div className="flex items-center gap-2 mt-1">
+                          <UserAvatar
+                            profilePictureUrl={payment.vendor.profilePictureUrl}
+                            userName={payment.vendor.businessName || payment.vendor.contactPersonName || 'Vendor'}
+                            size="sm"
+                          />
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              {payment.vendor.businessName || 'Individual Vendor'}
+                            </p>
+                            {payment.vendor.kycTier && (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                                payment.vendor.kycTier === 'tier2' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {payment.vendor.kycTier === 'tier2' ? (
+                                  <>
+                                    <Star className="w-3 h-3" aria-hidden="true" />
+                                    <span>Tier 2</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ClipboardList className="w-3 h-3" aria-hidden="true" />
+                                    <span>Tier 1</span>
+                                  </>
+                                )}
+                              </span>
                             )}
-                          </span>
-                        )}
+                          </div>
+                        </div>
                       </div>
                       <div>
                         <p className="text-gray-500">Contact Person</p>
@@ -1314,7 +1325,10 @@ export default function FinancePaymentsPage() {
                   </div>
 
                   {/* Action Buttons - Show for pending and overdue payments */}
-                  {payment.status === 'pending' && (
+                  {/* CRITICAL FIX: Don't show approve/reject for escrow_wallet payments with frozen status */}
+                  {/* These are waiting for vendor to sign documents - approval is meaningless */}
+                  {payment.status === 'pending' && 
+                   !(payment.paymentMethod === 'escrow_wallet' && payment.escrowStatus === 'frozen') && (
                     <div className="ml-4 flex flex-col space-y-2">
                       <button
                         type="button"
@@ -1336,6 +1350,21 @@ export default function FinancePaymentsPage() {
                       >
                         Reject
                       </button>
+                    </div>
+                  )}
+                  {/* Show waiting message for frozen escrow payments */}
+                  {payment.status === 'pending' && 
+                   payment.paymentMethod === 'escrow_wallet' && 
+                   payment.escrowStatus === 'frozen' && (
+                    <div className="ml-4 flex flex-col items-end">
+                      <div className="px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                        <p className="text-yellow-800 font-medium">⏳ Waiting for Documents</p>
+                        <p className="text-yellow-600 text-xs mt-1">
+                          {payment.documentProgress 
+                            ? `${payment.documentProgress.signedDocuments}/${payment.documentProgress.totalDocuments} signed`
+                            : 'Vendor must sign documents'}
+                        </p>
+                      </div>
                     </div>
                   )}
                   {payment.status === 'overdue' && (
@@ -1746,7 +1775,9 @@ export default function FinancePaymentsPage() {
               )}
 
               {/* Actions */}
-              {selectedPayment.status === 'pending' && (
+              {/* CRITICAL FIX: Don't show approve/reject for frozen escrow payments */}
+              {selectedPayment.status === 'pending' && 
+               !(selectedPayment.paymentMethod === 'escrow_wallet' && selectedPayment.escrowStatus === 'frozen') && (
                 <div className="flex gap-3 pt-4 border-t border-gray-200">
                   <button
                     type="button"
@@ -1770,6 +1801,36 @@ export default function FinancePaymentsPage() {
                   >
                     Reject Payment
                   </button>
+                </div>
+              )}
+              {/* Show waiting message for frozen escrow payments */}
+              {selectedPayment.status === 'pending' && 
+               selectedPayment.paymentMethod === 'escrow_wallet' && 
+               selectedPayment.escrowStatus === 'frozen' && (
+                <div className="pt-4 border-t border-gray-200">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div className="flex items-start">
+                      <svg className="w-5 h-5 text-yellow-600 mt-0.5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div>
+                        <h5 className="text-sm font-semibold text-yellow-800 mb-1">
+                          Waiting for Vendor to Sign Documents
+                        </h5>
+                        <p className="text-sm text-yellow-700">
+                          This escrow wallet payment will be automatically released after the vendor signs all required documents. 
+                          {selectedPayment.documentProgress && (
+                            <span className="font-medium">
+                              {' '}Progress: {selectedPayment.documentProgress.signedDocuments}/{selectedPayment.documentProgress.totalDocuments} documents signed.
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-yellow-600 mt-2">
+                          No manual approval needed - funds will auto-release when documents are complete.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -23,6 +23,7 @@ import { bids } from '@/lib/db/schema/bids';
 import { payments } from '@/lib/db/schema/payments';
 import { eq, and, gte, lte, or, like, desc, asc, sql, inArray } from 'drizzle-orm';
 import { auth } from '@/lib/auth/next-auth.config';
+import { cache } from '@/lib/redis/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,24 @@ export async function GET(request: NextRequest) {
     const location = searchParams.get('location') || '';
     const search = searchParams.get('search') || '';
     const tab = searchParams.get('tab') || 'active';
+
+    // SCALABILITY: Cache key for this specific query
+    // Only cache 'active' tab queries (most common, no user-specific data)
+    // Cache for 1 minute to balance freshness with performance
+    const shouldCache = tab === 'active' && !vendorId;
+    const cacheKey = shouldCache 
+      ? `auctions:list:${tab}:${assetType}:${priceMin}:${priceMax}:${sortBy}:${location}:${search}:${page}:${limit}`
+      : null;
+
+    // Try to get from cache
+    if (cacheKey) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        console.log(`✅ Cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
+      console.log(`❌ Cache MISS: ${cacheKey}`);
+    }
 
     // Build where conditions
     const conditions = [];
@@ -221,13 +240,22 @@ export async function GET(request: NextRequest) {
       isWinner: vendorId && auction.currentBidder === vendorId,
     }));
 
-    return NextResponse.json({
+    const response = {
       success: true,
       auctions: enrichedResults,
       hasMore,
       page,
       limit,
-    });
+    };
+
+    // SCALABILITY: Cache the response for 1 minute (60 seconds)
+    // Only cache 'active' tab to avoid caching user-specific data
+    if (cacheKey) {
+      await cache.set(cacheKey, response, 60); // 1 minute TTL
+      console.log(`✅ Cached response: ${cacheKey}`);
+    }
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Error fetching auctions:', error);
     return NextResponse.json(

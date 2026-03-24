@@ -4,6 +4,7 @@ import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
+import Image from 'next/image';
 import {
   LayoutDashboard,
   Users,
@@ -12,7 +13,6 @@ import {
   CreditCard,
   Wallet,
   Trophy,
-  Bell,
   AlertTriangle,
   ClipboardList,
   BarChart3,
@@ -23,6 +23,7 @@ import {
   Settings,
   ChevronDown,
   ChevronRight,
+  User as UserIcon,
 } from 'lucide-react';
 import NotificationBell from '@/components/notifications/notification-bell';
 
@@ -334,7 +335,28 @@ export default function DashboardSidebar() {
           NEM Salvage
         </h1>
 
-        <div className="w-10" /> {/* Spacer for centering */}
+        {/* Top Right: Notification Bell + Profile Picture */}
+        <div className="flex items-center gap-3">
+          <NotificationBell />
+          <Link 
+            href={`/${userRole}/settings/profile-picture`}
+            className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 hover:border-[#800020] transition-colors"
+          >
+            {session?.user?.profilePictureUrl ? (
+              <Image
+                src={session.user.profilePictureUrl}
+                alt={session.user.name || 'User'}
+                fill
+                className="object-cover rounded-full"
+                sizes="40px"
+              />
+            ) : (
+              <div className="w-full h-full bg-[#800020] flex items-center justify-center rounded-full">
+                <UserIcon className="w-5 h-5 text-white" />
+              </div>
+            )}
+          </Link>
+        </div>
       </div>
 
       {/* Mobile Menu Overlay */}
@@ -352,10 +374,12 @@ export default function DashboardSidebar() {
         }`}
       >
         <div className="p-4 border-b border-gray-200">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-[#800020]">NEM Salvage</h2>
-              <p className="text-sm text-gray-600 mt-1">
+          {/* Header: Company Info on LEFT, Notification Bell + Profile Picture on RIGHT */}
+          <div className="flex items-center justify-between mb-4">
+            {/* Left: User Info */}
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-bold text-[#800020]">NEM Salvage</h2>
+              <p className="text-sm text-gray-600 truncate">
                 {session?.user?.name || 'User'}
               </p>
               <p className="text-xs text-gray-500 capitalize">
@@ -363,8 +387,29 @@ export default function DashboardSidebar() {
               </p>
             </div>
             
-            {/* Notification Bell */}
-            <NotificationBell />
+            {/* Right: Notification Bell + Profile Picture */}
+            <div className="flex items-center gap-3 ml-3">
+              <NotificationBell />
+              <Link 
+                href={`/${userRole}/settings/profile-picture`}
+                className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200 hover:border-[#800020] transition-colors flex-shrink-0"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                {session?.user?.profilePictureUrl ? (
+                  <Image
+                    src={session.user.profilePictureUrl}
+                    alt={session.user.name || 'User'}
+                    fill
+                    className="object-cover rounded-full"
+                    sizes="48px"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-[#800020] flex items-center justify-center rounded-full">
+                    <UserIcon className="w-6 h-6 text-white" />
+                  </div>
+                )}
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -376,10 +421,12 @@ export default function DashboardSidebar() {
       {/* Desktop Sidebar */}
       <aside className="hidden lg:block fixed top-0 left-0 bottom-0 w-64 bg-white border-r border-gray-200 z-30">
         <div className="p-6 border-b border-gray-200">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold text-[#800020]">NEM Salvage</h2>
-              <p className="text-sm text-gray-600 mt-2">
+          {/* Header: Company Info on LEFT, Notification Bell + Profile Picture on RIGHT */}
+          <div className="flex items-center justify-between mb-4">
+            {/* Left: User Info */}
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl font-bold text-[#800020]">NEM Salvage</h2>
+              <p className="text-sm text-gray-600 mt-2 truncate">
                 {session?.user?.name || 'User'}
               </p>
               <p className="text-xs text-gray-500 capitalize mt-1">
@@ -387,8 +434,28 @@ export default function DashboardSidebar() {
               </p>
             </div>
             
-            {/* Notification Bell */}
-            <NotificationBell />
+            {/* Right: Notification Bell + Profile Picture */}
+            <div className="flex items-center gap-3 ml-3">
+              <NotificationBell />
+              <Link 
+                href={`/${userRole}/settings/profile-picture`}
+                className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200 hover:border-[#800020] transition-colors flex-shrink-0"
+              >
+                {session?.user?.profilePictureUrl ? (
+                  <Image
+                    src={session.user.profilePictureUrl}
+                    alt={session.user.name || 'User'}
+                    fill
+                    className="object-cover rounded-full"
+                    sizes="48px"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-[#800020] flex items-center justify-center rounded-full">
+                    <UserIcon className="w-6 h-6 text-white" />
+                  </div>
+                )}
+              </Link>
+            </div>
           </div>
         </div>
 

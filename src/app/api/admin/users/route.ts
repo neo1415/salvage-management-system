@@ -229,6 +229,7 @@ export async function GET(request: NextRequest) {
         fullName: true,
         role: true,
         status: true,
+        profilePictureUrl: true,
         createdAt: true,
         updatedAt: true,
         lastLoginAt: true,

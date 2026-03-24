@@ -37,6 +37,7 @@ interface LeaderboardEntry {
   totalSpent: string;
   onTimePickupRate: number;
   rating: string;
+  profilePictureUrl: string | null;
 }
 
 interface LeaderboardResponse {
@@ -103,6 +104,7 @@ async function calculateLeaderboard(): Promise<LeaderboardEntry[]> {
       rating: vendors.rating,
       userName: users.fullName,
       userEmail: users.email,
+      profilePictureUrl: users.profilePictureUrl,
     })
     .from(vendors)
     .innerJoin(users, eq(vendors.userId, users.id))
@@ -174,6 +176,7 @@ async function calculateLeaderboard(): Promise<LeaderboardEntry[]> {
       totalSpent: totalSpent,
       onTimePickupRate: stats.onTimePickupRate || 0,
       rating: vendor.rating || '0.00',
+      profilePictureUrl: vendor.profilePictureUrl,
     });
   }
 

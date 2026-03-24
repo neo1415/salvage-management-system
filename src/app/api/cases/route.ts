@@ -222,6 +222,7 @@ export async function GET(request: NextRequest) {
     const { auctions } = await import('@/lib/db/schema/auctions');
     const { eq, desc, and, or, sql } = await import('drizzle-orm');
     const { alias } = await import('drizzle-orm/pg-core');
+    const { cache } = await import('@/lib/redis/client');
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
@@ -230,6 +231,24 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || '';
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
+
+    // SCALABILITY: Cache key for this specific query
+    // Only cache non-user-specific queries (no createdByMe filter)
+    // Cache for 10 minutes to balance freshness with performance
+    const shouldCache = !createdByMe;
+    const cacheKey = shouldCache 
+      ? `cases:list:${status}:${search}:${limit}:${offset}`
+      : null;
+
+    // Try to get from cache
+    if (cacheKey) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        console.log(`✅ Cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
+      console.log(`❌ Cache MISS: ${cacheKey}`);
+    }
 
     // Create table aliases for adjuster and approver
     const adjusterUsers = alias(users, 'adjuster_users');
@@ -324,18 +343,24 @@ export async function GET(request: NextRequest) {
       severity: c.damageSeverity 
     })));
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: cases,
-        meta: {
-          limit,
-          offset,
-          count: cases.length,
-        },
+    const response = {
+      success: true,
+      data: cases,
+      meta: {
+        limit,
+        offset,
+        count: cases.length,
       },
-      { status: 200 }
-    );
+    };
+
+    // SCALABILITY: Cache the response for 10 minutes (600 seconds)
+    // Only cache non-user-specific queries
+    if (cacheKey) {
+      await cache.set(cacheKey, response, 600);
+      console.log(`✅ Cached response: ${cacheKey}`);
+    }
+
+    return NextResponse.json(response, { status: 200 });
   } catch (error) {
     console.error('Error in GET /api/cases:', error);
     return NextResponse.json(

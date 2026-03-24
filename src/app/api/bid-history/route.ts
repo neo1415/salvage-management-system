@@ -84,6 +84,7 @@ export async function GET(request: NextRequest) {
           id: item.vendor?.id,
           businessName: item.vendor?.businessName,
           tier: item.vendor?.tier,
+          profilePictureUrl: item.user?.profilePictureUrl,
         },
         user: {
           id: item.user?.id,
@@ -132,6 +133,7 @@ export async function GET(request: NextRequest) {
           id: item.currentBidderVendor.id,
           businessName: item.currentBidderVendor.businessName,
           tier: item.currentBidderVendor.tier,
+          profilePictureUrl: item.currentBidderUser?.profilePictureUrl,
         },
         user: {
           id: item.currentBidderUser?.id,

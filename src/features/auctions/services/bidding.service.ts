@@ -23,6 +23,7 @@ import { emailService } from '@/features/notifications/services/email.service';
 import { autoExtendService } from './auto-extend.service';
 import { escrowService } from '@/features/payments/services/escrow.service';
 import { createOutbidNotification } from '@/features/notifications/services/notification.service';
+import { cache } from '@/lib/redis/client';
 
 /**
  * Bid placement data
@@ -157,18 +158,69 @@ export class BiddingService {
       // Get previous highest bidder for notification
       const previousBidderId = auction.currentBidder;
 
-      // Create bid record
-      const [newBid] = await db
-        .insert(bids)
-        .values({
-          auctionId: data.auctionId,
-          vendorId: data.vendorId,
-          amount: data.amount.toString(),
-          otpVerified: true,
-          ipAddress: data.ipAddress,
-          deviceType: this.getDeviceType(data.userAgent),
-        })
-        .returning();
+      // SCALABILITY: Use database transaction with row locking to prevent race conditions
+      // This ensures atomic bid updates and prevents concurrent bid conflicts
+      let newBid: typeof bids.$inferSelect;
+      
+      try {
+        await db.transaction(async (tx) => {
+          // Lock the auction row for update (prevents concurrent modifications)
+          const [lockedAuction] = await tx
+            .select()
+            .from(auctions)
+            .where(eq(auctions.id, data.auctionId))
+            .for('update'); // PostgreSQL row-level lock
+
+          if (!lockedAuction) {
+            throw new Error('Auction not found or locked');
+          }
+
+          // Re-validate bid amount against locked auction state
+          // This prevents race condition where two bids arrive simultaneously
+          const currentBidAmount = lockedAuction.currentBid ? Number(lockedAuction.currentBid) : null;
+          const minimumBid = currentBidAmount ? currentBidAmount + 20000 : Number(lockedAuction.minimumIncrement);
+          
+          if (data.amount < minimumBid) {
+            throw new Error(`Bid too low. Minimum bid: ₦${minimumBid.toLocaleString()}`);
+          }
+
+          // Validate auction status again (could have changed)
+          if (lockedAuction.status !== 'active' && lockedAuction.status !== 'extended') {
+            throw new Error(`Auction is no longer active (status: ${lockedAuction.status})`);
+          }
+
+          // Create bid record within transaction
+          const [createdBid] = await tx
+            .insert(bids)
+            .values({
+              auctionId: data.auctionId,
+              vendorId: data.vendorId,
+              amount: data.amount.toString(),
+              otpVerified: true,
+              ipAddress: data.ipAddress,
+              deviceType: this.getDeviceType(data.userAgent),
+            })
+            .returning();
+
+          newBid = createdBid;
+
+          // Update auction with new current bid and bidder (atomic)
+          await tx
+            .update(auctions)
+            .set({
+              currentBid: data.amount.toString(),
+              currentBidder: data.vendorId,
+              updatedAt: new Date(),
+            })
+            .where(eq(auctions.id, data.auctionId));
+        });
+      } catch (txError) {
+        console.error('Transaction failed:', txError);
+        return {
+          success: false,
+          error: txError instanceof Error ? txError.message : 'Failed to place bid due to concurrent update',
+        };
+      }
 
       // Freeze funds for this bid
       try {
@@ -182,7 +234,7 @@ export class BiddingService {
       } catch (error) {
         console.error('Failed to freeze funds:', error);
         // Rollback bid creation if freeze fails
-        await db.delete(bids).where(eq(bids.id, newBid.id));
+        await db.delete(bids).where(eq(bids.id, newBid!.id));
         return {
           success: false,
           error: 'Failed to freeze funds. Please ensure you have sufficient wallet balance.',
@@ -227,27 +279,23 @@ export class BiddingService {
         }
       }
 
-      // Update auction with new current bid and bidder
-      await db
-        .update(auctions)
-        .set({
-          currentBid: data.amount.toString(),
-          currentBidder: data.vendorId,
-          updatedAt: new Date(),
-        })
-        .where(eq(auctions.id, data.auctionId));
+      // SCALABILITY: Invalidate cache for this auction
+      // This ensures users see the latest bid immediately
+      const detailsCacheKey = `auction:details:${data.auctionId}`;
+      await cache.del(detailsCacheKey);
+      console.log(`✅ Cache invalidated: ${detailsCacheKey}`);
 
       // Create audit log entry
       await logAction({
         userId: user.id,
         actionType: AuditActionType.BID_PLACED,
         entityType: AuditEntityType.BID,
-        entityId: newBid.id,
+        entityId: newBid!.id,
         ipAddress: data.ipAddress,
         deviceType: this.getDeviceType(data.userAgent),
         userAgent: data.userAgent,
         afterState: {
-          bidId: newBid.id,
+          bidId: newBid!.id,
           auctionId: data.auctionId,
           vendorId: data.vendorId,
           amount: data.amount,
@@ -256,7 +304,7 @@ export class BiddingService {
 
       // Broadcast new bid via Socket.io (async, don't wait)
       // Requirement 18.8: Broadcast within 2 seconds
-      this.broadcastBid(newBid, startTime).catch((error) => {
+      this.broadcastBid(newBid!, startTime).catch((error) => {
         console.error('Failed to broadcast bid:', error);
       });
 
@@ -282,11 +330,11 @@ export class BiddingService {
       return {
         success: true,
         bid: {
-          id: newBid.id,
-          auctionId: newBid.auctionId,
-          vendorId: newBid.vendorId,
-          amount: newBid.amount,
-          createdAt: newBid.createdAt,
+          id: newBid!.id,
+          auctionId: newBid!.auctionId,
+          vendorId: newBid!.vendorId,
+          amount: newBid!.amount,
+          createdAt: newBid!.createdAt,
         },
       };
     } catch (error) {

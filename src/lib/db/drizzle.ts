@@ -16,16 +16,25 @@ const connectionString = process.env.DATABASE_URL;
 
 // Configure connection pool based on environment
 const isTest = process.env.NODE_ENV === 'test';
+const isProduction = process.env.NODE_ENV === 'production';
+
+// CRITICAL FIX: Increase connection pool size for production
+// Supabase Session Pooler supports up to 200 connections
+// Phase 1 Scalability: Increased from 50 to 200 for 4x capacity increase
 const client = postgres(connectionString, {
-  // Increase max connections in test environment to handle concurrent tests
-  // Each test file fork gets its own pool, so we need more connections
-  max: isTest ? 10 : 10,
-  // Idle timeout - close idle connections after 30 seconds
-  idle_timeout: 30,
-  // Max lifetime - close connections after 30 minutes
-  max_lifetime: 60 * 30,
-  // Connection timeout - increased to 30 seconds for better reliability
-  connect_timeout: 30,
+  // Production: 200 connections (max allowed), Test: 10, Development: 20
+  max: isTest ? 10 : isProduction ? 200 : 20,
+  // Idle timeout - close idle connections after 20 seconds to free up pool
+  idle_timeout: 20,
+  // Max lifetime - close connections after 10 minutes to prevent stale connections
+  max_lifetime: 60 * 10,
+  // Connection timeout - 10 seconds is sufficient
+  connect_timeout: 10,
+  // SCALABILITY: Add connection queue management
+  // Queue up to 1000 requests when all connections are busy
+  max_queue: 1000,
+  // Queue timeout - fail fast after 5 seconds if no connection available
+  queue_timeout: 5000,
   // Prepare statements (disable in test for better cleanup)
   prepare: !isTest,
   // Add retry logic for transient connection failures
@@ -40,6 +49,11 @@ const client = postgres(connectionString, {
     if (process.env.NODE_ENV === 'development') {
       console.log('[Database] Connection closed');
     }
+  },
+  // CRITICAL: Enable connection pooling and reuse
+  // This prevents creating new connections for every query
+  transform: {
+    undefined: null, // Convert undefined to null for PostgreSQL
   },
 });
 

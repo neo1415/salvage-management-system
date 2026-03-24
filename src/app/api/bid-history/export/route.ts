@@ -80,6 +80,7 @@ export async function GET(request: NextRequest) {
         vendor: {
           id: item.vendor?.id,
           businessName: item.vendor?.businessName,
+          profilePictureUrl: item.user?.profilePictureUrl,
         },
       });
       return acc;
