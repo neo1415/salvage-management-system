@@ -4,10 +4,11 @@ import { getToken } from 'next-auth/jwt';
 import { rateLimiter } from '@/lib/redis/client';
 
 // SCALABILITY: Rate limiting configuration
+// Increased limits for production to prevent false positives
 const RATE_LIMITS = {
-  general: { maxAttempts: 100, windowSeconds: 60 }, // 100 req/min for general routes
-  bidding: { maxAttempts: 10, windowSeconds: 60 },  // 10 req/min for bidding
-  api: { maxAttempts: 100, windowSeconds: 60 },     // 100 req/min for API routes
+  general: { maxAttempts: 200, windowSeconds: 60 }, // 200 req/min for general routes
+  bidding: { maxAttempts: 20, windowSeconds: 60 },  // 20 req/min for bidding (increased from 10)
+  api: { maxAttempts: 200, windowSeconds: 60 },     // 200 req/min for API routes (increased from 100)
 } as const;
 
 // Routes that require authentication
@@ -25,51 +26,72 @@ const authRoutes = ['/login', '/register'];
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // SCALABILITY: Apply rate limiting to prevent abuse and DDoS
-  // Get client identifier (IP address or user ID if authenticated)
-  const ip = request.ip ?? request.headers.get('x-forwarded-for') ?? '127.0.0.1';
-  
-  // Determine rate limit based on route
-  let rateLimit = RATE_LIMITS.general;
-  let rateLimitKey = `ratelimit:${ip}:general`;
-  
-  // Stricter limits for bidding endpoints
-  if (pathname.includes('/bids') || pathname.includes('/bid')) {
-    rateLimit = RATE_LIMITS.bidding;
-    rateLimitKey = `ratelimit:${ip}:bidding`;
-  }
-  // API routes get their own limit
-  else if (pathname.startsWith('/api')) {
-    rateLimit = RATE_LIMITS.api;
-    rateLimitKey = `ratelimit:${ip}:api`;
-  }
-  
-  // Check rate limit
-  try {
-    const isLimited = await rateLimiter.isLimited(
-      rateLimitKey,
-      rateLimit.maxAttempts,
-      rateLimit.windowSeconds
-    );
+  // SCALABILITY: Apply rate limiting ONLY to API routes, not page navigation
+  // Page routes should not be rate limited as they're needed for normal navigation
+  if (pathname.startsWith('/api')) {
+    // Get client identifier (IP address or user ID if authenticated)
+    // Improved IP detection for production (Vercel)
+    let ip: string | null = null;
     
-    if (isLimited) {
-      return new NextResponse(
-        JSON.stringify({
-          error: 'Too Many Requests',
-          message: 'You have exceeded the rate limit. Please try again later.',
-        }),
-        {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': String(rateLimit.windowSeconds),
-          },
-        }
-      );
+    // Try x-forwarded-for header (Vercel sets this)
+    const forwardedFor = request.headers.get('x-forwarded-for');
+    if (forwardedFor) {
+      // x-forwarded-for can contain multiple IPs, take the first one (client IP)
+      ip = forwardedFor.split(',')[0].trim();
     }
-  } catch (error) {
-    // If rate limiting fails, log but don't block the request
-    console.error('[Middleware] Rate limiting error:', error);
+    
+    // If still no IP, try x-real-ip header
+    if (!ip) {
+      ip = request.headers.get('x-real-ip');
+    }
+    
+    // Fallback to a unique identifier to prevent all users sharing the same rate limit
+    if (!ip) {
+      // Use a combination of user agent and a random factor to create pseudo-unique identifier
+      const userAgent = request.headers.get('user-agent') || 'unknown';
+      ip = `fallback-${userAgent.slice(0, 20)}`;
+    }
+    
+    // Determine rate limit based on route
+    let rateLimit: { maxAttempts: number; windowSeconds: number };
+    let rateLimitKey: string;
+    
+    // Stricter limits for bidding endpoints
+    if (pathname.includes('/bids') || pathname.includes('/bid')) {
+      rateLimit = RATE_LIMITS.bidding;
+      rateLimitKey = `ratelimit:${ip}:bidding`;
+    } else {
+      rateLimit = RATE_LIMITS.api;
+      rateLimitKey = `ratelimit:${ip}:api`;
+    }
+    
+    // Check rate limit
+    try {
+      const isLimited = await rateLimiter.isLimited(
+        rateLimitKey,
+        rateLimit.maxAttempts,
+        rateLimit.windowSeconds
+      );
+      
+      if (isLimited) {
+        return new NextResponse(
+          JSON.stringify({
+            error: 'Too Many Requests',
+            message: 'You have exceeded the rate limit. Please try again later.',
+          }),
+          {
+            status: 429,
+            headers: {
+              'Content-Type': 'application/json',
+              'Retry-After': String(rateLimit.windowSeconds),
+            },
+          }
+        );
+      }
+    } catch (error) {
+      // If rate limiting fails, log but don't block the request
+      console.error('[Middleware] Rate limiting error:', error);
+    }
   }
 
   // Get the token from the request
