@@ -37,39 +37,56 @@ const LOCKOUT_DURATION = 30 * 60; // 30 minutes in seconds
 const MAX_FAILED_ATTEMPTS = 5;
 
 async function checkAccountLockout(identifier: string): Promise<{ locked: boolean; remainingTime?: number }> {
-  const lockoutKey = `lockout:${identifier}`;
-  const ttl = await redis.ttl(lockoutKey);
-  
-  if (ttl > 0) {
-    return { locked: true, remainingTime: ttl };
+  try {
+    const lockoutKey = `lockout:${identifier}`;
+    const ttl = await redis.ttl(lockoutKey);
+    
+    if (ttl > 0) {
+      return { locked: true, remainingTime: ttl };
+    }
+    
+    return { locked: false };
+  } catch (error) {
+    console.error('[Auth] Redis lockout check failed, allowing login:', error);
+    // If Redis is down, allow login (fail open for availability)
+    return { locked: false };
   }
-  
-  return { locked: false };
 }
 
 async function recordFailedLogin(identifier: string): Promise<number> {
-  const failedKey = `failed_login:${identifier}`;
-  const attempts = await redis.incr(failedKey);
-  
-  if (attempts === 1) {
-    // Set expiry for failed attempts counter (30 minutes)
-    await redis.expire(failedKey, LOCKOUT_DURATION);
+  try {
+    const failedKey = `failed_login:${identifier}`;
+    const attempts = await redis.incr(failedKey);
+    
+    if (attempts === 1) {
+      // Set expiry for failed attempts counter (30 minutes)
+      await redis.expire(failedKey, LOCKOUT_DURATION);
+    }
+    
+    if (attempts >= MAX_FAILED_ATTEMPTS) {
+      // Lock the account
+      const lockoutKey = `lockout:${identifier}`;
+      await redis.set(lockoutKey, 'locked', { ex: LOCKOUT_DURATION });
+      // Reset failed attempts counter
+      await redis.del(failedKey);
+    }
+    
+    return attempts;
+  } catch (error) {
+    console.error('[Auth] Redis failed login tracking failed:', error);
+    // If Redis is down, return 0 to allow login
+    return 0;
   }
-  
-  if (attempts >= MAX_FAILED_ATTEMPTS) {
-    // Lock the account
-    const lockoutKey = `lockout:${identifier}`;
-    await redis.set(lockoutKey, 'locked', { ex: LOCKOUT_DURATION });
-    // Reset failed attempts counter
-    await redis.del(failedKey);
-  }
-  
-  return attempts;
 }
 
 async function resetFailedLogins(identifier: string): Promise<void> {
-  const failedKey = `failed_login:${identifier}`;
-  await redis.del(failedKey);
+  try {
+    const failedKey = `failed_login:${identifier}`;
+    await redis.del(failedKey);
+  } catch (error) {
+    console.error('[Auth] Redis reset failed logins failed (non-fatal):', error);
+    // Non-fatal - continue with login
+  }
 }
 
 async function createAuditLog(
@@ -236,7 +253,7 @@ export const authConfig: NextAuthConfig = {
           phone: user.phone,
           dateOfBirth: user.dateOfBirth?.toISOString().split('T')[0],
           requirePasswordChange: user.requirePasswordChange === 'true',
-          profilePictureUrl: user.profilePictureUrl,
+          profilePictureUrl: user.profilePictureUrl ?? undefined,
           vendorId,
         };
       },
@@ -391,15 +408,24 @@ export const authConfig: NextAuthConfig = {
         try {
           // SCALABILITY: Try Redis cache first to avoid DB hit
           const userCacheKey = `user:${token.id}`;
-          const cachedUser = await redis.get(userCacheKey);
+          let cachedUser: { id: string; role: string; status: string; email: string } | null = null;
+          let redisError = false;
+          
+          try {
+            cachedUser = await redis.get(userCacheKey);
+          } catch (redisErr) {
+            console.error('[JWT] Redis cache read failed, falling back to database:', redisErr);
+            redisError = true;
+          }
           
           let currentUser;
           
-          if (cachedUser) {
+          if (cachedUser && !redisError) {
             // Use cached user data (no DB hit)
-            currentUser = JSON.parse(cachedUser as string);
+            // Vercel KV automatically deserializes JSON, so cachedUser is already an object
+            currentUser = cachedUser;
           } else {
-            // Cache miss - fetch from database
+            // Cache miss or Redis error - fetch from database
             const [dbUser] = await withRetry(async () => {
               return await db
                 .select({
@@ -415,9 +441,15 @@ export const authConfig: NextAuthConfig = {
             
             currentUser = dbUser;
             
-            // Cache for 30 minutes (same as validation interval)
-            if (currentUser) {
-              await redis.set(userCacheKey, JSON.stringify(currentUser), { ex: 30 * 60 });
+            // Cache for 30 minutes (same as validation interval) - only if Redis is working
+            if (currentUser && !redisError) {
+              try {
+                // Vercel KV automatically serializes objects, no need to JSON.stringify
+                await redis.set(userCacheKey, currentUser, { ex: 30 * 60 });
+              } catch (cacheErr) {
+                console.error('[JWT] Redis cache write failed (non-fatal):', cacheErr);
+                // Continue without caching - this is non-fatal
+              }
             }
           }
           
@@ -467,7 +499,7 @@ export const authConfig: NextAuthConfig = {
           token.status = updatedUser.status;
           token.phone = updatedUser.phone;
           token.requirePasswordChange = updatedUser.requirePasswordChange === 'true';
-          token.profilePictureUrl = updatedUser.profilePictureUrl;
+          token.profilePictureUrl = updatedUser.profilePictureUrl ?? undefined;
           
           // Refresh vendorId if user is a vendor
           if (updatedUser.role === 'vendor') {
@@ -514,32 +546,38 @@ export const authConfig: NextAuthConfig = {
       // Store session in Redis using the unique session ID
       // This prevents session collision between different users
       if (session.user?.id && token?.sessionId) {
-        const sessionKey = `session:${token.sessionId}`;
-        
-        interface TokenWithUserAgent {
-          userAgent?: string | null;
+        try {
+          const sessionKey = `session:${token.sessionId}`;
+          
+          interface TokenWithUserAgent {
+            userAgent?: string | null;
+          }
+          
+          const deviceType = getDeviceType((token as TokenWithUserAgent).userAgent as string | null);
+          const expirySeconds = getTokenExpiry(deviceType);
+          
+          // Store session with user ID validation data
+          const sessionData = {
+            ...session,
+            userId: session.user.id, // Explicit user ID for validation
+            email: session.user.email, // Email for cross-validation
+            createdAt: Date.now(),
+          };
+          
+          await kv.set(sessionKey, JSON.stringify(sessionData), {
+            ex: expirySeconds,
+          });
+          
+          // Also maintain a user-to-session mapping for logout
+          const userSessionKey = `user:${session.user.id}:session`;
+          await kv.set(userSessionKey, token.sessionId as string, {
+            ex: expirySeconds,
+          });
+        } catch (error) {
+          console.error('[Session] Redis session storage failed (non-fatal):', error);
+          // Continue without Redis session storage - JWT is still valid
+          // This allows auth to work even if Redis is down
         }
-        
-        const deviceType = getDeviceType((token as TokenWithUserAgent).userAgent as string | null);
-        const expirySeconds = getTokenExpiry(deviceType);
-        
-        // Store session with user ID validation data
-        const sessionData = {
-          ...session,
-          userId: session.user.id, // Explicit user ID for validation
-          email: session.user.email, // Email for cross-validation
-          createdAt: Date.now(),
-        };
-        
-        await kv.set(sessionKey, JSON.stringify(sessionData), {
-          ex: expirySeconds,
-        });
-        
-        // Also maintain a user-to-session mapping for logout
-        const userSessionKey = `user:${session.user.id}:session`;
-        await kv.set(userSessionKey, token.sessionId as string, {
-          ex: expirySeconds,
-        });
       }
 
       return session;
