@@ -86,12 +86,12 @@ export async function GET(request: NextRequest) {
 
     const now = new Date();
 
-    // Calculate aging buckets
+    // Calculate aging buckets (in days as per requirements)
     const agingBuckets = {
-      current: 0, // Within deadline
-      '0-24h': 0, // 0-24 hours overdue
-      '24-48h': 0, // 24-48 hours overdue
-      '48h+': 0, // 48+ hours overdue
+      '0-7': 0,    // 0-7 days overdue
+      '8-14': 0,   // 8-14 days overdue
+      '15-21': 0,  // 15-21 days overdue
+      '22+': 0,    // 22+ days overdue
     };
 
     const statusCounts = {
@@ -103,22 +103,26 @@ export async function GET(request: NextRequest) {
 
     const detailedPayments = paymentData.map((row) => {
       const deadline = new Date(row.paymentDeadline);
-      const hoursOverdue = row.status === 'pending' ? (now.getTime() - deadline.getTime()) / (1000 * 60 * 60) : 0;
+      const daysOverdue = row.status === 'pending' ? (now.getTime() - deadline.getTime()) / (1000 * 60 * 60 * 24) : 0;
 
-      let agingBucket = 'current';
-      if (hoursOverdue > 0) {
-        if (hoursOverdue <= 24) {
-          agingBucket = '0-24h';
-          agingBuckets['0-24h']++;
-        } else if (hoursOverdue <= 48) {
-          agingBucket = '24-48h';
-          agingBuckets['24-48h']++;
+      let agingBucket = '0-7';
+      if (daysOverdue > 0) {
+        if (daysOverdue <= 7) {
+          agingBucket = '0-7';
+          agingBuckets['0-7']++;
+        } else if (daysOverdue <= 14) {
+          agingBucket = '8-14';
+          agingBuckets['8-14']++;
+        } else if (daysOverdue <= 21) {
+          agingBucket = '15-21';
+          agingBuckets['15-21']++;
         } else {
-          agingBucket = '48h+';
-          agingBuckets['48h+']++;
+          agingBucket = '22+';
+          agingBuckets['22+']++;
         }
       } else {
-        agingBuckets.current++;
+        // Not overdue yet
+        agingBuckets['0-7']++;
       }
 
       // Count by status
@@ -145,16 +149,16 @@ export async function GET(request: NextRequest) {
         createdAt: row.createdAt.toISOString(),
         paymentDeadline: row.paymentDeadline.toISOString(),
         verifiedAt: row.verifiedAt?.toISOString() || null,
-        hoursOverdue: Math.max(0, Math.round(hoursOverdue * 100) / 100),
+        daysOverdue: Math.max(0, Math.round(daysOverdue * 100) / 100),
         agingBucket,
         paymentTimeHours: paymentTimeHours ? Math.round(paymentTimeHours * 100) / 100 : null,
       };
     });
 
-    // Sort by hours overdue (descending) for pending payments, then by created date
+    // Sort by days overdue (descending) for pending payments, then by created date
     detailedPayments.sort((a, b) => {
       if (a.status === 'pending' && b.status === 'pending') {
-        return b.hoursOverdue - a.hoursOverdue;
+        return b.daysOverdue - a.daysOverdue;
       }
       if (a.status === 'pending') return -1;
       if (b.status === 'pending') return 1;

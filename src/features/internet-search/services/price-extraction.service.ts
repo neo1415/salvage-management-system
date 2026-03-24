@@ -36,7 +36,7 @@ export interface PriceExtractionResult {
 
 // Nigerian Naira price patterns
 const NAIRA_PATTERNS = [
-  // Standard formats: ₦1,000,000 or ₦ 1,000,000
+  // Standard formats: ₦1,000,000 or ₦ 1,000,000 (with optional spaces)
   /₦\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi,
   
   // NGN format: NGN 1,000,000 or NGN1,000,000
@@ -45,14 +45,17 @@ const NAIRA_PATTERNS = [
   // Naira word format: 1,000,000 naira or 1000000 naira
   /([0-9,]+(?:\.[0-9]{1,2})?)\s*naira/gi,
   
-  // Million/thousand abbreviations: ₦2.5m, ₦500k, ₦1.2million
+  // Million/thousand abbreviations: ₦2.5m, ₦500k, ₦1.2million, ₦ 2.5m (with spaces)
   /₦\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)/gi,
   
   // Number followed by million/thousand naira
   /([0-9]+(?:\.[0-9]+)?)\s*(million|thousand)\s*naira/gi,
   
   // Ranges: ₦1m - ₦2m, ₦500k to ₦800k
-  /₦\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)\s*(?:[-–—to]|and)\s*₦?\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)?/gi
+  /₦\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)\s*(?:[-–—to]|and)\s*₦?\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)?/gi,
+  
+  // Jiji.ng specific format: "₦ 120,000,000" (space after ₦ and commas in large numbers)
+  /₦\s+([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)/gi
 ];
 
 // Other currency patterns for conversion
@@ -69,17 +72,6 @@ const CONVERSION_RATES = {
   EUR: 1700  // 1 EUR = 1700 NGN (approximate)
 };
 
-// Price validation ranges by item type (in NGN)
-const PRICE_RANGES: Record<string, { min: number; max: number }> = {
-  vehicle: { min: 500000, max: 1000000000 }, // ₦500k to ₦1B (increased for luxury vehicles)
-  electronics: { min: 10000, max: 5000000 }, // ₦10k to ₦5m
-  appliance: { min: 20000, max: 2000000 }, // ₦20k to ₦2m
-  property: { min: 1000000, max: 1000000000 }, // ₦1m to ₦1b
-  jewelry: { min: 5000, max: 10000000 }, // ₦5k to ₦10m
-  furniture: { min: 10000, max: 5000000 }, // ₦10k to ₦5m
-  machinery: { min: 100000, max: 50000000 } // ₦100k to ₦50m
-};
-
 export class PriceExtractionService {
   
   /**
@@ -92,7 +84,14 @@ export class PriceExtractionService {
   ): PriceExtractionResult {
     const extractedPrices: ExtractedPrice[] = [];
     
+    console.log(`🔍 Starting price extraction from ${results.length} search results`);
+    
     for (const result of results) {
+      const domain = this.extractDomain(result.link);
+      console.log(`\n📄 Processing result from: ${domain}`);
+      console.log(`   Title: ${result.title.substring(0, 80)}...`);
+      console.log(`   Snippet: ${result.snippet.substring(0, 100)}...`);
+      
       // Extract from snippet
       const snippetPrices = this.extractFromText(
         result.snippet, 
@@ -100,6 +99,10 @@ export class PriceExtractionService {
         result.title, 
         result.snippet
       );
+      if (snippetPrices.length > 0) {
+        console.log(`   ✅ Found ${snippetPrices.length} price(s) in snippet`);
+        snippetPrices.forEach(p => console.log(`      - ${p.originalText} = ₦${p.price.toLocaleString()}`));
+      }
       extractedPrices.push(...snippetPrices);
       
       // Extract from title
@@ -109,22 +112,35 @@ export class PriceExtractionService {
         result.title, 
         result.snippet
       );
+      if (titlePrices.length > 0) {
+        console.log(`   ✅ Found ${titlePrices.length} price(s) in title`);
+        titlePrices.forEach(p => console.log(`      - ${p.originalText} = ₦${p.price.toLocaleString()}`));
+      }
       extractedPrices.push(...titlePrices);
       
       // Use structured price data if available
       if (result.price && result.currency) {
         const structuredPrice = this.createStructuredPrice(result);
         if (structuredPrice) {
+          console.log(`   ✅ Found structured price: ${result.currency} ${result.price}`);
           extractedPrices.push(structuredPrice);
         }
       }
+      
+      if (snippetPrices.length === 0 && titlePrices.length === 0 && !result.price) {
+        console.log(`   ❌ No prices found in this result`);
+      }
     }
+    
+    console.log(`\n📊 Total prices extracted before filtering: ${extractedPrices.length}`);
     
     // Extract years from all prices
     this.extractYearsFromPrices(extractedPrices);
     
     // Remove duplicates and validate (with year filtering if target year provided)
     const validPrices = this.validateAndDeduplicatePrices(extractedPrices, itemType, targetYear);
+    
+    console.log(`📊 Valid prices after filtering: ${validPrices.length}`);
     
     // Calculate statistics
     const statistics = this.calculatePriceStatistics(validPrices);
@@ -234,24 +250,35 @@ export class PriceExtractionService {
         
         confidence += 20; // Higher confidence for abbreviated formats
       } else {
-        // Handle regular number format
-        price = parseFloat(match[1].replace(/,/g, ''));
+        // Handle regular number format (including large numbers with commas like "120,000,000")
+        const cleanedNumber = match[1].replace(/,/g, '');
+        price = parseFloat(cleanedNumber);
+        
+        // Higher confidence for properly formatted large numbers (with commas)
+        if (match[1].includes(',')) {
+          confidence += 10;
+        }
       }
       
       // Adjust confidence based on source
-      confidence += this.getSourceConfidenceBonus(url);
+      const sourceBonus = this.getSourceConfidenceBonus(url);
+      confidence += sourceBonus;
+      
+      const domain = this.extractDomain(url);
+      console.log(`   💵 Parsed: ${match[0]} → ₦${price.toLocaleString()} (confidence: ${Math.min(confidence, 100)}%, source: ${domain})`);
       
       return {
         price,
         currency: 'NGN',
         originalText: match[0],
         confidence: Math.min(confidence, 100),
-        source: this.extractDomain(url),
+        source: domain,
         url,
         title,
         snippet
       };
     } catch (error) {
+      console.log(`   ❌ Failed to parse price: ${match[0]} - ${error}`);
       return null;
     }
   }
@@ -419,46 +446,16 @@ export class PriceExtractionService {
 
   /**
    * Validate individual price
+   * 
+   * Philosophy: Trust internet search results. Only reject clearly invalid data.
    */
   private validatePrice(price: ExtractedPrice, itemType?: ItemIdentifier['type']): boolean {
-    // Basic validation
+    // Basic validation - only reject clearly invalid prices
     if (!price.price || price.price <= 0 || !isFinite(price.price)) {
       return false;
     }
     
-    // Type-specific validation
-    if (itemType && itemType in PRICE_RANGES) {
-      const range = PRICE_RANGES[itemType];
-      if (price.price < range.min || price.price > range.max) {
-        return false;
-      }
-    }
-    
-    // Luxury vehicle validation - check for unrealistic low prices
-    if (itemType === 'vehicle') {
-      const luxuryBrands = ['lamborghini', 'ferrari', 'mclaren', 'bugatti', 'koenigsegg', 'pagani', 'rolls-royce', 'bentley'];
-      const titleLower = price.title?.toLowerCase() || '';
-      const snippetLower = price.snippet?.toLowerCase() || '';
-      
-      const isLuxuryBrand = luxuryBrands.some(brand => 
-        titleLower.includes(brand) || snippetLower.includes(brand)
-      );
-      
-      // For luxury brands, reject prices under ₦100M unless it's clearly a down payment or partial amount
-      if (isLuxuryBrand && price.price < 100000000) {
-        const originalTextLower = price.originalText?.toLowerCase() || '';
-        const isPartialPayment = originalTextLower.includes('down') || 
-                               originalTextLower.includes('deposit') || 
-                               originalTextLower.includes('monthly') ||
-                               originalTextLower.includes('installment');
-        
-        if (!isPartialPayment) {
-          return false;
-        }
-      }
-    }
-    
-    // Confidence threshold
+    // Confidence threshold - reject low confidence extractions
     if (price.confidence < 30) {
       return false;
     }

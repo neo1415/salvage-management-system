@@ -14,6 +14,7 @@ import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
+import { cache } from '@/lib/redis/client';
 
 /**
  * POST /api/admin/fraud-alerts/[id]/dismiss
@@ -91,6 +92,9 @@ export async function POST(
     );
 
     await logAction(auditData);
+
+    // Invalidate admin dashboard cache to reflect updated fraud alert count
+    await cache.del('dashboard:admin');
 
     return NextResponse.json({
       success: true,

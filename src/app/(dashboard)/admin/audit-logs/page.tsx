@@ -51,7 +51,7 @@ export default function AuditLogViewer() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageLimit, setPageLimit] = useState<number>(50);
+  const [pageLimit, setPageLimit] = useState<number>(20);
   
   // Detail modal state
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
@@ -59,10 +59,28 @@ export default function AuditLogViewer() {
   
   // Export state
   const [exporting, setExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   useEffect(() => {
     fetchLogs();
   }, [userIdFilter, actionTypeFilter, entityTypeFilter, startDate, endDate, currentPage, pageLimit]);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (showExportMenu && !target.closest('.export-dropdown')) {
+        setShowExportMenu(false);
+      }
+    };
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showExportMenu]);
 
   const fetchLogs = async () => {
     try {
@@ -95,41 +113,6 @@ export default function AuditLogViewer() {
     }
   };
 
-  const handleExport = async (format: 'csv' | 'excel') => {
-    try {
-      setExporting(true);
-
-      const params = new URLSearchParams();
-      if (userIdFilter) params.append('userId', userIdFilter);
-      if (actionTypeFilter !== 'all') params.append('actionType', actionTypeFilter);
-      if (entityTypeFilter !== 'all') params.append('entityType', entityTypeFilter);
-      if (startDate) params.append('startDate', new Date(startDate).toISOString());
-      if (endDate) params.append('endDate', new Date(endDate).toISOString());
-      params.append('export', format);
-
-      const response = await fetch(`/api/admin/audit-logs?${params.toString()}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to export audit logs');
-      }
-
-      // Download the file
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `audit-logs-${new Date().toISOString().split('T')[0]}.${format === 'csv' ? 'csv' : 'xls'}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to export audit logs');
-    } finally {
-      setExporting(false);
-    }
-  };
-
   const handleResetFilters = () => {
     setUserIdFilter('');
     setActionTypeFilter('all');
@@ -137,6 +120,223 @@ export default function AuditLogViewer() {
     setStartDate('');
     setEndDate('');
     setCurrentPage(1);
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      setExporting(true);
+      setShowExportMenu(false);
+
+      // Fetch logs with current filters (limit to 5000 records)
+      const params = new URLSearchParams();
+      if (userIdFilter) params.append('userId', userIdFilter);
+      if (actionTypeFilter !== 'all') params.append('actionType', actionTypeFilter);
+      if (entityTypeFilter !== 'all') params.append('entityType', entityTypeFilter);
+      if (startDate) params.append('startDate', new Date(startDate).toISOString());
+      if (endDate) params.append('endDate', new Date(endDate).toISOString());
+      params.append('limit', '5000'); // Limit to 5000 records
+
+      const response = await fetch(`/api/admin/audit-logs?${params.toString()}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch audit logs for export');
+      }
+
+      const data = await response.json();
+      const exportLogs = data.logs || [];
+
+      // Show warning if we hit the limit
+      if (exportLogs.length >= 5000) {
+        alert('Export limited to 5000 most recent records. Please apply filters to reduce the dataset.');
+      }
+
+      // Prepare data for export
+      const exportData = exportLogs.map((log: AuditLog) => ({
+        timestamp: new Date(log.createdAt).toLocaleString('en-NG', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZone: 'Africa/Lagos',
+        }),
+        user: log.userName || 'Unknown User',
+        action: log.actionType,
+        resourceType: log.entityType,
+        resourceId: log.entityId,
+        ipAddress: log.ipAddress,
+        status: 'completed', // All logged actions are completed
+      }));
+
+      // Generate CSV content
+      const headers = ['Timestamp', 'User', 'Action', 'Resource Type', 'Resource ID', 'IP Address', 'Status'];
+      const csvRows = [headers.join(',')];
+      
+      exportData.forEach((row: any) => {
+        const values = [
+          escapeCSVField(row.timestamp),
+          escapeCSVField(row.user),
+          escapeCSVField(row.action),
+          escapeCSVField(row.resourceType),
+          escapeCSVField(row.resourceId),
+          escapeCSVField(row.ipAddress),
+          escapeCSVField(row.status),
+        ];
+        csvRows.push(values.join(','));
+      });
+
+      const csvContent = csvRows.join('\n');
+      
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      const date = new Date().toISOString().split('T')[0];
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `system-logs-${date}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      alert(`Successfully exported ${exportData.length} log records to CSV`);
+    } catch (err) {
+      console.error('Error exporting CSV:', err);
+      alert('Failed to generate CSV export. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      setExporting(true);
+      setShowExportMenu(false);
+
+      // Fetch logs with current filters (limit to 5000 records)
+      const params = new URLSearchParams();
+      if (userIdFilter) params.append('userId', userIdFilter);
+      if (actionTypeFilter !== 'all') params.append('actionType', actionTypeFilter);
+      if (entityTypeFilter !== 'all') params.append('entityType', entityTypeFilter);
+      if (startDate) params.append('startDate', new Date(startDate).toISOString());
+      if (endDate) params.append('endDate', new Date(endDate).toISOString());
+      params.append('limit', '5000'); // Limit to 5000 records
+
+      const response = await fetch(`/api/admin/audit-logs?${params.toString()}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch audit logs for export');
+      }
+
+      const data = await response.json();
+      const exportLogs = data.logs || [];
+
+      // Show warning if we hit the limit
+      if (exportLogs.length >= 5000) {
+        alert('Export limited to 5000 most recent records. Please apply filters to reduce the dataset.');
+      }
+
+      // Prepare data for export
+      const exportData = exportLogs.map((log: AuditLog) => ({
+        timestamp: new Date(log.createdAt).toLocaleString('en-NG', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Africa/Lagos',
+        }),
+        user: (log.userName || 'Unknown').substring(0, 20),
+        action: log.actionType.substring(0, 20),
+        resourceType: log.entityType.substring(0, 15),
+        resourceId: log.entityId.substring(0, 12),
+        ipAddress: log.ipAddress,
+        status: 'completed',
+      }));
+
+      // Dynamically import jsPDF and services
+      const { jsPDF } = await import('jspdf');
+      const { PDFTemplateService } = await import('@/features/documents/services/pdf-template.service');
+      
+      const doc = new jsPDF();
+      
+      // Add letterhead
+      await PDFTemplateService.addLetterhead(doc, 'SYSTEM LOGS REPORT');
+      
+      // Add table data
+      let y = 65; // Start below letterhead
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const maxY = PDFTemplateService.getMaxContentY(doc);
+      
+      // Add headers
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Timestamp', 15, y);
+      doc.text('User', 55, y);
+      doc.text('Action', 90, y);
+      doc.text('Resource', 120, y);
+      doc.text('Resource ID', 145, y);
+      doc.text('IP', 175, y);
+      
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      
+      // Add data rows
+      for (const item of exportData) {
+        if (y > maxY) {
+          // Add footer to current page
+          PDFTemplateService.addFooter(doc);
+          // Start new page
+          doc.addPage();
+          await PDFTemplateService.addLetterhead(doc, 'SYSTEM LOGS REPORT');
+          y = 65;
+          
+          // Re-add headers on new page
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Timestamp', 15, y);
+          doc.text('User', 55, y);
+          doc.text('Action', 90, y);
+          doc.text('Resource', 120, y);
+          doc.text('Resource ID', 145, y);
+          doc.text('IP', 175, y);
+          y += 5;
+          doc.setFont('helvetica', 'normal');
+        }
+        
+        doc.text(item.timestamp, 15, y);
+        doc.text(item.user, 55, y);
+        doc.text(item.action, 90, y);
+        doc.text(item.resourceType, 120, y);
+        doc.text(item.resourceId, 145, y);
+        doc.text(item.ipAddress, 175, y);
+        y += 5;
+      }
+      
+      // Add footer to last page
+      PDFTemplateService.addFooter(doc, `Total Records: ${exportData.length}`);
+      
+      // Download PDF
+      const date = new Date().toISOString().split('T')[0];
+      doc.save(`system-logs-${date}.pdf`);
+      
+      alert(`Successfully exported ${exportData.length} log records to PDF`);
+    } catch (err) {
+      console.error('Error exporting PDF:', err);
+      alert('Failed to generate PDF export. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const escapeCSVField = (field: string): string => {
+    const str = String(field);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
   };
 
   const formatTimestamp = (timestamp: string): string => {
@@ -304,25 +504,7 @@ export default function AuditLogViewer() {
             />
           </div>
 
-          {/* Page Limit */}
-          <div>
-            <label htmlFor="pageLimit" className="block text-sm font-medium text-gray-700 mb-2">
-              Items per page
-            </label>
-            <select
-              id="pageLimit"
-              value={pageLimit}
-              onChange={(e) => {
-                setPageLimit(parseInt(e.target.value, 10));
-                setCurrentPage(1);
-              }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
-            >
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-            </select>
-          </div>
+
         </div>
 
         {/* Action Buttons */}
@@ -333,20 +515,60 @@ export default function AuditLogViewer() {
           >
             Reset Filters
           </button>
-          <button
-            onClick={() => handleExport('csv')}
-            disabled={exporting || logs.length === 0}
-            className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {exporting ? 'Exporting...' : '📥 Export CSV'}
-          </button>
-          <button
-            onClick={() => handleExport('excel')}
-            disabled={exporting || logs.length === 0}
-            className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {exporting ? 'Exporting...' : '📊 Export Excel'}
-          </button>
+          
+          {/* Export Dropdown */}
+          <div className="relative export-dropdown">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowExportMenu(!showExportMenu);
+              }}
+              disabled={exporting || logs.length === 0}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {exporting ? 'Exporting...' : 'Export'}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleExportCSV();
+                  }}
+                  disabled={exporting}
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 disabled:opacity-50"
+                >
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-700">Export as CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleExportPDF();
+                  }}
+                  disabled={exporting}
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 border-t border-gray-100 disabled:opacity-50"
+                >
+                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-700">Export as PDF</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -463,25 +685,49 @@ export default function AuditLogViewer() {
           {/* Pagination */}
           {pagination && pagination.totalPages > 1 && (
             <div className="bg-white rounded-lg shadow-sm p-4 mt-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <button
                   onClick={() => setCurrentPage(currentPage - 1)}
                   disabled={!pagination.hasPreviousPage}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   ← Previous
                 </button>
                 
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">
-                    Page {pagination.page} of {pagination.totalPages}
-                  </span>
+                  {/* Page Numbers */}
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (pagination.page <= 3) {
+                      pageNum = i + 1;
+                    } else if (pagination.page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = pagination.page - 2 + i;
+                    }
+                    
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          pagination.page === pageNum
+                            ? 'bg-burgundy-600 text-white'
+                            : 'text-gray-700 hover:bg-gray-100 border border-gray-300'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
                 </div>
                 
                 <button
                   onClick={() => setCurrentPage(currentPage + 1)}
                   disabled={!pagination.hasNextPage}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Next →
                 </button>

@@ -3,7 +3,7 @@ import { users } from './users';
 
 export const vendorTierEnum = pgEnum('vendor_tier', ['tier1_bvn', 'tier2_full']);
 export const vendorStatusEnum = pgEnum('vendor_status', ['pending', 'approved', 'suspended']);
-export const assetTypeEnum = pgEnum('asset_type', ['vehicle', 'property', 'electronics']);
+export const assetTypeEnum = pgEnum('asset_type', ['vehicle', 'property', 'electronics', 'machinery']);
 
 export const vendors = pgTable('vendors', {
   id: uuid('id').primaryKey().defaultRandom(),

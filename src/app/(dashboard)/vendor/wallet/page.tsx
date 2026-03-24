@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Wallet, Plus, TrendingUp, TrendingDown, Lock, Unlock, CreditCard } from 'lucide-react';
+import { Wallet, Plus, TrendingUp, TrendingDown, Lock, Unlock, CreditCard, WifiOff } from 'lucide-react';
+import { useOnlineStatus } from '@/hooks/use-online-status';
 
 interface WalletBalance {
   balance: number;
@@ -21,15 +22,32 @@ interface WalletTransaction {
   createdAt: string;
 }
 
+interface PaginationMeta {
+  total: number;
+  limit: number;
+  offset: number;
+  page: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
 export default function WalletPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const isOnline = useOnlineStatus();
   const [balance, setBalance] = useState<WalletBalance | null>(null);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fundingAmount, setFundingAmount] = useState<string>('');
   const [isFunding, setIsFunding] = useState(false);
+  
+  // Export states
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // FIXED: Wrap fetchWalletData in useCallback to prevent recreation on every render
   const fetchWalletData = useCallback(async () => {
@@ -57,30 +75,23 @@ export default function WalletPage() {
         return balanceData;
       });
 
-      // Fetch transactions
-      const transactionsResponse = await fetch('/api/payments/wallet/transactions');
+      // Fetch transactions with pagination
+      const transactionsResponse = await fetch(`/api/payments/wallet/transactions?page=${currentPage}&limit=10`);
       if (!transactionsResponse.ok) {
         throw new Error('Failed to fetch transactions');
       }
       const transactionsData = await transactionsResponse.json();
       
-      // FIXED: Only update if transaction count changed
-      setTransactions(prev => {
-        if (prev.length === transactionsData.length && prev.length > 0) {
-          // Check if first transaction ID matches (most recent)
-          if (prev[0]?.id === transactionsData[0]?.id) {
-            return prev; // No new transactions, prevent re-render
-          }
-        }
-        return transactionsData;
-      });
+      // Update transactions and pagination
+      setTransactions(transactionsData.transactions || []);
+      setPagination(transactionsData.pagination || null);
     } catch (err) {
       console.error('Error fetching wallet data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load wallet data');
     } finally {
       setLoading(false);
     }
-  }, []); // No dependencies - stable function
+  }, [currentPage]); // Depend on currentPage for pagination
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -89,12 +100,12 @@ export default function WalletPage() {
     }
   }, [status, router]);
 
-  // Fetch wallet balance and transactions - FIXED: Only depend on user ID, not entire session object
+  // Fetch wallet balance and transactions - FIXED: Only depend on user ID and currentPage
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.id) {
       fetchWalletData();
     }
-  }, [status, session?.user?.id]); // Only depend on user ID, not entire session
+  }, [status, session?.user?.id, currentPage, fetchWalletData]); // Added currentPage and fetchWalletData
 
   // Check for payment success callback - FIXED: Run only once on mount
   useEffect(() => {
@@ -201,6 +212,176 @@ export default function WalletPage() {
     }
   }, []); // No dependencies - stable function
 
+  // Export functions
+  const handleExportCSV = useCallback(async () => {
+    try {
+      setExporting(true);
+      
+      // Fetch all transactions for export (not just current page)
+      const response = await fetch('/api/payments/wallet/transactions?limit=10000');
+      if (!response.ok) {
+        throw new Error('Failed to fetch transactions for export');
+      }
+      const data = await response.json();
+      const allTransactions = data.transactions || [];
+      
+      // Prepare CSV data
+      const headers = ['Transaction ID', 'Type', 'Amount', 'Balance After', 'Description', 'Date', 'Reference'];
+      const csvRows = [headers.join(',')];
+      
+      allTransactions.forEach((transaction: WalletTransaction) => {
+        const values = [
+          escapeCSVField(transaction.id),
+          escapeCSVField(transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)),
+          escapeCSVField(formatCurrency(transaction.amount)),
+          escapeCSVField(formatCurrency(transaction.balanceAfter)),
+          escapeCSVField(transaction.description),
+          escapeCSVField(formatDate(transaction.createdAt)),
+          escapeCSVField(transaction.reference)
+        ];
+        csvRows.push(values.join(','));
+      });
+
+      const csvContent = csvRows.join('\n');
+      
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      const date = new Date().toISOString().split('T')[0];
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `wallet-transactions-${date}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      alert(`Successfully exported ${allTransactions.length} transactions to CSV`);
+    } catch (err) {
+      console.error('Error exporting CSV:', err);
+      alert('Failed to export CSV. Please try again.');
+    } finally {
+      setExporting(false);
+      setShowExportMenu(false);
+    }
+  }, [formatCurrency, formatDate]);
+
+  const handleExportPDF = useCallback(async () => {
+    try {
+      setExporting(true);
+      
+      // Fetch all transactions for export
+      const response = await fetch('/api/payments/wallet/transactions?limit=10000');
+      if (!response.ok) {
+        throw new Error('Failed to fetch transactions for export');
+      }
+      const data = await response.json();
+      const allTransactions = data.transactions || [];
+      
+      // Dynamically import jsPDF and services
+      const { jsPDF } = await import('jspdf');
+      const { PDFTemplateService } = await import('@/features/documents/services/pdf-template.service');
+      
+      const doc = new jsPDF();
+      
+      // Add letterhead
+      await PDFTemplateService.addLetterhead(doc, 'WALLET TRANSACTIONS REPORT');
+      
+      // Add table data
+      let y = 65; // Start below letterhead
+      const maxY = PDFTemplateService.getMaxContentY(doc);
+      
+      // Add headers
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Date', 15, y);
+      doc.text('Type', 50, y);
+      doc.text('Amount', 80, y);
+      doc.text('Balance', 115, y);
+      doc.text('Description', 150, y);
+      
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      
+      // Add data rows
+      for (const transaction of allTransactions) {
+        if (y > maxY) {
+          // Add footer to current page
+          PDFTemplateService.addFooter(doc);
+          // Start new page
+          doc.addPage();
+          await PDFTemplateService.addLetterhead(doc, 'WALLET TRANSACTIONS REPORT');
+          y = 65;
+          
+          // Re-add headers on new page
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Date', 15, y);
+          doc.text('Type', 50, y);
+          doc.text('Amount', 80, y);
+          doc.text('Balance', 115, y);
+          doc.text('Description', 150, y);
+          y += 5;
+          doc.setFont('helvetica', 'normal');
+        }
+        
+        const date = new Date(transaction.createdAt).toLocaleDateString('en-NG', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+        
+        doc.text(date, 15, y);
+        doc.text(transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1), 50, y);
+        doc.text(formatCurrency(transaction.amount), 80, y);
+        doc.text(formatCurrency(transaction.balanceAfter), 115, y);
+        doc.text(transaction.description.substring(0, 30), 150, y);
+        y += 5;
+      }
+      
+      // Add footer to last page
+      PDFTemplateService.addFooter(doc, `Total Transactions: ${allTransactions.length}`);
+      
+      // Download PDF
+      const date = new Date().toISOString().split('T')[0];
+      doc.save(`wallet-transactions-${date}.pdf`);
+      
+      alert(`Successfully exported ${allTransactions.length} transactions to PDF`);
+    } catch (err) {
+      console.error('Error exporting PDF:', err);
+      alert('Failed to export PDF. Please try again.');
+    } finally {
+      setExporting(false);
+      setShowExportMenu(false);
+    }
+  }, [formatCurrency]);
+
+  const escapeCSVField = (field: string | number): string => {
+    const str = String(field);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  // Pagination handlers
+  const handleNextPage = () => {
+    if (pagination && pagination.hasNextPage) {
+      setCurrentPage(prev => prev + 1);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (pagination && pagination.hasPrevPage) {
+      setCurrentPage(prev => prev - 1);
+    }
+  };
+
+  const handlePageClick = (page: number) => {
+    setCurrentPage(page);
+  };
+
   if (status === 'loading' || loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -225,6 +406,23 @@ export default function WalletPage() {
             Pre-fund your wallet for instant bidding and faster payments
           </p>
         </div>
+
+        {/* Offline Warning Banner */}
+        {!isOnline && (
+          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+            <div className="flex items-center">
+              <WifiOff className="w-5 h-5 text-yellow-400 mr-3" />
+              <div>
+                <p className="text-sm font-medium text-yellow-800">
+                  You are currently offline
+                </p>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Some features like adding funds and exporting data may not be available. Your wallet data is cached and will sync when you're back online.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Error Message */}
         {error && (
@@ -305,13 +503,19 @@ export default function WalletPage() {
             <div className="flex items-end">
               <button
                 onClick={handleAddFunds}
-                disabled={isFunding || !fundingAmount}
+                disabled={isFunding || !fundingAmount || !isOnline}
                 className="w-full sm:w-auto px-8 py-3 bg-[#FFD700] text-[#800020] font-bold rounded-lg hover:bg-[#FFC700] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                title={!isOnline ? 'Adding funds is not available offline' : 'Add funds via Paystack'}
               >
                 {isFunding ? (
                   <>
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#800020]"></div>
                     Processing...
+                  </>
+                ) : !isOnline ? (
+                  <>
+                    <WifiOff className="w-5 h-5" />
+                    Offline
                   </>
                 ) : (
                   <>
@@ -329,8 +533,54 @@ export default function WalletPage() {
 
         {/* Transaction History */}
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <div className="p-6 border-b border-gray-200">
+          <div className="p-6 border-b border-gray-200 flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900">Transaction History</h2>
+            
+            {/* Export Dropdown */}
+            {transactions.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowExportMenu(!showExportMenu)}
+                  disabled={exporting || !isOnline}
+                  className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  title={!isOnline ? 'Export is not available offline' : 'Export transactions'}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export
+                  {!isOnline && <WifiOff className="w-4 h-4 text-gray-400" />}
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {showExportMenu && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                    <button
+                      onClick={handleExportCSV}
+                      disabled={exporting}
+                      className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 disabled:opacity-50"
+                    >
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span className="text-sm font-medium text-gray-700">Export as CSV</span>
+                    </button>
+                    <button
+                      onClick={handleExportPDF}
+                      disabled={exporting}
+                      className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 border-t border-gray-100 disabled:opacity-50"
+                    >
+                      <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      <span className="text-sm font-medium text-gray-700">Export as PDF</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           
           {transactions.length === 0 ? (
@@ -396,6 +646,62 @@ export default function WalletPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          
+          {/* Pagination Controls */}
+          {pagination && pagination.totalPages > 1 && (
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+              <div className="text-sm text-gray-700">
+                Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} transactions
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePrevPage}
+                  disabled={!pagination.hasPrevPage}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                
+                {/* Page Numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (pagination.page <= 3) {
+                      pageNum = i + 1;
+                    } else if (pagination.page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = pagination.page - 2 + i;
+                    }
+                    
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageClick(pageNum)}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          pagination.page === pageNum
+                            ? 'bg-[#800020] text-white'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+                
+                <button
+                  onClick={handleNextPage}
+                  disabled={!pagination.hasNextPage}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           )}
         </div>

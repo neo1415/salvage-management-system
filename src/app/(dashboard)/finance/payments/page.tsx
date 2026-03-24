@@ -116,6 +116,10 @@ export default function FinancePaymentsPage() {
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
 
+  // Export states
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
   const fetchPayments = useCallback(async () => {
     try {
       // Use different loading state for initial load vs filtering
@@ -161,6 +165,23 @@ export default function FinancePaymentsPage() {
     fetchPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, statusFilter, methodFilter, dateFrom, dateTo]);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (showExportMenu && !target.closest('.relative')) {
+        setShowExportMenu(false);
+      }
+    };
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showExportMenu]);
 
   const clearFilters = () => {
     setActiveTab('all');
@@ -481,6 +502,217 @@ export default function FinancePaymentsPage() {
     }
   };
 
+  const handleExportCSV = () => {
+    try {
+      setExporting(true);
+      
+      // Prepare data for export with comprehensive columns
+      const exportData = payments.map(payment => ({
+        paymentId: payment.id,
+        auctionId: payment.auctionId,
+        claimReference: payment.case.claimReference,
+        vendorName: payment.vendor.businessName || payment.vendor.contactPersonName || 'N/A',
+        amount: `₦${parseFloat(payment.amount).toLocaleString()}`,
+        status: payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
+        paymentMethod: getPaymentSourceLabel(payment.paymentMethod),
+        paymentReference: payment.paymentReference || 'N/A',
+        createdDate: new Date(payment.createdAt).toLocaleDateString('en-NG', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        verifiedDate: payment.status === 'verified' ? new Date(payment.createdAt).toLocaleDateString('en-NG', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        }) : 'N/A',
+        escrowStatus: payment.escrowStatus || 'N/A',
+        autoVerified: payment.autoVerified ? 'Yes' : 'No',
+        vendorEmail: payment.vendor.email || 'N/A',
+        vendorPhone: payment.vendor.phoneNumber || 'N/A'
+      }));
+
+      // Generate CSV content with more columns
+      const headers = ['Payment ID', 'Auction ID', 'Claim Reference', 'Vendor Name', 'Amount', 'Status', 'Payment Method', 'Transaction Reference', 'Created Date', 'Verified Date', 'Escrow Status', 'Auto-Verified', 'Vendor Email', 'Vendor Phone'];
+      const csvRows = [headers.join(',')];
+      
+      exportData.forEach(row => {
+        const values = [
+          escapeCSVField(row.paymentId),
+          escapeCSVField(row.auctionId),
+          escapeCSVField(row.claimReference),
+          escapeCSVField(row.vendorName),
+          escapeCSVField(row.amount),
+          escapeCSVField(row.status),
+          escapeCSVField(row.paymentMethod),
+          escapeCSVField(row.paymentReference),
+          escapeCSVField(row.createdDate),
+          escapeCSVField(row.verifiedDate),
+          escapeCSVField(row.escrowStatus),
+          escapeCSVField(row.autoVerified),
+          escapeCSVField(row.vendorEmail),
+          escapeCSVField(row.vendorPhone)
+        ];
+        csvRows.push(values.join(','));
+      });
+
+      const csvContent = csvRows.join('\n');
+      
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      const date = new Date().toISOString().split('T')[0];
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `finance-payments-${date}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Show success message
+      setSuccessMessage(`Successfully exported ${payments.length} payment records to CSV`);
+      setShowSuccessModal(true);
+    } catch (err) {
+      console.error('Error exporting CSV:', err);
+      setErrorMessage('Export Failed');
+      setErrorDetails('Failed to generate CSV export. Please try again.');
+      setShowErrorModal(true);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      setExporting(true);
+      
+      // Prepare data for export with more comprehensive columns
+      const exportData = payments.map(payment => ({
+        paymentId: payment.id.substring(0, 8),
+        auctionId: payment.auctionId.substring(0, 8),
+        claimRef: payment.case.claimReference,
+        vendorName: payment.vendor.businessName || payment.vendor.contactPersonName || 'N/A',
+        amount: `₦${parseFloat(payment.amount).toLocaleString()}`,
+        status: payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
+        paymentMethod: getPaymentSourceLabel(payment.paymentMethod),
+        reference: payment.paymentReference || 'N/A',
+        createdDate: new Date(payment.createdAt).toLocaleDateString('en-NG', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        }),
+        verifiedDate: payment.status === 'verified' ? new Date(payment.createdAt).toLocaleDateString('en-NG', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        }) : 'N/A',
+        escrowStatus: payment.escrowStatus || 'N/A',
+        autoVerified: payment.autoVerified ? 'Yes' : 'No'
+      }));
+
+      // Dynamically import jsPDF and services
+      const { jsPDF } = await import('jspdf');
+      const { PDFTemplateService } = await import('@/features/documents/services/pdf-template.service');
+      
+      // Use landscape orientation for more columns
+      const doc = new jsPDF('landscape');
+      
+      // Add letterhead
+      await PDFTemplateService.addLetterhead(doc, 'FINANCE PAYMENTS REPORT');
+      
+      // Add table data
+      let y = 65; // Start below letterhead
+      const maxY = PDFTemplateService.getMaxContentY(doc);
+      
+      // Add headers (landscape allows more columns)
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Pay ID', 15, y);
+      doc.text('Auction', 35, y);
+      doc.text('Claim Ref', 55, y);
+      doc.text('Vendor', 85, y);
+      doc.text('Amount', 120, y);
+      doc.text('Status', 150, y);
+      doc.text('Method', 175, y);
+      doc.text('Reference', 205, y);
+      doc.text('Created', 240, y);
+      doc.text('Verified', 265, y);
+      
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      
+      // Add data rows
+      for (const item of exportData) {
+        if (y > maxY) {
+          // Add footer to current page
+          PDFTemplateService.addFooter(doc);
+          // Start new page
+          doc.addPage();
+          await PDFTemplateService.addLetterhead(doc, 'FINANCE PAYMENTS REPORT');
+          y = 65;
+          
+          // Re-add headers on new page
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Pay ID', 15, y);
+          doc.text('Auction', 35, y);
+          doc.text('Claim Ref', 55, y);
+          doc.text('Vendor', 85, y);
+          doc.text('Amount', 120, y);
+          doc.text('Status', 150, y);
+          doc.text('Method', 175, y);
+          doc.text('Reference', 205, y);
+          doc.text('Created', 240, y);
+          doc.text('Verified', 265, y);
+          y += 5;
+          doc.setFont('helvetica', 'normal');
+        }
+        
+        doc.text(item.paymentId, 15, y);
+        doc.text(item.auctionId, 35, y);
+        doc.text(item.claimRef.substring(0, 12), 55, y);
+        doc.text(item.vendorName.substring(0, 15), 85, y);
+        doc.text(item.amount, 120, y);
+        doc.text(item.status, 150, y);
+        doc.text(item.paymentMethod.substring(0, 12), 175, y);
+        doc.text(item.reference.substring(0, 15), 205, y);
+        doc.text(item.createdDate, 240, y);
+        doc.text(item.verifiedDate, 265, y);
+        y += 5;
+      }
+      
+      // Add footer to last page
+      PDFTemplateService.addFooter(doc, `Total Records: ${payments.length} | Auto-Verified: ${payments.filter(p => p.autoVerified).length}`);
+      
+      // Download PDF
+      const date = new Date().toISOString().split('T')[0];
+      doc.save(`finance-payments-${date}.pdf`);
+      
+      // Show success message
+      setSuccessMessage(`Successfully exported ${payments.length} payment records to PDF`);
+      setShowSuccessModal(true);
+    } catch (err) {
+      console.error('Error exporting PDF:', err);
+      setErrorMessage('Export Failed');
+      setErrorDetails('Failed to generate PDF export. Please try again.');
+      setShowErrorModal(true);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const escapeCSVField = (field: string): string => {
+    const str = String(field);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -511,20 +743,78 @@ export default function FinancePaymentsPage() {
             )}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            fetchPayments();
-          }}
-          disabled={isFiltering}
-          className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <svg className="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Export Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowExportMenu(!showExportMenu);
+              }}
+              disabled={isFiltering || payments.length === 0}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Export
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleExportCSV();
+                    setShowExportMenu(false);
+                  }}
+                  disabled={exporting}
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 disabled:opacity-50"
+                >
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-700">Export as CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleExportPDF();
+                    setShowExportMenu(false);
+                  }}
+                  disabled={exporting}
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 border-t border-gray-100 disabled:opacity-50"
+                >
+                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-700">Export as PDF</span>
+                </button>
+              </div>
+            )}
+          </div>
+          
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              fetchPayments();
+            }}
+            disabled={isFiltering}
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}

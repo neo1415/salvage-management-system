@@ -20,7 +20,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { formatConditionForDisplay, type QualityTier } from '@/features/valuations/services/condition-mapping.service';
@@ -28,6 +28,7 @@ import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { FilterChip } from '@/components/ui/filters/filter-chip';
 import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
 import { SearchInput } from '@/components/ui/filters/search-input';
+import { LocationAutocomplete } from '@/components/ui/filters/location-autocomplete';
 import { Filter as FilterIcon, X, Circle, DollarSign, Trophy, ClipboardList, MapPin, Clock, Eye } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
 
@@ -68,6 +69,21 @@ interface Filters {
 }
 
 export default function AuctionBrowsingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading auctions...</p>
+        </div>
+      </div>
+    }>
+      <AuctionBrowsingContent />
+    </Suspense>
+  );
+}
+
+function AuctionBrowsingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -516,15 +532,14 @@ export default function AuctionBrowsingPage() {
                 </div>
               </div>
 
-              {/* Location Filter */}
+              {/* Location Filter with Autocomplete */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
-                <input
-                  type="text"
-                  placeholder="Enter location..."
+                <LocationAutocomplete
                   value={locationFilter}
-                  onChange={(e) => setLocationFilter(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020]"
+                  onChange={setLocationFilter}
+                  placeholder="Enter location..."
+                  className="w-full"
                 />
               </div>
             </div>
@@ -550,7 +565,9 @@ export default function AuctionBrowsingPage() {
             <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
             </svg>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No auctions found</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              {searchQuery ? `No results found for "${searchQuery}"` : 'No auctions found'}
+            </h3>
             <p className="text-gray-600 mb-4">
               {hasActiveFilters ? 'Try adjusting your filters' : 'Check back later for new auctions'}
             </p>
@@ -674,19 +691,46 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
     return () => clearInterval(interval);
   }, [auction.endTime]);
 
-  // Format asset name
+  // Format asset name - show specific item names, not just categories
   const getAssetName = () => {
     const details = auction.case.assetDetails;
+    let name = '';
+    
     switch (auction.case.assetType) {
       case 'vehicle':
-        return `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim() || 'Vehicle';
+        // Format: "2015 Toyota Camry" or fallback to "Vehicle"
+        name = `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim();
+        break;
       case 'property':
-        return `${details.propertyType || 'Property'}`;
+        // Format: "Commercial Property" or specific property type
+        name = details.propertyType ? String(details.propertyType) : 'Property';
+        break;
       case 'electronics':
-        return `${details.brand || ''} Electronics`.trim();
+        // Format: "Samsung Electronics" or "Electronics"
+        name = details.brand ? `${details.brand} ${details.model || 'Electronics'}`.trim() : 'Electronics';
+        break;
+      case 'machinery':
+        // Format: "Caterpillar CAT 320 Excavator" or "Caterpillar Excavator"
+        name = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
+        if (!name) {
+          name = details.machineryType ? String(details.machineryType) : 'Machinery';
+        }
+        break;
       default:
-        return 'Salvage Item';
+        name = 'Salvage Item';
     }
+    
+    // Fallback to "{assetType} - {claimReference}" if no specific name
+    if (!name || name === auction.case.assetType) {
+      name = `${auction.case.assetType} - ${auction.case.claimReference}`;
+    }
+    
+    // Truncate to 50 characters with ellipsis
+    if (name.length > 50) {
+      name = name.substring(0, 50) + '...';
+    }
+    
+    return name;
   };
 
   // Get main photo

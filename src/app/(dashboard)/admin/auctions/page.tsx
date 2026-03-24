@@ -60,7 +60,6 @@ export default function AdminAuctionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingDocs, setIsGeneratingDocs] = useState<string | null>(null);
-  const [isSendingNotification, setIsSendingNotification] = useState<string | null>(null);
   const [modalConfig, setModalConfig] = useState<ModalConfig>({
     isOpen: false,
     type: 'confirm',
@@ -153,63 +152,6 @@ export default function AdminAuctionsPage() {
     }
   };
 
-  // Send notification manually
-  const handleSendNotification = async (auctionId: string) => {
-    setModalConfig({
-      isOpen: true,
-      type: 'confirm',
-      title: 'Send Notification',
-      message: 'Send auction won notification to the winner?',
-      confirmationType: 'info',
-      onConfirm: () => executeSendNotification(auctionId),
-    });
-  };
-
-  const executeSendNotification = async (auctionId: string) => {
-    setModalConfig({ ...modalConfig, isOpen: false });
-    setIsSendingNotification(auctionId);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/admin/auctions/${auctionId}/send-notification`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to send notification');
-      }
-
-      const result = await response.json();
-      
-      setModalConfig({
-        isOpen: true,
-        type: 'result',
-        title: 'Success',
-        message: `Notification sent successfully!\n\n${result.message}`,
-        confirmationType: 'success',
-      });
-
-      // Refresh auctions list after a short delay
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to send notification';
-      setError(errorMessage);
-      
-      setModalConfig({
-        isOpen: true,
-        type: 'result',
-        title: 'Error',
-        message: errorMessage,
-        confirmationType: 'danger',
-      });
-    } finally {
-      setIsSendingNotification(null);
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -262,7 +204,7 @@ export default function AdminAuctionsPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Auction Management</h1>
           <p className="mt-2 text-gray-600">
-            Manage closed auctions, generate documents, and send notifications
+            Manage closed auctions and generate documents
           </p>
         </div>
 
@@ -290,9 +232,7 @@ export default function AdminAuctionsPage() {
                       <AuctionManagementCard
                         auction={auction}
                         isGenerating={isGeneratingDocs === auction.id}
-                        isSending={isSendingNotification === auction.id}
                         onGenerateDocuments={handleGenerateDocuments}
-                        onSendNotification={handleSendNotification}
                       />
                     </div>
                   )}
@@ -307,9 +247,7 @@ export default function AdminAuctionsPage() {
                     key={auction.id}
                     auction={auction}
                     isGenerating={isGeneratingDocs === auction.id}
-                    isSending={isSendingNotification === auction.id}
                     onGenerateDocuments={handleGenerateDocuments}
-                    onSendNotification={handleSendNotification}
                   />
                 ))}
               </div>
@@ -338,17 +276,13 @@ export default function AdminAuctionsPage() {
 interface AuctionManagementCardProps {
   auction: AuctionWithStatus;
   isGenerating: boolean;
-  isSending: boolean;
   onGenerateDocuments: (auctionId: string) => void;
-  onSendNotification: (auctionId: string) => void;
 }
 
 function AuctionManagementCard({
   auction,
   isGenerating,
-  isSending,
   onGenerateDocuments,
-  onSendNotification,
 }: AuctionManagementCardProps) {
   const getDocumentStatus = (auction: AuctionWithStatus) => {
     // Only require bill_of_sale and liability_waiver initially
@@ -468,18 +402,6 @@ function AuctionManagementCard({
               )}
             </div>
 
-            {/* Notification Status - Only show if failed */}
-            {auction.notificationFailed && (
-              <div>
-                <p className="text-sm font-medium text-red-600">
-                  ✗ Notification failed
-                </p>
-                <p className="text-xs text-red-600 font-semibold mt-1">
-                  ⚠️ FAILED - Retry needed
-                </p>
-              </div>
-            )}
-
             {/* Payment Status */}
             {auction.payment && (
               <div>
@@ -506,7 +428,7 @@ function AuctionManagementCard({
                 {(docStatus.status !== 'complete' || auction.documentGenerationFailed) && (
                   <button
                     onClick={() => onGenerateDocuments(auction.id)}
-                    disabled={isGenerating || isSending}
+                    disabled={isGenerating}
                     className={`w-full px-4 py-2 rounded-lg text-sm font-medium ${
                       auction.documentGenerationFailed
                         ? 'bg-red-600 hover:bg-red-700 text-white'
@@ -526,27 +448,36 @@ function AuctionManagementCard({
                   </button>
                 )}
 
-                {(!auction.notificationSent || auction.notificationFailed) && (
-                  <button
-                    onClick={() => onSendNotification(auction.id)}
-                    disabled={isGenerating || isSending}
-                    className={`w-full px-4 py-2 rounded-lg text-sm font-medium ${
-                      auction.notificationFailed
-                        ? 'bg-red-600 hover:bg-red-700 text-white'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {isSending ? (
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Sending...</span>
+                {/* Notification Status Indicator - Show when documents are complete */}
+                {docStatus.status === 'complete' && !auction.notificationFailed && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                    <div className="text-sm text-green-700 font-medium">
+                      ✓ Notifications Sent
+                    </div>
+                    <div className="text-xs text-green-600 mt-1">
+                      Winner notified automatically after auction closure
+                    </div>
+                  </div>
+                )}
+                
+                {/* Retry Notification Button - Only shown if notification explicitly failed */}
+                {auction.notificationFailed && (
+                  <div className="space-y-2">
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                      <div className="text-sm text-red-700 font-medium">
+                        ⚠️ Notification Failed
                       </div>
-                    ) : auction.notificationFailed ? (
-                      '🔄 Retry Notification'
-                    ) : (
-                      '📧 Send Notification'
-                    )}
-                  </button>
+                      <div className="text-xs text-red-600 mt-1">
+                        Automatic notification delivery failed
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => window.alert('Please contact technical support to investigate and retry notifications for this auction.')}
+                      className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-yellow-600 hover:bg-yellow-700 text-white"
+                    >
+                      🔄 Retry Notification
+                    </button>
+                  </div>
                 )}
               </div>
             )}

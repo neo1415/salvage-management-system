@@ -20,16 +20,18 @@ export async function GET(
 
     const { id: paymentId } = await params;
 
-    // Fetch payment with related data
+    // Fetch payment with related data including vendor details
     const [payment] = await db
       .select({
         payment: payments,
         auction: auctions,
         case: salvageCases,
+        vendor: vendors,
       })
       .from(payments)
       .innerJoin(auctions, eq(payments.auctionId, auctions.id))
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+      .innerJoin(vendors, eq(payments.vendorId, vendors.id))
       .where(eq(payments.id, paymentId))
       .limit(1);
 
@@ -38,13 +40,7 @@ export async function GET(
     }
 
     // Verify the payment belongs to the current user's vendor account
-    const [vendor] = await db
-      .select()
-      .from(vendors)
-      .where(eq(vendors.userId, session.user.id))
-      .limit(1);
-
-    if (!vendor || vendor.id !== payment.payment.vendorId) {
+    if (payment.vendor.userId !== session.user.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
@@ -59,6 +55,15 @@ export async function GET(
       paymentReference: payment.payment.paymentReference,
       paymentProofUrl: payment.payment.paymentProofUrl,
       createdAt: payment.payment.createdAt.toISOString(),
+      vendor: {
+        id: payment.vendor.id,
+        businessName: payment.vendor.businessName,
+        tier: payment.vendor.tier,
+        status: payment.vendor.status,
+        bankAccountNumber: payment.vendor.bankAccountNumber,
+        bankName: payment.vendor.bankName,
+        bankAccountName: payment.vendor.bankAccountName,
+      },
       auction: {
         id: payment.auction.id,
         caseId: payment.auction.caseId,

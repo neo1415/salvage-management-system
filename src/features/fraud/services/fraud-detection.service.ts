@@ -16,6 +16,7 @@ import { eq, and } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { emailService } from '@/features/notifications/services/email.service';
 import { pushNotificationService } from '@/features/notifications/services/push.service';
+import { cache } from '@/lib/redis/client';
 
 /**
  * Fraud pattern types
@@ -336,6 +337,9 @@ export class FraudDetectionService {
           })),
         },
       });
+
+      // Invalidate admin dashboard cache to reflect new fraud alert
+      await cache.del('dashboard:admin');
 
       // Send notifications to admin
       await this.notifyAdmin(data, patterns, details);

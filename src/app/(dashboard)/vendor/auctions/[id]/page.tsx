@@ -569,6 +569,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         return `${details.propertyType || 'Property'}`;
       case 'electronics':
         return `${details.brand || ''} Electronics`.trim();
+      case 'machinery':
+        const machineryName = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
+        return machineryName || (details.machineryType ? String(details.machineryType) : 'Machinery');
       default:
         return 'Salvage Item';
     }
@@ -687,12 +690,15 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 </h3>
                 <p className="text-gray-700 mb-4">
                   Before payment can be processed, you must sign all required documents. 
-                  Progress: <strong>{documents.filter(d => d.status === 'signed').length}/{documents.length} documents signed</strong>
+                  Progress: <strong>{documents.filter(d => d.status === 'signed' && !(d.documentType === 'pickup_authorization' && d.status === 'pending')).length}/{documents.filter(d => !(d.documentType === 'pickup_authorization' && d.status === 'pending')).length} documents signed</strong>
                 </p>
                 
                 {/* FIXED: Document Cards in Row Layout */}
+                {/* Filter out pending pickup_authorization - it's generated AFTER payment, never shown as pending */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                  {documents.map((doc) => (
+                  {documents
+                    .filter(doc => !(doc.documentType === 'pickup_authorization' && doc.status === 'pending'))
+                    .map((doc) => (
                     <div 
                       key={doc.id}
                       className={`flex flex-col p-4 rounded-lg border-2 transition-all ${
@@ -929,19 +935,21 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               </div>
 
               {/* Asset-specific details */}
-              <div className="border-t border-gray-200 pt-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Specifications</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {Object.entries(auction.case.assetDetails).map(([key, value]) => (
-                    <div key={key}>
-                      <p className="text-sm text-gray-600 capitalize">
-                        {key.replace(/([A-Z])/g, ' $1').trim()}
-                      </p>
-                      <p className="text-sm font-medium text-gray-900">{String(value)}</p>
-                    </div>
-                  ))}
+              {auction.case.assetDetails && typeof auction.case.assetDetails === 'object' && Object.keys(auction.case.assetDetails).length > 0 && (
+                <div className="border-t border-gray-200 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Specifications</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {Object.entries(auction.case.assetDetails).map(([key, value]) => (
+                      <div key={key}>
+                        <p className="text-sm text-gray-600 capitalize">
+                          {key.replace(/([A-Z])/g, ' $1').trim()}
+                        </p>
+                        <p className="text-sm font-medium text-gray-900">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Detected Damage */}

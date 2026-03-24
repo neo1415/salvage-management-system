@@ -175,13 +175,15 @@ export class QueryBuilderService {
         throw new Error(`Unsupported item type: ${(item as any).type}`);
     }
     
-    // Add condition terms
+    // Add condition terms - CRITICAL for accurate pricing
     if (includeCondition && item.condition) {
       const normalizedCondition = normalizeCondition(item.condition);
       if (normalizedCondition) {
         const conditionTerms = CONDITION_SEARCH_TERMS[normalizedCondition];
         if (conditionTerms && conditionTerms.length > 0) {
+          // Use the primary condition term for better search accuracy
           query += ` ${conditionTerms[0]}`;
+          console.log(`🔍 Including condition in search: "${conditionTerms[0]}" for ${normalizedCondition}`);
         }
       }
     }
@@ -446,7 +448,7 @@ export class QueryBuilderService {
   }
 
   private buildMachineryQuery(machinery: MachineryIdentifier): string {
-    let query = `${machinery.brand} ${machinery.machineryType}`;
+    let query = `${machinery.brand}`;
     
     if (machinery.model) {
       query += ` ${machinery.model}`;
@@ -454,6 +456,31 @@ export class QueryBuilderService {
     
     if (machinery.year) {
       query += ` ${machinery.year}`;
+    }
+    
+    // Add condition terms for better accuracy
+    if (machinery.condition) {
+      const normalizedCondition = normalizeCondition(machinery.condition);
+      if (normalizedCondition) {
+        const conditionTerms = CONDITION_SEARCH_TERMS[normalizedCondition];
+        if (conditionTerms && conditionTerms.length > 0) {
+          query += ` ${conditionTerms[0]}`;
+        }
+      }
+    }
+    
+    // Add machinery type
+    query += ` ${machinery.machineryType}`;
+    
+    // Add specific terms for heavy equipment brands to get better pricing results
+    const heavyEquipmentBrands = ['caterpillar', 'cat', 'komatsu', 'volvo', 'hitachi', 'jcb', 'liebherr', 'doosan', 'hyundai'];
+    const isHeavyEquipment = heavyEquipmentBrands.some(brand => 
+      machinery.brand.toLowerCase().includes(brand)
+    );
+    
+    if (isHeavyEquipment) {
+      // Prioritize Nigerian marketplaces for heavy equipment
+      query += ' price Nigeria site:jiji.ng OR site:cheki.ng';
     }
     
     return query;

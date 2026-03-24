@@ -273,6 +273,7 @@ export async function POST(
       await emailService.sendPaymentConfirmationEmail(vendorUser.email, {
         vendorName: vendorUser.fullName,
         auctionId: payment.auctionId,
+        paymentId: payment.id,
         assetName: `${caseDetails.assetType.toUpperCase()} - ${caseDetails.claimReference}`,
         paymentAmount: parseFloat(payment.amount),
         paymentMethod: payment.paymentMethod === 'paystack' ? 'Paystack' : 

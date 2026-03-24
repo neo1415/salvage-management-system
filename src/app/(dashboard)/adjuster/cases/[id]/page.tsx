@@ -433,7 +433,7 @@ export default function CaseDetailsPage() {
                 {formatNaira(caseData.marketValue)}
               </span>
             </div>
-            {Object.entries(caseData.assetDetails).map(([key, value]) => {
+            {caseData.assetDetails && typeof caseData.assetDetails === 'object' && Object.entries(caseData.assetDetails).map(([key, value]) => {
               // Format the value based on type
               let displayValue = String(value);
               if (typeof value === 'number' && value >= 1000) {

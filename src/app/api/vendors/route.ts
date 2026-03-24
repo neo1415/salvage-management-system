@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or, sql } from 'drizzle-orm';
 
 /**
  * Vendors API - Get vendors list
@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const statusFilter = searchParams.get('status');
     const tierFilter = searchParams.get('tier');
+    const search = searchParams.get('search') || '';
     const page = parseInt(searchParams.get('page') || '1', 10);
     const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
 
@@ -57,6 +58,19 @@ export async function GET(request: NextRequest) {
     }
     if (tierFilter) {
       conditions.push(eq(vendors.tier, tierFilter as 'tier1_bvn' | 'tier2_full'));
+    }
+    
+    // Search filter (company name, email, phone number)
+    // Requirements: 7.1, 7.4
+    if (search) {
+      const searchLower = search.toLowerCase();
+      conditions.push(
+        or(
+          sql`LOWER(${vendors.businessName}) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(${users.email}) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(${users.phone}) LIKE ${`%${searchLower}%`}`
+        )
+      );
     }
 
     // Calculate offset

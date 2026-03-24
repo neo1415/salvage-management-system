@@ -12,7 +12,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { useCases, type StatusFilter } from '@/hooks/queries/use-cases';
 import { useDeleteCase } from '@/hooks/queries/use-case-mutation';
-import { Trash2, Loader2, Filter as FilterIcon, X } from 'lucide-react';
+import { Trash2, Loader2, Filter as FilterIcon, X, Download, FileText, FileSpreadsheet } from 'lucide-react';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { FilterChip } from '@/components/ui/filters/filter-chip';
 import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
@@ -39,6 +39,8 @@ function AdjusterCasesContentInner() {
   );
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [showFilters, setShowFilters] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Update URL when filters change
   useEffect(() => {
@@ -51,6 +53,19 @@ function AdjusterCasesContentInner() {
     const newUrl = params.toString() ? `?${params.toString()}` : '';
     window.history.replaceState(null, '', `/adjuster/cases${newUrl}`);
   }, [statusFilter, assetTypeFilter, severityFilter, searchQuery]);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (showExportMenu && !target.closest('.export-dropdown')) {
+        setShowExportMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportMenu]);
 
   // Fetch cases with TanStack Query (cached, instant tab switching)
   const { data: cases = [], isLoading, error: queryError, refetch } = useCases({
@@ -93,14 +108,26 @@ function AdjusterCasesContentInner() {
       }
     }
     
-    // Search filter
+    // Search filter - search in claimReference, assetType, assetDetails, and locationName
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const matchesReference = caseItem.claimReference.toLowerCase().includes(query);
       const matchesLocation = caseItem.locationName.toLowerCase().includes(query);
       const matchesAssetType = caseItem.assetType.toLowerCase().includes(query);
       
-      if (!matchesReference && !matchesLocation && !matchesAssetType) {
+      // Search in assetDetails JSON fields
+      let matchesAssetDetails = false;
+      if (caseItem.assetDetails) {
+        const details = caseItem.assetDetails as Record<string, any>;
+        // Search in common fields across all asset types
+        const searchableFields = ['make', 'model', 'year', 'brand', 'description', 'propertyType'];
+        matchesAssetDetails = searchableFields.some(field => {
+          const value = details[field];
+          return value && String(value).toLowerCase().includes(query);
+        });
+      }
+      
+      if (!matchesReference && !matchesLocation && !matchesAssetType && !matchesAssetDetails) {
         return false;
       }
     }
@@ -136,6 +163,50 @@ function AdjusterCasesContentInner() {
   // Check if any filters are active
   const hasActiveFilters = statusFilter !== 'all' || assetTypeFilter.length > 0 || severityFilter.length > 0 || searchQuery !== '';
   const activeFilterCount = (statusFilter !== 'all' ? 1 : 0) + assetTypeFilter.length + severityFilter.length + (searchQuery ? 1 : 0);
+
+  // Export handler
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    try {
+      setIsExporting(true);
+      setShowExportMenu(false);
+
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.set('format', format);
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      if (searchQuery) params.set('search', searchQuery);
+      params.set('createdByMe', 'true'); // Only export cases created by current user
+
+      // Trigger download
+      const response = await fetch(`/api/cases/export?${params.toString()}`);
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Export failed');
+      }
+
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition');
+      const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
+      const filename = filenameMatch ? filenameMatch[1] : `cases-export.${format}`;
+
+      // Download file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert(error instanceof Error ? error.message : 'Failed to export cases');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Format status filter for display
   const formatStatusFilter = (status: StatusFilter): string => {
@@ -349,6 +420,51 @@ function AdjusterCasesContentInner() {
               </span>
             )}
           </RippleButton>
+
+          {/* Export Dropdown Button */}
+          <div className="relative export-dropdown">
+            <RippleButton
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              variant="secondary"
+              size="sm"
+              className="flex items-center gap-2"
+              aria-label="Export cases"
+              aria-expanded={showExportMenu}
+              disabled={isExporting || filteredCases.length === 0}
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+                  <span className="text-sm font-medium">Exporting...</span>
+                </>
+              ) : (
+                <>
+                  <Download size={18} aria-hidden="true" />
+                  <span className="text-sm font-medium">Export</span>
+                </>
+              )}
+            </RippleButton>
+
+            {/* Export Dropdown Menu */}
+            {showExportMenu && !isExporting && (
+              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-[160px]">
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <FileSpreadsheet size={16} aria-hidden="true" />
+                  <span>Export to CSV</span>
+                </button>
+                <button
+                  onClick={() => handleExport('pdf')}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100"
+                >
+                  <FileText size={16} aria-hidden="true" />
+                  <span>Export to PDF</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Active Filter Chips */}
           {statusFilter !== 'all' && (

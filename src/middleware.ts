@@ -92,19 +92,31 @@ export async function middleware(request: NextRequest) {
   );
   
   // Content Security Policy - allow necessary external services
-  response.headers.set(
-    'Content-Security-Policy',
-    [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: https: blob:",
-      "font-src 'self' data:",
-      "connect-src 'self' https://www.googleapis.com https://nominatim.openstreetmap.org https://api.paystack.co https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com",
-      "frame-src 'self' https://js.paystack.co https://checkout.flutterwave.com https://www.google.com https://maps.google.com https://www.google.com/maps/embed/",
-      "worker-src 'self' blob:",
-    ].join('; ')
-  );
+  // Note: Relaxed CSP for Paystack compatibility in development
+  const cspDirectives = process.env.NODE_ENV === 'production' 
+    ? [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js.paystack.co https://checkout.paystack.com https://*.paystack.com",
+        "style-src 'self' 'unsafe-inline' https://checkout.paystack.com https://*.paystack.com",
+        "img-src 'self' data: https: blob:",
+        "font-src 'self' data: https://checkout.paystack.com https://*.paystack.com",
+        "connect-src 'self' https://www.googleapis.com https://nominatim.openstreetmap.org https://api.paystack.co https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com https://checkout.paystack.com https://*.paystack.com",
+        "frame-src 'self' https://js.paystack.co https://checkout.flutterwave.com https://www.google.com https://maps.google.com https://www.google.com/maps/embed/ https://checkout.paystack.com https://*.paystack.com",
+        "worker-src 'self' blob:",
+      ]
+    : [
+        // Development: More permissive CSP
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline' https: http:",
+        "style-src 'self' 'unsafe-inline' https: http:",
+        "img-src 'self' data: https: http: blob:",
+        "font-src 'self' data: https: http:",
+        "connect-src 'self' https: http: ws: wss:",
+        "frame-src 'self' https: http:",
+        "worker-src 'self' blob:",
+      ];
+  
+  response.headers.set('Content-Security-Policy', cspDirectives.join('; '));
 
   return response;
 }

@@ -109,6 +109,12 @@ export async function POST(
       case 'electronics':
         assetName = `${assetDetails.brand || ''} ${assetDetails.serialNumber || 'Electronics'}`.trim();
         break;
+      case 'machinery':
+        assetName = `${assetDetails.brand || ''} ${assetDetails.model || ''} ${assetDetails.machineryType || ''}`.trim();
+        if (!assetName) {
+          assetName = assetDetails.machineryType || 'Machinery';
+        }
+        break;
       default:
         assetName = 'Salvage Item';
     }

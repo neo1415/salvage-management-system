@@ -1103,6 +1103,7 @@ export async function triggerFundReleaseOnDocumentCompletion(
         await emailService.sendPaymentConfirmationEmail(user.email, {
           vendorName: user.fullName,
           auctionId,
+          paymentId: payment.id,
           assetName: assetDetails,
           paymentAmount: parseFloat(payment.amount),
           paymentMethod: 'Escrow Wallet',

@@ -10,6 +10,7 @@ import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq, or } from 'drizzle-orm';
 import { kv } from '@vercel/kv';
 import { redis } from '@/lib/redis/client';
+import { isPersonalEmail, getPersonalEmailErrorMessage } from '@/lib/utils/email-validation';
 
 // Device type detection helper
 function getDeviceType(userAgent: string | null): 'mobile' | 'desktop' | 'tablet' {
@@ -276,6 +277,14 @@ export const authConfig: NextAuthConfig = {
         }
 
         // Check if user exists
+        // Validate business email for OAuth sign-ins
+        // Reject personal email providers (Gmail, Yahoo, Hotmail, etc.)
+        if (isPersonalEmail(email)) {
+          console.log(`❌ OAuth sign-in rejected: Personal email not allowed - ${email}`);
+          // Redirect to error page with specific message
+          return `/auth/error?error=BusinessEmailRequired&email=${encodeURIComponent(email)}`;
+        }
+
         const [existingUser] = await db
           .select()
           .from(users)

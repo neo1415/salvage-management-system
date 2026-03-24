@@ -123,11 +123,15 @@ export default function VendorDocumentsPage() {
           continue;
         }
 
-        // Check if all documents signed
+        // Check if all required documents signed (only bill_of_sale and liability_waiver)
+        // Pickup authorization is generated AFTER payment is complete
         const docs = auction.documents || [];
-        const allSigned = docs.length === 3 && docs.every(d => d.status === 'signed');
+        const requiredDocs = docs.filter(d => 
+          d.documentType === 'bill_of_sale' || d.documentType === 'liability_waiver'
+        );
+        const allSigned = requiredDocs.length === 2 && requiredDocs.every(d => d.status === 'signed');
         if (!allSigned) {
-          console.log(`⏸️  Not all documents signed for auction ${auction.auctionId}. Skipping.`);
+          console.log(`⏸️  Not all required documents signed for auction ${auction.auctionId}. Skipping.`);
           continue;
         }
 
@@ -332,8 +336,11 @@ function AuctionDocumentCard({ auction, onViewAuction, onDownload }: AuctionDocu
 
       {/* Documents List */}
       <div className="p-6">
+        {/* Filter out pending pickup_authorization - it's generated AFTER payment, never shown as pending */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {auction.documents.map((doc) => (
+          {auction.documents
+            .filter(doc => !(doc.documentType === 'pickup_authorization' && doc.status === 'pending'))
+            .map((doc) => (
             <div
               key={doc.id}
               className={`border-2 rounded-lg p-4 ${

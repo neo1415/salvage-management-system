@@ -11,9 +11,12 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     // Increase test timeout to handle slow database operations
     testTimeout: 30000,
-    // Run tests with limited concurrency to avoid database connection pool exhaustion
-    pool: 'forks',
-    maxConcurrency: 3,
+    // Use threads instead of forks to share database connection pool
+    pool: 'threads',
+    // Limit concurrent threads to prevent connection pool exhaustion (Vitest 4 syntax)
+    maxWorkers: 4,
+    minWorkers: 1,
+    maxConcurrency: 2,
     // Isolate test environment for each test file
     isolate: true,
     coverage: {

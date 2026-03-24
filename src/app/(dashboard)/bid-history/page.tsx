@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth/use-auth';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -20,7 +20,9 @@ import {
   XCircle,
   Gavel,
   Timer,
-  StopCircle
+  StopCircle,
+  Download,
+  ChevronDown
 } from 'lucide-react';
 import { formatNaira } from '@/lib/utils/currency-formatter';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
@@ -100,6 +102,9 @@ export default function BidHistoryPage() {
   const [endingAuction, setEndingAuction] = useState<string | null>(null);
   const [showEndAuctionModal, setShowEndAuctionModal] = useState(false);
   const [selectedAuctionId, setSelectedAuctionId] = useState<string | null>(null);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
 
   // Auth check
   useEffect(() => {
@@ -116,6 +121,23 @@ export default function BidHistoryPage() {
       return;
     }
   }, [isAuthenticated, isLoading, user, router]);
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target as Node)) {
+        setShowExportDropdown(false);
+      }
+    };
+
+    if (showExportDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showExportDropdown]);
 
   // Fetch data
   useEffect(() => {
@@ -185,6 +207,44 @@ export default function BidHistoryPage() {
       toast.error('Failed to End Auction', 'Please try again or contact support.');
     } finally {
       setEndingAuction(null);
+    }
+  };
+
+  // Export functionality
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    try {
+      setExporting(true);
+      setShowExportDropdown(false);
+
+      // Fetch all data (not just current page) with current filter
+      const response = await fetch(`/api/bid-history/export?tab=${activeTab}&format=${format}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to export bid history');
+      }
+
+      // Get filename from response headers or generate default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
+      const filename = filenameMatch?.[1] || `bid-history-${new Date().toISOString().split('T')[0]}.${format}`;
+
+      // Download file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success('Export Successful', `Bid history exported as ${format.toUpperCase()}`);
+    } catch (error) {
+      console.error('Error exporting bid history:', error);
+      toast.error('Export Failed', 'Please try again or contact support.');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -303,13 +363,57 @@ export default function BidHistoryPage() {
 
       <div className="max-w-7xl mx-auto">
         {/* Page Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
-            Bid History Management
-          </h1>
-          <p className="text-gray-600">
-            Monitor auction performance and bidding activity
-          </p>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+              Bid History Management
+            </h1>
+            <p className="text-gray-600">
+              Monitor auction performance and bidding activity
+            </p>
+          </div>
+
+          {/* Export Dropdown */}
+          <div className="relative" ref={exportDropdownRef}>
+            <button
+              onClick={() => setShowExportDropdown(!showExportDropdown)}
+              disabled={exporting || data.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#800020] text-white font-medium rounded-lg hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {exporting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Exporting...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>Export</span>
+                  <ChevronDown className="w-4 h-4" />
+                </>
+              )}
+            </button>
+
+            {/* Dropdown Menu */}
+            {showExportDropdown && !exporting && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors rounded-t-lg flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Export as CSV</span>
+                </button>
+                <button
+                  onClick={() => handleExport('pdf')}
+                  className="w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors rounded-b-lg flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Export as PDF</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}
@@ -381,14 +485,27 @@ export default function BidHistoryPage() {
               <div key={item.auction.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300 group">
                 {/* Item Image */}
                 <div className="relative h-48 bg-gray-100">
-                  {item.case.photos && item.case.photos.length > 0 ? (
-                    <Image
-                      src={item.case.photos[0]}
-                      alt={getAssetTitle(item)}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-300"
-                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                    />
+                  {item.case.photos && item.case.photos.length > 0 && item.case.photos[0] ? (
+                    (() => {
+                      const photoSrc = item.case.photos[0];
+                      // Validate URL: must start with http/https or be a data URI
+                      const isValidUrl = /^(https?:\/\/|data:image\/)/.test(photoSrc);
+                      
+                      return isValidUrl ? (
+                        <Image
+                          src={photoSrc}
+                          alt={getAssetTitle(item)}
+                          fill
+                          className="object-cover group-hover:scale-105 transition-transform duration-300"
+                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                          {getAssetIcon(item.case.assetType)}
+                          <span className="ml-2 text-gray-500">No Image</span>
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-gray-200">
                       {getAssetIcon(item.case.assetType)}

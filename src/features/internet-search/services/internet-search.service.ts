@@ -79,7 +79,9 @@ export class InternetSearchService {
    */
   async searchMarketPrice(options: SearchMarketPriceOptions): Promise<MarketPriceResult> {
     const timer = createSearchTimer();
-    const { item, maxResults = 10, timeout = 3000 } = options;
+    // Increase maxResults for machinery to get more Nigerian marketplace results
+    const defaultMaxResults = options.item.type === 'machinery' ? 15 : 10;
+    const { item, maxResults = defaultMaxResults, timeout = 3000 } = options;
     
     try {
       // Check cache first
@@ -113,6 +115,10 @@ export class InternetSearchService {
       // Build search query
       const query = queryBuilder.buildMarketQuery(item);
       
+      // Log the actual query being sent to Serper
+      console.log(`🔍 Serper Search Query: "${query}"`);
+      console.log(`📊 Search Parameters: maxResults=${maxResults}, timeout=${timeout}ms, itemType=${item.type}`);
+      
       // Execute search with timeout
       const searchPromise = serperApi.search(query, { num: maxResults });
       const timeoutPromise = new Promise((_, reject) => 
@@ -125,12 +131,25 @@ export class InternetSearchService {
         throw new Error('No search results returned');
       }
       
+      // Log search results summary
+      console.log(`📄 Search Results: ${searchResults.organic.length} results found`);
+      console.log(`🌐 Result Sources: ${searchResults.organic.map(r => new URL(r.link).hostname).join(', ')}`);
+      
       // Extract prices from results with year filtering
       const priceData = priceExtractor.extractPrices(
         searchResults.organic, 
         item.type,
         item.type === 'vehicle' ? item.year : undefined
       );
+      
+      // Log extracted prices with sources
+      console.log(`💰 Prices Extracted: ${priceData.prices.length} prices found`);
+      priceData.prices.forEach((price, index) => {
+        console.log(
+          `  ${index + 1}. ₦${price.price.toLocaleString()} from ${price.source} ` +
+          `(confidence: ${price.confidence}%) - "${price.originalText}"`
+        );
+      });
       
       const executionTime = timer.end();
       

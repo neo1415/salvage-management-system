@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
@@ -46,6 +46,21 @@ import { Filter as FilterIcon, X } from 'lucide-react';
 interface VendorApplication extends Vendor {}
 
 export default function Tier2ReviewQueuePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading vendors...</p>
+        </div>
+      </div>
+    }>
+      <Tier2ReviewQueueContent />
+    </Suspense>
+  );
+}
+
+function Tier2ReviewQueueContent() {
   const router = useRouter();
   const { status: sessionStatus } = useSession();
   const searchParams = useSearchParams();
@@ -349,7 +364,11 @@ export default function Tier2ReviewQueuePage() {
               <CheckCircle2 className="w-8 h-8 text-gray-400" />
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">
-              {hasActiveFilters ? 'No applications match your filters' : 'No Pending Applications'}
+              {searchQuery 
+                ? `No results found for "${searchQuery}"` 
+                : hasActiveFilters 
+                  ? 'No applications match your filters' 
+                  : 'No Pending Applications'}
             </h2>
             <p className="text-gray-600">
               {hasActiveFilters 

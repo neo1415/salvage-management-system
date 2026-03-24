@@ -62,25 +62,14 @@ export async function GET(request: NextRequest) {
       );
     } else if (tab === 'my_bids' && vendorId) {
       // Show auctions where vendor has placed bids (any status)
-      const vendorBids = await db
-        .selectDistinct({ auctionId: bids.auctionId })
-        .from(bids)
-        .where(eq(bids.vendorId, vendorId));
-      
-      const auctionIds = vendorBids.map(b => b.auctionId);
-      
-      if (auctionIds.length === 0) {
-        // No bids placed yet
-        return NextResponse.json({
-          success: true,
-          auctions: [],
-          hasMore: false,
-          page,
-          limit,
-        });
-      }
-      
-      conditions.push(inArray(auctions.id, auctionIds));
+      // Use EXISTS subquery to avoid separate query and connection
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ${bids} 
+          WHERE ${bids.auctionId} = ${auctions.id} 
+          AND ${bids.vendorId} = ${vendorId}
+        )`
+      );
     } else if (tab === 'won' && vendorId) {
       // Show auctions won by vendor (closed with vendor as winner)
       // Shows immediately after winning, regardless of payment status
@@ -92,36 +81,28 @@ export async function GET(request: NextRequest) {
       );
     } else if (tab === 'completed') {
       // Show only closed auctions where payment has been verified by Finance
-      // This ensures auctions only appear as "completed" after Finance approval
-      const verifiedAuctions = await db
-        .select({ auctionId: payments.auctionId })
-        .from(payments)
-        .where(eq(payments.status, 'verified'));
-      
-      const verifiedAuctionIds = verifiedAuctions.map(p => p.auctionId);
-      
-      if (verifiedAuctionIds.length === 0) {
-        // No verified payments yet
-        return NextResponse.json({
-          success: true,
-          auctions: [],
-          hasMore: false,
-          page,
-          limit,
-        });
-      }
-      
+      // Use EXISTS subquery to avoid separate query and connection
       conditions.push(
         and(
           eq(auctions.status, 'closed'),
-          inArray(auctions.id, verifiedAuctionIds)
+          sql`EXISTS (
+            SELECT 1 FROM ${payments} 
+            WHERE ${payments.auctionId} = ${auctions.id} 
+            AND ${payments.status} = 'verified'
+          )`
         )
       );
     }
 
-    // Asset type filter
+    // Asset type filter - supports multiple values (comma-separated)
+    // Requirement 8.1: Multi-Category Filter OR Logic
     if (assetType) {
-      conditions.push(eq(salvageCases.assetType, assetType as 'vehicle' | 'property' | 'electronics'));
+      const assetTypes = assetType.split(',').map(t => t.trim()).filter(Boolean);
+      if (assetTypes.length === 1) {
+        conditions.push(eq(salvageCases.assetType, assetTypes[0] as 'vehicle' | 'property' | 'electronics'));
+      } else if (assetTypes.length > 1) {
+        conditions.push(inArray(salvageCases.assetType, assetTypes as ('vehicle' | 'property' | 'electronics')[]));
+      }
     }
 
     // Price range filter (using reserve price or current bid)
@@ -155,12 +136,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Search filter (asset name or claim reference)
+    // Search in claimReference and assetDetails JSON fields (make, model, description)
     if (search) {
+      const searchLower = search.toLowerCase();
       conditions.push(
         or(
           like(salvageCases.claimReference, `%${search}%`),
-          // Search in asset details would require JSON operations
-          // For now, just search claim reference
+          // Search in JSON assetDetails fields using PostgreSQL JSON operators
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'make' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'model' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'description' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'brand' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'propertyType' AS TEXT)) LIKE ${`%${searchLower}%`}`
         )
       );
     }

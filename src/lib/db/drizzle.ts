@@ -17,8 +17,9 @@ const connectionString = process.env.DATABASE_URL;
 // Configure connection pool based on environment
 const isTest = process.env.NODE_ENV === 'test';
 const client = postgres(connectionString, {
-  // Limit max connections in test environment to prevent pool exhaustion
-  max: isTest ? 5 : 10,
+  // Increase max connections in test environment to handle concurrent tests
+  // Each test file fork gets its own pool, so we need more connections
+  max: isTest ? 10 : 10,
   // Idle timeout - close idle connections after 30 seconds
   idle_timeout: 30,
   // Max lifetime - close connections after 30 minutes

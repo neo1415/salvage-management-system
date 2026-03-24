@@ -44,6 +44,20 @@ export default function NotificationDropdown({
     fetchNotifications();
   }, []);
 
+  // Adjust dropdown position to prevent overflow on mobile
+  useEffect(() => {
+    if (dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      
+      // If dropdown goes off-screen on the right, adjust position
+      if (rect.right > viewportWidth) {
+        dropdownRef.current.style.right = '0';
+        dropdownRef.current.style.left = 'auto';
+      }
+    }
+  }, []);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -177,24 +191,36 @@ export default function NotificationDropdown({
   return (
     <div
       ref={dropdownRef}
-      className="fixed top-16 right-4 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999]"
+      className="absolute top-full right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:mt-0 max-sm:rounded-b-none max-sm:w-full"
       style={{ maxHeight: 'calc(100vh - 5rem)' }}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
         <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
-        {notifications.some((n) => !n.read) && (
+        <div className="flex items-center gap-2">
+          {notifications.some((n) => !n.read) && (
+            <button
+              onClick={handleMarkAllRead}
+              className="text-xs text-[#800020] hover:underline"
+            >
+              Mark all read
+            </button>
+          )}
+          {/* Close button for mobile */}
           <button
-            onClick={handleMarkAllRead}
-            className="text-xs text-[#800020] hover:underline"
+            onClick={onClose}
+            className="sm:hidden text-gray-400 hover:text-gray-600"
+            aria-label="Close notifications"
           >
-            Mark all read
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
-        )}
+        </div>
       </div>
 
       {/* Notification List */}
-      <div className="max-h-96 overflow-y-auto">
+      <div className="max-h-96 max-sm:max-h-[60vh] overflow-y-auto">
         {isLoading ? (
           <div className="px-4 py-8 text-center text-sm text-gray-500">
             Loading notifications...

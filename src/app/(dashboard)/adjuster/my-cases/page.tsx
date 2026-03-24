@@ -19,6 +19,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
+import { AuctionStatusService } from '@/features/auctions/services/status.service';
 
 interface Case {
   id: string;
@@ -31,6 +32,10 @@ interface Case {
   approvedAt: string | null;
   approvedBy: string | null;
   approverName: string | null;
+  // Auction data for real-time status checking
+  auctionId: string | null;
+  auctionStatus: string | null;
+  auctionEndTime: string | null;
 }
 
 type StatusFilter = 'all' | 'draft' | 'pending_approval' | 'approved' | 'cancelled' | 'active_auction' | 'sold';
@@ -43,6 +48,10 @@ export default function AdjusterMyCasesPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Export states
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -67,6 +76,23 @@ export default function AdjusterMyCasesPage() {
   useEffect(() => {
     filterCases();
   }, [cases, statusFilter, searchQuery]);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (showExportMenu && !target.closest('.export-menu-container')) {
+        setShowExportMenu(false);
+      }
+    };
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showExportMenu]);
 
   const fetchMyCases = async () => {
     try {
@@ -114,7 +140,22 @@ export default function AdjusterMyCasesPage() {
     setFilteredCases(filtered);
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (caseItem: Case) => {
+    // Use AuctionStatusService for real-time status if case has an auction
+    let displayStatus = caseItem.status;
+    
+    if (caseItem.auctionId && caseItem.auctionStatus && caseItem.auctionEndTime) {
+      const realTimeStatus = AuctionStatusService.getAuctionStatus({
+        status: caseItem.auctionStatus,
+        endTime: new Date(caseItem.auctionEndTime),
+      });
+      
+      // If auction is closed but case status is still active_auction, show closed
+      if (realTimeStatus === 'closed' && caseItem.status === 'active_auction') {
+        displayStatus = 'closed_auction';
+      }
+    }
+    
     const statusConfig: Record<string, { label: string; className: string; icon: any }> = {
       draft: {
         label: 'Draft',
@@ -141,6 +182,11 @@ export default function AdjusterMyCasesPage() {
         className: 'bg-blue-100 text-blue-800',
         icon: Gavel
       },
+      closed_auction: {
+        label: 'Auction Closed',
+        className: 'bg-gray-100 text-gray-800',
+        icon: Gavel
+      },
       sold: {
         label: 'Sold',
         className: 'bg-purple-100 text-purple-800',
@@ -148,7 +194,7 @@ export default function AdjusterMyCasesPage() {
       }
     };
 
-    const config = statusConfig[status] || statusConfig.draft;
+    const config = statusConfig[displayStatus] || statusConfig.draft;
     const Icon = config.icon;
 
     return (
@@ -171,6 +217,171 @@ export default function AdjusterMyCasesPage() {
     };
   };
 
+  const handleExportCSV = () => {
+    try {
+      setExporting(true);
+      
+      // Use filtered cases for export (respects status filters and search)
+      const exportData = filteredCases.map(caseItem => ({
+        claimReference: caseItem.claimReference,
+        assetType: caseItem.assetType,
+        status: caseItem.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        createdDate: new Date(caseItem.createdAt).toLocaleDateString('en-NG', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        }),
+        marketValue: `₦${parseFloat(caseItem.estimatedValue).toLocaleString()}`,
+        reservePrice: `₦${(parseFloat(caseItem.estimatedValue) * 0.7).toLocaleString()}`, // Assuming 70% reserve
+        location: caseItem.locationName,
+        damageSeverity: 'N/A' // Not available in current data model
+      }));
+
+      // Generate CSV content
+      const headers = ['Claim Reference', 'Asset Type', 'Status', 'Created Date', 'Market Value', 'Reserve Price', 'Location', 'Damage Severity'];
+      const csvRows = [headers.join(',')];
+      
+      exportData.forEach(row => {
+        const values = [
+          escapeCSVField(row.claimReference),
+          escapeCSVField(row.assetType),
+          escapeCSVField(row.status),
+          escapeCSVField(row.createdDate),
+          escapeCSVField(row.marketValue),
+          escapeCSVField(row.reservePrice),
+          escapeCSVField(row.location),
+          escapeCSVField(row.damageSeverity)
+        ];
+        csvRows.push(values.join(','));
+      });
+
+      const csvContent = csvRows.join('\n');
+      
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      const date = new Date().toISOString().split('T')[0];
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `my-cases-${date}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      alert(`Successfully exported ${filteredCases.length} case records to CSV`);
+    } catch (err) {
+      console.error('Error exporting CSV:', err);
+      alert('Failed to generate CSV export. Please try again.');
+    } finally {
+      setExporting(false);
+      setShowExportMenu(false);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      setExporting(true);
+      
+      // Use filtered cases for export (respects status filters and search)
+      const exportData = filteredCases.map(caseItem => ({
+        claimRef: caseItem.claimReference.substring(0, 15),
+        assetType: caseItem.assetType.substring(0, 12),
+        status: caseItem.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).substring(0, 12),
+        createdDate: new Date(caseItem.createdAt).toLocaleDateString('en-NG', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        }),
+        marketValue: `₦${parseFloat(caseItem.estimatedValue).toLocaleString()}`,
+        location: caseItem.locationName.substring(0, 15)
+      }));
+
+      // Dynamically import jsPDF and services
+      const { jsPDF } = await import('jspdf');
+      const { PDFTemplateService } = await import('@/features/documents/services/pdf-template.service');
+      
+      const doc = new jsPDF();
+      
+      // Add letterhead
+      await PDFTemplateService.addLetterhead(doc, 'MY CASES REPORT');
+      
+      // Add table data
+      let y = 65; // Start below letterhead
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const maxY = PDFTemplateService.getMaxContentY(doc);
+      
+      // Add headers
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Claim Ref', 15, y);
+      doc.text('Asset Type', 50, y);
+      doc.text('Status', 85, y);
+      doc.text('Created', 115, y);
+      doc.text('Value', 145, y);
+      doc.text('Location', 170, y);
+      
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      
+      // Add data rows
+      for (const item of exportData) {
+        if (y > maxY) {
+          // Add footer to current page
+          PDFTemplateService.addFooter(doc);
+          // Start new page
+          doc.addPage();
+          await PDFTemplateService.addLetterhead(doc, 'MY CASES REPORT');
+          y = 65;
+          
+          // Re-add headers on new page
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Claim Ref', 15, y);
+          doc.text('Asset Type', 50, y);
+          doc.text('Status', 85, y);
+          doc.text('Created', 115, y);
+          doc.text('Value', 145, y);
+          doc.text('Location', 170, y);
+          y += 5;
+          doc.setFont('helvetica', 'normal');
+        }
+        
+        doc.text(item.claimRef, 15, y);
+        doc.text(item.assetType, 50, y);
+        doc.text(item.status, 85, y);
+        doc.text(item.createdDate, 115, y);
+        doc.text(item.marketValue, 145, y);
+        doc.text(item.location, 170, y);
+        y += 5;
+      }
+      
+      // Add footer to last page
+      PDFTemplateService.addFooter(doc, `Total Records: ${filteredCases.length}`);
+      
+      // Download PDF
+      const date = new Date().toISOString().split('T')[0];
+      doc.save(`my-cases-${date}.pdf`);
+      
+      alert(`Successfully exported ${filteredCases.length} case records to PDF`);
+    } catch (err) {
+      console.error('Error exporting PDF:', err);
+      alert('Failed to generate PDF export. Please try again.');
+    } finally {
+      setExporting(false);
+      setShowExportMenu(false);
+    }
+  };
+
+  const escapeCSVField = (field: string): string => {
+    const str = String(field);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
   if (status === 'loading' || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -189,12 +400,68 @@ export default function AdjusterMyCasesPage() {
           <h1 className="text-3xl font-bold text-gray-900">My Cases</h1>
           <p className="text-gray-600 mt-2">View and manage all cases you've created</p>
         </div>
-        <Link
-          href="/adjuster/cases/new"
-          className="px-6 py-3 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors font-medium"
-        >
-          Create New Case
-        </Link>
+        <div className="flex items-center gap-3">
+          {/* Export Dropdown */}
+          <div className="relative export-menu-container">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowExportMenu(!showExportMenu);
+              }}
+              disabled={loading || filteredCases.length === 0}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Export
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleExportCSV();
+                  }}
+                  disabled={exporting}
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 disabled:opacity-50"
+                >
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-700">Export as CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleExportPDF();
+                  }}
+                  disabled={exporting}
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 border-t border-gray-100 disabled:opacity-50"
+                >
+                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-700">Export as PDF</span>
+                </button>
+              </div>
+            )}
+          </div>
+          
+          <Link
+            href="/adjuster/cases/new"
+            className="px-6 py-3 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors font-medium"
+          >
+            Create New Case
+          </Link>
+        </div>
       </div>
 
       {/* Search and Filter */}
@@ -249,13 +516,17 @@ export default function AdjusterMyCasesPage() {
           {filteredCases.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No cases found</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                {searchQuery ? `No results found for "${searchQuery}"` : 'No cases found'}
+              </h3>
               <p className="text-gray-600 mb-6">
-                {statusFilter === 'all' 
-                  ? "You haven't created any cases yet."
-                  : `No cases with status "${statusFilter.replace('_', ' ')}".`}
+                {searchQuery 
+                  ? 'Try adjusting your search query or filters.'
+                  : statusFilter === 'all' 
+                    ? "You haven't created any cases yet."
+                    : `No cases with status "${statusFilter.replace('_', ' ')}".`}
               </p>
-              {statusFilter === 'all' && (
+              {statusFilter === 'all' && !searchQuery && (
                 <Link
                   href="/adjuster/cases/new"
                   className="inline-flex items-center px-6 py-3 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors font-medium"
@@ -286,7 +557,7 @@ export default function AdjusterMyCasesPage() {
 interface CaseCardProps {
   caseItem: Case;
   onDelete?: () => void;
-  getStatusBadge: (status: string) => JSX.Element;
+  getStatusBadge: (caseItem: Case) => JSX.Element;
 }
 
 function CaseCard({ caseItem, onDelete, getStatusBadge }: CaseCardProps) {
@@ -328,7 +599,7 @@ function CaseCard({ caseItem, onDelete, getStatusBadge }: CaseCardProps) {
           <h3 className="text-lg font-semibold text-gray-900 flex-1">
             {caseItem.claimReference}
           </h3>
-          {getStatusBadge(caseItem.status)}
+          {getStatusBadge(caseItem)}
         </div>
 
         {/* Core Fields (Max 5) */}

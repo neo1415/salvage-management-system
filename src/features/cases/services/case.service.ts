@@ -16,7 +16,7 @@ import { mapQualityToUniversalCondition } from '@/features/valuations/services/c
 /**
  * Asset types (must match database assetTypeEnum)
  */
-export type AssetType = 'vehicle' | 'property' | 'electronics';
+export type AssetType = 'vehicle' | 'property' | 'electronics' | 'machinery';
 
 /**
  * Vehicle-specific details
@@ -184,9 +184,9 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
   }
 
   // Validate asset type
-  const validAssetTypes: AssetType[] = ['vehicle', 'property', 'electronics'];
+  const validAssetTypes: AssetType[] = ['vehicle', 'property', 'electronics', 'machinery'];
   if (!validAssetTypes.includes(input.assetType)) {
-    errors.push('Asset type must be one of: vehicle, property, electronics');
+    errors.push('Asset type must be one of: vehicle, property, electronics, machinery');
   }
 
   // Validate asset details based on type
@@ -219,11 +219,21 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
   // Validate market value
   if (!input.marketValue || input.marketValue <= 0) {
     errors.push('Market value must be positive');
+    console.error('❌ Market value validation failed:', {
+      marketValue: input.marketValue,
+      type: typeof input.marketValue,
+      isPositive: input.marketValue > 0
+    });
   }
 
   // Validate photos
   if (!input.photos || input.photos.length < 3) {
     errors.push('At least 3 photos are required');
+    console.error('❌ Photos validation failed:', {
+      hasPhotos: !!input.photos,
+      photoCount: input.photos?.length,
+      photosType: typeof input.photos
+    });
   } else if (input.photos.length > 10) {
     errors.push('Maximum 10 photos allowed');
   }
@@ -233,12 +243,19 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
   input.photos?.forEach((photo, index) => {
     if (photo.length > maxPhotoSize) {
       errors.push(`Photo ${index + 1} exceeds 5MB limit`);
+      console.error(`❌ Photo ${index + 1} size validation failed:`, {
+        size: photo.length,
+        maxSize: maxPhotoSize
+      });
     }
   });
 
   // Validate GPS location
   if (!input.gpsLocation) {
     errors.push('GPS location is required');
+    console.error('❌ GPS location validation failed:', {
+      hasGpsLocation: !!input.gpsLocation
+    });
   } else {
     if (
       typeof input.gpsLocation.latitude !== 'number' ||
@@ -246,6 +263,10 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
       input.gpsLocation.latitude > 90
     ) {
       errors.push('GPS latitude must be between -90 and 90');
+      console.error('❌ GPS latitude validation failed:', {
+        latitude: input.gpsLocation.latitude,
+        type: typeof input.gpsLocation.latitude
+      });
     }
     if (
       typeof input.gpsLocation.longitude !== 'number' ||
@@ -253,12 +274,20 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
       input.gpsLocation.longitude > 180
     ) {
       errors.push('GPS longitude must be between -180 and 180');
+      console.error('❌ GPS longitude validation failed:', {
+        longitude: input.gpsLocation.longitude,
+        type: typeof input.gpsLocation.longitude
+      });
     }
   }
 
   // Validate location name
   if (!input.locationName || input.locationName.trim() === '') {
     errors.push('Location name is required');
+    console.error('❌ Location name validation failed:', {
+      hasLocationName: !!input.locationName,
+      locationName: input.locationName
+    });
   }
 
   return errors;
@@ -286,6 +315,7 @@ export async function createCase(
     // Validate input
     const validationErrors = await validateCaseInput(input);
     if (validationErrors.length > 0) {
+      console.error('❌ Case validation failed with errors:', validationErrors);
       throw new ValidationError('Case validation failed', validationErrors);
     }
 

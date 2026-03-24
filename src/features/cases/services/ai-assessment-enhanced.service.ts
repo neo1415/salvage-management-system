@@ -87,7 +87,7 @@ function determineQualityTier(
 // Universal Item Information (replaces VehicleInfo)
 export interface UniversalItemInfo {
   // Universal fields
-  type: 'vehicle' | 'electronics' | 'appliance' | 'watch' | 'artwork' | 'equipment' | 'other';
+  type: 'vehicle' | 'electronics' | 'appliance' | 'watch' | 'artwork' | 'equipment' | 'machinery' | 'other';
   condition: 'Brand New' | 'Foreign Used (Tokunbo)' | 'Nigerian Used' | 'Heavily Used';
 
   // Vehicle-specific fields
@@ -289,6 +289,25 @@ export async function assessDamageEnhanced(params: {
   } else if (damages.length > 0 && marketValue > 0) {
     try {
       console.log('🔧 Calculating salvage value with damage deductions...');
+      console.log(`📊 Base market value: ₦${marketValue.toLocaleString()} (source: ${priceSource})`);
+      console.log(`🏷️ Item condition: ${itemInfo?.condition || 'Unknown'} (age: ${itemInfo?.age || 'Unknown'} years)`);
+      
+      // Apply condition-based adjustment to market value for damaged items
+      // This is important because:
+      // 1. Internet search may return prices for different conditions
+      // 2. Condition affects how well an item retains value after damage
+      // 3. Foreign Used items retain more value than Nigerian Used
+      let conditionAdjustedMarketValue = marketValue;
+      
+      if (itemInfo && priceSource !== 'internet_search') {
+        // Only apply condition adjustment if NOT from internet search (which already includes condition)
+        const conditionAdjustment = getConditionAdjustment(itemInfo.condition);
+        conditionAdjustedMarketValue = marketValue * conditionAdjustment;
+        console.log(`🔧 Applied condition adjustment: ${conditionAdjustment} for ${itemInfo.condition}`);
+        console.log(`📊 Condition-adjusted market value: ₦${conditionAdjustedMarketValue.toLocaleString()}`);
+      } else if (itemInfo) {
+        console.log(`ℹ️ Skipping condition adjustment - already included in ${priceSource} price`);
+      }
       
       // NEW: Search for part prices to enhance salvage calculations (Task 7.4)
       const partPrices = await searchUniversalPartPrices(itemInfo, damages);
@@ -301,8 +320,9 @@ export async function assessDamageEnhanced(params: {
       }
       
       // Call Enhanced DamageCalculationService with part prices (NEW)
+      // Use condition-adjusted market value as the base
       const salvageCalc = await damageCalculationService.calculateSalvageValueWithPartPrices(
-        marketValue,
+        conditionAdjustedMarketValue,
         damages,
         partPrices.map(p => ({
           component: p.component,
@@ -315,10 +335,10 @@ export async function assessDamageEnhanced(params: {
       
       salvageValue = Math.round(salvageCalc.salvageValue);
       
-      // CRITICAL: Ensure salvage value never exceeds market value
-      if (salvageValue > marketValue) {
-        console.warn(`⚠️ Salvage value (${salvageValue}) exceeds market value (${marketValue}), capping at market value`);
-        salvageValue = marketValue;
+      // CRITICAL: Ensure salvage value never exceeds condition-adjusted market value
+      if (salvageValue > conditionAdjustedMarketValue) {
+        console.warn(`⚠️ Salvage value (${salvageValue}) exceeds condition-adjusted market value (${conditionAdjustedMarketValue}), capping at condition-adjusted market value`);
+        salvageValue = conditionAdjustedMarketValue;
       }
       
       // CRITICAL FIX: Use Gemini's total loss flag to override damage calculation
@@ -329,11 +349,11 @@ export async function assessDamageEnhanced(params: {
         console.log(`🚨 GEMINI OVERRIDE: Gemini detected total loss but damage calculation did not. Forcing total loss.`);
       }
       
-      // TOTAL LOSS OVERRIDE: Cap salvage value at 30% of market value for total loss items
-      if (isActuallyTotalLoss && salvageValue > marketValue * 0.3) {
+      // TOTAL LOSS OVERRIDE: Cap salvage value at 30% of condition-adjusted market value for total loss items
+      if (isActuallyTotalLoss && salvageValue > conditionAdjustedMarketValue * 0.3) {
         const originalSalvage = salvageValue;
-        salvageValue = Math.round(marketValue * 0.3);
-        console.log(`🚨 Total loss override applied: Salvage value capped from ₦${originalSalvage.toLocaleString()} to ₦${salvageValue.toLocaleString()} (30% of market value)`);
+        salvageValue = Math.round(conditionAdjustedMarketValue * 0.3);
+        console.log(`🚨 Total loss override applied: Salvage value capped from ₦${originalSalvage.toLocaleString()} to ₦${salvageValue.toLocaleString()} (30% of condition-adjusted market value ₦${conditionAdjustedMarketValue.toLocaleString()})`);
         console.log(`   Source: ${geminiTotalLoss === true ? 'Gemini AI' : 'Damage Calculation'}`);
       }
       
@@ -1149,6 +1169,10 @@ function getUniversalAdjustment(itemInfo: UniversalItemInfo, skipConditionAdjust
       adjustment *= getEquipmentAdjustment(itemInfo);
       break;
 
+    case 'machinery':
+      adjustment *= getMachineryAdjustment(itemInfo);
+      break;
+
     case 'other':
     default:
       // For unknown items, only use condition adjustment
@@ -1273,6 +1297,36 @@ function getEquipmentAdjustment(itemInfo: UniversalItemInfo): number {
 
   return Math.max(0.20, adjustment); // Minimum 20% of value
 }
+
+// Machinery-specific adjustments (heavy equipment like excavators)
+function getMachineryAdjustment(itemInfo: UniversalItemInfo): number {
+  let adjustment = 1.0;
+
+  // Heavy machinery depreciation (slower than vehicles, faster than buildings)
+  // Heavy equipment like CAT excavators depreciate ~10% per year for first 5 years, then 5% per year
+  if (itemInfo.age) {
+    let ageDepreciation = 0;
+    if (itemInfo.age <= 5) {
+      ageDepreciation = itemInfo.age * 0.10; // 10% per year for first 5 years
+    } else {
+      ageDepreciation = 0.50 + ((itemInfo.age - 5) * 0.05); // 50% for first 5 years, then 5% per year
+    }
+    ageDepreciation = Math.min(ageDepreciation, 0.70); // Max 70% depreciation
+    adjustment *= (1.0 - ageDepreciation);
+  }
+
+  // Condition-based adjustment for machinery (more significant than vehicles)
+  // Foreign Used machinery is better maintained than Nigerian Used
+  // This is applied ON TOP of the base condition adjustment
+  if (itemInfo.condition === 'Nigerian Used') {
+    adjustment *= 0.85; // Additional -15% for local use (harsher conditions)
+  } else if (itemInfo.condition === 'Heavily Used') {
+    adjustment *= 0.70; // Additional -30% for heavy use
+  }
+
+  return Math.max(0.15, adjustment); // Minimum 15% of value (lower than vehicles due to salvage parts value)
+}
+
 
 // Brand prestige adjustment (universal)
 function getBrandPrestigeAdjustment(prestige: 'luxury' | 'premium' | 'standard' | 'budget'): number {

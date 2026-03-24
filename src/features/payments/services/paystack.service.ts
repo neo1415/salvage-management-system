@@ -17,10 +17,13 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export interface PaymentInitiation {
   paymentId: string;
-  paymentUrl: string;
+  paymentUrl: string; // Keep for backward compatibility
   reference: string;
   amount: number;
   deadline: Date;
+  // New fields for inline popup
+  publicKey: string;
+  email: string;
 }
 
 export interface PaystackWebhookPayload {
@@ -168,10 +171,13 @@ export async function initiatePayment(
 
     return {
       paymentId: payment.id,
-      paymentUrl: paystackData.data.authorization_url,
+      paymentUrl: paystackData.data.authorization_url, // Keep for backward compatibility
       reference,
-      amount: parseFloat(auction.currentBid.toString()),
+      amount: Math.round(parseFloat(auction.currentBid.toString()) * 100), // Amount in kobo for inline popup
       deadline: paymentDeadline,
+      // New fields for inline popup
+      publicKey: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || '',
+      email: user.email,
     };
   } catch (error) {
     console.error('Error initiating payment:', error);

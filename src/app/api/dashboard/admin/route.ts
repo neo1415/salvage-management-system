@@ -95,13 +95,37 @@ async function calculateAdminStats(): Promise<DashboardStats> {
   const activeVendors = activeVendorsResult[0]?.count || 0;
 
   // Pending fraud alerts count
-  // Note: Fraud alerts are stored in a separate table, but for now we'll check for suspended vendors
-  const pendingFraudAlertsResult = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(vendors)
-    .where(eq(vendors.status, 'suspended'));
-
-  const pendingFraudAlerts = pendingFraudAlertsResult[0]?.count || 0;
+  // Query actual fraud alert audit logs that haven't been dismissed
+  const { auditLogs } = await import('@/lib/db/schema/audit-logs');
+  const { AuditActionType } = await import('@/lib/utils/audit-logger');
+  
+  // Get fraud flag raised logs
+  const fraudFlagLogs = await db
+    .select({ entityId: auditLogs.entityId })
+    .from(auditLogs)
+    .where(eq(auditLogs.actionType, AuditActionType.FRAUD_FLAG_RAISED));
+  
+  const flaggedAuctionIds = fraudFlagLogs.map(log => log.entityId);
+  
+  // Get dismissed fraud flags - only query if there are flagged auctions
+  let dismissedAuctionIds = new Set<string>();
+  
+  if (flaggedAuctionIds.length > 0) {
+    const dismissedFlags = await db
+      .select({ entityId: auditLogs.entityId })
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.actionType, AuditActionType.FRAUD_FLAG_DISMISSED),
+          sql`${auditLogs.entityId} IN (${sql.join(flaggedAuctionIds.map(id => sql`${id}`), sql`, `)})`
+        )
+      );
+    
+    dismissedAuctionIds = new Set(dismissedFlags.map(log => log.entityId));
+  }
+  
+  // Count pending fraud alerts (flagged but not dismissed)
+  const pendingFraudAlerts = flaggedAuctionIds.filter(id => !dismissedAuctionIds.has(id)).length;
 
   // Today's audit logs count
   const today = new Date();

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { WalletPaymentConfirmation } from '@/components/payments/wallet-payment-confirmation';
+import Script from 'next/script';
 
 interface PaymentDetails {
   id: string;
@@ -16,6 +17,15 @@ interface PaymentDetails {
   paymentProofUrl: string | null;
   escrowStatus?: 'none' | 'frozen' | 'released';
   createdAt: string;
+  vendor?: {
+    id: string;
+    businessName: string;
+    tier: string;
+    status: string;
+    bankAccountNumber: string | null;
+    bankName: string | null;
+    bankAccountName: string | null;
+  };
   auction: {
     id: string;
     caseId: string;
@@ -134,9 +144,11 @@ export default function PaymentPage() {
     return () => clearInterval(interval);
   }, [payment]);
 
-  // Handle Paystack payment
+  // Handle Paystack payment with inline popup
   const handlePayWithPaystack = async () => {
     try {
+      setError(null);
+      
       const response = await fetch(`/api/payments/${paymentId}/initiate`, {
         method: 'POST',
       });
@@ -147,20 +159,51 @@ export default function PaymentPage() {
 
       const data = await response.json();
       
-      // Validate Paystack URL before redirect (security measure)
-      const allowedDomains = ['paystack.co', 'paystack.com'];
-      try {
-        const url = new URL(data.paymentUrl);
-        if (!allowedDomains.includes(url.hostname)) {
-          throw new Error('Invalid payment URL domain');
-        }
-      } catch (urlError) {
-        throw new Error('Invalid payment URL format');
+      // Check if PaystackPop is loaded
+      if (typeof (window as any).PaystackPop === 'undefined') {
+        throw new Error('Paystack SDK not loaded. Please refresh the page and try again.');
       }
       
-      // Redirect to Paystack payment page
-      window.location.href = data.paymentUrl;
+      // Use Paystack inline popup instead of redirect
+      const handler = (window as any).PaystackPop.setup({
+        key: data.publicKey,
+        email: data.email,
+        amount: data.amount, // Amount in kobo
+        ref: data.reference,
+        currency: 'NGN',
+        metadata: {
+          paymentId: payment.id,
+          auctionId: payment.auctionId,
+          custom_fields: [
+            {
+              display_name: 'Payment ID',
+              variable_name: 'payment_id',
+              value: payment.id,
+            },
+            {
+              display_name: 'Auction ID',
+              variable_name: 'auction_id',
+              value: payment.auctionId,
+            },
+          ],
+        },
+        callback: function(response: any) {
+          // Payment successful
+          console.log('Payment successful:', response);
+          // Redirect to verification page
+          window.location.href = `/vendor/payments/${paymentId}/verify?reference=${response.reference}`;
+        },
+        onClose: function() {
+          // User closed the popup
+          console.log('Payment popup closed');
+          setError('Payment cancelled. You can try again when ready.');
+        },
+      });
+      
+      // Open the payment popup
+      handler.openIframe();
     } catch (err) {
+      console.error('Paystack payment error:', err);
       setError(err instanceof Error ? err.message : 'Failed to initiate payment');
     }
   };
@@ -332,21 +375,54 @@ export default function PaymentPage() {
   const assetDetails = payment.auction.case.assetDetails as Record<string, string>;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <button
-            onClick={() => router.back()}
-            className="text-burgundy-900 hover:text-burgundy-700 flex items-center gap-2 mb-4"
-          >
-            ← Back
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900">Payment Details</h1>
-        </div>
+    <>
+      {/* Load Paystack Inline SDK */}
+      <Script 
+        src="https://js.paystack.co/v1/inline.js" 
+        strategy="lazyOnload"
+        onError={() => {
+          console.error('Failed to load Paystack SDK');
+          setError('Failed to load payment system. Please refresh the page.');
+        }}
+      />
+      
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .print-area, .print-area * {
+            visibility: visible;
+          }
+          .print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .bg-gray-50 {
+            background-color: white !important;
+          }
+        }
+      `}</style>
+      <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto print-area">
+          {/* Header */}
+          <div className="mb-6 no-print">
+            <button
+              onClick={() => router.back()}
+              className="text-burgundy-900 hover:text-burgundy-700 flex items-center gap-2 mb-4"
+            >
+              ← Back
+            </button>
+            <h1 className="text-3xl font-bold text-gray-900">Payment Details</h1>
+          </div>
 
         {/* Payment Status Banner */}
-        <div className={`rounded-lg p-4 mb-6 ${getStatusColor(payment.status)}`}>
+        <div className={`rounded-lg p-4 mb-6 no-print ${getStatusColor(payment.status)}`}>
           <div className="flex items-center justify-between">
             <div>
               <p className="font-semibold text-lg">{getStatusText(payment.status)}</p>
@@ -371,7 +447,7 @@ export default function PaymentPage() {
 
         {/* Wallet Payment Confirmed Banner */}
         {walletConfirmed && documentsUrl && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6" data-testid="wallet-confirmed-banner">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6 no-print" data-testid="wallet-confirmed-banner">
             <div className="flex items-start gap-4">
               <div className="flex-shrink-0 text-green-500 text-3xl">✓</div>
               <div className="flex-1">
@@ -398,7 +474,7 @@ export default function PaymentPage() {
 
         {/* Payment Deadline Countdown */}
         {payment.status === 'pending' && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6 no-print">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Payment Deadline</h2>
             <div className="text-center">
               <p className="text-gray-600 mb-2">Time Remaining</p>
@@ -486,17 +562,128 @@ export default function PaymentPage() {
         {/* Payment Amount */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Payment Amount</h2>
-          <div className="bg-burgundy-50 rounded-lg p-4">
+          <div className="bg-green-50 rounded-lg p-4">
             <p className="text-sm text-gray-600 mb-1">Winning Bid Amount</p>
-            <p className="text-3xl font-bold text-burgundy-900">
+            <p className="text-3xl font-bold text-green-700">
               ₦{parseFloat(payment.amount).toLocaleString()}
+            </p>
+          </div>
+        </div>
+
+        {/* Comprehensive Receipt Information */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Receipt Details</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-gray-600">Payment ID</p>
+              <p className="font-semibold text-gray-900 font-mono text-sm">{payment.id}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Payment Date</p>
+              <p className="font-semibold text-gray-900">
+                {new Date(payment.createdAt).toLocaleString('en-NG', {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Payment Method</p>
+              <p className="font-semibold text-gray-900 capitalize">
+                {payment.paymentMethod === 'escrow_wallet' ? 'Escrow Wallet' :
+                 payment.paymentMethod === 'paystack' ? 'Paystack' :
+                 payment.paymentMethod === 'flutterwave' ? 'Flutterwave' :
+                 payment.paymentMethod === 'bank_transfer' ? 'Bank Transfer' :
+                 payment.paymentMethod}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Payment Reference</p>
+              <p className="font-semibold text-gray-900 font-mono text-sm">
+                {payment.paymentReference || 'N/A'}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Auction ID</p>
+              <p className="font-semibold text-gray-900 font-mono text-sm">{payment.auctionId}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Payment Status</p>
+              <p className={`font-semibold inline-block px-3 py-1 rounded-full text-sm ${getStatusColor(payment.status)}`}>
+                {getStatusText(payment.status)}
+              </p>
+            </div>
+            {payment.paymentDeadline && (
+              <div>
+                <p className="text-sm text-gray-600">Payment Deadline</p>
+                <p className="font-semibold text-gray-900">
+                  {new Date(payment.paymentDeadline).toLocaleString('en-NG', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  })}
+                </p>
+              </div>
+            )}
+            {payment.escrowStatus && (
+              <div>
+                <p className="text-sm text-gray-600">Escrow Status</p>
+                <p className="font-semibold text-gray-900 capitalize">
+                  {payment.escrowStatus === 'none' ? 'Not Applicable' :
+                   payment.escrowStatus === 'frozen' ? 'Funds Frozen' :
+                   payment.escrowStatus === 'released' ? 'Funds Released' :
+                   payment.escrowStatus}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Vendor Information */}
+          {payment.vendor && (
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Vendor Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Business Name</p>
+                  <p className="font-semibold text-gray-900">{payment.vendor.businessName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Vendor Tier</p>
+                  <p className="font-semibold text-gray-900 capitalize">{payment.vendor.tier}</p>
+                </div>
+                {payment.vendor.bankAccountNumber && (
+                  <>
+                    <div>
+                      <p className="text-sm text-gray-600">Bank Name</p>
+                      <p className="font-semibold text-gray-900">{payment.vendor.bankName}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Account Name</p>
+                      <p className="font-semibold text-gray-900">{payment.vendor.bankAccountName}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Download Receipt Button */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <button
+              onClick={() => window.print()}
+              className="w-full bg-burgundy-900 text-white py-3 px-6 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors flex items-center justify-center gap-2"
+            >
+              <span>📄</span>
+              Print/Download Receipt
+            </button>
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              Use your browser's print function to save as PDF
             </p>
           </div>
         </div>
 
         {/* Payment Options */}
         {payment.status === 'pending' && !payment.paymentProofUrl && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6 no-print">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Payment Options</h2>
 
             {payment.paymentMethod === 'escrow_wallet' ? (
@@ -572,19 +759,7 @@ export default function PaymentPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Upload Payment Proof (Receipt/Screenshot)
                     </label>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/jpg,image/png,application/pdf"
-                      onChange={handleProofUpload}
-                      disabled={uploadingProof}
-                      className="block w-full text-sm text-gray-500
-                        file:mr-4 file:py-2 file:px-4
-                        file:rounded-lg file:border-0
-                        file:text-sm file:font-semibold
-                        file:bg-burgundy-50 file:text-burgundy-900
-                        hover:file:bg-burgundy-100
-                        disabled:opacity-50 disabled:cursor-not-allowed"
-                    />
+                    <input type="file" accept="image/jpeg,image/jpg,image/png,application/pdf" onChange={handleProofUpload} disabled={uploadingProof} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-burgundy-50 file:text-burgundy-900 hover:file:bg-burgundy-100 disabled:opacity-50 disabled:cursor-not-allowed" />
                     <p className="text-xs text-gray-500 mt-1">
                       JPG, PNG, or PDF • Max 5MB • Verification within 4 hours
                     </p>
@@ -600,7 +775,7 @@ export default function PaymentPage() {
 
         {/* Payment Proof Uploaded */}
         {payment.status === 'pending' && payment.paymentProofUrl && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6 no-print">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Payment Proof</h2>
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
               <p className="text-green-800 font-semibold">✓ Payment proof uploaded</p>
@@ -621,11 +796,12 @@ export default function PaymentPage() {
 
         {/* Error Message */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 no-print">
             <p className="text-red-800">{error}</p>
           </div>
         )}
       </div>
     </div>
+    </>
   );
 }

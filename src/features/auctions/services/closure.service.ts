@@ -325,8 +325,11 @@ export class AuctionClosureService {
         },
       });
 
-      // Generate required documents automatically (async, don't block closure)
-      this.generateWinnerDocuments(auctionId, vendor.id).catch(async (error) => {
+      // Generate required documents automatically (WAIT for completion to avoid race condition)
+      try {
+        await this.generateWinnerDocuments(auctionId, vendor.id);
+        console.log(`✅ Documents generated successfully for auction ${auctionId}`);
+      } catch (error) {
         console.error(`❌ CRITICAL: Failed to generate documents for auction ${auctionId}:`, error);
         console.error(`   - Vendor ID: ${vendor.id}`);
         console.error(`   - Error details:`, error instanceof Error ? error.message : 'Unknown error');
@@ -350,7 +353,8 @@ export class AuctionClosureService {
         } catch (logError) {
           console.error('Failed to log document generation failure:', logError);
         }
-      });
+        // Don't throw - continue with notifications even if documents fail
+      }
 
       // Send notifications to winner (async, don't wait)
       this.notifyWinner(user, vendor, auction, salvageCase, payment, paymentDeadline).catch(
@@ -454,31 +458,41 @@ export class AuctionClosureService {
         liabilityWaiver: hasLiabilityWaiver,
       };
 
-      // Generate Bill of Sale (only if it doesn't exist)
+      // Generate Bill of Sale and Liability Waiver in parallel (faster)
+      const documentPromises = [];
+      
       if (!hasBillOfSale) {
-        try {
-          await generateDocument(auctionId, vendorId, 'bill_of_sale', 'system');
-          results.billOfSale = true;
-          console.log(`✅ Bill of Sale generated for auction ${auctionId}`);
-        } catch (error) {
-          console.error(`❌ Failed to generate Bill of Sale for auction ${auctionId}:`, error);
-        }
+        documentPromises.push(
+          generateDocument(auctionId, vendorId, 'bill_of_sale', 'system')
+            .then(() => {
+              results.billOfSale = true;
+              console.log(`✅ Bill of Sale generated for auction ${auctionId}`);
+            })
+            .catch((error) => {
+              console.error(`❌ Failed to generate Bill of Sale for auction ${auctionId}:`, error);
+            })
+        );
       } else {
         console.log(`⏭️  Bill of Sale already exists for auction ${auctionId}. Skipping.`);
       }
 
-      // Generate Liability Waiver (only if it doesn't exist)
       if (!hasLiabilityWaiver) {
-        try {
-          await generateDocument(auctionId, vendorId, 'liability_waiver', 'system');
-          results.liabilityWaiver = true;
-          console.log(`✅ Liability Waiver generated for auction ${auctionId}`);
-        } catch (error) {
-          console.error(`❌ Failed to generate Liability Waiver for auction ${auctionId}:`, error);
-        }
+        documentPromises.push(
+          generateDocument(auctionId, vendorId, 'liability_waiver', 'system')
+            .then(() => {
+              results.liabilityWaiver = true;
+              console.log(`✅ Liability Waiver generated for auction ${auctionId}`);
+            })
+            .catch((error) => {
+              console.error(`❌ Failed to generate Liability Waiver for auction ${auctionId}:`, error);
+            })
+        );
       } else {
         console.log(`⏭️  Liability Waiver already exists for auction ${auctionId}. Skipping.`);
       }
+
+      // Wait for all documents to be generated in parallel
+      await Promise.all(documentPromises);
 
       const successCount = Object.values(results).filter(Boolean).length;
       const totalCount = Object.keys(results).length;
@@ -607,6 +621,9 @@ export class AuctionClosureService {
         return `${details.propertyType || 'Property'}`;
       case 'electronics':
         return `${details.brand || ''} ${details.serialNumber || 'Electronics'}`.trim();
+      case 'machinery':
+        const machineryName = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
+        return machineryName || (details.machineryType ? String(details.machineryType) : 'Machinery');
       default:
         return 'Salvage Item';
     }
@@ -831,11 +848,10 @@ export class AuctionClosureService {
               
               <div class="deadline-warning">
                 <h3>📝 Next Steps: Sign Documents</h3>
-                <p style="margin: 5px 0;">Before payment can be processed, you must sign 3 required documents:</p>
+                <p style="margin: 5px 0;">Before payment can be processed, you must sign 2 required documents:</p>
                 <ul style="text-align: left; margin: 15px auto; max-width: 400px; color: #856404;">
                   <li><strong>Bill of Sale</strong></li>
                   <li><strong>Release & Waiver of Liability</strong></li>
-                  <li><strong>Pickup Authorization</strong></li>
                 </ul>
                 <p style="margin: 10px 0 0 0; font-weight: 600; color: #856404;">
                   All documents must be signed within 24 hours!

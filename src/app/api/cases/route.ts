@@ -137,6 +137,20 @@ export async function POST(request: NextRequest) {
       aiAssessmentResult: body.aiAssessmentResult,
     };
     
+    // DEBUG: Log what we're sending to createCase
+    console.log('📤 Sending to createCase:', {
+      claimReference: input.claimReference,
+      assetType: input.assetType,
+      marketValue: input.marketValue,
+      marketValueType: typeof input.marketValue,
+      photoCount: input.photos.length,
+      hasGpsLocation: !!input.gpsLocation,
+      gpsLocation: input.gpsLocation,
+      hasLocationName: !!input.locationName,
+      locationName: input.locationName,
+      hasAiAssessment: !!input.aiAssessmentResult,
+    });
+    
     // DEBUG: Log what we received from frontend
     console.log('📥 Backend received AI assessment from frontend:', {
       hasAssessment: !!body.aiAssessmentResult,
@@ -205,13 +219,15 @@ export async function GET(request: NextRequest) {
     const { db } = await import('@/lib/db/drizzle');
     const { salvageCases } = await import('@/lib/db/schema/cases');
     const { users } = await import('@/lib/db/schema/users');
-    const { eq, desc, and } = await import('drizzle-orm');
+    const { auctions } = await import('@/lib/db/schema/auctions');
+    const { eq, desc, and, or, sql } = await import('drizzle-orm');
     const { alias } = await import('drizzle-orm/pg-core');
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get('status');
     const createdByMe = searchParams.get('createdByMe') === 'true';
+    const search = searchParams.get('search') || '';
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
@@ -242,10 +258,15 @@ export async function GET(request: NextRequest) {
         approvedAt: salvageCases.approvedAt,
         adjusterName: adjusterUsers.fullName,
         approverName: approverUsers.fullName,
+        // Include auction data for real-time status checking
+        auctionId: auctions.id,
+        auctionStatus: auctions.status,
+        auctionEndTime: auctions.endTime,
       })
       .from(salvageCases)
       .leftJoin(adjusterUsers, eq(salvageCases.createdBy, adjusterUsers.id))
-      .leftJoin(approverUsers, eq(salvageCases.approvedBy, approverUsers.id));
+      .leftJoin(approverUsers, eq(salvageCases.approvedBy, approverUsers.id))
+      .leftJoin(auctions, eq(auctions.caseId, salvageCases.id));
 
     // Build where conditions
     const whereConditions = [];
@@ -258,6 +279,24 @@ export async function GET(request: NextRequest) {
     // Filter by creator if requested
     if (createdByMe) {
       whereConditions.push(eq(salvageCases.createdBy, session.user.id));
+    }
+    
+    // Search filter (claimReference, assetType, assetDetails)
+    // Requirements: 7.1, 7.3
+    if (search) {
+      const searchLower = search.toLowerCase();
+      whereConditions.push(
+        or(
+          sql`LOWER(${salvageCases.claimReference}) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(${salvageCases.assetType}) LIKE ${`%${searchLower}%`}`,
+          // Search in JSON assetDetails fields using PostgreSQL JSON operators
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'make' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'model' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'description' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'brand' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(CAST(${salvageCases.assetDetails}->>'propertyType' AS TEXT)) LIKE ${`%${searchLower}%`}`
+        )
+      );
     }
 
     // Apply filters

@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { bids, payments, vendors, auctions, salvageCases } from '@/lib/db/schema';
+import { bids, payments, vendors, auctions, salvageCases, escrowWallets, walletTransactions } from '@/lib/db/schema';
 import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
 
 /**
  * GET /api/vendor/settings/transactions
  * 
- * Fetch transaction history for vendor (bids or payments)
+ * Fetch transaction history for vendor (wallet, bids, or payments)
  * 
  * Query Parameters:
- * - type: 'bids' | 'payments'
+ * - type: 'wallet' | 'bid' | 'bids' | 'payment' | 'payments'
  * - startDate: ISO date string
  * - endDate: ISO date string
  * - status: optional status filter
@@ -37,14 +37,30 @@ export async function GET(request: NextRequest) {
     }
 
     const searchParams = request.nextUrl.searchParams;
-    const type = searchParams.get('type') as 'bids' | 'payments';
+    const typeParam = searchParams.get('type');
+    
+    // Normalize type parameter to handle both singular and plural forms
+    let type: 'wallet' | 'bid' | 'payment';
+    if (typeParam === 'payments' || typeParam === 'payment') {
+      type = 'payment';
+    } else if (typeParam === 'bids' || typeParam === 'bid') {
+      type = 'bid';
+    } else if (typeParam === 'wallet') {
+      type = 'wallet';
+    } else {
+      return NextResponse.json(
+        { error: 'Invalid transaction type. Must be "wallet", "bid"/"bids", or "payment"/"payments"' },
+        { status: 400 }
+      );
+    }
+    
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const status = searchParams.get('status');
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    if (!type || !startDate || !endDate) {
+    if (!typeParam || !startDate || !endDate) {
       return NextResponse.json(
         { error: 'Missing required parameters: type, startDate, endDate' },
         { status: 400 }
@@ -55,7 +71,66 @@ export async function GET(request: NextRequest) {
     const endDateTime = new Date(endDate);
     endDateTime.setHours(23, 59, 59, 999); // End of day
 
-    if (type === 'bids') {
+    if (type === 'wallet') {
+      // Fetch wallet transaction history
+      const [wallet] = await db
+        .select()
+        .from(escrowWallets)
+        .where(eq(escrowWallets.vendorId, vendor.id))
+        .limit(1);
+
+      if (!wallet) {
+        return NextResponse.json({
+          transactions: [],
+          totalCount: 0,
+        });
+      }
+
+      const conditions = [
+        eq(walletTransactions.walletId, wallet.id),
+        gte(walletTransactions.createdAt, startDateTime),
+        lte(walletTransactions.createdAt, endDateTime),
+      ];
+
+      const walletRecords = await db
+        .select({
+          id: walletTransactions.id,
+          type: walletTransactions.type,
+          amount: walletTransactions.amount,
+          balanceAfter: walletTransactions.balanceAfter,
+          reference: walletTransactions.reference,
+          description: walletTransactions.description,
+          createdAt: walletTransactions.createdAt,
+        })
+        .from(walletTransactions)
+        .where(and(...conditions))
+        .orderBy(desc(walletTransactions.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      // Get total count
+      const [countResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(walletTransactions)
+        .where(and(...conditions));
+
+      // Transform to transaction format
+      const transactions = walletRecords.map((record) => ({
+        id: record.id,
+        date: record.createdAt.toISOString(),
+        description: record.description,
+        amount: parseFloat(record.amount),
+        type: record.type === 'credit' ? 'credit' : 'debit',
+        status: 'completed',
+        reference: record.reference,
+        balanceAfter: parseFloat(record.balanceAfter),
+      }));
+
+      return NextResponse.json({
+        transactions,
+        totalCount: countResult?.count || 0,
+      });
+    } else if (type === 'bid') {
       // Fetch bid history
       const conditions = [
         eq(bids.vendorId, vendor.id),
@@ -74,17 +149,12 @@ export async function GET(request: NextRequest) {
           status: bids.status,
           createdAt: bids.createdAt,
           auctionId: bids.auctionId,
-          auction: {
-            id: auctions.id,
-            status: auctions.status,
-            currentBid: auctions.currentBid,
-            currentBidder: auctions.currentBidder,
-          },
-          case: {
-            claimReference: salvageCases.claimReference,
-            assetType: salvageCases.assetType,
-            assetDetails: salvageCases.assetDetails,
-          },
+          auctionStatus: auctions.status,
+          auctionCurrentBid: auctions.currentBid,
+          auctionCurrentBidder: auctions.currentBidder,
+          caseClaimReference: salvageCases.claimReference,
+          caseAssetType: salvageCases.assetType,
+          caseAssetDetails: salvageCases.assetDetails,
         })
         .from(bids)
         .leftJoin(auctions, eq(bids.auctionId, auctions.id))
@@ -102,30 +172,32 @@ export async function GET(request: NextRequest) {
 
       // Transform to transaction format
       const transactions = bidRecords.map((record) => {
-        const assetDetails = record.case?.assetDetails as any;
+        const assetDetails = record.caseAssetDetails;
         let description = 'Bid placed';
         
-        if (record.case) {
-          if (record.case.assetType === 'vehicle' && assetDetails && typeof assetDetails === 'object' && assetDetails !== null) {
-            const year = assetDetails.year || '';
-            const make = assetDetails.make || '';
-            const model = assetDetails.model || '';
-            description = `Bid on ${year} ${make} ${model}`.trim() || `Bid on ${record.case.claimReference}`;
+        // Check if case exists and has valid data (must check for null BEFORE typeof check)
+        if (record.caseClaimReference) {
+          if (record.caseAssetType === 'vehicle' && assetDetails !== null && typeof assetDetails === 'object') {
+            const year = (assetDetails as any)?.year || '';
+            const make = (assetDetails as any)?.make || '';
+            const model = (assetDetails as any)?.model || '';
+            const vehicleDesc = `${year} ${make} ${model}`.trim();
+            description = vehicleDesc ? `Bid on ${vehicleDesc}` : `Bid on ${record.caseClaimReference}`;
           } else {
-            description = `Bid on ${record.case.claimReference}`;
+            description = `Bid on ${record.caseClaimReference}`;
           }
         }
 
         // Determine bid status
         let bidStatus = record.status || 'active';
-        if (record.auction) {
-          if (record.auction.status === 'closed') {
-            if (record.auction.currentBidder === vendor.id) {
+        if (record.auctionStatus) {
+          if (record.auctionStatus === 'closed') {
+            if (record.auctionCurrentBidder === vendor.id) {
               bidStatus = 'won';
             } else {
               bidStatus = 'lost';
             }
-          } else if (record.auction.currentBid && parseFloat(record.auction.currentBid) > parseFloat(record.amount)) {
+          } else if (record.auctionCurrentBid && parseFloat(record.auctionCurrentBid) > parseFloat(record.amount)) {
             bidStatus = 'outbid';
           }
         }
@@ -137,7 +209,7 @@ export async function GET(request: NextRequest) {
           amount: parseFloat(record.amount),
           type: 'debit' as const,
           status: bidStatus,
-          reference: record.case?.claimReference,
+          reference: record.caseClaimReference || undefined,
         };
       });
 
@@ -145,7 +217,7 @@ export async function GET(request: NextRequest) {
         transactions,
         totalCount: countResult?.count || 0,
       });
-    } else if (type === 'payments') {
+    } else if (type === 'payment') {
       // Fetch payment history
       const conditions = [
         eq(payments.vendorId, vendor.id),
@@ -167,14 +239,9 @@ export async function GET(request: NextRequest) {
           createdAt: payments.createdAt,
           paymentDeadline: payments.paymentDeadline,
           auctionId: payments.auctionId,
-          auction: {
-            id: auctions.id,
-          },
-          case: {
-            claimReference: salvageCases.claimReference,
-            assetType: salvageCases.assetType,
-            assetDetails: salvageCases.assetDetails,
-          },
+          caseClaimReference: salvageCases.claimReference,
+          caseAssetType: salvageCases.assetType,
+          caseAssetDetails: salvageCases.assetDetails,
         })
         .from(payments)
         .leftJoin(auctions, eq(payments.auctionId, auctions.id))
@@ -192,17 +259,19 @@ export async function GET(request: NextRequest) {
 
       // Transform to transaction format
       const transactions = paymentRecords.map((record) => {
-        const assetDetails = record.case?.assetDetails as any;
+        const assetDetails = record.caseAssetDetails;
         let description = 'Payment';
         
-        if (record.case) {
-          if (record.case.assetType === 'vehicle' && assetDetails && typeof assetDetails === 'object' && assetDetails !== null) {
-            const year = assetDetails.year || '';
-            const make = assetDetails.make || '';
-            const model = assetDetails.model || '';
-            description = `Payment for ${year} ${make} ${model}`.trim() || `Payment for ${record.case.claimReference}`;
+        // Check if case exists and has valid data (must check for null BEFORE typeof check)
+        if (record.caseClaimReference) {
+          if (record.caseAssetType === 'vehicle' && assetDetails !== null && typeof assetDetails === 'object') {
+            const year = (assetDetails as any)?.year || '';
+            const make = (assetDetails as any)?.make || '';
+            const model = (assetDetails as any)?.model || '';
+            const vehicleDesc = `${year} ${make} ${model}`.trim();
+            description = vehicleDesc ? `Payment for ${vehicleDesc}` : `Payment for ${record.caseClaimReference}`;
           } else {
-            description = `Payment for ${record.case.claimReference}`;
+            description = `Payment for ${record.caseClaimReference}`;
           }
         }
 
@@ -222,7 +291,7 @@ export async function GET(request: NextRequest) {
           amount: parseFloat(record.amount),
           type: 'debit' as const,
           status: paymentStatus,
-          reference: record.paymentReference || record.case?.claimReference,
+          reference: record.paymentReference || record.caseClaimReference || undefined,
         };
       });
 
@@ -230,11 +299,6 @@ export async function GET(request: NextRequest) {
         transactions,
         totalCount: countResult?.count || 0,
       });
-    } else {
-      return NextResponse.json(
-        { error: 'Invalid transaction type. Must be "bids" or "payments"' },
-        { status: 400 }
-      );
     }
   } catch (error) {
     console.error('Error fetching transactions:', error);

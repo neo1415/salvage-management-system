@@ -309,6 +309,9 @@ export class AuctionService {
         return `${details.propertyType || 'Property'}`;
       case 'electronics':
         return `${details.brand || ''} ${details.serialNumber || 'Electronics'}`.trim();
+      case 'machinery':
+        const machineryName = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
+        return machineryName || (details.machineryType ? String(details.machineryType) : 'Machinery');
       default:
         return 'Salvage Item';
     }

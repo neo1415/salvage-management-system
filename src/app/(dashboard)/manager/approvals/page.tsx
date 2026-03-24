@@ -984,7 +984,7 @@ export default function ApprovalsPage() {
           <div className="bg-white rounded-lg shadow-md p-4">
             <h3 className="font-bold text-gray-900 mb-3">Asset Details</h3>
             <div className="space-y-2 text-sm">
-              {Object.entries(selectedCase.assetDetails).map(([key, value]) => {
+              {selectedCase.assetDetails && typeof selectedCase.assetDetails === 'object' && Object.entries(selectedCase.assetDetails).map(([key, value]) => {
                 if (!value) return null;
                 
                 // Format the value based on type

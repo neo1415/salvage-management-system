@@ -68,6 +68,12 @@ export async function GET(request: NextRequest) {
         case 'electronics':
           assetName = `${details.brand || ''} Electronics`.trim();
           break;
+        case 'machinery':
+          assetName = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
+          if (!assetName) {
+            assetName = details.machineryType ? String(details.machineryType) : 'Machinery';
+          }
+          break;
       }
 
       return {

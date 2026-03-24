@@ -9,140 +9,17 @@
  * 
  * Uses jsPDF for client-side PDF generation with QR codes for verification.
  * Features NEM Insurance branding with logo, burgundy (#800020), and gold (#FFD700) colors.
+ * 
+ * Requirements: 21.1, 21.2, 21.5, 21.6
  */
 
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { PDFTemplateService } from './pdf-template.service';
 
 // NEM Insurance Brand Colors
 const NEM_BURGUNDY = '#800020';
 const NEM_GOLD = '#FFD700';
-const NEM_DARK_GOLD = '#FFC700';
-
-// Logo dimensions (optimized for professional letterhead)
-const LOGO_WIDTH = 35;
-const LOGO_HEIGHT = 35;
-
-/**
- * Load NEM Insurance logo as base64 data URL
- * Logo is loaded from public/icons/Nem-insurance-Logo.jpg
- * 
- * Note: In serverless environments, we use a fallback approach
- */
-async function getNEMLogoDataURL(): Promise<string> {
-  try {
-    // Try to read from filesystem (works in development and some deployments)
-    const logoPath = join(process.cwd(), 'public', 'icons', 'Nem-insurance-Logo.jpg');
-    const logoBuffer = readFileSync(logoPath);
-    const base64Logo = logoBuffer.toString('base64');
-    return `data:image/jpeg;base64,${base64Logo}`;
-  } catch (error) {
-    console.warn('Failed to load NEM logo from filesystem, trying URL fetch:', error);
-    
-    // Fallback: Fetch from public URL (works in serverless)
-    try {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-      const logoUrl = `${appUrl}/icons/Nem-insurance-Logo.jpg`;
-      const response = await fetch(logoUrl);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch logo: ${response.status}`);
-      }
-      
-      const arrayBuffer = await response.arrayBuffer();
-      const base64Logo = Buffer.from(arrayBuffer).toString('base64');
-      return `data:image/jpeg;base64,${base64Logo}`;
-    } catch (fetchError) {
-      console.error('Failed to fetch NEM logo from URL:', fetchError);
-      return ''; // Return empty string if logo can't be loaded
-    }
-  }
-}
-
-/**
- * Add professional letterhead with NEM logo and company information
- * @param doc - jsPDF document instance
- * @param title - Document title (e.g., "BILL OF SALE")
- */
-async function addLetterhead(doc: jsPDF, title: string): Promise<void> {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  
-  // Burgundy header bar
-  doc.setFillColor(128, 0, 32); // NEM burgundy
-  doc.rect(0, 0, pageWidth, 50, 'F');
-  
-  // Add NEM logo (top-left of header)
-  const logoDataURL = await getNEMLogoDataURL();
-  if (logoDataURL) {
-    try {
-      doc.addImage(logoDataURL, 'JPEG', 15, 7.5, LOGO_WIDTH, LOGO_HEIGHT);
-    } catch (error) {
-      console.error('Failed to add logo to PDF:', error);
-    }
-  }
-  
-  // Company name and title (centered, to the right of logo)
-  doc.setTextColor(255, 255, 255); // White text
-  doc.setFontSize(22);
-  doc.setFont('helvetica', 'bold');
-  doc.text('NEM INSURANCE PLC', pageWidth / 2, 20, { align: 'center' });
-  
-  // Gold accent line
-  doc.setDrawColor(255, 215, 0); // Gold
-  doc.setLineWidth(1);
-  doc.line(pageWidth / 2 - 60, 25, pageWidth / 2 + 60, 25);
-  
-  // Document title
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text(title, pageWidth / 2, 35, { align: 'center' });
-  
-  // Company address (small text at bottom of header)
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.text('199 Ikorodu Road, Obanikoro, Lagos, Nigeria | Tel: 234-02-014489560', pageWidth / 2, 45, { align: 'center' });
-  
-  // Reset text color for document body
-  doc.setTextColor(0, 0, 0);
-}
-
-/**
- * Add professional footer with company information and generation timestamp
- * @param doc - jsPDF document instance
- */
-function addFooter(doc: jsPDF): void {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  
-  // Footer position - fixed at bottom with proper margin
-  const footerY = pageHeight - 20;
-  
-  // Thin burgundy line above footer
-  doc.setDrawColor(128, 0, 32);
-  doc.setLineWidth(0.5);
-  doc.line(20, footerY - 5, pageWidth - 20, footerY - 5);
-  
-  // Footer text
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.setFont('helvetica', 'normal');
-  doc.text('NEM Insurance Plc | 199 Ikorodu Road, Obanikoro, Lagos, Nigeria', pageWidth / 2, footerY, { align: 'center' });
-  doc.text('Tel: 234-02-014489560 | Email: nemsupport@nem-insurance.com', pageWidth / 2, footerY + 4, { align: 'center' });
-  doc.text(`Generated: ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}`, pageWidth / 2, footerY + 8, { align: 'center' });
-}
-
-/**
- * Get the maximum Y position for content to avoid footer overlap
- * @param doc - jsPDF document instance
- * @returns Maximum Y position for content
- */
-function getMaxContentY(doc: jsPDF): number {
-  const pageHeight = doc.internal.pageSize.getHeight();
-  // Reserve 35px for footer (20px footer height + 15px spacing)
-  return pageHeight - 35;
-}
 
 export interface BillOfSaleData {
   // Transaction details
@@ -261,8 +138,8 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   
-  // Add professional letterhead with logo
-  await addLetterhead(doc, 'BILL OF SALE');
+  // Add professional letterhead with logo using PDFTemplateService
+  await PDFTemplateService.addLetterhead(doc, 'BILL OF SALE');
   
   // Transaction details
   let yPos = 60;
@@ -374,8 +251,8 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
   yPos += 5;
   doc.text('Buyer accepts all risks and responsibilities associated with this purchase.', 20, yPos);
   
-  // Get max content Y to avoid footer overlap
-  const maxContentY = getMaxContentY(doc);
+  // Get max content Y to avoid footer overlap using PDFTemplateService
+  const maxContentY = PDFTemplateService.getMaxContentY(doc);
   
   // QR Code section - positioned above footer with proper spacing
   yPos += 20;
@@ -400,8 +277,8 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
   // Add QR code (80x80px max, positioned in bottom-right, above footer)
   doc.addImage(qrCodeDataUrl, 'PNG', pageWidth - 50, yPos + 8, 30, 30);
   
-  // Add professional footer
-  addFooter(doc);
+  // Add professional footer using PDFTemplateService
+  PDFTemplateService.addFooter(doc);
   
   // Convert to buffer
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
@@ -415,8 +292,8 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   
-  // Add professional letterhead with logo
-  await addLetterhead(doc, 'RELEASE & WAIVER OF LIABILITY');
+  // Add professional letterhead with logo using PDFTemplateService
+  await PDFTemplateService.addLetterhead(doc, 'RELEASE & WAIVER OF LIABILITY');
   
   // Vendor information
   let yPos = 60;
@@ -495,8 +372,8 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   doc.setFont('helvetica', 'normal');
   doc.text('This agreement is governed by the laws of Nigeria.', 20, yPos);
   
-  // Get max content Y to avoid footer overlap
-  const maxContentY = getMaxContentY(doc);
+  // Get max content Y to avoid footer overlap using PDFTemplateService
+  const maxContentY = PDFTemplateService.getMaxContentY(doc);
   
   // Signature and QR code section - positioned above footer
   yPos += 20;
@@ -589,8 +466,8 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   // Add QR code (80x80px max)
   doc.addImage(qrCodeDataUrl, 'PNG', qrX, qrY + 8, 30, 30);
   
-  // Add professional footer
-  addFooter(doc);
+  // Add professional footer using PDFTemplateService
+  PDFTemplateService.addFooter(doc);
   
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
   return pdfBuffer;
@@ -603,8 +480,8 @@ export async function generatePickupAuthorizationPDF(data: PickupAuthorizationDa
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   
-  // Add professional letterhead with logo
-  await addLetterhead(doc, 'PICKUP AUTHORIZATION');
+  // Add professional letterhead with logo using PDFTemplateService
+  await PDFTemplateService.addLetterhead(doc, 'PICKUP AUTHORIZATION');
   
   // Authorization code (prominent with gold background)
   let yPos = 65;
@@ -691,8 +568,8 @@ export async function generatePickupAuthorizationPDF(data: PickupAuthorizationDa
   yPos += 5;
   doc.text('• Authorization code must match system records', 20, yPos);
   
-  // Get max content Y to avoid footer overlap
-  const maxContentY = getMaxContentY(doc);
+  // Get max content Y to avoid footer overlap using PDFTemplateService
+  const maxContentY = PDFTemplateService.getMaxContentY(doc);
   
   // QR Code section - centered, positioned above footer
   yPos += 20;
@@ -716,8 +593,8 @@ export async function generatePickupAuthorizationPDF(data: PickupAuthorizationDa
   // Add QR code (80x80px max, centered)
   doc.addImage(qrCodeDataUrl, 'PNG', pageWidth / 2 - 15, yPos + 8, 30, 30);
   
-  // Add professional footer
-  addFooter(doc);
+  // Add professional footer using PDFTemplateService
+  PDFTemplateService.addFooter(doc);
   
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
   return pdfBuffer;
@@ -730,8 +607,8 @@ export async function generateSalvageCertificatePDF(data: SalvageCertificateData
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   
-  // Add professional letterhead with logo
-  await addLetterhead(doc, 'SALVAGE CERTIFICATE');
+  // Add professional letterhead with logo using PDFTemplateService
+  await PDFTemplateService.addLetterhead(doc, 'SALVAGE CERTIFICATE');
   
   // Vehicle information
   let yPos = 65;
@@ -814,8 +691,8 @@ export async function generateSalvageCertificatePDF(data: SalvageCertificateData
   yPos += 5;
   doc.text('It may not be roadworthy and requires inspection before use.', 20, yPos);
   
-  // Get max content Y to avoid footer overlap
-  const maxContentY = getMaxContentY(doc);
+  // Get max content Y to avoid footer overlap using PDFTemplateService
+  const maxContentY = PDFTemplateService.getMaxContentY(doc);
   
   // QR Code section - positioned above footer with proper spacing
   yPos += 20;
@@ -839,8 +716,8 @@ export async function generateSalvageCertificatePDF(data: SalvageCertificateData
   // Add QR code (80x80px max, positioned in bottom-right, above footer)
   doc.addImage(qrCodeDataUrl, 'PNG', pageWidth - 50, yPos + 8, 30, 30);
   
-  // Add professional footer
-  addFooter(doc);
+  // Add professional footer using PDFTemplateService
+  PDFTemplateService.addFooter(doc);
   
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
   return pdfBuffer;

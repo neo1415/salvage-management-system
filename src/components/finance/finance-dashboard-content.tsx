@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { CreditCard, CheckCircle, Clock, AlertCircle, DollarSign, Wallet } from 'lucide-react';
+import { CreditCard, CheckCircle, Clock, AlertCircle, Wallet, Banknote } from 'lucide-react';
 import Link from 'next/link';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
 
@@ -171,7 +171,7 @@ function FinanceDashboardContentInner() {
               </p>
             </div>
             <div className="p-3 bg-purple-100 rounded-lg">
-              <DollarSign className="w-8 h-8 text-purple-600" />
+              <Banknote className="w-8 h-8 text-purple-600" />
             </div>
           </div>
         </div>
@@ -250,7 +250,7 @@ function FinanceDashboardContentInner() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center space-x-2">
-                <DollarSign className="w-5 h-5 text-green-600" />
+                <Banknote className="w-5 h-5 text-green-600" />
                 <span className="font-medium text-gray-900">Bank Transfer</span>
               </div>
               <span className="text-sm font-semibold text-gray-900">

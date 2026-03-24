@@ -24,6 +24,46 @@ export default function AdminUserManagement() {
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [usersPerPage] = useState<number>(20);
+  
+  // Data states
+  const [users, setUsers] = useState<User[]>([]);
+  const [totalUsers, setTotalUsers] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Virtualization states for infinite scroll
+  const [isFetching, setIsFetching] = useState(false);
+  const hasMore = users.length < totalUsers;
+  
+  const loadMore = useCallback(async () => {
+    if (isFetching || !hasMore) return;
+    
+    setIsFetching(true);
+    try {
+      const nextPage = currentPage + 1;
+      const params = new URLSearchParams({
+        page: nextPage.toString(),
+        limit: usersPerPage.toString(),
+      });
+      if (roleFilter !== 'all') params.append('role', roleFilter);
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (searchQuery) params.append('search', searchQuery);
+
+      const response = await fetch(`/api/admin/users?${params.toString()}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(prev => [...prev, ...(data.users || [])]);
+        setCurrentPage(nextPage);
+      }
+    } catch (err) {
+      console.error('Error loading more users:', err);
+    } finally {
+      setIsFetching(false);
+    }
+  }, [isFetching, hasMore, currentPage, usersPerPage, roleFilter, statusFilter, searchQuery]);
   
   // Modal states
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -44,20 +84,15 @@ export default function AdminUserManagement() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
-  // Virtualized list for users
-  const {
-    items: users,
-    isLoading,
-    isFetching,
-    hasMore,
-    loadMore,
-    reset,
-  } = useVirtualizedList<User>({
-    queryKey: ['users', { role: roleFilter, status: statusFilter, search: searchQuery }],
-    fetchFn: async (page) => {
+  // Fetch users with pagination
+  const fetchUsers = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
       const params = new URLSearchParams({
-        page: page.toString(),
-        pageSize: '50',
+        page: currentPage.toString(),
+        limit: usersPerPage.toString(),
       });
       if (roleFilter !== 'all') params.append('role', roleFilter);
       if (statusFilter !== 'all') params.append('status', statusFilter);
@@ -71,18 +106,26 @@ export default function AdminUserManagement() {
       }
 
       const data = await response.json();
-      return {
-        data: data.users || [],
-        hasMore: data.hasMore || false,
-      };
-    },
-    pageSize: 50,
-  });
+      setUsers(data.users || []);
+      setTotalUsers(data.totalCount || 0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch users');
+      setUsers([]);
+      setTotalUsers(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, usersPerPage, roleFilter, statusFilter, searchQuery]);
 
-  // Reset list when filters change
+  // Fetch users when filters or page changes
   useEffect(() => {
-    reset();
-  }, [roleFilter, statusFilter, searchQuery, reset]);
+    fetchUsers();
+  }, [fetchUsers]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [roleFilter, statusFilter, searchQuery]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,7 +190,7 @@ export default function AdminUserManagement() {
       });
 
       // Refresh user list
-      reset();
+      fetchUsers();
 
       // Auto-close modal after 10 seconds
       setTimeout(() => {
@@ -220,8 +263,8 @@ export default function AdminUserManagement() {
   }, []);
 
   const handleActionSuccess = useCallback(() => {
-    reset();
-  }, [reset]);
+    fetchUsers();
+  }, [fetchUsers]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
@@ -302,14 +345,14 @@ export default function AdminUserManagement() {
       </div>
 
       {/* Error Message */}
-      {!isLoading && users.length === 0 && (
+      {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-          No users found matching your filters
+          {error}
         </div>
       )}
 
       {/* Loading State */}
-      {isLoading && users.length === 0 && (
+      {loading && users.length === 0 && (
         <div className="bg-white rounded-lg shadow-sm p-12 text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-600"></div>
           <p className="mt-4 text-gray-600">Loading users...</p>
@@ -475,7 +518,7 @@ export default function AdminUserManagement() {
       )}
 
       {/* Empty State */}
-      {!isLoading && users.length === 0 && (
+      {!loading && users.length === 0 && (
         <div className="bg-white rounded-lg shadow-sm p-12 text-center">
           <svg
             className="mx-auto h-12 w-12 text-gray-400"
@@ -490,7 +533,9 @@ export default function AdminUserManagement() {
               d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
             />
           </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No users found</h3>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">
+            {searchQuery ? `No results found for "${searchQuery}"` : 'No users found'}
+          </h3>
           <p className="mt-1 text-sm text-gray-500">
             {searchQuery || roleFilter !== 'all' || statusFilter !== 'all'
               ? 'Try adjusting your filters'

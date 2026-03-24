@@ -26,7 +26,6 @@ import { useOfflineSync } from '@/hooks/use-offline-sync';
 import { saveOfflineCase } from '@/lib/db/indexeddb';
 import { getAccurateGeolocation, type GeolocationError } from '@/lib/integrations/google-geolocation';
 import { useToast } from '@/components/ui/toast';
-import { VehicleAutocomplete } from '@/components/ui/vehicle-autocomplete';
 import { getQualityTiers } from '@/features/valuations/services/condition-mapping.service';
 import { SearchProgressIndicator, useSearchProgress, type SearchProgress } from '@/components/ui/search-progress-indicator';
 import { UnifiedVoiceField, useUnifiedVoiceContent } from '@/components/ui/unified-voice-field';
@@ -1085,7 +1084,7 @@ export default function NewCasePage() {
         sessionStorage.removeItem(FORM_STATE_KEY);
         
         toast.success('Case saved offline', 'It will be synced when connection is restored.');
-        router.push('/adjuster/cases');
+        router.push('/adjuster/my-cases');
       } else {
         // Submit to API (AI assessment already completed during photo upload)
         const response = await fetch('/api/cases', {
@@ -1108,7 +1107,7 @@ export default function NewCasePage() {
           isDraft ? 'Case saved as draft' : 'Case submitted for approval',
           isDraft ? 'You can continue editing later.' : 'Manager will review your submission.'
         );
-        router.push('/adjuster/cases');
+        router.push('/adjuster/my-cases');
       }
     } catch (error) {
       console.error('Error submitting case:', error);
@@ -1278,58 +1277,29 @@ export default function NewCasePage() {
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <FormField label="Make" required={true}>
-                <VehicleAutocomplete
-                  name="vehicleMake"
-                  label=""
+                <ModernInput
+                  {...register('vehicleMake')}
+                  variant="filled"
                   placeholder="e.g., Toyota"
-                  value={watch('vehicleMake') || ''}
-                  onChange={(value) => {
-                    setValue('vehicleMake', value)
-                    setValue('vehicleModel', '')
-                    setValue('vehicleYear', undefined)
-                  }}
-                  endpoint="/api/valuations/makes"
-                  required
-                  isMobile={typeof window !== 'undefined' && window.innerWidth < 768}
-                  isOffline={isOffline}
                 />
               </FormField>
 
               <FormField label="Model" required={true}>
-                <VehicleAutocomplete
-                  name="vehicleModel"
-                  label=""
+                <ModernInput
+                  {...register('vehicleModel')}
+                  variant="filled"
                   placeholder="e.g., Camry"
-                  value={watch('vehicleModel') || ''}
-                  onChange={(value) => {
-                    setValue('vehicleModel', value)
-                    setValue('vehicleYear', undefined)
-                  }}
-                  endpoint="/api/valuations/models"
-                  queryParams={{ make: watch('vehicleMake') || '' }}
-                  disabled={!watch('vehicleMake')}
-                  required
-                  isMobile={typeof window !== 'undefined' && window.innerWidth < 768}
-                  isOffline={isOffline}
                 />
               </FormField>
 
               <FormField label="Year" required={true}>
-                <VehicleAutocomplete
-                  name="vehicleYear"
-                  label=""
+                <ModernInput
+                  type="number"
+                  {...register('vehicleYear', { valueAsNumber: true })}
+                  variant="filled"
                   placeholder="e.g., 2020"
-                  value={watch('vehicleYear')?.toString() || ''}
-                  onChange={(value) => setValue('vehicleYear', parseInt(value))}
-                  endpoint="/api/valuations/years"
-                  queryParams={{
-                    make: watch('vehicleMake') || '',
-                    model: watch('vehicleModel') || ''
-                  }}
-                  disabled={!watch('vehicleMake') || !watch('vehicleModel')}
-                  required
-                  isMobile={typeof window !== 'undefined' && window.innerWidth < 768}
-                  isOffline={isOffline}
+                  min="1900"
+                  max={new Date().getFullYear() + 1}
                 />
               </FormField>
 

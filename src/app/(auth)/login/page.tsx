@@ -144,6 +144,7 @@ function LoginForm() {
 
           {/* OAuth Buttons */}
           <div className="space-y-3 mb-6">
+            {/* TEMPORARILY DISABLED: Google OAuth - Uncomment when business email validation is ready for production
             <button
               type="button"
               onClick={() => handleOAuthLogin('google')}
@@ -169,6 +170,7 @@ function LoginForm() {
               </svg>
               <span className="font-medium text-gray-700">Sign in with Google</span>
             </button>
+            */}
 
             <button
               type="button"

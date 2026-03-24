@@ -93,6 +93,8 @@ export async function POST(
     }
 
     // Generate Pickup Authorization
+    // WARNING: Pickup authorization should normally only be generated AFTER payment is complete.
+    // This manual generation is for admin override purposes only (e.g., fixing data issues).
     try {
       await generateDocument(auctionId, vendor.id, 'pickup_authorization', session.user.id);
       results.pickupAuthorization.success = true;

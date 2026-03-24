@@ -421,14 +421,34 @@ export default function AuctionDetailPage() {
             {/* Image Gallery */}
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
               <div className="relative w-full aspect-[4/3] bg-gray-100">
-                {data.case.photos && data.case.photos.length > 0 ? (
-                  <Image
-                    src={data.case.photos[selectedImageIndex]}
-                    alt={getAssetTitle(data.case)}
-                    fill
-                    className="object-contain"
-                    sizes="(max-width: 1024px) 100vw, 66vw"
-                  />
+                {data.case.photos && data.case.photos.length > 0 && data.case.photos[selectedImageIndex] ? (
+                  (() => {
+                    const photoSrc = data.case.photos[selectedImageIndex];
+                    // Check if it's a valid URL (starts with http/https or data:)
+                    const isValidUrl = photoSrc.startsWith('http') || photoSrc.startsWith('https') || photoSrc.startsWith('data:');
+                    
+                    if (isValidUrl) {
+                      return (
+                        <Image
+                          src={photoSrc}
+                          alt={getAssetTitle(data.case)}
+                          fill
+                          className="object-contain"
+                          sizes="(max-width: 1024px) 100vw, 66vw"
+                        />
+                      );
+                    } else {
+                      // Invalid or relative path - show placeholder
+                      return (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <div className="text-center">
+                            <ImageIcon className="w-16 h-16 text-gray-400 mx-auto mb-2" />
+                            <p className="text-gray-500">Invalid image URL</p>
+                          </div>
+                        </div>
+                      );
+                    }
+                  })()
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
                     <div className="text-center">
@@ -443,23 +463,41 @@ export default function AuctionDetailPage() {
               {data.case.photos && data.case.photos.length > 1 && (
                 <div className="p-4 border-t border-gray-200">
                   <div className="flex gap-2 overflow-x-auto">
-                    {data.case.photos.map((photo, index) => (
-                      <button
-                        key={index}
-                        onClick={() => setSelectedImageIndex(index)}
-                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${
-                          selectedImageIndex === index ? 'border-[#800020]' : 'border-gray-200'
-                        }`}
-                      >
-                        <Image
-                          src={photo}
-                          alt={`View ${index + 1}`}
-                          width={64}
-                          height={64}
-                          className="w-full h-full object-cover"
-                        />
-                      </button>
-                    ))}
+                    {data.case.photos.map((photo, index) => {
+                      const isValidUrl = photo.startsWith('http') || photo.startsWith('https') || photo.startsWith('data:');
+                      
+                      if (!isValidUrl) {
+                        return (
+                          <button
+                            key={index}
+                            onClick={() => setSelectedImageIndex(index)}
+                            className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors bg-gray-200 flex items-center justify-center ${
+                              selectedImageIndex === index ? 'border-[#800020]' : 'border-gray-200'
+                            }`}
+                          >
+                            <ImageIcon className="w-6 h-6 text-gray-400" />
+                          </button>
+                        );
+                      }
+                      
+                      return (
+                        <button
+                          key={index}
+                          onClick={() => setSelectedImageIndex(index)}
+                          className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${
+                            selectedImageIndex === index ? 'border-[#800020]' : 'border-gray-200'
+                          }`}
+                        >
+                          <Image
+                            src={photo}
+                            alt={`View ${index + 1}`}
+                            width={64}
+                            height={64}
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
