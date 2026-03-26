@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Star } from 'lucide-react';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
@@ -190,11 +191,11 @@ export function RatingModal({
     }
   };
 
-  return (
-    <div>
+  const modalContent = (
+    <div className="fixed inset-0" style={{ zIndex: 999999 }}>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        className="fixed inset-0 bg-black/50"
         onClick={(e) => {
           if (e.target === e.currentTarget && !isSubmitting) {
             handleClose();
@@ -203,9 +204,9 @@ export function RatingModal({
       />
       
       {/* Modal Container */}
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+      <div className="fixed inset-0 flex items-center justify-center p-4">
         <div 
-          className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto pointer-events-auto"
+          className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
         {/* Header */}
@@ -313,4 +314,8 @@ export function RatingModal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(modalContent, document.body)
+    : null;
 }

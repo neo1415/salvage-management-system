@@ -5,7 +5,9 @@
 
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
 interface User {
   id: string;
@@ -36,6 +38,14 @@ export default function ActionModal({ actionModal, selectedUser, onClose, onSucc
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (actionModal && selectedUser) {
+      const unlock = lockScroll();
+      return unlock;
+    }
+  }, [actionModal, selectedUser]);
 
   const getRoleDisplayName = useCallback((role: string): string => {
     const roleNames: Record<string, string> = {
@@ -174,19 +184,24 @@ export default function ActionModal({ actionModal, selectedUser, onClose, onSucc
 
   if (!actionModal || !selectedUser) return null;
 
-  return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-    >
+  const modalContent = (
+    <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+      {/* Backdrop */}
       <div 
-        className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+        className="fixed inset-0 bg-black/50"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            onClose();
+          }
+        }}
+      />
+      
+      {/* Modal Container */}
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <div 
+          className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
         <div className="p-6">
           {/* View Details Modal */}
           {actionModal === 'view' && (
@@ -498,5 +513,10 @@ export default function ActionModal({ actionModal, selectedUser, onClose, onSucc
         </div>
       </div>
     </div>
+  </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(modalContent, document.body)
+    : null;
 }

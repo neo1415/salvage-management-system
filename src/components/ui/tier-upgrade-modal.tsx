@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { X, Crown, Zap, TrendingUp, Award } from 'lucide-react';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
@@ -29,11 +30,11 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
     onClose();
   };
 
-  return (
-    <div>
+  const modalContent = (
+    <div className="fixed inset-0" style={{ zIndex: 999999 }}>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        className="fixed inset-0 bg-black/50 transition-opacity"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             onClose();
@@ -42,9 +43,9 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
       />
       
       {/* Modal Container */}
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+      <div className="fixed inset-0 flex items-center justify-center p-4 overflow-y-auto">
         <div 
-          className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto pointer-events-auto"
+          className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl my-8 transform transition-all"
           onClick={(e) => e.stopPropagation()}
         >
         {/* Header with gradient */}
@@ -150,4 +151,8 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' 
+    ? createPortal(modalContent, document.body)
+    : null;
 }

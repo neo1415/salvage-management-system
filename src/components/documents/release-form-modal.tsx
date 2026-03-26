@@ -8,6 +8,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { DigitalSignaturePad } from './digital-signature-pad';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
@@ -144,15 +145,15 @@ export function ReleaseFormModal({
   const canSubmit = signatureData && hasScrolledToBottom && hasAcceptedTerms && !isSubmitting;
 
   if (isLoading) {
-    return (
-      <div>
+    const loadingContent = (
+      <div className="fixed inset-0" style={{ zIndex: 999999 }}>
         {/* Backdrop */}
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity" />
+        <div className="fixed inset-0 bg-black/50" />
         
         {/* Modal Container */}
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+        <div className="fixed inset-0 flex items-center justify-center p-4">
           <div 
-            className="relative bg-white rounded-lg shadow-xl p-8 pointer-events-auto"
+            className="relative bg-white rounded-lg shadow-xl p-8"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-center">
@@ -163,20 +164,24 @@ export function ReleaseFormModal({
         </div>
       </div>
     );
+    
+    return typeof document !== 'undefined'
+      ? createPortal(loadingContent, document.body)
+      : null;
   }
 
-  return (
-    <div>
+  const modalContent = (
+    <div className="fixed inset-0" style={{ zIndex: 999999 }}>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        className="fixed inset-0 bg-black/50"
         onClick={onClose}
       />
 
       {/* Modal Container */}
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+      <div className="fixed inset-0 flex items-center justify-center p-4">
         <div 
-          className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col pointer-events-auto"
+          className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -297,4 +302,8 @@ export function ReleaseFormModal({
       />
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(modalContent, document.body)
+    : null;
 }

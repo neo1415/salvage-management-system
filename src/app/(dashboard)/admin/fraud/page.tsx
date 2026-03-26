@@ -11,6 +11,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 
 interface FraudPattern {
@@ -529,119 +530,127 @@ export default function FraudAlertDashboard() {
       </div>
 
       {/* Dismiss Modal */}
-      {showDismissModal && selectedAlert && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h3 className="text-xl font-semibold text-gray-900 mb-4">
-              Dismiss Fraud Flag
-            </h3>
-            <p className="text-gray-600 mb-4">
-              You are about to dismiss this fraud flag as a false positive. Please provide a reason for your decision.
-            </p>
-            
-            {actionError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-800">{actionError}</p>
+      {showDismissModal && selectedAlert && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div className="fixed inset-0 bg-black/50" onClick={closeDismissModal} />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                Dismiss Fraud Flag
+              </h3>
+              <p className="text-gray-600 mb-4">
+                You are about to dismiss this fraud flag as a false positive. Please provide a reason for your decision.
+              </p>
+              
+              {actionError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-800">{actionError}</p>
+                </div>
+              )}
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Comment (minimum 10 characters)
+                </label>
+                <textarea
+                  value={dismissComment}
+                  onChange={(e) => setDismissComment(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                  rows={4}
+                  placeholder="Explain why this is a false positive..."
+                />
               </div>
-            )}
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Comment (minimum 10 characters)
-              </label>
-              <textarea
-                value={dismissComment}
-                onChange={(e) => setDismissComment(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
-                rows={4}
-                placeholder="Explain why this is a false positive..."
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={closeDismissModal}
-                disabled={actionLoading}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDismissFlag}
-                disabled={actionLoading || dismissComment.trim().length < 10}
-                className="flex-1 px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800 disabled:opacity-50"
-              >
-                {actionLoading ? 'Dismissing...' : 'Dismiss Flag'}
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={closeDismissModal}
+                  disabled={actionLoading}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDismissFlag}
+                  disabled={actionLoading || dismissComment.trim().length < 10}
+                  className="flex-1 px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Dismissing...' : 'Dismiss Flag'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Suspend Modal */}
-      {showSuspendModal && selectedAlert && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h3 className="text-xl font-semibold text-gray-900 mb-4">
-              Suspend Vendor
-            </h3>
-            <p className="text-gray-600 mb-4">
-              You are about to suspend this vendor. All active bids will be cancelled.
-            </p>
-            
-            {actionError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-800">{actionError}</p>
+      {showSuspendModal && selectedAlert && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div className="fixed inset-0 bg-black/50" onClick={closeSuspendModal} />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                Suspend Vendor
+              </h3>
+              <p className="text-gray-600 mb-4">
+                You are about to suspend this vendor. All active bids will be cancelled.
+              </p>
+              
+              {actionError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-800">{actionError}</p>
+                </div>
+              )}
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Suspension Duration
+                </label>
+                <select
+                  value={suspendDuration}
+                  onChange={(e) => setSuspendDuration(e.target.value as typeof suspendDuration)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                >
+                  <option value="7">7 days</option>
+                  <option value="30">30 days</option>
+                  <option value="90">90 days</option>
+                  <option value="permanent">Permanent</option>
+                </select>
               </div>
-            )}
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Suspension Duration
-              </label>
-              <select
-                value={suspendDuration}
-                onChange={(e) => setSuspendDuration(e.target.value as typeof suspendDuration)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
-              >
-                <option value="7">7 days</option>
-                <option value="30">30 days</option>
-                <option value="90">90 days</option>
-                <option value="permanent">Permanent</option>
-              </select>
-            </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason (minimum 10 characters)
+                </label>
+                <textarea
+                  value={suspendReason}
+                  onChange={(e) => setSuspendReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                  rows={4}
+                  placeholder="Explain the reason for suspension..."
+                />
+              </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Reason (minimum 10 characters)
-              </label>
-              <textarea
-                value={suspendReason}
-                onChange={(e) => setSuspendReason(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
-                rows={4}
-                placeholder="Explain the reason for suspension..."
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={closeSuspendModal}
-                disabled={actionLoading}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSuspendVendor}
-                disabled={actionLoading || suspendReason.trim().length < 10}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-              >
-                {actionLoading ? 'Suspending...' : 'Suspend Vendor'}
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={closeSuspendModal}
+                  disabled={actionLoading}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSuspendVendor}
+                  disabled={actionLoading || suspendReason.trim().length < 10}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Suspending...' : 'Suspend Vendor'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

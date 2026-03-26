@@ -1303,6 +1303,19 @@ function NewCasePageContent() {
 
         if (!response.ok) {
           const error = await response.json();
+          
+          // Handle specific validation errors
+          if (error.errors && Array.isArray(error.errors)) {
+            const errorMessages = error.errors.join(', ');
+            
+            // Check for duplicate claim reference error
+            if (errorMessages.includes('Claim reference must be unique')) {
+              throw new Error(`Claim reference "${data.claimReference}" already exists. Please use a different claim reference.`);
+            }
+            
+            throw new Error(errorMessages);
+          }
+          
           throw new Error(error.error || 'Failed to create case');
         }
 

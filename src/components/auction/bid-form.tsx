@@ -19,6 +19,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { TierUpgradeModal } from '@/components/ui/tier-upgrade-modal';
 import { useTierUpgrade, type VendorTier } from '@/hooks/use-tier-upgrade';
@@ -324,18 +325,18 @@ export function BidForm({
 
   if (!isOpen) return null;
 
-  return (
-    <>
+  const modalContent = (
+    <div className="fixed inset-0" style={{ zIndex: 999999 }}>
       {/* Modal Overlay */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        className="fixed inset-0 bg-black/50 transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal Content */}
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+      <div className="fixed inset-0 flex items-center justify-center p-4">
         <div
-          className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto pointer-events-auto"
+          className="bg-white rounded-lg shadow-xl max-w-md w-full transform transition-all"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -563,6 +564,10 @@ export function BidForm({
         onClose={closeUpgradeModal}
         auctionValue={blockedAuctionValue}
       />
-    </>
+    </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(modalContent, document.body)
+    : null;
 }

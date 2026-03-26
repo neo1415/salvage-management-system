@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import { EscrowPaymentDetails } from '@/components/finance/escrow-payment-details';
@@ -1405,121 +1406,127 @@ export default function FinancePaymentsPage() {
       </div>
 
       {/* Verification Modal */}
-      {showModal && selectedPayment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {action === 'approve' ? 'Approve Payment' : 'Reject Payment'}
-            </h3>
+      {showModal && selectedPayment && typeof document !== 'undefined' ? createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div className="fixed inset-0 bg-black/50" onClick={closeModal} />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                {action === 'approve' ? 'Approve Payment' : 'Reject Payment'}
+              </h3>
 
-            <div className="space-y-3 mb-6">
-              <div>
-                <p className="text-sm text-gray-500">Claim Reference</p>
-                <p className="font-medium text-gray-900">{selectedPayment.case.claimReference}</p>
+              <div className="space-y-3 mb-6">
+                <div>
+                  <p className="text-sm text-gray-500">Claim Reference</p>
+                  <p className="font-medium text-gray-900">{selectedPayment.case.claimReference}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Amount</p>
+                  <p className="font-medium text-gray-900">
+                    ₦{parseFloat(selectedPayment.amount).toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Vendor</p>
+                  <p className="font-medium text-gray-900">
+                    {selectedPayment.vendor.businessName || selectedPayment.vendor.contactPersonName || 'Individual Vendor'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">Amount</p>
-                <p className="font-medium text-gray-900">
-                  ₦{parseFloat(selectedPayment.amount).toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Vendor</p>
-                <p className="font-medium text-gray-900">
-                  {selectedPayment.vendor.businessName || selectedPayment.vendor.contactPersonName || 'Individual Vendor'}
-                </p>
-              </div>
-            </div>
 
-            {action === 'reject' && (
-              <div className="mb-6">
-                <label htmlFor="comment" className="block text-sm font-medium text-gray-700 mb-2">
-                  Rejection Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  id="comment"
-                  rows={4}
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Explain why this payment is being rejected (minimum 10 characters)"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
-                  required
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  {comment.length}/10 characters minimum
-                </p>
-              </div>
-            )}
+              {action === 'reject' && (
+                <div className="mb-6">
+                  <label htmlFor="comment" className="block text-sm font-medium text-gray-700 mb-2">
+                    Rejection Reason <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    id="comment"
+                    rows={4}
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="Explain why this payment is being rejected (minimum 10 characters)"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    {comment.length}/10 characters minimum
+                  </p>
+                </div>
+              )}
 
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-800">{error}</p>
-              </div>
-            )}
+              {error && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-800">{error}</p>
+                </div>
+              )}
 
-            <div className="flex space-x-3">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  closeModal();
-                }}
-                disabled={processing}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  handleVerifyPayment();
-                }}
-                disabled={processing || (action === 'reject' && comment.trim().length < 10)}
-                className={`flex-1 px-4 py-2 rounded-lg text-white transition-colors disabled:opacity-50 ${
-                  action === 'approve'
-                    ? 'bg-green-600 hover:bg-green-700'
-                    : 'bg-red-600 hover:bg-red-700'
-                }`}
-              >
-                {processing ? (
-                  <span className="flex items-center justify-center">
-                    <svg className="animate-spin h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing...
-                  </span>
-                ) : (
-                  `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`
-                )}
-              </button>
+              <div className="flex space-x-3">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    closeModal();
+                  }}
+                  disabled={processing}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleVerifyPayment();
+                  }}
+                  disabled={processing || (action === 'reject' && comment.trim().length < 10)}
+                  className={`flex-1 px-4 py-2 rounded-lg text-white transition-colors disabled:opacity-50 ${
+                    action === 'approve'
+                      ? 'bg-green-600 hover:bg-green-700'
+                      : 'bg-red-600 hover:bg-red-700'
+                  }`}
+                >
+                  {processing ? (
+                    <span className="flex items-center justify-center">
+                      <svg className="animate-spin h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Processing...
+                    </span>
+                  ) : (
+                    `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body
+      ) : null}
 
       {/* Payment Details Modal */}
-      {showDetailsModal && selectedPayment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-semibold text-gray-900">Payment Details</h3>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  closeModal();
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+      {showDetailsModal && selectedPayment && typeof document !== 'undefined' ? createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div className="fixed inset-0 bg-black/50" onClick={closeModal} />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-semibold text-gray-900">Payment Details</h3>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    closeModal();
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
 
-            <div className="space-y-6">
+              <div className="space-y-6">
               {/* Payment Information */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
@@ -1850,7 +1857,9 @@ export default function FinancePaymentsPage() {
             </div>
           </div>
         </div>
-      )}
+      </div>,
+        document.body
+      ) : null}
 
       {/* Success Modal */}
       <SuccessModal

@@ -54,7 +54,7 @@ interface AuctionDetails {
   case: {
     id: string;
     claimReference: string;
-    assetType: 'vehicle' | 'property' | 'electronics';
+    assetType: 'vehicle' | 'property' | 'electronics' | 'machinery';
     assetDetails: Record<string, unknown>;
     marketValue: string;
     estimatedSalvageValue: string;
@@ -293,25 +293,31 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       console.log(`🔄 Fetching documents for closed auction ${auction.id}`);
       fetchDocuments(auction.id, session.user.vendorId);
       
-      // CRITICAL FIX: Poll for documents every 5 seconds if we don't have all documents yet
+      // CRITICAL FIX: Poll for documents every 3 seconds with extended timeout
       // This handles the case where documents are still being generated
       const pollInterval = setInterval(async () => {
         // Stop polling if we have all expected documents (2: bill_of_sale, liability_waiver)
-        if (documents.length >= 2) {
-          console.log(`✅ All documents loaded (${documents.length}/2). Stopping poll.`);
+        // Note: pickup_authorization is generated AFTER payment, so we only expect 2 documents initially
+        const expectedDocs = documents.filter(d => 
+          d.documentType === 'bill_of_sale' || d.documentType === 'liability_waiver'
+        );
+        
+        if (expectedDocs.length >= 2) {
+          console.log(`✅ All required documents loaded (${expectedDocs.length}/2). Stopping poll.`);
           clearInterval(pollInterval);
           return;
         }
         
-        console.log(`🔄 Polling for documents... (current: ${documents.length}/2)`);
-        await fetchDocuments(auction.id, session.user.vendorId);
-      }, 5000); // Poll every 5 seconds
+        console.log(`🔄 Polling for documents... (current: ${expectedDocs.length}/2)`);
+        await fetchDocuments(auction.id, session.user.vendorId!);
+      }, 3000); // Poll every 3 seconds (faster polling)
       
-      // Stop polling after 60 seconds (12 attempts)
+      // EXTENDED: Stop polling after 3 minutes (60 attempts) instead of 1 minute
+      // This gives more time for document generation to complete
       const stopPollingTimeout = setTimeout(() => {
-        console.log(`⏱️  Stopping document polling after 60 seconds`);
+        console.log(`⏱️  Stopping document polling after 3 minutes`);
         clearInterval(pollInterval);
-      }, 60000);
+      }, 180000); // 3 minutes
       
       // Cleanup
       return () => {
@@ -675,8 +681,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         {/* Document Signing Section (if won but not all signed) */}
         {auction.status === 'closed' && 
          session?.user?.vendorId && 
-         auction.currentBidder === session.user.vendorId && 
-         documents.length > 0 && (
+         auction.currentBidder === session.user.vendorId && (
           <div className="bg-white border-2 border-yellow-400 rounded-lg shadow-lg p-6 mb-6">
             <div className="flex items-start gap-4">
               <div className="flex-shrink-0">
@@ -688,10 +693,44 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 <h3 className="text-xl font-bold text-gray-900 mb-2">
                   🎉 Congratulations! You Won This Auction
                 </h3>
-                <p className="text-gray-700 mb-4">
-                  Before payment can be processed, you must sign all required documents. 
-                  Progress: <strong>{documents.filter(d => d.status === 'signed' && !(d.documentType === 'pickup_authorization' && d.status === 'pending')).length}/{documents.filter(d => !(d.documentType === 'pickup_authorization' && d.status === 'pending')).length} documents signed</strong>
-                </p>
+                
+                {/* Show loading state while documents are being fetched */}
+                {isLoadingDocuments && documents.length === 0 && (
+                  <div className="flex items-center gap-3 py-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#800020]"></div>
+                    <p className="text-gray-600">Loading your documents...</p>
+                  </div>
+                )}
+                
+                {/* Show message if no documents found with refresh button */}
+                {!isLoadingDocuments && documents.length === 0 && (
+                  <div className="py-4">
+                    <p className="text-gray-700 mb-4">
+                      Your documents are being generated. This usually takes a few moments.
+                    </p>
+                    <button
+                      onClick={() => {
+                        if (session?.user?.vendorId) {
+                          fetchDocuments(auction.id, session.user.vendorId);
+                        }
+                      }}
+                      className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors flex items-center gap-2"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Refresh Documents
+                    </button>
+                  </div>
+                )}
+                
+                {/* Show documents if available */}
+                {documents.length > 0 && (
+                  <>
+                    <p className="text-gray-700 mb-4">
+                      Before payment can be processed, you must sign all required documents. 
+                      Progress: <strong>{documents.filter(d => d.status === 'signed' && d.documentType !== 'pickup_authorization').length}/{documents.filter(d => d.documentType !== 'pickup_authorization').length} documents signed</strong>
+                    </p>
                 
                 {/* FIXED: Document Cards in Row Layout */}
                 {/* Filter out pending pickup_authorization - it's generated AFTER payment, never shown as pending */}
@@ -804,20 +843,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     </p>
                   </div>
                 )}
+                  </>
+                )}
               </div>
-            </div>
-          </div>
-        )}
-        
-        {/* Loading Documents State */}
-        {auction.status === 'closed' && 
-         session?.user?.vendorId && 
-         auction.currentBidder === session.user.vendorId && 
-         isLoadingDocuments && (
-          <div className="bg-white border border-gray-300 rounded-lg shadow-md p-6 mb-6">
-            <div className="flex items-center justify-center gap-3">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#800020]"></div>
-              <p className="text-gray-600">Loading documents...</p>
             </div>
           </div>
         )}

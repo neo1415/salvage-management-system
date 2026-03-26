@@ -6,6 +6,7 @@
 
 'use client';
 
+import { createPortal } from 'react-dom';
 import { useOfflineSync } from '@/hooks/use-offline-sync';
 import { useOffline } from '@/hooks/use-offline';
 
@@ -140,9 +141,11 @@ export function SyncProgressIndicator() {
       )}
 
       {/* Conflict resolution modal */}
-      {conflicts.length > 0 && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+      {conflicts.length > 0 && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div className="fixed inset-0 bg-black bg-opacity-50" />
+          <div className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 pointer-events-auto">
             <h2 className="text-xl font-bold text-gray-900 mb-4">
               Sync Conflict Detected
             </h2>
@@ -177,6 +180,8 @@ export function SyncProgressIndicator() {
             </p>
           </div>
         </div>
+      </div>,
+        document.body
       )}
     </div>
   );

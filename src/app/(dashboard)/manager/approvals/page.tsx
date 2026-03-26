@@ -672,11 +672,19 @@ export default function ApprovalsPage() {
               </div>
               <div>
                 <p className="text-gray-600">Estimated Value</p>
-                <p className="font-medium">₦{parseFloat(selectedCase.estimatedSalvageValue).toLocaleString()}</p>
+                <p className="font-medium">
+                  {selectedCase.estimatedSalvageValue 
+                    ? `₦${parseFloat(selectedCase.estimatedSalvageValue).toLocaleString()}`
+                    : 'Pending Analysis'}
+                </p>
               </div>
               <div>
                 <p className="text-gray-600">Reserve Price</p>
-                <p className="font-medium">₦{parseFloat(selectedCase.reservePrice).toLocaleString()}</p>
+                <p className="font-medium">
+                  {selectedCase.reservePrice 
+                    ? `₦${parseFloat(selectedCase.reservePrice).toLocaleString()}`
+                    : 'Pending Analysis'}
+                </p>
               </div>
             </div>
           </div>

@@ -460,6 +460,23 @@ export class PriceExtractionService {
       return false;
     }
     
+    // CRITICAL FIX: Add minimum price thresholds by item type to filter out part prices
+    const minPriceThresholds: Record<string, number> = {
+      'vehicle': 500000, // Minimum ₦500k for vehicles (filters out part prices like ₦80)
+      'electronics': 10000, // Minimum ₦10k for electronics
+      'appliance': 20000, // Minimum ₦20k for appliances
+      'machinery': 100000, // Minimum ₦100k for machinery
+      'property': 1000000, // Minimum ₦1M for property
+      'jewelry': 5000, // Minimum ₦5k for jewelry
+      'furniture': 10000, // Minimum ₦10k for furniture
+    };
+    
+    const minPrice = itemType ? minPriceThresholds[itemType] || 1000 : 1000;
+    if (price.price < minPrice) {
+      console.log(`🚫 Rejecting price ₦${price.price.toLocaleString()} - below minimum threshold of ₦${minPrice.toLocaleString()} for ${itemType || 'unknown'} type`);
+      return false;
+    }
+    
     return true;
   }
 

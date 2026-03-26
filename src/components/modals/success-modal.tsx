@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
 interface SuccessModalProps {
@@ -50,11 +51,11 @@ export function SuccessModal({
     }
   };
 
-  return (
-    <div>
+  const modalContent = (
+    <div className="fixed inset-0" style={{ zIndex: 999999 }}>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        className="fixed inset-0 bg-black/50 transition-opacity"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             onClose();
@@ -63,9 +64,9 @@ export function SuccessModal({
       />
       
       {/* Modal Container */}
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+      <div className="fixed inset-0 flex items-center justify-center p-4">
         <div 
-          className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl pointer-events-auto max-h-[90vh] overflow-y-auto"
+          className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl transform transition-all"
           onClick={(e) => e.stopPropagation()}
         >
         {/* Success Icon */}
@@ -107,4 +108,8 @@ export function SuccessModal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' 
+    ? createPortal(modalContent, document.body)
+    : null;
 }

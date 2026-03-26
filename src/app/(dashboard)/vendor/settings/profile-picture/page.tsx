@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { Camera, Trash2, Upload, X } from 'lucide-react';
 import Image from 'next/image';
@@ -265,12 +266,14 @@ export default function ProfilePicturePage() {
       </div>
 
       {/* Full Image Modal */}
-      {showFullImage && currentProfilePicture && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4"
-          onClick={() => setShowFullImage(false)}
-        >
-          <div className="relative max-w-4xl max-h-[90vh]">
+      {showFullImage && currentProfilePicture && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-75"
+            onClick={() => setShowFullImage(false)}
+          />
+          <div className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none">
+            <div className="relative max-w-4xl max-h-[90vh] pointer-events-auto">
             <button
               onClick={() => setShowFullImage(false)}
               className="absolute -top-12 right-0 text-white hover:text-gray-300"
@@ -286,6 +289,8 @@ export default function ProfilePicturePage() {
             />
           </div>
         </div>
+      </div>,
+        document.body
       )}
     </div>
   );

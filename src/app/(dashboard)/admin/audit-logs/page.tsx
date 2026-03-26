@@ -11,6 +11,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { UserAvatar } from '@/components/ui/user-avatar';
 
 interface AuditLog {
@@ -774,9 +775,11 @@ export default function AuditLogViewer() {
       )}
 
       {/* Detail Modal */}
-      {showDetailModal && selectedLog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      {showDetailModal && selectedLog && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => { setShowDetailModal(false); setSelectedLog(null); }} />
+          <div className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto pointer-events-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-900">Audit Log Details</h2>
@@ -897,6 +900,8 @@ export default function AuditLogViewer() {
             </div>
           </div>
         </div>
+      </div>,
+        document.body
       )}
     </div>
   );

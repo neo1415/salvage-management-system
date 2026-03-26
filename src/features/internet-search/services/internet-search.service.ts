@@ -89,27 +89,111 @@ export class InternetSearchService {
       if (cachedResult) {
         const executionTime = timer.end();
         
-        // Record cache hit in performance metrics
-        performanceMonitor.recordSearch({
-          query: cachedResult.query,
-          itemType: item.type,
-          startTime: timer.getStartTime(),
-          endTime: Date.now(),
-          success: true,
-          resultsCount: cachedResult.resultsProcessed,
-          pricesExtracted: cachedResult.priceData.prices.length,
-          confidence: cachedResult.priceData.confidence,
-          fromCache: true
+        console.log('💾 Using CACHED market price data');
+        console.log(`📊 Cached prices: ${cachedResult.priceData.prices.length} prices`);
+        cachedResult.priceData.prices.forEach((price, index) => {
+          console.log(
+            `  ${index + 1}. ₦${price.price.toLocaleString()} from ${price.source} ` +
+            `(confidence: ${price.confidence}%)`
+          );
+        });
+        console.log(`📊 Cached statistics: avg=₦${cachedResult.priceData.averagePrice?.toLocaleString()}, median=₦${cachedResult.priceData.medianPrice?.toLocaleString()}`);
+        
+        // CRITICAL FIX: Revalidate cached prices with current validation rules
+        // This ensures old cached data with invalid prices (like ₦80 parts) gets filtered out
+        const revalidatedPrices = cachedResult.priceData.prices.filter(price => {
+          // Apply minimum price threshold
+          const minPriceThresholds: Record<string, number> = {
+            'vehicle': 500000,
+            'electronics': 10000,
+            'appliance': 20000,
+            'machinery': 100000,
+            'property': 1000000,
+            'jewelry': 5000,
+            'furniture': 10000,
+          };
+          const minPrice = item.type ? minPriceThresholds[item.type] || 1000 : 1000;
+          
+          if (price.price < minPrice) {
+            console.log(`🚫 Filtering out cached price ₦${price.price.toLocaleString()} - below minimum threshold of ₦${minPrice.toLocaleString()}`);
+            return false;
+          }
+          return true;
         });
         
-        return {
-          priceData: cachedResult.priceData,
-          query: cachedResult.query,
-          resultsProcessed: cachedResult.resultsProcessed,
-          executionTime,
-          dataSource: 'internet_search',
-          success: true
-        };
+        // Recalculate statistics if prices were filtered
+        if (revalidatedPrices.length !== cachedResult.priceData.prices.length) {
+          console.log(`📊 Revalidation: ${cachedResult.priceData.prices.length - revalidatedPrices.length} invalid prices removed from cache`);
+          
+          if (revalidatedPrices.length === 0) {
+            console.log('⚠️ All cached prices were invalid, fetching fresh data...');
+            // Don't use cache, fall through to fresh search
+          } else {
+            // Recalculate statistics with valid prices only
+            const priceValues = revalidatedPrices.map(p => p.price);
+            const sortedPrices = [...priceValues].sort((a, b) => a - b);
+            const averagePrice = priceValues.reduce((sum, price) => sum + price, 0) / priceValues.length;
+            const medianPrice = sortedPrices.length % 2 === 0
+              ? (sortedPrices[sortedPrices.length / 2 - 1] + sortedPrices[sortedPrices.length / 2]) / 2
+              : sortedPrices[Math.floor(sortedPrices.length / 2)];
+            
+            console.log(`📊 Recalculated statistics: avg=₦${Math.round(averagePrice).toLocaleString()}, median=₦${Math.round(medianPrice).toLocaleString()}`);
+            
+            // Update cached result with revalidated data
+            cachedResult.priceData.prices = revalidatedPrices;
+            cachedResult.priceData.averagePrice = Math.round(averagePrice);
+            cachedResult.priceData.medianPrice = Math.round(medianPrice);
+            cachedResult.priceData.priceRange = {
+              min: Math.min(...priceValues),
+              max: Math.max(...priceValues)
+            };
+            
+            // Record cache hit in performance metrics
+            performanceMonitor.recordSearch({
+              query: cachedResult.query,
+              itemType: item.type,
+              startTime: timer.getStartTime(),
+              endTime: Date.now(),
+              success: true,
+              resultsCount: cachedResult.resultsProcessed,
+              pricesExtracted: revalidatedPrices.length,
+              confidence: cachedResult.priceData.confidence,
+              fromCache: true
+            });
+            
+            return {
+              priceData: cachedResult.priceData,
+              query: cachedResult.query,
+              resultsProcessed: cachedResult.resultsProcessed,
+              executionTime,
+              dataSource: 'internet_search',
+              success: true
+            };
+          }
+        } else {
+          // No filtering needed, use cache as-is
+          // Record cache hit in performance metrics
+          performanceMonitor.recordSearch({
+            query: cachedResult.query,
+            itemType: item.type,
+            startTime: timer.getStartTime(),
+            endTime: Date.now(),
+            success: true,
+            resultsCount: cachedResult.resultsProcessed,
+            pricesExtracted: cachedResult.priceData.prices.length,
+            confidence: cachedResult.priceData.confidence,
+            fromCache: true
+          });
+          
+          return {
+            priceData: cachedResult.priceData,
+            query: cachedResult.query,
+            resultsProcessed: cachedResult.resultsProcessed,
+            executionTime,
+            dataSource: 'internet_search',
+            success: true
+          };
+        }
       }
       
       // Build search query

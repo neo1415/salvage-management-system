@@ -10,6 +10,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { AdminPickupConfirmation } from '@/components/admin/admin-pickup-confirmation';
@@ -412,51 +413,58 @@ export default function AdminPickupsPage() {
         )}
 
         {/* Pickup Confirmation Modal */}
-        {isModalOpen && selectedPickup && session?.user && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">Confirm Pickup</h2>
-                  <button
-                    onClick={() => {
-                      setIsModalOpen(false);
-                      setSelectedPickup(null);
+        {isModalOpen && selectedPickup && session?.user && typeof document !== 'undefined' && createPortal(
+          <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+            <div className="fixed inset-0 bg-black/50" onClick={() => {
+              setIsModalOpen(false);
+              setSelectedPickup(null);
+            }} />
+            <div className="fixed inset-0 flex items-center justify-center p-4">
+              <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="p-6">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold text-gray-900">Confirm Pickup</h2>
+                    <button
+                      onClick={() => {
+                        setIsModalOpen(false);
+                        setSelectedPickup(null);
+                      }}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Pickup Details */}
+                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-2">
+                      <span className="font-medium">Claim:</span> {selectedPickup.claimReference}
+                    </p>
+                    <p className="text-sm text-gray-600 mb-2">
+                      <span className="font-medium">Asset:</span> {formatAssetName(selectedPickup)}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      <span className="font-medium">Vendor:</span> {selectedPickup.vendor.fullName} ({selectedPickup.vendor.businessName})
+                    </p>
+                  </div>
+
+                  {/* AdminPickupConfirmation Component */}
+                  <AdminPickupConfirmation
+                    auctionId={selectedPickup.auctionId}
+                    adminId={session.user.id}
+                    vendorPickupStatus={{
+                      confirmed: selectedPickup.vendorConfirmation.confirmed,
+                      confirmedAt: selectedPickup.vendorConfirmation.confirmedAt,
                     }}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                    onConfirm={handleConfirmPickup}
+                  />
                 </div>
-
-                {/* Pickup Details */}
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-2">
-                    <span className="font-medium">Claim:</span> {selectedPickup.claimReference}
-                  </p>
-                  <p className="text-sm text-gray-600 mb-2">
-                    <span className="font-medium">Asset:</span> {formatAssetName(selectedPickup)}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">Vendor:</span> {selectedPickup.vendor.fullName} ({selectedPickup.vendor.businessName})
-                  </p>
-                </div>
-
-                {/* AdminPickupConfirmation Component */}
-                <AdminPickupConfirmation
-                  auctionId={selectedPickup.auctionId}
-                  adminId={session.user.id}
-                  vendorPickupStatus={{
-                    confirmed: selectedPickup.vendorConfirmation.confirmed,
-                    confirmedAt: selectedPickup.vendorConfirmation.confirmedAt,
-                  }}
-                  onConfirm={handleConfirmPickup}
-                />
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </div>

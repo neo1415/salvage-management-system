@@ -11,6 +11,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { User as UserIcon } from 'lucide-react';
 import ActionModal from './action-modal';
@@ -567,141 +568,21 @@ export default function AdminUserManagement() {
       )}
 
       {/* Add User Modal */}
-      {showAddUserModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Add New User</h2>
-                <button
-                  onClick={() => {
-                    setShowAddUserModal(false);
-                    setFormErrors({});
-                    setSubmitError(null);
-                    setSubmitSuccess(null);
-                    setTemporaryPassword(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Success Message */}
-              {submitSuccess && (
-                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4">
-                  <p className="font-semibold">{submitSuccess}</p>
-                  {temporaryPassword && (
-                    <div className="mt-3 p-3 bg-white border border-green-300 rounded">
-                      <p className="text-sm font-medium mb-1">Temporary Password:</p>
-                      <code className="text-sm bg-gray-100 px-2 py-1 rounded">{temporaryPassword}</code>
-                      <p className="text-xs mt-2 text-green-600">
-                        ⚠️ Save this password! It has been emailed to the user.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Error Message */}
-              {submitError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
-                  {submitError}
-                </div>
-              )}
-
-              <form onSubmit={handleAddUser}>
-                {/* Full Name */}
-                <div className="mb-4">
-                  <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    id="fullName"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent ${
-                      formErrors.fullName ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="John Doe"
-                  />
-                  {formErrors.fullName && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.fullName}</p>
-                  )}
-                </div>
-
-                {/* Email */}
-                <div className="mb-4">
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                    Email *
-                  </label>
-                  <input
-                    type="email"
-                    id="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent ${
-                      formErrors.email ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="john.doe@nem-insurance.com"
-                  />
-                  {formErrors.email && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
-                  )}
-                </div>
-
-                {/* Phone */}
-                <div className="mb-4">
-                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone Number *
-                  </label>
-                  <input
-                    type="tel"
-                    id="phone"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent ${
-                      formErrors.phone ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="+2348012345678"
-                  />
-                  {formErrors.phone && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.phone}</p>
-                  )}
-                </div>
-
-                {/* Role */}
-                <div className="mb-6">
-                  <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-2">
-                    Role *
-                  </label>
-                  <select
-                    id="role"
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
-                  >
-                    <option value="claims_adjuster">Claims Adjuster</option>
-                    <option value="salvage_manager">Salvage Manager</option>
-                    <option value="finance_officer">Finance Officer</option>
-                  </select>
-                </div>
-
-                {/* Info Box */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <p className="text-sm text-blue-800">
-                    <strong>ℹ️ Note:</strong> A temporary password will be generated and emailed to the user. 
-                    They will be required to change it on first login.
-                  </p>
-                </div>
-
-                {/* Buttons */}
-                <div className="flex gap-3">
+      {showAddUserModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div className="fixed inset-0 bg-black/50" onClick={() => {
+            setShowAddUserModal(false);
+            setFormErrors({});
+            setSubmitError(null);
+            setSubmitSuccess(null);
+            setTemporaryPassword(null);
+          }} />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Add New User</h2>
                   <button
-                    type="button"
                     onClick={() => {
                       setShowAddUserModal(false);
                       setFormErrors({});
@@ -709,23 +590,153 @@ export default function AdminUserManagement() {
                       setSubmitSuccess(null);
                       setTemporaryPassword(null);
                     }}
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
-                    disabled={submitting}
+                    className="text-gray-400 hover:text-gray-600"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2 bg-burgundy-600 text-white font-semibold rounded-lg hover:bg-burgundy-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={submitting}
-                  >
-                    {submitting ? 'Creating...' : 'Create User'}
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 </div>
-              </form>
+
+                {/* Success Message */}
+                {submitSuccess && (
+                  <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4">
+                    <p className="font-semibold">{submitSuccess}</p>
+                    {temporaryPassword && (
+                      <div className="mt-3 p-3 bg-white border border-green-300 rounded">
+                        <p className="text-sm font-medium mb-1">Temporary Password:</p>
+                        <code className="text-sm bg-gray-100 px-2 py-1 rounded">{temporaryPassword}</code>
+                        <p className="text-xs mt-2 text-green-600">
+                          ⚠️ Save this password! It has been emailed to the user.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Error Message */}
+                {submitError && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+                    {submitError}
+                  </div>
+                )}
+
+                <form onSubmit={handleAddUser}>
+                  {/* Full Name */}
+                  <div className="mb-4">
+                    <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      id="fullName"
+                      value={formData.fullName}
+                      onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent ${
+                        formErrors.fullName ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      placeholder="John Doe"
+                    />
+                    {formErrors.fullName && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.fullName}</p>
+                    )}
+                  </div>
+
+                  {/* Email */}
+                  <div className="mb-4">
+                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                      Email *
+                    </label>
+                    <input
+                      type="email"
+                      id="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent ${
+                        formErrors.email ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      placeholder="john.doe@nem-insurance.com"
+                    />
+                    {formErrors.email && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
+                    )}
+                  </div>
+
+                  {/* Phone */}
+                  <div className="mb-4">
+                    <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                      Phone Number *
+                    </label>
+                    <input
+                      type="tel"
+                      id="phone"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent ${
+                        formErrors.phone ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      placeholder="+2348012345678"
+                    />
+                    {formErrors.phone && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.phone}</p>
+                    )}
+                  </div>
+
+                  {/* Role */}
+                  <div className="mb-6">
+                    <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-2">
+                      Role *
+                    </label>
+                    <select
+                      id="role"
+                      value={formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                    >
+                      <option value="claims_adjuster">Claims Adjuster</option>
+                      <option value="salvage_manager">Salvage Manager</option>
+                      <option value="finance_officer">Finance Officer</option>
+                    </select>
+                  </div>
+
+                  {/* Info Box */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                    <p className="text-sm text-blue-800">
+                      <strong>ℹ️ Note:</strong> A temporary password will be generated and emailed to the user. 
+                      They will be required to change it on first login.
+                    </p>
+                  </div>
+
+                  {/* Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddUserModal(false);
+                        setFormErrors({});
+                        setSubmitError(null);
+                        setSubmitSuccess(null);
+                        setTemporaryPassword(null);
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                      disabled={submitting}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 px-4 py-2 bg-burgundy-600 text-white font-semibold rounded-lg hover:bg-burgundy-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={submitting}
+                    >
+                      {submitting ? 'Creating...' : 'Create User'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Action Modal */}

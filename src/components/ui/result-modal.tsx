@@ -3,11 +3,13 @@
  * 
  * Professional modal for displaying success/error messages
  * Replaces browser alert() with a clean UI
+ * Uses React Portal to render outside layout hierarchy
  */
 
 'use client';
 
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckCircle, XCircle, X } from 'lucide-react';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
@@ -70,11 +72,11 @@ export function ResultModal({
 
   const colors = getColors();
 
-  return (
-    <div>
-      {/* Backdrop */}
+  const modalContent = (
+    <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+      {/* Backdrop - covers EVERYTHING including sidebar */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        className="fixed inset-0 bg-black/50 transition-opacity"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             onClose();
@@ -82,10 +84,10 @@ export function ResultModal({
         }}
       />
       
-      {/* Modal Container */}
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+      {/* Modal Container - properly centered, always visible */}
+      <div className="fixed inset-0 flex items-center justify-center p-4">
         <div 
-          className="relative w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto pointer-events-auto"
+          className="relative w-full max-w-md bg-white rounded-xl shadow-2xl transform transition-all"
           onClick={(e) => e.stopPropagation()}
         >
         {/* Close button */}
@@ -140,4 +142,9 @@ export function ResultModal({
       </div>
     </div>
   );
+
+  // Render modal using Portal to break out of layout hierarchy
+  return typeof document !== 'undefined' 
+    ? createPortal(modalContent, document.body)
+    : null;
 }

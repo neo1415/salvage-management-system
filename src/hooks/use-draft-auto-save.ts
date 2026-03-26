@@ -119,8 +119,7 @@ export function useDraftAutoSave(
 
   // Validate draft for submission
   useEffect(() => {
-    // CRITICAL FIX: Validate even without a draft ID
-    // This allows submission when user fills form for the first time
+    // Validate current form state for submission
     const draft: DraftCase = {
       id: currentDraftId || 'temp',
       formData: formDataRef.current,
@@ -135,7 +134,15 @@ export function useDraftAutoSave(
     const validation = DraftService.canSubmit(draft);
     setCanSubmit(validation.valid);
     setValidationErrors(validation.errors);
-  }, [currentDraftId]); // CRITICAL FIX: Only depend on currentDraftId, use refs for other values
+    
+    // Log validation state for debugging
+    console.log('Draft validation:', {
+      hasAIAnalysis: hasAIAnalysisRef.current,
+      marketValue: marketValueRef.current,
+      valid: validation.valid,
+      errors: validation.errors,
+    });
+  }, [currentDraftId, hasAIAnalysis, marketValue]); // Re-validate when AI analysis completes or market value changes
 
   // Manual save
   const saveDraft = useCallback(async () => {
