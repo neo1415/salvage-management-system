@@ -276,6 +276,8 @@ export function verifyWebhookSignature(payload: string, signature: string): bool
  * Process Paystack webhook
  * Auto-verifies payment and generates pickup authorization
  * Also handles wallet funding confirmations
+ * 
+ * SECURITY FIX: Added idempotency check to prevent replay attacks
  */
 export async function processPaystackWebhook(
   payload: PaystackWebhookPayload,
@@ -300,6 +302,20 @@ export async function processPaystackWebhook(
       console.log(`Payment not successful: ${status}`);
       return;
     }
+
+    // SECURITY FIX: Idempotency check - prevent replay attacks
+    // Check if this webhook has already been processed using the reference
+    const { kv } = await import('@vercel/kv');
+    const webhookKey = `webhook:processed:${reference}`;
+    const alreadyProcessed = await kv.get(webhookKey);
+    
+    if (alreadyProcessed) {
+      console.log(`⚠️  Webhook already processed for reference: ${reference}. Ignoring duplicate.`);
+      return;
+    }
+
+    // Mark webhook as processed (TTL: 7 days)
+    await kv.set(webhookKey, true, { ex: 7 * 24 * 60 * 60 });
 
     // Check if this is a wallet funding transaction
     if (metadata && typeof metadata === 'object' && 'type' in metadata && metadata.type === 'wallet_funding') {
@@ -360,145 +376,151 @@ async function processWalletFunding(
 
 /**
  * Process auction payment webhook
+ * SECURITY FIX: Added database transaction with row-level locking to prevent race conditions
  */
 async function processAuctionPayment(reference: string, amountInKobo: number): Promise<void> {
   try {
-    // Find payment in database
-    const [payment] = await db
-      .select()
-      .from(payments)
-      .where(eq(payments.paymentReference, reference))
-      .limit(1);
+    // SECURITY FIX: Use transaction with row-level locking to prevent race conditions
+    // This ensures only ONE webhook can process this payment at a time
+    await db.transaction(async (tx) => {
+      // Lock the payment row for update
+      const [payment] = await tx
+        .select()
+        .from(payments)
+        .where(eq(payments.paymentReference, reference))
+        .for('update') // PostgreSQL row-level lock
+        .limit(1);
 
-    if (!payment) {
-      throw new Error(`Payment not found for reference: ${reference}`);
-    }
+      if (!payment) {
+        throw new Error(`Payment not found for reference: ${reference}`);
+      }
 
-    // Verify amount matches (Paystack sends amount in kobo)
-    const expectedAmountInKobo = Math.round(parseFloat(payment.amount) * 100);
-    if (amountInKobo !== expectedAmountInKobo) {
-      throw new Error(
-        `Amount mismatch: expected ${expectedAmountInKobo} kobo, got ${amountInKobo} kobo`
-      );
-    }
+      // Verify amount matches (Paystack sends amount in kobo)
+      const expectedAmountInKobo = Math.round(parseFloat(payment.amount) * 100);
+      if (amountInKobo !== expectedAmountInKobo) {
+        throw new Error(
+          `Amount mismatch: expected ${expectedAmountInKobo} kobo, got ${amountInKobo} kobo`
+        );
+      }
 
-    // Check if already verified
-    if (payment.status === 'verified') {
-      console.log(`Payment already verified: ${payment.id}`);
-      return;
-    }
+      // Check if already verified (double-check after lock)
+      if (payment.status === 'verified') {
+        console.log(`Payment already verified: ${payment.id}`);
+        return;
+      }
 
-    // Get auction details
-    const [auction] = await db
-      .select()
-      .from(auctions)
-      .where(eq(auctions.id, payment.auctionId))
-      .limit(1);
+      // Get auction details
+      const [auction] = await tx
+        .select()
+        .from(auctions)
+        .where(eq(auctions.id, payment.auctionId))
+        .limit(1);
 
-    if (!auction) {
-      throw new Error('Auction not found');
-    }
+      if (!auction) {
+        throw new Error('Auction not found');
+      }
 
-    // Get case details
-    const [salvageCase] = await db
-      .select()
-      .from(salvageCases)
-      .where(eq(salvageCases.id, auction.caseId))
-      .limit(1);
+      // Get case details
+      const [salvageCase] = await tx
+        .select()
+        .from(salvageCases)
+        .where(eq(salvageCases.id, auction.caseId))
+        .limit(1);
 
-    if (!salvageCase) {
-      throw new Error('Case not found');
-    }
+      if (!salvageCase) {
+        throw new Error('Case not found');
+      }
 
-    // Get vendor details
-    const [vendor] = await db
-      .select()
-      .from(vendors)
-      .where(eq(vendors.id, payment.vendorId))
-      .limit(1);
+      // Get vendor details
+      const [vendor] = await tx
+        .select()
+        .from(vendors)
+        .where(eq(vendors.id, payment.vendorId))
+        .limit(1);
 
-    if (!vendor) {
-      throw new Error('Vendor not found');
-    }
+      if (!vendor) {
+        throw new Error('Vendor not found');
+      }
 
-    // Get user details
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, vendor.userId))
-      .limit(1);
+      // Get user details
+      const [user] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, vendor.userId))
+        .limit(1);
 
-    if (!user) {
-      throw new Error('User not found');
-    }
+      if (!user) {
+        throw new Error('User not found');
+      }
 
-    // Update payment status to verified
-    await db
-      .update(payments)
-      .set({
-        status: 'verified',
-        verifiedAt: new Date(),
-        autoVerified: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(payments.id, payment.id));
+      // Update payment status to verified (within transaction)
+      await tx
+        .update(payments)
+        .set({
+          status: 'verified',
+          verifiedAt: new Date(),
+          autoVerified: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(payments.id, payment.id));
 
-    // Generate pickup authorization code
-    const pickupCode = generatePickupAuthorizationCode(payment.id);
+      // Generate pickup authorization code
+      const pickupCode = generatePickupAuthorizationCode(payment.id);
 
-    // Send SMS notification
-    const smsMessage = `Payment confirmed! Your pickup authorization code is: ${pickupCode}. Amount: ₦${parseFloat(
-      payment.amount
-    ).toLocaleString()}. Valid for 7 days.`;
-    
-    await smsService.sendSMS({
-      to: user.phone,
-      message: smsMessage,
-    });
+      // Send SMS notification
+      const smsMessage = `Payment confirmed! Your pickup authorization code is: ${pickupCode}. Amount: ₦${parseFloat(
+        payment.amount
+      ).toLocaleString()}. Valid for 7 days.`;
+      
+      await smsService.sendSMS({
+        to: user.phone,
+        message: smsMessage,
+      });
 
-    // Send email notification
-    const emailSubject = 'Payment Confirmed - Pickup Authorization';
-    const emailHtml = `
-      <h2>Payment Confirmed</h2>
-      <p>Dear ${user.fullName},</p>
-      <p>Your payment of <strong>₦${parseFloat(payment.amount).toLocaleString()}</strong> has been confirmed.</p>
-      <h3>Pickup Authorization Code</h3>
-      <p style="font-size: 24px; font-weight: bold; color: #800020;">${pickupCode}</p>
-      <p>Please present this code when collecting your salvage item.</p>
-      <h3>Item Details</h3>
-      <ul>
-        <li>Claim Reference: ${salvageCase.claimReference}</li>
-        <li>Asset Type: ${salvageCase.assetType}</li>
-        <li>Location: ${salvageCase.locationName}</li>
-      </ul>
-      <p>This authorization is valid for 7 days from the date of payment.</p>
-      <p>Thank you for using NEM Salvage Management System.</p>
-    `;
+      // Send email notification
+      const emailSubject = 'Payment Confirmed - Pickup Authorization';
+      const emailHtml = `
+        <h2>Payment Confirmed</h2>
+        <p>Dear ${user.fullName},</p>
+        <p>Your payment of <strong>₦${parseFloat(payment.amount).toLocaleString()}</strong> has been confirmed.</p>
+        <h3>Pickup Authorization Code</h3>
+        <p style="font-size: 24px; font-weight: bold; color: #800020;">${pickupCode}</p>
+        <p>Please present this code when collecting your salvage item.</p>
+        <h3>Item Details</h3>
+        <ul>
+          <li>Claim Reference: ${salvageCase.claimReference}</li>
+          <li>Asset Type: ${salvageCase.assetType}</li>
+          <li>Location: ${salvageCase.locationName}</li>
+        </ul>
+        <p>This authorization is valid for 7 days from the date of payment.</p>
+        <p>Thank you for using NEM Salvage Management System.</p>
+      `;
 
-    await emailService.sendEmail({
-      to: user.email,
-      subject: emailSubject,
-      html: emailHtml,
-    });
+      await emailService.sendEmail({
+        to: user.email,
+        subject: emailSubject,
+        html: emailHtml,
+      });
 
-    // Log auto-verification
-    await logAction({
-      userId: payment.vendorId,
-      actionType: AuditActionType.PAYMENT_AUTO_VERIFIED,
-      entityType: AuditEntityType.PAYMENT,
-      entityId: payment.id,
-      ipAddress: '0.0.0.0',
-      deviceType: DeviceType.MOBILE,
-      userAgent: 'paystack-webhook',
-      beforeState: { status: payment.status },
-      afterState: {
-        status: 'verified',
-        autoVerified: true,
-        pickupCode,
-      },
-    });
+      // Log auto-verification
+      await logAction({
+        userId: payment.vendorId,
+        actionType: AuditActionType.PAYMENT_AUTO_VERIFIED,
+        entityType: AuditEntityType.PAYMENT,
+        entityId: payment.id,
+        ipAddress: '0.0.0.0',
+        deviceType: DeviceType.MOBILE,
+        userAgent: 'paystack-webhook',
+        beforeState: { status: payment.status },
+        afterState: {
+          status: 'verified',
+          autoVerified: true,
+          pickupCode,
+        },
+      });
 
-    console.log(`Payment auto-verified successfully: ${payment.id}`);
+      console.log(`✅ Payment auto-verified successfully (with transaction lock): ${payment.id}`);
+    }); // End transaction
   } catch (error) {
     console.error('Error processing auction payment:', error);
     throw error;

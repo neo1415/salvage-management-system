@@ -7,7 +7,9 @@
 
 'use client';
 
+import { useEffect } from 'react';
 import { X, AlertTriangle, CheckCircle, Info, XCircle } from 'lucide-react';
+import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
 export type ConfirmationType = 'warning' | 'danger' | 'info' | 'success' | 'error';
 
@@ -34,6 +36,14 @@ export function ConfirmationModal({
   type = 'warning',
   isLoading = false,
 }: ConfirmationModalProps) {
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const unlock = lockScroll();
+      return unlock;
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const getIcon = () => {
@@ -77,20 +87,35 @@ export function ConfirmationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden">
-        {/* Close button */}
-        <button
-          onClick={handleCancel}
-          disabled={isLoading}
-          className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Close modal"
+    <div>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        onClick={(e) => {
+          if (e.target === e.currentTarget && !isLoading) {
+            handleCancel();
+          }
+        }}
+      />
+      
+      {/* Modal Container */}
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+        <div 
+          className="relative w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
         >
-          <X className="w-5 h-5 text-gray-500" />
-        </button>
+          {/* Close button */}
+          <button
+            onClick={handleCancel}
+            disabled={isLoading}
+            className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed z-10"
+            aria-label="Close modal"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
 
-        {/* Content */}
-        <div className="p-6 text-center">
+          {/* Content */}
+          <div className="p-6 text-center">
           {/* Icon */}
           <div className="flex justify-center mb-4">
             {getIcon()}
@@ -132,6 +157,7 @@ export function ConfirmationModal({
               )}
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

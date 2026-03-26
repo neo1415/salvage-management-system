@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
 interface ErrorModalProps {
   isOpen: boolean;
@@ -21,6 +22,14 @@ export function ErrorModal({
   actionLabel = 'Close',
   onAction,
 }: ErrorModalProps) {
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const unlock = lockScroll();
+      return unlock;
+    }
+  }, [isOpen]);
+
   // Close on Escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -44,8 +53,23 @@ export function ErrorModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fadeIn">
-      <div className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl animate-slideUp">
+    <div>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            onClose();
+          }
+        }}
+      />
+      
+      {/* Modal Container */}
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+        <div 
+          className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl pointer-events-auto max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Error Icon */}
         <div className="flex items-center justify-center mb-4">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
@@ -88,37 +112,8 @@ export function ErrorModal({
         >
           {actionLabel}
         </button>
+        </div>
       </div>
-
-      <style jsx>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-
-        @keyframes slideUp {
-          from {
-            transform: translateY(20px);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0);
-            opacity: 1;
-          }
-        }
-
-        .animate-fadeIn {
-          animation: fadeIn 0.2s ease-out;
-        }
-
-        .animate-slideUp {
-          animation: slideUp 0.3s ease-out;
-        }
-      `}</style>
     </div>
   );
 }

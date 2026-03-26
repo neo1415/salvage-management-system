@@ -28,6 +28,7 @@ import { formatNaira } from '@/lib/utils/currency-formatter';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { useToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { useCachedBidHistory } from '@/hooks/use-cached-bid-history';
 
 interface BidHistoryItem {
   auction: {
@@ -97,17 +98,26 @@ export default function BidHistoryPage() {
   const toast = useToast();
   
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
-  const [data, setData] = useState<BidHistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [endingAuction, setEndingAuction] = useState<string | null>(null);
   const [showEndAuctionModal, setShowEndAuctionModal] = useState(false);
   const [selectedAuctionId, setSelectedAuctionId] = useState<string | null>(null);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [exporting, setExporting] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Use cached bid history hook
+  const { 
+    data, 
+    isLoading: loading, 
+    isOffline, 
+    lastCached, 
+    refresh, 
+    error: cacheError, 
+    totalPages 
+  } = useCachedBidHistory(activeTab, page);
+
+  const [error, setError] = useState<string | null>(null);
 
   // Auth check
   useEffect(() => {
@@ -142,33 +152,9 @@ export default function BidHistoryPage() {
     };
   }, [showExportDropdown]);
 
-  // Fetch data
-  useEffect(() => {
-    if (!isAuthenticated || !user) return;
-    
-    fetchBidHistory();
-  }, [activeTab, page, isAuthenticated, user]);
-
+  // Fetch bid history (now handled by the hook, but keep for manual refresh)
   const fetchBidHistory = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await fetch(`/api/bid-history?tab=${activeTab}&page=${page}&limit=10`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch bid history');
-      }
-      
-      const result = await response.json();
-      setData(result.data);
-      setTotalPages(result.pagination.totalPages);
-    } catch (err) {
-      console.error('Error fetching bid history:', err);
-      setError('Failed to load bid history');
-    } finally {
-      setLoading(false);
-    }
+    await refresh();
   };
 
   // Early auction closure (salvage managers only)
@@ -315,7 +301,7 @@ export default function BidHistoryPage() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -326,20 +312,20 @@ export default function BidHistoryPage() {
     );
   }
 
-  if (error) {
+  if (error || cacheError) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <XCircle className="w-8 h-8 text-red-600" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">{isOffline ? 'Offline' : 'Access Denied'}</h2>
+          <p className="text-gray-600 mb-6">{error || cacheError?.message}</p>
           <button
-            onClick={() => router.push('/login')}
+            onClick={() => isOffline ? refresh() : router.push('/login')}
             className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
           >
-            Go to Login
+            {isOffline ? 'Retry' : 'Go to Login'}
           </button>
         </div>
       </div>
@@ -418,6 +404,30 @@ export default function BidHistoryPage() {
             )}
           </div>
         </div>
+
+        {/* Offline indicator banner */}
+        {isOffline && (
+          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-yellow-600 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-yellow-800">
+                  You are offline. Showing cached bid history.
+                </p>
+                {lastCached && (
+                  <p className="text-xs text-yellow-700 mt-1">
+                    Last updated: {new Date(lastCached).toLocaleString('en-NG', {
+                      dateStyle: 'medium',
+                      timeStyle: 'short'
+                    })}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow mb-6">
@@ -586,14 +596,14 @@ export default function BidHistoryPage() {
                     )}
                   </div>
 
-                  {/* Location */}
-                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
+                  {/* Location - Hidden on mobile */}
+                  <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600 mb-4">
                     <MapPin className="w-4 h-4" />
                     <span className="truncate">{item.case.locationName}</span>
                   </div>
 
-                  {/* Bidding Info */}
-                  <div className="grid grid-cols-2 gap-4 mb-4">
+                  {/* Bidding Info - Stack on mobile, row on desktop */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
                       <div className="text-xs text-gray-500 mb-1">Current Bid</div>
                       <div className="text-lg font-bold text-[#800020]">
@@ -608,13 +618,13 @@ export default function BidHistoryPage() {
                     </div>
                   </div>
 
-                  {/* Bid Stats */}
+                  {/* Bid Stats - Hide watching count on mobile */}
                   <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
                     <div className="flex items-center gap-1">
                       <Users className="w-4 h-4" />
                       <span>{item.bidHistory.length} bids</span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="hidden sm:flex items-center gap-1">
                       <Eye className="w-4 h-4" />
                       <span>{item.watchingCount} watching</span>
                     </div>

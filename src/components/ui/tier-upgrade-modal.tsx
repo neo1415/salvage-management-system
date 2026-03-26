@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Crown, Zap, TrendingUp, Award } from 'lucide-react';
+import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
 interface TierUpgradeModalProps {
   isOpen: boolean;
@@ -12,6 +14,14 @@ interface TierUpgradeModalProps {
 export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeModalProps) {
   const router = useRouter();
 
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const unlock = lockScroll();
+      return unlock;
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleUpgradeClick = () => {
@@ -20,8 +30,23 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden">
+    <div>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            onClose();
+          }
+        }}
+      />
+      
+      {/* Modal Container */}
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+        <div 
+          className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header with gradient */}
         <div className="bg-gradient-to-r from-[#800020] to-[#FFD700] p-6 text-white">
           <button
@@ -120,6 +145,7 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
               Upgrade Now
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

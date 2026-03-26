@@ -39,9 +39,16 @@ export async function GET(
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
     }
 
-    // Verify the payment belongs to the current user's vendor account
-    if (payment.vendor.userId !== session.user.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    // SECURITY FIX: IDOR Protection - Verify ownership
+    // Only allow access if:
+    // 1. User is the vendor who owns this payment
+    // 2. User is admin/manager/finance (authorized roles)
+    const isOwner = payment.vendor.userId === session.user.id;
+    const isAuthorizedRole = ['admin', 'salvage_manager', 'system_admin', 'finance_officer'].includes(session.user.role);
+
+    if (!isOwner && !isAuthorizedRole) {
+      console.warn(`⚠️  IDOR attempt: User ${session.user.id} tried to access payment ${paymentId} owned by ${payment.vendor.userId}`);
+      return NextResponse.json({ error: 'Forbidden - You do not have permission to access this payment' }, { status: 403 });
     }
 
     // Format response
@@ -83,8 +90,10 @@ export async function GET(
     return NextResponse.json(response);
   } catch (error) {
     console.error('Error fetching payment:', error);
+    
+    // SECURITY FIX: Sanitize error messages - don't expose database/internal details
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to retrieve payment details. Please try again.' },
       { status: 500 }
     );
   }

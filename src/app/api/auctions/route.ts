@@ -175,7 +175,13 @@ export async function GET(request: NextRequest) {
     let orderBy;
     switch (sortBy) {
       case 'newest':
-        orderBy = desc(auctions.createdAt);
+        // For closed auctions (completed/won), sort by end time descending (most recently ended first)
+        // For active auctions, sort by creation time descending (latest created first)
+        if (tab === 'completed' || tab === 'won') {
+          orderBy = desc(auctions.endTime);
+        } else {
+          orderBy = desc(auctions.createdAt);
+        }
         break;
       case 'price_low':
         orderBy = asc(
@@ -189,7 +195,8 @@ export async function GET(request: NextRequest) {
         break;
       case 'ending_soon':
       default:
-        // For completed auctions, sort by end time descending (most recent first)
+        // For closed auctions (completed/won), sort by end time descending (most recently ended first)
+        // For active auctions, sort by end time ascending (ending soonest first)
         if (tab === 'completed' || tab === 'won') {
           orderBy = desc(auctions.endTime);
         } else {

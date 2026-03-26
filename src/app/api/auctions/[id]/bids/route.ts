@@ -60,6 +60,19 @@ export async function POST(
       );
     }
 
+    // Tier enforcement: Tier 1 vendors cannot bid above ₦500,000
+    const TIER_1_LIMIT = 500_000;
+    if (vendor.tier === 'tier1_bvn' && parseFloat(amount) > TIER_1_LIMIT) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Your current Tier 1 account limits bids to ₦${TIER_1_LIMIT.toLocaleString()}. Upgrade to Tier 2 for unlimited bidding.`,
+          requiresTier2: true,
+        },
+        { status: 403 }
+      );
+    }
+
     // Get IP address and user agent
     const ipAddress = request.headers.get('x-forwarded-for') || 
                      request.headers.get('x-real-ip') || 
@@ -93,10 +106,16 @@ export async function POST(
     });
   } catch (error) {
     console.error('Bid placement error:', error);
+    
+    // SECURITY FIX: Sanitize error messages - don't expose internal details
+    const sanitizedError = error instanceof Error && error.message.includes('Bid too low')
+      ? error.message // Safe error message
+      : 'Failed to place bid. Please try again.'; // Generic error for unexpected issues
+    
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to place bid' 
+        error: sanitizedError
       },
       { status: 500 }
     );
@@ -134,10 +153,12 @@ export async function GET(
     });
   } catch (error) {
     console.error('Get bids error:', error);
+    
+    // SECURITY FIX: Sanitize error messages
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to get bids' 
+        error: 'Failed to retrieve bids. Please try again.'
       },
       { status: 500 }
     );

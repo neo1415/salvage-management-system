@@ -10,6 +10,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { DigitalSignaturePad } from './digital-signature-pad';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
+import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
 interface ReleaseFormModalProps {
   auctionId: string;
@@ -49,6 +50,10 @@ export function ReleaseFormModal({
   useEffect(() => {
     if (auctionId && documentType) {
       fetchDocumentContent();
+      
+      // Prevent body scroll
+      const unlock = lockScroll();
+      return unlock;
     }
   }, [auctionId, documentType]);
 
@@ -140,10 +145,16 @@ export function ReleaseFormModal({
 
   if (isLoading) {
     return (
-      <div className="fixed inset-0 z-50 overflow-y-auto">
-        <div className="flex min-h-screen items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" />
-          <div className="relative bg-white rounded-lg shadow-xl p-8">
+      <div>
+        {/* Backdrop */}
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity" />
+        
+        {/* Modal Container */}
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+          <div 
+            className="relative bg-white rounded-lg shadow-xl p-8 pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020]"></div>
               <span className="ml-3 text-gray-700">Loading document...</span>
@@ -155,16 +166,19 @@ export function ReleaseFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-screen items-center justify-center p-4">
-        {/* Backdrop */}
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-          onClick={onClose}
-        />
+    <div>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        onClick={onClose}
+      />
 
-        {/* Modal */}
-        <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+      {/* Modal Container */}
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+        <div 
+          className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Header */}
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center justify-between">

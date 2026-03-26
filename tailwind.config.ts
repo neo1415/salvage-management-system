@@ -38,6 +38,9 @@ const config: Config = {
           900: '#856d00',
         },
       },
+      zIndex: {
+        '45': '45',
+      },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',

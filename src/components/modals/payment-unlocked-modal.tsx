@@ -14,8 +14,10 @@
  * - Stops appearing after visiting payment page
  */
 
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
+import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
 interface PaymentUnlockedModalProps {
   isOpen: boolean;
@@ -38,6 +40,14 @@ export default function PaymentUnlockedModal({
 }: PaymentUnlockedModalProps) {
   const router = useRouter();
 
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const unlock = lockScroll();
+      return unlock;
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleViewPayment = () => {
@@ -59,8 +69,23 @@ export default function PaymentUnlockedModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[9999]">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+    <div>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            handleDismiss();
+          }
+        }}
+      />
+      
+      {/* Modal Container */}
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+        <div 
+          className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header */}
         <div className="sticky top-0 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 flex items-center justify-between rounded-t-lg">
           <div className="flex items-center gap-3">
@@ -189,6 +214,7 @@ export default function PaymentUnlockedModal({
               Dismiss
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

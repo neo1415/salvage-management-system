@@ -15,8 +15,8 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -32,6 +32,9 @@ import { UnifiedVoiceField, useUnifiedVoiceContent } from '@/components/ui/unifi
 import { ModernVoiceControls } from '@/components/ui/modern-voice-controls';
 import { ResponsiveFormLayout, FormSection, FormField, ModernInput, ModernButton } from '@/components/ui/responsive-form-layout';
 import { cn } from '@/lib/utils';
+import { useDraftAutoSave } from '@/hooks/use-draft-auto-save';
+import { DraftList } from '@/components/cases/draft-list';
+import { AIAnalysisStatusBadge } from '@/components/cases/ai-analysis-status-badge';
 
 /**
  * Web Speech API types (not fully supported in TypeScript)
@@ -102,7 +105,16 @@ const caseFormSchema = z.object({
   assetType: z.enum(['vehicle', 'property', 'electronics', 'appliance', 'jewelry', 'furniture', 'machinery']).refine((val) => val !== undefined, {
     message: 'Asset type is required',
   }),
-  marketValue: z.number().positive('Market value must be positive'),
+  marketValue: z.preprocess(
+    (val) => {
+      // Handle NaN, null, undefined, empty string
+      if (val === null || val === undefined || val === '' || (typeof val === 'number' && isNaN(val))) {
+        return undefined;
+      }
+      return val;
+    },
+    z.number().positive('Market value must be positive').optional()
+  ),
   
   // Vehicle-specific fields
   vehicleMake: z.string().optional(),
@@ -235,6 +247,7 @@ interface AIAssessmentResult {
 
 export default function NewCasePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const isOffline = useOffline();
   const { pendingCount } = useOfflineSync();
   const toast = useToast();
@@ -252,6 +265,7 @@ export default function NewCasePage() {
     defaultValues: {
       photos: [],
       unifiedVoiceContent: '',
+      marketValue: undefined, // Explicitly set to undefined to avoid NaN
     },
   });
 
@@ -287,9 +301,16 @@ export default function NewCasePage() {
   const [mileageWarning, setMileageWarning] = useState<string | null>(null);
   const [formStateRestored, setFormStateRestored] = useState(false);
   
+  // CRITICAL FIX: Track if user has attempted to submit
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  
   // Separate loading states for draft vs submit buttons
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false);
+  
+  // Rate limiting state for AI assessment
+  const [lastAnalysisTimes, setLastAnalysisTimes] = useState<number[]>([]);
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null);
   
   // Search progress state
   const {
@@ -302,6 +323,38 @@ export default function NewCasePage() {
     updateProgress,
     reset: resetSearchProgress,
   } = useSearchProgress();
+  
+  // Draft list visibility state
+  const [showDraftList, setShowDraftList] = useState(false);
+  
+  // Watch all form fields - pass directly to useDraftAutoSave without memoization
+  // The hook will handle its own memoization internally
+  const formData = watch();
+  const marketValue = watch('marketValue');
+  const hasAIAnalysis = !!aiAssessment;
+  
+  const {
+    currentDraftId,
+    isSaving: isDraftSaving,
+    lastSaved: draftLastSaved,
+    saveDraft: saveDraftManually,
+    loadDraft,
+    drafts,
+    deleteDraft,
+    canSubmit: canSubmitDraft,
+    validationErrors: draftValidationErrors,
+    refreshDrafts,
+  } = useDraftAutoSave(formData, hasAIAnalysis, marketValue, {
+    enabled: true,
+    interval: 30000, // 30 seconds
+    onSave: (draft) => {
+      console.log('Draft auto-saved:', draft.id);
+    },
+    onError: (error) => {
+      console.error('Draft save failed:', error);
+      toast.error('Draft save failed', error.message);
+    },
+  });
   
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -318,6 +371,48 @@ export default function NewCasePage() {
     captureGPSLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Load draft from URL parameter if present
+   */
+  useEffect(() => {
+    const draftId = searchParams.get('draftId');
+    if (draftId && !formStateRestored) {
+      loadDraft(draftId).then(async () => {
+        // Load the draft data from IndexedDB
+        const { getDraft } = await import('@/lib/db/indexeddb');
+        const draft = await getDraft(draftId);
+        
+        if (draft) {
+          // Populate form fields from draft
+          Object.keys(draft.formData).forEach((key) => {
+            const value = draft.formData[key];
+            if (value !== undefined && value !== null) {
+              setValue(key as any, value);
+            }
+          });
+          
+          // Restore AI assessment if present
+          if (draft.hasAIAnalysis && draft.marketValue) {
+            setAiAssessment({
+              damageSeverity: 'moderate',
+              confidenceScore: 0.85,
+              labels: [],
+              estimatedSalvageValue: draft.marketValue * 0.7,
+              reservePrice: draft.marketValue * 0.7 * 0.7,
+              marketValue: draft.marketValue,
+            } as AIAssessmentResult);
+          }
+          
+          toast.success('Draft loaded', 'Continue editing your case');
+        }
+      }).catch((error) => {
+        console.error('Failed to load draft:', error);
+        toast.error('Failed to load draft', 'The draft may have been deleted');
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   /**
    * Restore form state from sessionStorage on mount
@@ -405,10 +500,14 @@ export default function NewCasePage() {
 
   /**
    * Sync unified voice content with form field
+   * FIXED: Only update if the values are actually different to prevent infinite loop
    */
   useEffect(() => {
-    setValue('unifiedVoiceContent', voiceContent);
-  }, [voiceContent, setValue]);
+    const currentValue = watch('unifiedVoiceContent');
+    if (currentValue !== voiceContent) {
+      setValue('unifiedVoiceContent', voiceContent, { shouldDirty: false, shouldTouch: false });
+    }
+  }, [voiceContent, setValue, watch]);
 
   /**
    * Debounced mileage validation
@@ -450,10 +549,14 @@ export default function NewCasePage() {
    * Capture GPS location using hybrid approach
    * - When online: Uses Google Maps Geolocation API (accurate)
    * - When offline: Falls back to browser geolocation
+   * - When offline and GPS fails: Shows optional message
    */
   const captureGPSLocation = async () => {
     if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported by your browser');
+      const errorMsg = isOffline 
+        ? 'Geolocation not supported. GPS is optional when offline - you can submit without it.'
+        : 'Geolocation is not supported by your browser';
+      setGpsError(errorMsg);
       return;
     }
 
@@ -482,9 +585,15 @@ export default function NewCasePage() {
       // Handle GeolocationError from our service
       if (error && typeof error === 'object' && 'code' in error) {
         const geoError = error as GeolocationError;
-        setGpsError(geoError.message);
+        const errorMsg = isOffline 
+          ? `${geoError.message} GPS is optional when offline - you can submit without it.`
+          : geoError.message;
+        setGpsError(errorMsg);
       } else {
-        setGpsError('Failed to capture GPS location. Please try again.');
+        const errorMsg = isOffline
+          ? 'Failed to capture GPS location. GPS is optional when offline - you can submit without it.'
+          : 'Failed to capture GPS location. Please try again.';
+        setGpsError(errorMsg);
       }
     } finally {
       setIsCapturingGPS(false);
@@ -554,7 +663,8 @@ export default function NewCasePage() {
 
   /**
    * Handle photo upload
-   * CRITICAL: Only triggers AI assessment once when conditions are met
+   * CHANGED: No longer auto-triggers AI assessment
+   * User must click "Analyze Photos" button manually
    */
   const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -582,15 +692,31 @@ export default function NewCasePage() {
     setValue('photos', updatedPhotos);
 
     console.log('📸 Total photos now:', updatedPhotos.length);
+    
+    // REMOVED: Auto-trigger AI assessment
+    // User must now click "Analyze Photos" button manually
+  };
 
-    // Check if we should trigger AI assessment
-    // Wait for BOTH photos AND item details (for most asset types)
-    if (shouldRunAIAssessment()) {
-      console.log('✅ Conditions met for AI assessment, triggering...');
-      await runAIAssessment(updatedPhotos);
-    } else {
-      console.log('⏳ Waiting for more info before AI assessment');
+  /**
+   * Check if rate limit is exceeded
+   * Max 5 AI assessments per minute
+   * Returns: { allowed: boolean, waitTime: number (seconds) }
+   */
+  const checkRateLimit = (): { allowed: boolean; waitTime: number } => {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60000; // 60 seconds
+    
+    // Filter out timestamps older than 1 minute
+    const recentAnalyses = lastAnalysisTimes.filter(time => time > oneMinuteAgo);
+    
+    if (recentAnalyses.length >= 5) {
+      // Calculate wait time until oldest request expires
+      const oldestRequest = Math.min(...recentAnalyses);
+      const waitTime = Math.ceil((oldestRequest + 60000 - now) / 1000);
+      return { allowed: false, waitTime };
     }
+    
+    return { allowed: true, waitTime: 0 };
   };
 
   /**
@@ -600,17 +726,24 @@ export default function NewCasePage() {
    * Shows progress indicators for internet search operations
    * 
    * CRITICAL: This function includes duplicate call prevention to avoid race conditions
+   * UPDATED: Now called manually by user clicking "Analyze Photos" button
    */
   const runAIAssessment = async (photosToAssess: string[]) => {
-    // CRITICAL: Prevent duplicate calls - check if already processing OR if we already have results
-    if (isProcessingAI || isOffline) {
-      console.log('⚠️ AI assessment skipped:', { isProcessingAI, isOffline, hasResults: !!aiAssessment });
+    // CRITICAL: Check rate limit first
+    const rateCheck = checkRateLimit();
+    if (!rateCheck.allowed) {
+      const errorMsg = `⚠️ Analysis limit reached. Please wait ${rateCheck.waitTime} seconds before analyzing again.`;
+      setRateLimitError(errorMsg);
+      toast.warning('Rate limit exceeded', errorMsg);
       return;
     }
     
-    // Additional guard: Don't re-run if we already have assessment results for these photos
-    if (aiAssessment && photos.length === photosToAssess.length) {
-      console.log('⚠️ AI assessment skipped: Already have results for current photos');
+    // Clear any previous rate limit error
+    setRateLimitError(null);
+    
+    // CRITICAL: Prevent duplicate calls - check if already processing OR if we already have results
+    if (isProcessingAI || isOffline) {
+      console.log('⚠️ AI assessment skipped:', { isProcessingAI, isOffline, hasResults: !!aiAssessment });
       return;
     }
     
@@ -618,6 +751,10 @@ export default function NewCasePage() {
     setIsProcessingAI(true);
     setAiAssessment(null); // Clear previous results
     resetSearchProgress(); // Reset any previous search progress
+    
+    // Update rate limit tracking
+    const now = Date.now();
+    setLastAnalysisTimes(prev => [...prev.filter(time => time > now - 60000), now]);
     
     try {
       // Build item info object based on asset type
@@ -944,13 +1081,71 @@ export default function NewCasePage() {
   }, []);
 
   /**
+   * Handle resuming a draft
+   */
+  const handleResumeDraft = async (draft: typeof drafts[0]) => {
+    try {
+      // Load the draft
+      await loadDraft(draft.id);
+      
+      // Populate form fields
+      Object.keys(draft.formData).forEach((key) => {
+        const value = draft.formData[key];
+        if (value !== undefined && value !== null) {
+          setValue(key as keyof CaseFormData, value as any);
+        }
+      });
+      
+      // Restore AI assessment if available
+      if (draft.hasAIAnalysis && draft.marketValue) {
+        // Note: We don't have the full AI assessment stored in the draft
+        // So we just restore the market value
+        setValue('marketValue', draft.marketValue);
+      }
+      
+      // Close the draft list
+      setShowDraftList(false);
+      
+      toast.success('Draft loaded', 'Continue editing your case');
+    } catch (error) {
+      console.error('Failed to resume draft:', error);
+      toast.error('Failed to load draft', 'Please try again');
+    }
+  };
+
+  /**
+   * Save draft without validation
+   * Allows saving incomplete forms for later completion
+   */
+  const saveDraftDirectly = async () => {
+    setIsSavingDraft(true);
+    
+    try {
+      const formData = watch(); // Get all current form values
+      
+      // Save to IndexedDB via draft service
+      await saveDraftManually();
+      
+      toast.success('Draft saved', 'You can continue editing later.');
+    } catch (error) {
+      console.error('Error saving draft:', error);
+      toast.error('Failed to save draft', error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
+  /**
    * Submit form
    * CRITICAL: AI assessment already runs in real-time during photo upload (line ~380)
    * This function just saves the case with the AI results already captured
    * The backend will NOT re-run AI assessment to avoid duplicate processing
    */
   const onSubmit = async (data: CaseFormData, isDraft: boolean = false) => {
-    console.log('📝 Form submission started:', { isDraft, hasAIResults: !!aiAssessment });
+    console.log('📝 Form submission started:', { isDraft, hasAIResults: !!aiAssessment, marketValue: data.marketValue });
+    
+    // CRITICAL FIX: Mark that user has attempted to submit
+    setHasAttemptedSubmit(true);
     
     // CRITICAL: Prevent submission while AI is processing
     if (isProcessingAI || searchProgress.stage !== 'idle') {
@@ -964,13 +1159,19 @@ export default function NewCasePage() {
       setIsSavingDraft(true);
     } else {
       setIsSubmittingForApproval(true);
-    } {
-      setIsSubmittingForApproval(true);
     }
     
     try {
-      if (!gpsLocation) {
-        toast.error('GPS location required', 'Please allow location access.');
+      // Market value is required for submission but not for draft saves
+      if (isDraft === false && (!data.marketValue || data.marketValue <= 0)) {
+        toast.error('Market value required', 'Please complete AI analysis to determine market value before submitting.');
+        setIsSubmittingForApproval(false);
+        return;
+      }
+
+      // When offline, GPS is optional - allow submission without it
+      if (!gpsLocation && !isOffline) {
+        toast.error('GPS location required', 'Please allow location access or go offline to skip GPS.');
         return;
       }
 
@@ -1040,8 +1241,8 @@ export default function NewCasePage() {
         assetDetails,
         marketValue: data.marketValue,
         photos: data.photos,
-        gpsLocation,
-        locationName: data.locationName,
+        gpsLocation: gpsLocation || undefined, // Optional when offline
+        locationName: data.locationName || (isOffline ? 'Location unavailable (offline)' : 'Unknown location'),
         // FIXED: Convert unified voice content to voiceNotes array for backend
         voiceNotes: data.unifiedVoiceContent ? [data.unifiedVoiceContent] : [],
         status: isDraft ? 'draft' as const : 'pending_approval' as const,
@@ -1083,6 +1284,11 @@ export default function NewCasePage() {
         // Clear form state from sessionStorage on successful submission
         sessionStorage.removeItem(FORM_STATE_KEY);
         
+        // Clear the current draft after successful submission
+        if (currentDraftId && !isDraft) {
+          await deleteDraft(currentDraftId);
+        }
+        
         toast.success('Case saved offline', 'It will be synced when connection is restored.');
         router.push('/adjuster/my-cases');
       } else {
@@ -1102,6 +1308,11 @@ export default function NewCasePage() {
 
         // Clear form state from sessionStorage on successful submission
         sessionStorage.removeItem(FORM_STATE_KEY);
+
+        // Clear the current draft after successful submission
+        if (currentDraftId && !isDraft) {
+          await deleteDraft(currentDraftId);
+        }
 
         toast.success(
           isDraft ? 'Case saved as draft' : 'Case submitted for approval',
@@ -1132,15 +1343,15 @@ export default function NewCasePage() {
       enableVoiceOptimization={true}
       className="min-h-screen"
     >
-      {/* Modern Header with Glassmorphism - Fixed z-index for better navigation */}
+      {/* Modern Header with Glassmorphism - Fixed positioning */}
       <div className="bg-gradient-to-r from-[#800020] via-[#a0002a] to-[#800020] text-white sticky top-0 z-20 backdrop-blur-lg shadow-2xl shadow-[#800020]/20 border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
+        <div className="px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between max-w-7xl mx-auto">
             <ModernButton
               variant="ghost"
               size="sm"
               onClick={() => router.back()}
-              className="text-white hover:bg-white/10 border-white/20 hover:border-white/30 transition-all duration-200"
+              className="!text-white !bg-white/10 hover:!bg-white/20 !border-white/20 hover:!border-white/30 transition-all duration-200"
             >
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -1148,7 +1359,7 @@ export default function NewCasePage() {
               Back
             </ModernButton>
             <div className="text-center">
-              <h1 className="text-xl font-bold bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent">
+              <h1 className="text-xl font-bold text-white">
                 Create Salvage Case
               </h1>
             </div>
@@ -1186,9 +1397,101 @@ export default function NewCasePage() {
         </div>
       )}
 
+      {/* Draft Auto-Save Indicator */}
+      {(isDraftSaving || draftLastSaved) && (
+        <div className="mx-4 mt-4 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl shadow-sm">
+          <div className="flex items-center space-x-2">
+            {isDraftSaving ? (
+              <>
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-sm text-blue-700 font-medium">Saving draft...</span>
+              </>
+            ) : draftLastSaved ? (
+              <>
+                <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <span className="text-sm text-gray-700">
+                  Last saved: {new Date(draftLastSaved).toLocaleTimeString()}
+                </span>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* AI Analysis Required Warning - ONLY show after user attempts to submit */}
+      {hasAttemptedSubmit && !canSubmitDraft && draftValidationErrors.length > 0 && (
+        <div className="mx-4 mt-4 p-4 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200/50 rounded-xl shadow-sm">
+          <div className="flex items-start space-x-3">
+            <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z" clipRule="evenodd" />
+            </svg>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-red-900">Cannot Submit</h3>
+              <ul className="mt-1 text-sm text-red-700 space-y-1">
+                {draftValidationErrors.map((error, index) => (
+                  <li key={index}>• {error}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Saved Drafts Section */}
+      {drafts.length > 0 && (
+        <div className="mx-4 mt-4">
+          <button
+            type="button"
+            onClick={() => setShowDraftList(!showDraftList)}
+            className="w-full p-4 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200/50 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-xl flex items-center justify-center shadow-lg">
+                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
+                    <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                  </svg>
+                </div>
+                <div className="text-left">
+                  <h3 className="text-sm font-semibold text-indigo-900">Saved Drafts</h3>
+                  <p className="text-xs text-indigo-700">
+                    {drafts.length} draft{drafts.length !== 1 ? 's' : ''} available
+                  </p>
+                </div>
+              </div>
+              <svg
+                className={cn(
+                  'w-5 h-5 text-indigo-600 transition-transform duration-200',
+                  showDraftList ? 'rotate-180' : ''
+                )}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </button>
+
+          {/* Draft List - Collapsible */}
+          {showDraftList && (
+            <div className="mt-3 animate-in slide-in-from-top-2 duration-200">
+              <DraftList
+                drafts={drafts}
+                onResume={handleResumeDraft}
+                onDelete={deleteDraft}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Modern Form Container */}
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-8">
-        <form onSubmit={handleSubmit((data) => onSubmit(data, false))} className="space-y-8">
+        <form onSubmit={(e) => e.preventDefault()} className="space-y-8">
         
         {/* Claim Reference - Modern Card Design */}
         <FormSection variant="card" title="Case Information" description="Basic details for the salvage case">
@@ -1219,7 +1522,7 @@ export default function NewCasePage() {
               name="assetType"
               control={control}
               render={({ field }) => (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {ASSET_TYPES.map((type) => (
                     <button
                       key={type.value}
@@ -1738,12 +2041,14 @@ export default function NewCasePage() {
         {/* Market Value - AI Estimated */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Market Value (₦) <span className="text-red-500">*</span>
+            Market Value (₦)
           </label>
           <div className="relative">
             <input
               type="number"
-              {...register('marketValue', { valueAsNumber: true })}
+              {...register('marketValue', { 
+                setValueAs: (v) => v === '' || v === null ? undefined : parseFloat(v)
+              })}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent bg-gray-50"
               placeholder="AI will estimate from photos"
               readOnly={!aiAssessment}
@@ -1813,88 +2118,6 @@ export default function NewCasePage() {
             <p className="mt-1 text-sm text-red-600">{errors.photos.message}</p>
           )}
           
-          {/* Manual AI Assessment Button */}
-          {!isOffline && photos && photos.length >= 3 && !aiAssessment && !isProcessingAI && shouldRunAIAssessment() && searchProgress.stage === 'idle' && (
-            <button
-              type="button"
-              onClick={() => runAIAssessment(photos)}
-              className="mt-3 w-full px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-            >
-              🤖 Run AI Assessment with Internet Search
-            </button>
-          )}
-          
-          {/* Item Details Required Notice */}
-          {!isOffline && photos && photos.length >= 3 && !aiAssessment && !isProcessingAI && !shouldRunAIAssessment() && assetType && (
-            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center space-x-2">
-                <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                </svg>
-                <div>
-                  <p className="text-sm font-medium text-blue-900">Item details required</p>
-                  <p className="text-xs text-blue-700">
-                    {assetType === 'vehicle' && 'Please fill in Make, Model, and Year to run AI assessment'}
-                    {assetType === 'electronics' && 'Please fill in Brand and Model to run AI assessment'}
-                    {assetType === 'appliance' && 'Please fill in Brand and Model to run AI assessment'}
-                    {assetType === 'jewelry' && 'Please fill in Type to run AI assessment'}
-                    {assetType === 'furniture' && 'Please fill in Type to run AI assessment'}
-                    {assetType === 'machinery' && 'Please fill in Brand and Type to run AI assessment'}
-                    {assetType === 'property' && 'Property details are sufficient for AI assessment'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Offline AI Notice */}
-          {isOffline && photos && photos.length >= 3 && (
-            <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-center space-x-2">
-                <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                </svg>
-                <div>
-                  <p className="text-sm font-medium text-yellow-900">You're offline</p>
-                  <p className="text-xs text-yellow-700">AI assessment will run automatically when connection is restored</p>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Search Progress Indicator - Replaces old AI processing indicator */}
-          {(searchProgress.stage !== 'idle' || isProcessingAI) && (
-            <SearchProgressIndicator
-              progress={searchProgress}
-              onCancel={() => {
-                resetSearchProgress();
-                setIsProcessingAI(false);
-              }}
-              onRetry={() => {
-                if (photos && photos.length >= 3) {
-                  runAIAssessment(photos);
-                }
-              }}
-              className="mt-3"
-            />
-          )}
-          
-          {/* AI Processing Indicator - Legacy fallback */}
-          {isProcessingAI && searchProgress.stage === 'idle' && (
-            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center space-x-2">
-                <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <div>
-                  <p className="text-sm font-medium text-blue-900">AI is analyzing your photos with real market data...</p>
-                  <p className="text-xs text-blue-700">This may take 10-15 seconds</p>
-                </div>
-              </div>
-            </div>
-          )}
-          
           {/* Photo Preview */}
           {photos && photos.length > 0 && (
             <div className="mt-4 grid grid-cols-3 gap-2">
@@ -1919,21 +2142,154 @@ export default function NewCasePage() {
               ))}
             </div>
           )}
+          
+          {/* Manual AI Assessment Button */}
+          {!isOffline && photos && photos.length >= 3 && photos.length <= 10 && shouldRunAIAssessment() && searchProgress.stage === 'idle' && (
+            <div className="mt-4 space-y-3">
+              {/* AI Analysis Status Badge */}
+              <AIAnalysisStatusBadge
+                hasAnalysis={hasAIAnalysis}
+                isProcessing={isProcessingAI}
+                marketValue={marketValue}
+                confidenceScore={aiAssessment?.confidenceScore}
+                error={searchProgress.stage === 'error' ? searchProgress.error || 'Analysis failed' : null}
+                className="w-full"
+              />
+              
+              {/* Rate Limit Error */}
+              {rateLimitError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-red-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z" clipRule="evenodd" />
+                    </svg>
+                    <p className="text-sm font-medium text-red-900">{rateLimitError}</p>
+                  </div>
+                </div>
+              )}
+              
+              {/* Analyze Button */}
+              <ModernButton
+                type="button"
+                variant="primary"
+                size="lg"
+                fullWidth={true}
+                onClick={() => runAIAssessment(photos)}
+                disabled={isProcessingAI || !checkRateLimit().allowed}
+                loading={isProcessingAI}
+                className="relative overflow-hidden group"
+              >
+                <div className="flex items-center justify-center space-x-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  <span className="font-semibold">
+                    {aiAssessment ? `Re-Analyze ${photos.length} Photos` : `Analyze ${photos.length} Photos`}
+                  </span>
+                </div>
+                {/* Shine effect */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 transform translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+              </ModernButton>
+              
+              {/* Helper Text */}
+              <div className="text-center">
+                {aiAssessment ? (
+                  <p className="text-sm text-green-600 font-medium">
+                    ✓ Analysis complete! You can add/remove photos and re-analyze
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-600">
+                    Ready to analyze {photos.length} photo{photos.length > 1 ? 's' : ''} with AI
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Photo Count Warning */}
+          {!isOffline && photos && photos.length < 3 && (
+            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+              <div className="flex items-center space-x-2">
+                <svg className="w-5 h-5 text-amber-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-amber-900">Upload at least 3 photos to analyze</p>
+                  <p className="text-xs text-amber-700">You have {photos.length} photo{photos.length !== 1 ? 's' : ''} uploaded</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Item Details Required Notice */}
+          {!isOffline && photos && photos.length >= 3 && !shouldRunAIAssessment() && assetType && searchProgress.stage === 'idle' && (
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+              <div className="flex items-center space-x-2">
+                <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-blue-900">Item details required</p>
+                  <p className="text-xs text-blue-700">
+                    {assetType === 'vehicle' && 'Please fill in Make, Model, and Year to analyze'}
+                    {assetType === 'electronics' && 'Please fill in Brand and Model to analyze'}
+                    {assetType === 'appliance' && 'Please fill in Brand and Model to analyze'}
+                    {assetType === 'jewelry' && 'Please fill in Type to analyze'}
+                    {assetType === 'furniture' && 'Please fill in Type to analyze'}
+                    {assetType === 'machinery' && 'Please fill in Brand and Type to analyze'}
+                    {assetType === 'property' && 'Property details are sufficient for analysis'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Offline AI Notice */}
+          {isOffline && photos && photos.length >= 3 && (
+            <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-xl">
+              <div className="flex items-center space-x-2">
+                <svg className="w-5 h-5 text-yellow-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-yellow-900">You're offline</p>
+                  <p className="text-xs text-yellow-700">AI assessment will run automatically when connection is restored</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Search Progress Indicator */}
+          {(searchProgress.stage !== 'idle' || isProcessingAI) && (
+            <SearchProgressIndicator
+              progress={searchProgress}
+              onCancel={() => {
+                resetSearchProgress();
+                setIsProcessingAI(false);
+              }}
+              onRetry={() => {
+                if (photos && photos.length >= 3) {
+                  runAIAssessment(photos);
+                }
+              }}
+              className="mt-3"
+            />
+          )}
         </div>
 
         {/* AI Assessment Results - Show immediately after photos */}
         {aiAssessment && (
-          <div className="p-5 bg-gradient-to-br from-green-50 to-blue-50 rounded-xl border-2 border-green-300 shadow-md">
+          <div className="w-full max-w-full overflow-hidden p-5 bg-gradient-to-br from-green-50 to-blue-50 rounded-xl border-2 border-green-300 shadow-md">
             <div className="flex items-center mb-3">
-              <svg className="w-6 h-6 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-6 h-6 text-green-600 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <h3 className="text-lg font-bold text-gray-900">✨ AI Damage Assessment Complete</h3>
+              <h3 className="text-base md:text-lg font-bold text-gray-900 break-words">✨ AI Damage Assessment Complete</h3>
             </div>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center p-3 bg-white rounded-lg">
-                <span className="text-gray-700 font-medium">Damage Severity:</span>
-                <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+            <div className="space-y-3 w-full max-w-full overflow-hidden">
+              <div className="flex justify-between items-center gap-2 p-3 bg-white rounded-lg overflow-hidden">
+                <span className="text-sm md:text-base text-gray-700 font-medium truncate">Damage Severity:</span>
+                <span className={`px-3 py-1 rounded-full text-xs md:text-sm font-bold whitespace-nowrap flex-shrink-0 ${
                   aiAssessment.damageSeverity === 'minor' ? 'bg-green-100 text-green-800' :
                   aiAssessment.damageSeverity === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
                   'bg-red-100 text-red-800'
@@ -1941,62 +2297,62 @@ export default function NewCasePage() {
                   {aiAssessment.damageSeverity.toUpperCase()}
                 </span>
               </div>
-              <div className="flex justify-between items-center p-3 bg-white rounded-lg">
-                <span className="text-gray-700 font-medium">AI Confidence:</span>
-                <span className="text-lg font-bold text-blue-600">{aiAssessment.confidenceScore}%</span>
+              <div className="flex justify-between items-center gap-2 p-3 bg-white rounded-lg overflow-hidden">
+                <span className="text-sm md:text-base text-gray-700 font-medium truncate">AI Confidence:</span>
+                <span className="text-base md:text-lg font-bold text-blue-600 whitespace-nowrap flex-shrink-0">{aiAssessment.confidenceScore}%</span>
               </div>
               
               {/* NEW: Mileage and Condition Display (Requirement 3.1, 3.2) */}
               {assetType === 'vehicle' && (
-                <div className="p-3 bg-white rounded-lg border-l-4 border-blue-400">
-                  <div className="text-sm font-medium text-gray-700 mb-2">📊 Vehicle Data Used:</div>
-                  <div className="space-y-1 text-sm">
+                <div className="w-full max-w-full overflow-hidden p-3 bg-white rounded-lg border-l-4 border-blue-400">
+                  <div className="text-xs md:text-sm font-medium text-gray-700 mb-2">📊 Vehicle Data Used:</div>
+                  <div className="space-y-1 text-xs md:text-sm">
                     {vehicleMileage ? (
-                      <div className="flex items-center">
-                        <span className="text-green-600 mr-2">✓</span>
-                        <span className="text-gray-600">Mileage: <span className="font-semibold">{vehicleMileage.toLocaleString()} km</span></span>
+                      <div className="flex items-start gap-2">
+                        <span className="text-green-600 flex-shrink-0">✓</span>
+                        <span className="text-gray-600 break-words">Mileage: <span className="font-semibold">{vehicleMileage.toLocaleString()} km</span></span>
                       </div>
                     ) : (
-                      <div className="flex items-center">
-                        <span className="text-yellow-600 mr-2">⚠</span>
-                        <span className="text-gray-600">Mileage: <span className="font-semibold">Estimated</span> (based on vehicle age)</span>
+                      <div className="flex items-start gap-2">
+                        <span className="text-yellow-600 flex-shrink-0">⚠</span>
+                        <span className="text-gray-600 break-words">Mileage: <span className="font-semibold">Estimated</span> (based on vehicle age)</span>
                       </div>
                     )}
                     {vehicleCondition ? (
-                      <div className="flex items-center">
-                        <span className="text-green-600 mr-2">✓</span>
-                        <span className="text-gray-600">Condition: <span className="font-semibold">{getQualityTiers().find(t => t.value === vehicleCondition)?.label || vehicleCondition}</span></span>
+                      <div className="flex items-start gap-2">
+                        <span className="text-green-600 flex-shrink-0">✓</span>
+                        <span className="text-gray-600 break-words">Condition: <span className="font-semibold">{getQualityTiers().find(t => t.value === vehicleCondition)?.label || vehicleCondition}</span></span>
                       </div>
                     ) : (
-                      <div className="flex items-center">
-                        <span className="text-yellow-600 mr-2">⚠</span>
-                        <span className="text-gray-600">Condition: <span className="font-semibold">Good (Foreign Used)</span> (default assumed)</span>
+                      <div className="flex items-start gap-2">
+                        <span className="text-yellow-600 flex-shrink-0">⚠</span>
+                        <span className="text-gray-600 break-words">Condition: <span className="font-semibold">Good (Foreign Used)</span> (default assumed)</span>
                       </div>
                     )}
                   </div>
                 </div>
               )}
               
-              <div className="flex justify-between items-center p-3 bg-white rounded-lg">
-                <span className="text-gray-700 font-medium">Estimated Salvage Value:</span>
-                <span className="text-lg font-bold text-green-600">₦{aiAssessment.estimatedSalvageValue.toLocaleString()}</span>
+              <div className="flex justify-between items-center gap-2 p-3 bg-white rounded-lg overflow-hidden">
+                <span className="text-sm md:text-base text-gray-700 font-medium truncate">Estimated Salvage Value:</span>
+                <span className="text-base md:text-lg font-bold text-green-600 whitespace-nowrap flex-shrink-0">₦{aiAssessment.estimatedSalvageValue.toLocaleString()}</span>
               </div>
-              <div className="flex justify-between items-center p-3 bg-white rounded-lg">
-                <span className="text-gray-700 font-medium">Reserve Price:</span>
-                <span className="text-lg font-bold text-[#800020]">₦{aiAssessment.reservePrice.toLocaleString()}</span>
+              <div className="flex justify-between items-center gap-2 p-3 bg-white rounded-lg overflow-hidden">
+                <span className="text-sm md:text-base text-gray-700 font-medium truncate">Reserve Price:</span>
+                <span className="text-base md:text-lg font-bold text-[#800020] whitespace-nowrap flex-shrink-0">₦{aiAssessment.reservePrice.toLocaleString()}</span>
               </div>
-              <div className="p-3 bg-white rounded-lg">
-                <span className="text-gray-700 font-medium block mb-2">Detected Damage:</span>
-                <div className="flex flex-wrap gap-2">
+              <div className="w-full max-w-full overflow-hidden p-3 bg-white rounded-lg">
+                <span className="text-sm md:text-base text-gray-700 font-medium block mb-2">Detected Damage:</span>
+                <div className="flex flex-wrap gap-2 w-full max-w-full">
                   {aiAssessment.labels.map((label, index) => (
-                    <span key={index} className="px-3 py-1 bg-blue-500 text-white rounded-full text-xs font-medium">
+                    <span key={index} className="inline-flex items-center px-3 md:px-4 py-1.5 md:py-2 bg-blue-500 text-white rounded-xl text-xs md:text-sm font-medium break-words max-w-full">
                       {label}
                     </span>
                   ))}
                 </div>
               </div>
             </div>
-            <p className="mt-3 text-xs text-gray-600 italic">
+            <p className="mt-3 text-xs text-gray-600 italic break-words">
               💡 Market value has been auto-filled based on AI analysis. You can edit it if needed.
             </p>
           </div>
@@ -2097,7 +2453,7 @@ export default function NewCasePage() {
             
             {/* Voice Notes Statistics */}
             {voiceContent && (
-              <div className="flex justify-between items-center text-xs text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2">
+              <div className="flex justify-between items-center text-xs text-gray-500 !bg-gray-50 rounded-lg px-3 py-2">
                 <span>Words: {voiceWordCount}</span>
                 <span>Characters: {voiceCharacterCount}</span>
               </div>
@@ -2110,15 +2466,28 @@ export default function NewCasePage() {
           </div>
         </FormSection>
 
-        {/* Modern Action Buttons - Redesigned for mobile-first with better sizing */}
-        <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white/95 to-transparent backdrop-blur-lg border-t border-gray-200/50 p-4 z-10">
-          <div className="max-w-sm mx-auto flex flex-col sm:flex-row gap-3 sm:gap-4">
+        {/* Modern Action Buttons - Fixed at bottom with proper z-index and centering */}
+        <div className="fixed left-0 right-0 bg-gradient-to-t from-white via-white/95 to-transparent backdrop-blur-lg border-t border-gray-200/50 p-4 z-50">
+          <div className="w-full max-w-2xl mx-auto space-y-3">
+            {/* AI Analysis Status Badge - Show if not complete */}
+            {!canSubmitDraft && (
+              <AIAnalysisStatusBadge
+                hasAnalysis={hasAIAnalysis}
+                isProcessing={isProcessingAI}
+                marketValue={marketValue}
+                confidenceScore={aiAssessment?.confidenceScore}
+                error={searchProgress.stage === 'error' ? searchProgress.error || 'Analysis failed' : null}
+                className="w-full"
+              />
+            )}
+            
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
             {/* Save Draft Button - Burgundy outline style matching app theme */}
             <ModernButton
               type="button"
               variant="secondary"
               size="md"
-              onClick={handleSubmit((data) => onSubmit(data, true))}
+              onClick={saveDraftDirectly}
               disabled={isSavingDraft || isSubmittingForApproval || isProcessingAI || searchProgress.stage !== 'idle'}
               loading={isSavingDraft}
               className={cn(
@@ -2150,7 +2519,7 @@ export default function NewCasePage() {
               variant="primary"
               size="md"
               onClick={handleSubmit((data) => onSubmit(data, false))}
-              disabled={isSavingDraft || isSubmittingForApproval || isProcessingAI || searchProgress.stage !== 'idle'}
+              disabled={!canSubmitDraft || isSavingDraft || isSubmittingForApproval || isProcessingAI || searchProgress.stage !== 'idle'}
               loading={isSubmittingForApproval}
               className={cn(
                 "flex-1 sm:flex-none sm:min-w-[160px] relative overflow-hidden group",
@@ -2163,6 +2532,7 @@ export default function NewCasePage() {
                 "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
                 "rounded-xl px-4 py-3"
               )}
+              title={!canSubmitDraft ? 'AI analysis required before submission' : ''}
             >
               <div className="flex items-center justify-center space-x-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2177,6 +2547,7 @@ export default function NewCasePage() {
               {/* Enhanced shine effect */}
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 transform translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
             </ModernButton>
+          </div>
           </div>
           
           {/* Subtle gradient fade */}

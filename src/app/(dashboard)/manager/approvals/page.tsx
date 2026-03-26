@@ -27,6 +27,7 @@ import { LocationMap } from '@/components/ui/location-map';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
 import { Star, DollarSign, Check, X, CheckCircle } from 'lucide-react';
+import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 
 /**
  * Case data structure
@@ -76,6 +77,17 @@ interface CaseData {
  * Approval action type
  */
 type ApprovalAction = 'approve' | 'reject' | null;
+
+/**
+ * Check if a photo URL is valid
+ */
+const isValidPhotoUrl = (url: any): url is string => {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  // Check if it starts with http:// or https:// or /
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/');
+};
 
 export default function ApprovalsPage() {
   const router = useRouter();
@@ -135,21 +147,26 @@ export default function ApprovalsPage() {
       return;
     }
 
+    // Deduplicate cases by ID (in case of duplicate rows from joins)
+    const uniqueCases = Array.from(
+      new Map(allCases.map(c => [c.id, c])).values()
+    );
+
     let filtered: CaseData[] = [];
     switch (activeTab) {
       case 'pending':
-        filtered = allCases.filter(c => c.status === 'pending_approval');
+        filtered = uniqueCases.filter(c => c.status === 'pending_approval');
         break;
       case 'approved':
         // Show cases that have been approved (have approvedBy field)
         // This includes cases in 'active_auction' and 'sold' status
-        filtered = allCases.filter(c => c.approvedBy !== null && c.approvedBy !== undefined);
+        filtered = uniqueCases.filter(c => c.approvedBy !== null && c.approvedBy !== undefined);
         break;
       case 'rejected':
-        filtered = allCases.filter(c => c.status === 'rejected');
+        filtered = uniqueCases.filter(c => c.status === 'rejected');
         break;
       case 'all':
-        filtered = allCases;
+        filtered = uniqueCases;
         break;
     }
     setCases(filtered);
@@ -175,13 +192,16 @@ export default function ApprovalsPage() {
 
   /**
    * Fetch all cases from API (no filtering - get everything)
+   * Add cache-busting timestamp to force fresh data
    */
   const fetchPendingCases = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch('/api/cases');
+      // Add timestamp to bust cache
+      const timestamp = Date.now();
+      const response = await fetch(`/api/cases?_t=${timestamp}`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch cases');
@@ -608,9 +628,9 @@ export default function ApprovalsPage() {
   // Detail view
   if (selectedCase) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-32">
+      <div className="min-h-screen bg-gray-50 pb-32 overflow-y-auto">
         {/* Header */}
-        <div className="bg-[#800020] text-white p-4 sticky top-0 z-10 shadow-md">
+        <div className="bg-[#800020] text-white p-4 sticky top-0 z-40 shadow-md">
           <div className="flex items-center justify-between">
             <button
               onClick={() => setSelectedCase(null)}
@@ -664,13 +684,19 @@ export default function ApprovalsPage() {
           {/* Swipeable Photo Gallery */}
           <div className="bg-white rounded-lg shadow-md overflow-hidden">
             <div className="relative w-full aspect-[4/3] bg-gray-200">
-              <Image
-                src={selectedCase.photos[currentPhotoIndex]}
-                alt={`Photo ${currentPhotoIndex + 1}`}
-                fill
-                className="object-contain"
-                sizes="(max-width: 768px) 100vw, 800px"
-              />
+              {isValidPhotoUrl(selectedCase.photos[currentPhotoIndex]) ? (
+                <Image
+                  src={selectedCase.photos[currentPhotoIndex]}
+                  alt={`Photo ${currentPhotoIndex + 1}`}
+                  fill
+                  className="object-contain"
+                  sizes="(max-width: 768px) 100vw, 800px"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-400">
+                  <p>Photo not available</p>
+                </div>
+              )}
               
               {/* Photo Navigation */}
               <div className="absolute inset-0 flex items-center justify-between px-4">
@@ -708,13 +734,19 @@ export default function ApprovalsPage() {
                     index === currentPhotoIndex ? 'ring-2 ring-[#800020] border-[#800020]' : 'border-gray-300'
                   }`}
                 >
-                  <Image
-                    src={photo}
-                    alt={`Thumbnail ${index + 1}`}
-                    width={80}
-                    height={60}
-                    className="w-20 h-16 object-cover"
-                  />
+                  {isValidPhotoUrl(photo) ? (
+                    <Image
+                      src={photo}
+                      alt={`Thumbnail ${index + 1}`}
+                      width={80}
+                      height={60}
+                      className="w-20 h-16 object-cover"
+                    />
+                  ) : (
+                    <div className="w-20 h-16 bg-gray-200 flex items-center justify-center text-xs text-gray-400">
+                      N/A
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
@@ -844,7 +876,7 @@ export default function ApprovalsPage() {
                     {selectedCase.aiAssessment.labels.map((label, index) => (
                       <span
                         key={index}
-                        className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium"
+                        className="inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-xl text-sm font-medium break-words"
                       >
                         {label}
                       </span>
@@ -1041,8 +1073,9 @@ export default function ApprovalsPage() {
           )}
         </div>
 
-        {/* Approval Actions - Fixed Bottom */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 space-y-3">
+        {/* Approval Actions - Fixed Bottom with proper z-index and centering */}
+        <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white/95 to-transparent backdrop-blur-lg border-t border-gray-200/50 p-4 space-y-3 z-50">
+          <div className="w-full max-w-2xl mx-auto">
           {/* Check if case has already been approved */}
           {selectedCase.approvedBy ? (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -1095,22 +1128,26 @@ export default function ApprovalsPage() {
           ) : !approvalAction ? (
             // Normal Mode Actions - Show "Approve" and "Reject"
             <div className="flex justify-center gap-4">
-              <button
+              <OfflineAwareButton
                 onClick={() => handleApprovalAction('reject')}
                 disabled={isSubmitting}
+                requiresOnline={true}
+                offlineTooltip="Rejection requires internet connection"
                 className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-semibold hover:from-red-600 hover:to-red-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200 min-w-[140px] max-w-[200px]"
               >
                 <X className="w-5 h-5" aria-hidden="true" />
                 <span>Reject</span>
-              </button>
-              <button
+              </OfflineAwareButton>
+              <OfflineAwareButton
                 onClick={() => handleApprovalAction('approve')}
                 disabled={isSubmitting}
+                requiresOnline={true}
+                offlineTooltip="Approval requires internet connection"
                 className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold hover:from-green-600 hover:to-green-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200 min-w-[140px] max-w-[200px]"
               >
                 <CheckCircle className="w-5 h-5" aria-hidden="true" />
                 <span>Approve</span>
-              </button>
+              </OfflineAwareButton>
             </div>
           ) : (
             // Approval/Rejection Confirmation - Show comment field and confirm/cancel
@@ -1172,6 +1209,7 @@ export default function ApprovalsPage() {
               </div>
             </>
           )}
+          </div>
         </div>
 
         {/* Confirmation Modal */}
@@ -1202,9 +1240,9 @@ export default function ApprovalsPage() {
 
   // List view
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-y-auto">
       {/* Header */}
-      <div className="bg-[#800020] text-white p-4 sticky top-0 z-10 shadow-md">
+      <div className="bg-[#800020] text-white p-4 sticky top-0 z-40 shadow-md">
         <div className="flex items-center justify-between">
           <button
             onClick={() => router.back()}
@@ -1229,7 +1267,7 @@ export default function ApprovalsPage() {
             <div>
               <p className="text-xs font-medium text-gray-600">Pending</p>
               <p className="text-2xl font-bold text-yellow-600 mt-1">
-                {allCases.filter(c => c.status === 'pending_approval').length}
+                {Array.from(new Map(allCases.map(c => [c.id, c])).values()).filter(c => c.status === 'pending_approval').length}
               </p>
             </div>
             <div className="p-2 bg-yellow-100 rounded-full">
@@ -1245,7 +1283,7 @@ export default function ApprovalsPage() {
             <div>
               <p className="text-xs font-medium text-gray-600">Approved</p>
               <p className="text-2xl font-bold text-green-600 mt-1">
-                {allCases.filter(c => c.approvedBy !== null && c.approvedBy !== undefined).length}
+                {Array.from(new Map(allCases.map(c => [c.id, c])).values()).filter(c => c.approvedBy !== null && c.approvedBy !== undefined).length}
               </p>
             </div>
             <div className="p-2 bg-green-100 rounded-full">
@@ -1261,7 +1299,7 @@ export default function ApprovalsPage() {
             <div>
               <p className="text-xs font-medium text-gray-600">Rejected</p>
               <p className="text-2xl font-bold text-red-600 mt-1">
-                {allCases.filter(c => c.status === 'rejected').length}
+                {Array.from(new Map(allCases.map(c => [c.id, c])).values()).filter(c => c.status === 'rejected').length}
               </p>
             </div>
             <div className="p-2 bg-red-100 rounded-full">
@@ -1277,7 +1315,7 @@ export default function ApprovalsPage() {
             <div>
               <p className="text-xs font-medium text-gray-600">Total</p>
               <p className="text-2xl font-bold text-blue-600 mt-1">
-                {allCases.length}
+                {Array.from(new Map(allCases.map(c => [c.id, c])).values()).length}
               </p>
             </div>
             <div className="p-2 bg-blue-100 rounded-full">
@@ -1290,7 +1328,7 @@ export default function ApprovalsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 sticky top-[60px] z-10">
+      <div className="bg-white border-b border-gray-200 sticky top-[60px] z-30">
         <div className="flex overflow-x-auto">
           <button
             onClick={() => setActiveTab('pending')}
@@ -1402,7 +1440,7 @@ export default function ApprovalsPage() {
 
                   {/* Photo Preview */}
                   <div className="mt-3 flex gap-2 overflow-x-auto">
-                    {caseData.photos.slice(0, 4).map((photo, index) => (
+                    {caseData.photos.filter(isValidPhotoUrl).slice(0, 4).map((photo, index) => (
                       <Image
                         key={index}
                         src={photo}
@@ -1412,9 +1450,14 @@ export default function ApprovalsPage() {
                         className="w-20 h-16 object-cover rounded flex-shrink-0"
                       />
                     ))}
-                    {caseData.photos.length > 4 && (
+                    {caseData.photos.filter(isValidPhotoUrl).length === 0 && (
+                      <div className="w-20 h-16 bg-gray-200 rounded flex-shrink-0 flex items-center justify-center text-xs text-gray-400">
+                        No photos
+                      </div>
+                    )}
+                    {caseData.photos.filter(isValidPhotoUrl).length > 4 && (
                       <div className="w-20 h-16 bg-gray-200 rounded flex items-center justify-center flex-shrink-0 text-sm text-gray-600">
-                        +{caseData.photos.length - 4}
+                        +{caseData.photos.filter(isValidPhotoUrl).length - 4}
                       </div>
                     )}
                   </div>

@@ -132,6 +132,10 @@ export async function POST(
       afterState: { status: 'signed', signedAt: signedDocument.signedAt },
     });
 
+    // CRITICAL: Check if all documents are signed and trigger fund release
+    const { triggerFundReleaseOnDocumentCompletion } = await import('@/features/documents/services/document.service');
+    await triggerFundReleaseOnDocumentCompletion(auctionId, vendorId, session.user.id);
+
     return NextResponse.json({
       status: 'success',
       data: { document: signedDocument },

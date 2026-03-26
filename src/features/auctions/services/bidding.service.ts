@@ -86,11 +86,35 @@ export class BiddingService {
     const startTime = Date.now();
 
     try {
-      // Validate input
+      // SECURITY FIX: Enhanced input validation
       if (!data.auctionId || !data.vendorId || !data.amount || !data.otp) {
         return {
           success: false,
           error: 'Auction ID, vendor ID, bid amount, and OTP are required',
+        };
+      }
+
+      // Validate bid amount is a positive number
+      if (typeof data.amount !== 'number' || isNaN(data.amount) || data.amount <= 0) {
+        return {
+          success: false,
+          error: 'Bid amount must be a positive number',
+        };
+      }
+
+      // Validate bid amount is not unreasonably large (max ₦100M)
+      if (data.amount > 100000000) {
+        return {
+          success: false,
+          error: 'Bid amount exceeds maximum allowed (₦100,000,000)',
+        };
+      }
+
+      // Validate bid amount has at most 2 decimal places
+      if (!Number.isInteger(data.amount * 100)) {
+        return {
+          success: false,
+          error: 'Bid amount can have at most 2 decimal places',
         };
       }
 

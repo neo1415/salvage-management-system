@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
+import { useCachedAuctions } from '@/hooks/use-cached-auctions';
+import { OfflineIndicator } from '@/components/pwa/offline-indicator';
+import { RefreshCw, WifiOff } from 'lucide-react';
+import { formatRelativeDate } from '@/utils/format-utils';
 
 interface AuctionWithStatus {
   id: string;
@@ -57,9 +61,8 @@ export default function AdminAuctionsPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const [auctions, setAuctions] = useState<AuctionWithStatus[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isGeneratingDocs, setIsGeneratingDocs] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [modalConfig, setModalConfig] = useState<ModalConfig>({
     isOpen: false,
     type: 'confirm',
@@ -68,32 +71,50 @@ export default function AdminAuctionsPage() {
     confirmationType: 'warning',
   });
 
+  // Cached auctions hook with fetch function
+  const fetchAuctionsFn = useCallback(async () => {
+    const response = await fetch('/api/admin/auctions?status=closed');
+    if (!response.ok) {
+      throw new Error('Failed to fetch auctions');
+    }
+    const data = await response.json();
+    return data.auctions || [];
+  }, []);
+
+  const {
+    auctions: cachedAuctions,
+    isLoading,
+    isOffline,
+    lastUpdated,
+    refresh: refreshCache,
+    error: cacheError,
+  } = useCachedAuctions(fetchAuctionsFn);
+
+  // Update local auctions state when cached auctions change
+  useEffect(() => {
+    setAuctions(cachedAuctions as unknown as AuctionWithStatus[]);
+  }, [cachedAuctions]);
+
+  // Manual refresh handler
+  const handleRefresh = async () => {
+    if (isOffline) return;
+    
+    setIsRefreshing(true);
+    try {
+      await refreshCache();
+    } catch (error) {
+      console.error('Failed to refresh auctions:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Redirect if not admin or finance
   useEffect(() => {
     if (session && session.user.role !== 'admin' && session.user.role !== 'finance_officer') {
       router.push('/dashboard');
     }
   }, [session, router]);
-
-  // Fetch closed auctions
-  useEffect(() => {
-    async function fetchAuctions() {
-      try {
-        const response = await fetch('/api/admin/auctions?status=closed');
-        if (!response.ok) {
-          throw new Error('Failed to fetch auctions');
-        }
-        const data = await response.json();
-        setAuctions(data.auctions || []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchAuctions();
-  }, []);
 
   // Generate documents manually
   const handleGenerateDocuments = async (auctionId: string) => {
@@ -110,7 +131,6 @@ export default function AdminAuctionsPage() {
   const executeGenerateDocuments = async (auctionId: string) => {
     setModalConfig({ ...modalConfig, isOpen: false });
     setIsGeneratingDocs(auctionId);
-    setError(null);
 
     try {
       const response = await fetch(`/api/admin/auctions/${auctionId}/generate-documents`, {
@@ -134,11 +154,10 @@ export default function AdminAuctionsPage() {
 
       // Refresh auctions list after a short delay
       setTimeout(() => {
-        window.location.reload();
+        handleRefresh();
       }, 2000);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate documents';
-      setError(errorMessage);
       
       setModalConfig({
         isOpen: true,
@@ -152,7 +171,7 @@ export default function AdminAuctionsPage() {
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -199,26 +218,71 @@ export default function AdminAuctionsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Auction Management</h1>
-          <p className="mt-2 text-gray-600">
-            Manage closed auctions and generate documents
-          </p>
-        </div>
+      {/* Offline Indicator */}
+      <OfflineIndicator />
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-800">{error}</p>
+      <div className="max-w-7xl mx-auto">
+        {/* Offline Data Banner */}
+        {isOffline && lastUpdated && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-6">
+            <div className="flex items-center gap-2 text-sm text-blue-800">
+              <WifiOff size={16} className="flex-shrink-0" />
+              <span>
+                Viewing cached data. Last updated: {formatRelativeDate(lastUpdated)}
+              </span>
+            </div>
           </div>
         )}
+
+        {/* Cache Miss Error */}
+        {isOffline && !isLoading && auctions.length === 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 mb-6">
+            <div className="flex items-center gap-2 text-sm text-yellow-800">
+              <WifiOff size={16} className="flex-shrink-0" />
+              <span>
+                No cached data available. Please connect to the internet to view auctions.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Auction Management</h1>
+            <p className="mt-2 text-gray-600">
+              Manage closed auctions and generate documents
+            </p>
+          </div>
+          
+          {/* Refresh Button */}
+          <button
+            onClick={handleRefresh}
+            disabled={isOffline || isRefreshing}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+              isOffline
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-burgundy-900 text-white hover:bg-burgundy-800'
+            }`}
+            title={isOffline ? 'Cannot refresh while offline' : 'Refresh auctions'}
+          >
+            <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+            <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+        </div>
 
         {/* Auctions List */}
         {auctions.length === 0 ? (
           <div className="bg-white rounded-lg shadow-md p-8 text-center">
-            <p className="text-gray-600">No closed auctions found</p>
+            {isOffline ? (
+              <>
+                <WifiOff className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">No cached auction data available</p>
+                <p className="text-sm text-gray-500 mt-2">Connect to the internet to view auctions</p>
+              </>
+            ) : (
+              <p className="text-gray-600">No closed auctions found</p>
+            )}
           </div>
         ) : (
           <>

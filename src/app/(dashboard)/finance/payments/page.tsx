@@ -7,6 +7,7 @@ import { EscrowPaymentDetails } from '@/components/finance/escrow-payment-detail
 import { EscrowPaymentAuditTrail } from '@/components/finance/escrow-payment-audit-trail';
 import { ClipboardList, Star } from 'lucide-react';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 
 const SuccessModal = dynamic(
   () => import('@/components/modals/success-modal').then(mod => ({ default: mod.SuccessModal })),
@@ -728,10 +729,11 @@ export default function FinancePaymentsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header - Mobile Responsive with 2-row layout on mobile */}
+      <div className="flex flex-col gap-4">
+        {/* Title Row - Always on top */}
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Payment Verification</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Payment Verification</h1>
           <p className="mt-1 text-sm text-gray-500">
             Review and verify vendor payments
             {isFiltering && (
@@ -745,7 +747,9 @@ export default function FinancePaymentsPage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        
+        {/* Action Buttons Row - Second row on mobile, same row on desktop */}
+        <div className="flex items-center gap-3 flex-wrap">
           {/* Export Dropdown */}
           <div className="relative">
             <button
@@ -760,7 +764,7 @@ export default function FinancePaymentsPage() {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              Export
+              <span className="hidden sm:inline">Export</span>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
@@ -809,12 +813,12 @@ export default function FinancePaymentsPage() {
               fetchPayments();
             }}
             disabled={isFiltering}
-            className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            <svg className="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Refresh
+            <span className="hidden sm:inline">Refresh</span>
           </button>
         </div>
       </div>
@@ -1158,35 +1162,39 @@ export default function FinancePaymentsPage() {
           ) : (
             <div className={`transition-opacity duration-200 ${isFiltering ? 'opacity-50' : 'opacity-100'}`}>
               {payments.map((payment) => (
-              <div key={payment.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3">
-                      <h3 className="text-sm font-medium text-gray-900">
+              <div key={payment.id} className="px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors">
+                <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+                  <div className="flex-1 w-full min-w-0">
+                    {/* Payment ID and Tags - Stack on mobile */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
+                      <h3 className="text-sm font-medium text-gray-900 truncate">
                         {payment.case.claimReference}
                       </h3>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        {payment.case.assetType}
-                      </span>
-                      {/* Status Badge */}
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        payment.status === 'verified' ? 'bg-green-100 text-green-800' :
-                        payment.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                        payment.status === 'overdue' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {payment.status === 'pending' && '⏳ Pending'}
-                        {payment.status === 'verified' && '✅ Verified'}
-                        {payment.status === 'rejected' && '❌ Rejected'}
-                        {payment.status === 'overdue' && '🚨 Overdue'}
-                      </span>
-                      {/* Auto-verified Badge */}
-                      {payment.autoVerified && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                          🤖 Auto-Verified
+                      {/* Tags container with wrapping */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {payment.case.assetType}
                         </span>
-                      )}
+                        {/* Status Badge */}
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          payment.status === 'verified' ? 'bg-green-100 text-green-800' :
+                          payment.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                          payment.status === 'overdue' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {payment.status === 'pending' && '⏳ Pending'}
+                          {payment.status === 'verified' && '✅ Verified'}
+                          {payment.status === 'rejected' && '❌ Rejected'}
+                          {payment.status === 'overdue' && '🚨 Overdue'}
+                        </span>
+                        {/* Auto-verified Badge */}
+                        {payment.autoVerified && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                            🤖 Auto-Verified
+                          </span>
+                        )}
+                      </div>
                     </div>
                     
                     <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
@@ -1324,40 +1332,44 @@ export default function FinancePaymentsPage() {
                     </div>
                   </div>
 
-                  {/* Action Buttons - Show for pending and overdue payments */}
+                  {/* Action Buttons - Mobile responsive */}
                   {/* CRITICAL FIX: Don't show approve/reject for escrow_wallet payments with frozen status */}
                   {/* These are waiting for vendor to sign documents - approval is meaningless */}
                   {payment.status === 'pending' && 
                    !(payment.paymentMethod === 'escrow_wallet' && payment.escrowStatus === 'frozen') && (
-                    <div className="ml-4 flex flex-col space-y-2">
-                      <button
+                    <div className="w-full sm:w-auto sm:ml-4 flex flex-col gap-2">
+                      <OfflineAwareButton
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
                           openVerificationModal(payment, 'approve');
                         }}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                        requiresOnline={true}
+                        offlineTooltip="Payment approval requires internet connection"
+                        className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
                       >
                         Approve
-                      </button>
-                      <button
+                      </OfflineAwareButton>
+                      <OfflineAwareButton
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
                           openVerificationModal(payment, 'reject');
                         }}
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                        requiresOnline={true}
+                        offlineTooltip="Payment rejection requires internet connection"
+                        className="w-full sm:w-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
                       >
                         Reject
-                      </button>
+                      </OfflineAwareButton>
                     </div>
                   )}
                   {/* Show waiting message for frozen escrow payments */}
                   {payment.status === 'pending' && 
                    payment.paymentMethod === 'escrow_wallet' && 
                    payment.escrowStatus === 'frozen' && (
-                    <div className="ml-4 flex flex-col items-end">
-                      <div className="px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                    <div className="w-full sm:w-auto sm:ml-4 flex flex-col items-start sm:items-end">
+                      <div className="w-full sm:w-auto px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
                         <p className="text-yellow-800 font-medium">⏳ Waiting for Documents</p>
                         <p className="text-yellow-600 text-xs mt-1">
                           {payment.documentProgress 
@@ -1368,18 +1380,20 @@ export default function FinancePaymentsPage() {
                     </div>
                   )}
                   {payment.status === 'overdue' && (
-                    <div className="ml-4 flex flex-col space-y-2">
-                      <button
+                    <div className="w-full sm:w-auto sm:ml-4">
+                      <OfflineAwareButton
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
                           handleGrantGracePeriod(payment.id);
                         }}
                         disabled={processing}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        requiresOnline={true}
+                        offlineTooltip="Granting grace period requires internet connection"
+                        className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Grant Grace Period
-                      </button>
+                      </OfflineAwareButton>
                     </div>
                   )}
                 </div>

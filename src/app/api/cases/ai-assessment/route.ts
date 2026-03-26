@@ -9,6 +9,7 @@
  * - Vehicle context (make/model/year/mileage/condition)
  * - Accurate salvage value calculations
  * - High confidence scores (90%+)
+ * - Server-side rate limiting (5 requests per minute per user)
  * 
  * Accepts base64 data URLs (data:image/jpeg;base64,...) or regular image URLs
  */
@@ -16,6 +17,50 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assessDamageEnhanced } from '@/features/cases/services/ai-assessment-enhanced.service';
 import type { VehicleInfo, UniversalItemInfo } from '@/features/cases/services/ai-assessment-enhanced.service';
+import { auth } from '@/lib/auth/next-auth.config';
+
+// In-memory rate limiting store (in production, use Redis)
+const rateLimitStore = new Map<string, number[]>();
+
+/**
+ * Check rate limit for a user
+ * Max 5 requests per minute
+ */
+function checkRateLimit(userId: string): { allowed: boolean; retryAfter: number } {
+  const now = Date.now();
+  const oneMinuteAgo = now - 60000;
+  
+  // Get user's request history
+  const userRequests = rateLimitStore.get(userId) || [];
+  
+  // Filter out requests older than 1 minute
+  const recentRequests = userRequests.filter(time => time > oneMinuteAgo);
+  
+  if (recentRequests.length >= 5) {
+    // Calculate retry-after in seconds
+    const oldestRequest = Math.min(...recentRequests);
+    const retryAfter = Math.ceil((oldestRequest + 60000 - now) / 1000);
+    return { allowed: false, retryAfter };
+  }
+  
+  // Update store with new request
+  recentRequests.push(now);
+  rateLimitStore.set(userId, recentRequests);
+  
+  // Cleanup old entries periodically
+  if (rateLimitStore.size > 1000) {
+    for (const [key, times] of rateLimitStore.entries()) {
+      const validTimes = times.filter(t => t > oneMinuteAgo);
+      if (validTimes.length === 0) {
+        rateLimitStore.delete(key);
+      } else {
+        rateLimitStore.set(key, validTimes);
+      }
+    }
+  }
+  
+  return { allowed: true, retryAfter: 0 };
+}
 
 // Helper functions to determine brand prestige
 function getLuxuryBrandPrestige(make?: string): 'luxury' | 'premium' | 'standard' | 'budget' {
@@ -68,6 +113,36 @@ function getWatchBrandPrestige(brand?: string): 'luxury' | 'premium' | 'standard
 
 export async function POST(request: NextRequest) {
   try {
+    // Get user session for rate limiting
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Please log in' },
+        { status: 401 }
+      );
+    }
+    
+    // Check rate limit
+    const rateLimit = checkRateLimit(session.user.id);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { 
+          error: 'Too many analysis requests',
+          message: `Please try again in ${rateLimit.retryAfter} seconds.`,
+          retryAfter: rateLimit.retryAfter
+        },
+        { 
+          status: 429,
+          headers: {
+            'Retry-After': rateLimit.retryAfter.toString(),
+            'X-RateLimit-Limit': '5',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': new Date(Date.now() + rateLimit.retryAfter * 1000).toISOString()
+          }
+        }
+      );
+    }
+    
     const body = await request.json();
     const { photos, vehicleInfo, itemInfo } = body;
 

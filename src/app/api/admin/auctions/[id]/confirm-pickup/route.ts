@@ -158,8 +158,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
   } catch (error) {
     console.error('Error confirming pickup:', error);
+    
+    // SECURITY FIX: Sanitize error messages
     return NextResponse.json(
-      { error: 'Failed to confirm pickup' },
+      { error: 'Failed to confirm pickup. Please try again.' },
       { status: 500 }
     );
   }

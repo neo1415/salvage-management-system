@@ -7,7 +7,9 @@
 
 'use client';
 
+import { useEffect } from 'react';
 import { CheckCircle, XCircle, X } from 'lucide-react';
+import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
 export type ResultType = 'success' | 'error';
 
@@ -28,6 +30,14 @@ export function ResultModal({
   message,
   details,
 }: ResultModalProps) {
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const unlock = lockScroll();
+      return unlock;
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const getIcon = () => {
@@ -61,8 +71,23 @@ export function ResultModal({
   const colors = getColors();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden">
+    <div>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            onClose();
+          }
+        }}
+      />
+      
+      {/* Modal Container */}
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+        <div 
+          className="relative w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Close button */}
         <button
           onClick={onClose}
@@ -110,6 +135,7 @@ export function ResultModal({
           >
             Close
           </button>
+        </div>
         </div>
       </div>
     </div>

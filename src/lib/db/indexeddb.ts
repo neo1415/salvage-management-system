@@ -48,6 +48,53 @@ export interface SyncQueueItem {
 }
 
 /**
+ * Draft case data structure
+ */
+export interface DraftCase {
+  id: string;
+  formData: Record<string, unknown>;
+  status: 'draft';
+  createdAt: Date;
+  updatedAt: Date;
+  autoSavedAt: Date;
+  hasAIAnalysis: boolean;
+  marketValue?: number;
+}
+
+/**
+ * Cached auction data structure
+ */
+export interface CachedAuction {
+  data: Record<string, unknown>;
+  cachedAt: Date;
+  expiresAt: Date;
+  size: number;
+}
+
+/**
+ * Cached document data structure
+ */
+export interface CachedDocument {
+  data: Record<string, unknown>;
+  auctionId: string;
+  cachedAt: Date;
+  expiresAt: Date;
+  pdfUrl?: string;
+  size: number;
+}
+
+/**
+ * Cached wallet data structure
+ */
+export interface CachedWallet {
+  balance: number;
+  transactions: Array<Record<string, unknown>>;
+  cachedAt: Date;
+  expiresAt: Date;
+  size: number;
+}
+
+/**
  * Database schema definition
  */
 interface SalvageDBSchema extends DBSchema {
@@ -68,10 +115,44 @@ interface SalvageDBSchema extends DBSchema {
       'by-created-at': Date;
     };
   };
+  drafts: {
+    key: string;
+    value: DraftCase;
+    indexes: {
+      'by-created-at': Date;
+      'by-updated-at': Date;
+      'by-auto-saved-at': Date;
+    };
+  };
+  cachedAuctions: {
+    key: string;
+    value: CachedAuction;
+    indexes: {
+      'by-cached-at': Date;
+      'by-expires-at': Date;
+    };
+  };
+  cachedDocuments: {
+    key: string;
+    value: CachedDocument;
+    indexes: {
+      'by-auction-id': string;
+      'by-cached-at': Date;
+      'by-expires-at': Date;
+    };
+  };
+  cachedWallet: {
+    key: string;
+    value: CachedWallet;
+    indexes: {
+      'by-cached-at': Date;
+      'by-expires-at': Date;
+    };
+  };
 }
 
 const DB_NAME = 'salvage-management-db';
-const DB_VERSION = 1;
+const DB_VERSION = 3; // Incremented for cache stores
 
 let dbInstance: IDBPDatabase<SalvageDBSchema> | null = null;
 
@@ -84,7 +165,7 @@ export async function initDB(): Promise<IDBPDatabase<SalvageDBSchema>> {
   }
 
   dbInstance = await openDB<SalvageDBSchema>(DB_NAME, DB_VERSION, {
-    upgrade(db) {
+    upgrade(db, oldVersion) {
       // Create offlineCases store
       if (!db.objectStoreNames.contains('offlineCases')) {
         const offlineCasesStore = db.createObjectStore('offlineCases', {
@@ -104,6 +185,48 @@ export async function initDB(): Promise<IDBPDatabase<SalvageDBSchema>> {
         
         syncQueueStore.createIndex('by-case-id', 'caseId');
         syncQueueStore.createIndex('by-created-at', 'createdAt');
+      }
+
+      // Create drafts store (v2)
+      if (oldVersion < 2 && !db.objectStoreNames.contains('drafts')) {
+        const draftsStore = db.createObjectStore('drafts', {
+          keyPath: 'id',
+        });
+        
+        draftsStore.createIndex('by-created-at', 'createdAt');
+        draftsStore.createIndex('by-updated-at', 'updatedAt');
+        draftsStore.createIndex('by-auto-saved-at', 'autoSavedAt');
+      }
+
+      // Create cache stores (v3)
+      if (oldVersion < 3) {
+        if (!db.objectStoreNames.contains('cachedAuctions')) {
+          const cachedAuctionsStore = db.createObjectStore('cachedAuctions', {
+            keyPath: 'data.id',
+          });
+          
+          cachedAuctionsStore.createIndex('by-cached-at', 'cachedAt');
+          cachedAuctionsStore.createIndex('by-expires-at', 'expiresAt');
+        }
+
+        if (!db.objectStoreNames.contains('cachedDocuments')) {
+          const cachedDocumentsStore = db.createObjectStore('cachedDocuments', {
+            keyPath: 'data.id',
+          });
+          
+          cachedDocumentsStore.createIndex('by-auction-id', 'auctionId');
+          cachedDocumentsStore.createIndex('by-cached-at', 'cachedAt');
+          cachedDocumentsStore.createIndex('by-expires-at', 'expiresAt');
+        }
+
+        if (!db.objectStoreNames.contains('cachedWallet')) {
+          const cachedWalletStore = db.createObjectStore('cachedWallet', {
+            keyPath: 'userId',
+          });
+          
+          cachedWalletStore.createIndex('by-cached-at', 'cachedAt');
+          cachedWalletStore.createIndex('by-expires-at', 'expiresAt');
+        }
       }
     },
   });
@@ -293,5 +416,300 @@ export async function getStorageStats(): Promise<{
     synced: allCases.filter(c => c.syncStatus === 'synced').length,
     errors: allCases.filter(c => c.syncStatus === 'error').length,
     queueSize: queue.length,
+  };
+}
+
+/**
+ * Save draft case
+ * If a draft with the same claim reference exists, update it instead of creating a new one
+ */
+export async function saveDraft(formData: Record<string, unknown>, hasAIAnalysis: boolean = false, marketValue?: number): Promise<DraftCase> {
+  const db = await getDB();
+  
+  // Check if a draft with the same claim reference already exists
+  const claimReference = formData.claimReference as string;
+  if (claimReference) {
+    const existingDraft = await findDraftByClaimReference(claimReference);
+    if (existingDraft) {
+      // Update the existing draft instead of creating a new one
+      return await updateDraft(existingDraft.id, formData, hasAIAnalysis, marketValue);
+    }
+  }
+  
+  const now = new Date();
+  const draft: DraftCase = {
+    id: `draft-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+    formData,
+    status: 'draft',
+    createdAt: now,
+    updatedAt: now,
+    autoSavedAt: now,
+    hasAIAnalysis,
+    marketValue,
+  };
+
+  await db.add('drafts', draft);
+  
+  return draft;
+}
+
+/**
+ * Update existing draft
+ */
+export async function updateDraft(id: string, formData: Record<string, unknown>, hasAIAnalysis?: boolean, marketValue?: number): Promise<DraftCase> {
+  const db = await getDB();
+  const existingDraft = await db.get('drafts', id);
+  
+  if (!existingDraft) {
+    throw new Error(`Draft not found: ${id}`);
+  }
+
+  const now = new Date();
+  const updatedDraft: DraftCase = {
+    ...existingDraft,
+    formData,
+    updatedAt: now,
+    autoSavedAt: now,
+    hasAIAnalysis: hasAIAnalysis !== undefined ? hasAIAnalysis : existingDraft.hasAIAnalysis,
+    marketValue: marketValue !== undefined ? marketValue : existingDraft.marketValue,
+  };
+
+  await db.put('drafts', updatedDraft);
+  
+  return updatedDraft;
+}
+
+/**
+ * Get draft by ID
+ */
+export async function getDraft(id: string): Promise<DraftCase | undefined> {
+  const db = await getDB();
+  return await db.get('drafts', id);
+}
+
+/**
+ * Find draft by claim reference
+ */
+export async function findDraftByClaimReference(claimReference: string): Promise<DraftCase | undefined> {
+  const db = await getDB();
+  const allDrafts = await db.getAll('drafts');
+  return allDrafts.find(draft => draft.formData.claimReference === claimReference);
+}
+
+/**
+ * Get all drafts
+ */
+export async function getAllDrafts(): Promise<DraftCase[]> {
+  const db = await getDB();
+  const drafts = await db.getAll('drafts');
+  // Sort by most recently updated
+  return drafts.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+}
+
+/**
+ * Delete draft
+ */
+export async function deleteDraft(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete('drafts', id);
+}
+
+/**
+ * Clear all drafts
+ */
+export async function clearAllDrafts(): Promise<void> {
+  const db = await getDB();
+  await db.clear('drafts');
+}
+
+/**
+ * Cache auction data
+ */
+export async function cacheAuction(auction: Record<string, unknown>, maxAgeMs: number = 24 * 60 * 60 * 1000): Promise<void> {
+  const db = await getDB();
+  const now = new Date();
+  
+  const cached: CachedAuction = {
+    data: auction,
+    cachedAt: now,
+    expiresAt: new Date(now.getTime() + maxAgeMs),
+    size: JSON.stringify(auction).length,
+  };
+
+  await db.put('cachedAuctions', cached);
+}
+
+/**
+ * Get cached auction
+ */
+export async function getCachedAuction(id: string): Promise<CachedAuction | undefined> {
+  const db = await getDB();
+  const cached = await db.get('cachedAuctions', id);
+  
+  // Check if expired
+  if (cached && cached.expiresAt < new Date()) {
+    await db.delete('cachedAuctions', id);
+    return undefined;
+  }
+  
+  return cached;
+}
+
+/**
+ * Get all cached auctions
+ */
+export async function getAllCachedAuctions(): Promise<CachedAuction[]> {
+  const db = await getDB();
+  const cached = await db.getAll('cachedAuctions');
+  
+  // Filter out expired
+  const now = new Date();
+  return cached.filter(c => c.expiresAt >= now);
+}
+
+/**
+ * Cache document data
+ */
+export async function cacheDocument(document: Record<string, unknown>, auctionId: string, maxAgeMs: number = 7 * 24 * 60 * 60 * 1000): Promise<void> {
+  const db = await getDB();
+  const now = new Date();
+  
+  const cached: CachedDocument = {
+    data: document,
+    auctionId,
+    cachedAt: now,
+    expiresAt: new Date(now.getTime() + maxAgeMs),
+    pdfUrl: document.pdfUrl as string | undefined,
+    size: JSON.stringify(document).length,
+  };
+
+  await db.put('cachedDocuments', cached);
+}
+
+/**
+ * Get cached document
+ */
+export async function getCachedDocument(id: string): Promise<CachedDocument | undefined> {
+  const db = await getDB();
+  const cached = await db.get('cachedDocuments', id);
+  
+  // Check if expired
+  if (cached && cached.expiresAt < new Date()) {
+    await db.delete('cachedDocuments', id);
+    return undefined;
+  }
+  
+  return cached;
+}
+
+/**
+ * Get cached documents by auction ID
+ */
+export async function getCachedDocumentsByAuction(auctionId: string): Promise<CachedDocument[]> {
+  const db = await getDB();
+  const cached = await db.getAllFromIndex('cachedDocuments', 'by-auction-id', auctionId);
+  
+  // Filter out expired
+  const now = new Date();
+  return cached.filter(c => c.expiresAt >= now);
+}
+
+/**
+ * Cache wallet data
+ */
+export async function cacheWallet(userId: string, balance: number, transactions: Array<Record<string, unknown>>, maxAgeMs: number = 60 * 60 * 1000): Promise<void> {
+  const db = await getDB();
+  const now = new Date();
+  
+  const cached: CachedWallet & { userId: string } = {
+    userId,
+    balance,
+    transactions,
+    cachedAt: now,
+    expiresAt: new Date(now.getTime() + maxAgeMs),
+    size: JSON.stringify({ balance, transactions }).length,
+  };
+
+  await db.put('cachedWallet', cached);
+}
+
+/**
+ * Get cached wallet
+ */
+export async function getCachedWallet(userId: string): Promise<CachedWallet | undefined> {
+  const db = await getDB();
+  const cached = await db.get('cachedWallet', userId);
+  
+  // Check if expired
+  if (cached && cached.expiresAt < new Date()) {
+    await db.delete('cachedWallet', userId);
+    return undefined;
+  }
+  
+  return cached;
+}
+
+/**
+ * Clear expired cache entries
+ */
+export async function clearExpiredCache(): Promise<number> {
+  const db = await getDB();
+  const now = new Date();
+  let cleared = 0;
+
+  // Clear expired auctions
+  const auctions = await db.getAll('cachedAuctions');
+  for (const auction of auctions) {
+    if (auction.expiresAt < now) {
+      await db.delete('cachedAuctions', auction.data.id as string);
+      cleared++;
+    }
+  }
+
+  // Clear expired documents
+  const documents = await db.getAll('cachedDocuments');
+  for (const doc of documents) {
+    if (doc.expiresAt < now) {
+      await db.delete('cachedDocuments', doc.data.id as string);
+      cleared++;
+    }
+  }
+
+  // Clear expired wallet data
+  const wallets = await db.getAll('cachedWallet');
+  for (const wallet of wallets) {
+    if (wallet.expiresAt < now) {
+      await db.delete('cachedWallet', (wallet as unknown as { userId: string }).userId);
+      cleared++;
+    }
+  }
+
+  return cleared;
+}
+
+/**
+ * Get cache storage usage
+ */
+export async function getCacheStorageUsage(): Promise<{
+  auctions: { count: number; size: number };
+  documents: { count: number; size: number };
+  wallet: { count: number; size: number };
+  total: number;
+}> {
+  const db = await getDB();
+
+  const auctions = await db.getAll('cachedAuctions');
+  const documents = await db.getAll('cachedDocuments');
+  const wallets = await db.getAll('cachedWallet');
+
+  const auctionsSize = auctions.reduce((sum, a) => sum + a.size, 0);
+  const documentsSize = documents.reduce((sum, d) => sum + d.size, 0);
+  const walletsSize = wallets.reduce((sum, w) => sum + w.size, 0);
+
+  return {
+    auctions: { count: auctions.length, size: auctionsSize },
+    documents: { count: documents.length, size: documentsSize },
+    wallet: { count: wallets.length, size: walletsSize },
+    total: auctionsSize + documentsSize + walletsSize,
   };
 }

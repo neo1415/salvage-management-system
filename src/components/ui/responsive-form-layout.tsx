@@ -83,36 +83,39 @@ export const ResponsiveFormLayout: React.FC<ResponsiveFormLayoutProps> = ({
   return (
     <div
       className={cn(
-        // Base container styles - Match app background (white with burgundy theme)
+        // Base container styles - FORCE WHITE background (override dark mode)
         'responsive-form-layout min-h-screen',
-        'bg-white',
-        'dark:bg-gray-900',
+        '!bg-white',
         
-        // Mobile-first layout (320px - 767px)
-        'flex flex-col relative',
-        currentSpacing.container,
+        // CRITICAL: Prevent horizontal overflow on mobile
+        'overflow-x-hidden',
+        
+        // Mobile-first layout (320px - 767px) - PERFECTLY CENTERED with max-width constraint
+        'w-full max-w-full',
+        'px-4', // Consistent horizontal padding on mobile
+        currentSpacing.container.replace('p-4', 'py-4').replace('p-3', 'py-3').replace('p-6', 'py-6'),
         
         // Enhanced mobile touch optimization
         'touch-manipulation',
         
         // Tablet layout (768px - 1023px)
-        'md:max-w-4xl md:mx-auto md:grid md:grid-cols-1 md:gap-6',
-        spacing === 'spacious' && 'md:p-8',
+        'md:max-w-4xl md:mx-auto md:px-6',
+        spacing === 'spacious' && 'md:py-8',
         
         // Desktop layout (1024px+)
-        'lg:max-w-6xl lg:grid-cols-1',
-        spacing === 'spacious' && 'lg:p-12',
+        'lg:max-w-6xl lg:px-8',
+        spacing === 'spacious' && 'lg:py-12',
         
         // Auto variant responsive behavior with enhanced breakpoints
         variant === 'auto' && [
           // Mobile optimizations (320px+)
-          'sm:p-4',
+          'sm:px-4',
           // Tablet optimizations (768px+)
-          'md:p-6 md:space-y-8',
+          'md:px-6 md:space-y-8',
           // Desktop optimizations (1024px+)
-          'lg:p-8 lg:space-y-10',
+          'lg:px-8 lg:space-y-10',
           // Large desktop optimizations (1440px+)
-          'xl:max-w-7xl xl:p-12 xl:space-y-12',
+          'xl:max-w-7xl xl:px-12 xl:space-y-12',
         ],
         
         // Explicit variant overrides with improved constraints
@@ -201,12 +204,12 @@ export const VoiceOptimizedSection: React.FC<VoiceOptimizedSectionProps> = ({
         {(title || description) && (
           <div className="section-header space-y-2 mb-4">
             {title && (
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <h3 className="text-lg font-semibold text-gray-900">
                 {title}
               </h3>
             )}
             {description && (
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm text-gray-600">
                 {description}
               </p>
             )}
@@ -224,9 +227,9 @@ export const VoiceOptimizedSection: React.FC<VoiceOptimizedSectionProps> = ({
         <div className={cn(
           'voice-controls-area',
           
-          // Mobile: sticky at bottom
+          // Mobile: sticky at bottom - FORCE WHITE BACKGROUND
           'sticky bottom-4 z-20 mt-4',
-          'bg-white/95 backdrop-blur-sm rounded-2xl p-4',
+          '!bg-white/95 backdrop-blur-sm rounded-2xl p-4',
           'border border-gray-200/50 shadow-lg shadow-gray-900/5',
           
           // Tablet: sidebar positioning
@@ -236,10 +239,6 @@ export const VoiceOptimizedSection: React.FC<VoiceOptimizedSectionProps> = ({
           
           // Desktop: enhanced sidebar
           'lg:col-span-1',
-          
-          // Dark mode support
-          'dark:bg-gray-800/95 dark:border-gray-700/50',
-          'md:dark:bg-transparent md:dark:border-none',
         )}>
           {voiceControls}
         </div>
@@ -276,21 +275,18 @@ export const FormSection: React.FC<FormSectionProps> = ({
         // Base section styles
         variant === 'default' && 'space-y-4',
         
-        // Highlighted section with background
+        // Highlighted section with background - Mobile responsive padding - FORCE WHITE BACKGROUND
         variant === 'highlighted' && [
-          'p-6 space-y-4 rounded-2xl',
-          'bg-gradient-to-br from-blue-50/50 to-indigo-50/50',
-          'border border-blue-200/30',
-          'dark:from-blue-900/20 dark:to-indigo-900/20',
-          'dark:border-blue-700/30',
+          'p-4 sm:p-6 space-y-4 rounded-2xl',
+          '!bg-white w-full max-w-full mx-0', // Remove mx-auto, let parent handle centering
+          'border border-gray-200/30',
         ],
         
-        // Card section with elevation
+        // Card section with elevation - Mobile responsive padding - FORCE WHITE BACKGROUND
         variant === 'card' && [
-          'p-6 space-y-4 rounded-2xl',
-          'bg-white/80 backdrop-blur-sm',
+          'p-4 sm:p-6 space-y-4 rounded-2xl',
+          '!bg-white w-full max-w-full mx-0', // Remove mx-auto, let parent handle centering
           'border border-gray-200/50 shadow-lg shadow-gray-900/5',
-          'dark:bg-gray-800/80 dark:border-gray-700/50',
         ],
         
         className
@@ -300,12 +296,12 @@ export const FormSection: React.FC<FormSectionProps> = ({
       {(title || description) && (
         <div className="section-header space-y-2">
           {title && (
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <h3 className="text-lg font-semibold text-gray-900">
               {title}
             </h3>
           )}
           {description && (
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-sm text-gray-600">
               {description}
             </p>
           )}
@@ -361,7 +357,7 @@ export const FormField: React.FC<FormFieldProps> = ({
       {/* Field label */}
       {label && (
         <label className={cn(
-          'block font-medium text-gray-700 dark:text-gray-300',
+          'block font-medium text-gray-700',
           // Responsive text sizing
           'text-sm md:text-base',
           // Enhanced spacing for voice fields
@@ -375,7 +371,7 @@ export const FormField: React.FC<FormFieldProps> = ({
       {/* Field description */}
       {description && (
         <p className={cn(
-          'text-gray-500 dark:text-gray-400',
+          'text-gray-500',
           // Responsive text sizing
           'text-xs md:text-sm',
           // Enhanced spacing for voice fields
@@ -400,7 +396,7 @@ export const FormField: React.FC<FormFieldProps> = ({
       
       {/* Field error */}
       {error && (
-        <p className="text-sm text-red-600 dark:text-red-400 flex items-center space-x-1">
+        <p className="text-sm text-red-600 flex items-center space-x-1">
           <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
           </svg>
@@ -416,7 +412,7 @@ export const FormField: React.FC<FormFieldProps> = ({
  * 
  * Styled input component with modern 2026 design and responsive optimization
  */
-interface ModernInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+interface ModernInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
   variant?: 'default' | 'filled' | 'outlined';
   size?: 'sm' | 'md' | 'lg';
   responsive?: boolean;
@@ -451,29 +447,23 @@ export const ModernInput: React.FC<ModernInputProps> = ({
           responsive ? 'px-5 py-4 text-lg md:px-6 md:py-5 lg:px-7 lg:py-6' : 'px-5 py-4 text-lg'
         ],
         
-        // Style variants with enhanced modern design
+        // Style variants with enhanced modern design - FORCE LIGHT MODE
         variant === 'default' && [
-          'border-gray-300 bg-white text-gray-900',
+          'border-gray-300 !bg-white !text-gray-900',
           'hover:border-gray-400 focus:border-[#800020]',
           'placeholder:text-gray-500',
-          'dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100',
-          'dark:placeholder:text-gray-400',
         ],
         
         variant === 'filled' && [
-          'border-transparent bg-gray-100 text-gray-900',
+          'border-transparent !bg-gray-100 !text-gray-900',
           'hover:bg-gray-200 focus:bg-white focus:border-[#800020]',
           'placeholder:text-gray-600',
-          'dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600',
-          'dark:placeholder:text-gray-300',
         ],
         
         variant === 'outlined' && [
-          'border-2 border-gray-300 bg-transparent text-gray-900',
+          'border-2 border-gray-300 !bg-transparent !text-gray-900',
           'hover:border-gray-400 focus:border-[#800020]',
           'placeholder:text-gray-500',
-          'dark:border-gray-600 dark:text-gray-100',
-          'dark:placeholder:text-gray-400',
         ],
         
         className
@@ -488,7 +478,7 @@ export const ModernInput: React.FC<ModernInputProps> = ({
  * 
  * Styled button component with modern design, animations, and responsive optimization
  */
-interface ModernButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface ModernButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'size'> {
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
@@ -544,10 +534,9 @@ export const ModernButton: React.FC<ModernButtonProps> = ({
         ],
         
         variant === 'secondary' && [
-          'bg-gray-200 text-gray-900 hover:bg-gray-300',
+          '!bg-gray-200 !text-gray-900 hover:bg-gray-300',
           'focus:ring-gray-300 active:scale-95',
           'shadow-md shadow-gray-900/10',
-          'dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600',
         ],
         
         variant === 'outline' && [
@@ -557,9 +546,8 @@ export const ModernButton: React.FC<ModernButtonProps> = ({
         ],
         
         variant === 'ghost' && [
-          'text-gray-700 hover:bg-gray-100 hover:text-gray-900',
+          '!text-gray-700 hover:bg-gray-100 hover:text-gray-900',
           'focus:ring-gray-300 active:scale-95',
-          'dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100',
         ],
         
         className
@@ -579,6 +567,3 @@ export const ModernButton: React.FC<ModernButtonProps> = ({
 };
 
 export default ResponsiveFormLayout;
-
-// Export all components for easy importing
-export { ResponsiveFormLayout, VoiceOptimizedSection, FormSection, FormField, ModernInput, ModernButton };

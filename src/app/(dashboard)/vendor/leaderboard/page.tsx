@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/use-auth';
 import { TrustBadges } from '@/components/vendor/trust-badges';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { useCachedLeaderboard } from '@/hooks/use-cached-leaderboard';
 
 interface LeaderboardEntry {
   rank: number;
@@ -29,35 +30,10 @@ interface LeaderboardResponse {
 export default function VendorLeaderboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading } = useAuth();
+  const { data: leaderboardData, isLoading: isLoadingData, isOffline, lastCached, refresh, error: cacheError } = useCachedLeaderboard();
 
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardResponse | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentVendorId, setCurrentVendorId] = useState<string | null>(null);
-
-  // Fetch leaderboard data
-  const fetchLeaderboardData = useCallback(async () => {
-    try {
-      setError(null);
-      const response = await fetch('/api/vendors/leaderboard');
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push('/login');
-          return;
-        }
-        throw new Error('Failed to fetch leaderboard data');
-      }
-
-      const data: LeaderboardResponse = await response.json();
-      setLeaderboardData(data);
-    } catch (err) {
-      console.error('Error fetching leaderboard data:', err);
-      setError('Failed to load leaderboard. Please try again.');
-    } finally {
-      setIsLoadingData(false);
-    }
-  }, [router]);
 
   // Fetch current vendor ID
   const fetchCurrentVendorId = useCallback(async () => {
@@ -86,15 +62,13 @@ export default function VendorLeaderboardPage() {
 
     if (isAuthenticated && user?.role !== 'vendor') {
       setError('Access denied. Vendor role required.');
-      setIsLoadingData(false);
       return;
     }
 
     if (isAuthenticated && user) {
-      fetchLeaderboardData();
       fetchCurrentVendorId();
     }
-  }, [isAuthenticated, isLoading, user, router, fetchLeaderboardData, fetchCurrentVendorId]);
+  }, [isAuthenticated, isLoading, user, router, fetchCurrentVendorId]);
 
   // Get trophy icon for top 3
   const getTrophyIcon = (rank: number) => {
@@ -153,7 +127,7 @@ export default function VendorLeaderboardPage() {
   };
 
   // Loading state
-  if (isLoading || (isLoadingData && !leaderboardData)) {
+  if (isLoading || isLoadingData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -165,7 +139,7 @@ export default function VendorLeaderboardPage() {
   }
 
   // Error state
-  if (error) {
+  if (error || cacheError) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
@@ -175,9 +149,9 @@ export default function VendorLeaderboardPage() {
             </svg>
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Error</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
+          <p className="text-gray-600 mb-6">{error || cacheError?.message}</p>
           <button
-            onClick={() => fetchLeaderboardData()}
+            onClick={() => refresh()}
             className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
           >
             Try Again
@@ -212,6 +186,30 @@ export default function VendorLeaderboardPage() {
             Top 10 vendors this month • Updated weekly
           </p>
         </div>
+
+        {/* Offline indicator banner */}
+        {isOffline && (
+          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-yellow-600 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-yellow-800">
+                  You are offline. Showing cached leaderboard.
+                </p>
+                {lastCached && (
+                  <p className="text-xs text-yellow-700 mt-1">
+                    Last updated: {new Date(lastCached).toLocaleString('en-NG', {
+                      dateStyle: 'medium',
+                      timeStyle: 'short'
+                    })}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Update Info Banner */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">

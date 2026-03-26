@@ -106,8 +106,9 @@ export const searchUsageAnalytics = pgTable('search_usage_analytics', {
 }, (table) => ({
   dateIdx: index('idx_search_usage_date').on(table.analyticsDate),
   hourIdx: index('idx_search_usage_hour').on(table.analyticsDate, table.hourOfDay),
-  brandsIdx: index('idx_search_usage_brands').on(table.mostCommonBrands).using('gin'),
-  locationsIdx: index('idx_search_usage_locations').on(table.topLocations).using('gin'),
+  // GIN indexes for JSONB columns — created via SQL migration
+  // brandsIdx: index('idx_search_usage_brands').on(table.mostCommonBrands).using('gin'),
+  // locationsIdx: index('idx_search_usage_locations').on(table.topLocations).using('gin'),
   uniqueDateHour: unique('unique_usage_analytics_date').on(table.analyticsDate, table.hourOfDay),
 }));
 /**
@@ -255,9 +256,10 @@ export const searchTrendAnalytics = pgTable('search_trend_analytics', {
 }, (table) => ({
   dateIdx: index('idx_search_trend_date').on(table.trendDate),
   periodIdx: index('idx_search_trend_period').on(table.trendPeriod),
-  vehiclesIdx: index('idx_search_trend_vehicles').on(table.trendingVehicles).using('gin'),
-  electronicsIdx: index('idx_search_trend_electronics').on(table.trendingElectronics).using('gin'),
-  priceTrendsIdx: index('idx_search_trend_price_trends').on(table.priceTrends).using('gin'),
+  // GIN indexes for JSONB columns — created via SQL migration
+  // vehiclesIdx: index('idx_search_trend_vehicles').on(table.trendingVehicles).using('gin'),
+  // electronicsIdx: index('idx_search_trend_electronics').on(table.trendingElectronics).using('gin'),
+  // priceTrendsIdx: index('idx_search_trend_price_trends').on(table.priceTrends).using('gin'),
   uniqueDatePeriod: unique('unique_trend_analytics_date_period').on(table.trendDate, table.trendPeriod),
 }));
 

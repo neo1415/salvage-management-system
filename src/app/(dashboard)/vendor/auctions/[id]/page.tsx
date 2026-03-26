@@ -963,7 +963,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                   {auction.case.aiAssessment.labels.map((label, index) => (
                     <span
                       key={index}
-                      className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
+                      className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium break-words"
                     >
                       {label}
                     </span>

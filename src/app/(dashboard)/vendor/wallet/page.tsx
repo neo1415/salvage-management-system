@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Wallet, Plus, TrendingUp, TrendingDown, Lock, Unlock, CreditCard, WifiOff } from 'lucide-react';
+import { Wallet, Plus, TrendingUp, TrendingDown, Lock, Unlock, CreditCard, WifiOff, Clock } from 'lucide-react';
 import { useOnlineStatus } from '@/hooks/use-online-status';
+import { useCachedWallet } from '@/hooks/use-cached-wallet';
 
 interface WalletBalance {
   balance: number;
@@ -36,12 +37,7 @@ export default function WalletPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const isOnline = useOnlineStatus();
-  const [balance, setBalance] = useState<WalletBalance | null>(null);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [fundingAmount, setFundingAmount] = useState<string>('');
   const [isFunding, setIsFunding] = useState(false);
   
@@ -49,49 +45,73 @@ export default function WalletPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  // FIXED: Wrap fetchWalletData in useCallback to prevent recreation on every render
+  // Fetch function for useCachedWallet hook
   const fetchWalletData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Fetch balance
-      const balanceResponse = await fetch('/api/payments/wallet/balance');
-      if (!balanceResponse.ok) {
-        throw new Error('Failed to fetch wallet balance');
-      }
-      const balanceData = await balanceResponse.json();
-      
-      // FIXED: Only update state if values actually changed
-      setBalance(prev => {
-        if (!prev) return balanceData;
-        if (
-          prev.balance === balanceData.balance &&
-          prev.availableBalance === balanceData.availableBalance &&
-          prev.frozenAmount === balanceData.frozenAmount
-        ) {
-          return prev; // No change, prevent re-render
-        }
-        return balanceData;
-      });
-
-      // Fetch transactions with pagination
-      const transactionsResponse = await fetch(`/api/payments/wallet/transactions?page=${currentPage}&limit=10`);
-      if (!transactionsResponse.ok) {
-        throw new Error('Failed to fetch transactions');
-      }
-      const transactionsData = await transactionsResponse.json();
-      
-      // Update transactions and pagination
-      setTransactions(transactionsData.transactions || []);
-      setPagination(transactionsData.pagination || null);
-    } catch (err) {
-      console.error('Error fetching wallet data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load wallet data');
-    } finally {
-      setLoading(false);
+    // Fetch balance
+    const balanceResponse = await fetch('/api/payments/wallet/balance');
+    if (!balanceResponse.ok) {
+      throw new Error('Failed to fetch wallet balance');
     }
-  }, [currentPage]); // Depend on currentPage for pagination
+    const balanceData = await balanceResponse.json();
+
+    // Fetch transactions (get more for caching)
+    const transactionsResponse = await fetch('/api/payments/wallet/transactions?page=1&limit=20');
+    if (!transactionsResponse.ok) {
+      throw new Error('Failed to fetch transactions');
+    }
+    const transactionsData = await transactionsResponse.json();
+
+    return {
+      balance: balanceData.balance,
+      availableBalance: balanceData.availableBalance,
+      frozenAmount: balanceData.frozenAmount,
+      transactions: transactionsData.transactions || [],
+    };
+  }, []);
+
+  // Use cached wallet hook
+  const { 
+    wallet, 
+    isLoading: loading, 
+    isOffline, 
+    lastSynced, 
+    refresh,
+    error: walletError 
+  } = useCachedWallet(session?.user?.id || null, fetchWalletData);
+
+  // Extract balance and transactions from wallet data
+  const balance = wallet ? {
+    balance: wallet.balance,
+    availableBalance: (wallet as any).availableBalance || 0,
+    frozenAmount: (wallet as any).frozenAmount || 0,
+  } : null;
+
+  const allTransactions = (wallet?.transactions || []) as unknown as WalletTransaction[];
+  
+  // Paginate transactions locally
+  const itemsPerPage = 10;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const transactions = allTransactions.slice(startIndex, endIndex);
+  
+  const pagination: PaginationMeta = {
+    total: allTransactions.length,
+    limit: itemsPerPage,
+    offset: startIndex,
+    page: currentPage,
+    totalPages: Math.ceil(allTransactions.length / itemsPerPage),
+    hasNextPage: endIndex < allTransactions.length,
+    hasPrevPage: currentPage > 1,
+  };
+
+  const [error, setError] = useState<string | null>(null);
+
+  // Sync error with wallet error
+  useEffect(() => {
+    if (walletError) {
+      setError(walletError.message);
+    }
+  }, [walletError]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -99,13 +119,6 @@ export default function WalletPage() {
       router.push('/login');
     }
   }, [status, router]);
-
-  // Fetch wallet balance and transactions - FIXED: Only depend on user ID and currentPage
-  useEffect(() => {
-    if (status === 'authenticated' && session?.user?.id) {
-      fetchWalletData();
-    }
-  }, [status, session?.user?.id, currentPage, fetchWalletData]); // Added currentPage and fetchWalletData
 
   // Check for payment success callback - FIXED: Run only once on mount
   useEffect(() => {
@@ -115,13 +128,14 @@ export default function WalletPage() {
     if (paymentStatus === 'success') {
       // Refresh wallet data after successful payment
       setTimeout(() => {
-        fetchWalletData();
+        refresh();
       }, 2000); // Wait 2 seconds for webhook to process
       
       // Clear URL parameters
       window.history.replaceState({}, '', '/vendor/wallet');
     }
-  }, []); // Empty dependency array - run only once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount
 
   // FIXED: Wrap handleAddFunds in useCallback to prevent recreation
   const handleAddFunds = useCallback(async () => {
@@ -217,13 +231,8 @@ export default function WalletPage() {
     try {
       setExporting(true);
       
-      // Fetch all transactions for export (not just current page)
-      const response = await fetch('/api/payments/wallet/transactions?limit=10000');
-      if (!response.ok) {
-        throw new Error('Failed to fetch transactions for export');
-      }
-      const data = await response.json();
-      const allTransactions = data.transactions || [];
+      // Use all cached transactions for export
+      const allTransactions = (wallet?.transactions || []) as unknown as WalletTransaction[];
       
       // Prepare CSV data
       const headers = ['Transaction ID', 'Type', 'Amount', 'Balance After', 'Description', 'Date', 'Reference'];
@@ -265,19 +274,14 @@ export default function WalletPage() {
       setExporting(false);
       setShowExportMenu(false);
     }
-  }, [formatCurrency, formatDate]);
+  }, [wallet, formatCurrency, formatDate]);
 
   const handleExportPDF = useCallback(async () => {
     try {
       setExporting(true);
       
-      // Fetch all transactions for export
-      const response = await fetch('/api/payments/wallet/transactions?limit=10000');
-      if (!response.ok) {
-        throw new Error('Failed to fetch transactions for export');
-      }
-      const data = await response.json();
-      const allTransactions = data.transactions || [];
+      // Use all cached transactions for export
+      const allTransactions = (wallet?.transactions || []) as unknown as WalletTransaction[];
       
       // Dynamically import jsPDF and services
       const { jsPDF } = await import('jspdf');
@@ -355,7 +359,7 @@ export default function WalletPage() {
       setExporting(false);
       setShowExportMenu(false);
     }
-  }, [formatCurrency]);
+  }, [wallet, formatCurrency]);
 
   const escapeCSVField = (field: string | number): string => {
     const str = String(field);
@@ -398,26 +402,56 @@ export default function WalletPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <Wallet className="w-8 h-8 text-[#800020]" />
-            Escrow Wallet
-          </h1>
-          <p className="mt-2 text-gray-600">
-            Pre-fund your wallet for instant bidding and faster payments
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                <Wallet className="w-8 h-8 text-[#800020]" />
+                Escrow Wallet
+              </h1>
+              <p className="mt-2 text-gray-600">
+                Pre-fund your wallet for instant bidding and faster payments
+              </p>
+            </div>
+            
+            {/* Last Synced Timestamp */}
+            {lastSynced && (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <Clock className="w-4 h-4" />
+                <span>
+                  Last synced: {new Date(lastSynced).toLocaleString('en-NG', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Offline Warning Banner */}
-        {!isOnline && (
+        {isOffline && (
           <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
             <div className="flex items-center">
               <WifiOff className="w-5 h-5 text-yellow-400 mr-3" />
               <div>
                 <p className="text-sm font-medium text-yellow-800">
-                  You are currently offline
+                  You are viewing cached wallet data
                 </p>
                 <p className="text-sm text-yellow-700 mt-1">
-                  Some features like adding funds and exporting data may not be available. Your wallet data is cached and will sync when you're back online.
+                  Transaction actions are disabled while offline. Your data will sync automatically when you're back online.
+                  {lastSynced && (
+                    <span className="block mt-1">
+                      Last updated: {new Date(lastSynced).toLocaleString('en-NG', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -716,11 +750,11 @@ export default function WalletPage() {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 mt-0.5">•</span>
-              <span>When you win an auction, the bid amount is automatically frozen from your available balance</span>
+              <span>When you win an auction, the bid amount is frozen, then you must sign all necessary documents</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 mt-0.5">•</span>
-              <span>After pickup confirmation, frozen funds are released to NEM Insurance</span>
+              <span>After all documents are signed, the frozen funds are paid and you receive your authorization code to collect your item</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 mt-0.5">•</span>

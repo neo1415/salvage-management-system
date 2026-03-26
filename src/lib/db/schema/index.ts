@@ -14,3 +14,4 @@ export * from './vehicle-valuations';
 export * from './seed-registry';
 export * from './notifications';
 export * from './release-forms';
+export * from './verification-costs';

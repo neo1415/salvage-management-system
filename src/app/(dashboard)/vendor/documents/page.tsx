@@ -10,9 +10,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { useToast } from '@/components/ui/toast';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
+import { useCachedDocuments } from '@/hooks/use-cached-documents';
+import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 
 interface Document {
   id: string;
@@ -39,69 +40,73 @@ export default function VendorDocumentsPage() {
   const router = useRouter();
   const toast = useToast();
   const [auctionDocuments, setAuctionDocuments] = useState<AuctionDocuments[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   
   // Track which auctions have been processed to prevent duplicate calls
   const processedAuctionsRef = useRef<Set<string>>(new Set());
   const [notifications, setNotifications] = useState<any[]>([]);
 
-  useEffect(() => {
-    const fetchDocuments = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-
-        // Fetch all won auctions and notifications in parallel
-        const [auctionsResponse, notificationsResponse] = await Promise.all([
-          fetch('/api/vendor/won-auctions'),
-          fetch('/api/notifications?unreadOnly=false&limit=50'),
-        ]);
-        
-        if (!auctionsResponse.ok) {
-          throw new Error('Failed to fetch documents');
-        }
-
-        const data = await auctionsResponse.json();
-        
-        // Store notifications for retroactive processing check
-        if (notificationsResponse.ok) {
-          const notifData = await notificationsResponse.json();
-          setNotifications(notifData.data?.notifications || []);
-        }
-        
-        if (data.status === 'success' && data.data.auctions) {
-          // Fetch documents for each auction
-          const auctionsWithDocs = await Promise.all(
-            data.data.auctions.map(async (auction: any) => {
-              const docsResponse = await fetch(`/api/auctions/${auction.id}/documents`);
-              const docsData = await docsResponse.json();
-              
-              return {
-                auctionId: auction.id,
-                assetName: auction.assetName || 'Salvage Item',
-                winningBid: parseFloat(auction.currentBid || '0'),
-                closedAt: new Date(auction.closedAt),
-                status: auction.status,
-                documents: docsData.status === 'success' ? docsData.data.documents : [],
-              };
-            })
-          );
-
-          setAuctionDocuments(auctionsWithDocs.filter(a => a.documents.length > 0));
-        }
-      } catch (err) {
-        console.error('Error fetching documents:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load documents');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (session?.user?.vendorId) {
-      fetchDocuments();
+  // Use cached documents hook - pass null for auctionId since we're fetching all auctions
+  const { 
+    documents: cachedDocs, 
+    isLoading, 
+    isOffline, 
+    lastUpdated, 
+    refresh,
+    error: cacheError 
+  } = useCachedDocuments(null, async () => {
+    // Only fetch if we have a valid session
+    if (!session?.user?.vendorId) {
+      return [];
     }
-  }, [session]);
+
+    // Fetch all won auctions and notifications in parallel
+    const [auctionsResponse, notificationsResponse] = await Promise.all([
+      fetch('/api/vendor/won-auctions'),
+      fetch('/api/notifications?unreadOnly=false&limit=50'),
+    ]);
+    
+    if (!auctionsResponse.ok) {
+      throw new Error('Failed to fetch documents');
+    }
+
+    const data = await auctionsResponse.json();
+    
+    // Store notifications for retroactive processing check
+    if (notificationsResponse.ok) {
+      const notifData = await notificationsResponse.json();
+      setNotifications(notifData.data?.notifications || []);
+    }
+    
+    if (data.status === 'success' && data.data.auctions) {
+      // Fetch documents for each auction
+      const auctionsWithDocs = await Promise.all(
+        data.data.auctions.map(async (auction: any) => {
+          const docsResponse = await fetch(`/api/auctions/${auction.id}/documents`);
+          const docsData = await docsResponse.json();
+          
+          return {
+            auctionId: auction.id,
+            assetName: auction.assetName || 'Salvage Item',
+            winningBid: parseFloat(auction.currentBid || '0'),
+            closedAt: new Date(auction.closedAt),
+            status: auction.status,
+            documents: docsData.status === 'success' ? docsData.data.documents : [],
+          };
+        })
+      );
+
+      return auctionsWithDocs.filter(a => a.documents.length > 0);
+    }
+    
+    return [];
+  });
+
+  // Update local state when cached docs change
+  useEffect(() => {
+    if (cachedDocs && cachedDocs.length > 0) {
+      setAuctionDocuments(cachedDocs as unknown as AuctionDocuments[]);
+    }
+  }, [cachedDocs]);
 
   // Automatic retroactive payment processing trigger
   useEffect(() => {
@@ -212,7 +217,7 @@ export default function VendorDocumentsPage() {
     );
   }
 
-  if (error) {
+  if (cacheError) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="text-center max-w-md">
@@ -220,9 +225,9 @@ export default function VendorDocumentsPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Documents</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
+          <p className="text-gray-600 mb-6">{cacheError.message}</p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => refresh()}
             className="px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
           >
             Try Again
@@ -238,6 +243,27 @@ export default function VendorDocumentsPage() {
         <div className="max-w-7xl mx-auto px-4 py-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-6">My Documents</h1>
           
+          {/* Offline indicator when viewing cached empty state */}
+          {isOffline && (
+            <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 text-yellow-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-yellow-800">
+                    You are offline. Showing cached data.
+                  </p>
+                  {lastUpdated && (
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Last updated: {new Date(lastUpdated).toLocaleString('en-NG')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div className="bg-white rounded-lg shadow-md p-12 text-center">
             <svg className="w-24 h-24 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -249,6 +275,7 @@ export default function VendorDocumentsPage() {
             <button
               onClick={() => router.push('/vendor/auctions')}
               className="px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+              disabled={isOffline}
             >
               Browse Auctions
             </button>
@@ -268,6 +295,33 @@ export default function VendorDocumentsPage() {
           </p>
         </div>
 
+        {/* Offline indicator banner */}
+        {isOffline && (
+          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-yellow-600 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-yellow-800">
+                  You are offline. Showing cached documents.
+                </p>
+                {lastUpdated && (
+                  <p className="text-xs text-yellow-700 mt-1">
+                    Last updated: {new Date(lastUpdated).toLocaleString('en-NG', {
+                      dateStyle: 'medium',
+                      timeStyle: 'short'
+                    })}
+                  </p>
+                )}
+                <p className="text-xs text-yellow-700 mt-1">
+                  Document downloads are disabled while offline.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Use virtualization only when count > 50 */}
         {auctionDocuments.length > 50 ? (
           <div className="h-[calc(100vh-250px)] min-h-[600px]">
@@ -279,6 +333,7 @@ export default function VendorDocumentsPage() {
                     auction={auction}
                     onViewAuction={() => router.push(`/vendor/auctions/${auction.auctionId}`)}
                     onDownload={handleDownload}
+                    isOffline={isOffline}
                   />
                 </div>
               )}
@@ -294,6 +349,7 @@ export default function VendorDocumentsPage() {
                 auction={auction}
                 onViewAuction={() => router.push(`/vendor/auctions/${auction.auctionId}`)}
                 onDownload={handleDownload}
+                isOffline={isOffline}
               />
             ))}
           </div>
@@ -309,9 +365,10 @@ interface AuctionDocumentCardProps {
   auction: AuctionDocuments;
   onViewAuction: () => void;
   onDownload: (docId: string, title: string) => void;
+  isOffline: boolean;
 }
 
-function AuctionDocumentCard({ auction, onViewAuction, onDownload }: AuctionDocumentCardProps) {
+function AuctionDocumentCard({ auction, onViewAuction, onDownload, isOffline }: AuctionDocumentCardProps) {
   const router = useRouter();
 
   return (
@@ -391,15 +448,17 @@ function AuctionDocumentCard({ auction, onViewAuction, onDownload }: AuctionDocu
               )}
 
               {doc.status === 'signed' && (
-                <button
+                <OfflineAwareButton
                   onClick={() => onDownload(doc.id, doc.title)}
                   className="w-full px-4 py-2 bg-[#800020] hover:bg-[#600018] text-white rounded-md font-medium transition-colors flex items-center justify-center gap-2"
+                  requiresOnline={true}
+                  offlineTooltip="Document downloads require an internet connection"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   Download PDF
-                </button>
+                </OfflineAwareButton>
               )}
 
               {doc.status === 'pending' && (

@@ -23,6 +23,7 @@ import { useSession } from 'next-auth/react';
 import { TierUpgradeModal } from '@/components/ui/tier-upgrade-modal';
 import { useTierUpgrade, type VendorTier } from '@/hooks/use-tier-upgrade';
 import { useToast } from '@/components/ui/toast';
+import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
 interface BidFormProps {
   auctionId: string;
@@ -83,6 +84,10 @@ export function BidForm({
       setError('');
       setOtpTimer(180);
       setStartTime(Date.now());
+      
+      // Prevent body scroll
+      const unlock = lockScroll();
+      return unlock;
     }
   }, [isOpen]);
 
@@ -323,14 +328,14 @@ export function BidForm({
     <>
       {/* Modal Overlay */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
+        className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal Content */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
         <div
-          className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+          className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}

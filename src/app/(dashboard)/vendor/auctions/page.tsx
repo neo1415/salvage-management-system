@@ -22,6 +22,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { formatConditionForDisplay, type QualityTier } from '@/features/valuations/services/condition-mapping.service';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
@@ -29,8 +30,10 @@ import { FilterChip } from '@/components/ui/filters/filter-chip';
 import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
 import { SearchInput } from '@/components/ui/filters/search-input';
 import { LocationAutocomplete } from '@/components/ui/filters/location-autocomplete';
-import { Filter as FilterIcon, X, Circle, DollarSign, Trophy, ClipboardList, MapPin, Clock, Eye } from 'lucide-react';
+import { Filter as FilterIcon, X, Circle, DollarSign, Trophy, ClipboardList, MapPin, Clock, Eye, RefreshCw, WifiOff } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
+import { useCachedAuctions } from '@/hooks/use-cached-auctions';
+import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 
 // Types
 interface Auction {
@@ -46,7 +49,7 @@ interface Auction {
   case: {
     id: string;
     claimReference: string;
-    assetType: 'vehicle' | 'property' | 'electronics';
+    assetType: 'vehicle' | 'property' | 'electronics' | 'machinery';
     assetDetails: Record<string, unknown>;
     marketValue: string;
     estimatedSalvageValue: string;
@@ -86,14 +89,12 @@ export default function AuctionBrowsingPage() {
 function AuctionBrowsingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   
   // State
   const [auctions, setAuctions] = useState<Auction[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(1);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Initialize filters from URL
   const [activeTab, setActiveTab] = useState<Filters['tab']>(
@@ -111,7 +112,143 @@ function AuctionBrowsingContent() {
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [showFilters, setShowFilters] = useState(false);
 
-  // Update URL when filters change
+  // Cached auctions hook with fetch function
+  const fetchAuctionsFn = useCallback(async () => {
+    // Build query params
+    const params = new URLSearchParams({
+      page: '1',
+      limit: '100', // Fetch more for better offline experience
+      assetType: assetTypeFilter.join(','),
+      priceMin,
+      priceMax,
+      sortBy,
+      location: locationFilter,
+      search: searchQuery,
+      tab: activeTab,
+    });
+
+    const response = await fetch(`/api/auctions?${params}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch auctions');
+    }
+
+    const data = await response.json();
+    return data.auctions || [];
+  }, [activeTab, assetTypeFilter, priceMin, priceMax, sortBy, locationFilter, searchQuery]);
+
+  const {
+    auctions: cachedAuctions,
+    isLoading,
+    isOffline,
+    lastUpdated,
+    refresh: refreshCache,
+    error: cacheError,
+  } = useCachedAuctions(fetchAuctionsFn);
+
+  // Update local auctions state when cached auctions change
+  // Apply client-side filtering when offline
+  useEffect(() => {
+    let filteredAuctions = (cachedAuctions as unknown as Auction[]).filter(
+      auction => auction.status !== 'cancelled' && !auction.case.claimReference.toLowerCase().includes('test')
+    );
+
+    // When offline, apply tab filtering client-side
+    if (isOffline && filteredAuctions.length > 0) {
+      const userId = session?.user?.vendorId;
+      
+      switch (activeTab) {
+        case 'active':
+          filteredAuctions = filteredAuctions.filter(
+            a => a.status === 'active' || a.status === 'extended'
+          );
+          break;
+        case 'my_bids':
+          // Filter auctions where user has placed bids
+          // Note: This requires bid data to be cached with auctions
+          // For now, show all auctions when offline (limitation)
+          break;
+        case 'won':
+          filteredAuctions = filteredAuctions.filter(
+            a => a.status === 'closed' && a.isWinner === true
+          );
+          break;
+        case 'completed':
+          filteredAuctions = filteredAuctions.filter(
+            a => a.status === 'closed'
+          );
+          break;
+      }
+
+      // Apply search filter client-side when offline
+      if (searchQuery) {
+        const searchLower = searchQuery.toLowerCase();
+        filteredAuctions = filteredAuctions.filter(auction => {
+          const claimRef = auction.case.claimReference.toLowerCase();
+          const details = auction.case.assetDetails;
+          const make = (details.make as string || '').toLowerCase();
+          const model = (details.model as string || '').toLowerCase();
+          const brand = (details.brand as string || '').toLowerCase();
+          
+          return claimRef.includes(searchLower) || 
+                 make.includes(searchLower) || 
+                 model.includes(searchLower) ||
+                 brand.includes(searchLower);
+        });
+      }
+
+      // Apply asset type filter client-side when offline
+      if (assetTypeFilter.length > 0) {
+        filteredAuctions = filteredAuctions.filter(
+          a => assetTypeFilter.includes(a.case.assetType)
+        );
+      }
+
+      // Apply location filter client-side when offline
+      if (locationFilter) {
+        const locationLower = locationFilter.toLowerCase();
+        filteredAuctions = filteredAuctions.filter(
+          a => a.case.locationName.toLowerCase().includes(locationLower)
+        );
+      }
+
+      // Apply price filter client-side when offline
+      if (priceMin || priceMax) {
+        filteredAuctions = filteredAuctions.filter(auction => {
+          const price = auction.currentBid 
+            ? Number(auction.currentBid)
+            : Number(auction.case.reservePrice);
+          
+          if (priceMin && price < Number(priceMin)) return false;
+          if (priceMax && price > Number(priceMax)) return false;
+          return true;
+        });
+      }
+    }
+
+    setAuctions(filteredAuctions);
+  }, [cachedAuctions, isOffline, activeTab, searchQuery, assetTypeFilter, locationFilter, priceMin, priceMax, session]);
+
+  // Manual refresh handler
+  const handleRefresh = async () => {
+    if (isOffline) return;
+    
+    setIsRefreshing(true);
+    try {
+      await refreshCache();
+    } catch (error) {
+      console.error('Failed to refresh auctions:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Sync URL with filter state
   useEffect(() => {
     const params = new URLSearchParams();
     if (activeTab !== 'active') params.set('tab', activeTab);
@@ -124,6 +261,14 @@ function AuctionBrowsingContent() {
     
     const newUrl = params.toString() ? `?${params.toString()}` : '';
     window.history.replaceState(null, '', `/vendor/auctions${newUrl}`);
+  }, [activeTab, assetTypeFilter, priceMin, priceMax, sortBy, locationFilter, searchQuery]);
+
+  // Trigger refresh when filters change and online
+  useEffect(() => {
+    if (!isOffline && !isLoading) {
+      handleRefresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, assetTypeFilter, priceMin, priceMax, sortBy, locationFilter, searchQuery]);
 
   // Build filters object for API
@@ -152,67 +297,9 @@ function AuctionBrowsingContent() {
   };
 
   // Refs
-  const observerTarget = useRef<HTMLDivElement>(null);
   const pullStartY = useRef(0);
   const pullDistance = useRef(0);
   const expiryCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Fetch auctions - using ref to avoid circular dependency
-  const filtersRef = useRef(filters);
-  
-  // Keep ref in sync with filters
-  useEffect(() => {
-    filtersRef.current = filters;
-  }, [filters]);
-
-  const fetchAuctions = useCallback(async (pageNum: number, reset: boolean = false) => {
-    try {
-      if (reset) {
-        setIsLoading(true);
-        setAuctions([]); // Clear immediately to prevent flickering
-      } else {
-        setIsLoadingMore(true);
-      }
-
-      // Build query params using ref to get latest filters
-      const params = new URLSearchParams({
-        page: pageNum.toString(),
-        limit: '20',
-        ...filtersRef.current,
-      });
-
-      const response = await fetch(`/api/auctions?${params}`, {
-        cache: 'no-store', // Prevent service worker from serving stale cache
-        headers: {
-          'Cache-Control': 'no-cache',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch auctions');
-      }
-
-      const data = await response.json();
-      
-      if (reset) {
-        setAuctions(data.auctions || []);
-      } else {
-        setAuctions(prev => [...prev, ...(data.auctions || [])]);
-      }
-      
-      setHasMore(data.hasMore || false);
-    } catch (error) {
-      console.error('Error fetching auctions:', error);
-      // Use mock data for development
-      if (reset) {
-        setAuctions([]);
-      }
-    } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
-      setIsPullRefreshing(false);
-    }
-  }, []); // No dependencies - stable function
 
   // Check for expired auctions on mount and periodically
   useEffect(() => {
@@ -233,7 +320,7 @@ function AuctionBrowsingContent() {
           if (data.successful > 0) {
             console.log(`✅ Closed ${data.successful} expired auctions`);
             // Refresh the auction list
-            fetchAuctions(1, true);
+            await handleRefresh();
           }
         }
       } catch (error) {
@@ -252,38 +339,7 @@ function AuctionBrowsingContent() {
         clearInterval(expiryCheckIntervalRef.current);
       }
     };
-  }, [auctions, fetchAuctions]);
-
-  // Initial load and filter changes
-  useEffect(() => {
-    setPage(1);
-    fetchAuctions(1, true);
-  }, [activeTab, assetTypeFilter, priceMin, priceMax, sortBy, locationFilter, searchQuery, fetchAuctions]);
-
-  // Infinite scroll observer
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !isLoading) {
-          const nextPage = page + 1;
-          setPage(nextPage);
-          fetchAuctions(nextPage, false);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    const currentTarget = observerTarget.current;
-    if (currentTarget) {
-      observer.observe(currentTarget);
-    }
-
-    return () => {
-      if (currentTarget) {
-        observer.unobserve(currentTarget);
-      }
-    };
-  }, [hasMore, isLoadingMore, isLoading, page, fetchAuctions]);
+  }, [auctions]);
 
   // Pull-to-refresh handlers
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -301,13 +357,13 @@ function AuctionBrowsingContent() {
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = async () => {
     if (pullDistance.current > 80 && !isPullRefreshing) {
-      setPage(1);
-      fetchAuctions(1, true);
+      await handleRefresh();
     }
     pullStartY.current = 0;
     pullDistance.current = 0;
+    setIsPullRefreshing(false);
   };
 
   // Filter handlers - removed, now using direct state setters
@@ -323,6 +379,7 @@ function AuctionBrowsingContent() {
     { value: 'vehicle', label: 'Vehicle' },
     { value: 'property', label: 'Property' },
     { value: 'electronics', label: 'Electronics' },
+    { value: 'machinery', label: 'Machinery' },
   ];
 
   // Sort options
@@ -340,6 +397,9 @@ function AuctionBrowsingContent() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Offline Indicator */}
+      <OfflineIndicator />
+
       {/* Pull-to-refresh indicator */}
       {isPullRefreshing && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-white shadow-md p-4 flex items-center justify-center">
@@ -348,11 +408,50 @@ function AuctionBrowsingContent() {
         </div>
       )}
 
+      {/* Offline Data Banner */}
+      {isOffline && lastUpdated && (
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-3">
+          <div className="max-w-7xl mx-auto flex items-center gap-2 text-sm text-blue-800">
+            <WifiOff size={16} className="flex-shrink-0" />
+            <span>
+              Viewing cached data. Last updated: {formatRelativeDate(lastUpdated)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Cache Miss Error */}
+      {isOffline && !isLoading && auctions.length === 0 && !cacheError && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-3">
+          <div className="max-w-7xl mx-auto flex items-center gap-2 text-sm text-yellow-800">
+            <WifiOff size={16} className="flex-shrink-0" />
+            <span>
+              No cached data available. Please connect to the internet to view auctions.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold text-gray-900">Auctions</h1>
+            
+            {/* Refresh Button */}
+            <button
+              onClick={handleRefresh}
+              disabled={isOffline || isRefreshing}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                isOffline
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-[#800020] text-white hover:bg-[#600018]'
+              }`}
+              title={isOffline ? 'Cannot refresh while offline' : 'Refresh auctions'}
+            >
+              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+              <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+            </button>
           </div>
 
           {/* Tabs */}
@@ -562,22 +661,36 @@ function AuctionBrowsingContent() {
         {/* Empty State */}
         {!isLoading && auctions.length === 0 && (
           <div className="text-center py-12">
-            <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-            </svg>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {searchQuery ? `No results found for "${searchQuery}"` : 'No auctions found'}
-            </h3>
-            <p className="text-gray-600 mb-4">
-              {hasActiveFilters ? 'Try adjusting your filters' : 'Check back later for new auctions'}
-            </p>
-            {hasActiveFilters && (
-              <button
-                onClick={clearAllFilters}
-                className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
-              >
-                Clear Filters
-              </button>
+            {isOffline ? (
+              <>
+                <WifiOff className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No Cached Data Available
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  You're offline and no cached auction data is available. Please connect to the internet to view auctions.
+                </p>
+              </>
+            ) : (
+              <>
+                <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                </svg>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  {searchQuery ? `No results found for "${searchQuery}"` : 'No auctions found'}
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  {hasActiveFilters ? 'Try adjusting your filters' : 'Check back later for new auctions'}
+                </p>
+                {hasActiveFilters && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -600,15 +713,6 @@ function AuctionBrowsingContent() {
                   )}
                   estimateSize={400}
                   overscan={3}
-                  onLoadMore={() => {
-                    if (hasMore && !isLoadingMore) {
-                      const nextPage = page + 1;
-                      setPage(nextPage);
-                      fetchAuctions(nextPage, false);
-                    }
-                  }}
-                  hasMore={hasMore}
-                  isLoading={isLoadingMore}
                 />
               </div>
             ) : (
@@ -618,24 +722,6 @@ function AuctionBrowsingContent() {
                     <AuctionCard key={auction.id} auction={auction} onClick={() => router.push(`/vendor/auctions/${auction.id}`)} />
                   ))}
                 </div>
-
-                {/* Loading More Indicator */}
-                {isLoadingMore && (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#800020]"></div>
-                    <span className="ml-2 text-gray-600">Loading more...</span>
-                  </div>
-                )}
-
-                {/* Infinite Scroll Trigger */}
-                <div ref={observerTarget} className="h-4" />
-
-                {/* End of Results */}
-                {!hasMore && (
-                  <div className="text-center py-8 text-gray-600">
-                    <p>You've reached the end of the list</p>
-                  </div>
-                )}
               </>
             )}
           </>

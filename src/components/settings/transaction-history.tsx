@@ -200,26 +200,26 @@ export default function TransactionHistory({
 
   return (
     <div className="space-y-4">
-      {/* Transaction List */}
+      {/* Transaction List - Mobile Responsive */}
       <div className="space-y-3">
         {transactions.map((transaction) => (
           <div
             key={transaction.id}
-            className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors gap-3"
           >
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 mb-1">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-1">
                 <h4 className="font-medium text-gray-900 truncate">{transaction.description}</h4>
                 {getStatusBadge(transaction.status)}
               </div>
-              <div className="flex items-center gap-4 text-sm text-gray-600">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-gray-600">
                 <span>{formatDate(transaction.date)}</span>
                 {transaction.reference && (
                   <span className="text-xs text-gray-500">Ref: {transaction.reference}</span>
                 )}
               </div>
             </div>
-            <div className="ml-4 flex-shrink-0">
+            <div className="flex-shrink-0">
               <div
                 className={`text-lg font-semibold ${
                   transaction.type === 'credit' ? 'text-green-600' : 'text-red-600'
@@ -233,14 +233,14 @@ export default function TransactionHistory({
         ))}
       </div>
 
-      {/* Pagination */}
+      {/* Pagination - Mobile Responsive */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-          <div className="text-sm text-gray-600">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-gray-200">
+          <div className="text-sm text-gray-600 text-center sm:text-left">
             Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, totalCount)} of{' '}
             {totalCount} transactions
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <button
               onClick={() => setPage(page - 1)}
               disabled={page === 1}
@@ -248,7 +248,8 @@ export default function TransactionHistory({
             >
               Previous
             </button>
-            <div className="flex items-center gap-1">
+            {/* Hide page numbers on mobile, show on desktop */}
+            <div className="hidden sm:flex items-center gap-1">
               {[...Array(Math.min(5, totalPages))].map((_, i) => {
                 let pageNum;
                 if (totalPages <= 5) {

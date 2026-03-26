@@ -835,52 +835,56 @@ export default function AuctionDetailPage() {
           </div>
         )}
 
-        {/* Complete Bidding Timeline */}
-        <div className="mt-8 bg-white rounded-xl shadow-lg p-6">
+        {/* Complete Bidding Timeline - Mobile Responsive */}
+        <div className="mt-8 bg-white rounded-xl shadow-lg p-4 sm:p-6">
           <h3 className="text-xl font-bold text-gray-900 mb-6">Complete Bidding Timeline</h3>
           
           {data.bidHistory.length > 0 ? (
             <div className="space-y-4">
               {data.bidHistory.map((bid, index) => (
-                <div key={bid.id} className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className="flex-shrink-0 w-10 h-10 bg-[#800020] rounded-full flex items-center justify-center text-white text-sm font-bold">
+                <div key={bid.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                  <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 bg-[#800020] rounded-full flex items-center justify-center text-white text-xs sm:text-sm font-bold">
                     {index + 1}
                   </div>
                   
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    {/* Mobile: Stack everything vertically */}
+                    <div className="space-y-3">
+                      {/* Vendor info with avatar and tier badge */}
+                      <div className="flex items-start gap-2 sm:gap-3">
                         <UserAvatar
                           profilePictureUrl={bid.vendor.profilePictureUrl}
                           userName={bid.user.fullName}
                           size="sm"
                         />
-                        <div>
-                          <div className="font-semibold text-gray-900">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-gray-900 text-sm sm:text-base truncate">
                             {bid.vendor.businessName}
                           </div>
-                          <div className="text-sm text-gray-600">
+                          <div className="text-xs sm:text-sm text-gray-600 truncate">
                             {bid.user.fullName}
                           </div>
                         </div>
+                      </div>
+                      
+                      {/* Tier badge - separate line on mobile */}
+                      <div className="flex items-center">
                         {getTierBadge(bid.vendor.tier)}
                       </div>
                       
-                      <div className="text-right">
-                        <div className="text-xl font-bold text-[#800020]">
+                      {/* Price - separate line on mobile */}
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <div className="text-lg sm:text-xl font-bold text-[#800020]">
                           {formatNaira(bid.amount)}
                         </div>
-                        <div className="text-sm text-gray-600">
+                        <div className="text-xs sm:text-sm text-gray-600">
                           {formatDateTime(bid.createdAt)}
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="text-sm text-gray-600">
-                      <div className="flex items-center gap-4">
+                      
+                      {/* Contact info - no vendor ID */}
+                      <div className="text-xs sm:text-sm text-gray-600 truncate">
                         <span>Contact: {bid.user.phone}</span>
-                        <span>•</span>
-                        <span>Vendor ID: {bid.vendor.id.slice(0, 8)}...</span>
                       </div>
                     </div>
                   </div>

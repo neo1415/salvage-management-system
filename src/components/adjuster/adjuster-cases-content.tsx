@@ -402,13 +402,13 @@ function AdjusterCasesContentInner() {
           className="w-full"
         />
 
-        {/* Filter Bar */}
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Filter Bar - Mobile: Stack buttons, Desktop: Row */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-wrap">
           <RippleButton
             onClick={() => setShowFilters(!showFilters)}
             variant="secondary"
             size="sm"
-            className="flex items-center gap-2"
+            className="flex items-center justify-center gap-2 w-full sm:w-auto"
             aria-label="Toggle filters"
             aria-expanded={showFilters}
           >
@@ -421,13 +421,13 @@ function AdjusterCasesContentInner() {
             )}
           </RippleButton>
 
-          {/* Export Dropdown Button */}
-          <div className="relative export-dropdown">
+          {/* Export Dropdown Button - Full width on mobile */}
+          <div className="relative export-dropdown w-full sm:w-auto">
             <RippleButton
               onClick={() => setShowExportMenu(!showExportMenu)}
               variant="secondary"
               size="sm"
-              className="flex items-center gap-2"
+              className="flex items-center justify-center gap-2 w-full"
               aria-label="Export cases"
               aria-expanded={showExportMenu}
               disabled={isExporting || filteredCases.length === 0}
@@ -447,7 +447,7 @@ function AdjusterCasesContentInner() {
 
             {/* Export Dropdown Menu */}
             {showExportMenu && !isExporting && (
-              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-[160px]">
+              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-[160px] w-full sm:w-auto">
                 <button
                   onClick={() => handleExport('csv')}
                   className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"

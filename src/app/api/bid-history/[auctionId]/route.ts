@@ -102,6 +102,7 @@ export async function GET(
           id: auction.currentBidderVendor.id,
           businessName: auction.currentBidderVendor.businessName,
           tier: auction.currentBidderVendor.tier,
+          profilePictureUrl: auction.currentBidderUser?.profilePictureUrl || null,
         },
         user: {
           id: auction.currentBidderUser?.id,
@@ -117,6 +118,7 @@ export async function GET(
           id: item.vendor?.id,
           businessName: item.vendor?.businessName,
           tier: item.vendor?.tier,
+          profilePictureUrl: item.user?.profilePictureUrl || null,
         },
         user: {
           id: item.user?.id,

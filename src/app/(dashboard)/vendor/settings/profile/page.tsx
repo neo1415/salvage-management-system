@@ -10,12 +10,14 @@
  * - Show non-sensitive KYC info
  * - Hide sensitive data (BVN, NIN, documents)
  * - Change password form
+ * - Offline support with cached data
  */
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import ChangePasswordForm from '@/components/settings/change-password-form';
+import { useCachedProfile } from '@/hooks/use-cached-profile';
 
 interface ProfileData {
   user: {
@@ -39,8 +41,7 @@ interface ProfileData {
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { profile, isLoading: loading, isOffline, lastCached, refresh, error: cacheError } = useCachedProfile();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,33 +49,6 @@ export default function ProfilePage() {
       router.push('/login');
     }
   }, [status, router]);
-
-  useEffect(() => {
-    if (status === 'authenticated') {
-      fetchProfile();
-    }
-  }, [status]);
-
-  const fetchProfile = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch('/api/vendor/settings/profile');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch profile data');
-      }
-
-      const data = await response.json();
-      setProfile(data);
-    } catch (err) {
-      console.error('Error fetching profile:', err);
-      setError('Failed to load profile data. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const getTierBadge = (tier: string) => {
     const tierMap: Record<string, { label: string; color: string }> = {
@@ -138,12 +112,12 @@ export default function ProfilePage() {
     );
   }
 
-  if (error || !profile) {
+  if (error || cacheError || !profile) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
-        <p className="text-red-600">{error || 'Failed to load profile data.'}</p>
+        <p className="text-red-600">{error || cacheError?.message || 'Failed to load profile data.'}</p>
         <button
-          onClick={fetchProfile}
+          onClick={() => refresh()}
           className="mt-4 px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors"
         >
           Retry
@@ -154,6 +128,33 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
+      {/* Offline indicator banner */}
+      {isOffline && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 text-yellow-600 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-yellow-800">
+                You are offline. Showing cached profile data.
+              </p>
+              {lastCached && (
+                <p className="text-xs text-yellow-700 mt-1">
+                  Last updated: {new Date(lastCached).toLocaleString('en-NG', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short'
+                  })}
+                </p>
+              )}
+              <p className="text-xs text-yellow-700 mt-1">
+                Profile editing is disabled while offline.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* User Information */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-6">User Information</h2>
