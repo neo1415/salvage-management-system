@@ -15,7 +15,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { useForm, Controller } from 'react-hook-form';
@@ -245,7 +245,7 @@ interface AIAssessmentResult {
   qualityTier?: string;
 }
 
-export default function NewCasePage() {
+function NewCasePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isOffline = useOffline();
@@ -2559,5 +2559,21 @@ export default function NewCasePage() {
       </form>
     </div>
     </ResponsiveFormLayout>
+  );
+}
+
+// Wrap in Suspense boundary to fix Next.js build error
+export default function NewCasePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading case creation form...</p>
+        </div>
+      </div>
+    }>
+      <NewCasePageContent />
+    </Suspense>
   );
 }
