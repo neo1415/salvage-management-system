@@ -319,13 +319,24 @@ export async function POST(
 
       console.log(`Found ${matchingVendors.length} vendors matching asset type: ${assetType}`);
 
-      // Send notifications to matching vendors
+      // Filter out test vendors to save email quota and speed up approval
+      const realVendors = matchingVendors.filter(vendor => {
+        const isTestEmail = vendor.email.endsWith('@test.com') || vendor.email.endsWith('@example.com');
+        if (isTestEmail) {
+          console.log(`⏭️ Skipping test vendor: ${vendor.email}`);
+        }
+        return !isTestEmail;
+      });
+
+      console.log(`Sending notifications to ${realVendors.length} real vendors (${matchingVendors.length - realVendors.length} test vendors skipped)`);
+
+      // Send notifications to real vendors only
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
       const durationText = auctionDurationHours < 24 
         ? `${auctionDurationHours} hour${auctionDurationHours !== 1 ? 's' : ''}`
         : `${Math.round(auctionDurationHours / 24)} day${Math.round(auctionDurationHours / 24) !== 1 ? 's' : ''}`;
 
-      for (const vendor of matchingVendors) {
+      for (const vendor of realVendors) {
         // Send SMS notification
         const smsMessage = `New auction available! ${assetType.toUpperCase()} - Reserve: ₦${caseRecord.reservePrice}. Ends in ${durationText}. Bid now: ${appUrl}/vendor/auctions/${auction.id}`;
         
@@ -441,7 +452,9 @@ export async function POST(
             status: auction.status,
             reservePrice: finalReservePrice,
           },
-          notifiedVendors: matchingVendors.length,
+          notifiedVendors: realVendors.length,
+          totalMatchingVendors: matchingVendors.length,
+          testVendorsSkipped: matchingVendors.length - realVendors.length,
         },
       });
     } else {
