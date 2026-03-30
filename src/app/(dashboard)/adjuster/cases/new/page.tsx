@@ -29,6 +29,7 @@ import { useToast } from '@/components/ui/toast';
 import { getQualityTiers } from '@/features/valuations/services/condition-mapping.service';
 import { SearchProgressIndicator, useSearchProgress, type SearchProgress } from '@/components/ui/search-progress-indicator';
 import { UnifiedVoiceField, useUnifiedVoiceContent } from '@/components/ui/unified-voice-field';
+import { VoiceNoteControls } from '@/components/ui/voice-note-controls';
 import { ModernVoiceControls } from '@/components/ui/modern-voice-controls';
 import { ResponsiveFormLayout, FormSection, FormField, ModernInput, ModernButton } from '@/components/ui/responsive-form-layout';
 import { cn } from '@/lib/utils';
@@ -116,12 +117,28 @@ const caseFormSchema = z.object({
     z.number().positive('Market value must be positive').optional()
   ),
   
-  // Vehicle-specific fields
+  // Vehicle-specific fields - use preprocess to handle empty strings and NaN
   vehicleMake: z.string().optional(),
   vehicleModel: z.string().optional(),
-  vehicleYear: z.number().optional(),
+  vehicleYear: z.preprocess(
+    (val) => {
+      if (val === null || val === undefined || val === '' || (typeof val === 'number' && isNaN(val))) {
+        return undefined;
+      }
+      return val;
+    },
+    z.number().optional()
+  ),
   vehicleVin: z.string().optional(),
-  vehicleMileage: z.number().positive('Mileage must be positive').optional(),
+  vehicleMileage: z.preprocess(
+    (val) => {
+      if (val === null || val === undefined || val === '' || (typeof val === 'number' && isNaN(val))) {
+        return undefined;
+      }
+      return val;
+    },
+    z.number().positive('Mileage must be positive').optional()
+  ),
   vehicleCondition: z.enum(['excellent', 'good', 'fair', 'poor']).optional(),
   
   // Property-specific fields
@@ -157,7 +174,15 @@ const caseFormSchema = z.object({
   machineryBrand: z.string().optional(),
   machineryModel: z.string().optional(),
   machineryType: z.string().optional(),
-  machineryYear: z.number().optional(),
+  machineryYear: z.preprocess(
+    (val) => {
+      if (val === null || val === undefined || val === '' || (typeof val === 'number' && isNaN(val))) {
+        return undefined;
+      }
+      return val;
+    },
+    z.number().optional()
+  ),
   
   // Universal condition field
   itemCondition: z.enum(['Brand New', 'Foreign Used (Tokunbo)', 'Nigerian Used', 'Heavily Used']).optional(),
@@ -243,6 +268,23 @@ interface AIAssessmentResult {
   };
   analysisMethod?: 'gemini' | 'vision' | 'neutral' | 'mock';
   qualityTier?: string;
+  // CRITICAL: Detailed Gemini analysis results
+  itemDetails?: {
+    detectedMake?: string;
+    detectedModel?: string;
+    detectedYear?: string;
+    color?: string;
+    trim?: string;
+    bodyStyle?: string;
+    storage?: string;
+    overallCondition?: string;
+    notes?: string;
+  };
+  damagedParts?: Array<{
+    part: string;
+    severity: 'minor' | 'moderate' | 'severe';
+    confidence: number;
+  }>;
 }
 
 function NewCasePageContent() {
@@ -282,6 +324,8 @@ function NewCasePageContent() {
     content: voiceContent,
     appendVoiceNote,
     updateContent: updateVoiceContent,
+    showTimestamps,
+    toggleTimestamps,
     wordCount: voiceWordCount,
     characterCount: voiceCharacterCount,
   } = useUnifiedVoiceContent(watch('unifiedVoiceContent') || '');
@@ -458,7 +502,7 @@ function NewCasePageContent() {
   }, []);
 
   /**
-   * Initialize Web Speech API
+   * Initialize Web Speech API with optimized settings
    */
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -466,7 +510,10 @@ function NewCasePageContent() {
       recognitionRef.current = new SpeechRecognitionConstructor();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
+      // CRITICAL FIX: Use multiple language variants for better recognition
       recognitionRef.current.lang = 'en-US';
+      // CRITICAL FIX: Set max alternatives for better accuracy
+      (recognitionRef.current as any).maxAlternatives = 3;
     }
   }, []);
 
@@ -899,8 +946,15 @@ function NewCasePageContent() {
           damageScore: result.data.damageScore,
           analysisMethod: result.data.analysisMethod,
           qualityTier: result.data.qualityTier,
+          // CRITICAL: Store detailed Gemini analysis results
+          itemDetails: result.data.itemDetails,
+          damagedParts: result.data.damagedParts,
         };
         
+        console.log('🎯 COMPLETE AI assessment stored:', assessment);
+        console.log('📋 Item Details:', assessment.itemDetails);
+        console.log('🔧 Damaged Parts:', assessment.damagedParts);
+        setAiAssessment(assessment);
         console.log('🎯 COMPLETE AI assessment stored:', assessment);
         setAiAssessment(assessment);
         
@@ -957,7 +1011,7 @@ function NewCasePageContent() {
   };
 
   /**
-   * Start voice recording
+   * Start voice recording with improved settings
    */
   const startVoiceRecording = async () => {
     if (!recognitionRef.current) {
@@ -982,6 +1036,9 @@ function NewCasePageContent() {
       setRecordingDuration(prev => prev + 1);
     }, 1000);
     
+    // CRITICAL FIX: Debounce interim results to reduce lag
+    let interimDebounceTimer: NodeJS.Timeout | null = null;
+    
     recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
       let interimTranscript = '';
       let finalTranscript = '';
@@ -995,21 +1052,38 @@ function NewCasePageContent() {
         }
       }
       
-      // Update interim results for real-time feedback
-      setInterimTranscript(interimTranscript);
+      // CRITICAL FIX: Debounce interim updates to improve performance
+      if (interimTranscript) {
+        if (interimDebounceTimer) {
+          clearTimeout(interimDebounceTimer);
+        }
+        interimDebounceTimer = setTimeout(() => {
+          setInterimTranscript(interimTranscript);
+        }, 100); // Update every 100ms instead of instantly
+      }
       
       // Only append final results to avoid duplicates
       if (finalTranscript) {
-        const newContent = appendVoiceNote(finalTranscript, true);
+        const newContent = appendVoiceNote(finalTranscript);
         // Update the form field with the new unified content immediately
         setValue('unifiedVoiceContent', newContent);
         // Clear interim transcript after final result
         setInterimTranscript('');
+        if (interimDebounceTimer) {
+          clearTimeout(interimDebounceTimer);
+        }
       }
     };
 
     recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
       console.error('Speech recognition error:', event.error);
+      
+      // CRITICAL FIX: Don't stop on "no-speech" error, just warn
+      if (event.error === 'no-speech') {
+        toast.warning('No speech detected', 'Keep speaking or tap stop when done.');
+        return; // Don't stop recording
+      }
+      
       stopVoiceRecording();
       setInterimTranscript(''); // Clear any interim results on error
       
@@ -1018,20 +1092,34 @@ function NewCasePageContent() {
         case 'not-allowed':
           toast.error('Microphone access denied', 'Please enable microphone permissions in your browser settings.');
           break;
-        case 'no-speech':
-          toast.warning('No speech detected', 'Please try again.');
-          break;
         case 'network':
           toast.error('Network error', 'Please check your internet connection.');
           break;
+        case 'aborted':
+          // User stopped recording, no error needed
+          break;
         default:
-          toast.error('Voice recording failed', `Error: ${event.error}`);
+          toast.error('Voice recording issue', `Error: ${event.error}. Try speaking more clearly.`);
+      }
+    };
+    
+    // CRITICAL FIX: Auto-restart on end to keep recording continuous
+    recognitionRef.current.onend = () => {
+      // Only restart if we're still supposed to be recording
+      if (isRecording && recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+          console.log('Voice recognition auto-restarted');
+        } catch (error) {
+          console.error('Failed to restart recognition:', error);
+        }
       }
     };
 
     try {
       recognitionRef.current.start();
       console.log('Voice recognition started successfully');
+      toast.success('Recording started', 'Speak clearly into your microphone');
     } catch (error) {
       console.error('Failed to start recognition:', error);
       stopVoiceRecording();
@@ -1040,11 +1128,21 @@ function NewCasePageContent() {
   };
 
   /**
-   * Stop voice recording - Fixed to ensure proper stopping
+   * Stop voice recording - CRITICAL FIX: Ensure proper cleanup
    */
   const stopVoiceRecording = () => {
+    console.log('Stopping voice recording...');
+    
+    // CRITICAL FIX: Set recording state to false FIRST to prevent auto-restart
+    setIsRecording(false);
+    
     if (recognitionRef.current) {
       try {
+        // Remove event handlers to prevent auto-restart
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        
         recognitionRef.current.stop();
         console.log('Voice recognition stopped successfully');
       } catch (error) {
@@ -1058,8 +1156,8 @@ function NewCasePageContent() {
       recordingTimerRef.current = null;
     }
     
-    setIsRecording(false);
     setInterimTranscript(''); // Clear any interim results
+    toast.success('Recording stopped', 'Your voice note has been saved');
   };
 
   /**
@@ -1136,6 +1234,35 @@ function NewCasePageContent() {
   };
 
   /**
+   * Handle form validation errors
+   * Called by React Hook Form when validation fails
+   */
+  const onValidationError = (errors: any) => {
+    console.log('❌ Form validation failed:', errors);
+    
+    // Mark that user has attempted to submit
+    setHasAttemptedSubmit(true);
+    
+    // Scroll to top to show errors
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    // Find the first error and make it user-friendly
+    const firstErrorKey = Object.keys(errors)[0];
+    const firstError = errors[firstErrorKey] as any;
+    
+    // Create user-friendly error messages
+    let errorMessage = firstError?.message || 'Please fill in all required fields';
+    
+    // Replace technical messages with user-friendly ones
+    if (errorMessage.includes('NaN') || errorMessage.includes('Invalid input')) {
+      const fieldName = firstErrorKey.replace(/([A-Z])/g, ' $1').toLowerCase();
+      errorMessage = `Please check the ${fieldName} field`;
+    }
+    
+    toast.error('Please fix the errors', errorMessage);
+  };
+
+  /**
    * Submit form
    * CRITICAL: AI assessment already runs in real-time during photo upload (line ~380)
    * This function just saves the case with the AI results already captured
@@ -1151,6 +1278,22 @@ function NewCasePageContent() {
     if (isProcessingAI || searchProgress.stage !== 'idle') {
       console.log('⚠️ Form submission blocked: AI assessment still in progress');
       toast.warning('Please wait', 'AI assessment is still processing...');
+      return;
+    }
+    
+    // CRITICAL FIX: Check validation and show errors if submission is blocked
+    if (!isDraft && !canSubmitDraft) {
+      console.log('⚠️ Form submission blocked: Validation failed', draftValidationErrors);
+      
+      // Scroll to top to show validation errors
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      
+      // Show toast with first error
+      if (draftValidationErrors.length > 0) {
+        toast.error('Cannot submit', draftValidationErrors[0]);
+      } else {
+        toast.error('Cannot submit', 'Please complete all required fields and AI analysis');
+      }
       return;
     }
     
@@ -1264,6 +1407,9 @@ function NewCasePageContent() {
           damageScore: aiAssessment.damageScore,
           analysisMethod: aiAssessment.analysisMethod,
           qualityTier: aiAssessment.qualityTier,
+          // CRITICAL: Include detailed Gemini analysis results
+          itemDetails: aiAssessment.itemDetails,
+          damagedParts: aiAssessment.damagedParts,
         } : undefined,
       };
       
@@ -1445,6 +1591,25 @@ function NewCasePageContent() {
               <ul className="mt-1 text-sm text-red-700 space-y-1">
                 {draftValidationErrors.map((error, index) => (
                   <li key={index}>• {error}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Form Validation Errors - Show after user attempts to submit */}
+      {hasAttemptedSubmit && Object.keys(errors).length > 0 && (
+        <div className="mx-4 mt-4 p-4 bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200/50 rounded-xl shadow-sm">
+          <div className="flex items-start space-x-3">
+            <svg className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-orange-900">Please Fix These Errors</h3>
+              <ul className="mt-1 text-sm text-orange-700 space-y-1">
+                {Object.entries(errors).map(([field, error]: [string, any]) => (
+                  <li key={field}>• {error?.message || `${field} is invalid`}</li>
                 ))}
               </ul>
             </div>
@@ -2354,16 +2519,95 @@ function NewCasePageContent() {
                 <span className="text-sm md:text-base text-gray-700 font-medium truncate">Reserve Price:</span>
                 <span className="text-base md:text-lg font-bold text-[#800020] whitespace-nowrap flex-shrink-0">₦{aiAssessment.reservePrice.toLocaleString()}</span>
               </div>
-              <div className="w-full max-w-full overflow-hidden p-3 bg-white rounded-lg">
-                <span className="text-sm md:text-base text-gray-700 font-medium block mb-2">Detected Damage:</span>
-                <div className="flex flex-wrap gap-2 w-full max-w-full">
-                  {aiAssessment.labels.map((label, index) => (
-                    <span key={index} className="inline-flex items-center px-3 md:px-4 py-1.5 md:py-2 bg-blue-500 text-white rounded-xl text-xs md:text-sm font-medium break-words max-w-full">
-                      {label}
-                    </span>
-                  ))}
+              
+              {/* NEW: Detailed Item Identification (from Gemini) */}
+              {aiAssessment.itemDetails && (
+                <div className="w-full max-w-full overflow-hidden p-3 bg-white rounded-lg border-l-4 border-purple-400">
+                  <div className="text-sm md:text-base font-bold text-gray-900 mb-2">🔍 Item Identification</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs md:text-sm">
+                    {aiAssessment.itemDetails.detectedMake && (
+                      <div><span className="text-gray-600">Make:</span> <span className="font-semibold">{aiAssessment.itemDetails.detectedMake}</span></div>
+                    )}
+                    {aiAssessment.itemDetails.detectedModel && (
+                      <div><span className="text-gray-600">Model:</span> <span className="font-semibold">{aiAssessment.itemDetails.detectedModel}</span></div>
+                    )}
+                    {aiAssessment.itemDetails.detectedYear && (
+                      <div><span className="text-gray-600">Year:</span> <span className="font-semibold">{aiAssessment.itemDetails.detectedYear}</span></div>
+                    )}
+                    {/* CRITICAL FIX: Filter fields by asset type */}
+                    {/* Vehicle-specific fields */}
+                    {assetType === 'vehicle' && aiAssessment.itemDetails.color && (
+                      <div><span className="text-gray-600">Color:</span> <span className="font-semibold">{aiAssessment.itemDetails.color}</span></div>
+                    )}
+                    {assetType === 'vehicle' && aiAssessment.itemDetails.trim && (
+                      <div><span className="text-gray-600">Trim:</span> <span className="font-semibold">{aiAssessment.itemDetails.trim}</span></div>
+                    )}
+                    {assetType === 'vehicle' && aiAssessment.itemDetails.bodyStyle && (
+                      <div><span className="text-gray-600">Body Style:</span> <span className="font-semibold">{aiAssessment.itemDetails.bodyStyle}</span></div>
+                    )}
+                    {/* Electronics-specific fields */}
+                    {assetType === 'electronics' && aiAssessment.itemDetails.storage && (
+                      <div><span className="text-gray-600">Storage:</span> <span className="font-semibold">{aiAssessment.itemDetails.storage}</span></div>
+                    )}
+                    {assetType === 'electronics' && aiAssessment.itemDetails.color && (
+                      <div><span className="text-gray-600">Color:</span> <span className="font-semibold">{aiAssessment.itemDetails.color}</span></div>
+                    )}
+                    {/* Universal fields (shown for all types) */}
+                    {aiAssessment.itemDetails.overallCondition && (
+                      <div className="col-span-2"><span className="text-gray-600">Condition:</span> <span className="font-semibold">{aiAssessment.itemDetails.overallCondition}</span></div>
+                    )}
+                  </div>
+                  {aiAssessment.itemDetails.notes && (
+                    <div className="mt-2 text-xs md:text-sm text-gray-600 italic">{aiAssessment.itemDetails.notes}</div>
+                  )}
                 </div>
-              </div>
+              )}
+              
+              {/* NEW: Detailed Damaged Parts List (from Gemini) */}
+              {aiAssessment.damagedParts && aiAssessment.damagedParts.length > 0 && (
+                <div className="w-full max-w-full overflow-hidden p-3 bg-white rounded-lg border-l-4 border-red-400">
+                  <div className="text-sm md:text-base font-bold text-gray-900 mb-2">🔧 Damaged Parts ({aiAssessment.damagedParts.length})</div>
+                  <div className="space-y-2">
+                    {aiAssessment.damagedParts.map((part, index) => (
+                      <div key={index} className="flex items-center justify-between gap-2 p-2 bg-gray-50 rounded">
+                        <span className="text-xs md:text-sm text-gray-800 font-medium flex-1">{part.part}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                            part.severity === 'minor' ? 'bg-yellow-100 text-yellow-800' :
+                            part.severity === 'moderate' ? 'bg-orange-100 text-orange-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {part.severity}
+                          </span>
+                          <span className="text-xs text-gray-500">{part.confidence}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* NEW: AI Summary/Recommendation (from Gemini) */}
+              {aiAssessment.recommendation && (
+                <div className="w-full max-w-full overflow-hidden p-4 bg-purple-50 rounded-lg border-l-4 border-purple-500">
+                  <div className="text-sm md:text-base font-bold text-purple-900 mb-2">💡 AI Assessment Summary</div>
+                  <p className="text-xs md:text-sm text-gray-700 leading-relaxed">{aiAssessment.recommendation}</p>
+                </div>
+              )}
+              
+              {/* Fallback: Show labels if no damagedParts (Vision API or old data) */}
+              {(!aiAssessment.damagedParts || aiAssessment.damagedParts.length === 0) && (
+                <div className="w-full max-w-full overflow-hidden p-3 bg-white rounded-lg">
+                  <span className="text-sm md:text-base text-gray-700 font-medium block mb-2">Detected Damage:</span>
+                  <div className="flex flex-wrap gap-2 w-full max-w-full">
+                    {aiAssessment.labels.map((label, index) => (
+                      <span key={index} className="inline-flex items-center px-3 md:px-4 py-1.5 md:py-2 bg-blue-500 text-white rounded-xl text-xs md:text-sm font-medium break-words max-w-full">
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <p className="mt-3 text-xs text-gray-600 italic break-words">
               💡 Market value has been auto-filled based on AI analysis. You can edit it if needed.
@@ -2414,6 +2658,18 @@ function NewCasePageContent() {
           variant="card"
         >
           <div className="space-y-4">
+            {/* Voice Note Controls - Timestamp toggle and AI cleanup */}
+            <VoiceNoteControls
+              content={voiceContent}
+              onContentUpdate={(newContent) => {
+                updateVoiceContent(newContent);
+                setValue('unifiedVoiceContent', newContent);
+              }}
+              showTimestamps={showTimestamps}
+              onToggleTimestamps={toggleTimestamps}
+              disabled={isRecording}
+            />
+            
             {/* Unified Voice Field */}
             <UnifiedVoiceField
               value={voiceContent}
@@ -2531,8 +2787,8 @@ function NewCasePageContent() {
               type="button"
               variant="primary"
               size="md"
-              onClick={handleSubmit((data) => onSubmit(data, false))}
-              disabled={!canSubmitDraft || isSavingDraft || isSubmittingForApproval || isProcessingAI || searchProgress.stage !== 'idle'}
+              onClick={handleSubmit((data) => onSubmit(data, false), onValidationError)}
+              disabled={isSavingDraft || isSubmittingForApproval || isProcessingAI || searchProgress.stage !== 'idle'}
               loading={isSubmittingForApproval}
               className={cn(
                 "flex-1 sm:flex-none sm:min-w-[160px] relative overflow-hidden group",
@@ -2545,7 +2801,6 @@ function NewCasePageContent() {
                 "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
                 "rounded-xl px-4 py-3"
               )}
-              title={!canSubmitDraft ? 'AI analysis required before submission' : ''}
             >
               <div className="flex items-center justify-center space-x-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

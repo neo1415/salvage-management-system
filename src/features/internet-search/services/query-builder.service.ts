@@ -212,9 +212,10 @@ export class QueryBuilderService {
     damageType?: string
   ): string {
     // Convert to PartIdentifier format
+    // For non-vehicles, use brand instead of 'generic'
     const partIdentifier: PartIdentifier = {
-      vehicleMake: item.type === 'vehicle' ? item.make : 'generic',
-      vehicleModel: item.type === 'vehicle' ? item.model : undefined,
+      vehicleMake: item.type === 'vehicle' ? item.make : (item.type === 'electronics' || item.type === 'appliance' || item.type === 'watch' ? (item as any).brand : 'generic'),
+      vehicleModel: item.type === 'vehicle' ? item.model : (item as any).model,
       vehicleYear: item.type === 'vehicle' ? item.year : undefined,
       partName,
       partType: this.mapDamageTypeToPartType(damageType),

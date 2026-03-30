@@ -43,6 +43,24 @@ export const salvageCases = pgTable('salvage_cases', {
       damagePercentage: number;
       processedAt: Date;
       
+      // NEW: Detailed Gemini analysis results
+      itemDetails?: {
+        detectedMake?: string;
+        detectedModel?: string;
+        detectedYear?: string;
+        color?: string;
+        trim?: string;
+        bodyStyle?: string;
+        storage?: string;
+        overallCondition?: string;
+        notes?: string;
+      };
+      damagedParts?: Array<{
+        part: string;
+        severity: 'minor' | 'moderate' | 'severe';
+        confidence: number;
+      }>;
+      
       // Enhanced fields for accuracy and transparency
       damageScore?: {
         structural: number;

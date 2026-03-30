@@ -44,7 +44,15 @@ app.prepare().then(() => {
   });
 
   // Initialize Socket.io server
-  const _io = initializeSocketServer(httpServer); // Prefixed with _ to indicate intentionally unused
+  const io = initializeSocketServer(httpServer);
+  
+  // Verify initialization
+  if (!io) {
+    console.error('❌ CRITICAL: Socket.io server failed to initialize!');
+    process.exit(1);
+  }
+  
+  console.log('✅ Socket.io server stored and accessible');
 
   // Start server
   httpServer.listen(port, () => {

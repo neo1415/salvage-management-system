@@ -26,6 +26,7 @@ import {
   createAuctionLostNotification,
 } from '@/features/notifications/services/notification.service';
 import { generateDocument } from '@/features/documents/services/document.service';
+import { broadcastAuctionClosure, broadcastAuctionUpdate, broadcastAuctionClosing, broadcastDocumentGenerated, broadcastDocumentGenerationComplete } from '@/lib/socket/server';
 
 /**
  * Auction closure result
@@ -294,38 +295,19 @@ export class AuctionClosureService {
         console.log(`   - Reference: ${reference}`);
       }
 
-      // Update auction status to 'closed'
-      await db
-        .update(auctions)
-        .set({
-          status: 'closed',
-          updatedAt: new Date(),
-        })
-        .where(eq(auctions.id, auctionId));
+      // STEP 1: Broadcast closing event (before any status changes)
+      try {
+        await broadcastAuctionClosing(auctionId);
+        console.log(`✅ Broadcasted auction closing for ${auctionId}`);
+      } catch (error) {
+        console.error(`❌ Failed to broadcast auction closing for ${auctionId}:`, error);
+        // Don't throw - continue with closure process
+      }
 
-      // Keep case status as 'active_auction' until payment is verified
-      // Case will be marked as 'sold' when payment is verified by finance officer
-      // This ensures accurate reporting and prevents showing items as sold before payment
+      console.log(`🔄 Auction ${auctionId}: Generating documents before status change...`);
 
-      // Log auction closure
-      await logAction({
-        userId: vendor.userId,
-        actionType: AuditActionType.AUCTION_CLOSED,
-        entityType: AuditEntityType.AUCTION,
-        entityId: auctionId,
-        ipAddress: '0.0.0.0',
-        deviceType: DeviceType.DESKTOP,
-        userAgent: 'cron-job',
-        beforeState: { status: auction.status },
-        afterState: {
-          status: 'closed',
-          winnerId: vendor.id,
-          winningBid: auction.currentBid.toString(),
-          paymentId: payment.id,
-        },
-      });
-
-      // Generate required documents automatically (WAIT for completion to avoid race condition)
+      // STEP 2: Generate required documents SYNCHRONOUSLY (CRITICAL FIX)
+      // This ensures documents are ready before auction is marked as 'closed'
       try {
         await this.generateWinnerDocuments(auctionId, vendor.id, vendor.userId);
         console.log(`✅ Documents generated successfully for auction ${auctionId}`);
@@ -342,7 +324,6 @@ export class AuctionClosureService {
         }
         
         // Log overall document generation failure to audit trail
-        // Individual document failures are already logged in generateDocumentWithRetry
         try {
           await logAction({
             userId: vendor.userId,
@@ -351,7 +332,7 @@ export class AuctionClosureService {
             entityId: auctionId,
             ipAddress: '0.0.0.0',
             deviceType: DeviceType.DESKTOP,
-            userAgent: 'cron-job',
+            userAgent: 'auction-closure',
             afterState: {
               error: errorMessage,
               stackTrace,
@@ -365,10 +346,84 @@ export class AuctionClosureService {
           console.error('Failed to log document generation failure to audit trail:', logError);
         }
         
-        // Don't throw - continue with notifications even if documents fail
+        // Note: Auction status remains unchanged (active/extended) if documents fail
+        // This allows the auction to be retried
+        console.error(`⚠️  Auction ${auctionId} remains in '${auction.status}' status due to document generation failure`);
+        
+        // Broadcast error state
+        try {
+          await broadcastAuctionUpdate(auctionId, {
+            ...auction,
+            error: 'Document generation failed',
+          });
+        } catch (broadcastError) {
+          console.error(`❌ Failed to broadcast error state:`, broadcastError);
+        }
+        
+        // Don't throw - return error result instead
+        return {
+          success: false,
+          auctionId,
+          error: `Document generation failed: ${errorMessage}`,
+        };
       }
 
-      // Send notifications to winner (async, don't wait)
+      // STEP 3: Update auction status to 'closed' (final state - only after documents succeed)
+      await db
+        .update(auctions)
+        .set({
+          status: 'closed',
+          updatedAt: new Date(),
+        })
+        .where(eq(auctions.id, auctionId));
+
+      console.log(`✅ Auction ${auctionId} status: closed`);
+
+      // STEP 4: Broadcast auction closure to all viewers via Socket.io
+      try {
+        await broadcastAuctionClosure(auctionId, vendor.id);
+        console.log(`✅ Broadcasted auction closure for ${auctionId}`);
+      } catch (error) {
+        console.error(`❌ Failed to broadcast auction closure for ${auctionId}:`, error);
+        // Don't throw - continue with rest of closure process
+      }
+
+      // STEP 6: Broadcast auction update with new status
+      try {
+        await broadcastAuctionUpdate(auctionId, {
+          ...auction,
+          status: 'closed',
+          updatedAt: new Date(),
+        });
+        console.log(`✅ Broadcasted auction status update for ${auctionId}`);
+      } catch (error) {
+        console.error(`❌ Failed to broadcast auction status update for ${auctionId}:`, error);
+        // Don't throw - continue with rest of closure process
+      }
+
+      // Keep case status as 'active_auction' until payment is verified
+      // Case will be marked as 'sold' when payment is verified by finance officer
+      // This ensures accurate reporting and prevents showing items as sold before payment
+
+      // Log auction closure
+      await logAction({
+        userId: vendor.userId,
+        actionType: AuditActionType.AUCTION_CLOSED,
+        entityType: AuditEntityType.AUCTION,
+        entityId: auctionId,
+        ipAddress: '0.0.0.0',
+        deviceType: DeviceType.DESKTOP,
+        userAgent: 'auction-closure',
+        beforeState: { status: auction.status },
+        afterState: {
+          status: 'closed',
+          winnerId: vendor.id,
+          winningBid: auction.currentBid.toString(),
+          paymentId: payment.id,
+        },
+      });
+
+      // STEP 7: Send notifications to winner (async, don't wait)
       this.notifyWinner(user, vendor, auction, salvageCase, payment, paymentDeadline).catch(
         async (error) => {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -580,9 +635,16 @@ export class AuctionClosureService {
       // Generate Bill of Sale first (sequential to avoid race conditions)
       if (!hasBillOfSale) {
         try {
-          await this.generateDocumentWithRetry(auctionId, vendorId, 'bill_of_sale', 'system', userId);
+          const billOfSaleDoc = await this.generateDocumentWithRetry(auctionId, vendorId, 'bill_of_sale', 'system', userId);
           results.billOfSale = true;
           console.log(`✅ Bill of Sale generated for auction ${auctionId}`);
+          
+          // Broadcast document generated event
+          try {
+            await broadcastDocumentGenerated(auctionId, 'bill_of_sale', billOfSaleDoc.id);
+          } catch (broadcastError) {
+            console.error(`❌ Failed to broadcast bill_of_sale generation:`, broadcastError);
+          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           const stackTrace = error instanceof Error ? error.stack : undefined;
@@ -607,9 +669,16 @@ export class AuctionClosureService {
       // Then generate Liability Waiver (sequential to avoid race conditions)
       if (!hasLiabilityWaiver) {
         try {
-          await this.generateDocumentWithRetry(auctionId, vendorId, 'liability_waiver', 'system', userId);
+          const waiverDoc = await this.generateDocumentWithRetry(auctionId, vendorId, 'liability_waiver', 'system', userId);
           results.liabilityWaiver = true;
           console.log(`✅ Liability Waiver generated for auction ${auctionId}`);
+          
+          // Broadcast document generated event
+          try {
+            await broadcastDocumentGenerated(auctionId, 'liability_waiver', waiverDoc.id);
+          } catch (broadcastError) {
+            console.error(`❌ Failed to broadcast liability_waiver generation:`, broadcastError);
+          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           const stackTrace = error instanceof Error ? error.stack : undefined;
@@ -635,6 +704,15 @@ export class AuctionClosureService {
       const totalCount = Object.keys(results).length;
 
       console.log(`📄 Document generation complete: ${successCount}/${totalCount} successful for auction ${auctionId}`);
+      
+      // Broadcast document generation complete
+      if (successCount === totalCount) {
+        try {
+          await broadcastDocumentGenerationComplete(auctionId, totalCount);
+        } catch (broadcastError) {
+          console.error(`❌ Failed to broadcast document generation complete:`, broadcastError);
+        }
+      }
       
       // Log overall generation result to audit log
       if (errors.length > 0) {

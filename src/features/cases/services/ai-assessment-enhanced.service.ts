@@ -133,6 +133,87 @@ export interface DamageScore {
   interior: number;      // 0-100
 }
 
+/**
+ * Convert damagedParts array from Gemini to legacy DamageScore format
+ * 
+ * This function maps specific damaged parts to the 5 damage categories:
+ * - structural: frame, chassis, pillars, structural components
+ * - mechanical: engine, transmission, suspension, drivetrain
+ * - cosmetic: body panels, paint, trim, glass
+ * - electrical: wiring, lights, electronics, battery
+ * - interior: seats, dashboard, controls, upholstery
+ * 
+ * @param damagedParts - Array of damaged parts from Gemini
+ * @returns DamageScore with 0-100 scores for each category
+ */
+function convertDamagedPartsToScores(damagedParts: Array<{ part: string; severity: 'minor' | 'moderate' | 'severe'; confidence: number }>): DamageScore {
+  // Initialize scores
+  const scores: DamageScore = {
+    structural: 0,
+    mechanical: 0,
+    cosmetic: 0,
+    electrical: 0,
+    interior: 0
+  };
+
+  // If no damaged parts, return all zeros
+  if (damagedParts.length === 0) {
+    return scores;
+  }
+
+  // Category keywords for mapping parts to categories
+  const categoryKeywords = {
+    structural: ['frame', 'chassis', 'pillar', 'a-pillar', 'b-pillar', 'c-pillar', 'd-pillar', 'rocker', 'floor pan', 'structural', 'housing', 'body structure'],
+    mechanical: ['engine', 'transmission', 'suspension', 'drivetrain', 'axle', 'wheel', 'tire', 'brake', 'exhaust', 'motor', 'gearbox', 'drive shaft', 'belt', 'chain', 'bearing', 'hydraulic', 'pump', 'valve'],
+    cosmetic: ['bumper', 'hood', 'trunk', 'door', 'fender', 'quarter panel', 'panel', 'paint', 'trim', 'glass', 'windshield', 'window', 'mirror', 'grille', 'headlight', 'taillight', 'light', 'lens', 'screen', 'display'],
+    electrical: ['wiring', 'wire', 'battery', 'alternator', 'starter', 'sensor', 'control module', 'electrical', 'electronics', 'charging port', 'port', 'circuit', 'motherboard'],
+    interior: ['seat', 'dashboard', 'steering wheel', 'console', 'door panel', 'airbag', 'upholstery', 'interior', 'control panel']
+  };
+
+  // Severity to score mapping
+  const severityScores = {
+    minor: 30,
+    moderate: 60,
+    severe: 90
+  };
+
+  // Count parts in each category
+  const categoryCounts = {
+    structural: 0,
+    mechanical: 0,
+    cosmetic: 0,
+    electrical: 0,
+    interior: 0
+  };
+
+  // Map each damaged part to categories and accumulate scores
+  damagedParts.forEach(damagedPart => {
+    const partLower = damagedPart.part.toLowerCase();
+    const baseScore = severityScores[damagedPart.severity];
+
+    // Check which category this part belongs to
+    let categorized = false;
+
+    for (const [category, keywords] of Object.entries(categoryKeywords)) {
+      if (keywords.some(keyword => partLower.includes(keyword))) {
+        const cat = category as keyof DamageScore;
+        scores[cat] = Math.max(scores[cat], baseScore); // Use max score for category
+        categoryCounts[cat]++;
+        categorized = true;
+        break; // Part assigned to first matching category
+      }
+    }
+
+    // If part doesn't match any category, add to cosmetic as fallback
+    if (!categorized) {
+      scores.cosmetic = Math.max(scores.cosmetic, baseScore);
+      categoryCounts.cosmetic++;
+    }
+  });
+
+  return scores;
+}
+
 export interface AssessmentConfidence {
   overall: number;
   vehicleDetection: number;
@@ -152,6 +233,24 @@ export interface EnhancedDamageAssessment {
   // Enhanced info
   damageScore: DamageScore;
   confidence: AssessmentConfidence;
+  
+  // NEW: Detailed Gemini analysis results
+  itemDetails?: {
+    detectedMake?: string;
+    detectedModel?: string;
+    detectedYear?: string;
+    color?: string;
+    trim?: string;
+    bodyStyle?: string;
+    storage?: string;
+    overallCondition?: string;
+    notes?: string;
+  };
+  damagedParts?: Array<{
+    part: string;
+    severity: 'minor' | 'moderate' | 'severe';
+    confidence: number;
+  }>;
   
   // Financial estimates
   marketValue: number;
@@ -176,6 +275,7 @@ export interface EnhancedDamageAssessment {
   // Recommendations
   isRepairable: boolean;
   recommendation: string;
+  summary?: string; // CRITICAL FIX: Gemini's summary for display in purple box
   warnings: string[];
   
   // Metadata
@@ -244,8 +344,20 @@ export async function assessDamageEnhanced(params: {
   }> | undefined;
   let isTotalLoss: boolean | undefined;
   
-  // Identify damaged components from damage score (Requirement 6.2)
-  const damages = identifyDamagedComponents(damageScore);
+  // ELECTRONICS FIX: For electronics, use Gemini's specific parts directly instead of generic scores
+  // This preserves part names like "front screen display" instead of converting to "body"
+  let damages: DamageInput[];
+  if (itemInfo?.type === 'electronics' && damageAnalysis.damagedParts && damageAnalysis.damagedParts.length > 0) {
+    // Use Gemini's specific parts directly for electronics
+    damages = damageAnalysis.damagedParts.map(part => ({
+      component: part.part, // Use the specific part name from Gemini
+      damageLevel: part.severity
+    }));
+    console.log('📱 Using specific electronics parts from Gemini:', damages.map(d => d.component).join(', '));
+  } else {
+    // For other item types, use the traditional score-based approach
+    damages = identifyDamagedComponents(damageScore);
+  }
   
   // PRISTINE CONDITION HANDLING: If no damage detected, use universal adjustments
   if (damages.length === 0) {
@@ -449,6 +561,8 @@ export async function assessDamageEnhanced(params: {
     damageSeverity,
     damageScore,
     confidence,
+    itemDetails: damageAnalysis.itemDetails, // NEW: Include detailed item identification
+    damagedParts: damageAnalysis.damagedParts, // NEW: Include detailed damaged parts list
     marketValue: Math.round(marketValue),
     estimatedRepairCost: Math.round(repairCost),
     estimatedSalvageValue: Math.round(salvageValue),
@@ -459,6 +573,7 @@ export async function assessDamageEnhanced(params: {
     qualityTier, // NEW: Quality tier assessment (Requirement 4.1)
     isRepairable: repairability.isRepairable,
     recommendation: repairability.recommendation,
+    summary: damageAnalysis.summary, // CRITICAL FIX: Include Gemini's summary for display
     warnings,
     processedAt: new Date(),
     photoCount: photos.length,
@@ -492,6 +607,23 @@ async function analyzePhotosWithFallback(
   method: 'gemini' | 'vision' | 'neutral';
   geminiTotalLoss?: boolean; // NEW: Capture Gemini's total loss flag
   severity?: 'minor' | 'moderate' | 'severe'; // NEW: Capture Gemini's severity assessment
+  summary?: string; // NEW: Capture Gemini's summary for display
+  itemDetails?: {
+    detectedMake?: string;
+    detectedModel?: string;
+    detectedYear?: string;
+    color?: string;
+    trim?: string;
+    bodyStyle?: string;
+    storage?: string;
+    overallCondition?: string;
+    notes?: string;
+  };
+  damagedParts?: Array<{
+    part: string;
+    severity: 'minor' | 'moderate' | 'severe';
+    confidence: number;
+  }>;
 }> {
   const requestId = `enhanced-assess-${Date.now()}`;
   
@@ -538,17 +670,13 @@ async function analyzePhotosWithFallback(
         
         console.log('✅ Gemini assessment successful');
         console.log(`   Severity: ${geminiResult.severity}`);
-        console.log(`   Structural: ${geminiResult.structural}, Mechanical: ${geminiResult.mechanical}`);
-        console.log(`   Cosmetic: ${geminiResult.cosmetic}, Electrical: ${geminiResult.electrical}, Interior: ${geminiResult.interior}`);
+        console.log(`   Damaged parts: ${geminiResult.damagedParts.length}`);
         
-        // Convert Gemini response to damage score format
-        const damageScore: DamageScore = {
-          structural: geminiResult.structural,
-          mechanical: geminiResult.mechanical,
-          cosmetic: geminiResult.cosmetic,
-          electrical: geminiResult.electrical,
-          interior: geminiResult.interior,
-        };
+        // Convert Gemini's damagedParts array to legacy DamageScore format
+        const damageScore: DamageScore = convertDamagedPartsToScores(geminiResult.damagedParts);
+        
+        console.log(`   Converted scores - Structural: ${damageScore.structural}, Mechanical: ${damageScore.mechanical}`);
+        console.log(`   Cosmetic: ${damageScore.cosmetic}, Electrical: ${damageScore.electrical}, Interior: ${damageScore.interior}`);
         
         // Create mock vision results for backward compatibility
         const visionResults = {
@@ -564,7 +692,10 @@ async function analyzePhotosWithFallback(
           visionResults, 
           method: 'gemini',
           geminiTotalLoss: geminiResult.totalLoss, // Pass through Gemini's total loss determination
-          severity: geminiResult.severity // Pass through Gemini's severity assessment
+          severity: geminiResult.severity, // Pass through Gemini's severity assessment
+          summary: geminiResult.summary, // CRITICAL FIX: Pass through Gemini's summary for display
+          itemDetails: geminiResult.itemDetails, // Pass through detailed item identification
+          damagedParts: geminiResult.damagedParts // Pass through detailed damaged parts list
         };
       } else {
         const reason = quotaStatus.dailyRemaining === 0 
@@ -604,7 +735,7 @@ async function analyzePhotosWithFallback(
     
     console.log('✅ Vision API assessment successful');
     
-    return { damageScore, visionResults, method: 'vision', geminiTotalLoss: undefined };
+    return { damageScore, visionResults, method: 'vision', geminiTotalLoss: undefined, itemDetails: undefined, damagedParts: undefined };
   } catch (visionError: any) {
     console.error('❌ Vision API assessment failed:', visionError?.message || 'Unknown error');
     console.log('   Using neutral scores...');
@@ -625,7 +756,7 @@ async function analyzePhotosWithFallback(
     totalConfidence: 0.5,
   };
   
-  return { damageScore: neutralScore, visionResults: neutralVisionResults, method: 'neutral', geminiTotalLoss: undefined };
+  return { damageScore: neutralScore, visionResults: neutralVisionResults, method: 'neutral', geminiTotalLoss: undefined, itemDetails: undefined, damagedParts: undefined };
 }
 
 /**
@@ -1866,13 +1997,8 @@ async function searchUniversalPartPrices(
           'interior': 'seat'
         };
       case 'electronics':
-        return {
-          'structure': 'case',
-          'mechanical': 'processor', // FIXED: Use 'mechanical' instead of 'engine' for electronics
-          'electrical': 'battery',
-          'body': 'screen',
-          'interior': 'internal components'
-        };
+        // For electronics, return empty mapping - we'll use the specific part names directly
+        return {};
       case 'appliance':
         return {
           'structure': 'housing',
@@ -1918,7 +2044,9 @@ async function searchUniversalPartPrices(
   const partMapping = getPartMapping(itemInfo.type);
 
   const partSearchPromises = damages.map(async (damage) => {
-    const partName = partMapping[damage.component] || damage.component;
+    // For electronics, use the component name directly (it's already specific from Gemini)
+    // For other types, use the mapping
+    const partName = itemInfo.type === 'electronics' ? damage.component : (partMapping[damage.component] || damage.component);
     
     try {
       console.log(`🔍 Searching for ${itemInfo.type} part price: ${partName} for ${itemInfo.brand || itemInfo.make} ${itemInfo.model}`);

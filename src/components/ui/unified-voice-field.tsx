@@ -252,18 +252,160 @@ export const UnifiedVoiceField: React.FC<UnifiedVoiceFieldProps> = ({
 };
 
 /**
+ * Comprehensive filler words list for professional transcription cleanup
+ * 
+ * Based on research from professional transcription services and linguistic studies.
+ * This list focuses on words that are ALWAYS fillers (hesitations, verbal tics, discourse markers)
+ * and excludes words that can be meaningful in context (like "really", "totally" when used for emphasis).
+ * 
+ * Categories:
+ * - Hesitation sounds (um, uh, er, ah, hmm) - ALWAYS remove
+ * - Verbal tics (like, you know, i mean) - ALWAYS remove when used as fillers
+ * - Discourse markers (okay, so, well) - ALWAYS remove when used as fillers
+ * - Agreement sounds (yeah, yep, uh huh) - ALWAYS remove
+ * - Thinking pauses (let me see, you see) - ALWAYS remove
+ * - Vague expressions (or something, whatnot) - ALWAYS remove
+ * 
+ * Sources: FluentU, ResearchGate, Speechpad, professional transcription style guides
+ */
+const FILLER_WORDS = [
+  // Hesitation sounds (most common) - ALWAYS fillers
+  'um', 'uh', 'uhm', 'umm', 'er', 'erm', 'ah', 'ahh', 'hmm', 'hm', 'mhm',
+  
+  // Verbal tics and pause fillers - ALWAYS fillers
+  'like', 'you know', 'i mean', 'you know what i mean', 'if you know what i mean',
+  
+  // Hedge words (uncertainty markers) - ALWAYS fillers
+  'sort of', 'kind of', 'kinda', 'sorta', 'basically', 'more or less',
+  
+  // Discourse markers (conversation flow) - ALWAYS fillers
+  'okay', 'ok', 'so', 'well', 'now', 'right', 'alright', 'all right',
+  
+  // Agreement and acknowledgment sounds - ALWAYS fillers
+  'yeah', 'yep', 'yup', 'uh huh', 'mm hmm', 'mmm', 'mhmm',
+  
+  // Thinking and stalling phrases - ALWAYS fillers
+  'let me see', 'let me think', 'lets see', 'you see', 'i guess', 'i suppose',
+  
+  // Vague expressions - ALWAYS fillers
+  'or something', 'or something like that', 'and stuff', 'and things',
+  'and all that', 'or whatever', 'whatnot', 'and so on', 'and so forth',
+  'et cetera', 'etc',
+  
+  // Filler phrases (common in casual speech) - ALWAYS fillers
+  'at the end of the day', 'believe me', 'trust me', 'to be honest',
+  'to tell you the truth', 'as a matter of fact', 'the thing is',
+  'the fact of the matter is', 'you know what', 'i mean to say',
+  
+  // Informal contractions (clean up to formal) - ALWAYS fillers
+  'gonna', 'wanna', 'gotta', 'dunno', 'lemme', 'gimme',
+  'coulda', 'shoulda', 'woulda', 'hafta', 'oughta',
+  
+  // Repetitive acknowledgments - ALWAYS fillers
+  'oh well', 'oh yeah', 'oh okay', 'oh right', 'oh sure',
+  
+  // Sentence starters (often unnecessary) - ALWAYS fillers
+  'look', 'listen', 'hey', 'man', 'dude', 'guys',
+  
+  // Thinking sounds - ALWAYS fillers
+  'ehh', 'eeh',
+  
+  // False starts and corrections (common patterns) - ALWAYS fillers
+  'i mean like', 'like i said', 'as i said', 'like i mean',
+  'you know like', 'i mean you know',
+  
+  // Note: Words like "basically", "actually", "literally", "seriously", "honestly",
+  // "clearly", "obviously", "definitely", "certainly", "absolutely", "really",
+  // "very", "quite", "totally", "pretty much" are NOT included because they can
+  // be meaningful in context (e.g., "really bad", "totally damaged", "very severe")
+];
+
+/**
+ * Remove filler words from transcription text
+ * 
+ * This function removes common filler words and phrases to create
+ * cleaner, more professional transcriptions. It handles:
+ * - Single-word fillers (um, uh, like)
+ * - Multi-word phrases (you know, i mean, sort of)
+ * - Case-insensitive matching
+ * - Proper cleanup of extra spaces and punctuation
+ * - Sentence capitalization
+ */
+const removeFillerWords = (text: string): string => {
+  let cleaned = text;
+  
+  // Sort filler words by length (longest first) to handle multi-word phrases correctly
+  // This prevents "you know what i mean" from being partially matched as "you know"
+  const sortedFillers = [...FILLER_WORDS].sort((a, b) => b.length - a.length);
+  
+  // Create regex pattern for each filler word (case-insensitive, word boundaries)
+  sortedFillers.forEach(filler => {
+    // Escape special regex characters in the filler word
+    const escapedFiller = filler.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Match the filler with optional surrounding punctuation and spaces
+    const pattern = new RegExp(`[,\\s]*\\b${escapedFiller}\\b[,\\s]*`, 'gi');
+    cleaned = cleaned.replace(pattern, ' ');
+  });
+  
+  // Cleanup punctuation and spacing issues
+  cleaned = cleaned
+    .replace(/\s+/g, ' ') // Multiple spaces to single space
+    .replace(/\s*,\s*,\s*/g, ' ') // Remove double commas with spaces
+    .replace(/,\s*,/g, ' ') // Remove double commas
+    .replace(/\s*,\s*/g, ' ') // Remove all commas (they're likely orphaned after filler removal)
+    .replace(/\s+([.!?])/g, '$1') // Remove space before sentence-ending punctuation
+    .replace(/([.!?])\s*([.!?])/g, '$1') // Remove duplicate punctuation
+    .replace(/\s+$/gm, '') // Remove trailing spaces on each line
+    .trim();
+  
+  // Capitalize first letter of each sentence
+  cleaned = cleaned.replace(/(^|[.!?]\s+)([a-z])/g, (match, separator, letter) => {
+    return separator + letter.toUpperCase();
+  });
+  
+  // Capitalize the very first letter if it's lowercase
+  if (cleaned.length > 0) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  
+  return cleaned;
+};
+
+/**
  * Hook for managing voice note content with unified field
  */
 export const useUnifiedVoiceContent = (initialValue: string = '') => {
   const [content, setContent] = useState(initialValue);
+  const [showTimestamps, setShowTimestamps] = useState(() => {
+    // Load timestamp preference from localStorage
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('voiceNoteTimestamps');
+      return saved === 'true';
+    }
+    return false; // Default: timestamps OFF for cleaner reading
+  });
+
+  /**
+   * Toggle timestamp display preference
+   */
+  const toggleTimestamps = useCallback(() => {
+    setShowTimestamps(prev => {
+      const newValue = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('voiceNoteTimestamps', String(newValue));
+      }
+      return newValue;
+    });
+  }, []);
 
   /**
    * Append new voice transcription to existing content
    * Returns the new content for immediate use
    */
-  const appendVoiceNote = useCallback((transcription: string, addTimestamp: boolean = true) => {
+  const appendVoiceNote = useCallback((transcription: string, addTimestamp?: boolean) => {
     const now = new Date();
-    const timestamp = addTimestamp ? now.toLocaleTimeString('en-US', { 
+    const useTimestamp = addTimestamp !== undefined ? addTimestamp : showTimestamps;
+    const timestamp = useTimestamp ? now.toLocaleTimeString('en-US', { 
       hour12: false, 
       hour: '2-digit', 
       minute: '2-digit' 
@@ -272,18 +414,20 @@ export const useUnifiedVoiceContent = (initialValue: string = '') => {
     let newContent = '';
     setContent(prev => {
       const delimiter = prev.trim() ? '\n\n' : '';
-      const prefix = addTimestamp ? `[${timestamp}] ` : '';
-      const cleanTranscription = transcription.trim();
+      const prefix = useTimestamp ? `[${timestamp}] ` : '';
+      
+      // Remove filler words for professional transcripts
+      const cleanedTranscription = removeFillerWords(transcription.trim());
       
       // Ensure proper sentence capitalization
-      const capitalizedTranscription = cleanTranscription.charAt(0).toUpperCase() + cleanTranscription.slice(1);
+      const capitalizedTranscription = cleanedTranscription.charAt(0).toUpperCase() + cleanedTranscription.slice(1);
       
       newContent = `${prev}${delimiter}${prefix}${capitalizedTranscription}`;
       return newContent;
     });
     
     return newContent;
-  }, []);
+  }, [showTimestamps]);
 
   /**
    * Clear all voice content
@@ -304,6 +448,8 @@ export const useUnifiedVoiceContent = (initialValue: string = '') => {
     appendVoiceNote,
     clearContent,
     updateContent,
+    showTimestamps,
+    toggleTimestamps,
     wordCount: content.trim().split(/\s+/).filter(word => word.length > 0).length,
     characterCount: content.length,
   };

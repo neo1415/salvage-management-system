@@ -31,14 +31,35 @@ export interface VehicleContext {
 }
 
 /**
+ * Item details detected from analysis
+ */
+export interface ItemDetails {
+  detectedMake?: string;
+  detectedModel?: string;
+  detectedYear?: string;
+  color?: string;
+  trim?: string;
+  bodyStyle?: string;
+  storage?: string;
+  overallCondition?: string;
+  notes?: string;
+}
+
+/**
+ * Individual damaged part with severity and confidence
+ */
+export interface DamagedPart {
+  part: string;              // Specific part name (e.g., "driver front door", "front bumper")
+  severity: 'minor' | 'moderate' | 'severe';
+  confidence: number;        // 0-100: Confidence in this part's damage assessment
+}
+
+/**
  * Structured damage assessment result from Gemini
  */
 export interface GeminiDamageAssessment {
-  structural: number;        // 0-100: Frame, chassis, pillars, roof damage
-  mechanical: number;        // 0-100: Engine, transmission, suspension damage
-  cosmetic: number;          // 0-100: Body panels, paint, trim damage
-  electrical: number;        // 0-100: Wiring, lights, electronics damage
-  interior: number;          // 0-100: Seats, dashboard, controls damage
+  itemDetails?: ItemDetails;  // Overall item identification
+  damagedParts: DamagedPart[]; // Only damaged parts
   severity: 'minor' | 'moderate' | 'severe';
   airbagDeployed: boolean;
   totalLoss: boolean;
@@ -74,6 +95,9 @@ export interface DamageDetectionResult {
 
 /**
  * Search for part prices when damage is detected with performance optimizations
+ * 
+ * CRITICAL FIX: Use actual damaged part names from Gemini directly instead of generic mapping
+ * This preserves the specificity of parts like "driver front door" vs generic "door panel"
  */
 async function searchPartPricesForDamage(
   vehicleInfo: { make?: string; model?: string; year?: number },
@@ -95,71 +119,11 @@ async function searchPartPricesForDamage(
     year: vehicleInfo.year
   };
 
-  // Enhanced part mapping with more comprehensive coverage
-  const partMapping: Record<string, string> = {
-    // Body components
-    'front_bumper': 'front bumper',
-    'rear_bumper': 'rear bumper',
-    'hood': 'hood',
-    'trunk': 'trunk lid',
-    'door': 'door panel',
-    'fender': 'fender',
-    'quarter_panel': 'quarter panel',
-    'rocker_panel': 'rocker panel',
-    'body_panel': 'body panel',
-    
-    // Lighting
-    'headlight': 'headlight assembly',
-    'taillight': 'taillight assembly',
-    'fog_light': 'fog light',
-    'turn_signal': 'turn signal light',
-    
-    // Glass
-    'windshield': 'windshield',
-    'rear_window': 'rear window',
-    'side_window': 'side window',
-    
-    // Mirrors and exterior
-    'side_mirror': 'side mirror',
-    'grille': 'front grille',
-    'trim': 'exterior trim',
-    
-    // Wheels and tires
-    'wheel': 'wheel rim',
-    'tire': 'tire',
-    'wheel_cover': 'wheel cover',
-    
-    // Mechanical components
-    'engine': 'engine parts',
-    'transmission': 'transmission parts',
-    'suspension': 'suspension parts',
-    'brake': 'brake parts',
-    'exhaust': 'exhaust system',
-    
-    // Interior components
-    'dashboard': 'dashboard',
-    'seat': 'car seat',
-    'steering_wheel': 'steering wheel',
-    'console': 'center console',
-    'door_panel_interior': 'interior door panel',
-    
-    // Electrical
-    'wiring': 'wiring harness',
-    'battery': 'car battery',
-    'alternator': 'alternator',
-    'starter': 'starter motor',
-    
-    // Generic fallbacks
-    'structural': 'body panel',
-    'mechanical': 'engine parts',
-    'cosmetic': 'body panel',
-    'electrical': 'electrical parts',
-    'interior': 'interior parts'
-  };
-
-  // Map damaged components to searchable parts
+  // CRITICAL FIX: Use actual part names directly from Gemini
+  // Gemini provides specific names like "driver front door", "front bumper", "rear quarter panel"
+  // These are already optimized for search - don't map them to generic terms!
   const partsToSearch = damagedComponents.map(damage => ({
-    name: partMapping[damage.component] || damage.component,
+    name: damage.component, // Use the actual part name from Gemini
     damageType: damage.severity
   }));
 
@@ -380,35 +344,44 @@ export function getGeminiServiceConfig(): {
 const GEMINI_RESPONSE_SCHEMA = {
   type: "object",
   properties: {
-    structural: { 
-      type: "number", 
-      minimum: 0, 
-      maximum: 100,
-      description: "Frame, chassis, pillars, roof damage score (0=no damage, 100=complete structural failure)"
+    itemDetails: {
+      type: "object",
+      properties: {
+        detectedMake: { type: "string", description: "Detected make/brand of the item" },
+        detectedModel: { type: "string", description: "Detected model of the item" },
+        detectedYear: { type: "string", description: "Detected year/age of the item" },
+        color: { type: "string", description: "Color of the item" },
+        trim: { type: "string", description: "Trim level (vehicles)" },
+        bodyStyle: { type: "string", description: "Body style (vehicles)" },
+        storage: { type: "string", description: "Storage capacity (electronics)" },
+        overallCondition: { type: "string", description: "Overall condition assessment" },
+        notes: { type: "string", description: "Additional notes about the item" }
+      }
     },
-    mechanical: { 
-      type: "number", 
-      minimum: 0, 
-      maximum: 100,
-      description: "Engine, transmission, suspension, drivetrain damage score (0=no damage, 100=non-functional)"
-    },
-    cosmetic: { 
-      type: "number", 
-      minimum: 0, 
-      maximum: 100,
-      description: "Body panels, paint, trim, glass damage score (0=no damage, 100=completely destroyed)"
-    },
-    electrical: { 
-      type: "number", 
-      minimum: 0, 
-      maximum: 100,
-      description: "Wiring, lights, electronics, battery damage score (0=no damage, 100=total electrical failure)"
-    },
-    interior: { 
-      type: "number", 
-      minimum: 0, 
-      maximum: 100,
-      description: "Seats, dashboard, controls, upholstery damage score (0=no damage, 100=completely destroyed)"
+    damagedParts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          part: { 
+            type: "string",
+            description: "Specific part name with location (e.g., 'driver front door', 'front bumper')"
+          },
+          severity: { 
+            type: "string",
+            enum: ["minor", "moderate", "severe"],
+            description: "Damage severity for this specific part"
+          },
+          confidence: {
+            type: "number",
+            minimum: 0,
+            maximum: 100,
+            description: "Confidence in this part's damage assessment (0-100)"
+          }
+        },
+        required: ["part", "severity", "confidence"]
+      },
+      description: "Array of damaged parts only (exclude undamaged parts)"
     },
     severity: { 
       type: "string", 
@@ -421,7 +394,7 @@ const GEMINI_RESPONSE_SCHEMA = {
     },
     totalLoss: { 
       type: "boolean",
-      description: "Whether repair cost would exceed 75% of vehicle value"
+      description: "Whether item is a total loss (conservative criteria)"
     },
     summary: { 
       type: "string", 
@@ -430,8 +403,7 @@ const GEMINI_RESPONSE_SCHEMA = {
     }
   },
   required: [
-    "structural", "mechanical", "cosmetic", "electrical", "interior",
-    "severity", "airbagDeployed", "totalLoss", "summary"
+    "itemDetails", "damagedParts", "severity", "airbagDeployed", "totalLoss", "summary"
   ]
 };
 
@@ -540,47 +512,6 @@ export function validateAndCorrectSeverity(
 }
 
 /**
- * Validate and sanitize summary text
- * 
- * Requirements: 15.6
- * 
- * @param summary - Raw summary from Gemini
- * @param requestId - Request ID for logging
- * @returns Valid summary text
- */
-export function validateSummary(summary: any, requestId: string): string {
-  // Check if summary is a string
-  if (typeof summary !== 'string') {
-    console.warn(
-      `[Gemini Service] Invalid summary (not a string): ${typeof summary}. ` +
-      `Using default summary. Request ID: ${requestId}`
-    );
-    return 'Damage assessment completed. Please review detailed scores.';
-  }
-
-  // Check if summary is empty
-  if (summary.trim() === '') {
-    console.warn(
-      `[Gemini Service] Empty summary received. ` +
-      `Using default summary. Request ID: ${requestId}`
-    );
-    return 'Damage assessment completed. Please review detailed scores.';
-  }
-
-  // Truncate if exceeds 500 characters
-  if (summary.length > 500) {
-    const truncated = summary.substring(0, 497) + '...';
-    console.warn(
-      `[Gemini Service] Summary exceeds 500 characters (${summary.length}). ` +
-      `Truncated to 500 characters. Request ID: ${requestId}`
-    );
-    return truncated;
-  }
-
-  return summary;
-}
-
-/**
  * Validate and sanitize boolean flag
  * 
  * Requirements: 15.5
@@ -603,14 +534,54 @@ export function validateBoolean(value: any, fieldName: string, requestId: string
 }
 
 /**
+ * Validate and sanitize summary text
+ * 
+ * Requirements: 15.6
+ * 
+ * @param summary - Raw summary from Gemini
+ * @param requestId - Request ID for logging
+ * @returns Valid summary text
+ */
+export function validateSummary(summary: any, requestId: string): string {
+  // Check if summary is a string
+  if (typeof summary !== 'string') {
+    console.warn(
+      `[Gemini Service] Invalid summary (not a string): ${typeof summary}. ` +
+      `Using default summary. Request ID: ${requestId}`
+    );
+    return 'Damage assessment completed. Please review detailed parts.';
+  }
+
+  // Check if summary is empty
+  if (summary.trim() === '') {
+    console.warn(
+      `[Gemini Service] Empty summary received. ` +
+      `Using default summary. Request ID: ${requestId}`
+    );
+    return 'Damage assessment completed. Please review detailed parts.';
+  }
+
+  // Truncate if exceeds 500 characters
+  if (summary.length > 500) {
+    const truncated = summary.substring(0, 497) + '...';
+    console.warn(
+      `[Gemini Service] Summary exceeds 500 characters (${summary.length}). ` +
+      `Truncated to 500 characters. Request ID: ${requestId}`
+    );
+    return truncated;
+  }
+
+  return summary;
+}
+
+/**
  * Parse and validate Gemini JSON response
  * 
  * This function:
  * - Parses JSON response from Gemini API
  * - Validates all required fields are present
- * - Validates field types (numbers for scores, string for severity, booleans for flags)
- * - Clamps damage scores to 0-100 range if outside bounds
- * - Defaults severity to "moderate" if invalid value
+ * - Validates field types
+ * - Validates damagedParts array structure
  * - Ensures summary is non-empty and under 500 characters
  * - Returns structured GeminiDamageAssessment object
  * 
@@ -636,8 +607,7 @@ export function parseAndValidateResponse(responseText: string, requestId: string
 
   // Validate required fields are present
   const requiredFields = [
-    'structural', 'mechanical', 'cosmetic', 'electrical', 'interior',
-    'severity', 'airbagDeployed', 'totalLoss', 'summary'
+    'damagedParts', 'severity', 'airbagDeployed', 'totalLoss', 'summary'
   ];
 
   const missingFields = requiredFields.filter(field => !(field in parsedResponse));
@@ -649,61 +619,133 @@ export function parseAndValidateResponse(responseText: string, requestId: string
     throw new Error(errorMsg);
   }
 
-  // Validate and sanitize all fields
-  const structural = validateDamageScore(parsedResponse.structural, 'structural', requestId);
-  const mechanical = validateDamageScore(parsedResponse.mechanical, 'mechanical', requestId);
-  const cosmetic = validateDamageScore(parsedResponse.cosmetic, 'cosmetic', requestId);
-  const electrical = validateDamageScore(parsedResponse.electrical, 'electrical', requestId);
-  const interior = validateDamageScore(parsedResponse.interior, 'interior', requestId);
-  
-  // Validate severity format first
+  // Validate damagedParts array
+  if (!Array.isArray(parsedResponse.damagedParts)) {
+    const errorMsg = 
+      `damagedParts must be an array. Received: ${typeof parsedResponse.damagedParts}. ` +
+      `Request ID: ${requestId}`;
+    console.error(`[Gemini Service] ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+
+  // Validate each damaged part
+  const damagedParts: DamagedPart[] = parsedResponse.damagedParts.map((part: any, index: number) => {
+    if (!part.part || typeof part.part !== 'string') {
+      console.warn(
+        `[Gemini Service] Invalid part name at index ${index}. Using "unknown part". ` +
+        `Request ID: ${requestId}`
+      );
+      part.part = 'unknown part';
+    }
+
+    const validSeverities: Array<'minor' | 'moderate' | 'severe'> = ['minor', 'moderate', 'severe'];
+    if (!validSeverities.includes(part.severity)) {
+      console.warn(
+        `[Gemini Service] Invalid severity "${part.severity}" at index ${index}. Defaulting to "moderate". ` +
+        `Request ID: ${requestId}`
+      );
+      part.severity = 'moderate';
+    }
+
+    if (typeof part.confidence !== 'number' || part.confidence < 0 || part.confidence > 100) {
+      console.warn(
+        `[Gemini Service] Invalid confidence ${part.confidence} at index ${index}. Defaulting to 70. ` +
+        `Request ID: ${requestId}`
+      );
+      part.confidence = 70;
+    }
+
+    return {
+      part: part.part,
+      severity: part.severity as 'minor' | 'moderate' | 'severe',
+      confidence: part.confidence
+    };
+  });
+
+  // Validate severity format
   const validSeverities: Array<'minor' | 'moderate' | 'severe'> = ['minor', 'moderate', 'severe'];
-  let rawSeverity: 'minor' | 'moderate' | 'severe';
+  let severity: 'minor' | 'moderate' | 'severe';
   if (typeof parsedResponse.severity === 'string' && validSeverities.includes(parsedResponse.severity as any)) {
-    rawSeverity = parsedResponse.severity as 'minor' | 'moderate' | 'severe';
+    severity = parsedResponse.severity as 'minor' | 'moderate' | 'severe';
   } else {
     console.warn(
       `[Gemini Service] Invalid severity value: ${parsedResponse.severity}. ` +
       `Defaulting to "moderate". Request ID: ${requestId}`
     );
-    rawSeverity = 'moderate';
+    severity = 'moderate';
   }
   
   const airbagDeployed = validateBoolean(parsedResponse.airbagDeployed, 'airbagDeployed', requestId);
-  
-  // Validate and correct severity based on damage scores
-  const severity = validateAndCorrectSeverity(
-    rawSeverity,
-    { structural, mechanical, cosmetic, electrical, interior },
-    airbagDeployed,
-    requestId
-  );
-  
   const totalLoss = validateBoolean(parsedResponse.totalLoss, 'totalLoss', requestId);
   const summary = validateSummary(parsedResponse.summary, requestId);
 
-  // Calculate confidence score based on average damage
-  const averageDamage = (structural + mechanical + cosmetic + electrical + interior) / 5;
-  const confidence = 85; // Base confidence for Gemini assessments
+  // Parse itemDetails if present
+  let itemDetails: ItemDetails | undefined;
+  if (parsedResponse.itemDetails && typeof parsedResponse.itemDetails === 'object') {
+    // Helper function to sanitize field values
+    const sanitizeField = (value: any): string | undefined => {
+      if (typeof value !== 'string') return undefined;
+      const trimmed = value.trim();
+      // Reject empty strings
+      if (!trimmed) return undefined;
+      // Reject values that look like AI reasoning (contain parentheses with explanations or are overly long)
+      if ((trimmed.includes('(') || trimmed.includes('estimated') || trimmed.includes('appears to be')) && trimmed.length > 50) {
+        console.warn(`[Gemini Service] Rejecting field value with reasoning text: ${trimmed.substring(0, 100)}...`);
+        return undefined;
+      }
+      return trimmed;
+    };
+
+    itemDetails = {
+      detectedMake: sanitizeField(parsedResponse.itemDetails.detectedMake),
+      detectedModel: sanitizeField(parsedResponse.itemDetails.detectedModel),
+      detectedYear: sanitizeField(parsedResponse.itemDetails.detectedYear),
+      color: sanitizeField(parsedResponse.itemDetails.color),
+      trim: sanitizeField(parsedResponse.itemDetails.trim),
+      bodyStyle: sanitizeField(parsedResponse.itemDetails.bodyStyle),
+      storage: sanitizeField(parsedResponse.itemDetails.storage),
+      overallCondition: sanitizeField(parsedResponse.itemDetails.overallCondition),
+      notes: sanitizeField(parsedResponse.itemDetails.notes),
+    };
+    
+    // Remove undefined fields for cleaner output
+    Object.keys(itemDetails).forEach(key => {
+      if (itemDetails![key as keyof ItemDetails] === undefined) {
+        delete itemDetails![key as keyof ItemDetails];
+      }
+    });
+    
+    console.info(
+      `[Gemini Service] Item details parsed: ${itemDetails.detectedMake || 'N/A'} ${itemDetails.detectedModel || 'N/A'} ${itemDetails.detectedYear || 'N/A'}. ` +
+      `Request ID: ${requestId}`
+    );
+  } else {
+    console.warn(
+      `[Gemini Service] Item details missing from Gemini response. This should not happen as itemDetails is required. ` +
+      `Request ID: ${requestId}`
+    );
+  }
+
+  // Calculate confidence score based on damaged parts
+  const avgConfidence = damagedParts.length > 0
+    ? damagedParts.reduce((sum, part) => sum + part.confidence, 0) / damagedParts.length
+    : 85;
 
   console.info(
     `[Gemini Service] Successfully parsed and validated response. ` +
-    `Severity: ${severity}, Average damage: ${averageDamage.toFixed(1)}, ` +
+    `Severity: ${severity}, Damaged parts: ${damagedParts.length}, ` +
     `Airbag deployed: ${airbagDeployed}, Total loss: ${totalLoss}. ` +
     `Request ID: ${requestId}`
   );
 
   return {
-    structural,
-    mechanical,
-    cosmetic,
-    electrical,
-    interior,
+    itemDetails,
+    damagedParts,
     severity,
     airbagDeployed,
     totalLoss,
     summary,
-    confidence,
+    confidence: avgConfidence,
     method: 'gemini',
   };
 }
@@ -724,128 +766,410 @@ export function parseAndValidateResponse(responseText: string, requestId: string
  * @param vehicleContext - Vehicle make, model, and year
  * @returns Formatted prompt string optimized for Gemini AI
  */
+/**
+ * Construct the damage assessment prompt with vehicle context
+ * 
+ * This function creates an optimized prompt for Gemini 2.5 Flash that:
+ * - Analyzes the ENTIRE item FIRST (identification)
+ * - THEN analyzes damage with SPECIFIC part names
+ * - Only includes DAMAGED parts in the response
+ * - Uses CONSERVATIVE total loss criteria
+ * - Provides item-type-specific prompts (vehicles, electronics, machinery)
+ * 
+ * Requirements: 3.4, 3.5, 14.1, 14.2, 14.3, 14.4, 14.5, 14.6
+ * 
+ * @param vehicleContext - Vehicle make, model, and year
+ * @returns Formatted prompt string optimized for Gemini AI
+ */
 export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext): string {
   const { year, make, model, itemType } = vehicleContext;
-  
-  // Determine if this is a vehicle or universal item
+
+  // Determine item type and create appropriate prompt
   const isVehicle = !itemType || itemType === 'vehicle';
-  const itemDescription = isVehicle 
-    ? `${year} ${make} ${model}` 
-    : `${make} ${model} ${itemType} (${year})`;
-  
-  const expertRole = isVehicle 
-    ? 'expert vehicle damage assessor' 
-    : 'expert damage assessor specializing in various items';
-  
-  const analysisInstruction = isVehicle
-    ? `Analyze the provided photos of a ${itemDescription} and assess the damage comprehensively.`
-    : `Analyze the provided photos of this ${itemDescription} and assess the damage comprehensively.`;
+  const isElectronics = itemType === 'electronics';
+  const isMachinery = itemType === 'machinery' || itemType === 'equipment';
 
-  return `You are an ${expertRole}. ${analysisInstruction}
-
-Provide a detailed damage assessment with scores from 0-100 for each of the following categories:
-
-**Structural Damage (0-100):**
-${isVehicle 
-  ? '- Frame, chassis, pillars, roof, structural integrity'
-  : '- Main body, frame, housing, structural components, mounting points'
-}
-- 0 = No structural damage
-- 100 = Complete structural failure${isVehicle ? ', frame bent or broken' : ', main structure destroyed'}
-${isVehicle 
-  ? '- Examples: Minor (10-30): Small frame dent. Moderate (40-60): Crumpled pillar, roof damage. Severe (70-90): Frame bent, multiple structural failures.'
-  : '- Examples: Minor (10-30): Small dent in housing. Moderate (40-60): Cracked casing, bent frame. Severe (70-90): Broken housing, structural collapse.'
+  if (isVehicle) {
+    return constructVehiclePrompt(year, make, model);
+  } else if (isElectronics) {
+    return constructElectronicsPrompt(make, model, year);
+  } else if (isMachinery) {
+    return constructMachineryPrompt(make, model, year);
+  } else {
+    // Fallback to vehicle prompt for unknown types
+    return constructVehiclePrompt(year, make, model);
+  }
 }
 
-**Mechanical Damage (0-100):**
-${isVehicle 
-  ? '- Engine, transmission, suspension, drivetrain, wheels, brakes'
-  : '- Moving parts, motors, mechanisms, buttons, switches, mechanical components'
-}
-- 0 = No mechanical damage, fully functional
-- 100 = Non-functional, major mechanical failure
-${isVehicle 
-  ? '- Examples: Minor (10-30): Scratched wheel rim. Moderate (40-60): Damaged suspension, leaking fluids. Severe (70-90): Engine damage, transmission failure.'
-  : '- Examples: Minor (10-30): Sticky button. Moderate (40-60): Jammed mechanism, loose parts. Severe (70-90): Broken motor, non-functional components.'
-}
+/**
+ * Construct vehicle-specific damage assessment prompt
+ */
+function constructVehiclePrompt(year: number, make: string, model: string): string {
+  return `You are an expert vehicle damage assessor for insurance claims. Analyze the provided photos of a ${year} ${make} ${model} and provide an insurance-grade assessment.
 
-**Cosmetic Damage (0-100):**
-${isVehicle 
-  ? '- Body panels, paint, trim, bumpers, glass, mirrors'
-  : '- Surface finish, paint, coating, external appearance, decorative elements'
-}
-- 0 = No cosmetic damage, pristine condition
-- 100 = Completely destroyed exterior
-${isVehicle 
-  ? '- Examples: Minor (10-30): Small dent, scratch, paint chip. Moderate (40-60): Crumpled fender, broken headlight, shattered glass. Severe (70-90): Multiple panels destroyed, extensive paint damage.'
-  : '- Examples: Minor (10-30): Small scratch, scuff mark. Moderate (40-60): Deep scratches, dents, faded finish. Severe (70-90): Extensive surface damage, missing parts.'
-}
+**CRITICAL INSTRUCTIONS FOR RESPONSE FORMAT:**
+- Provide ONLY factual data in your JSON response
+- DO NOT include reasoning, explanations, or uncertainty statements in field values
+- If you cannot determine a field with confidence, OMIT it entirely (don't include the key in the JSON)
+- Example of CORRECT response: {"color": "White"}
+- Example of INCORRECT response: {"color": "White (appears to be white but lighting makes it hard to confirm)"}
+- Your response will be shown directly to insurance adjusters and vendors - it must be professional and concise
+- NO parenthetical explanations, NO hedging language, NO reasoning text in any field values
 
-**Electrical Damage (0-100):**
-${isVehicle 
-  ? '- Wiring, lights, electronics, battery, sensors, control modules'
-  : '- Wiring, circuits, display, battery, charging port, electronic components'
-}
-- 0 = No electrical damage, all systems functional
-- 100 = Total electrical failure, no systems working
-${isVehicle 
-  ? '- Examples: Minor (10-30): Broken taillight. Moderate (40-60): Multiple lights out, exposed wiring. Severe (70-90): Electrical fire damage, control module failure.'
-  : '- Examples: Minor (10-30): Dim display. Moderate (40-60): Charging issues, flickering screen. Severe (70-90): No power, burnt circuits, electrical damage.'
-}
+**VEHICLE CONTEXT PROVIDED:**
+You have been told this is a ${year} ${make} ${model}.
 
-**Interior Damage (0-100):**
-${isVehicle 
-  ? '- Seats, dashboard, controls, upholstery, steering wheel, console'
-  : '- Internal components, user interface, controls, internal housing, accessible parts'
-}
-- 0 = No interior damage, pristine condition
-- 100 = Completely destroyed interior
-${isVehicle 
-  ? '- Examples: Minor (10-30): Stained seat, small tear. Moderate (40-60): Deployed airbag, cracked dashboard. Severe (70-90): Multiple deployed airbags, destroyed dashboard, seats torn.'
-  : '- Examples: Minor (10-30): Minor wear, small stains. Moderate (40-60): Cracked internal parts, loose components. Severe (70-90): Broken internal structure, missing parts.'
-}
+**IMPORTANT - VEHICLE VERIFICATION:**
+Compare what you see in the photos with the provided vehicle information:
+- If the vehicle in photos MATCHES the provided information (${year} ${make} ${model}), confirm it in itemDetails
+- If the vehicle in photos DOES NOT MATCH the provided information, report what you actually see AND add a note about the discrepancy
+- Example note for mismatch: "Vehicle in photos appears to be a 2016 Mercedes-Benz GLE, which differs from the provided information (2021 Toyota Camry). Please verify vehicle information with the claimant."
 
-**Overall Severity Classification:**
-Determine the overall severity level:
-- **minor**: Mostly cosmetic damage, ${isVehicle ? 'vehicle is drivable' : 'item is functional'} and repairable with minimal cost (typically <25% of ${isVehicle ? 'vehicle' : 'item'} value)
-- **moderate**: Significant damage but repairable, may affect ${isVehicle ? 'drivability' : 'functionality'} (typically 25-50% of ${isVehicle ? 'vehicle' : 'item'} value)
-- **severe**: Extensive damage, major repairs needed, may not be economically repairable (typically >50% of ${isVehicle ? 'vehicle' : 'item'} value)
+**SECTION 1: VEHICLE IDENTIFICATION**
 
-${isVehicle ? `**Airbag Deployment Detection:**
-Carefully examine the photos for signs of airbag deployment:
-- Deployed airbags visible in steering wheel, dashboard, or side panels
-- Airbag covers open or missing
-- White powder residue (from airbag deployment)
-- Damaged steering wheel or dashboard from airbag deployment
-Set airbagDeployed to **true** if any airbags have deployed, **false** otherwise.` : ''}
+First, identify the vehicle details:
+- Make/Model/Year: Confirm or correct the provided information based on what you see
+- Trim level: (e.g., SE, XLE, Limited) - OMIT if not clearly visible
+- Color: Exterior color - OMIT if not clearly visible
+- Body style: (e.g., Sedan, SUV, Truck, Coupe) - OMIT if not clearly visible
+- Overall condition: (e.g., Excellent, Good, Fair, Poor) based on visible damage
+- Notes: CRITICAL - If vehicle doesn't match provided info, state the discrepancy here. Otherwise, any distinguishing features or observations
 
-**Total Loss Determination:**
-Determine if the ${isVehicle ? 'vehicle' : 'item'} is a total loss:
-- ${isVehicle ? 'A vehicle' : 'An item'} is considered a total loss if the estimated repair cost would exceed **75% of the ${isVehicle ? "vehicle's" : "item's"} pre-accident value**
-- Consider: structural damage (most expensive), mechanical damage${isVehicle ? ', number of deployed airbags' : ''}, age of ${isVehicle ? 'vehicle' : 'item'}
-- Set totalLoss to **true** if repair cost > 75% of ${isVehicle ? 'vehicle' : 'item'} value, **false** otherwise
+**SECTION 2: DAMAGE ANALYSIS**
 
-**Summary:**
-Provide a brief, clear description of the damage in 2-3 sentences (maximum 500 characters). Include:
+Analyze the damage and list ONLY the damaged parts. For each damaged part, provide:
+- **Part name**: Be SPECIFIC with location (e.g., "driver front door", "passenger rear quarter panel", "front bumper center section")
+- **Severity**: minor, moderate, or severe
+- **Confidence**: 0-100 (how confident you are in this assessment)
+
+**CRITICAL FIELD INSTRUCTIONS:**
+For each field in itemDetails:
+- detectedMake: The brand/manufacturer you see (e.g., "Toyota", "Mercedes-Benz") - NO explanations
+- detectedModel: The model name (e.g., "Camry", "GLE-Class") - NO explanations
+- detectedYear: The model year if visible (e.g., "2021", "2016") - NO explanations
+- color: Exterior color (e.g., "White", "Black", "Red") - OMIT if not clearly visible, NO explanations
+- trim: Trim level (e.g., "SE", "XLE", "AMG Line") - OMIT if not clearly visible, NO explanations
+- bodyStyle: Body type (e.g., "Sedan", "SUV", "Truck") - OMIT if not clearly visible, NO explanations
+- overallCondition: Condition assessment (e.g., "Excellent", "Good", "Fair", "Poor") based on visible damage - NO explanations
+- notes: ONLY for vehicle mismatch discrepancies or critical observations - NO reasoning text
+
+**REMEMBER**: If a field is not clearly visible or determinable, OMIT it from your response. Do not include reasoning or uncertainty statements.
+
+**Vehicle-Specific Parts to Consider:**
+- **Exterior**: front bumper, rear bumper, hood, trunk lid, driver/passenger doors (front/rear), driver/passenger fenders, driver/passenger quarter panels, roof, windshield, rear window, side windows, headlights, taillights, side mirrors, grille
+- **Structural**: frame, chassis, A-pillar, B-pillar, C-pillar, D-pillar, rocker panels, floor pan
+- **Mechanical**: engine, transmission, suspension (front/rear), drivetrain, axles, wheels, tires, brakes, exhaust system
+- **Electrical**: wiring harness, battery, alternator, starter, lights, sensors, control modules
+- **Interior**: dashboard, steering wheel, seats (driver/passenger/rear), center console, door panels, airbags, upholstery
+
+**Severity Guidelines:**
+- **Minor**: Cosmetic damage, small dents, scratches, paint chips (repairable with minimal cost)
+- **Moderate**: Functional damage, crumpled panels, broken lights, damaged suspension (requires significant repair)
+- **Severe**: Structural damage, major mechanical failure, deployed airbags, frame damage (may not be economically repairable)
+
+**IMPORTANT**: Only include parts that are DAMAGED. Do not list undamaged parts.
+
+**SECTION 3: OVERALL ASSESSMENT**
+
+**Overall Severity**: Classify as minor, moderate, or severe based on the worst damage present.
+
+**Airbag Deployment**: Set to true if ANY airbags have deployed (look for deployed airbags, open airbag covers, white powder residue). Set to false otherwise.
+
+**Total Loss Determination** (EXTREMELY CONSERVATIVE CRITERIA):
+
+**CRITICAL**: A vehicle is NOT a total loss just because it has significant damage. Total loss means the vehicle is BEYOND ECONOMIC REPAIR or UNSAFE TO DRIVE.
+
+Set totalLoss to **true** ONLY if ALL of these apply:
+1. Frame/chassis is SEVERELY bent, twisted, or buckled (not just minor frame damage)
+2. Cabin has COLLAPSED or has SEVERE intrusion into passenger space
+3. Multiple CRITICAL systems are COMPLETELY destroyed (engine AND transmission AND suspension all non-functional)
+4. Vehicle would be UNSAFE to drive even after repairs
+5. Repair cost would exceed 80% of vehicle value
+
+**EXAMPLES OF TOTAL LOSS:**
+- Vehicle rolled multiple times with crushed roof and collapsed cabin
+- Fire destroyed engine bay, cabin, and trunk completely
+- Complete submersion with water damage throughout all systems
+- Frame twisted beyond repair with cabin intrusion
+- Multiple major impacts destroying engine, transmission, and suspension
+
+**EXAMPLES THAT ARE NOT TOTAL LOSS:**
+- Front and rear body panel damage (bumpers, hood, trunk, fenders, quarter panels)
+- Airbag deployment with repairable damage
+- Single major system damage (engine OR transmission, not both)
+- Cosmetic damage (paint, trim, glass, lights)
+- Repairable frame damage (minor bends that can be straightened)
+- Side impact with door and panel damage but intact frame
+- **THIS MERCEDES GLE EXAMPLE**: Front bumper/hood/grille/headlights + rear bumper/quarter panels damaged = REPAIRABLE, NOT TOTAL LOSS
+
+Set totalLoss to **false** if:
+- Only body panels damaged (bumpers, doors, fenders, hood, trunk, quarter panels)
+- Only cosmetic damage (paint, trim, glass, lights)
+- Single system damage (only engine OR only transmission OR only suspension)
+- Repairable structural damage (frame can be straightened)
+- Airbag deployment alone (NOT sufficient for total loss)
+- Vehicle is still drivable or can be made drivable with repairs
+- Damage is limited to front OR rear (not both with severe structural compromise)
+
+**REMEMBER**: Body panel damage is ALWAYS repairable. Only mark as total loss if the vehicle is truly beyond economic repair or unsafe.
+
+**Summary**: Provide a brief, clear description (2-3 sentences, max 500 characters) including:
 - Most significant damage areas
-${isVehicle ? '- Whether airbags deployed' : ''}
+- Whether airbags deployed
 - Overall assessment of repairability
 
-**IMPORTANT:** Return your assessment as JSON matching this exact schema:
+**RESPONSE FORMAT:**
+Return your assessment as JSON:
 {
-  "structural": number (0-100),
-  "mechanical": number (0-100),
-  "cosmetic": number (0-100),
-  "electrical": number (0-100),
-  "interior": number (0-100),
-  "severity": "minor" | "moderate" | "severe",
-  "airbagDeployed": boolean,
-  "totalLoss": boolean,
-  "summary": string (max 500 characters)
+  "itemDetails": {
+    "detectedMake": "Toyota",
+    "detectedModel": "Camry",
+    "detectedYear": "2020",
+    "color": "White",
+    "trim": "SE",
+    "bodyStyle": "Sedan",
+    "overallCondition": "Good"
+  },
+  "damagedParts": [
+    {"part": "driver front door", "severity": "severe", "confidence": 85},
+    {"part": "front bumper", "severity": "severe", "confidence": 90}
+  ],
+  "severity": "severe",
+  "airbagDeployed": true,
+  "totalLoss": false,
+  "summary": "Severe damage to driver side with deployed airbag. Front bumper and driver door require replacement. Vehicle is repairable but requires significant work."
+}`;
 }
 
-Analyze all provided photos carefully and provide your assessment.`;
+/**
+ * Construct electronics-specific damage assessment prompt
+ */
+function constructElectronicsPrompt(brand: string, model: string, year: number): string {
+  return `You are an expert electronics damage assessor for insurance claims. Analyze the provided photos of a ${brand} ${model} (${year}) and provide an insurance-grade assessment.
+
+**CRITICAL INSTRUCTIONS FOR RESPONSE FORMAT:**
+- Provide ONLY factual data in your JSON response
+- DO NOT include reasoning, explanations, or uncertainty statements in field values
+- If you cannot determine a field with confidence, OMIT it entirely (don't include the key in the JSON)
+- Example of CORRECT response: {"storage": "256GB"}
+- Example of INCORRECT response: {"storage": "256GB (estimated from model number, not fully verified)"}
+- Your response will be shown directly to insurance adjusters and vendors - it must be professional and concise
+- NO parenthetical explanations, NO hedging language, NO reasoning text in any field values
+
+**DEVICE CONTEXT PROVIDED:**
+You have been told this is a ${brand} ${model} (${year}).
+
+**IMPORTANT - DEVICE VERIFICATION:**
+Compare what you see in the photos with the provided device information:
+- If the device in photos MATCHES the provided information (${brand} ${model}), confirm it in itemDetails
+- If the device in photos DOES NOT MATCH the provided information, report what you actually see AND add a note about the discrepancy
+- Example note for mismatch: "Device in photos appears to be an iPhone 12, which differs from the provided information (iPhone 13 Pro). Please verify device information with the claimant."
+
+**SECTION 1: DEVICE IDENTIFICATION**
+
+First, identify the device details:
+- Brand/Model: Confirm or correct the provided information based on what you see
+- Storage capacity: (e.g., 64GB, 128GB, 256GB, 512GB, 1TB) - OMIT if not clearly visible
+- Color: Device color - OMIT if not clearly visible
+- Overall condition: (e.g., Excellent, Good, Fair, Poor) based on visible damage
+- Notes: CRITICAL - If device doesn't match provided info, state the discrepancy here. Otherwise, any distinguishing features or observations
+
+**SECTION 2: DAMAGE ANALYSIS**
+
+Analyze the damage and list ONLY the damaged parts. For each damaged part, provide:
+- **Part name**: Be SPECIFIC (e.g., "front screen glass", "rear camera lens", "charging port", "left speaker")
+- **Severity**: minor, moderate, or severe
+- **Confidence**: 0-100 (how confident you are in this assessment)
+
+**CRITICAL FIELD INSTRUCTIONS:**
+For each field in itemDetails:
+- detectedMake: The brand you see (e.g., "Apple", "Samsung") - NO explanations
+- detectedModel: The model name (e.g., "iPhone 13 Pro", "Galaxy S21") - NO explanations
+- detectedYear: The release year if visible (e.g., "2021", "2020") - NO explanations
+- storage: Storage capacity (e.g., "256GB", "128GB") - OMIT if not clearly visible, NO explanations
+- color: Device color (e.g., "Graphite", "White") - OMIT if not clearly visible, NO explanations
+- overallCondition: Condition assessment (e.g., "Excellent", "Good", "Fair", "Poor") based on visible damage - NO explanations
+- notes: ONLY for device mismatch discrepancies or critical observations - NO reasoning text
+
+**REMEMBER**: If a field is not clearly visible or determinable, OMIT it from your response. Do not include reasoning or uncertainty statements.
+
+**Electronics-Specific Parts to Consider:**
+- **Display**: front screen, digitizer, LCD/OLED panel, screen protector
+- **Housing**: front glass, rear glass/housing, frame, buttons (power, volume, home)
+- **Cameras**: front camera, rear camera (main/wide/telephoto), camera lens, flash
+- **Ports**: charging port, headphone jack, SIM tray, speaker grilles
+- **Internal**: battery, motherboard, internal components, water damage indicators
+- **Accessories**: case, screen protector (if visible)
+
+**Severity Guidelines:**
+- **Minor**: Small scratches, scuffs, minor cosmetic damage (device fully functional)
+- **Moderate**: Cracked screen, dented housing, damaged ports (device partially functional)
+- **Severe**: Shattered screen, bent frame, water damage, non-functional (device not usable)
+
+**IMPORTANT**: Only include parts that are DAMAGED. Do not list undamaged parts.
+
+**SECTION 3: OVERALL ASSESSMENT**
+
+**Overall Severity**: Classify as minor, moderate, or severe based on the worst damage present.
+
+**Airbag Deployment**: Always set to false for electronics.
+
+**Total Loss Determination** (CONSERVATIVE CRITERIA):
+Set totalLoss to **true** ONLY if:
+- Device is bent or structurally compromised (frame damage affecting functionality)
+- Water damage with visible corrosion on internal components
+- Multiple critical components damaged (screen + motherboard + housing)
+- Repair cost would exceed 70% of device replacement cost
+- Device is completely non-functional with no possibility of repair
+
+Set totalLoss to **false** if:
+- Only screen damage (even if severe) - screens are replaceable
+- Only cosmetic damage (scratches, dents, housing cracks)
+- Single component damage (only screen OR only housing OR only camera)
+- Device is still functional or can be made functional with part replacement
+- Repair cost is less than 70% of device replacement cost
+
+**IMPORTANT**: A cracked or shattered screen alone does NOT constitute a total loss. Screens are standard replaceable parts.
+
+**Summary**: Provide a brief, clear description (2-3 sentences, max 500 characters) including:
+- Most significant damage areas
+- Device functionality status
+- Overall assessment of repairability
+
+**RESPONSE FORMAT:**
+Return your assessment as JSON:
+{
+  "itemDetails": {
+    "detectedMake": "Apple",
+    "detectedModel": "iPhone 13 Pro",
+    "detectedYear": "2021",
+    "color": "Graphite",
+    "storage": "256GB",
+    "overallCondition": "Fair"
+  },
+  "damagedParts": [
+    {"part": "front screen glass", "severity": "moderate", "confidence": 90},
+    {"part": "rear camera lens", "severity": "minor", "confidence": 85}
+  ],
+  "severity": "moderate",
+  "airbagDeployed": false,
+  "totalLoss": false,
+  "summary": "Cracked front screen glass with functional LCD. Minor scratch on rear camera lens. Device is functional and repairable."
+}`;
 }
+
+/**
+ * Construct machinery-specific damage assessment prompt
+ */
+function constructMachineryPrompt(brand: string, model: string, year: number): string {
+  return `You are an expert machinery damage assessor for insurance claims. Analyze the provided photos of a ${brand} ${model} (${year}) and provide an insurance-grade assessment.
+
+**CRITICAL INSTRUCTIONS FOR RESPONSE FORMAT:**
+- Provide ONLY factual data in your JSON response
+- DO NOT include reasoning, explanations, or uncertainty statements in field values
+- If you cannot determine a field with confidence, OMIT it entirely (don't include the key in the JSON)
+- Example of CORRECT response: {"overallCondition": "Good"}
+- Example of INCORRECT response: {"overallCondition": "Good (based on visible wear patterns, though some areas are not fully visible)"}
+- Your response will be shown directly to insurance adjusters and vendors - it must be professional and concise
+- NO parenthetical explanations, NO hedging language, NO reasoning text in any field values
+
+**MACHINERY CONTEXT PROVIDED:**
+You have been told this is a ${brand} ${model} (${year}).
+
+**IMPORTANT - MACHINERY VERIFICATION:**
+Compare what you see in the photos with the provided machinery information:
+- If the machinery in photos MATCHES the provided information (${brand} ${model}), confirm it in itemDetails
+- If the machinery in photos DOES NOT MATCH the provided information, report what you actually see AND add a note about the discrepancy
+- Example note for mismatch: "Machinery in photos appears to be a Caterpillar 320D Excavator, which differs from the provided information (Honda EU2200i Generator). Please verify equipment information with the claimant."
+
+**SECTION 1: MACHINERY IDENTIFICATION**
+
+First, identify the machinery details:
+- Type: (e.g., Generator, Tractor, Excavator, Compressor, Pump) - OMIT if not clearly visible
+- Brand/Model: Confirm or correct the provided information based on what you see
+- Overall condition: (e.g., Excellent, Good, Fair, Poor) based on visible damage
+- Notes: CRITICAL - If machinery doesn't match provided info, state the discrepancy here. Otherwise, any distinguishing features or observations
+
+**SECTION 2: DAMAGE ANALYSIS**
+
+Analyze the damage and list ONLY the damaged parts. For each damaged part, provide:
+- **Part name**: Be SPECIFIC (e.g., "engine block", "hydraulic cylinder left side", "control panel display")
+- **Severity**: minor, moderate, or severe
+- **Confidence**: 0-100 (how confident you are in this assessment)
+
+**CRITICAL FIELD INSTRUCTIONS:**
+For each field in itemDetails:
+- detectedMake: The brand you see (e.g., "Honda", "Caterpillar") - NO explanations
+- detectedModel: The model name (e.g., "EU2200i", "320D") - NO explanations
+- detectedYear: The model year if visible (e.g., "2020", "2018") - NO explanations
+- overallCondition: Condition assessment (e.g., "Excellent", "Good", "Fair", "Poor") based on visible damage - NO explanations
+- notes: ONLY for machinery mismatch discrepancies or critical observations - NO reasoning text
+
+**REMEMBER**: If a field is not clearly visible or determinable, OMIT it from your response. Do not include reasoning or uncertainty statements.
+
+**Machinery-Specific Parts to Consider:**
+- **Structural**: frame, chassis, housing, mounting points, protective guards
+- **Mechanical**: engine, motor, transmission, gearbox, drive shaft, belts, chains, bearings
+- **Hydraulic**: hydraulic cylinders, hoses, pumps, valves, fluid reservoir
+- **Electrical**: control panel, wiring, battery, alternator, sensors, switches, display
+- **Operational**: cutting blades, drill bits, attachments, tools, accessories
+- **Safety**: guards, shields, emergency stops, warning labels
+
+**Severity Guidelines:**
+- **Minor**: Cosmetic damage, small dents, scratches, worn paint (fully operational)
+- **Moderate**: Functional damage, damaged components, leaking fluids (partially operational)
+- **Severe**: Structural damage, major mechanical failure, safety hazards (not operational)
+
+**IMPORTANT**: Only include parts that are DAMAGED. Do not list undamaged parts.
+
+**SECTION 3: OVERALL ASSESSMENT**
+
+**Overall Severity**: Classify as minor, moderate, or severe based on the worst damage present.
+
+**Airbag Deployment**: Always set to false for machinery.
+
+**Total Loss Determination** (CONSERVATIVE CRITERIA):
+Set totalLoss to **true** ONLY if:
+- Frame/chassis is bent, twisted, or structurally compromised
+- Engine/motor is destroyed or seized
+- Multiple major systems are destroyed (engine + hydraulics + electrical all severely damaged)
+- Fire damage affecting entire structure
+- Safety hazards that cannot be repaired
+
+Set totalLoss to **false** if:
+- Only housing/guards damaged
+- Only cosmetic damage
+- Single system damage (only engine OR only hydraulics)
+- Repairable structural damage
+- Operational with repairs
+
+**Summary**: Provide a brief, clear description (2-3 sentences, max 500 characters) including:
+- Most significant damage areas
+- Operational status
+- Overall assessment of repairability
+
+**RESPONSE FORMAT:**
+Return your assessment as JSON:
+{
+  "itemDetails": {
+    "detectedMake": "Honda",
+    "detectedModel": "EU2200i",
+    "detectedYear": "2020",
+    "overallCondition": "Good",
+    "notes": "Portable generator"
+  },
+  "damagedParts": [
+    {"part": "engine housing", "severity": "moderate", "confidence": 85},
+    {"part": "control panel display", "severity": "minor", "confidence": 90}
+  ],
+  "severity": "moderate",
+  "airbagDeployed": false,
+  "totalLoss": false,
+  "summary": "Dented engine housing and cracked control panel display. Generator is operational and repairable with replacement parts."
+}`
+;
+}
+
 
 /**
  * Supported image formats for Gemini API
@@ -1477,49 +1801,12 @@ export async function detectDamageWithGemini(
       year: vehicleInfo.year
     });
 
-    // Convert Gemini assessment to DamageDetectionResult format
-    const damagedComponents = [];
-    
-    // Map damage scores to components
-    if (geminiResult.structural > 20) {
-      damagedComponents.push({
-        component: 'structural',
-        severity: geminiResult.structural > 70 ? 'severe' : geminiResult.structural > 40 ? 'moderate' : 'minor',
-        confidence: geminiResult.confidence
-      });
-    }
-    
-    if (geminiResult.mechanical > 20) {
-      damagedComponents.push({
-        component: 'mechanical',
-        severity: geminiResult.mechanical > 70 ? 'severe' : geminiResult.mechanical > 40 ? 'moderate' : 'minor',
-        confidence: geminiResult.confidence
-      });
-    }
-    
-    if (geminiResult.cosmetic > 20) {
-      damagedComponents.push({
-        component: 'cosmetic',
-        severity: geminiResult.cosmetic > 70 ? 'severe' : geminiResult.cosmetic > 40 ? 'moderate' : 'minor',
-        confidence: geminiResult.confidence
-      });
-    }
-    
-    if (geminiResult.electrical > 20) {
-      damagedComponents.push({
-        component: 'electrical',
-        severity: geminiResult.electrical > 70 ? 'severe' : geminiResult.electrical > 40 ? 'moderate' : 'minor',
-        confidence: geminiResult.confidence
-      });
-    }
-    
-    if (geminiResult.interior > 20) {
-      damagedComponents.push({
-        component: 'interior',
-        severity: geminiResult.interior > 70 ? 'severe' : geminiResult.interior > 40 ? 'moderate' : 'minor',
-        confidence: geminiResult.confidence
-      });
-    }
+    // Convert Gemini's damagedParts to DamageDetectionResult format
+    const damagedComponents = geminiResult.damagedParts.map(part => ({
+      component: part.part,
+      severity: part.severity,
+      confidence: part.confidence
+    }));
 
     const result: DamageDetectionResult = {
       overallConfidence: geminiResult.confidence,

@@ -22,7 +22,9 @@
     "db:studio": "drizzle-kit studio",
     "db:apply-optimized-indexes": "tsx scripts/apply-optimized-indexes.ts",
     "db:check-index-usage": "tsx scripts/check-index-usage.ts",
-    "db:cleanup-redundant-indexes": "tsx scripts/cleanup-redundant-indexes.ts"
+    "db:cleanup-redundant-indexes": "tsx scripts/cleanup-redundant-indexes.ts",
+    "socket:verify-auction-id": "tsx scripts/verify-auction-id-match.ts",
+    "socket:diagnose": "tsx scripts/diagnose-socket-io.ts"
   },
   "dependencies": {
     "@google-cloud/documentai": "^9.5.0",

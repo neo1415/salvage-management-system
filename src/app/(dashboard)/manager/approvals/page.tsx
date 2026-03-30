@@ -28,6 +28,7 @@ import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
 import { Star, DollarSign, Check, X, CheckCircle } from 'lucide-react';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
+import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 
 /**
  * Case data structure
@@ -55,6 +56,22 @@ interface CaseData {
       photoQuality: number;
       reasons: string[];
     };
+    itemDetails?: {
+      detectedMake?: string;
+      detectedModel?: string;
+      detectedYear?: string;
+      color?: string;
+      trim?: string;
+      bodyStyle?: string;
+      storage?: string;
+      overallCondition?: string;
+      notes?: string;
+    };
+    damagedParts?: Array<{
+      part: string;
+      severity: 'minor' | 'moderate' | 'severe';
+      confidence: number;
+    }>;
   } | null;
   gpsLocation?: {
     x: number; // longitude
@@ -877,20 +894,31 @@ export default function ApprovalsPage() {
                   <span className="font-medium">{selectedCase.aiAssessment.damagePercentage}%</span>
                 </div>
 
-                {/* Detected Damage */}
-                <div>
-                  <p className="text-gray-600 mb-2">Detected Damage</p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedCase.aiAssessment.labels.map((label, index) => (
-                      <span
-                        key={index}
-                        className="inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-xl text-sm font-medium break-words"
-                      >
-                        {label}
-                      </span>
-                    ))}
+                {/* Gemini Damage Display Component */}
+                <GeminiDamageDisplay
+                  itemDetails={selectedCase.aiAssessment.itemDetails}
+                  damagedParts={selectedCase.aiAssessment.damagedParts}
+                  summary={(selectedCase.aiAssessment as any).recommendation}
+                  showTitle={false}
+                  assetType={selectedCase.assetType}
+                />
+
+                {/* Fallback: Detected Damage (for Vision API or old data) */}
+                {(!selectedCase.aiAssessment.damagedParts || selectedCase.aiAssessment.damagedParts.length === 0) && (
+                  <div>
+                    <p className="text-gray-600 mb-2">Detected Damage</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedCase.aiAssessment.labels.map((label, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-xl text-sm font-medium break-words"
+                        >
+                          {label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>

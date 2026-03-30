@@ -18,6 +18,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Image from 'next/image';
 import { formatNaira, formatAnalysisMethod } from '@/lib/utils/currency-formatter';
 import { LocationMap } from '@/components/ui/location-map';
+import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 
 interface Case {
   id: string;
@@ -202,6 +203,15 @@ export default function CaseDetailsPage() {
               <h2 className="text-xl font-bold text-gray-900">{caseData.claimReference}</h2>
               <p className="text-sm text-gray-600 mt-1">
                 {caseData.assetType.charAt(0).toUpperCase() + caseData.assetType.slice(1)}
+                {/* Show item name, brand, and year if available */}
+                {caseData.assetDetails && typeof caseData.assetDetails === 'object' && (
+                  <>
+                    {(caseData.assetDetails as any).name && ` • ${(caseData.assetDetails as any).name}`}
+                    {(caseData.assetDetails as any).brand && ` • ${(caseData.assetDetails as any).brand}`}
+                    {(caseData.assetDetails as any).make && ` • ${(caseData.assetDetails as any).make}`}
+                    {(caseData.assetDetails as any).year && ` • ${(caseData.assetDetails as any).year}`}
+                  </>
+                )}
               </p>
             </div>
             {getStatusBadge(caseData.status)}
@@ -255,83 +265,73 @@ export default function CaseDetailsPage() {
           (caseData.aiAssessment as any).recommendation || 
           (caseData.aiAssessment as any).labels?.length > 0
         ) && (
-          <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg shadow-md border-2 border-purple-200 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-purple-900 mb-2">
-                  AI Damage Summary
-                </h3>
-                
-                {/* Damage Description - PROSE FORMAT from Gemini */}
-                {(caseData.aiAssessment as any).recommendation && (
-                  <div className="mb-3">
-                    <p className="text-sm text-gray-800 leading-relaxed">
-                      {(caseData.aiAssessment as any).recommendation}
-                    </p>
-                  </div>
-                )}
-                
-                {/* Damage Labels */}
-                {(caseData.aiAssessment as any).labels?.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-xs font-semibold text-gray-700 mb-2">Detected Issues:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(caseData.aiAssessment as any).labels.map((label: string, index: number) => (
-                        <span 
-                          key={index}
-                          className="px-2 py-1 bg-white border border-purple-200 rounded-full text-xs text-gray-700"
-                        >
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Repairability Status - Fixed to show Total Loss when isTotalLoss=true */}
-                {(caseData.aiAssessment as any).isTotalLoss !== undefined ? (
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className={`px-2 py-1 rounded-full font-medium ${
-                      (caseData.aiAssessment as any).isTotalLoss 
-                        ? 'bg-red-100 text-red-800' 
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {(caseData.aiAssessment as any).isTotalLoss ? '✗ Total Loss' : '✓ Repairable'}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <GeminiDamageDisplay
+              itemDetails={(caseData.aiAssessment as any).itemDetails}
+              damagedParts={(caseData.aiAssessment as any).damagedParts}
+              summary={(caseData.aiAssessment as any).recommendation}
+              showTitle={true}
+              assetType={caseData.assetType}
+            />
+            
+            {/* Damage Labels - Fallback for Vision API or old data */}
+            {(caseData.aiAssessment as any).labels?.length > 0 && (
+              !(caseData.aiAssessment as any).damagedParts || (caseData.aiAssessment as any).damagedParts.length === 0
+            ) && (
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-gray-700 mb-2">Detected Issues:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(caseData.aiAssessment as any).labels.map((label: string, index: number) => (
+                    <span 
+                      key={index}
+                      className="px-2 py-1 bg-gray-100 border border-gray-200 rounded-full text-xs text-gray-700"
+                    >
+                      {label}
                     </span>
-                    {(caseData.aiAssessment as any).estimatedRepairCost && (
-                      <span className="text-gray-600">
-                        Est. Repair: {formatNaira((caseData.aiAssessment as any).estimatedRepairCost)}
-                      </span>
-                    )}
-                  </div>
-                ) : (caseData.aiAssessment as any).isRepairable !== undefined ? (
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className={`px-2 py-1 rounded-full font-medium ${
-                      (caseData.aiAssessment as any).isRepairable 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {(caseData.aiAssessment as any).isRepairable ? '✓ Repairable' : '✗ Total Loss'}
-                    </span>
-                    {(caseData.aiAssessment as any).estimatedRepairCost && (
-                      <span className="text-gray-600">
-                        Est. Repair: {formatNaira((caseData.aiAssessment as any).estimatedRepairCost)}
-                      </span>
-                    )}
-                  </div>
-                ) : null}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+            
+            {/* Repairability Status - Fixed to show Total Loss when isTotalLoss=true */}
+            {(caseData.aiAssessment as any).isTotalLoss !== undefined ? (
+              <div className="flex items-center gap-2 text-xs mt-4">
+                <span className={`px-2 py-1 rounded-full font-medium ${
+                  (caseData.aiAssessment as any).isTotalLoss 
+                    ? 'bg-red-100 text-red-800' 
+                    : 'bg-green-100 text-green-800'
+                }`}>
+                  {(caseData.aiAssessment as any).isTotalLoss ? '✗ Total Loss' : '✓ Repairable'}
+                </span>
+                {/* COMMENTED OUT: Est. Repair Cost - per user request */}
+                {/* {(caseData.aiAssessment as any).estimatedRepairCost && (
+                  <span className="text-gray-600">
+                    Est. Repair: {formatNaira((caseData.aiAssessment as any).estimatedRepairCost)}
+                  </span>
+                )} */}
+              </div>
+            ) : (caseData.aiAssessment as any).isRepairable !== undefined ? (
+              <div className="flex items-center gap-2 text-xs mt-4">
+                <span className={`px-2 py-1 rounded-full font-medium ${
+                  (caseData.aiAssessment as any).isRepairable 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-red-100 text-red-800'
+                }`}>
+                  {(caseData.aiAssessment as any).isRepairable ? '✓ Repairable' : '✗ Total Loss'}
+                </span>
+                {/* COMMENTED OUT: Est. Repair Cost - per user request */}
+                {/* {(caseData.aiAssessment as any).estimatedRepairCost && (
+                  <span className="text-gray-600">
+                    Est. Repair: {formatNaira((caseData.aiAssessment as any).estimatedRepairCost)}
+                  </span>
+                )} */}
+              </div>
+            ) : null}
           </div>
         )}
 
-        {/* AI Assessment Details - SINGLE SECTION ONLY */}
-        {caseData.damageSeverity && caseData.aiAssessment && (
+        {/* COMMENTED OUT: AI Assessment Details - REDUNDANT with Gemini display above */}
+        {/* {caseData.damageSeverity && caseData.aiAssessment && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <h3 className="font-bold text-gray-900 mb-3">AI Assessment Details</h3>
             <div className="space-y-3">
@@ -340,7 +340,6 @@ export default function CaseDetailsPage() {
                 {getSeverityBadge(caseData.damageSeverity)}
               </div>
               
-              {/* Damage Scores - Technical Breakdown */}
               {typeof caseData.aiAssessment === 'object' && 'damageScore' in caseData.aiAssessment && (
                 <div className="mt-4 space-y-2">
                   <h4 className="text-sm font-semibold text-gray-700">Damage Breakdown</h4>
@@ -365,9 +364,6 @@ export default function CaseDetailsPage() {
                 </div>
               )}
               
-              {/* Confidence Metrics - REMOVED per user request */}
-              
-              {/* Valuation Details with Currency Formatting */}
               {caseData.estimatedSalvageValue && (
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
                   <span className="text-sm text-gray-600">Estimated Salvage Value</span>
@@ -385,7 +381,6 @@ export default function CaseDetailsPage() {
                 </div>
               )}
               
-              {/* Analysis Method - Shows actual method used (gemini/vision/neutral) + price source */}
               {typeof caseData.aiAssessment === 'object' && 'analysisMethod' in caseData.aiAssessment && (
                 <div className="mt-3 pt-3 border-t border-gray-200">
                   <div className="flex items-center justify-between text-xs">
@@ -401,7 +396,7 @@ export default function CaseDetailsPage() {
               )}
             </div>
           </div>
-        )}
+        )} */}
         
         {/* Voice Notes Display */}
         {caseData.voiceNotes && Array.isArray(caseData.voiceNotes) && caseData.voiceNotes.length > 0 && (
@@ -434,10 +429,19 @@ export default function CaseDetailsPage() {
               </span>
             </div>
             {caseData.assetDetails && typeof caseData.assetDetails === 'object' && Object.entries(caseData.assetDetails).map(([key, value]) => {
-              // Format the value based on type
+              // Only format as currency if the key contains "price", "value", or "cost"
+              const isCurrency = key.toLowerCase().includes('price') || 
+                                 key.toLowerCase().includes('value') || 
+                                 key.toLowerCase().includes('cost');
+              
               let displayValue = String(value);
-              if (typeof value === 'number' && value >= 1000) {
-                displayValue = value.toLocaleString();
+              
+              // Format currency fields with Naira symbol
+              if (isCurrency && typeof value === 'number') {
+                displayValue = formatNaira(value);
+              } else {
+                // For non-currency fields, just display as-is (no thousand separators for years, etc.)
+                displayValue = String(value);
               }
               
               return (

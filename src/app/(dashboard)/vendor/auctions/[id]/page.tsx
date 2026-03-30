@@ -31,7 +31,7 @@ import { ReleaseFormModal } from '@/components/documents/release-form-modal';
 import { useAuctionWatch, useAuctionUpdates } from '@/hooks/use-socket';
 import { formatConditionForDisplay, type QualityTier } from '@/features/valuations/services/condition-mapping.service';
 import { useToast } from '@/components/ui/toast';
-import { useAuctionExpiryCheck } from '@/hooks/use-auction-expiry-check';
+import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 
 const PaymentUnlockedModal = dynamic(
   () => import('@/components/modals/payment-unlocked-modal'),
@@ -65,6 +65,22 @@ interface AuctionDetails {
       confidenceScore: number;
       damagePercentage: number;
       processedAt: string;
+      itemDetails?: {
+        detectedMake?: string;
+        detectedModel?: string;
+        detectedYear?: string;
+        color?: string;
+        trim?: string;
+        bodyStyle?: string;
+        storage?: string;
+        overallCondition?: string;
+        notes?: string;
+      };
+      damagedParts?: Array<{
+        part: string;
+        severity: 'minor' | 'moderate' | 'severe';
+        confidence: number;
+      }>;
     };
     gpsLocation: {
       x: number; // longitude
@@ -102,6 +118,10 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   const [isWatching, setIsWatching] = useState(false);
   const [isWatchLoading, setIsWatchLoading] = useState(false);
   
+  // Real-time UI feedback state
+  const [showNewBidAnimation, setShowNewBidAnimation] = useState(false);
+  const [showExtensionNotification, setShowExtensionNotification] = useState(false);
+  
   // Document state
   const [documents, setDocuments] = useState<Array<{
     id: string;
@@ -131,47 +151,88 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   // Real-time updates via Socket.io
   const { watchingCount } = useAuctionWatch(resolvedParams.id);
-  const { auction: realtimeAuction, latestBid } = useAuctionUpdates(resolvedParams.id);
+  const { 
+    auction: realtimeAuction, 
+    latestBid, 
+    usingPolling,
+    isClosing,
+    documentsGenerating,
+    generatedDocuments,
+  } = useAuctionUpdates(resolvedParams.id);
 
-  // Real-time auction expiry check - closes auction immediately when timer expires
-  // CRITICAL FIX: Hook must run when auction is loaded, regardless of status
-  // This ensures expired auctions are closed immediately on page refresh
-  useAuctionExpiryCheck({
-    auctionId: resolvedParams.id,
-    endTime: auction?.endTime || new Date().toISOString(),
-    status: auction?.status || 'closed',
-    enabled: !!auction, // Run whenever auction data is loaded
-    onAuctionClosed: async () => {
-      console.log('🎯 Auction expired and closed! Refreshing data...');
-      // Refresh auction data to show closed status and documents
-      try {
-        const response = await fetch(`/api/auctions/${resolvedParams.id}`);
-        if (response.ok) {
-          const data = await response.json();
-          setAuction(data.auction);
-          toast.info('Auction Closed', 'This auction has ended');
-          
-          // CRITICAL FIX: Fetch documents immediately after auction closes
-          // This ensures documents show up without requiring a page reload
-          if (session?.user?.vendorId && data.auction.currentBidder === session.user.vendorId) {
-            console.log('🔄 Fetching documents after auction closure...');
-            await fetchDocuments(resolvedParams.id, session.user.vendorId);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to refresh auction after closure:', error);
+  // Client-side timer to close auction when it expires (replaces useAuctionExpiryCheck)
+  useEffect(() => {
+    // CRITICAL FIX: Timer should work for BOTH 'active' AND 'extended' statuses
+    if (!auction || (auction.status !== 'active' && auction.status !== 'extended')) return;
+    
+    const endTime = new Date(auction.endTime);
+    const now = new Date();
+    const timeUntilEnd = endTime.getTime() - now.getTime();
+    
+    console.log(`⏰ Setting up auction close timer:`, {
+      auctionId: auction.id,
+      status: auction.status,
+      endTime: endTime.toISOString(),
+      now: now.toISOString(),
+      timeUntilEnd: `${Math.round(timeUntilEnd / 1000)}s`,
+    });
+    
+    if (timeUntilEnd <= 0) {
+      // Already expired - close immediately
+      console.log(`🎯 Auction already expired, closing now`);
+      handleAuctionClose();
+    } else {
+      // Set timer to close when expires
+      const timer = setTimeout(() => {
+        console.log(`⏰ Timer fired! Closing auction ${auction.id}`);
+        handleAuctionClose();
+      }, timeUntilEnd);
+      
+      return () => {
+        console.log(`🧹 Clearing timer for auction ${auction.id}`);
+        clearTimeout(timer);
+      };
+    }
+  }, [auction?.id, auction?.endTime, auction?.status]);
+
+  const handleAuctionClose = async () => {
+    if (!auction) return;
+    
+    try {
+      console.log(`🎯 Closing auction ${auction.id}...`);
+      toast.info('Closing Auction', 'Auction time has expired');
+      
+      const response = await fetch(`/api/auctions/${auction.id}/close`, {
+        method: 'POST',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`✅ Auction closure initiated:`, data);
+        // Socket.io will handle real-time updates
+      } else {
+        const error = await response.json();
+        console.error(`❌ Failed to close auction:`, error);
+        toast.error('Closure Failed', error.error || 'Please refresh the page');
       }
-    },
-  });
+    } catch (error) {
+      console.error('Error closing auction:', error);
+      toast.error('Closure Failed', 'Please refresh the page');
+    }
+  };
 
   // Use ref to track if we've already shown notification for this bid
   const lastNotifiedBidRef = useRef<string | null>(null);
 
-  // Show outbid notification - use useCallback to prevent recreation
+  // Show outbid notification and visual feedback - use useCallback to prevent recreation
   useEffect(() => {
     if (latestBid && auction && latestBid.id !== lastNotifiedBidRef.current) {
       // Mark this bid as notified
       lastNotifiedBidRef.current = latestBid.id;
+      
+      // Trigger visual animation for new bid
+      setShowNewBidAnimation(true);
+      setTimeout(() => setShowNewBidAnimation(false), 2000);
       
       // Check if the current user was the previous highest bidder
       const wasHighestBidder = auction.currentBidder && latestBid.vendorId !== auction.currentBidder;
@@ -191,6 +252,21 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       }
     }
   }, [latestBid?.id, auction?.currentBidder, toast]); // Add stable dependencies
+  
+  // Show extension notification
+  const lastExtensionCountRef = useRef<number>(0);
+  useEffect(() => {
+    if (auction && auction.extensionCount > lastExtensionCountRef.current) {
+      lastExtensionCountRef.current = auction.extensionCount;
+      setShowExtensionNotification(true);
+      setTimeout(() => setShowExtensionNotification(false), 5000);
+      
+      toast.info(
+        '⏰ Auction Extended',
+        'Auction extended by 2 minutes due to last-minute bid'
+      );
+    }
+  }, [auction?.extensionCount, toast]);
 
   // Fetch documents for closed auction
   const fetchDocuments = useCallback(async (auctionId: string, vendorId: string) => {
@@ -657,27 +733,112 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               <span className="font-medium">Back</span>
             </button>
 
-            {/* Status Badge */}
-            <span
-              className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                auction.status === 'active'
-                  ? 'bg-green-500 text-white'
-                  : auction.status === 'extended'
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-gray-500 text-white'
-              }`}
-            >
-              {auction.status === 'active' && '🟢 Active'}
-              {auction.status === 'extended' && '🟠 Extended'}
-              {auction.status === 'closed' && '⚫ Closed'}
-              {auction.status === 'cancelled' && '⚫ Cancelled'}
-            </span>
+            <div className="flex items-center gap-3">
+              {/* Connection Status Indicator (dev mode only) */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                  {usingPolling ? (
+                    <>
+                      <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                      <span>Polling ⚠️</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                      <span>WebSocket ✅</span>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Status Badge */}
+              <span
+                className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                  auction.status === 'active'
+                    ? 'bg-green-500 text-white'
+                    : auction.status === 'extended'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-gray-500 text-white'
+                }`}
+              >
+                {auction.status === 'active' && '🟢 Active'}
+                {auction.status === 'extended' && '🟠 Extended'}
+                {auction.status === 'closed' && '⚫ Closed'}
+                {auction.status === 'cancelled' && '⚫ Cancelled'}
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Extension Notification Banner */}
+        {showExtensionNotification && (
+          <div className="bg-gradient-to-r from-orange-500 to-yellow-500 border-2 border-orange-600 rounded-lg shadow-lg p-4 mb-6 animate-pulse">
+            <div className="flex items-center gap-3">
+              <svg className="w-8 h-8 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-white">
+                  ⏰ Auction Extended by 2 Minutes!
+                </h3>
+                <p className="text-white/90 text-sm">
+                  A bid was placed in the last 5 minutes. The auction will continue for 2 more minutes.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Document Generation Loading State */}
+        {isClosing && (
+          <div className="bg-blue-50 border-2 border-blue-400 rounded-lg shadow-lg p-6 mb-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-blue-900 mb-2">
+                  Closing Auction...
+                </h3>
+                {documentsGenerating && (
+                  <>
+                    <p className="text-blue-700 mb-3">
+                      Generating your documents: {generatedDocuments.length}/2
+                    </p>
+                    <div className="space-y-2">
+                      {['bill_of_sale', 'liability_waiver'].map(docType => {
+                        const isGenerated = generatedDocuments.includes(docType);
+                        return (
+                          <div key={docType} className="flex items-center gap-2">
+                            {isGenerated ? (
+                              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                            )}
+                            <span className={isGenerated ? 'text-green-700 font-medium' : 'text-blue-700'}>
+                              {docType === 'bill_of_sale' ? 'Bill of Sale' : 'Liability Waiver'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+                {!documentsGenerating && generatedDocuments.length === 2 && (
+                  <p className="text-green-700 font-semibold">
+                    ✅ All documents ready! Finalizing closure...
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Document Signing Section (if won but not all signed) */}
         {auction.status === 'closed' && 
          session?.user?.vendorId && 
@@ -982,22 +1143,31 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
             {/* Detected Damage */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Detected Damage</h3>
+              <GeminiDamageDisplay
+                itemDetails={auction.case.aiAssessment.itemDetails}
+                damagedParts={auction.case.aiAssessment.damagedParts}
+                summary={(auction.case.aiAssessment as any).recommendation}
+                showTitle={true}
+                assetType={auction.case.assetType}
+              />
               
-              {/* Damage Labels */}
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Damage Components</p>
-                <div className="flex flex-wrap gap-2">
-                  {auction.case.aiAssessment.labels.map((label, index) => (
-                    <span
-                      key={index}
-                      className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium break-words"
-                    >
-                      {label}
-                    </span>
-                  ))}
+              {/* Fallback: Damage Labels (for Vision API or old data) */}
+              {(!auction.case.aiAssessment.damagedParts || auction.case.aiAssessment.damagedParts.length === 0) && (
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-4">Detected Damage</h3>
+                  <p className="text-sm text-gray-600 mb-2">Damage Components</p>
+                  <div className="flex flex-wrap gap-2">
+                    {auction.case.aiAssessment.labels.map((label, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium break-words"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* GPS Location */}
@@ -1177,18 +1347,60 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                   <p className="text-sm text-gray-600 mb-2">
                     {currentBid ? 'Current Bid' : 'Starting Bid (Reserve Price)'}
                   </p>
-                  <p className="text-3xl font-bold text-[#800020] mb-4">
-                    ₦{(currentBid || reservePrice).toLocaleString()}
-                  </p>
+                  <div className={`transition-all duration-500 ${showNewBidAnimation ? 'scale-110 bg-yellow-100 rounded-lg p-2' : ''}`}>
+                    <p className="text-3xl font-bold text-[#800020] mb-4">
+                      ₦{(currentBid || reservePrice).toLocaleString()}
+                    </p>
+                  </div>
                   <p className="text-sm text-gray-600">
                     Minimum Bid: ₦{minimumBid.toLocaleString()}
                   </p>
+                  
+                  {/* Show vendor's own current bid if they have one */}
+                  {session?.user?.vendorId && auction.bids.length > 0 && (() => {
+                    const vendorBids = auction.bids.filter(b => b.vendorId === session.user.vendorId);
+                    if (vendorBids.length > 0) {
+                      const highestVendorBid = Math.max(...vendorBids.map(b => Number(b.amount)));
+                      const isWinning = auction.currentBidder === session.user.vendorId;
+                      return (
+                        <div className={`mt-3 p-3 rounded-lg ${isWinning ? 'bg-green-50 border border-green-200' : 'bg-blue-50 border border-blue-200'}`}>
+                          <p className="text-xs text-gray-600 mb-1">Your Current Bid</p>
+                          <p className={`text-lg font-bold ${isWinning ? 'text-green-700' : 'text-blue-700'}`}>
+                            ₦{highestVendorBid.toLocaleString()}
+                          </p>
+                          {isWinning && (
+                            <p className="text-xs text-green-600 font-semibold mt-1 flex items-center justify-center gap-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              You're winning!
+                            </p>
+                          )}
+                          {!isWinning && (
+                            <p className="text-xs text-orange-600 font-semibold mt-1">
+                              You've been outbid
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                  
+                  {showNewBidAnimation && (
+                    <div className="mt-2 flex items-center justify-center gap-2 text-green-600 animate-bounce">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                      <span className="text-sm font-semibold">New Bid!</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Watching Count */}
               <div className="bg-white rounded-lg shadow-md p-6">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -1204,6 +1416,20 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     </span>
                   )}
                 </div>
+                
+                {/* Real-time Updates Indicator */}
+                {!usingPolling && (
+                  <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 px-3 py-2 rounded-lg">
+                    <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    <span className="font-medium">Live updates active</span>
+                  </div>
+                )}
+                {usingPolling && (
+                  <div className="flex items-center gap-2 text-xs text-yellow-600 bg-yellow-50 px-3 py-2 rounded-lg">
+                    <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                    <span className="font-medium">Updates every 3 seconds</span>
+                  </div>
+                )}
               </div>
 
               {/* Action Buttons */}

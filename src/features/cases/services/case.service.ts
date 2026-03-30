@@ -118,6 +118,23 @@ export interface CreateCaseInput {
     warnings?: string[];
     analysisMethod?: 'gemini' | 'vision' | 'neutral' | 'mock';
     qualityTier?: string;
+    // CRITICAL: Detailed Gemini analysis results
+    itemDetails?: {
+      detectedMake?: string;
+      detectedModel?: string;
+      detectedYear?: string;
+      color?: string;
+      trim?: string;
+      bodyStyle?: string;
+      storage?: string;
+      overallCondition?: string;
+      notes?: string;
+    };
+    damagedParts?: Array<{
+      part: string;
+      severity: 'minor' | 'moderate' | 'severe';
+      confidence: number;
+    }>;
   };
 }
 
@@ -401,6 +418,9 @@ export async function createCase(
         photoCount: photoUrls.length,
         qualityTier: (input.aiAssessmentResult.qualityTier || 'fair') as any,
         marketValue: input.marketValue,
+        // CRITICAL: Extract detailed Gemini analysis results
+        itemDetails: input.aiAssessmentResult.itemDetails,
+        damagedParts: input.aiAssessmentResult.damagedParts,
       };
       
       console.log('🎯 Using frontend severity assessment:', aiAssessment.damageSeverity);
@@ -467,6 +487,9 @@ export async function createCase(
         warnings: aiAssessment.warnings,
         analysisMethod: aiAssessment.analysisMethod,
         photoCount: aiAssessment.photoCount,
+        // CRITICAL: Store detailed Gemini analysis results
+        itemDetails: aiAssessment.itemDetails,
+        damagedParts: aiAssessment.damagedParts,
       } : null,
       gpsLocation: [input.gpsLocation.latitude, input.gpsLocation.longitude] as [number, number],
       locationName: input.locationName,

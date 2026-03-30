@@ -268,6 +268,9 @@ export async function POST(request: NextRequest) {
       confidence: assessment.confidenceScore,
       salvageValue: assessment.estimatedSalvageValue,
       marketValue: assessment.marketValue,
+      itemDetails: assessment.itemDetails,
+      damagedPartsCount: assessment.damagedParts?.length || 0,
+      isTotalLoss: assessment.isTotalLoss,
     });
 
     return NextResponse.json({
@@ -284,12 +287,15 @@ export async function POST(request: NextRequest) {
         damageScore: assessment.damageScore, // CRITICAL FIX: Return actual damage scores
         isTotalLoss: assessment.isTotalLoss, // CRITICAL FIX: Return total loss indicator
         isRepairable: assessment.isRepairable,
-        recommendation: assessment.recommendation,
+        recommendation: assessment.summary || assessment.recommendation, // CRITICAL FIX: Use Gemini's summary if available, fallback to recommendation
         warnings: assessment.warnings,
         confidence: assessment.confidence,
         analysisMethod: assessment.analysisMethod, // CRITICAL FIX: Return analysis method
         qualityTier: assessment.qualityTier, // Return quality tier
         priceSource: assessment.priceSource, // CRITICAL FIX: Return price source
+        // CRITICAL FIX: Return detailed Gemini analysis results
+        itemDetails: assessment.itemDetails, // Item identification from Gemini
+        damagedParts: assessment.damagedParts, // Detailed damaged parts list from Gemini
         // Add metadata for progress indicators
         dataSource: 'internet', // Default to internet search
         searchQuery: universalItemData ? 

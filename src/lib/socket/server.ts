@@ -30,6 +30,18 @@ export interface ServerToClientEvents {
   'auction:closed': (data: { auctionId: string; winnerId: string }) => void;
   'auction:watching-count': (data: { auctionId: string; count: number }) => void;
 
+  // NEW: Auction closure with document generation
+  'auction:closing': (data: { auctionId: string }) => void;
+  'auction:document-generated': (data: { 
+    auctionId: string; 
+    documentType: string;
+    documentId: string;
+  }) => void;
+  'auction:document-generation-complete': (data: { 
+    auctionId: string;
+    totalDocuments: number;
+  }) => void;
+
   // Vendor notifications
   'vendor:outbid': (data: { auctionId: string; newBid: number }) => void;
   'vendor:won': (data: { auctionId: string; amount: number }) => void;
@@ -73,12 +85,29 @@ export type AuthenticatedSocket = Socket<
 >;
 
 // Global Socket.io server instance
+// CRITICAL FIX: Use Node.js global object to share instance across module boundaries
+// This fixes Next.js module loading issues where different compilations create separate instances
+declare global {
+  var __socketIOServer: SocketIOServer<
+    ClientToServerEvents,
+    ServerToClientEvents,
+    InterServerEvents,
+    SocketData
+  > | null | undefined;
+}
+
+// Initialize global if it doesn't exist
+if (typeof global.__socketIOServer === 'undefined') {
+  global.__socketIOServer = null;
+}
+
+// Module-level reference (for backward compatibility)
 let io: SocketIOServer<
   ClientToServerEvents,
   ServerToClientEvents,
   InterServerEvents,
   SocketData
-> | null = null;
+> | null = global.__socketIOServer || null;
 
 /**
  * Initialize Socket.io server
@@ -87,7 +116,18 @@ let io: SocketIOServer<
  * This enables horizontal scaling - messages are broadcast to all servers
  */
 export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
+  console.log('🔧 initializeSocketServer() called');
+  
+  // Check global first
+  if (global.__socketIOServer) {
+    console.log('✅ Socket.io server already initialized (from global), returning existing instance');
+    io = global.__socketIOServer;
+    return io;
+  }
+  
   if (io) {
+    console.log('✅ Socket.io server already initialized (from module), returning existing instance');
+    global.__socketIOServer = io;
     return io;
   }
 
@@ -110,6 +150,9 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
     maxHttpBufferSize: 1e6, // 1MB max message size
     connectTimeout: 45000, // 45 second connection timeout
   });
+
+  // CRITICAL: Store in global object to share across module boundaries
+  global.__socketIOServer = io;
 
   // SCALABILITY: Configure Redis adapter for horizontal scaling
   // This enables pub/sub across multiple server instances
@@ -139,7 +182,11 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
   // Connection handler
   io.on('connection', handleConnection);
 
-  console.log('✅ Socket.io server initialized');
+  console.log('✅ Socket.io server initialized successfully');
+  console.log(`   - CORS origin: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}`);
+  console.log(`   - Transports: websocket, polling`);
+  console.log(`   - Server instance created and ready`);
+  console.log(`   - Stored in global.__socketIOServer for cross-module access`);
 
   return io;
 }
@@ -232,8 +279,19 @@ function registerAuctionWatchingHandlers(socket: AuthenticatedSocket) {
   // Watch auction
   socket.on('auction:watch', async ({ auctionId }) => {
     try {
+      console.log(`👁️ auction:watch event received`);
+      console.log(`   - User ID: ${socket.data.userId}`);
+      console.log(`   - Auction ID: ${auctionId}`);
+      console.log(`   - Socket ID: ${socket.id}`);
+      
       // Join auction room
       socket.join(`auction:${auctionId}`);
+      
+      console.log(`✅ User ${socket.data.userId} joined room: auction:${auctionId}`);
+      
+      // Verify room membership
+      const rooms = Array.from(socket.rooms);
+      console.log(`   - Socket rooms: ${rooms.join(', ')}`);
 
       // Track auction view (will increment after 10 seconds)
       if (socket.data.vendorId) {
@@ -330,53 +388,100 @@ async function handleDisconnection(socket: AuthenticatedSocket) {
  * Broadcast new bid to all auction viewers
  */
 export async function broadcastNewBid(auctionId: string, bid: any) {
-  if (!io) {
-    console.warn('Socket.io server not initialized');
+  console.log(`🔔 broadcastNewBid() called for auction ${auctionId}`);
+  
+  // CRITICAL FIX: Use getSocketServer() instead of module-level io variable
+  // This fixes Next.js module loading issues where API routes see io as null
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
+    console.error('❌ Socket.io server not initialized - cannot broadcast bid');
+    console.error('   - This means io is null/undefined');
+    console.error('   - Check that initializeSocketServer() was called in server.ts');
     return;
   }
 
-  // Calculate new minimum bid (current bid + ₦20,000)
-  const currentBid = Number(bid.amount);
-  const minimumBid = currentBid + 20000;
+  try {
+    // Calculate new minimum bid (current bid + ₦20,000)
+    const currentBid = Number(bid.amount);
+    const minimumBid = currentBid + 20000;
 
-  io.to(`auction:${auctionId}`).emit('auction:new-bid', {
-    auctionId,
-    bid: {
-      ...bid,
-      minimumBid, // Include the new minimum bid for realtime updates
-    },
-  });
+    // Get room info for debugging
+    const room = socketServer.sockets.adapter.rooms.get(`auction:${auctionId}`);
+    const clientCount = room ? room.size : 0;
+    
+    console.log(`📢 Broadcasting to room: auction:${auctionId}`);
+    console.log(`   - Clients in room: ${clientCount}`);
+    console.log(`   - Bid amount: ₦${currentBid.toLocaleString()}`);
+    console.log(`   - New minimum bid: ₦${minimumBid.toLocaleString()}`);
+    console.log(`   - EVENT NAME: 'auction:new-bid'`);
+    console.log(`   - Payload:`, JSON.stringify({
+      auctionId,
+      bid: {
+        ...bid,
+        minimumBid,
+      },
+    }, null, 2));
 
-  console.log(`📢 Broadcasted new bid for auction ${auctionId} with minimum bid ₦${minimumBid.toLocaleString()}`);
+    socketServer.to(`auction:${auctionId}`).emit('auction:new-bid', {
+      auctionId,
+      bid: {
+        ...bid,
+        minimumBid, // Include the new minimum bid for realtime updates
+      },
+    });
+
+    console.log(`✅ Broadcast successful for auction ${auctionId}`);
+  } catch (error) {
+    console.error(`❌ Failed to broadcast new bid for auction ${auctionId}:`, error);
+    console.error('   - Error details:', error instanceof Error ? error.message : 'Unknown error');
+  }
 }
 
 /**
  * Broadcast auction update
  */
 export async function broadcastAuctionUpdate(auctionId: string, auction: any) {
-  if (!io) {
-    console.warn('Socket.io server not initialized');
+  console.log(`🔔 broadcastAuctionUpdate() called for auction ${auctionId}`);
+  
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
+    console.error('❌ Socket.io server not initialized - cannot broadcast update');
     return;
   }
 
-  io.to(`auction:${auctionId}`).emit('auction:updated', {
-    auctionId,
-    auction,
-  });
+  try {
+    const room = socketServer.sockets.adapter.rooms.get(`auction:${auctionId}`);
+    const clientCount = room ? room.size : 0;
+    
+    console.log(`📢 Broadcasting auction update to room: auction:${auctionId}`);
+    console.log(`   - Clients in room: ${clientCount}`);
+    console.log(`   - Status: ${auction.status}`);
 
-  console.log(`📢 Broadcasted auction update for ${auctionId}`);
+    socketServer.to(`auction:${auctionId}`).emit('auction:updated', {
+      auctionId,
+      auction,
+    });
+
+    console.log(`✅ Auction update broadcast successful for ${auctionId}`);
+  } catch (error) {
+    console.error(`❌ Failed to broadcast auction update for ${auctionId}:`, error);
+  }
 }
 
 /**
  * Broadcast auction extension
  */
 export async function broadcastAuctionExtension(auctionId: string, newEndTime: Date) {
-  if (!io) {
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
     console.warn('Socket.io server not initialized');
     return;
   }
 
-  io.to(`auction:${auctionId}`).emit('auction:extended', {
+  socketServer.to(`auction:${auctionId}`).emit('auction:extended', {
     auctionId,
     newEndTime,
   });
@@ -388,29 +493,46 @@ export async function broadcastAuctionExtension(auctionId: string, newEndTime: D
  * Broadcast auction closure
  */
 export async function broadcastAuctionClosure(auctionId: string, winnerId: string) {
-  if (!io) {
-    console.warn('Socket.io server not initialized');
+  console.log(`🔔 broadcastAuctionClosure() called for auction ${auctionId}`);
+  
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
+    console.error('❌ Socket.io server not initialized - cannot broadcast closure');
     return;
   }
 
-  io.to(`auction:${auctionId}`).emit('auction:closed', {
-    auctionId,
-    winnerId,
-  });
+  try {
+    const room = socketServer.sockets.adapter.rooms.get(`auction:${auctionId}`);
+    const clientCount = room ? room.size : 0;
+    
+    console.log(`📢 Broadcasting auction closure to room: auction:${auctionId}`);
+    console.log(`   - Clients in room: ${clientCount}`);
+    console.log(`   - Winner ID: ${winnerId}`);
 
-  console.log(`📢 Broadcasted auction closure for ${auctionId}`);
+    socketServer.to(`auction:${auctionId}`).emit('auction:closed', {
+      auctionId,
+      winnerId,
+    });
+
+    console.log(`✅ Auction closure broadcast successful for ${auctionId}`);
+  } catch (error) {
+    console.error(`❌ Failed to broadcast auction closure for ${auctionId}:`, error);
+  }
 }
 
 /**
  * Notify vendor they've been outbid
  */
 export async function notifyVendorOutbid(vendorId: string, auctionId: string, newBid: number) {
-  if (!io) {
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
     console.warn('Socket.io server not initialized');
     return;
   }
 
-  io.to(`vendor:${vendorId}`).emit('vendor:outbid', {
+  socketServer.to(`vendor:${vendorId}`).emit('vendor:outbid', {
     auctionId,
     newBid,
   });
@@ -422,12 +544,14 @@ export async function notifyVendorOutbid(vendorId: string, auctionId: string, ne
  * Notify vendor they've won auction
  */
 export async function notifyVendorWon(vendorId: string, auctionId: string, amount: number) {
-  if (!io) {
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
     console.warn('Socket.io server not initialized');
     return;
   }
 
-  io.to(`vendor:${vendorId}`).emit('vendor:won', {
+  socketServer.to(`vendor:${vendorId}`).emit('vendor:won', {
     auctionId,
     amount,
   });
@@ -439,12 +563,14 @@ export async function notifyVendorWon(vendorId: string, auctionId: string, amoun
  * Send notification to specific user
  */
 export async function sendNotificationToUser(userId: string, notification: any) {
-  if (!io) {
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
     console.warn('Socket.io server not initialized');
     return;
   }
 
-  io.to(`user:${userId}`).emit('notification:new', {
+  socketServer.to(`user:${userId}`).emit('notification:new', {
     notification,
   });
 
@@ -452,8 +578,118 @@ export async function sendNotificationToUser(userId: string, notification: any) 
 }
 
 /**
+ * Broadcast auction closing (document generation starting)
+ */
+export async function broadcastAuctionClosing(auctionId: string) {
+  console.log(`🔔 broadcastAuctionClosing() called for auction ${auctionId}`);
+  
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
+    console.error('❌ Socket.io server not initialized - cannot broadcast closing');
+    return;
+  }
+
+  try {
+    const room = socketServer.sockets.adapter.rooms.get(`auction:${auctionId}`);
+    const clientCount = room ? room.size : 0;
+    
+    console.log(`📢 Broadcasting auction closing to room: auction:${auctionId}`);
+    console.log(`   - Clients in room: ${clientCount}`);
+
+    socketServer.to(`auction:${auctionId}`).emit('auction:closing', {
+      auctionId,
+    });
+
+    console.log(`✅ Auction closing broadcast successful for ${auctionId}`);
+  } catch (error) {
+    console.error(`❌ Failed to broadcast auction closing for ${auctionId}:`, error);
+  }
+}
+
+/**
+ * Broadcast document generated
+ */
+export async function broadcastDocumentGenerated(
+  auctionId: string,
+  documentType: string,
+  documentId: string
+) {
+  console.log(`🔔 broadcastDocumentGenerated() called for auction ${auctionId}`);
+  console.log(`   - Document type: ${documentType}`);
+  console.log(`   - Document ID: ${documentId}`);
+  
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
+    console.error('❌ Socket.io server not initialized - cannot broadcast document');
+    return;
+  }
+
+  try {
+    const room = socketServer.sockets.adapter.rooms.get(`auction:${auctionId}`);
+    const clientCount = room ? room.size : 0;
+    
+    console.log(`📢 Broadcasting document generated to room: auction:${auctionId}`);
+    console.log(`   - Clients in room: ${clientCount}`);
+
+    socketServer.to(`auction:${auctionId}`).emit('auction:document-generated', {
+      auctionId,
+      documentType,
+      documentId,
+    });
+
+    console.log(`✅ Document generated broadcast successful for ${auctionId}`);
+  } catch (error) {
+    console.error(`❌ Failed to broadcast document generated for ${auctionId}:`, error);
+  }
+}
+
+/**
+ * Broadcast document generation complete
+ */
+export async function broadcastDocumentGenerationComplete(
+  auctionId: string,
+  totalDocuments: number
+) {
+  console.log(`🔔 broadcastDocumentGenerationComplete() called for auction ${auctionId}`);
+  console.log(`   - Total documents: ${totalDocuments}`);
+  
+  const socketServer = getSocketServer();
+  
+  if (!socketServer) {
+    console.error('❌ Socket.io server not initialized - cannot broadcast completion');
+    return;
+  }
+
+  try {
+    const room = socketServer.sockets.adapter.rooms.get(`auction:${auctionId}`);
+    const clientCount = room ? room.size : 0;
+    
+    console.log(`📢 Broadcasting document generation complete to room: auction:${auctionId}`);
+    console.log(`   - Clients in room: ${clientCount}`);
+
+    socketServer.to(`auction:${auctionId}`).emit('auction:document-generation-complete', {
+      auctionId,
+      totalDocuments,
+    });
+
+    console.log(`✅ Document generation complete broadcast successful for ${auctionId}`);
+  } catch (error) {
+    console.error(`❌ Failed to broadcast document generation complete for ${auctionId}:`, error);
+  }
+}
+
+/**
  * Get Socket.io server instance
+ * CRITICAL: Always check global first to handle Next.js module loading
  */
 export function getSocketServer(): SocketIOServer | null {
+  // Check global first (cross-module access)
+  if (global.__socketIOServer) {
+    return global.__socketIOServer;
+  }
+  
+  // Fallback to module-level variable
   return io;
 }
