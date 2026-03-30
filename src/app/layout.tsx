@@ -21,8 +21,39 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
-    title: 'Salvage Management',
+    statusBarStyle: 'black-translucent',
+    title: 'NEM Salvage',
+    startupImage: [
+      {
+        url: '/icons/icon-2048.png',
+        media: '(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)',
+      },
+      {
+        url: '/icons/icon-2048.png',
+        media: '(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)',
+      },
+      {
+        url: '/icons/icon-2048.png',
+        media: '(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)',
+      },
+      {
+        url: '/icons/icon-2048.png',
+        media: '(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)',
+      },
+      {
+        url: '/icons/icon-2048.png',
+        media: '(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)',
+      },
+    ],
+  },
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/icons/icon-180.png', sizes: '180x180', type: 'image/png' },
+    ],
   },
   openGraph: {
     type: 'website',

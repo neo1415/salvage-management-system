@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { useDraftAutoSave } from '@/hooks/use-draft-auto-save';
 import { DraftList } from '@/components/cases/draft-list';
 import { AIAnalysisStatusBadge } from '@/components/cases/ai-analysis-status-badge';
+import { compressImage } from '@/utils/image-compression';
 
 /**
  * Web Speech API types (not fully supported in TypeScript)
@@ -723,15 +724,25 @@ function NewCasePageContent() {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Photo too large', `${file.name} exceeds 5MB limit`);
+      console.log(`📸 Processing ${file.name}: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+      
+      try {
+        // Compress image before converting to base64
+        // This is CRITICAL for camera photos which can be 8-12MB
+        const compressedBase64 = await compressImage(file, {
+          maxWidth: 1920,
+          maxHeight: 1920,
+          quality: 0.85,
+          maxSizeMB: 1, // Target 1MB after compression
+        });
+        
+        newPhotos.push(compressedBase64);
+        console.log(`✅ Compressed ${file.name} successfully`);
+      } catch (error) {
+        console.error(`❌ Failed to compress ${file.name}:`, error);
+        toast.error('Photo compression failed', `Could not process ${file.name}`);
         continue;
       }
-
-      // Convert to base64
-      const base64 = await fileToBase64(file);
-      newPhotos.push(base64);
     }
 
     const currentPhotos = photos || [];
