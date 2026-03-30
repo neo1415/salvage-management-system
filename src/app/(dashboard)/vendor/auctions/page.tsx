@@ -1,5 +1,5 @@
 /**
- * Mobile Auction Browsing UI
+ * Mobile Auction Browsing UI - 2026 Modern Design
  * 
  * Requirements:
  * - Requirement 16: Mobile Auction Browsing
@@ -16,6 +16,19 @@
  * - Pull-to-refresh
  * - Real-time countdown timers
  * - Watching count display
+ * 
+ * 2026 Design Enhancements:
+ * - Glassmorphism overlays (backdrop-blur, translucent backgrounds)
+ * - Modern card elevation with hover effects (translateY, enhanced shadows)
+ * - 12px border radius (modern standard)
+ * - Smooth transitions (200ms cubic-bezier)
+ * - Bottom sheet filter pattern for mobile
+ * - Pill-style tabs with rounded corners
+ * - Enhanced visual hierarchy (larger prices, red urgency colors)
+ * - Proper touch targets (48×48px minimum)
+ * - Micro-interactions (button press feedback, card lift)
+ * - Modern color system (urgent red #d32f2f, brand burgundy #800020, success green #388e3c)
+ * - Gradient overlay on images for compact card design
  */
 
 'use client';
@@ -30,7 +43,7 @@ import { FilterChip } from '@/components/ui/filters/filter-chip';
 import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
 import { SearchInput } from '@/components/ui/filters/search-input';
 import { LocationAutocomplete } from '@/components/ui/filters/location-autocomplete';
-import { Filter as FilterIcon, X, Circle, DollarSign, Trophy, ClipboardList, MapPin, Clock, Eye, RefreshCw, WifiOff } from 'lucide-react';
+import { Filter as FilterIcon, X, Circle, DollarSign, Trophy, ClipboardList, Clock, Eye, RefreshCw, WifiOff } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
 import { useCachedAuctions } from '@/hooks/use-cached-auctions';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
@@ -73,16 +86,47 @@ interface Filters {
 
 export default function AuctionBrowsingPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading auctions...</p>
+    <>
+      <style jsx global>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+        
+        .active\\:scale-96:active {
+          transform: scale(0.96);
+        }
+        
+        .active\\:scale-95:active {
+          transform: scale(0.95);
+        }
+        
+        @media (prefers-reduced-motion: reduce) {
+          *,
+          *::before,
+          *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+          }
+        }
+      `}</style>
+      <Suspense fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading auctions...</p>
+          </div>
         </div>
-      </div>
-    }>
-      <AuctionBrowsingContent />
-    </Suspense>
+      }>
+        <AuctionBrowsingContent />
+      </Suspense>
+    </>
   );
 }
 
@@ -95,6 +139,7 @@ function AuctionBrowsingContent() {
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showSearchBar, setShowSearchBar] = useState(false);
   
   // Initialize filters from URL
   const [activeTab, setActiveTab] = useState<Filters['tab']>(
@@ -400,9 +445,9 @@ function AuctionBrowsingContent() {
       {/* Offline Indicator */}
       <OfflineIndicator />
 
-      {/* Pull-to-refresh indicator */}
+      {/* Pull-to-refresh indicator - Modern glassmorphism */}
       {isPullRefreshing && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-white shadow-md p-4 flex items-center justify-center">
+        <div className="fixed top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-md shadow-md p-4 flex items-center justify-center border-b border-white/30">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#800020]"></div>
           <span className="ml-2 text-sm text-gray-600">Refreshing...</span>
         </div>
@@ -432,21 +477,51 @@ function AuctionBrowsingContent() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between mb-4">
+      {/* Header - Modern glassmorphism sticky header */}
+      <div className="bg-white/90 backdrop-blur-md shadow-sm sticky top-0 z-40 border-b border-white/30">
+        <div className="max-w-7xl mx-auto px-4 py-3 md:py-4">
+          {/* Mobile: Search Icon + Filter Button */}
+          <div className="flex items-center justify-between mb-3 md:mb-4 md:hidden">
+            <button
+              onClick={() => setShowSearchBar(!showSearchBar)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-all duration-200 active:scale-95"
+              style={{ minWidth: '48px', minHeight: '48px' }}
+              aria-label="Toggle search"
+            >
+              <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+            
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 active:scale-96"
+              style={{ minHeight: '48px' }}
+              aria-label="Toggle filters"
+            >
+              <FilterIcon size={18} aria-hidden="true" />
+              {activeFilterCount > 0 && (
+                <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Desktop: Header with Title and Refresh */}
+          <div className="hidden md:flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold text-gray-900">Auctions</h1>
             
-            {/* Refresh Button */}
+            {/* Refresh Button - Desktop Only with burgundy brand color */}
             <button
               onClick={handleRefresh}
               disabled={isOffline || isRefreshing}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition-all duration-200 ${
                 isOffline
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-[#800020] text-white hover:bg-[#600018]'
+                  : 'bg-[#800020] text-white hover:bg-[#600018] active:scale-96 shadow-md hover:shadow-lg'
               }`}
+              style={{ minHeight: '48px' }}
               title={isOffline ? 'Cannot refresh while offline' : 'Refresh auctions'}
             >
               <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
@@ -454,74 +529,103 @@ function AuctionBrowsingContent() {
             </button>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+          {/* Tabs - Modern pill-style with burgundy brand color */}
+          <div className="flex gap-2 mb-3 overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
             <button
               onClick={() => setActiveTab('active')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'active'
-                  ? 'bg-[#800020] text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-[#800020] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
+              style={{ minHeight: '48px' }}
             >
               <Circle size={16} className="fill-current" aria-hidden="true" />
               <span>Active</span>
             </button>
             <button
               onClick={() => setActiveTab('my_bids')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'my_bids'
-                  ? 'bg-[#800020] text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-[#800020] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
+              style={{ minHeight: '48px' }}
             >
               <DollarSign size={16} aria-hidden="true" />
               <span>My Bids</span>
             </button>
             <button
               onClick={() => setActiveTab('won')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'won'
-                  ? 'bg-[#800020] text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-[#800020] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
+              style={{ minHeight: '48px' }}
             >
               <Trophy size={16} aria-hidden="true" />
               <span>Won</span>
             </button>
             <button
               onClick={() => setActiveTab('completed')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'completed'
-                  ? 'bg-[#800020] text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-[#800020] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
+              style={{ minHeight: '48px' }}
             >
               <ClipboardList size={16} aria-hidden="true" />
               <span>Completed</span>
             </button>
           </div>
+          
+          <style jsx>{`
+            .scrollbar-hide::-webkit-scrollbar {
+              display: none;
+            }
+            .scrollbar-hide {
+              -ms-overflow-style: none;
+              scrollbar-width: none;
+            }
+          `}</style>
 
-          {/* Search Bar */}
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search by asset name or claim reference..."
-            className="w-full mb-4"
-          />
+          {/* Search Bar - Collapsible on Mobile, Always Visible on Desktop */}
+          <div className="md:hidden">
+            {showSearchBar && (
+              <SearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="Search by asset name or claim reference..."
+                className="w-full mb-3"
+              />
+            )}
+          </div>
 
-          {/* Filter Bar */}
-          <div className="flex items-center gap-2 flex-wrap mb-4">
+          {/* Desktop: Search Bar Always Visible */}
+          <div className="hidden md:block">
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search by asset name or claim reference..."
+              className="w-full mb-4"
+            />
+          </div>
+
+          {/* Filter Bar - Desktop Only */}
+          <div className="hidden md:flex items-center gap-2 flex-wrap mb-4">
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 active:scale-96 focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2"
+              style={{ minHeight: '48px' }}
               aria-label="Toggle filters"
               aria-expanded={showFilters}
             >
               <FilterIcon size={18} aria-hidden="true" />
               <span className="text-sm font-medium">Filters</span>
               {activeFilterCount > 0 && (
-                <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-medium">
+                <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-bold">
                   {activeFilterCount}
                 </span>
               )}
@@ -564,7 +668,8 @@ function AuctionBrowsingContent() {
             {hasActiveFilters && (
               <button
                 onClick={clearAllFilters}
-                className="flex items-center gap-1 px-3 py-1 text-sm text-gray-600 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2 rounded"
+                className="flex items-center gap-1 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-all duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2 rounded-lg"
+                style={{ minHeight: '48px' }}
                 aria-label="Clear all filters"
               >
                 <X size={14} aria-hidden="true" />
@@ -573,81 +678,179 @@ function AuctionBrowsingContent() {
             )}
           </div>
 
-          {/* Results Count */}
+          {/* Results Count - Desktop Only */}
           {hasActiveFilters && (
-            <div className="text-sm text-gray-600 mb-2">
+            <div className="hidden md:block text-sm text-gray-600 mb-2">
               Showing <span className="font-semibold text-gray-900">{auctions.length}</span> auctions
             </div>
           )}
         </div>
 
-        {/* Filters Panel */}
+        {/* Filters Panel - Bottom Sheet Pattern for Mobile */}
         {showFilters && (
-          <div className="border-t border-gray-200 bg-gray-50 p-4">
-            <div className="max-w-7xl mx-auto space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-gray-900">Filter Options</h3>
+          <>
+            {/* Backdrop with blur */}
+            <div 
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden"
+              onClick={() => setShowFilters(false)}
+              style={{ animation: 'fadeIn 300ms ease' }}
+            />
+            
+            {/* Bottom Sheet - Mobile */}
+            <div 
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-50 md:hidden"
+              style={{ 
+                maxHeight: '80vh',
+                animation: 'slideUp 300ms cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+            >
+              {/* Swipe Handle */}
+              <div className="flex justify-center pt-3 pb-2">
+                <div className="w-10 h-1 bg-gray-300 rounded-full" />
               </div>
-
-              <div className="flex flex-wrap gap-3">
-                {/* Asset Type Faceted Filter */}
-                <FacetedFilter
-                  title="Asset Type"
-                  options={assetTypeOptions}
-                  selected={assetTypeFilter}
-                  onChange={setAssetTypeFilter}
-                />
-
-                {/* Sort By Faceted Filter */}
-                <FacetedFilter
-                  title="Sort By"
-                  options={sortOptions}
-                  selected={[sortBy]}
-                  onChange={(selected) => setSortBy((selected[0] as Filters['sortBy']) || 'ending_soon')}
-                />
-              </div>
-
-              {/* Price Range Filter */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Min Price (₦)</label>
-                  <input
-                    type="number"
-                    placeholder="0"
-                    value={priceMin}
-                    onChange={(e) => setPriceMin(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020]"
-                  />
+              
+              <div className="overflow-y-auto px-4 pb-6" style={{ maxHeight: 'calc(80vh - 60px)' }}>
+                <div className="flex items-center justify-between mb-4 sticky top-0 bg-white pt-2 pb-3 border-b border-gray-100">
+                  <h3 className="text-lg font-bold text-gray-900">Filter Options</h3>
+                  <button
+                    onClick={() => setShowFilters(false)}
+                    className="p-2 hover:bg-gray-100 rounded-full transition-all duration-200 active:scale-95"
+                    style={{ minWidth: '48px', minHeight: '48px' }}
+                    aria-label="Close filters"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Max Price (₦)</label>
-                  <input
-                    type="number"
-                    placeholder="No limit"
-                    value={priceMax}
-                    onChange={(e) => setPriceMax(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020]"
-                  />
-                </div>
-              </div>
 
-              {/* Location Filter with Autocomplete */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
-                <LocationAutocomplete
-                  value={locationFilter}
-                  onChange={setLocationFilter}
-                  placeholder="Enter location..."
-                  className="w-full"
-                />
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-3">
+                    <FacetedFilter
+                      title="Asset Type"
+                      options={assetTypeOptions}
+                      selected={assetTypeFilter}
+                      onChange={setAssetTypeFilter}
+                    />
+
+                    <FacetedFilter
+                      title="Sort By"
+                      options={sortOptions}
+                      selected={[sortBy]}
+                      onChange={(selected) => setSortBy((selected[0] as Filters['sortBy']) || 'ending_soon')}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Min Price (₦)</label>
+                      <input
+                        type="number"
+                        placeholder="0"
+                        value={priceMin}
+                        onChange={(e) => setPriceMin(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#800020] transition-all duration-200"
+                        style={{ minHeight: '48px' }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Max Price (₦)</label>
+                      <input
+                        type="number"
+                        placeholder="No limit"
+                        value={priceMax}
+                        onChange={(e) => setPriceMax(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#800020] transition-all duration-200"
+                        style={{ minHeight: '48px' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Location</label>
+                    <LocationAutocomplete
+                      value={locationFilter}
+                      onChange={setLocationFilter}
+                      placeholder="Enter location..."
+                      className="w-full"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+
+            {/* Desktop Inline Filters */}
+            <div className="hidden md:block border-t border-gray-200 bg-gray-50 p-4">
+              <div className="max-w-7xl mx-auto space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Filter Options</h3>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <FacetedFilter
+                    title="Asset Type"
+                    options={assetTypeOptions}
+                    selected={assetTypeFilter}
+                    onChange={setAssetTypeFilter}
+                  />
+
+                  <FacetedFilter
+                    title="Sort By"
+                    options={sortOptions}
+                    selected={[sortBy]}
+                    onChange={(selected) => setSortBy((selected[0] as Filters['sortBy']) || 'ending_soon')}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Min Price (₦)</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={priceMin}
+                      onChange={(e) => setPriceMin(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Max Price (₦)</label>
+                    <input
+                      type="number"
+                      placeholder="No limit"
+                      value={priceMax}
+                      onChange={(e) => setPriceMax(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                  <LocationAutocomplete
+                    value={locationFilter}
+                    onChange={setLocationFilter}
+                    placeholder="Enter location..."
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <style jsx>{`
+              @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
+              @keyframes slideUp {
+                from { transform: translateY(100%); }
+                to { transform: translateY(0); }
+              }
+            `}</style>
+          </>
         )}
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      {/* Main Content - Reduced side padding for bigger cards */}
+      <div className="max-w-7xl mx-auto px-2 md:px-4 py-6">
         {/* Loading State */}
         {isLoading && (
           <div className="flex items-center justify-center py-12">
@@ -685,7 +888,8 @@ function AuctionBrowsingContent() {
                 {hasActiveFilters && (
                   <button
                     onClick={clearAllFilters}
-                    className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+                    className="px-6 py-3 bg-[#800020] text-white font-bold rounded-xl hover:bg-[#600018] transition-all duration-200 active:scale-96 shadow-md hover:shadow-lg"
+                    style={{ minHeight: '48px' }}
                   >
                     Clear Filters
                   </button>
@@ -717,7 +921,7 @@ function AuctionBrowsingContent() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
                   {auctions.map((auction) => (
                     <AuctionCard key={auction.id} auction={auction} onClick={() => router.push(`/vendor/auctions/${auction.id}`)} />
                   ))}
@@ -741,7 +945,6 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
   const [timeRemaining, setTimeRemaining] = useState('');
   const [timerColor, setTimerColor] = useState('text-green-600');
 
-  // Calculate time remaining
   useEffect(() => {
     const updateTimer = () => {
       const now = new Date().getTime();
@@ -758,16 +961,15 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
       const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
 
-      // Compact format
       if (days > 0) {
         setTimeRemaining(`${days}d ${hours}h`);
-        setTimerColor('text-green-600');
+        setTimerColor('text-[#388e3c]');
       } else if (hours > 0) {
         setTimeRemaining(`${hours}h ${minutes}m`);
-        setTimerColor(hours >= 1 ? 'text-yellow-600' : 'text-red-600');
+        setTimerColor(hours >= 1 ? 'text-[#f57c00]' : 'text-[#d32f2f]');
       } else {
         setTimeRemaining(`${minutes}m`);
-        setTimerColor('text-red-600');
+        setTimerColor('text-[#d32f2f]');
       }
     };
 
@@ -832,10 +1034,21 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow cursor-pointer overflow-hidden group"
+      className="bg-white rounded-xl overflow-hidden group cursor-pointer transition-all duration-200"
+      style={{
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24)',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.boxShadow = '0 3px 6px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.12)';
+        e.currentTarget.style.transform = 'translateY(-2px)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24)';
+        e.currentTarget.style.transform = 'translateY(0)';
+      }}
     >
-      {/* Image */}
-      <div className="relative h-40 bg-gray-200">
+      {/* Image with Gradient Overlay - Modern 2026 Pattern */}
+      <div className="relative h-48 bg-gray-200">
         <Image
           src={mainPhoto}
           alt={getAssetName()}
@@ -844,20 +1057,23 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />
         
-        {/* Status Badge */}
-        <div className="absolute top-2 right-2">
+        {/* Dark gradient overlay for text readability */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+        
+        {/* Status Badge - Top Right */}
+        <div className="absolute top-2 right-2 z-10">
           {auction.isWinner && auction.status === 'closed' ? (
-            <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-yellow-500 text-white">
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-[#388e3c] text-white shadow-lg">
               <Trophy size={12} aria-label="Won auction" />
               <span>Won</span>
             </span>
           ) : (
             <span
-              className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold shadow-lg ${
                 auction.status === 'active'
-                  ? 'bg-green-500 text-white'
+                  ? 'bg-[#388e3c] text-white'
                   : auction.status === 'extended'
-                  ? 'bg-orange-500 text-white'
+                  ? 'bg-[#f57c00] text-white'
                   : 'bg-gray-500 text-white'
               }`}
             >
@@ -871,67 +1087,52 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
           )}
         </div>
 
-        {/* Asset Type Badge */}
-        <div className="absolute top-2 left-2">
-          <span className="px-2 py-1 bg-white/90 backdrop-blur-sm rounded-full text-xs font-semibold text-gray-700">
+        {/* Asset Type Badge - Bottom Left (no overlap) */}
+        <div className="absolute bottom-2 left-2 z-10">
+          <span className="px-2.5 py-1 bg-white/95 backdrop-blur-sm rounded-full text-xs font-bold text-gray-800 shadow-lg">
             {auction.case.assetType.toUpperCase()}
           </span>
         </div>
-      </div>
 
-      {/* Content - Max 5 fields */}
-      <div className="p-3">
-        {/* Asset Name */}
-        <h3 className="text-base font-bold text-gray-900 mb-2 line-clamp-1">
-          {getAssetName()}
-        </h3>
-
-        {/* Core Fields (Max 5) */}
-        <div className="space-y-2">
-          {/* Field 1: Location */}
-          <div className="flex items-center gap-2 text-sm">
-            <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" aria-label="Location" />
-            <span className="text-gray-600 truncate">{auction.case.locationName}</span>
-          </div>
-
-          {/* Field 2: Price with compact format */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-gray-400 flex-shrink-0" aria-label={priceLabel} />
-              <span className="text-xs text-gray-500">{priceLabel}</span>
-            </div>
-            <span className="text-lg font-bold text-[#800020]">
+        {/* Price & Timer ON IMAGE - Bottom section with gradient */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
+          {/* Price - Large and prominent */}
+          <div className="mb-2">
+            <span className="text-2xl font-bold text-white drop-shadow-lg">
               {formatCompactCurrency(displayPrice)}
             </span>
           </div>
 
-          {/* Field 3: Time Remaining */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" aria-label="Time remaining" />
-              <span className="text-xs text-gray-500">
-                {auction.status === 'closed' ? 'Ended' : 'Remaining'}
-              </span>
-            </div>
-            <span className={`text-sm font-semibold ${timerColor}`}>
+          {/* Timer - Compact */}
+          <div className="flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-white/90 flex-shrink-0" aria-label="Time remaining" />
+            <span className="text-sm font-semibold text-white/90 drop-shadow">
               {timeRemaining}
             </span>
           </div>
+        </div>
+      </div>
 
-          {/* Field 4: Watching Count */}
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Eye className="w-4 h-4" aria-label="Watching count" />
-              <span>{auction.watchingCount} watching</span>
-            </div>
+      {/* Compact Content Below Image - Only essential info */}
+      <div className="p-2.5">
+        {/* Asset Name - Compact */}
+        <h3 className="text-sm font-bold text-gray-900 mb-2 line-clamp-2" style={{ lineHeight: '1.3', letterSpacing: '-0.01em' }}>
+          {getAssetName()}
+        </h3>
 
-            {/* High Demand Badge */}
-            {auction.watchingCount > 5 && (
-              <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full font-semibold">
-                High Demand
-              </span>
-            )}
+        {/* Watching Count - Single line */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs text-gray-600">
+            <Eye className="w-3.5 h-3.5" aria-label="Watching count" />
+            <span className="font-medium">{auction.watchingCount} watching</span>
           </div>
+
+          {/* High Demand Badge */}
+          {auction.watchingCount > 5 && (
+            <span className="text-xs bg-[#800020]/10 text-[#800020] px-2 py-0.5 rounded-full font-bold">
+              High Demand
+            </span>
+          )}
         </div>
       </div>
     </div>
