@@ -24,6 +24,9 @@ import {
   ChevronDown,
   ChevronRight,
   User as UserIcon,
+  TrendingUp,
+  Brain,
+  Database,
 } from 'lucide-react';
 import NotificationBell from '@/components/notifications/notification-bell';
 
@@ -52,6 +55,12 @@ const navigationItems: NavItem[] = [
     label: 'Auctions',
     href: '/vendor/auctions',
     icon: Gavel,
+    roles: ['vendor'],
+  },
+  {
+    label: 'Market Insights',
+    href: '/vendor/market-insights',
+    icon: TrendingUp,
     roles: ['vendor'],
   },
   {
@@ -117,9 +126,9 @@ const navigationItems: NavItem[] = [
   },
   {
     label: 'Reports',
-    href: '/manager/reports',
+    href: '/reports',
     icon: BarChart3,
-    roles: ['salvage_manager'],
+    roles: ['salvage_manager', 'system_admin', 'admin', 'finance_officer', 'claims_adjuster'],
   },
 
   // Adjuster Navigation
@@ -162,6 +171,12 @@ const navigationItems: NavItem[] = [
     roles: ['finance_officer'],
   },
   {
+    label: 'Payment Transactions',
+    href: '/finance/payment-transactions',
+    icon: Wallet,
+    roles: ['finance_officer'],
+  },
+  {
     label: 'Auction Management',
     href: '/admin/auctions',
     icon: Gavel,
@@ -174,6 +189,24 @@ const navigationItems: NavItem[] = [
     href: '/admin/dashboard',
     icon: LayoutDashboard,
     roles: ['system_admin', 'admin'],
+  },
+  {
+    label: 'Auction Config',
+    href: '/admin/auction-config',
+    icon: Settings,
+    roles: ['system_admin', 'admin'],
+  },
+  {
+    label: 'Intelligence',
+    href: '/admin/intelligence',
+    icon: Brain,
+    roles: ['system_admin', 'admin'],
+    submenu: [
+      { name: 'Overview', href: '/admin/intelligence' },
+      { name: 'Analytics', href: '/admin/intelligence/analytics' },
+      { name: 'Configuration', href: '/admin/intelligence/config' },
+      { name: 'Data Export', href: '/admin/intelligence/export' },
+    ],
   },
   {
     label: 'Users',

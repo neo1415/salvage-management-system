@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Socket.IO Closure Test</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #800020;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    .input-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #333;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    button {
+      background: #800020;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background: #600018;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .status {
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      font-weight: 600;
+    }
+    .status.disconnected {
+      background: #fee;
+      color: #c00;
+      border: 1px solid #fcc;
+    }
+    .status.connected {
+      background: #efe;
+      color: #0a0;
+      border: 1px solid #cfc;
+    }
+    .status.watching {
+      background: #eef;
+      color: #00a;
+      border: 1px solid #ccf;
+    }
+    .log {
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 15px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      margin-top: 20px;
+    }
+    .log-entry {
+      margin-bottom: 8px;
+      padding: 5px;
+      border-left: 3px solid #ddd;
+      padding-left: 10px;
+    }
+    .log-entry.info {
+      border-left-color: #00a;
+      color: #00a;
+    }
+    .log-entry.success {
+      border-left-color: #0a0;
+      color: #0a0;
+    }
+    .log-entry.error {
+      border-left-color: #c00;
+      color: #c00;
+    }
+    .log-entry.event {
+      border-left-color: #f90;
+      color: #f90;
+      font-weight: 600;
+    }
+    .timestamp {
+      color: #999;
+      font-size: 11px;
+    }
+    .clear-btn {
+      background: #666;
+      font-size: 12px;
+      padding: 8px 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔌 Socket.IO Auction Closure Test</h1>
+    <p class="subtitle">Test real-time auction closure events</p>
+
+    <div id="status" class="status disconnected">
+      ❌ Disconnected
+    </div>
+
+    <div class="input-group">
+      <label for="token">Access Token (JWT):</label>
+      <input type="text" id="token" placeholder="Paste your JWT token here (from browser DevTools > Application > Cookies > next-auth.session-token)">
+    </div>
+
+    <div class="input-group">
+      <label for="auctionId">Auction ID:</label>
+      <input type="text" id="auctionId" placeholder="Enter auction ID to watch">
+    </div>
+
+    <div>
+      <button id="connectBtn" onclick="connect()">Connect</button>
+      <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+      <button id="watchBtn" onclick="watchAuction()" disabled>Watch Auction</button>
+      <button id="unwatchBtn" onclick="unwatchAuction()" disabled>Unwatch Auction</button>
+      <button class="clear-btn" onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div class="log" id="log">
+      <div class="log-entry info">
+        <span class="timestamp">[Ready]</span> Waiting for connection...
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let socket = null;
+    let currentAuctionId = null;
+
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      
+      const timestamp = new Date().toLocaleTimeString();
+      entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+      
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function updateStatus(text, className) {
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = text;
+      statusDiv.className = `status ${className}`;
+    }
+
+    function connect() {
+      const token = document.getElementById('token').value.trim();
+      
+      if (!token) {
+        alert('Please enter your access token');
+        return;
+      }
+
+      log('🔌 Connecting to Socket.IO server...', 'info');
+      
+      socket = io(window.location.origin, {
+        auth: {
+          token: token
+        },
+        transports: ['websocket', 'polling']
+      });
+
+      socket.on('connect', () => {
+        log('✅ Connected to Socket.IO server', 'success');
+        log(`   - Socket ID: ${socket.id}`, 'info');
+        log(`   - Transport: ${socket.io.engine.transport.name}`, 'info');
+        
+        updateStatus('✅ Connected', 'connected');
+        
+        document.getElementById('connectBtn').disabled = true;
+        document.getElementById('disconnectBtn').disabled = false;
+        document.getElementById('watchBtn').disabled = false;
+      });
+
+      socket.on('disconnect', (reason) => {
+        log(`❌ Disconnected: ${reason}`, 'error');
+        updateStatus('❌ Disconnected', 'disconnected');
+        
+        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('disconnectBtn').disabled = true;
+        document.getElementById('watchBtn').disabled = true;
+        document.getElementById('unwatchBtn').disabled = true;
+      });
+
+      socket.on('connect_error', (error) => {
+        log(`❌ Connection error: ${error.message}`, 'error');
+        updateStatus('❌ Connection Error', 'disconnected');
+      });
+
+      // Listen for auction events
+      socket.on('auction:closed', (data) => {
+        log(`🎉 AUCTION CLOSED EVENT RECEIVED!`, 'event');
+        log(`   - Auction ID: ${data.auctionId}`, 'event');
+        log(`   - Winner ID: ${data.winnerId}`, 'event');
+        
+        if (data.auctionId === currentAuctionId) {
+          log(`✅ This is the auction you're watching!`, 'success');
+        }
+      });
+
+      socket.on('auction:closing', (data) => {
+        log(`📄 AUCTION CLOSING EVENT RECEIVED (documents generating)`, 'event');
+        log(`   - Auction ID: ${data.auctionId}`, 'event');
+      });
+
+      socket.on('auction:document-generated', (data) => {
+        log(`📄 DOCUMENT GENERATED EVENT RECEIVED`, 'event');
+        log(`   - Auction ID: ${data.auctionId}`, 'event');
+        log(`   - Document Type: ${data.documentType}`, 'event');
+        log(`   - Document ID: ${data.documentId}`, 'event');
+      });
+
+      socket.on('auction:document-generation-complete', (data) => {
+        log(`✅ DOCUMENT GENERATION COMPLETE EVENT RECEIVED`, 'event');
+        log(`   - Auction ID: ${data.auctionId}`, 'event');
+        log(`   - Total Documents: ${data.totalDocuments}`, 'event');
+      });
+
+      socket.on('auction:new-bid', (data) => {
+        log(`💰 NEW BID EVENT RECEIVED`, 'event');
+        log(`   - Auction ID: ${data.auctionId}`, 'event');
+        log(`   - Bid Amount: ₦${Number(data.bid.amount).toLocaleString()}`, 'event');
+        log(`   - Vendor ID: ${data.bid.vendorId}`, 'event');
+      });
+
+      socket.on('auction:extended', (data) => {
+        log(`⏰ AUCTION EXTENDED EVENT RECEIVED`, 'event');
+        log(`   - Auction ID: ${data.auctionId}`, 'event');
+        log(`   - New End Time: ${data.newEndTime}`, 'event');
+      });
+
+      socket.on('auction:updated', (data) => {
+        log(`📡 AUCTION UPDATED EVENT RECEIVED`, 'event');
+        log(`   - Auction ID: ${data.auctionId}`, 'event');
+        log(`   - Status: ${data.auction.status}`, 'event');
+      });
+    }
+
+    function disconnect() {
+      if (socket) {
+        log('🔌 Disconnecting...', 'info');
+        socket.disconnect();
+        socket = null;
+        currentAuctionId = null;
+      }
+    }
+
+    function watchAuction() {
+      const auctionId = document.getElementById('auctionId').value.trim();
+      
+      if (!auctionId) {
+        alert('Please enter an auction ID');
+        return;
+      }
+
+      if (!socket || !socket.connected) {
+        alert('Please connect first');
+        return;
+      }
+
+      log(`👁️ Watching auction: ${auctionId}`, 'info');
+      socket.emit('auction:watch', { auctionId });
+      
+      currentAuctionId = auctionId;
+      updateStatus(`👁️ Watching auction: ${auctionId}`, 'watching');
+      
+      document.getElementById('watchBtn').disabled = true;
+      document.getElementById('unwatchBtn').disabled = false;
+    }
+
+    function unwatchAuction() {
+      if (!currentAuctionId) return;
+
+      log(`👁️ Stopped watching auction: ${currentAuctionId}`, 'info');
+      socket.emit('auction:unwatch', { auctionId: currentAuctionId });
+      
+      currentAuctionId = null;
+      updateStatus('✅ Connected', 'connected');
+      
+      document.getElementById('watchBtn').disabled = false;
+      document.getElementById('unwatchBtn').disabled = true;
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+      log('Log cleared', 'info');
+    }
+
+    // Auto-fill token from localStorage if available
+    window.addEventListener('load', () => {
+      const savedToken = localStorage.getItem('test-socket-token');
+      if (savedToken) {
+        document.getElementById('token').value = savedToken;
+      }
+    });
+
+    // Save token to localStorage when changed
+    document.getElementById('token').addEventListener('change', (e) => {
+      localStorage.setItem('test-socket-token', e.target.value);
+    });
+  </script>
+</body>
+</html>

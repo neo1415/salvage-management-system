@@ -214,10 +214,14 @@ export class OTPService {
       if (email && fullName) {
         try {
           const { emailService } = await import('@/features/notifications/services/email.service');
-          await emailService.sendOTPEmail(email, fullName, otp, 5);
-          console.log(`✅ OTP email sent successfully to ${email}`);
+          const emailResult = await emailService.sendOTPEmail(email, fullName, otp, 5);
+          if (emailResult.success) {
+            console.log(`✅ OTP email sent successfully to ${email}`);
+          } else {
+            console.warn(`⚠️ OTP email failed (non-critical): ${emailResult.error}`);
+          }
         } catch (emailError) {
-          console.error('Failed to send OTP email:', emailError);
+          console.warn('⚠️ OTP email backup failed (non-critical):', emailError);
           // Don't fail if email sending fails - SMS is primary
         }
       }

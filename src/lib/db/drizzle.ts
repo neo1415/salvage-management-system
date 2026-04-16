@@ -12,29 +12,31 @@ if (!process.env.DATABASE_URL) {
 }
 
 // Create postgres connection with proper pool configuration
-const connectionString = process.env.DATABASE_URL;
-
-// Configure connection pool based on environment
-const isTest = process.env.NODE_ENV === 'test';
+// Use TEST_DATABASE_URL for tests if available (Transaction mode pooler)
+const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
 const isProduction = process.env.NODE_ENV === 'production';
+const connectionString = isTest && process.env.TEST_DATABASE_URL 
+  ? process.env.TEST_DATABASE_URL 
+  : process.env.DATABASE_URL;
 
 // CRITICAL FIX: Increase connection pool size for production
 // Supabase Session Pooler supports up to 200 connections
 // Phase 1 Scalability: Increased from 50 to 200 for 4x capacity increase
 const client = postgres(connectionString, {
-  // Production: 200 connections (max allowed), Test: 10, Development: 20
+  // Test: 10 connections (enough for integration tests with transactions), Production: 200, Development: 20
+  // Increased from 2 to 10 for tests to handle concurrent transactions
   max: isTest ? 10 : isProduction ? 200 : 20,
-  // Idle timeout - close idle connections after 20 seconds to free up pool
-  idle_timeout: 20,
-  // Max lifetime - close connections after 10 minutes to prevent stale connections
-  max_lifetime: 60 * 10,
-  // Connection timeout - 10 seconds is sufficient
-  connect_timeout: 10,
+  // Idle timeout - close idle connections after reasonable time
+  idle_timeout: isTest ? 30 : 20,
+  // Max lifetime - longer in tests to prevent mid-test disconnections
+  max_lifetime: isTest ? 300 : 60 * 10,
+  // Connection timeout - reasonable timeout for tests
+  connect_timeout: isTest ? 10 : 10,
   // SCALABILITY: Add connection queue management
-  // Queue up to 1000 requests when all connections are busy
-  max_queue: 1000,
-  // Queue timeout - fail fast after 5 seconds if no connection available
-  queue_timeout: 5000,
+  // Larger queue for tests to handle transaction queuing
+  max_queue: isTest ? 100 : 1000,
+  // Queue timeout - reasonable timeout for tests
+  queue_timeout: isTest ? 10000 : 5000,
   // Prepare statements (disable in test for better cleanup)
   prepare: !isTest,
   // Add retry logic for transient connection failures

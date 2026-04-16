@@ -38,7 +38,7 @@ interface PriceOverrides {
  * - action: 'approve' or 'reject'
  * - comment: Optional for approval, required for rejection (min 10 chars)
  * - priceOverrides: Optional price adjustments (requires comment if provided)
- * - auctionDurationHours: Optional custom auction duration in hours (default: 120 hours = 5 days)
+ * - scheduleData: Optional auction scheduling data
  * 
  * Requirements: 11.1
  */
@@ -46,7 +46,11 @@ interface ApprovalRequest {
   action: 'approve' | 'reject';
   comment?: string;
   priceOverrides?: PriceOverrides;
-  auctionDurationHours?: number;
+  scheduleData?: {
+    mode: 'now' | 'scheduled';
+    scheduledTime?: Date | string;
+    durationHours?: number;
+  };
 }
 
 /**
@@ -170,6 +174,9 @@ export async function POST(
     if (body.action === 'approve') {
       // APPROVE CASE
       
+      // Define appUrl for use in notifications
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      
       // Determine final values to use (Requirements: 6.1, 6.2, 6.3, 11.3, 11.4)
       const aiEstimates = {
         marketValue: parseFloat(caseRecord.marketValue),
@@ -249,24 +256,48 @@ export async function POST(
         );
       }
 
-      // Auto-create auction with custom duration
+      // Auto-create auction with scheduling support
       const now = new Date();
-      const auctionDurationHours = body.auctionDurationHours || 120; // Default to 5 days (120 hours)
-      const endTime = new Date(now.getTime() + auctionDurationHours * 60 * 60 * 1000);
+      const scheduleData = body.scheduleData || { mode: 'now', durationHours: 120 };
+      
+      // Get duration in hours (default 120 hours = 5 days)
+      const durationHours = scheduleData.durationHours || 120;
+      const durationMs = durationHours * 60 * 60 * 1000;
+      
+      let auctionStatus: 'scheduled' | 'active' = 'active';
+      let scheduledStartTime: Date | null = null;
+      let isScheduled = false;
+      let startTime = now;
+      let endTime: Date;
+      
+      if (scheduleData.mode === 'scheduled' && scheduleData.scheduledTime) {
+        // Scheduled auction
+        auctionStatus = 'scheduled';
+        scheduledStartTime = new Date(scheduleData.scheduledTime);
+        isScheduled = true;
+        startTime = scheduledStartTime;
+        // Use specified duration from scheduled start
+        endTime = new Date(scheduledStartTime.getTime() + durationMs);
+      } else {
+        // Start now - use specified duration
+        endTime = new Date(now.getTime() + durationMs);
+      }
 
       const [auction] = await db
         .insert(auctions)
         .values({
           caseId: caseId,
-          startTime: now,
+          startTime: startTime,
           endTime: endTime,
           originalEndTime: endTime,
           extensionCount: 0,
           currentBid: null,
           currentBidder: null,
           minimumIncrement: '10000.00', // ₦10,000
-          status: 'active',
+          status: auctionStatus,
           watchingCount: 0,
+          scheduledStartTime: scheduledStartTime,
+          isScheduled: isScheduled,
         })
         .returning();
 
@@ -283,88 +314,91 @@ export async function POST(
             caseId: caseId,
             startTime: auction.startTime,
             endTime: auction.endTime,
-            durationHours: auctionDurationHours,
             status: auction.status,
+            isScheduled: auction.isScheduled,
+            scheduledStartTime: auction.scheduledStartTime,
           }
         )
       );
 
-      // Update case status to 'active_auction'
+      // Update case status based on auction status
+      const caseStatus = auctionStatus === 'scheduled' ? 'approved' : 'active_auction';
       await db
         .update(salvageCases)
         .set({
-          status: 'active_auction',
+          status: caseStatus,
           updatedAt: new Date(),
         })
         .where(eq(salvageCases.id, caseId));
 
-      // Notify vendors matching asset categories
-      const assetType = caseRecord.assetType;
-      const matchingVendors = await db
-        .select({
-          vendorId: vendors.id,
-          userId: vendors.userId,
-          phone: users.phone,
-          email: users.email,
-          fullName: users.fullName,
-        })
-        .from(vendors)
-        .innerJoin(users, eq(vendors.userId, users.id))
-        .where(
-          and(
-            eq(vendors.status, 'approved'),
-            arrayContains(vendors.categories, [assetType])
-          )
-        );
+      // Notify vendors only if starting now (not scheduled)
+      let notifiedVendorsCount = 0;
+      if (scheduleData.mode === 'now') {
+        // Notify vendors matching asset categories
+        const assetType = caseRecord.assetType;
+        const matchingVendors = await db
+          .select({
+            vendorId: vendors.id,
+            userId: vendors.userId,
+            phone: users.phone,
+            email: users.email,
+            fullName: users.fullName,
+          })
+          .from(vendors)
+          .innerJoin(users, eq(vendors.userId, users.id))
+          .where(
+            and(
+              eq(vendors.status, 'approved'),
+              arrayContains(vendors.categories, [assetType])
+            )
+          );
 
-      console.log(`Found ${matchingVendors.length} vendors matching asset type: ${assetType}`);
+        console.log(`Found ${matchingVendors.length} vendors matching asset type: ${assetType}`);
 
-      // Filter out test vendors to save email quota and speed up approval
-      const realVendors = matchingVendors.filter(vendor => {
-        const isTestEmail = vendor.email.endsWith('@test.com') || vendor.email.endsWith('@example.com');
-        if (isTestEmail) {
-          console.log(`⏭️ Skipping test vendor: ${vendor.email}`);
+        // Filter out test vendors to save email quota and speed up approval
+        const realVendors = matchingVendors.filter(vendor => {
+          const isTestEmail = vendor.email.endsWith('@test.com') || vendor.email.endsWith('@example.com');
+          if (isTestEmail) {
+            console.log(`⏭️ Skipping test vendor: ${vendor.email}`);
+          }
+          return !isTestEmail;
+        });
+
+        console.log(`Sending notifications to ${realVendors.length} real vendors (${matchingVendors.length - realVendors.length} test vendors skipped)`);
+
+        // Send notifications to real vendors only
+        for (const vendor of realVendors) {
+          // Send SMS notification
+          const smsMessage = `New auction available! ${assetType.toUpperCase()} - Reserve: ₦${caseRecord.reservePrice}. Ends in 5 days. Bid now: ${appUrl}/vendor/auctions/${auction.id}`;
+          
+          try {
+            await smsService.sendSMS({
+              to: vendor.phone,
+              message: smsMessage,
+            });
+          } catch (error) {
+            console.error(`Failed to send SMS to vendor ${vendor.vendorId}:`, error);
+          }
+
+          // Send email notification using professional template
+          try {
+            await emailService.sendAuctionStartEmail(vendor.email, {
+              vendorName: vendor.fullName,
+              auctionId: auction.id,
+              assetType: assetType,
+              assetName: `${assetType.toUpperCase()} - ${caseRecord.claimReference}`,
+              reservePrice: parseFloat(caseRecord.reservePrice),
+              startTime: now.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
+              endTime: endTime.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
+              location: caseRecord.locationName,
+              appUrl: appUrl,
+            });
+          } catch (error) {
+            console.error(`Failed to send email to vendor ${vendor.vendorId}:`, error);
+          }
         }
-        return !isTestEmail;
-      });
-
-      console.log(`Sending notifications to ${realVendors.length} real vendors (${matchingVendors.length - realVendors.length} test vendors skipped)`);
-
-      // Send notifications to real vendors only
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
-      const durationText = auctionDurationHours < 24 
-        ? `${auctionDurationHours} hour${auctionDurationHours !== 1 ? 's' : ''}`
-        : `${Math.round(auctionDurationHours / 24)} day${Math.round(auctionDurationHours / 24) !== 1 ? 's' : ''}`;
-
-      for (const vendor of realVendors) {
-        // Send SMS notification
-        const smsMessage = `New auction available! ${assetType.toUpperCase()} - Reserve: ₦${caseRecord.reservePrice}. Ends in ${durationText}. Bid now: ${appUrl}/vendor/auctions/${auction.id}`;
         
-        try {
-          await smsService.sendSMS({
-            to: vendor.phone,
-            message: smsMessage,
-          });
-        } catch (error) {
-          console.error(`Failed to send SMS to vendor ${vendor.vendorId}:`, error);
-        }
-
-        // Send email notification using professional template
-        try {
-          await emailService.sendAuctionStartEmail(vendor.email, {
-            vendorName: vendor.fullName,
-            auctionId: auction.id,
-            assetType: assetType,
-            assetName: `${assetType.toUpperCase()} - ${caseRecord.claimReference}`,
-            reservePrice: parseFloat(caseRecord.reservePrice),
-            startTime: now.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
-            endTime: endTime.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
-            location: caseRecord.locationName,
-            appUrl: appUrl,
-          });
-        } catch (error) {
-          console.error(`Failed to send email to vendor ${vendor.vendorId}:`, error);
-        }
+        notifiedVendorsCount = realVendors.length;
       }
 
       // Notify case creator (adjuster) about approval (Requirement: 6.5)
@@ -435,12 +469,14 @@ export async function POST(
         success: true,
         message: body.priceOverrides 
           ? 'Case approved with price adjustments and auction created successfully'
+          : scheduleData.mode === 'scheduled'
+          ? 'Case approved and auction scheduled successfully'
           : 'Case approved and auction created successfully',
         data: {
           case: {
             id: updatedCase.id,
             claimReference: updatedCase.claimReference,
-            status: 'active_auction',
+            status: caseStatus,
             approvedBy: updatedCase.approvedBy,
             approvedAt: updatedCase.approvedAt,
             priceOverridesApplied: !!body.priceOverrides,
@@ -451,10 +487,10 @@ export async function POST(
             endTime: auction.endTime,
             status: auction.status,
             reservePrice: finalReservePrice,
+            isScheduled: auction.isScheduled,
+            scheduledStartTime: auction.scheduledStartTime,
           },
-          notifiedVendors: realVendors.length,
-          totalMatchingVendors: matchingVendors.length,
-          testVendorsSkipped: matchingVendors.length - realVendors.length,
+          notifiedVendors: notifiedVendorsCount,
         },
       });
     } else {

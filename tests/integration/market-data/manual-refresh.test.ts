@@ -45,8 +45,6 @@ vi.mock('@/features/market-data/services/rate-limiter.service', () => ({
   recordRequest: vi.fn(async () => {}),
 }));
 
-import { getServerSession } from 'next-auth';
-
 describe('Integration Test: Manual Market Data Refresh', () => {
   const testProperty: PropertyIdentifier = {
     type: 'vehicle',

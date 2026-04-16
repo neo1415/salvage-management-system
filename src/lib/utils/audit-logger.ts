@@ -43,6 +43,8 @@ export enum AuditActionType {
   AUCTION_CREATED = 'auction_created',
   AUCTION_CLOSED = 'auction_closed',
   AUCTION_CANCELLED = 'auction_cancelled',
+  AUCTION_STARTED = 'auction_started',
+  AUCTION_RESTARTED = 'auction_restarted',
   
   // Payment actions
   PAYMENT_INITIATED = 'payment_initiated',

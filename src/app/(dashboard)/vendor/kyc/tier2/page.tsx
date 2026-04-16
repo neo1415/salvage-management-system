@@ -119,8 +119,12 @@ export default function Tier2KYCPage() {
     const options: DojahWidgetOptions = {
       app_id: widgetConfig.appId,
       p_key: widgetConfig.publicKey,
-      type: 'custom',
-      ...(widgetConfig.widgetId && { widget_id: widgetConfig.widgetId }),
+      type: widgetConfig.widgetId ? 'custom' : 'verification', // Use 'verification' if no widget_id
+      ...(widgetConfig.widgetId && { 
+        config: {
+          widget_id: widgetConfig.widgetId 
+        }
+      }),
       user_data: {
         first_name: nameParts[0],
         last_name: nameParts.slice(1).join(' ') || undefined,
@@ -138,7 +142,10 @@ export default function Tier2KYCPage() {
       },
       onError: (err) => {
         console.error('[Dojah Widget] Error', err);
-        setErrorMessage('Verification encountered an error. Please try again.');
+        const errorMsg = typeof err === 'object' && err !== null && 'message' in err 
+          ? String(err.message) 
+          : 'Verification encountered an error. Please try again.';
+        setErrorMessage(errorMsg);
         setPageState('ready');
       },
       onClose: () => {

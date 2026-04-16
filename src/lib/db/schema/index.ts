@@ -15,3 +15,10 @@ export * from './seed-registry';
 export * from './notifications';
 export * from './release-forms';
 export * from './verification-costs';
+export * from './auction-deposit';
+
+// AI-Powered Marketplace Intelligence schemas
+export * from './intelligence';
+export * from './analytics';
+export * from './ml-training';
+export * from './fraud-detection';

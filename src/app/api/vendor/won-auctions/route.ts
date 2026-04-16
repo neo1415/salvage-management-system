@@ -10,7 +10,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, or, inArray } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch all closed auctions won by this vendor
+    // Fetch all closed or awaiting_payment auctions won by this vendor
+    // FIXED: Include awaiting_payment status so recent documents show up
     const wonAuctions = await db
       .select({
         id: auctions.id,
@@ -48,7 +49,10 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(auctions.currentBidder, vendorId),
-          eq(auctions.status, 'closed')
+          or(
+            eq(auctions.status, 'closed'),
+            eq(auctions.status, 'awaiting_payment')
+          )
         )
       )
       .orderBy(desc(auctions.endTime));

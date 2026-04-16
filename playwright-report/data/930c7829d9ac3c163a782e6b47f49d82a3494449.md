@@ -1,0 +1,61 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - button [ref=e4] [cursor=pointer]:
+      - img [ref=e5]
+    - heading "NEM Salvage" [level=1] [ref=e6]
+    - generic [ref=e7]:
+      - button "Notifications" [ref=e9] [cursor=pointer]:
+        - img [ref=e10]
+      - link [ref=e13]:
+        - /url: /settings/profile-picture
+        - img [ref=e15]
+  - complementary [ref=e18]:
+    - generic [ref=e20]:
+      - generic [ref=e21]:
+        - heading "NEM Salvage" [level=2] [ref=e22]
+        - paragraph [ref=e23]: User
+        - paragraph [ref=e24]: vendor
+      - generic [ref=e25]:
+        - button "Notifications" [ref=e27] [cursor=pointer]:
+          - img [ref=e28]
+        - link [ref=e31]:
+          - /url: /settings/profile-picture
+          - img [ref=e33]
+    - navigation [ref=e36]:
+      - link "Dashboard" [ref=e38]:
+        - /url: /vendor/dashboard
+        - img [ref=e39]
+        - generic [ref=e44]: Dashboard
+      - link "Auctions" [ref=e46]:
+        - /url: /vendor/auctions
+        - img [ref=e47]
+        - generic [ref=e53]: Auctions
+      - link "Market Insights" [ref=e55]:
+        - /url: /vendor/market-insights
+        - img [ref=e56]
+        - generic [ref=e59]: Market Insights
+      - link "Wallet" [ref=e61]:
+        - /url: /vendor/wallet
+        - img [ref=e62]
+        - generic [ref=e65]: Wallet
+      - link "Documents" [ref=e67]:
+        - /url: /vendor/documents
+        - img [ref=e68]
+        - generic [ref=e71]: Documents
+      - link "Leaderboard" [ref=e73]:
+        - /url: /vendor/leaderboard
+        - img [ref=e74]
+        - generic [ref=e80]: Leaderboard
+      - button "Settings" [ref=e82] [cursor=pointer]:
+        - generic [ref=e83]:
+          - img [ref=e84]
+          - generic [ref=e87]: Settings
+        - img [ref=e88]
+      - button "Logout" [ref=e90] [cursor=pointer]:
+        - img [ref=e91]
+        - generic [ref=e94]: Logout
+  - main [ref=e95]
+```

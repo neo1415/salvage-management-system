@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Wallet, Plus, TrendingUp, TrendingDown, Lock, Unlock, CreditCard, WifiOff, Clock } from 'lucide-react';
 import { useOnlineStatus } from '@/hooks/use-online-status';
 import { useCachedWallet } from '@/hooks/use-cached-wallet';
+import { DepositHistory } from '@/components/vendor/deposit-history';
 
 interface WalletBalance {
   balance: number;
@@ -40,6 +41,7 @@ export default function WalletPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [fundingAmount, setFundingAmount] = useState<string>('');
   const [isFunding, setIsFunding] = useState(false);
+  const [vendorId, setVendorId] = useState<string | null>(null);
   
   // Export states
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -112,6 +114,24 @@ export default function WalletPage() {
       setError(walletError.message);
     }
   }, [walletError]);
+
+  // Fetch vendor ID
+  useEffect(() => {
+    const fetchVendorId = async () => {
+      if (session?.user?.id) {
+        try {
+          const response = await fetch('/api/vendors/me');
+          if (response.ok) {
+            const data = await response.json();
+            setVendorId(data.vendor.id);
+          }
+        } catch (error) {
+          console.error('Failed to fetch vendor ID:', error);
+        }
+      }
+    };
+    fetchVendorId();
+  }, [session?.user?.id]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -739,6 +759,13 @@ export default function WalletPage() {
             </div>
           )}
         </div>
+
+        {/* Deposit History Section */}
+        {vendorId && (
+          <div className="mt-8">
+            <DepositHistory vendorId={vendorId} />
+          </div>
+        )}
 
         {/* Info Section */}
         <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">

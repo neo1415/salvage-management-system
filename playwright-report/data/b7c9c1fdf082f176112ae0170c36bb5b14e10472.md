@@ -1,0 +1,118 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [active]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - navigation [ref=e7]:
+          - button "previous" [disabled] [ref=e8]:
+            - img "previous" [ref=e9]
+          - generic [ref=e11]:
+            - generic [ref=e12]: 1/
+            - text: "1"
+          - button "next" [disabled] [ref=e13]:
+            - img "next" [ref=e14]
+        - link "Next.js 16.1.6 (stale) Turbopack" [ref=e17]:
+          - /url: https://nextjs.org/docs/messages/version-staleness
+          - img [ref=e18]
+          - generic "There is a newer version (16.2.2) available, upgrade recommended!" [ref=e20]: Next.js 16.1.6 (stale)
+          - generic [ref=e21]: Turbopack
+      - dialog "Runtime TypeError" [ref=e23]:
+        - generic [ref=e26]:
+          - generic [ref=e27]:
+            - generic [ref=e28]:
+              - generic [ref=e30]: Runtime TypeError
+              - generic [ref=e31]:
+                - button "Copy Error Info" [ref=e32] [cursor=pointer]:
+                  - img [ref=e33]
+                - button "No related documentation found" [disabled] [ref=e35]:
+                  - img [ref=e36]
+                - button "Attach Node.js inspector" [ref=e38] [cursor=pointer]:
+                  - img [ref=e39]
+            - generic [ref=e51]: null is not an object (evaluating 'auction.case.aiAssessment.itemDetails')
+          - generic [ref=e53]:
+            - paragraph [ref=e55]:
+              - text: Call Stack
+              - generic [ref=e56]: "11"
+            - generic [ref=e57]:
+              - generic [ref=e58]:
+                - text: AuctionDetailsPage
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e59] [cursor=pointer]:
+                  - img [ref=e60]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/src_6b27f093._.js (6731:87)
+            - generic [ref=e62]:
+              - generic [ref=e63]:
+                - text: react_stack_bottom_frame
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e64] [cursor=pointer]:
+                  - img [ref=e65]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js (14826:33)
+            - generic [ref=e67]:
+              - generic [ref=e68]:
+                - text: renderWithHooks
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e69] [cursor=pointer]:
+                  - img [ref=e70]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js (4651:42)
+            - generic [ref=e72]:
+              - generic [ref=e73]:
+                - text: updateFunctionComponent
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e74] [cursor=pointer]:
+                  - img [ref=e75]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js (6112:36)
+            - generic [ref=e77]:
+              - generic [ref=e78]:
+                - text: runWithFiberInDEV
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e79] [cursor=pointer]:
+                  - img [ref=e80]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js (965:139)
+            - generic [ref=e82]:
+              - generic [ref=e83]:
+                - text: performUnitOfWork
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e84] [cursor=pointer]:
+                  - img [ref=e85]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js (9562:114)
+            - generic [ref=e87]:
+              - generic [ref=e88]:
+                - text: workLoopSync
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e89] [cursor=pointer]:
+                  - img [ref=e90]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js (9456:57)
+            - generic [ref=e92]:
+              - generic [ref=e93]:
+                - text: renderRootSync
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e94] [cursor=pointer]:
+                  - img [ref=e95]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js (9440:25)
+            - generic [ref=e97]:
+              - generic [ref=e98]:
+                - text: performWorkOnRoot
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e99] [cursor=pointer]:
+                  - img [ref=e100]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js (9105:61)
+            - generic [ref=e102]:
+              - generic [ref=e103]:
+                - text: performWorkOnRootViaSchedulerTask
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e104] [cursor=pointer]:
+                  - img [ref=e105]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js (10230:26)
+            - generic [ref=e107]:
+              - generic [ref=e108]:
+                - text: performWorkUntilDeadline
+                - button "Sourcemapping failed. Click to log cause of error." [ref=e109] [cursor=pointer]:
+                  - img [ref=e110]
+              - text: file:///C:/Users/DELL%20PRECISION%205540/Desktop/React/salvage/.next/dev/static/chunks/node_modules_next_dist_compiled_a0e4c7b4._.js (2647:72)
+        - generic [ref=e112]: "1"
+        - generic [ref=e113]: "2"
+    - generic [ref=e118] [cursor=pointer]:
+      - button "Open Next.js Dev Tools" [ref=e119]:
+        - img [ref=e120]
+      - generic [ref=e125]:
+        - button "Open issues overlay" [ref=e126]:
+          - generic [ref=e127]:
+            - generic [ref=e128]: "0"
+            - generic [ref=e129]: "1"
+          - generic [ref=e130]: Issue
+        - button "Collapse issues badge" [ref=e131]:
+          - img [ref=e132]
+  - 'heading "Application error: a client-side exception has occurred while loading localhost (see the browser console for more information)." [level=2] [ref=e136]'
+```

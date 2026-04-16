@@ -132,9 +132,9 @@ export async function POST(
       afterState: { status: 'signed', signedAt: signedDocument.signedAt },
     });
 
-    // CRITICAL: Check if all documents are signed and trigger fund release
-    const { triggerFundReleaseOnDocumentCompletion } = await import('@/features/documents/services/document.service');
-    await triggerFundReleaseOnDocumentCompletion(auctionId, vendorId, session.user.id);
+    // NOTE: Fund release is NO LONGER automatic after document signing.
+    // Vendor must now choose payment method (wallet, paystack, or hybrid) via PaymentOptions modal.
+    // The auction status is updated to 'awaiting_payment' in the signDocument function.
 
     return NextResponse.json({
       status: 'success',

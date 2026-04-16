@@ -404,6 +404,18 @@ export function useAuctionUpdates(auctionId: string | null) {
         setIsClosed(true);
         setIsClosing(false);
         setDocumentsGenerating(false);
+        
+        // CRITICAL FIX: Update auction state with closed status
+        // This ensures the UI reflects the closure immediately
+        setAuction((prev: any) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            status: 'closed',
+            currentBidder: data.winnerId,
+          };
+        });
+        console.log(`✅ Auction state updated to 'closed'`);
       }
     };
     
@@ -527,41 +539,25 @@ export function useAuctionUpdates(auctionId: string | null) {
     };
   }, [socket, isConnected, auctionId]);
 
-  // Polling fallback mechanism
+  // CHANGED: Use polling as PRIMARY method (not fallback)
+  // Socket.IO is kept for future use but polling is more reliable for now
   useEffect(() => {
     if (!auctionId) {
       return;
     }
 
-    // Start polling fallback timer if WebSocket is not connected after 10 seconds
-    if (!isConnected && !usingPolling) {
-      pollingFallbackTimeoutRef.current = setTimeout(() => {
-        if (!isConnected) {
-          console.warn('⚠️  WebSocket not connected after 10 seconds');
-          console.warn('   - Activating polling fallback');
-          setUsingPolling(true);
-        }
-      }, 10000);
-    }
+    // Always use polling as primary method
+    console.log('🔄 Using polling as primary update method');
+    setUsingPolling(true);
 
-    // Stop polling if WebSocket connects
-    if (isConnected && usingPolling) {
-      console.log('✅ WebSocket connected - stopping polling fallback');
-      setUsingPolling(false);
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-    }
-
-    // Cleanup fallback timeout
+    // Cleanup
     return () => {
       if (pollingFallbackTimeoutRef.current) {
         clearTimeout(pollingFallbackTimeoutRef.current);
         pollingFallbackTimeoutRef.current = null;
       }
     };
-  }, [isConnected, auctionId, usingPolling]);
+  }, [auctionId]);
 
   // Polling implementation
   useEffect(() => {
@@ -650,8 +646,8 @@ export function useAuctionUpdates(auctionId: string | null) {
     // Poll immediately
     pollAuction();
 
-    // Then poll every 3 seconds
-    pollingIntervalRef.current = setInterval(pollAuction, 3000);
+    // Then poll every 2 seconds (faster updates)
+    pollingIntervalRef.current = setInterval(pollAuction, 2000);
 
     return () => {
       if (pollingIntervalRef.current) {
@@ -706,4 +702,38 @@ export function useVendorNotifications() {
   }, [socket, isConnected]);
 
   return { outbidNotification, wonNotification };
+}
+
+/**
+ * Hook for real-time notifications
+ * Listens for new notifications via Socket.IO
+ */
+export function useRealtimeNotifications() {
+  const { socket, isConnected } = useSocket();
+  const [newNotification, setNewNotification] = useState<any>(null);
+
+  useEffect(() => {
+    if (!socket || !isConnected) {
+      return;
+    }
+
+    console.log('📬 Setting up real-time notification listener');
+
+    const handleNewNotification = (notification: any) => {
+      console.log('📬 New notification received:', notification);
+      setNewNotification(notification);
+      
+      // Clear after 5 seconds to allow next notification
+      setTimeout(() => setNewNotification(null), 5000);
+    };
+
+    socket.on('notification:new', handleNewNotification);
+
+    return () => {
+      console.log('🧹 Cleaning up notification listener');
+      socket.off('notification:new', handleNewNotification);
+    };
+  }, [socket, isConnected]);
+
+  return { newNotification };
 }

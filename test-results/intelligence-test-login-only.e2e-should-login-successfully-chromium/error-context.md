@@ -1,0 +1,59 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - heading "Welcome Back" [level=1] [ref=e10]
+      - paragraph [ref=e11]: Sign in to access your account
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - button "Sign in with Facebook" [ref=e14] [cursor=pointer]:
+          - img [ref=e15]
+          - generic [ref=e17]: Sign in with Facebook
+        - generic [ref=e22]: Or continue with email/phone
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - generic [ref=e25]: Email or Phone Number *
+          - textbox "Email or Phone Number *" [ref=e26]:
+            - /placeholder: your.email@example.com or +234XXXXXXXXXX
+        - generic [ref=e27]:
+          - generic [ref=e28]: Password *
+          - generic [ref=e29]:
+            - textbox "Password *" [ref=e30]:
+              - /placeholder: Enter your password
+            - button [ref=e31] [cursor=pointer]:
+              - img [ref=e32]
+        - generic [ref=e35]:
+          - generic [ref=e36] [cursor=pointer]:
+            - checkbox "Remember me" [ref=e37]
+            - generic [ref=e38]: Remember me
+          - link "Forgot password?" [ref=e39] [cursor=pointer]:
+            - /url: /forgot-password
+        - button "Sign In" [ref=e40] [cursor=pointer]
+      - paragraph [ref=e41]:
+        - text: Don't have an account?
+        - link "Sign up" [ref=e42] [cursor=pointer]:
+          - /url: /register
+    - paragraph [ref=e44]:
+      - text: Need help?
+      - link "Contact Support" [ref=e45] [cursor=pointer]:
+        - /url: /contact
+  - generic [ref=e46]:
+    - img [ref=e48]
+    - button "Open Tanstack query devtools" [ref=e96] [cursor=pointer]:
+      - img [ref=e97]
+  - generic [ref=e149] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e150]:
+      - img [ref=e151]
+    - generic [ref=e154]:
+      - button "Open issues overlay" [ref=e155]:
+        - generic [ref=e156]:
+          - generic [ref=e157]: "0"
+          - generic [ref=e158]: "1"
+        - generic [ref=e159]: Issue
+      - button "Collapse issues badge" [ref=e160]:
+        - img [ref=e161]
+  - alert [ref=e163]
+```

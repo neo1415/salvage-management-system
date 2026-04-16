@@ -172,26 +172,31 @@ export class AutoExtendService {
         .where(eq(auctions.id, auctionId))
         .returning();
 
-      // Create audit log entry
-      await logAction({
-        userId: 'system', // System-triggered action
-        actionType: AuditActionType.AUCTION_EXTENDED,
-        entityType: AuditEntityType.AUCTION,
-        entityId: auctionId,
-        ipAddress,
-        deviceType: DeviceType.DESKTOP,
-        userAgent,
-        beforeState: {
-          endTime: auctionBefore.endTime.toISOString(),
-          status: auctionBefore.status,
-          extensionCount: auctionBefore.extensionCount,
-        },
-        afterState: {
-          endTime: updatedAuction.endTime.toISOString(),
-          status: updatedAuction.status,
-          extensionCount: updatedAuction.extensionCount,
-        },
-      });
+      // Create audit log entry (skip if fails - don't break extension)
+      try {
+        await logAction({
+          userId: 'system', // System-triggered action
+          actionType: AuditActionType.AUCTION_EXTENDED,
+          entityType: AuditEntityType.AUCTION,
+          entityId: auctionId,
+          ipAddress,
+          deviceType: DeviceType.DESKTOP,
+          userAgent,
+          beforeState: {
+            endTime: auctionBefore.endTime.toISOString(),
+            status: auctionBefore.status,
+            extensionCount: auctionBefore.extensionCount,
+          },
+          afterState: {
+            endTime: updatedAuction.endTime.toISOString(),
+            status: updatedAuction.status,
+            extensionCount: updatedAuction.extensionCount,
+          },
+        });
+      } catch (auditError) {
+        // Log error but don't fail the extension
+        console.warn('⚠️  Failed to create audit log for extension (non-critical):', auditError);
+      }
 
       // Broadcast extension via Socket.io (async, don't wait)
       this.broadcastExtension(auctionId, extensionCheck.newEndTime).catch((error) => {

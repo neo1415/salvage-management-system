@@ -14,7 +14,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { bids } from '@/lib/db/schema/bids';
-import { eq, desc } from 'drizzle-orm';
+import { payments } from '@/lib/db/schema/payments';
+import { eq, desc, and } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 
 export async function GET(
@@ -70,12 +71,29 @@ export async function GET(
       .where(eq(bids.auctionId, id))
       .orderBy(desc(bids.createdAt));
 
+    // Check if payment is verified (for awaiting_payment status)
+    let hasVerifiedPayment = false;
+    if (auction.status === 'awaiting_payment') {
+      const [payment] = await db
+        .select()
+        .from(payments)
+        .where(
+          and(
+            eq(payments.auctionId, id),
+            eq(payments.status, 'verified')
+          )
+        )
+        .limit(1);
+      hasVerifiedPayment = !!payment;
+    }
+
     // Format response
     const response = {
       success: true,
       auction: {
         ...auction,
         bids: bidHistory,
+        hasVerifiedPayment,
       },
     };
 

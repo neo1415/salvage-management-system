@@ -235,23 +235,58 @@ export async function generateDocument(
       compress: false,
     });
 
-    // Store document in database (with retry)
-    const [document] = await withRetry(async () => {
-      return await db
-        .insert(releaseForms)
-        .values({
-          auctionId,
-          vendorId,
-          documentType,
-          title,
-          status: 'pending',
-          pdfUrl: uploadResult.secureUrl,
-          pdfPublicId: uploadResult.publicId,
-          documentData: baseDocumentData,
-          generatedBy: generatedBy === 'system' ? null : generatedBy, // Fix: Use null for system-generated documents
-        })
-        .returning();
-    });
+    // Store document in database (with retry and conflict handling)
+    let document: ReleaseForm;
+    try {
+      [document] = await withRetry(async () => {
+        return await db
+          .insert(releaseForms)
+          .values({
+            auctionId,
+            vendorId,
+            documentType,
+            title,
+            status: 'pending',
+            pdfUrl: uploadResult.secureUrl,
+            pdfPublicId: uploadResult.publicId,
+            documentData: baseDocumentData,
+            generatedBy: generatedBy === 'system' ? null : generatedBy, // Fix: Use null for system-generated documents
+          })
+          .returning();
+      });
+    } catch (insertError: any) {
+      // Handle unique constraint violation (duplicate document)
+      if (insertError.code === '23505' || insertError.message?.includes('duplicate key') || insertError.message?.includes('unique constraint')) {
+        console.log(`⚠️  Duplicate document detected during insert: ${documentType} for auction ${auctionId}`);
+        console.log(`   - This is expected during race conditions (offline/online, multiple closure requests)`);
+        console.log(`   - Fetching existing document instead...`);
+        
+        // Fetch the existing document
+        const [existingDoc] = await withRetry(async () => {
+          return await db
+            .select()
+            .from(releaseForms)
+            .where(
+              and(
+                eq(releaseForms.auctionId, auctionId),
+                eq(releaseForms.vendorId, vendorId),
+                eq(releaseForms.documentType, documentType)
+              )
+            )
+            .limit(1);
+        });
+        
+        if (!existingDoc) {
+          throw new Error('Document insert failed and existing document not found');
+        }
+        
+        console.log(`✅ Using existing document: ${existingDoc.id} (status: ${existingDoc.status})`);
+        return existingDoc;
+      }
+      
+      // Re-throw other errors
+      throw insertError;
+    }
 
     console.log(`✅ Document generated: ${documentType} for auction ${auctionId}`);
     console.log(`   - Document ID: ${document.id}`);
@@ -431,20 +466,92 @@ export async function signDocument(
       // Don't fail the signing if notifications fail
     }
 
-    // NEW: Check if all documents are signed and trigger fund release
+    // NEW: Check if all documents are signed and update auction status
     try {
-      const [vendor] = await db.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);
-      if (vendor) {
-        console.log(`🔄 Triggering fund release check for auction ${signedDoc.auctionId}...`);
-        await triggerFundReleaseOnDocumentCompletion(
-          signedDoc.auctionId,
-          vendorId,
-          vendor.userId
-        );
+      const allSigned = await checkAllDocumentsSigned(signedDoc.auctionId, vendorId);
+      
+      if (allSigned) {
+        console.log(`\n🔄 ALL DOCUMENTS SIGNED for auction ${signedDoc.auctionId}`);
+        
+        // CRITICAL FIX: Only update status if auction is currently 'closed'
+        // Never change status if it's already 'awaiting_payment' or any other status
+        const [currentAuction] = await db
+          .select()
+          .from(auctions)
+          .where(eq(auctions.id, signedDoc.auctionId))
+          .limit(1);
+
+        if (!currentAuction) {
+          throw new Error(`Auction ${signedDoc.auctionId} not found`);
+        }
+
+        // Only proceed if auction is in 'closed' status
+        if (currentAuction.status === 'closed') {
+          console.log(`   Updating status: closed → awaiting_payment`);
+          
+          // Update auction status to awaiting_payment (vendor must choose payment method)
+          const [updatedAuction] = await db
+            .update(auctions)
+            .set({ 
+              status: 'awaiting_payment',
+              updatedAt: new Date()
+            })
+            .where(
+              and(
+                eq(auctions.id, signedDoc.auctionId),
+                eq(auctions.status, 'closed') // Double-check status hasn't changed
+              )
+            )
+            .returning();
+
+          if (!updatedAuction) {
+            console.log(`⚠️  Auction status was not 'closed', skipping status update`);
+            return signedDoc; // Return early, don't broadcast or notify
+          }
+
+          console.log(`✅ Auction status updated successfully: ${updatedAuction.status}`);
+
+          // CRITICAL FIX: Broadcast status change via Socket.IO for real-time UI updates
+          try {
+            const { broadcastAuctionUpdate } = await import('@/lib/socket/server');
+            await broadcastAuctionUpdate(signedDoc.auctionId, updatedAuction);
+            console.log(`✅ Broadcasted status change for auction ${signedDoc.auctionId} via Socket.IO`);
+          } catch (socketError) {
+            console.error(`❌ Failed to broadcast status change via Socket.IO:`, socketError);
+            // Don't throw - status update succeeded, Socket.IO is just for real-time updates
+          }
+
+          // Send notification to vendor to choose payment method
+          const [vendor] = await db.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);
+          if (vendor) {
+            const [user] = await db.select().from(users).where(eq(users.id, vendor.userId)).limit(1);
+            if (user) {
+              const { createNotification } = await import('@/features/notifications/services/notification.service');
+              await createNotification({
+                userId: user.id,
+                type: 'PAYMENT_METHOD_SELECTION_REQUIRED',
+                title: 'Choose Payment Method',
+                message: 'All documents signed! Please choose how you would like to pay.',
+                data: {
+                  auctionId: signedDoc.auctionId,
+                },
+              });
+
+              console.log(`✅ Vendor notified to choose payment method for auction ${signedDoc.auctionId}\n`);
+            }
+          }
+        } else {
+          console.log(`ℹ️  Auction is in '${currentAuction.status}' status, not 'closed'. Skipping status update.`);
+        }
+      } else {
+        console.log(`ℹ️  Not all documents signed yet for auction ${signedDoc.auctionId}`);
       }
     } catch (error) {
-      console.error('❌ Error triggering fund release after document signing:', error);
-      // Don't fail the signing if fund release fails - Finance Officer will be alerted
+      console.error('❌ CRITICAL ERROR updating auction status after document signing:', error);
+      console.error('   Auction ID:', signedDoc.auctionId);
+      console.error('   Vendor ID:', vendorId);
+      console.error('   Error details:', error instanceof Error ? error.message : 'Unknown error');
+      // Don't fail the signing if status update fails, but log prominently
     }
 
     return signedDoc;
@@ -896,8 +1003,11 @@ export async function triggerFundReleaseOnDocumentCompletion(
 
     console.log(`✅ All documents signed for auction ${auctionId}. Proceeding with fund release...`);
 
-    // Step 2: Get payment record
+    // Step 2: Get payment record (check for BOTH escrow_wallet AND paystack)
     const { payments } = await import('@/lib/db/schema/payments');
+    
+    // CRITICAL FIX: Check for verified payment of ANY type (escrow_wallet OR paystack)
+    // The old code only checked for escrow_wallet, which broke Paystack payments
     [payment] = await db
       .select()
       .from(payments)
@@ -905,7 +1015,7 @@ export async function triggerFundReleaseOnDocumentCompletion(
         and(
           eq(payments.auctionId, auctionId),
           eq(payments.vendorId, vendorId),
-          eq(payments.paymentMethod, 'escrow_wallet')
+          eq(payments.status, 'verified') // Only process verified payments
         )
       )
       .limit(1);
@@ -990,37 +1100,38 @@ export async function triggerFundReleaseOnDocumentCompletion(
 
     // Step 3: ENHANCED DUPLICATE PREVENTION - Check multiple conditions
     
-    // Check 3a: Payment already verified
-    if (payment.status === 'verified') {
-      console.log(`⏸️  Payment already verified for auction ${auctionId}. Skipping fund release.`);
-      return;
-    }
-
-    // Check 3b: Escrow funds already released
+    // Check 3a: Escrow funds already released (PRIMARY CHECK)
+    // For Paystack payments, status is 'verified' but escrowStatus may still be null
+    // We should only skip if funds were ACTUALLY released (escrowStatus === 'released')
     if (payment.escrowStatus === 'released') {
       console.log(`⏸️  Escrow funds already released for auction ${auctionId}. Skipping fund release.`);
       return;
     }
 
-    // Check 3c: PAYMENT_UNLOCKED notification already exists
-    const { notifications } = await import('@/lib/db/schema/notifications');
-    const [existingNotification] = await db
-      .select()
-      .from(notifications)
-      .where(
-        and(
-          eq(notifications.userId, userId),
-          eq(notifications.type, 'PAYMENT_UNLOCKED')
+    // Check 3b: PAYMENT_UNLOCKED notification already exists
+    // Only check if userId is a valid UUID (not 'system')
+    const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+    
+    if (isValidUuid) {
+      const { notifications } = await import('@/lib/db/schema/notifications');
+      const [existingNotification] = await db
+        .select()
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.type, 'PAYMENT_UNLOCKED')
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    // Check if notification data matches this auction
-    if (existingNotification) {
-      const notificationData = existingNotification.data as { auctionId?: string; paymentId?: string };
-      if (notificationData?.auctionId === auctionId || notificationData?.paymentId === payment.id) {
-        console.log(`⏸️  Payment unlocked notification already exists for auction ${auctionId}. Skipping fund release.`);
-        return;
+      // Check if notification data matches this auction
+      if (existingNotification) {
+        const notificationData = existingNotification.data as { auctionId?: string; paymentId?: string };
+        if (notificationData?.auctionId === auctionId || notificationData?.paymentId === payment.id) {
+          console.log(`⏸️  Payment unlocked notification already exists for auction ${auctionId}. Skipping fund release.`);
+          return;
+        }
       }
     }
 

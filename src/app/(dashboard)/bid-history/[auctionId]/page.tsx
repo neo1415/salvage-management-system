@@ -33,8 +33,12 @@ import {
   Pause
 } from 'lucide-react';
 import { formatNaira } from '@/lib/utils/currency-formatter';
+import { AuctionTimerExtension } from '@/components/manager/auction-timer-extension';
+import { AuctionScheduleSelector, type AuctionScheduleValue } from '@/components/ui/auction-schedule-selector';
 import { BidHistoryChart } from '@/components/charts/bid-history-chart';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
+import { SuccessModal } from '@/components/modals/success-modal';
+import { ErrorModal } from '@/components/modals/error-modal';
 import { useToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 
@@ -116,6 +120,15 @@ export default function AuctionDetailPage() {
   const [endingAuction, setEndingAuction] = useState(false);
   const [playingVoiceNote, setPlayingVoiceNote] = useState<string | null>(null);
   const [showEndAuctionModal, setShowEndAuctionModal] = useState(false);
+  const [extendingAuction, setExtendingAuction] = useState(false);
+  const [showRestartModal, setShowRestartModal] = useState(false);
+  const [restartingAuction, setRestartingAuction] = useState(false);
+  const [restartSchedule, setRestartSchedule] = useState<AuctionScheduleValue>({ mode: 'now' });
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [errorDetails, setErrorDetails] = useState('');
 
   // Auth check
   useEffect(() => {
@@ -198,6 +211,86 @@ export default function AuctionDetailPage() {
       toast.error('Failed to End Auction', 'Please try again or contact support.');
     } finally {
       setEndingAuction(false);
+    }
+  };
+
+  // Handle timer extension
+  const handleExtendAuction = async (auctionId: string, extensionMinutes: number) => {
+    try {
+      setExtendingAuction(true);
+      
+      const response = await fetch(`/api/auctions/${auctionId}/extend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ extensionMinutes }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to extend auction');
+      }
+
+      // Refresh data
+      await fetchAuctionDetails();
+      
+      toast.success('Auction Extended', `Auction time extended by ${extensionMinutes} minutes.`);
+    } catch (error) {
+      console.error('Error extending auction:', error);
+      throw error; // Re-throw to let component handle it
+    } finally {
+      setExtendingAuction(false);
+    }
+  };
+
+  // Handle restart auction
+  const handleRestartAuction = () => {
+    if (user?.role !== 'salvage_manager') {
+      toast.error('Access Denied', 'Only salvage managers can restart auctions');
+      return;
+    }
+    setShowRestartModal(true);
+  };
+
+  const confirmRestartAuction = async () => {
+    try {
+      setRestartingAuction(true);
+      
+      const response = await fetch(`/api/auctions/${auctionId}/restart`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ scheduleData: restartSchedule }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to restart auction');
+      }
+
+      // Refresh data
+      await fetchAuctionDetails();
+      
+      setShowRestartModal(false);
+      setRestartSchedule({ mode: 'now' });
+      
+      // Show success modal
+      if (restartSchedule.mode === 'scheduled') {
+        setSuccessMessage('Auction has been scheduled to restart successfully.');
+      } else {
+        setSuccessMessage('Auction has been restarted successfully and vendors have been notified.');
+      }
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('Error restarting auction:', error);
+      setShowRestartModal(false);
+      setErrorMessage('Failed to Restart Auction');
+      setErrorDetails(error instanceof Error ? error.message : 'Please try again or contact support.');
+      setShowErrorModal(true);
+    } finally {
+      setRestartingAuction(false);
     }
   };
 
@@ -821,6 +914,53 @@ export default function AuctionDetailPage() {
                 </div>
               </div>
             )}
+
+            {/* Timer Extension - Salvage Managers Only */}
+            {user?.role === 'salvage_manager' && data.auction.status === 'active' && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <AuctionTimerExtension
+                  auctionId={data.auction.id}
+                  currentEndTime={new Date(data.auction.endTime)}
+                  onExtend={handleExtendAuction}
+                  isLoading={extendingAuction}
+                />
+              </div>
+            )}
+
+            {/* Restart Auction - Salvage Managers Only */}
+            {user?.role === 'salvage_manager' && data.auction.status === 'closed' && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Restart Auction
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Restart this closed auction with a new schedule. All previous bids will be cleared.
+                </p>
+                <button
+                  onClick={handleRestartAuction}
+                  disabled={restartingAuction}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#800020] text-white rounded-lg font-medium hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ minHeight: '44px' }}
+                >
+                  {restartingAuction ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Restarting...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Restart Auction
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -899,6 +1039,87 @@ export default function AuctionDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Restart Auction Modal */}
+        {showRestartModal && (
+          <div className="fixed inset-0" style={{ zIndex: 999998 }}>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/50 transition-opacity"
+              onClick={() => {
+                if (!restartingAuction) {
+                  setShowRestartModal(false);
+                  setRestartSchedule({ mode: 'now' });
+                }
+              }}
+            />
+            
+            {/* Modal Container */}
+            <div className="fixed inset-0 flex items-center justify-center p-4">
+              <div 
+                className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="p-6">
+                  <h3 className="text-xl font-bold text-gray-900 mb-4">Restart Auction</h3>
+                  <p className="text-sm text-gray-600 mb-6">
+                    Configure the restart schedule for this auction. All previous bids will be cleared and vendors will be notified.
+                  </p>
+                  
+                  <AuctionScheduleSelector
+                    value={restartSchedule}
+                    onChange={setRestartSchedule}
+                  />
+                  
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      onClick={() => {
+                        setShowRestartModal(false);
+                        setRestartSchedule({ mode: 'now' });
+                      }}
+                      disabled={restartingAuction}
+                      className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmRestartAuction}
+                      disabled={restartingAuction}
+                      className="flex-1 px-4 py-3 bg-[#800020] text-white rounded-lg font-medium hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {restartingAuction ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Restarting...
+                        </span>
+                      ) : (
+                        'Confirm Restart'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Success Modal */}
+        <SuccessModal
+          isOpen={showSuccessModal}
+          onClose={() => setShowSuccessModal(false)}
+          title="Auction Restarted Successfully"
+          message={successMessage}
+          actionLabel="OK"
+        />
+
+        {/* Error Modal */}
+        <ErrorModal
+          isOpen={showErrorModal}
+          onClose={() => setShowErrorModal(false)}
+          title={errorMessage}
+          message={errorDetails}
+          actionLabel="Close"
+        />
       </div>
     </div>
   );

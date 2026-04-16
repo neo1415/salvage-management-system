@@ -133,20 +133,15 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
 
   const rejected = rejectedResult[0]?.count || 0;
 
-  // Total amount (sum of payments EXCLUDING frozen escrow)
-  // CRITICAL FIX: Don't count frozen escrow funds that are waiting for document signing
-  // These funds haven't been released yet and shouldn't appear in finance dashboard
+  // Total amount (sum of VERIFIED payments only)
+  // CRITICAL: Only count verified payments to prevent double-counting
+  // Pending payments should NOT appear in total until verified
   const totalAmountResult = await db
     .select({ 
       total: sql<number>`COALESCE(SUM(${payments.amount}::numeric), 0)::numeric` 
     })
     .from(payments)
-    .where(
-      or(
-        ne(payments.paymentMethod, 'escrow_wallet'),
-        ne(payments.escrowStatus, 'frozen')
-      )
-    );
+    .where(eq(payments.status, 'verified'));
 
   const totalAmount = parseFloat(totalAmountResult[0]?.total?.toString() || '0');
 

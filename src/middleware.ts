@@ -173,12 +173,12 @@ export async function middleware(request: NextRequest) {
   const cspDirectives = process.env.NODE_ENV === 'production' 
     ? [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js.paystack.co https://checkout.paystack.com https://*.paystack.com",
-        "style-src 'self' 'unsafe-inline' https://checkout.paystack.com https://*.paystack.com",
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js.paystack.co https://checkout.paystack.com https://*.paystack.com https://widget.dojah.io",
+        "style-src 'self' 'unsafe-inline' https://checkout.paystack.com https://*.paystack.com https://widget.dojah.io",
         "img-src 'self' data: https: blob:",
         "font-src 'self' data: https://checkout.paystack.com https://*.paystack.com",
-        "connect-src 'self' https://www.googleapis.com https://nominatim.openstreetmap.org https://api.paystack.co https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com https://checkout.paystack.com https://*.paystack.com",
-        "frame-src 'self' https://js.paystack.co https://checkout.flutterwave.com https://www.google.com https://maps.google.com https://www.google.com/maps/embed/ https://checkout.paystack.com https://*.paystack.com",
+        "connect-src 'self' https://www.googleapis.com https://nominatim.openstreetmap.org https://api.paystack.co https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com https://checkout.paystack.com https://*.paystack.com https://widget.dojah.io https://api.dojah.io https://*.dojah.io",
+        "frame-src 'self' https://js.paystack.co https://checkout.flutterwave.com https://www.google.com https://maps.google.com https://www.google.com/maps/embed/ https://checkout.paystack.com https://*.paystack.com https://widget.dojah.io",
         "worker-src 'self' blob:",
       ]
     : [

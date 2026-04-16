@@ -28,13 +28,24 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { CountdownTimer } from '@/components/ui/countdown-timer';
 import { BidForm } from '@/components/auction/bid-form';
 import { ReleaseFormModal } from '@/components/documents/release-form-modal';
-import { useAuctionWatch, useAuctionUpdates } from '@/hooks/use-socket';
+import { useAuctionWatch, useAuctionUpdates, useRealtimeNotifications } from '@/hooks/use-socket';
 import { formatConditionForDisplay, type QualityTier } from '@/features/valuations/services/condition-mapping.service';
 import { useToast } from '@/components/ui/toast';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
+import { PredictionCard } from '@/components/intelligence/prediction-card';
 
 const PaymentUnlockedModal = dynamic(
   () => import('@/components/modals/payment-unlocked-modal'),
+  { ssr: false }
+);
+
+const PaymentOptions = dynamic(
+  () => import('@/components/vendor/payment-options').then(mod => ({ default: mod.PaymentOptions })),
+  { ssr: false }
+);
+
+const DocumentSigning = dynamic(
+  () => import('@/components/vendor/document-signing').then(mod => ({ default: mod.DocumentSigning })),
   { ssr: false }
 );
 
@@ -49,7 +60,7 @@ interface AuctionDetails {
   currentBid: string | null;
   currentBidder: string | null;
   minimumIncrement: string;
-  status: 'scheduled' | 'active' | 'extended' | 'closed' | 'cancelled';
+  status: 'scheduled' | 'active' | 'extended' | 'closed' | 'awaiting_payment' | 'cancelled';
   watchingCount: number;
   case: {
     id: string;
@@ -136,6 +147,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   // Payment unlocked modal state
   const [showPaymentUnlockedModal, setShowPaymentUnlockedModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentUnlockedData, setPaymentUnlockedData] = useState<{
     paymentId: string;
     auctionId: string;
@@ -148,6 +160,23 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   
   // Track if payment processing has been attempted to prevent duplicate calls
   const paymentProcessingAttemptedRef = useRef(false);
+  
+  // Track document count to prevent infinite polling loop
+  const documentCountRef = useRef(0);
+
+  // Track if verified payment exists (to hide "Pay Now" button)
+  const [hasVerifiedPayment, setHasVerifiedPayment] = useState(false);
+
+  // Prediction state
+  const [prediction, setPrediction] = useState<any>(null);
+  const [predictionLoading, setPredictionLoading] = useState(false);
+
+  // Set hasVerifiedPayment from initial auction data (no separate API call needed)
+  useEffect(() => {
+    if (auction && 'hasVerifiedPayment' in auction) {
+      setHasVerifiedPayment((auction as any).hasVerifiedPayment || false);
+    }
+  }, [auction]);
 
   // Real-time updates via Socket.io
   const { watchingCount } = useAuctionWatch(resolvedParams.id);
@@ -159,6 +188,54 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     documentsGenerating,
     generatedDocuments,
   } = useAuctionUpdates(resolvedParams.id);
+  
+  // Real-time notification listener for PAYMENT_UNLOCKED
+  const { newNotification } = useRealtimeNotifications();
+
+  // Handle PAYMENT_UNLOCKED notification in real-time
+  useEffect(() => {
+    if (!newNotification || !auction) return;
+    
+    // Check if this is a PAYMENT_UNLOCKED notification for this auction
+    if (
+      newNotification.type === 'PAYMENT_UNLOCKED' && 
+      newNotification.data?.auctionId === auction.id &&
+      session?.user?.vendorId &&
+      auction.currentBidder === session.user.vendorId
+    ) {
+      console.log('📬 PAYMENT_UNLOCKED notification received in real-time!');
+      console.log('   - Auction ID:', newNotification.data.auctionId);
+      console.log('   - Payment ID:', newNotification.data.paymentId);
+      console.log('   - Pickup Code:', newNotification.data.pickupAuthCode);
+      
+      // Check if payment page has been visited
+      const paymentId = newNotification.data.paymentId;
+      if (paymentId) {
+        const hasVisited = localStorage.getItem(`payment-visited-${paymentId}`);
+        if (hasVisited) {
+          console.log('⏸️  Payment page already visited. Skipping modal.');
+          return;
+        }
+      }
+      
+      // Get asset description
+      const assetDetails = auction.case.assetDetails as { make?: string; model?: string; year?: number };
+      const assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || auction.case.assetType;
+      
+      // Show modal immediately
+      setPaymentUnlockedData({
+        paymentId: newNotification.data.paymentId,
+        auctionId: auction.id,
+        assetDescription,
+        winningBid: parseFloat(auction.currentBid || '0'),
+        pickupAuthCode: newNotification.data.pickupAuthCode || 'N/A',
+        pickupLocation: newNotification.data.pickupLocation || 'NEM Insurance Salvage Yard',
+        pickupDeadline: newNotification.data.pickupDeadline || 'TBD',
+      });
+      setShowPaymentUnlockedModal(true);
+      console.log('✅ Payment unlocked modal triggered from real-time notification!');
+    }
+  }, [newNotification, auction?.id, auction?.currentBidder, auction?.currentBid, session?.user?.vendorId]);
 
   // Client-side timer to close auction when it expires (replaces useAuctionExpiryCheck)
   useEffect(() => {
@@ -255,7 +332,16 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   
   // Show extension notification
   const lastExtensionCountRef = useRef<number>(0);
+  const lastAuctionStatusRef = useRef<string>('');
+  
   useEffect(() => {
+    // Hide extension notification if auction is closed or awaiting payment
+    if (auction && (auction.status === 'closed' || auction.status === 'awaiting_payment')) {
+      setShowExtensionNotification(false);
+      lastAuctionStatusRef.current = auction.status;
+      return;
+    }
+
     if (auction && auction.extensionCount > lastExtensionCountRef.current) {
       lastExtensionCountRef.current = auction.extensionCount;
       setShowExtensionNotification(true);
@@ -265,6 +351,10 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         '⏰ Auction Extended',
         'Auction extended by 2 minutes due to last-minute bid'
       );
+    }
+    
+    if (auction) {
+      lastAuctionStatusRef.current = auction.status;
     }
   }, [auction?.extensionCount, toast]);
 
@@ -288,18 +378,28 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           }));
           
           setDocuments(docs);
-          console.log(`✅ Loaded ${docs.length} documents`);
+          
+          // Update ref with count of expected documents (bill_of_sale and liability_waiver)
+          const expectedDocs = docs.filter((d: any) => 
+            d.documentType === 'bill_of_sale' || d.documentType === 'liability_waiver'
+          );
+          documentCountRef.current = expectedDocs.length;
+          
+          console.log(`✅ Loaded ${docs.length} documents (${expectedDocs.length} expected)`);
         } else {
           console.log(`⚠️  No documents found in response`);
           setDocuments([]);
+          documentCountRef.current = 0;
         }
       } else {
         console.error(`❌ Failed to fetch documents: ${response.status}`);
         setDocuments([]);
+        documentCountRef.current = 0;
       }
     } catch (error) {
       console.error('Error fetching documents:', error);
       setDocuments([]);
+      documentCountRef.current = 0;
     } finally {
       setIsLoadingDocuments(false);
     }
@@ -352,7 +452,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   }, [resolvedParams.id]); // Only depend on auction ID
 
   // FIXED: Separate useEffect for document fetching to prevent disappearing on reload
-  // ENHANCED: Add polling for documents after auction closes to handle async generation
+  // CHANGED: Poll for documents every 3 seconds until they appear
   useEffect(() => {
     // Only fetch documents if:
     // 1. Auction is loaded
@@ -366,82 +466,86 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       session?.user?.vendorId && 
       auction.currentBidder === session.user.vendorId
     ) {
-      console.log(`🔄 Fetching documents for closed auction ${auction.id}`);
+      console.log(`🔄 Starting document polling for closed auction ${auction.id}`);
+      
+      // Fetch immediately
       fetchDocuments(auction.id, session.user.vendorId);
       
-      // CRITICAL FIX: Poll for documents every 3 seconds with extended timeout
-      // This handles the case where documents are still being generated
-      const pollInterval = setInterval(async () => {
-        // Stop polling if we have all expected documents (2: bill_of_sale, liability_waiver)
-        // Note: pickup_authorization is generated AFTER payment, so we only expect 2 documents initially
-        const expectedDocs = documents.filter(d => 
-          d.documentType === 'bill_of_sale' || d.documentType === 'liability_waiver'
-        );
-        
-        if (expectedDocs.length >= 2) {
-          console.log(`✅ All required documents loaded (${expectedDocs.length}/2). Stopping poll.`);
+      // Then poll every 3 seconds until documents appear
+      const pollInterval = setInterval(() => {
+        // Stop polling if we have documents
+        if (documents.length > 0) {
+          console.log(`✅ Documents loaded, stopping poll`);
           clearInterval(pollInterval);
           return;
         }
         
-        console.log(`🔄 Polling for documents... (current: ${expectedDocs.length}/2)`);
-        await fetchDocuments(auction.id, session.user.vendorId!);
-      }, 3000); // Poll every 3 seconds (faster polling)
+        console.log(`📄 Polling for documents...`);
+        fetchDocuments(auction.id, session.user.vendorId);
+      }, 3000);
       
-      // EXTENDED: Stop polling after 3 minutes (60 attempts) instead of 1 minute
-      // This gives more time for document generation to complete
-      const stopPollingTimeout = setTimeout(() => {
-        console.log(`⏱️  Stopping document polling after 3 minutes`);
-        clearInterval(pollInterval);
-      }, 180000); // 3 minutes
-      
-      // Cleanup
       return () => {
+        console.log(`🛑 Stopping document polling`);
         clearInterval(pollInterval);
-        clearTimeout(stopPollingTimeout);
       };
     }
-  }, [auction?.id, auction?.status, auction?.currentBidder, session?.user?.vendorId, fetchDocuments, documents.length]);
+  }, [auction?.id, auction?.status, auction?.currentBidder, session?.user?.vendorId, documents.length, fetchDocuments]);
 
-  // FIXED: Backward compatibility check - trigger payment unlocked modal for existing auctions
+  // Fetch prediction for active/extended auctions
   useEffect(() => {
-    const checkPaymentUnlockedBackwardCompatibility = async () => {
-      // Prevent multiple attempts
-      if (paymentProcessingAttemptedRef.current) return;
+    const fetchPrediction = async () => {
+      if (!auction || (auction.status !== 'active' && auction.status !== 'extended')) {
+        setPrediction(null);
+        return;
+      }
+      
+      try {
+        setPredictionLoading(true);
+        const response = await fetch(`/api/auctions/${auction.id}/prediction`);
+        if (response.ok) {
+          const data = await response.json();
+          // FIXED: API now returns flat structure (not nested data.data)
+          setPrediction(data);
+        } else {
+          console.error('Failed to fetch prediction');
+          setPrediction(null);
+        }
+      } catch (error) {
+        console.error('Error fetching prediction:', error);
+        setPrediction(null);
+      } finally {
+        setPredictionLoading(false);
+      }
+    };
 
+    fetchPrediction();
+  }, [auction?.id, auction?.status]);
+
+  // Show payment unlocked modal if notification exists (for page refreshes)
+  // CHANGED: Use polling to check for notification every 5 seconds
+  useEffect(() => {
+    const checkForExistingPaymentNotification = async () => {
       // Only check if:
-      // 1. Auction is loaded and closed
+      // 1. Auction is in awaiting_payment status (payment unlocked)
       // 2. User is authenticated with vendor ID
       // 3. User is the winner
-      // 4. Documents are loaded
       if (
         !auction ||
-        auction.status !== 'closed' ||
+        auction.status !== 'awaiting_payment' ||
         !session?.user?.vendorId ||
         !session?.user?.id ||
-        auction.currentBidder !== session.user.vendorId ||
-        documents.length === 0
+        auction.currentBidder !== session.user.vendorId
       ) {
         return;
       }
 
-      // Check if all documents are signed
-      const allDocumentsSigned = documents.every(doc => doc.status === 'signed');
-      if (!allDocumentsSigned) {
-        console.log(`⏸️  Not all documents signed yet. Skipping payment unlocked check.`);
-        return;
-      }
-
-      // Mark as attempted to prevent duplicate calls
-      paymentProcessingAttemptedRef.current = true;
-
-      console.log(`🔍 Checking for payment unlocked notification (backward compatibility)...`);
+      console.log(`🔍 Checking for existing payment unlocked notification...`);
 
       try {
         // Check if PAYMENT_UNLOCKED notification exists
         const notificationsResponse = await fetch('/api/notifications?unreadOnly=false&limit=50');
         if (!notificationsResponse.ok) {
-          console.error('Failed to fetch notifications for backward compatibility check');
+          console.error('Failed to fetch notifications');
           return;
         }
 
@@ -454,7 +558,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         );
 
         if (paymentUnlockedNotification) {
-          console.log(`✅ Payment unlocked notification already exists. Checking if modal should be shown...`);
+          console.log(`✅ Payment unlocked notification found`);
           
           // Check if payment page has been visited
           const paymentId = paymentUnlockedNotification.data?.paymentId;
@@ -481,64 +585,61 @@ export default function AuctionDetailsPage({ params }: PageProps) {
             setShowPaymentUnlockedModal(true);
             console.log(`✅ Payment unlocked modal triggered from existing notification`);
           }
-          return;
-        }
-
-        console.log(`⚠️  No payment unlocked notification found. Triggering retroactive payment processing...`);
-
-        // Call process-payment endpoint to trigger retroactive processing
-        const response = await fetch(`/api/auctions/${auction.id}/process-payment`, {
-          method: 'POST',
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && !data.alreadyProcessed) {
-            console.log(`✅ Retroactive payment processing completed. Refreshing page to show modal...`);
-            // Refresh page to trigger modal with new notification
-            window.location.reload();
-          } else if (data.alreadyProcessed) {
-            console.log(`⏸️  Payment already processed`);
-          }
-        } else {
-          const errorData = await response.json();
-          console.error('Failed to process retroactive payment:', errorData.error);
         }
       } catch (error) {
-        console.error('Error in backward compatibility check:', error);
+        console.error('Error checking for payment notification:', error);
       }
     };
 
-    checkPaymentUnlockedBackwardCompatibility();
-  }, [auction?.id, auction?.status, auction?.currentBidder, auction?.currentBid, auction?.case, session?.user?.vendorId, session?.user?.id, documents]);
+    // Check immediately
+    checkForExistingPaymentNotification();
 
-  // Update auction with real-time data - use useCallback to memoize the update function
+    // Then poll every 5 seconds while in awaiting_payment status
+    const pollInterval = setInterval(checkForExistingPaymentNotification, 5000);
+
+    return () => clearInterval(pollInterval);
+  }, [auction?.id, auction?.status, auction?.currentBidder, auction?.currentBid, session?.user?.vendorId, session?.user?.id]); // Removed auction?.case from dependencies
+
+
+  // Update auction with real-time data - CRITICAL FIX for real-time UI updates
   useEffect(() => {
-    if (realtimeAuction) {
-      setAuction(prev => {
-        if (!prev) return null;
-        
-        // Only update if values actually changed
-        const hasChanges = 
-          (realtimeAuction.currentBid && realtimeAuction.currentBid !== prev.currentBid) ||
-          (realtimeAuction.currentBidder && realtimeAuction.currentBidder !== prev.currentBidder) ||
-          (realtimeAuction.status && realtimeAuction.status !== prev.status) ||
-          (realtimeAuction.endTime && realtimeAuction.endTime !== prev.endTime) ||
-          (realtimeAuction.extensionCount !== undefined && realtimeAuction.extensionCount !== prev.extensionCount);
-        
-        if (!hasChanges) return prev;
-        
-        return {
-          ...prev,
-          currentBid: realtimeAuction.currentBid || prev.currentBid,
-          currentBidder: realtimeAuction.currentBidder || prev.currentBidder,
-          status: realtimeAuction.status || prev.status,
-          endTime: realtimeAuction.endTime || prev.endTime,
-          extensionCount: realtimeAuction.extensionCount ?? prev.extensionCount,
-        };
+    if (!realtimeAuction) return;
+    
+    console.log(`📡 Real-time auction update received:`, {
+      currentBid: realtimeAuction.currentBid,
+      currentBidder: realtimeAuction.currentBidder,
+      status: realtimeAuction.status,
+      endTime: realtimeAuction.endTime,
+      extensionCount: realtimeAuction.extensionCount,
+    });
+    
+    setAuction(prev => {
+      if (!prev) {
+        console.log(`⚠️  No previous auction state, skipping update`);
+        return null;
+      }
+      
+      // Merge realtime updates into existing auction object
+      // This ensures we don't lose any fields and always update when Socket.IO sends data
+      const updated = {
+        ...prev,
+        ...(realtimeAuction.currentBid !== undefined && { currentBid: realtimeAuction.currentBid }),
+        ...(realtimeAuction.currentBidder !== undefined && { currentBidder: realtimeAuction.currentBidder }),
+        ...(realtimeAuction.status !== undefined && { status: realtimeAuction.status }),
+        ...(realtimeAuction.endTime !== undefined && { endTime: realtimeAuction.endTime }),
+        ...(realtimeAuction.extensionCount !== undefined && { extensionCount: realtimeAuction.extensionCount }),
+      };
+      
+      console.log(`✅ Auction state updated:`, {
+        oldStatus: prev.status,
+        newStatus: updated.status,
+        oldBid: prev.currentBid,
+        newBid: updated.currentBid,
       });
-    }
-  }, [realtimeAuction?.currentBid, realtimeAuction?.currentBidder, realtimeAuction?.status, realtimeAuction?.endTime, realtimeAuction?.extensionCount]); // Only depend on specific fields
+      
+      return updated;
+    });
+  }, [realtimeAuction]); // Depend on the entire object, not individual fields
 
   // Update watching count - only when it actually changes
   useEffect(() => {
@@ -843,7 +944,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         {auction.status === 'closed' && 
          session?.user?.vendorId && 
          auction.currentBidder === session.user.vendorId && (
-          <div className="bg-white border-2 border-yellow-400 rounded-lg shadow-lg p-6 mb-6">
+          <div className="bg-white border-2 border-yellow-400 rounded-lg shadow-lg p-6 mb-6" id={`auction-${auction.id}-documents`}>
             <div className="flex items-start gap-4">
               <div className="flex-shrink-0">
                 <svg className="h-8 w-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -851,9 +952,20 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 </svg>
               </div>
               <div className="flex-1">
-                <h3 className="text-xl font-bold text-gray-900 mb-2">
-                  🎉 Congratulations! You Won This Auction
-                </h3>
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="text-xl font-bold text-gray-900">
+                    🎉 Congratulations! You Won This Auction
+                  </h3>
+                  <a
+                    href={`/vendor/documents#auction-${auction.id}`}
+                    className="text-sm text-[#800020] hover:text-[#600018] font-medium flex items-center gap-1 whitespace-nowrap"
+                  >
+                    View All Documents
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </a>
+                </div>
                 
                 {/* Show loading state while documents are being fetched */}
                 {isLoadingDocuments && documents.length === 0 && (
@@ -996,19 +1108,111 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                   </div>
                 </div>
 
-                {documents.every(d => d.status === 'signed') && (
-                  <div className="mt-4 p-4 bg-green-100 border border-green-300 rounded-lg">
-                    <p className="text-green-800 font-semibold">
-                      ✅ All documents signed! Payment is being processed automatically. 
-                      You will receive your pickup code shortly.
-                    </p>
-                  </div>
-                )}
                   </>
                 )}
               </div>
             </div>
           </div>
+        )}
+
+        {/* Payment Verified Banner (show when payment is verified) */}
+        {auction.status === 'awaiting_payment' && 
+         session?.user?.vendorId && 
+         auction.currentBidder === session.user.vendorId &&
+         hasVerifiedPayment && (
+          <div className="bg-gradient-to-r from-green-500 to-emerald-600 border-2 border-green-700 rounded-lg shadow-lg p-6 mb-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0 w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-white mb-1">
+                    ✅ Payment Verified!
+                  </h3>
+                  <p className="text-white/90 text-sm">
+                    Your payment has been confirmed. You can now access your pickup authorization and all documents.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <a
+                  href={`/vendor/documents#auction-${auction.id}`}
+                  className="flex-shrink-0 px-6 py-3 bg-white text-green-700 font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-md flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  View Documents
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Payment Method Selection Section (after documents signed) */}
+        {auction.status === 'awaiting_payment' && 
+         session?.user?.vendorId && 
+         auction.currentBidder === session.user.vendorId &&
+         !hasVerifiedPayment && (
+          <div className="mb-6" id={`auction-${auction.id}-payment`}>
+            {/* Prominent Pay Now Banner */}
+            <div className="bg-gradient-to-r from-[#800020] to-[#600018] border-2 border-[#800020] rounded-lg shadow-lg p-6 mb-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0 w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                    <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-xl font-bold text-white mb-1">
+                      🎉 Payment Required
+                    </h3>
+                    <p className="text-white/90 text-sm">
+                      All documents signed! Complete your payment to unlock pickup authorization.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <a
+                    href={`/vendor/documents#auction-${auction.id}`}
+                    className="text-sm text-white/90 hover:text-white font-medium flex items-center gap-1 whitespace-nowrap"
+                  >
+                    View Documents
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </a>
+                  <button
+                    onClick={() => setShowPaymentModal(true)}
+                    className="flex-shrink-0 px-6 py-3 bg-white text-[#800020] font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-md flex items-center gap-2"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    Pay Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Payment Options Modal */}
+        {showPaymentModal && auction && (
+          <PaymentOptions
+            auctionId={auction.id}
+            asModal={true}
+            onClose={() => setShowPaymentModal(false)}
+            onPaymentSuccess={() => {
+              setShowPaymentModal(false);
+              // Refresh the page to show updated status
+              window.location.reload();
+            }}
+          />
         )}
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1266,6 +1470,23 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               </div>
             </div>
 
+            {/* Price Prediction Card */}
+            {(auction.status === 'active' || auction.status === 'extended') && prediction && (
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <PredictionCard
+                  auctionId={auction.id}
+                  predictedPrice={prediction.predictedPrice}
+                  lowerBound={prediction.lowerBound}
+                  upperBound={prediction.upperBound}
+                  confidenceScore={prediction.confidenceScore}
+                  confidenceLevel={prediction.confidenceLevel}
+                  method={prediction.method}
+                  sampleSize={prediction.sampleSize}
+                  metadata={prediction.metadata}
+                />
+              </div>
+            )}
+
             {/* Bid History Chart */}
             {bidHistoryData.length > 0 && (
               <div className="bg-white rounded-lg shadow-md p-6">
@@ -1310,31 +1531,48 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
           {/* Right Column - Bidding Panel */}
           <div className="lg:col-span-1">
-            <div className="sticky top-24 space-y-4">
+            {/* Sticky sidebar that stays visible while scrolling main content */}
+            <div className="lg:sticky lg:top-24 lg:self-start space-y-4 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:overscroll-contain [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              <style jsx>{`
+                /* Hide scrollbar completely */
+                div {
+                  -ms-overflow-style: none;  /* IE and Edge */
+                  scrollbar-width: none;  /* Firefox */
+                }
+                div::-webkit-scrollbar {
+                  display: none;  /* Chrome, Safari, Opera */
+                }
+              `}</style>
               {/* Countdown Timer */}
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">
                   Time Remaining
                 </h3>
                 <div className="text-center">
-                  <CountdownTimer
-                    endTime={auction.endTime}
-                    className="text-xl md:text-2xl lg:text-xl font-mono" // Smaller font on desktop to prevent layout shifts
-                    onComplete={async () => {
-                      // Refresh auction data via API instead of full page reload
-                      try {
-                        const response = await fetch(`/api/auctions/${resolvedParams.id}`);
-                        if (response.ok) {
-                          const data = await response.json();
-                          setAuction(data.auction);
+                  {(auction.status === 'closed' || auction.status === 'awaiting_payment' || auction.status === 'cancelled') ? (
+                    <div className="text-2xl font-bold text-gray-500">
+                      Expired
+                    </div>
+                  ) : (
+                    <CountdownTimer
+                      endTime={auction.endTime}
+                      className="text-xl md:text-2xl lg:text-xl font-mono"
+                      onComplete={async () => {
+                        // Refresh auction data via API instead of full page reload
+                        try {
+                          const response = await fetch(`/api/auctions/${resolvedParams.id}`);
+                          if (response.ok) {
+                            const data = await response.json();
+                            setAuction(data.auction);
+                          }
+                        } catch (error) {
+                          console.error('Failed to refresh auction after countdown:', error);
                         }
-                      } catch (error) {
-                        console.error('Failed to refresh auction after countdown:', error);
-                      }
-                    }}
-                  />
+                      }}
+                    />
+                  )}
                 </div>
-                {auction.extensionCount > 0 && (
+                {auction.extensionCount > 0 && auction.status !== 'closed' && auction.status !== 'cancelled' && (
                   <p className="text-sm text-orange-600 text-center mt-2">
                     Extended {auction.extensionCount} time{auction.extensionCount > 1 ? 's' : ''}
                   </p>
@@ -1410,24 +1648,18 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                       {auction.watchingCount} watching
                     </span>
                   </div>
-                  {auction.watchingCount > 5 && (
+                  {auction.watchingCount > 5 && (auction.status === 'active' || auction.status === 'extended') && (
                     <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full font-semibold">
                       🔥 High Demand
                     </span>
                   )}
                 </div>
                 
-                {/* Real-time Updates Indicator */}
-                {!usingPolling && (
+                {/* Real-time Updates Indicator - Only show for active/extended auctions */}
+                {(auction.status === 'active' || auction.status === 'extended') && !usingPolling && (
                   <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 px-3 py-2 rounded-lg">
                     <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                     <span className="font-medium">Live updates active</span>
-                  </div>
-                )}
-                {usingPolling && (
-                  <div className="flex items-center gap-2 text-xs text-yellow-600 bg-yellow-50 px-3 py-2 rounded-lg">
-                    <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
-                    <span className="font-medium">Updates every 3 seconds</span>
                   </div>
                 )}
               </div>
@@ -1444,10 +1676,25 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                   </button>
                 )}
 
-                {auction.status === 'closed' && (
+                {auction.status === 'closed' && 
+                 !(session?.user?.vendorId && auction.currentBidder === session.user.vendorId) && (
                   <div className="bg-gray-100 text-gray-600 py-4 rounded-lg font-bold text-lg text-center">
                     Auction Closed
                   </div>
+                )}
+
+                {auction.status === 'awaiting_payment' && 
+                 session?.user?.vendorId && 
+                 auction.currentBidder === session.user.vendorId && (
+                  <a
+                    href={`/vendor/documents#auction-${auction.id}`}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-lg font-bold text-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    View Documents
+                  </a>
                 )}
 
                 {auction.status === 'cancelled' && (
@@ -1456,49 +1703,58 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                   </div>
                 )}
 
-                {/* Watch Auction Button */}
-                <button
-                  onClick={handleToggleWatch}
-                  disabled={isWatchLoading}
-                  className={`w-full py-3 rounded-lg font-semibold transition-colors border-2 group ${
-                    isWatching
-                      ? 'bg-[#800020] text-white border-[#800020] hover:bg-[#600018]'
-                      : 'bg-white text-[#800020] border-[#800020] hover:bg-gray-50'
-                  } ${isWatchLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  {isWatchLoading ? (
-                    <>
-                      <svg className="w-5 h-5 inline-block mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      {isWatching ? 'Unwatching...' : 'Watching...'}
-                    </>
-                  ) : isWatching ? (
-                    <>
-                      <span className="group-hover:hidden">
-                        <svg className="w-5 h-5 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                          <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+                {/* Watch Auction Button / Payment Complete */}
+                {hasVerifiedPayment ? (
+                  <div className="w-full py-3 rounded-lg font-semibold bg-green-100 text-green-800 border-2 border-green-600 text-center">
+                    <svg className="w-5 h-5 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    Payment Complete
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleToggleWatch}
+                    disabled={isWatchLoading}
+                    className={`w-full py-3 rounded-lg font-semibold transition-colors border-2 group ${
+                      isWatching
+                        ? 'bg-[#800020] text-white border-[#800020] hover:bg-[#600018]'
+                        : 'bg-white text-[#800020] border-[#800020] hover:bg-gray-50'
+                    } ${isWatchLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {isWatchLoading ? (
+                      <>
+                        <svg className="w-5 h-5 inline-block mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
-                        Watching
-                      </span>
-                      <span className="hidden group-hover:inline">
+                        {isWatching ? 'Unwatching...' : 'Watching...'}
+                      </>
+                    ) : isWatching ? (
+                      <>
+                        <span className="group-hover:hidden">
+                          <svg className="w-5 h-5 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                            <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+                          </svg>
+                          Watching
+                        </span>
+                        <span className="hidden group-hover:inline">
+                          <svg className="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                          Stop Watching
+                        </span>
+                      </>
+                    ) : (
+                      <>
                         <svg className="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
-                        Stop Watching
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                      Watch Auction
-                    </>
-                  )}
-                </button>
+                        Watch Auction
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Additional Info */}
@@ -1553,10 +1809,24 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           onSigned={async () => {
             setShowDocumentModal(false);
             setSelectedDocumentType(null);
+            
             // Refresh documents
             if (session?.user?.vendorId) {
               await fetchDocuments(auction.id, session.user.vendorId);
             }
+            
+            // CRITICAL FIX: Refresh auction data to get updated status (awaiting_payment)
+            try {
+              const response = await fetch(`/api/auctions/${auction.id}`);
+              if (response.ok) {
+                const data = await response.json();
+                setAuction(data.auction);
+                console.log(`✅ Auction data refreshed. New status: ${data.auction.status}`);
+              }
+            } catch (error) {
+              console.error('Failed to refresh auction data:', error);
+            }
+            
             toast.success(
               'Document Signed Successfully',
               'Your signature has been recorded'

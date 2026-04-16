@@ -1,5 +1,6 @@
 // Service Worker for Salvage Management System PWA
 // Implements offline-first caching strategies with Workbox
+// Version: 1.0.1 - Fixed external script caching
 
 // Import Workbox from CDN (for runtime service worker)
 importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js');
@@ -74,11 +75,13 @@ if (workbox) {
 
   // Cache Strategy 3: StaleWhileRevalidate for static assets
   // Serve from cache immediately, update cache in background
+  // EXCLUDE external domains (Dojah, Paystack, etc.) from caching
   workbox.routing.registerRoute(
-    ({ request }) =>
-      request.destination === 'style' ||
+    ({ request, url }) =>
+      (request.destination === 'style' ||
       request.destination === 'script' ||
-      request.destination === 'font',
+      request.destination === 'font') &&
+      url.origin === self.location.origin, // Only cache same-origin assets
     new workbox.strategies.StaleWhileRevalidate({
       cacheName: 'static-assets-cache',
       plugins: [

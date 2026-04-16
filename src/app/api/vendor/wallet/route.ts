@@ -3,12 +3,16 @@
  * GET /api/vendor/wallet
  * 
  * Returns wallet balance and transaction history for the authenticated vendor
+ * Includes deposit system information (availableBalance, frozenAmount, forfeitedAmount)
+ * 
+ * Requirements:
+ * - Requirement 23.1: Display balance breakdown
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { vendors } from '@/lib/db/schema/vendors';
+import { vendors, escrowWallets } from '@/lib/db/schema';
 import { walletTransactions } from '@/lib/db/schema/escrow';
 import { eq, desc } from 'drizzle-orm';
 
@@ -54,11 +58,22 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(walletTransactions.createdAt))
       .limit(50);
 
-    // Calculate wallet balance
+    // Get escrow wallet for deposit information
+    const escrowWallet = await db.query.escrowWallets.findFirst({
+      where: eq(escrowWallets.vendorId, vendor.id),
+    });
+
+    // Calculate wallet balance breakdown
     const balance = parseFloat(vendor.walletBalance || '0');
+    const availableBalance = escrowWallet ? parseFloat(escrowWallet.availableBalance) : balance;
+    const frozenAmount = escrowWallet ? parseFloat(escrowWallet.frozenAmount) : 0;
+    const forfeitedAmount = escrowWallet ? parseFloat(escrowWallet.forfeitedAmount || '0') : 0;
 
     return NextResponse.json({
       balance,
+      availableBalance,
+      frozenAmount,
+      forfeitedAmount,
       transactions: transactions.map((tx) => ({
         id: tx.id,
         type: tx.type,

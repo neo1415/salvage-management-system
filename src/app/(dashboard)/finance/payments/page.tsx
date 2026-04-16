@@ -23,6 +23,7 @@ const ErrorModal = dynamic(
 interface Payment {
   id: string;
   auctionId: string;
+  auctionStatus: string; // CRITICAL FIX: Include auction status for UI logic
   vendorId: string;
   amount: string;
   paymentMethod: 'paystack' | 'flutterwave' | 'bank_transfer' | 'escrow_wallet';
@@ -149,6 +150,18 @@ export default function FinancePaymentsPage() {
       }
 
       const data = await response.json();
+      
+      // Debug logging for Paystack payments
+      const paystackPayments = (data.payments || []).filter((p: Payment) => p.paymentMethod === 'paystack');
+      if (paystackPayments.length > 0) {
+        console.log('🔍 Client: Received Paystack payments from API:');
+        paystackPayments.forEach((p: Payment) => {
+          console.log(`   - ${p.paymentReference}`);
+          console.log(`     Status: ${p.status}, Auction Status: ${p.auctionStatus || 'MISSING!'}`);
+          console.log(`     Should hide buttons: ${p.status === 'pending' && p.auctionStatus === 'awaiting_payment'}`);
+        });
+      }
+      
       setPayments(data.payments || []);
       setStats(data.stats || {
         total: 0,
@@ -1334,10 +1347,13 @@ export default function FinancePaymentsPage() {
                   </div>
 
                   {/* Action Buttons - Mobile responsive */}
-                  {/* CRITICAL FIX: Don't show approve/reject for escrow_wallet payments with frozen status */}
-                  {/* These are waiting for vendor to sign documents - approval is meaningless */}
+                  {/* CRITICAL FIX: Only show approve/reject when payment is actually completed and needs verification */}
+                  {/* Don't show for: */}
+                  {/* 1. escrow_wallet with frozen status (waiting for documents) */}
+                  {/* 2. Paystack pending (vendor hasn't completed payment yet - auction status is awaiting_payment) */}
                   {payment.status === 'pending' && 
-                   !(payment.paymentMethod === 'escrow_wallet' && payment.escrowStatus === 'frozen') && (
+                   !(payment.paymentMethod === 'escrow_wallet' && payment.escrowStatus === 'frozen') &&
+                   !(payment.paymentMethod === 'paystack' && payment.auctionStatus === 'awaiting_payment') && (
                     <div className="w-full sm:w-auto sm:ml-4 flex flex-col gap-2">
                       <OfflineAwareButton
                         type="button"
@@ -1376,6 +1392,19 @@ export default function FinancePaymentsPage() {
                           {payment.documentProgress 
                             ? `${payment.documentProgress.signedDocuments}/${payment.documentProgress.totalDocuments} signed`
                             : 'Vendor must sign documents'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {/* Show waiting message for Paystack payments that are awaiting payment */}
+                  {payment.status === 'pending' && 
+                   payment.paymentMethod === 'paystack' && 
+                   payment.auctionStatus === 'awaiting_payment' && (
+                    <div className="w-full sm:w-auto sm:ml-4 flex flex-col items-start sm:items-end">
+                      <div className="w-full sm:w-auto px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                        <p className="text-blue-800 font-medium">⏳ Awaiting Payment</p>
+                        <p className="text-blue-600 text-xs mt-1">
+                          Vendor must complete Paystack payment
                         </p>
                       </div>
                     </div>

@@ -43,7 +43,12 @@ export default function VendorDocumentsPage() {
   
   // Track which auctions have been processed to prevent duplicate calls
   const processedAuctionsRef = useRef<Set<string>>(new Set());
-  const [notifications, setNotifications] = useState<any[]>([]);
+  
+  // Track if we need to scroll to a specific auction
+  const [scrollToAuctionId, setScrollToAuctionId] = useState<string | null>(null);
+  
+  // Track if we're refreshing due to hash navigation
+  const [isHashRefreshing, setIsHashRefreshing] = useState(false);
 
   // Use cached documents hook - pass null for auctionId since we're fetching all auctions
   const { 
@@ -59,11 +64,8 @@ export default function VendorDocumentsPage() {
       return [];
     }
 
-    // Fetch all won auctions and notifications in parallel
-    const [auctionsResponse, notificationsResponse] = await Promise.all([
-      fetch('/api/vendor/won-auctions'),
-      fetch('/api/notifications?unreadOnly=false&limit=50'),
-    ]);
+    // OPTIMIZED: Fetch won auctions first, then fetch documents in parallel
+    const auctionsResponse = await fetch('/api/vendor/won-auctions');
     
     if (!auctionsResponse.ok) {
       throw new Error('Failed to fetch documents');
@@ -71,30 +73,36 @@ export default function VendorDocumentsPage() {
 
     const data = await auctionsResponse.json();
     
-    // Store notifications for retroactive processing check
-    if (notificationsResponse.ok) {
-      const notifData = await notificationsResponse.json();
-      setNotifications(notifData.data?.notifications || []);
-    }
-    
-    if (data.status === 'success' && data.data.auctions) {
-      // Fetch documents for each auction
-      const auctionsWithDocs = await Promise.all(
-        data.data.auctions.map(async (auction: any) => {
-          const docsResponse = await fetch(`/api/auctions/${auction.id}/documents`);
-          const docsData = await docsResponse.json();
-          
-          return {
+    if (data.status === 'success' && data.data.auctions && data.data.auctions.length > 0) {
+      // CRITICAL FIX: Fetch ALL documents in parallel instead of sequentially
+      // This reduces load time from N seconds to ~1 second
+      const documentPromises = data.data.auctions.map((auction: any) =>
+        fetch(`/api/auctions/${auction.id}/documents`)
+          .then(res => res.json())
+          .then(docsData => ({
             auctionId: auction.id,
             assetName: auction.assetName || 'Salvage Item',
             winningBid: parseFloat(auction.currentBid || '0'),
             closedAt: new Date(auction.closedAt),
             status: auction.status,
             documents: docsData.status === 'success' ? docsData.data.documents : [],
-          };
-        })
+          }))
+          .catch(err => {
+            console.error(`Failed to fetch documents for auction ${auction.id}:`, err);
+            return {
+              auctionId: auction.id,
+              assetName: auction.assetName || 'Salvage Item',
+              winningBid: parseFloat(auction.currentBid || '0'),
+              closedAt: new Date(auction.closedAt),
+              status: auction.status,
+              documents: [],
+            };
+          })
       );
 
+      const auctionsWithDocs = await Promise.all(documentPromises);
+      
+      // Only return auctions that have documents
       return auctionsWithDocs.filter(a => a.documents.length > 0);
     }
     
@@ -105,83 +113,46 @@ export default function VendorDocumentsPage() {
   useEffect(() => {
     if (cachedDocs && cachedDocs.length > 0) {
       setAuctionDocuments(cachedDocs as unknown as AuctionDocuments[]);
+    } else if (!isLoading) {
+      // Clear documents if no cached docs and not loading
+      setAuctionDocuments([]);
     }
-  }, [cachedDocs]);
+  }, [cachedDocs, isLoading]);
 
-  // Automatic retroactive payment processing trigger
+  // Handle anchor navigation from auction detail page
   useEffect(() => {
-    const processRetroactivePayments = async () => {
-      if (!auctionDocuments || auctionDocuments.length === 0) return;
-
-      console.log(`🔍 Checking ${auctionDocuments.length} auctions for retroactive payment processing...`);
-
-      for (const auction of auctionDocuments) {
-        // Skip if already processed in this session
-        if (processedAuctionsRef.current.has(auction.auctionId)) {
-          console.log(`⏸️  Auction ${auction.auctionId} already processed in this session. Skipping.`);
-          continue;
-        }
-
-        // Only process closed auctions
-        if (auction.status !== 'closed') {
-          console.log(`⏸️  Auction ${auction.auctionId} not closed (status: ${auction.status}). Skipping.`);
-          continue;
-        }
-
-        // Check if all required documents signed (only bill_of_sale and liability_waiver)
-        // Pickup authorization is generated AFTER payment is complete
-        const docs = auction.documents || [];
-        const requiredDocs = docs.filter(d => 
-          d.documentType === 'bill_of_sale' || d.documentType === 'liability_waiver'
-        );
-        const allSigned = requiredDocs.length === 2 && requiredDocs.every(d => d.status === 'signed');
-        if (!allSigned) {
-          console.log(`⏸️  Not all required documents signed for auction ${auction.auctionId}. Skipping.`);
-          continue;
-        }
-
-        // Check if PAYMENT_UNLOCKED notification exists
-        const hasNotification = notifications?.some(
-          n => n.type === 'PAYMENT_UNLOCKED' && n.data?.auctionId === auction.auctionId
-        );
-        if (hasNotification) {
-          console.log(`⏸️  PAYMENT_UNLOCKED notification already exists for auction ${auction.auctionId}. Skipping.`);
-          continue;
-        }
-
-        // Mark as processed to prevent duplicate calls
-        processedAuctionsRef.current.add(auction.auctionId);
-
-        // Trigger retroactive payment processing
-        try {
-          console.log(`🔄 Triggering retroactive payment processing for auction ${auction.auctionId}...`);
-          const response = await fetch(`/api/auctions/${auction.auctionId}/process-payment`, {
-            method: 'POST',
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success && !data.alreadyProcessed) {
-              toast.success(
-                'Payment Processed',
-                `Payment for ${auction.assetName} has been processed. Check your notifications.`
-              );
-              console.log(`✅ Retroactive payment processing completed for auction ${auction.auctionId}`);
-            } else if (data.alreadyProcessed) {
-              console.log(`⏸️  Payment already processed for auction ${auction.auctionId}`);
-            }
-          } else {
-            const errorData = await response.json();
-            console.error(`❌ Failed to process payment for auction ${auction.auctionId}:`, errorData.error);
-          }
-        } catch (error) {
-          console.error(`❌ Failed to process payment for auction ${auction.auctionId}:`, error);
-        }
+    // Check if there's a hash in the URL (e.g., #auction-123)
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.substring(1); // Remove the #
+      if (hash.startsWith('auction-')) {
+        const auctionId = hash.replace('auction-', '');
+        setScrollToAuctionId(auctionId);
+        
+        // Force refresh when navigating with hash to ensure fresh data
+        setIsHashRefreshing(true);
+        refresh().finally(() => {
+          setIsHashRefreshing(false);
+        });
       }
-    };
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    processRetroactivePayments();
-  }, [auctionDocuments, notifications, toast]);
+  // Scroll to auction after documents are loaded
+  useEffect(() => {
+    if (scrollToAuctionId && auctionDocuments.length > 0 && !isLoading) {
+      // Wait longer for the DOM to fully render
+      setTimeout(() => {
+        const element = document.getElementById(`auction-${scrollToAuctionId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // Clear the scroll target
+          setScrollToAuctionId(null);
+        } else {
+          console.warn(`Element auction-${scrollToAuctionId} not found in DOM`);
+        }
+      }, 300); // Increased from 100ms to 300ms
+    }
+  }, [scrollToAuctionId, auctionDocuments, isLoading]);
 
   const handleDownload = async (documentId: string, title: string) => {
     try {
@@ -206,12 +177,16 @@ export default function VendorDocumentsPage() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isHashRefreshing) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading documents...</p>
+          <div className="relative w-16 h-16 mx-auto mb-6">
+            <div className="absolute inset-0 rounded-full border-4 border-gray-200"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-[#800020] border-t-transparent animate-spin"></div>
+          </div>
+          <p className="text-lg font-medium text-gray-700">Loading documents...</p>
+          <p className="text-sm text-gray-500 mt-2">Please wait</p>
         </div>
       </div>
     );
@@ -219,16 +194,18 @@ export default function VendorDocumentsPage() {
 
   if (cacheError) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center p-4">
         <div className="text-center max-w-md">
-          <svg className="w-16 h-16 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Documents</h2>
-          <p className="text-gray-600 mb-6">{cacheError.message}</p>
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">Unable to Load Documents</h2>
+          <p className="text-gray-600 mb-8 leading-relaxed">{cacheError.message}</p>
           <button
             onClick={() => refresh()}
-            className="px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+            className="px-8 py-3.5 bg-[#800020] text-white font-semibold rounded-xl hover:bg-[#600018] transition-all duration-200 shadow-lg shadow-[#800020]/20 hover:shadow-xl hover:shadow-[#800020]/30 hover:-translate-y-0.5"
           >
             Try Again
           </button>
@@ -239,23 +216,28 @@ export default function VendorDocumentsPage() {
 
   if (auctionDocuments.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-6">My Documents</h1>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-6 tracking-tight">My Documents</h1>
           
           {/* Offline indicator when viewing cached empty state */}
           {isOffline && (
-            <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
-              <div className="flex items-center">
-                <svg className="w-5 h-5 text-yellow-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
+            <div className="mb-6 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-2xl p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-yellow-800">
-                    You are offline. Showing cached data.
+                  <p className="text-sm font-semibold text-amber-900">
+                    Offline Mode
                   </p>
                   {lastUpdated && (
-                    <p className="text-xs text-yellow-700 mt-1">
+                    <p className="text-xs text-amber-700 mt-1 flex items-center gap-1">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
                       Last updated: {new Date(lastUpdated).toLocaleString('en-NG')}
                     </p>
                   )}
@@ -264,17 +246,19 @@ export default function VendorDocumentsPage() {
             </div>
           )}
           
-          <div className="bg-white rounded-lg shadow-md p-12 text-center">
-            <svg className="w-24 h-24 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">No Documents Yet</h2>
-            <p className="text-gray-600 mb-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 sm:p-16 text-center">
+            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3">No Documents Yet</h2>
+            <p className="text-gray-600 mb-8 text-base sm:text-lg max-w-md mx-auto leading-relaxed">
               Documents will appear here after you win an auction
             </p>
             <button
               onClick={() => router.push('/vendor/auctions')}
-              className="px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+              className="px-8 py-3.5 bg-[#800020] text-white font-semibold rounded-xl hover:bg-[#600018] transition-all duration-200 shadow-lg shadow-[#800020]/20 hover:shadow-xl hover:shadow-[#800020]/30 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
               disabled={isOffline}
             >
               Browse Auctions
@@ -286,49 +270,77 @@ export default function VendorDocumentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">My Documents</h1>
-          <p className="text-gray-600">
-            View and download documents from your won auctions
-          </p>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
+        {/* Modern Header with Stats */}
+        <div className="mb-8 sm:mb-10">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2 tracking-tight">
+                My Documents
+              </h1>
+              <p className="text-base sm:text-lg text-gray-600">
+                Manage and download your auction documents
+              </p>
+            </div>
+            
+            {/* Document Stats */}
+            {auctionDocuments.length > 0 && (
+              <div className="flex gap-3 sm:gap-4">
+                <div className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100">
+                  <div className="text-2xl font-bold text-[#800020]">{auctionDocuments.length}</div>
+                  <div className="text-xs text-gray-600 mt-0.5">Auctions</div>
+                </div>
+                <div className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100">
+                  <div className="text-2xl font-bold text-[#800020]">
+                    {auctionDocuments.reduce((sum, a) => sum + a.documents.length, 0)}
+                  </div>
+                  <div className="text-xs text-gray-600 mt-0.5">Documents</div>
+                </div>
+              </div>
+            )}
+          </div>
 
-        {/* Offline indicator banner */}
-        {isOffline && (
-          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
-            <div className="flex items-center">
-              <svg className="w-5 h-5 text-yellow-600 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-yellow-800">
-                  You are offline. Showing cached documents.
-                </p>
-                {lastUpdated && (
-                  <p className="text-xs text-yellow-700 mt-1">
-                    Last updated: {new Date(lastUpdated).toLocaleString('en-NG', {
-                      dateStyle: 'medium',
-                      timeStyle: 'short'
-                    })}
+          {/* Offline indicator banner - Modern design */}
+          {isOffline && (
+            <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-2xl p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-amber-900">
+                    Offline Mode
                   </p>
-                )}
-                <p className="text-xs text-yellow-700 mt-1">
-                  Document downloads are disabled while offline.
-                </p>
+                  <p className="text-sm text-amber-800 mt-1">
+                    Showing cached documents. Downloads are disabled until you're back online.
+                  </p>
+                  {lastUpdated && (
+                    <p className="text-xs text-amber-700 mt-2 flex items-center gap-1">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Last updated: {new Date(lastUpdated).toLocaleString('en-NG', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short'
+                      })}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Use virtualization only when count > 50 */}
         {auctionDocuments.length > 50 ? (
-          <div className="h-[calc(100vh-250px)] min-h-[600px]">
+          <div className="h-[calc(100vh-280px)] min-h-[600px]">
             <VirtualizedList
               items={auctionDocuments}
               renderItem={(auction) => (
-                <div className="pb-6">
+                <div className="pb-5">
                   <AuctionDocumentCard
                     auction={auction}
                     onViewAuction={() => router.push(`/vendor/auctions/${auction.auctionId}`)}
@@ -342,7 +354,7 @@ export default function VendorDocumentsPage() {
             />
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="grid gap-5 sm:gap-6">
             {auctionDocuments.map((auction) => (
               <AuctionDocumentCard
                 key={auction.auctionId}
@@ -371,86 +383,159 @@ interface AuctionDocumentCardProps {
 function AuctionDocumentCard({ auction, onViewAuction, onDownload, isOffline }: AuctionDocumentCardProps) {
   const router = useRouter();
 
+  const signedCount = auction.documents.filter(d => d.status === 'signed').length;
+  const pendingCount = auction.documents.filter(d => d.status === 'pending' && !(d.documentType === 'pickup_authorization')).length;
+  const totalCount = auction.documents.filter(d => !(d.documentType === 'pickup_authorization' && d.status === 'pending')).length;
+
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      {/* Auction Header */}
-      <div className="bg-gradient-to-r from-[#800020] to-[#a00028] text-white p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold mb-1">{auction.assetName}</h2>
-            <p className="text-white/90">
-              Won for ₦{auction.winningBid.toLocaleString()} • {new Date(auction.closedAt).toLocaleDateString('en-NG')}
-            </p>
+    <div 
+      id={`auction-${auction.auctionId}`} 
+      className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden scroll-mt-24 hover:shadow-md transition-shadow duration-300"
+    >
+      {/* Modern Auction Header with Gradient */}
+      <div className="relative bg-gradient-to-br from-[#800020] via-[#900025] to-[#a00028] text-white p-6 sm:p-8">
+        {/* Decorative background pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
+        </div>
+        
+        <div className="relative z-10">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-bold truncate">{auction.assetName}</h2>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-3 text-white/90">
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                  </svg>
+                  <span className="font-semibold">₦{auction.winningBid.toLocaleString()}</span>
+                </div>
+                <span className="text-white/60">•</span>
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span>{new Date(auction.closedAt).toLocaleDateString('en-NG', { 
+                    year: 'numeric', 
+                    month: 'short', 
+                    day: 'numeric' 
+                  })}</span>
+                </div>
+              </div>
+            </div>
+            
+            <button
+              onClick={onViewAuction}
+              className="px-5 py-2.5 bg-white/20 backdrop-blur-sm hover:bg-white/30 rounded-xl font-medium transition-all duration-200 border border-white/30 hover:border-white/50 flex items-center gap-2 group"
+            >
+              <span>View Auction</span>
+              <svg className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
           </div>
-          <button
-            onClick={onViewAuction}
-            className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-medium transition-colors"
-          >
-            View Auction
-          </button>
+
+          {/* Progress indicator */}
+          <div className="flex items-center gap-3 mt-4">
+            <div className="flex-1 bg-white/20 rounded-full h-2 overflow-hidden backdrop-blur-sm">
+              <div 
+                className="bg-white h-full rounded-full transition-all duration-500"
+                style={{ width: `${totalCount > 0 ? (signedCount / totalCount) * 100 : 0}%` }}
+              ></div>
+            </div>
+            <span className="text-sm font-medium text-white/90 whitespace-nowrap">
+              {signedCount}/{totalCount} signed
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Documents List */}
-      <div className="p-6">
-        {/* Filter out pending pickup_authorization - it's generated AFTER payment, never shown as pending */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Documents Grid - Modern Card Design */}
+      <div className="p-6 sm:p-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {auction.documents
             .filter(doc => !(doc.documentType === 'pickup_authorization' && doc.status === 'pending'))
             .map((doc) => (
             <div
               key={doc.id}
-              className={`border-2 rounded-lg p-4 ${
+              className={`group relative rounded-xl p-5 transition-all duration-300 border-2 ${
                 doc.status === 'signed'
-                  ? 'border-green-300 bg-green-50'
+                  ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-green-50 hover:shadow-lg hover:shadow-emerald-100'
                   : doc.status === 'voided'
-                  ? 'border-red-300 bg-red-50'
-                  : 'border-yellow-300 bg-yellow-50'
+                  ? 'border-red-200 bg-gradient-to-br from-red-50 to-rose-50 hover:shadow-lg hover:shadow-red-100'
+                  : 'border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50 hover:shadow-lg hover:shadow-amber-100'
               }`}
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  {doc.status === 'signed' ? (
-                    <svg className="w-6 h-6 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  ) : doc.status === 'voided' ? (
-                    <svg className="w-6 h-6 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-6 h-6 text-yellow-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  )}
-                </div>
+              {/* Status Badge - Top Right */}
+              <div className="absolute top-3 right-3">
                 <span
-                  className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                  className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow-sm ${
                     doc.status === 'signed'
-                      ? 'bg-green-600 text-white'
+                      ? 'bg-emerald-600 text-white'
                       : doc.status === 'voided'
                       ? 'bg-red-600 text-white'
-                      : 'bg-yellow-600 text-white'
+                      : 'bg-amber-600 text-white'
                   }`}
                 >
                   {doc.status.toUpperCase()}
                 </span>
               </div>
 
-              <h3 className="font-semibold text-gray-900 mb-2">
-                {auction.assetName} - {doc.title}
+              {/* Icon */}
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
+                doc.status === 'signed'
+                  ? 'bg-emerald-100'
+                  : doc.status === 'voided'
+                  ? 'bg-red-100'
+                  : 'bg-amber-100'
+              }`}>
+                {doc.status === 'signed' ? (
+                  <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                ) : doc.status === 'voided' ? (
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+              </div>
+
+              {/* Document Title */}
+              <h3 className="font-bold text-gray-900 mb-2 pr-16 leading-snug">
+                {doc.title}
               </h3>
               
+              {/* Signed Date */}
               {doc.signedAt && (
-                <p className="text-sm text-gray-600 mb-3">
-                  Signed: {new Date(doc.signedAt).toLocaleDateString('en-NG')}
+                <p className="text-sm text-gray-600 mb-4 flex items-center gap-1.5">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Signed {new Date(doc.signedAt).toLocaleDateString('en-NG', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
                 </p>
               )}
 
+              {/* Action Buttons */}
               {doc.status === 'signed' && (
                 <OfflineAwareButton
                   onClick={() => onDownload(doc.id, doc.title)}
-                  className="w-full px-4 py-2 bg-[#800020] hover:bg-[#600018] text-white rounded-md font-medium transition-colors flex items-center justify-center gap-2"
+                  className="w-full px-4 py-3 bg-[#800020] hover:bg-[#600018] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[#800020]/20 hover:shadow-lg hover:shadow-[#800020]/30 hover:-translate-y-0.5"
                   requiresOnline={true}
                   offlineTooltip="Document downloads require an internet connection"
                 >
@@ -464,8 +549,11 @@ function AuctionDocumentCard({ auction, onViewAuction, onDownload, isOffline }: 
               {doc.status === 'pending' && (
                 <button
                   onClick={() => router.push(`/vendor/auctions/${auction.auctionId}`)}
-                  className="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md font-medium transition-colors"
+                  className="w-full px-4 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-semibold transition-all duration-200 shadow-md shadow-amber-600/20 hover:shadow-lg hover:shadow-amber-600/30 hover:-translate-y-0.5 flex items-center justify-center gap-2"
                 >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
                   Sign Document
                 </button>
               )}

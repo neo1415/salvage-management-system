@@ -19,6 +19,9 @@ export const escrowWallets = pgTable('escrow_wallets', {
   availableBalance: numeric('available_balance', { precision: 12, scale: 2 })
     .notNull()
     .default('0.00'),
+  forfeitedAmount: numeric('forfeited_amount', { precision: 12, scale: 2 })
+    .notNull()
+    .default('0.00'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

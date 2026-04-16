@@ -13,6 +13,12 @@ export const bids = pgTable('bids', {
     .notNull()
     .references(() => vendors.id),
   amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  
+  // Deposit system fields (added in migration 0028)
+  depositAmount: numeric('deposit_amount', { precision: 12, scale: 2 }),
+  status: varchar('status', { length: 50 }).default('active'),
+  isLegacy: boolean('is_legacy').default(false),
+  
   otpVerified: boolean('otp_verified').notNull().default(false),
   ipAddress: varchar('ip_address', { length: 45 }).notNull(),
   deviceType: deviceTypeEnum('device_type').notNull(),

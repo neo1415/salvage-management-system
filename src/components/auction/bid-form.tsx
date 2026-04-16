@@ -326,21 +326,26 @@ export function BidForm({
   if (!isOpen) return null;
 
   const modalContent = (
-    <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+    <div className="fixed inset-0 z-[9999]" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
       {/* Modal Overlay */}
       <div
-        className="fixed inset-0 bg-black/50 transition-opacity"
+        className="absolute inset-0 bg-black/50 transition-opacity"
         onClick={onClose}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
 
-      {/* Modal Content */}
-      <div className="fixed inset-0 flex items-center justify-center p-4">
+      {/* Modal Content - Centered with absolute positioning */}
+      <div 
+        className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none"
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+      >
         <div
-          className="bg-white rounded-lg shadow-xl max-w-md w-full transform transition-all"
+          className="bg-white rounded-lg shadow-xl max-w-md w-full pointer-events-auto transform transition-all overflow-hidden flex flex-col"
+          style={{ maxHeight: 'calc(100vh - 4rem)' }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
             <h2 className="text-xl font-bold text-gray-900">
               {step === 'bid' ? 'Place Your Bid' : 'Verify OTP'}
             </h2>
@@ -365,8 +370,8 @@ export function BidForm({
             </button>
           </div>
 
-          {/* Body */}
-          <div className="p-6">
+          {/* Body - Scrollable */}
+          <div className="p-6 overflow-y-auto flex-1">
             {/* Asset Name */}
             <div className="mb-6">
               <p className="text-sm text-gray-600 mb-1">Bidding on:</p>

@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum, boolean, integer } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { auctions } from './auctions';
 import { vendors } from './vendors';
@@ -30,6 +30,12 @@ export const releaseForms = pgTable('release_forms', {
   title: varchar('title', { length: 255 }).notNull(),
   status: documentStatusEnum('status').notNull().default('pending'),
   disabled: boolean('disabled').default(false), // For forfeiture - disables document signing
+
+  // Deposit system fields (Requirements 6.3, 8.5)
+  validityDeadline: timestamp('validity_deadline'), // Deadline for signing (default 48 hours)
+  extensionCount: integer('extension_count').default(0).notNull(), // Number of extensions granted
+  originalDeadline: timestamp('original_deadline'), // Original deadline before extensions
+  paymentDeadline: timestamp('payment_deadline'), // Payment deadline after signing (default 72 hours)
 
   // Digital signature data
   digitalSignature: text('digital_signature'), // Base64 encoded signature image

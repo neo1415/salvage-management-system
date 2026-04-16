@@ -22,7 +22,7 @@ import { useSession } from 'next-auth/react';
 import { PriceField } from '@/components/manager/price-field';
 import { validatePriceOverrides as validatePrices, type PriceOverrides } from '@/lib/validation/price-validation';
 import { formatConditionForDisplay } from '@/features/valuations/services/condition-mapping.service';
-import { AuctionDurationSelector } from '@/components/ui/auction-duration-selector';
+import { AuctionScheduleSelector, type AuctionScheduleValue } from '@/components/ui/auction-schedule-selector';
 import { LocationMap } from '@/components/ui/location-map';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
@@ -129,8 +129,11 @@ export default function ApprovalsPage() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   
-  // Auction duration state
-  const [auctionDurationHours, setAuctionDurationHours] = useState<number>(120); // Default 5 days
+  // Auction schedule state
+  const [auctionSchedule, setAuctionSchedule] = useState<AuctionScheduleValue>({ 
+    mode: 'now',
+    durationHours: 120, // Default 5 days
+  });
   
   // Modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -248,8 +251,11 @@ export default function ApprovalsPage() {
     setOverrideComment('');
     setValidationErrors([]);
     setValidationWarnings([]);
-    // Reset auction duration to default
-    setAuctionDurationHours(120);
+    // Reset auction schedule to default
+    setAuctionSchedule({ 
+      mode: 'now',
+      durationHours: 120, // Default 5 days
+    });
     // Reset modal state
     setShowConfirmModal(false);
     setShowResultModal(false);
@@ -371,7 +377,10 @@ export default function ApprovalsPage() {
       setOverrideComment('');
       setValidationErrors([]);
       setValidationWarnings([]);
-      setAuctionDurationHours(120);
+      setAuctionSchedule({ 
+        mode: 'now',
+        durationHours: 120, // Default 5 days
+      });
     }
   };
 
@@ -464,7 +473,7 @@ export default function ApprovalsPage() {
           action: approvalAction,
           comment: comment.trim() || overrideComment.trim() || undefined,
           priceOverrides: hasOverrides ? priceOverrides : undefined,
-          auctionDurationHours: approvalAction === 'approve' ? auctionDurationHours : undefined,
+          scheduleData: approvalAction === 'approve' ? auctionSchedule : undefined,
         }),
       });
 
@@ -1093,17 +1102,16 @@ export default function ApprovalsPage() {
             </div>
           )}
 
-          {/* Auction Duration Settings - Only show for pending approval cases */}
+          {/* Auction Schedule Settings - Only show for pending approval cases */}
           {selectedCase.status === 'pending_approval' && !selectedCase.approvedBy && (
             <div className="bg-white rounded-lg shadow-md p-4">
               <h3 className="font-bold text-gray-900 mb-3 flex items-center">
                 <span className="mr-2">⏰</span>
-                Auction Settings
+                Auction Schedule
               </h3>
-              <AuctionDurationSelector
-                value={auctionDurationHours}
-                onChange={setAuctionDurationHours}
-                disabled={isSubmitting}
+              <AuctionScheduleSelector
+                value={auctionSchedule}
+                onChange={setAuctionSchedule}
               />
             </div>
           )}

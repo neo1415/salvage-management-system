@@ -46,7 +46,9 @@ import { LocationAutocomplete } from '@/components/ui/filters/location-autocompl
 import { Filter as FilterIcon, X, Circle, DollarSign, Trophy, ClipboardList, Clock, Eye, RefreshCw, WifiOff } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
 import { useCachedAuctions } from '@/hooks/use-cached-auctions';
+import { useScheduledAuctionChecker } from '@/hooks/use-scheduled-auction-checker';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
+import { RecommendationsFeed } from '@/components/intelligence/recommendations-feed';
 
 // Types
 interface Auction {
@@ -56,9 +58,11 @@ interface Auction {
   endTime: string;
   currentBid: string | null;
   minimumIncrement: string;
-  status: 'scheduled' | 'active' | 'extended' | 'closed' | 'cancelled';
+  status: 'scheduled' | 'active' | 'extended' | 'closed' | 'cancelled' | 'awaiting_payment';
   watchingCount: number;
   isWinner?: boolean;
+  scheduledStartTime?: string;
+  isScheduled?: boolean;
   case: {
     id: string;
     claimReference: string;
@@ -81,7 +85,7 @@ interface Filters {
   sortBy: 'ending_soon' | 'newest' | 'price_low' | 'price_high';
   location: string;
   search: string;
-  tab: 'active' | 'my_bids' | 'won' | 'completed';
+  tab: 'active' | 'my_bids' | 'won' | 'scheduled' | 'for_you';
 }
 
 export default function AuctionBrowsingPage() {
@@ -140,6 +144,7 @@ function AuctionBrowsingContent() {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
+  const [showDesktopSearch, setShowDesktopSearch] = useState(false); // NEW: Desktop search toggle
   
   // Initialize filters from URL
   const [activeTab, setActiveTab] = useState<Filters['tab']>(
@@ -159,18 +164,19 @@ function AuctionBrowsingContent() {
 
   // Cached auctions hook with fetch function
   const fetchAuctionsFn = useCallback(async () => {
-    // Build query params
+    // For client-side filtering, fetch ALL auctions at once with bid info
     const params = new URLSearchParams({
       page: '1',
-      limit: '100', // Fetch more for better offline experience
-      assetType: assetTypeFilter.join(','),
-      priceMin,
-      priceMax,
-      sortBy,
-      location: locationFilter,
-      search: searchQuery,
-      tab: activeTab,
+      limit: '500', // Fetch more for client-side filtering
+      includeAllStatuses: 'true', // Get all statuses for client-side filtering
+      includeBidInfo: 'true', // Include bid information
     });
+
+    // Only apply server-side filters that can't be done client-side efficiently
+    // (search requires database text search capabilities)
+    if (searchQuery) {
+      params.set('search', searchQuery);
+    }
 
     const response = await fetch(`/api/auctions?${params}`, {
       cache: 'no-store',
@@ -185,7 +191,7 @@ function AuctionBrowsingContent() {
 
     const data = await response.json();
     return data.auctions || [];
-  }, [activeTab, assetTypeFilter, priceMin, priceMax, sortBy, locationFilter, searchQuery]);
+  }, [searchQuery]); // Only refetch when search changes
 
   const {
     auctions: cachedAuctions,
@@ -197,87 +203,131 @@ function AuctionBrowsingContent() {
   } = useCachedAuctions(fetchAuctionsFn);
 
   // Update local auctions state when cached auctions change
-  // Apply client-side filtering when offline
+  // Apply ALL filtering client-side for instant UX
   useEffect(() => {
     let filteredAuctions = (cachedAuctions as unknown as Auction[]).filter(
-      auction => auction.status !== 'cancelled' && !auction.case.claimReference.toLowerCase().includes('test')
+      auction => auction.status !== 'cancelled' && 
+      !auction.case.claimReference.toLowerCase().includes('test') &&
+      !getAssetNameForFiltering(auction).toLowerCase().includes('test')
     );
 
-    // When offline, apply tab filtering client-side
-    if (isOffline && filteredAuctions.length > 0) {
-      const userId = session?.user?.vendorId;
-      
-      switch (activeTab) {
-        case 'active':
-          filteredAuctions = filteredAuctions.filter(
-            a => a.status === 'active' || a.status === 'extended'
-          );
-          break;
-        case 'my_bids':
-          // Filter auctions where user has placed bids
-          // Note: This requires bid data to be cached with auctions
-          // For now, show all auctions when offline (limitation)
-          break;
-        case 'won':
-          filteredAuctions = filteredAuctions.filter(
-            a => a.status === 'closed' && a.isWinner === true
-          );
-          break;
-        case 'completed':
-          filteredAuctions = filteredAuctions.filter(
-            a => a.status === 'closed'
-          );
-          break;
-      }
-
-      // Apply search filter client-side when offline
-      if (searchQuery) {
-        const searchLower = searchQuery.toLowerCase();
-        filteredAuctions = filteredAuctions.filter(auction => {
-          const claimRef = auction.case.claimReference.toLowerCase();
-          const details = auction.case.assetDetails;
-          const make = (details.make as string || '').toLowerCase();
-          const model = (details.model as string || '').toLowerCase();
-          const brand = (details.brand as string || '').toLowerCase();
-          
-          return claimRef.includes(searchLower) || 
-                 make.includes(searchLower) || 
-                 model.includes(searchLower) ||
-                 brand.includes(searchLower);
-        });
-      }
-
-      // Apply asset type filter client-side when offline
-      if (assetTypeFilter.length > 0) {
+    const userId = session?.user?.vendorId;
+    
+    // TAB FILTERING - Client-side for instant switching
+    switch (activeTab) {
+      case 'active':
         filteredAuctions = filteredAuctions.filter(
-          a => assetTypeFilter.includes(a.case.assetType)
+          a => a.status === 'active' || a.status === 'extended'
         );
-      }
-
-      // Apply location filter client-side when offline
-      if (locationFilter) {
-        const locationLower = locationFilter.toLowerCase();
+        break;
+      case 'scheduled':
         filteredAuctions = filteredAuctions.filter(
-          a => a.case.locationName.toLowerCase().includes(locationLower)
+          a => a.status === 'scheduled'
         );
-      }
+        break;
+      case 'my_bids':
+        // Filter auctions where user has placed bids
+        filteredAuctions = filteredAuctions.filter(
+          a => (a as any).hasVendorBid === true
+        );
+        break;
+      case 'won':
+        // Filter auctions where user is the winner (closed or awaiting_payment)
+        filteredAuctions = filteredAuctions.filter(
+          a => a.isWinner === true && (a.status === 'closed' || a.status === 'awaiting_payment')
+        );
+        break;
+      case 'for_you':
+        // Skip filtering for recommendations tab
+        return;
+    }
 
-      // Apply price filter client-side when offline
-      if (priceMin || priceMax) {
-        filteredAuctions = filteredAuctions.filter(auction => {
-          const price = auction.currentBid 
-            ? Number(auction.currentBid)
-            : Number(auction.case.reservePrice);
-          
-          if (priceMin && price < Number(priceMin)) return false;
-          if (priceMax && price > Number(priceMax)) return false;
-          return true;
+    // ASSET TYPE FILTER - Client-side
+    if (assetTypeFilter.length > 0) {
+      filteredAuctions = filteredAuctions.filter(
+        a => assetTypeFilter.includes(a.case.assetType)
+      );
+    }
+
+    // LOCATION FILTER - Client-side
+    if (locationFilter) {
+      const locationLower = locationFilter.toLowerCase();
+      filteredAuctions = filteredAuctions.filter(
+        a => a.case.locationName.toLowerCase().includes(locationLower)
+      );
+    }
+
+    // PRICE FILTER - Client-side
+    if (priceMin || priceMax) {
+      filteredAuctions = filteredAuctions.filter(auction => {
+        const price = auction.currentBid 
+          ? Number(auction.currentBid)
+          : Number(auction.case.reservePrice);
+        
+        if (priceMin && price < Number(priceMin)) return false;
+        if (priceMax && price > Number(priceMax)) return false;
+        return true;
+      });
+    }
+
+    // SORTING - Client-side for instant results
+    switch (sortBy) {
+      case 'newest':
+        // Sort by endTime DESC for closed/won, createdAt DESC for active
+        if (activeTab === 'won') {
+          filteredAuctions.sort((a, b) => 
+            new Date(b.endTime).getTime() - new Date(a.endTime).getTime()
+          );
+        } else {
+          filteredAuctions.sort((a, b) => 
+            new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+          );
+        }
+        break;
+      case 'price_low':
+        filteredAuctions.sort((a, b) => {
+          const priceA = a.currentBid ? Number(a.currentBid) : Number(a.case.reservePrice);
+          const priceB = b.currentBid ? Number(b.currentBid) : Number(b.case.reservePrice);
+          return priceA - priceB;
         });
-      }
+        break;
+      case 'price_high':
+        filteredAuctions.sort((a, b) => {
+          const priceA = a.currentBid ? Number(a.currentBid) : Number(a.case.reservePrice);
+          const priceB = b.currentBid ? Number(b.currentBid) : Number(b.case.reservePrice);
+          return priceB - priceA;
+        });
+        break;
+      case 'ending_soon':
+      default:
+        // Sort by endTime DESC for closed/won (latest ended first)
+        // Sort by endTime ASC for active (ending soonest first)
+        if (activeTab === 'won' || activeTab === 'my_bids') {
+          filteredAuctions.sort((a, b) => 
+            new Date(b.endTime).getTime() - new Date(a.endTime).getTime()
+          );
+        } else {
+          filteredAuctions.sort((a, b) => 
+            new Date(a.endTime).getTime() - new Date(b.endTime).getTime()
+          );
+        }
+        break;
     }
 
     setAuctions(filteredAuctions);
-  }, [cachedAuctions, isOffline, activeTab, searchQuery, assetTypeFilter, locationFilter, priceMin, priceMax, session]);
+  }, [cachedAuctions, activeTab, assetTypeFilter, locationFilter, priceMin, priceMax, sortBy, session]);
+
+  // Client-side polling for scheduled auctions
+  // This replaces the need for cron jobs and works in both local dev and production
+  useScheduledAuctionChecker({
+    onAuctionsActivated: (activated) => {
+      console.log(`✅ ${activated.length} auction(s) activated, refreshing list...`);
+      // Refresh the auction list when auctions are activated
+      handleRefresh();
+    },
+    intervalMs: 20000, // Check every 20 seconds
+    enabled: !isOffline, // Only poll when online
+  });
 
   // Manual refresh handler
   const handleRefresh = async () => {
@@ -308,13 +358,45 @@ function AuctionBrowsingContent() {
     window.history.replaceState(null, '', `/vendor/auctions${newUrl}`);
   }, [activeTab, assetTypeFilter, priceMin, priceMax, sortBy, locationFilter, searchQuery]);
 
-  // Trigger refresh when filters change and online
+  // Trigger refresh only when search changes (other filters are client-side)
   useEffect(() => {
     if (!isOffline && !isLoading) {
       handleRefresh();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, assetTypeFilter, priceMin, priceMax, sortBy, locationFilter, searchQuery]);
+  }, [searchQuery]); // Only refetch when search changes
+
+  // Helper function to get asset name for filtering (avoid duplication)
+  const getAssetNameForFiltering = (auction: Auction) => {
+    const details = auction.case.assetDetails;
+    let name = '';
+    
+    switch (auction.case.assetType) {
+      case 'vehicle':
+        name = `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim();
+        break;
+      case 'property':
+        name = details.propertyType ? String(details.propertyType) : 'Property';
+        break;
+      case 'electronics':
+        name = details.brand ? `${details.brand} ${details.model || 'Electronics'}`.trim() : 'Electronics';
+        break;
+      case 'machinery':
+        name = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
+        if (!name) {
+          name = details.machineryType ? String(details.machineryType) : 'Machinery';
+        }
+        break;
+      default:
+        name = 'Salvage Item';
+    }
+    
+    if (!name || name === auction.case.assetType) {
+      name = `${auction.case.assetType} - ${auction.case.claimReference}`;
+    }
+    
+    return name;
+  };
 
   // Build filters object for API
   const filters: Filters = {
@@ -479,9 +561,9 @@ function AuctionBrowsingContent() {
 
       {/* Header - Modern glassmorphism sticky header */}
       <div className="bg-white/90 backdrop-blur-md shadow-sm sticky top-0 z-40 border-b border-white/30">
-        <div className="max-w-7xl mx-auto px-4 py-3 md:py-4">
+        <div className="max-w-7xl mx-auto px-4 py-2">
           {/* Mobile: Search Icon + Filter Button */}
-          <div className="flex items-center justify-between mb-3 md:mb-4 md:hidden">
+          <div className="flex items-center justify-between mb-2 md:hidden">
             <button
               onClick={() => setShowSearchBar(!showSearchBar)}
               className="p-2 rounded-lg hover:bg-gray-100 transition-all duration-200 active:scale-95"
@@ -508,76 +590,138 @@ function AuctionBrowsingContent() {
             </button>
           </div>
 
-          {/* Desktop: Header with Title and Refresh */}
-          <div className="hidden md:flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-gray-900">Auctions</h1>
+          {/* Desktop: Header with Title, Search Icon, and Filter Icon */}
+          <div className="hidden md:flex items-center justify-between mb-2">
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-bold text-gray-900">Auctions</h1>
+              
+              {/* Desktop Search - Collapsible with smooth animation */}
+              <div className="flex items-center gap-2">
+                {!showDesktopSearch ? (
+                  <button
+                    onClick={() => setShowDesktopSearch(true)}
+                    className="p-2 rounded-lg hover:bg-gray-100 transition-all duration-200 active:scale-95"
+                    aria-label="Open search"
+                  >
+                    <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </button>
+                ) : (
+                  <div 
+                    className="flex items-center gap-2 overflow-hidden"
+                    style={{
+                      animation: 'slideInFromLeft 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+                      maxWidth: '400px',
+                    }}
+                  >
+                    <SearchInput
+                      value={searchQuery}
+                      onChange={setSearchQuery}
+                      placeholder="Search auctions..."
+                      className="w-full"
+                    />
+                    <button
+                      onClick={() => {
+                        setShowDesktopSearch(false);
+                        setSearchQuery('');
+                      }}
+                      className="p-2 rounded-lg hover:bg-gray-100 transition-all duration-200 active:scale-95 flex-shrink-0"
+                      aria-label="Close search"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
             
-            {/* Refresh Button - Desktop Only with burgundy brand color */}
+            {/* Filter Icon - Desktop Only */}
             <button
-              onClick={handleRefresh}
-              disabled={isOffline || isRefreshing}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition-all duration-200 ${
-                isOffline
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-[#800020] text-white hover:bg-[#600018] active:scale-96 shadow-md hover:shadow-lg'
-              }`}
-              style={{ minHeight: '48px' }}
-              title={isOffline ? 'Cannot refresh while offline' : 'Refresh auctions'}
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-200 active:scale-96"
+              aria-label="Toggle filters"
             >
-              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
-              <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+              <FilterIcon size={18} aria-hidden="true" />
+              {activeFilterCount > 0 && (
+                <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
             </button>
           </div>
+          
+          <style jsx>{`
+            @keyframes slideInFromLeft {
+              from {
+                opacity: 0;
+                transform: translateX(-20px);
+              }
+              to {
+                opacity: 1;
+                transform: translateX(0);
+              }
+            }
+          `}</style>
 
-          {/* Tabs - Modern pill-style with burgundy brand color */}
-          <div className="flex gap-2 mb-3 overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
+          {/* Tabs - Modern pill-style with burgundy brand color - More compact */}
+          <div className="flex gap-2 mb-2 overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
             <button
               onClick={() => setActiveTab('active')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
                 activeTab === 'active'
                   ? 'bg-[#800020] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
-              style={{ minHeight: '48px' }}
             >
-              <Circle size={16} className="fill-current" aria-hidden="true" />
+              <Circle size={14} className="fill-current" aria-hidden="true" />
               <span>Active</span>
             </button>
             <button
+              onClick={() => setActiveTab('for_you')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
+                activeTab === 'for_you'
+                  ? 'bg-[#800020] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
+              }`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+              </svg>
+              <span>For You</span>
+            </button>
+            <button
               onClick={() => setActiveTab('my_bids')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
                 activeTab === 'my_bids'
                   ? 'bg-[#800020] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
-              style={{ minHeight: '48px' }}
             >
-              <DollarSign size={16} aria-hidden="true" />
+              <DollarSign size={14} aria-hidden="true" />
               <span>My Bids</span>
             </button>
             <button
               onClick={() => setActiveTab('won')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
                 activeTab === 'won'
                   ? 'bg-[#800020] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
-              style={{ minHeight: '48px' }}
             >
-              <Trophy size={16} aria-hidden="true" />
+              <Trophy size={14} aria-hidden="true" />
               <span>Won</span>
             </button>
             <button
-              onClick={() => setActiveTab('completed')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold whitespace-nowrap transition-all duration-200 ${
-                activeTab === 'completed'
+              onClick={() => setActiveTab('scheduled')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
+                activeTab === 'scheduled'
                   ? 'bg-[#800020] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
-              style={{ minHeight: '48px' }}
             >
-              <ClipboardList size={16} aria-hidden="true" />
-              <span>Completed</span>
+              <Clock size={14} aria-hidden="true" />
+              <span>Scheduled</span>
             </button>
           </div>
           
@@ -591,47 +735,22 @@ function AuctionBrowsingContent() {
             }
           `}</style>
 
-          {/* Search Bar - Collapsible on Mobile, Always Visible on Desktop */}
+          {/* Search Bar - Collapsible on Mobile */}
           <div className="md:hidden">
             {showSearchBar && (
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search by asset name or claim reference..."
-                className="w-full mb-3"
+                className="w-full mb-2"
               />
             )}
           </div>
 
-          {/* Desktop: Search Bar Always Visible */}
-          <div className="hidden md:block">
-            <SearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search by asset name or claim reference..."
-              className="w-full mb-4"
-            />
-          </div>
-
-          {/* Filter Bar - Desktop Only */}
-          <div className="hidden md:flex items-center gap-2 flex-wrap mb-4">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 active:scale-96 focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2"
-              style={{ minHeight: '48px' }}
-              aria-label="Toggle filters"
-              aria-expanded={showFilters}
-            >
-              <FilterIcon size={18} aria-hidden="true" />
-              <span className="text-sm font-medium">Filters</span>
-              {activeFilterCount > 0 && (
-                <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-bold">
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
-
+          {/* Filter Chips - Desktop Only */}
+          <div className="hidden md:flex items-center gap-2 flex-wrap mb-2">
             {/* Active Filter Chips */}
+
             {assetTypeFilter.map(type => (
               <FilterChip
                 key={type}
@@ -657,10 +776,13 @@ function AuctionBrowsingContent() {
                 onRemove={() => setLocationFilter('')}
               />
             )}
-            {searchQuery && (
+            {searchQuery && showDesktopSearch && (
               <FilterChip
                 label={`Search: "${searchQuery}"`}
-                onRemove={() => setSearchQuery('')}
+                onRemove={() => {
+                  setSearchQuery('');
+                  setShowDesktopSearch(false);
+                }}
               />
             )}
 
@@ -668,22 +790,14 @@ function AuctionBrowsingContent() {
             {hasActiveFilters && (
               <button
                 onClick={clearAllFilters}
-                className="flex items-center gap-1 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-all duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2 rounded-lg"
-                style={{ minHeight: '48px' }}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-900 transition-all duration-200 active:scale-95 rounded-lg"
                 aria-label="Clear all filters"
               >
-                <X size={14} aria-hidden="true" />
+                <X size={12} aria-hidden="true" />
                 <span>Clear all</span>
               </button>
             )}
           </div>
-
-          {/* Results Count - Desktop Only */}
-          {hasActiveFilters && (
-            <div className="hidden md:block text-sm text-gray-600 mb-2">
-              Showing <span className="font-semibold text-gray-900">{auctions.length}</span> auctions
-            </div>
-          )}
         </div>
 
         {/* Filters Panel - Bottom Sheet Pattern for Mobile */}
@@ -900,7 +1014,7 @@ function AuctionBrowsingContent() {
         )}
 
         {/* Auction Grid */}
-        {!isLoading && auctions.length > 0 && (
+        {!isLoading && auctions.length > 0 && activeTab !== 'for_you' && (
           <>
             {/* Use virtualization only when count > 50 */}
             {auctions.length > 50 ? (
@@ -930,6 +1044,13 @@ function AuctionBrowsingContent() {
             )}
           </>
         )}
+
+        {/* Recommendations Feed - For You Tab */}
+        {activeTab === 'for_you' && session?.user?.vendorId && (
+          <div className="max-w-7xl mx-auto px-4 py-6">
+            <RecommendationsFeed vendorId={session.user.vendorId} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -944,16 +1065,51 @@ interface AuctionCardProps {
 function AuctionCard({ auction, onClick }: AuctionCardProps) {
   const [timeRemaining, setTimeRemaining] = useState('');
   const [timerColor, setTimerColor] = useState('text-green-600');
+  const [timerLabel, setTimerLabel] = useState('Ends in');
 
   useEffect(() => {
     const updateTimer = () => {
       const now = new Date().getTime();
+      
+      // Check if auction is scheduled (not started yet)
+      if (auction.status === 'scheduled' && auction.scheduledStartTime) {
+        const start = new Date(auction.scheduledStartTime).getTime();
+        const diff = start - now;
+
+        if (diff <= 0) {
+          // Scheduled time has passed, should be active now
+          setTimeRemaining('Starting soon...');
+          setTimerColor('text-blue-600');
+          setTimerLabel('');
+          return;
+        }
+
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+        setTimerLabel('Starts in');
+        if (days > 0) {
+          setTimeRemaining(`${days}d ${hours}h`);
+          setTimerColor('text-blue-600');
+        } else if (hours > 0) {
+          setTimeRemaining(`${hours}h ${minutes}m`);
+          setTimerColor('text-blue-600');
+        } else {
+          setTimeRemaining(`${minutes}m`);
+          setTimerColor('text-blue-600');
+        }
+        return;
+      }
+
+      // For active/extended auctions, show time until end
       const end = new Date(auction.endTime).getTime();
       const diff = end - now;
 
       if (diff <= 0) {
         setTimeRemaining('Ended');
         setTimerColor('text-gray-600');
+        setTimerLabel('');
         return;
       }
 
@@ -961,6 +1117,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
       const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
 
+      setTimerLabel('Ends in');
       if (days > 0) {
         setTimeRemaining(`${days}d ${hours}h`);
         setTimerColor('text-[#388e3c]');
@@ -977,7 +1134,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, [auction.endTime]);
+  }, [auction.endTime, auction.status, auction.scheduledStartTime]);
 
   // Format asset name - show specific item names, not just categories
   const getAssetName = () => {
@@ -1033,6 +1190,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
 
   return (
     <div
+      data-testid="auction-card"
       onClick={onClick}
       className="bg-white rounded-xl overflow-hidden group cursor-pointer transition-all duration-200"
       style={{
@@ -1062,7 +1220,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
         
         {/* Status Badge - Top Right */}
         <div className="absolute top-2 right-2 z-10">
-          {auction.isWinner && auction.status === 'closed' ? (
+          {auction.isWinner && (auction.status === 'closed' || auction.status === 'awaiting_payment') ? (
             <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-[#388e3c] text-white shadow-lg">
               <Trophy size={12} aria-label="Won auction" />
               <span>Won</span>
@@ -1070,17 +1228,23 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
           ) : (
             <span
               className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold shadow-lg ${
-                auction.status === 'active'
+                auction.status === 'scheduled'
+                  ? 'bg-blue-600 text-white'
+                  : auction.status === 'active'
                   ? 'bg-[#388e3c] text-white'
                   : auction.status === 'extended'
+                  ? 'bg-[#f57c00] text-white'
+                  : auction.status === 'awaiting_payment'
                   ? 'bg-[#f57c00] text-white'
                   : 'bg-gray-500 text-white'
               }`}
             >
               <Circle size={8} className="fill-current" aria-hidden="true" />
               <span>
+                {auction.status === 'scheduled' && 'Scheduled'}
                 {auction.status === 'active' && 'Active'}
                 {auction.status === 'extended' && 'Extended'}
+                {auction.status === 'awaiting_payment' && 'Payment Due'}
                 {auction.status === 'closed' && 'Closed'}
               </span>
             </span>
@@ -1107,7 +1271,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
           <div className="flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 text-white/90 flex-shrink-0" aria-label="Time remaining" />
             <span className="text-sm font-semibold text-white/90 drop-shadow">
-              {timeRemaining}
+              {timerLabel && `${timerLabel} `}{timeRemaining}
             </span>
           </div>
         </div>

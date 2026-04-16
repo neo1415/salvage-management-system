@@ -114,6 +114,9 @@ async function createAuditLog(
 }
 
 export const authConfig: NextAuthConfig = {
+  // Skip CSRF check for E2E tests to allow Playwright automated login
+  skipCSRFCheck: process.env.E2E_TESTING === 'true',
+  
   providers: [
     // Credentials provider for email/phone + password login
     CredentialsProvider({

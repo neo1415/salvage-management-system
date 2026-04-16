@@ -1,9 +1,12 @@
 /**
  * Auction Bids API Route
- * Handles bid placement with OTP verification
+ * Handles bid placement with OTP verification and deposit-based freezing
  * 
  * Requirements:
  * - Requirement 18: Bid Placement with OTP
+ * - Requirement 1: Dynamic Deposit Calculation
+ * - Requirement 2: Pre-Bid Eligibility Validation
+ * - Requirement 3: Deposit Freeze on Bid Placement
  * - Enterprise Standards Section 5: Business Logic Layer
  */
 
@@ -60,30 +63,19 @@ export async function POST(
       );
     }
 
-    // Tier enforcement: Tier 1 vendors cannot bid above ₦500,000
-    const TIER_1_LIMIT = 500_000;
-    if (vendor.tier === 'tier1_bvn' && parseFloat(amount) > TIER_1_LIMIT) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Your current Tier 1 account limits bids to ₦${TIER_1_LIMIT.toLocaleString()}. Upgrade to Tier 2 for unlimited bidding.`,
-          requiresTier2: true,
-        },
-        { status: 403 }
-      );
-    }
-
     // Get IP address and user agent
     const ipAddress = request.headers.get('x-forwarded-for') || 
                      request.headers.get('x-real-ip') || 
                      'unknown';
     const userAgent = request.headers.get('user-agent') || 'unknown';
 
-    // Place bid
+    const bidAmount = parseFloat(amount);
+
+    // Place bid (bidding service handles all deposit/escrow logic internally)
     const result = await biddingService.placeBid({
       auctionId: id,
       vendorId: vendor.id,
-      amount: parseFloat(amount),
+      amount: bidAmount,
       otp,
       ipAddress,
       userAgent,
@@ -100,6 +92,7 @@ export async function POST(
       );
     }
 
+    // Return bid confirmation
     return NextResponse.json({
       success: true,
       bid: result.bid,

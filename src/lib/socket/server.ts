@@ -49,6 +49,54 @@ export interface ServerToClientEvents {
   // System notifications
   'notification:new': (data: { notification: any }) => void;
 
+  // Intelligence events (Phase 8)
+  'prediction:updated': (data: {
+    auctionId: string;
+    prediction: {
+      predictedPrice: number;
+      confidence: number;
+      priceRange: { min: number; max: number };
+      factors?: Array<{ factor: string; impact: number }>;
+    };
+    timestamp: Date;
+  }) => void;
+  'recommendation:new': (data: {
+    vendorId: string;
+    recommendation: {
+      auctionId: string;
+      matchScore: number;
+      reasonCodes: string[];
+      auction: {
+        title: string;
+        currentBid: number;
+        endTime: Date;
+      };
+    };
+    timestamp: Date;
+  }) => void;
+  'recommendation:closing_soon': (data: {
+    vendorId: string;
+    auctionId: string;
+    timeRemaining: number;
+    currentBid: number;
+    matchScore: number;
+    timestamp: Date;
+  }) => void;
+  'fraud:alert': (data: {
+    alertId: string;
+    entityType: 'vendor' | 'case' | 'auction' | 'user';
+    entityId: string;
+    riskScore: number;
+    flagReasons: string[];
+    timestamp: Date;
+  }) => void;
+  'schema:new_asset_type': (data: {
+    assetType: string;
+    firstSeenAt: Date;
+    sampleAuctionId: string;
+    requiresReview: boolean;
+  }) => void;
+
   // Connection events
   'connect_error': (error: Error) => void;
 }
@@ -499,6 +547,8 @@ export async function broadcastAuctionClosure(auctionId: string, winnerId: strin
   
   if (!socketServer) {
     console.error('❌ Socket.io server not initialized - cannot broadcast closure');
+    console.error('   - CRITICAL: WebSocket clients will NOT receive closure notification');
+    console.error('   - Polling clients will still receive updates via /api/auctions/[id]/poll');
     return;
   }
 
@@ -509,6 +559,13 @@ export async function broadcastAuctionClosure(auctionId: string, winnerId: strin
     console.log(`📢 Broadcasting auction closure to room: auction:${auctionId}`);
     console.log(`   - Clients in room: ${clientCount}`);
     console.log(`   - Winner ID: ${winnerId}`);
+    
+    if (clientCount === 0) {
+      console.warn(`⚠️  WARNING: No clients in room auction:${auctionId}`);
+      console.warn(`   - Broadcast will be sent but no one is listening`);
+      console.warn(`   - Users may have left the page or not joined the room yet`);
+      console.warn(`   - Polling fallback will handle updates for these users`);
+    }
 
     socketServer.to(`auction:${auctionId}`).emit('auction:closed', {
       auctionId,
@@ -518,6 +575,7 @@ export async function broadcastAuctionClosure(auctionId: string, winnerId: strin
     console.log(`✅ Auction closure broadcast successful for ${auctionId}`);
   } catch (error) {
     console.error(`❌ Failed to broadcast auction closure for ${auctionId}:`, error);
+    console.error(`   - Error details:`, error instanceof Error ? error.message : 'Unknown error');
   }
 }
 
@@ -587,6 +645,8 @@ export async function broadcastAuctionClosing(auctionId: string) {
   
   if (!socketServer) {
     console.error('❌ Socket.io server not initialized - cannot broadcast closing');
+    console.error('   - CRITICAL: WebSocket clients will NOT receive closure notification');
+    console.error('   - Polling clients will still receive updates via /api/auctions/[id]/poll');
     return;
   }
 
@@ -596,6 +656,13 @@ export async function broadcastAuctionClosing(auctionId: string) {
     
     console.log(`📢 Broadcasting auction closing to room: auction:${auctionId}`);
     console.log(`   - Clients in room: ${clientCount}`);
+    
+    if (clientCount === 0) {
+      console.warn(`⚠️  WARNING: No clients in room auction:${auctionId}`);
+      console.warn(`   - Broadcast will be sent but no one is listening`);
+      console.warn(`   - Users may have left the page or not joined the room yet`);
+      console.warn(`   - Polling fallback will handle updates for these users`);
+    }
 
     socketServer.to(`auction:${auctionId}`).emit('auction:closing', {
       auctionId,
@@ -604,6 +671,7 @@ export async function broadcastAuctionClosing(auctionId: string) {
     console.log(`✅ Auction closing broadcast successful for ${auctionId}`);
   } catch (error) {
     console.error(`❌ Failed to broadcast auction closing for ${auctionId}:`, error);
+    console.error(`   - Error details:`, error instanceof Error ? error.message : 'Unknown error');
   }
 }
 

@@ -10,6 +10,7 @@ export const auctionStatusEnum = pgEnum('auction_status', [
   'active',
   'extended',
   'closed',
+  'awaiting_payment', // Documents signed, vendor must choose payment method
   'cancelled',
   'forfeited',
 ]);
@@ -30,6 +31,8 @@ export const auctions = pgTable('auctions', {
     .default('10000.00'),
   status: auctionStatusEnum('status').notNull().default('scheduled'),
   watchingCount: integer('watching_count').notNull().default(0),
+  scheduledStartTime: timestamp('scheduled_start_time'),
+  isScheduled: boolean('is_scheduled').default(false),
   pickupConfirmedVendor: boolean('pickup_confirmed_vendor').default(false),
   pickupConfirmedVendorAt: timestamp('pickup_confirmed_vendor_at'),
   pickupConfirmedAdmin: boolean('pickup_confirmed_admin').default(false),

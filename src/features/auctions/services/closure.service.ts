@@ -368,7 +368,26 @@ export class AuctionClosureService {
         };
       }
 
-      // STEP 3: Update auction status to 'closed' (final state - only after documents succeed)
+      // STEP 3: Handle deposit system logic (Requirement 5: Top N Bidders Retention)
+      // This must happen BEFORE status update to 'closed'
+      try {
+        const { auctionClosureService: depositClosureService } = await import('./auction-closure.service');
+        const depositResult = await depositClosureService.closeAuction(auctionId);
+        
+        if (depositResult.success) {
+          console.log(`✅ Deposit system closure complete for auction ${auctionId}`);
+          console.log(`   - Top bidders: ${depositResult.topBiddersCount} (deposits kept frozen)`);
+          console.log(`   - Unfrozen bidders: ${depositResult.unfrozenBiddersCount}`);
+        } else {
+          console.warn(`⚠️  Deposit system closure had issues for auction ${auctionId}: ${depositResult.error}`);
+          // Don't fail the entire closure if deposit logic fails - log for manual review
+        }
+      } catch (error) {
+        console.error(`❌ Failed to execute deposit system closure for auction ${auctionId}:`, error);
+        // Don't fail the entire closure - log for manual review
+      }
+
+      // STEP 4: Update auction status to 'closed' (final state - only after documents succeed)
       await db
         .update(auctions)
         .set({

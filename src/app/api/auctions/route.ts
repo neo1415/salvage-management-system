@@ -48,6 +48,8 @@ export async function GET(request: NextRequest) {
     const location = searchParams.get('location') || '';
     const search = searchParams.get('search') || '';
     const tab = searchParams.get('tab') || 'active';
+    const includeAllStatuses = searchParams.get('includeAllStatuses') === 'true';
+    const includeBidInfo = searchParams.get('includeBidInfo') === 'true';
 
     // SCALABILITY: Cache key for this specific query
     // Only cache 'active' tab queries (most common, no user-specific data)
@@ -70,8 +72,9 @@ export async function GET(request: NextRequest) {
     // Build where conditions
     const conditions = [];
 
-    // Tab-based filtering
-    if (tab === 'active') {
+    // Tab-based filtering (skip if includeAllStatuses is true for client-side filtering)
+    if (!includeAllStatuses) {
+      if (tab === 'active') {
       // Only show active and extended auctions
       conditions.push(
         or(
@@ -90,11 +93,14 @@ export async function GET(request: NextRequest) {
         )`
       );
     } else if (tab === 'won' && vendorId) {
-      // Show auctions won by vendor (closed with vendor as winner)
+      // Show auctions won by vendor (closed OR awaiting_payment with vendor as winner)
       // Shows immediately after winning, regardless of payment status
       conditions.push(
         and(
-          eq(auctions.status, 'closed'),
+          or(
+            eq(auctions.status, 'closed'),
+            eq(auctions.status, 'awaiting_payment')
+          ),
           eq(auctions.currentBidder, vendorId)
         )
       );
@@ -112,6 +118,7 @@ export async function GET(request: NextRequest) {
         )
       );
     }
+    } // End of tab-based filtering
 
     // Asset type filter - supports multiple values (comma-separated)
     // Requirement 8.1: Multi-Category Filter OR Logic
@@ -241,11 +248,32 @@ export async function GET(request: NextRequest) {
     const hasMore = auctionsList.length > limit;
     const results = hasMore ? auctionsList.slice(0, limit) : auctionsList;
 
-    // For my_bids and won tabs, add flag to indicate if user won
-    const enrichedResults = results.map(auction => ({
-      ...auction,
-      isWinner: vendorId && auction.currentBidder === vendorId,
-    }));
+    // Add bid information if requested (for client-side filtering)
+    let enrichedResults;
+    if (includeBidInfo && vendorId) {
+      // Fetch all bids for this vendor to determine which auctions they've bid on
+      const vendorBidsData = await db
+        .select({
+          auctionId: bids.auctionId,
+        })
+        .from(bids)
+        .where(eq(bids.vendorId, vendorId))
+        .groupBy(bids.auctionId);
+
+      const auctionIdsWithBids = new Set(vendorBidsData.map(b => b.auctionId));
+
+      enrichedResults = results.map(auction => ({
+        ...auction,
+        isWinner: vendorId && auction.currentBidder === vendorId,
+        hasVendorBid: auctionIdsWithBids.has(auction.id),
+      }));
+    } else {
+      // For my_bids and won tabs, add flag to indicate if user won
+      enrichedResults = results.map(auction => ({
+        ...auction,
+        isWinner: vendorId && auction.currentBidder === vendorId,
+      }));
+    }
 
     const response = {
       success: true,

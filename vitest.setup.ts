@@ -1,38 +1,35 @@
-import { config } from 'dotenv';
-import { resolve } from 'path';
-import '@testing-library/jest-dom/vitest';
-import { afterAll } from 'vitest';
+import { beforeAll, afterAll, afterEach } from 'vitest';
+import { client } from '@/lib/db/drizzle';
 
-// Load environment variables from .env file for tests
-config({ path: resolve(__dirname, '.env') });
-
-// Ensure required environment variables are set
-const requiredEnvVars = [
-  'KV_REST_API_URL',
-  'KV_REST_API_TOKEN',
-  'DATABASE_URL',
-];
-
-const missingEnvVars = requiredEnvVars.filter((envVar) => !process.env[envVar]);
-
-if (missingEnvVars.length > 0) {
-  console.warn(
-    `Warning: Missing environment variables: ${missingEnvVars.join(', ')}`
-  );
-  console.warn('Some tests may fail without proper configuration.');
-}
-
-// Set test environment
-// NODE_ENV is already set to 'test' by vitest
-
-// Global cleanup - close database connections after all tests
-afterAll(async () => {
+// Global test setup
+beforeAll(async () => {
+  console.log('[Test Setup] Initializing test environment...');
+  
+  // Verify database connection
   try {
-    // Dynamically import the client to close connections
-    const { client } = await import('./src/lib/db/drizzle');
-    await client.end({ timeout: 5 });
-    console.log('Database connections closed successfully');
+    await client`SELECT 1 as test`;
+    console.log('[Test Setup] Database connection verified');
   } catch (error) {
-    console.error('Error closing database connections:', error);
+    console.error('[Test Setup] Database connection failed:', error);
+    throw error;
+  }
+});
+
+// Clean up after each test to prevent connection leaks
+afterEach(async () => {
+  // Small delay to allow pending queries to complete
+  await new Promise(resolve => setTimeout(resolve, 100));
+});
+
+// Global test teardown
+afterAll(async () => {
+  console.log('[Test Setup] Cleaning up test environment...');
+  
+  // Close all database connections
+  try {
+    await client.end({ timeout: 5 });
+    console.log('[Test Setup] Database connections closed successfully');
+  } catch (error) {
+    console.error('[Test Setup] Error closing database connections:', error);
   }
 });

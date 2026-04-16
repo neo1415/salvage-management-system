@@ -10,6 +10,10 @@ import { escrowWallets } from '@/lib/db/schema/escrow';
 import { releaseForms } from '@/lib/db/schema/release-forms';
 import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
 
+// Force dynamic rendering - never cache this route
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 /**
  * GET /api/finance/payments
  * Fetch payments for Finance Officer dashboard with flexible filtering
@@ -178,10 +182,11 @@ export async function GET(request: NextRequest) {
     console.log(`✅ Batch fetched ${allDocuments.length} documents in 1 query`);
 
     // Format response WITHOUT additional queries
-    const formattedPayments = filteredPayments.map(({ payment, vendor, user, case: caseData }) => {
+    const formattedPayments = filteredPayments.map(({ payment, vendor, user, auction, case: caseData }) => {
       const base = {
         id: payment.id,
         auctionId: payment.auctionId,
+        auctionStatus: auction.status, // CRITICAL FIX: Include auction status for UI logic
         vendorId: payment.vendorId,
         amount: payment.amount,
         paymentMethod: payment.paymentMethod,
@@ -211,6 +216,14 @@ export async function GET(request: NextRequest) {
           assetDetails: caseData.assetDetails,
         },
       };
+
+      // Debug logging for Paystack payments
+      if (payment.paymentMethod === 'paystack') {
+        console.log(`📋 Paystack Payment: ${payment.paymentReference}`);
+        console.log(`   - Payment Status: ${payment.status}`);
+        console.log(`   - Auction Status: ${auction.status}`);
+        console.log(`   - Should hide buttons: ${payment.status === 'pending' && auction.status === 'awaiting_payment'}`);
+      }
 
       if (payment.paymentMethod !== 'escrow_wallet') {
         return base;

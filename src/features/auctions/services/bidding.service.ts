@@ -24,6 +24,8 @@ import { autoExtendService } from './auto-extend.service';
 import { escrowService } from '@/features/payments/services/escrow.service';
 import { createOutbidNotification } from '@/features/notifications/services/notification.service';
 import { cache } from '@/lib/redis/client';
+import { depositCalculatorService } from './deposit-calculator.service';
+import { configService } from '@/features/auction-deposit/services/config.service';
 
 /**
  * Bid placement data
@@ -168,7 +170,8 @@ export class BiddingService {
         vendor.tier,
         data.otp,
         user.phone,
-        data.vendorId
+        data.vendorId,
+        data.auctionId
       );
 
       if (!validation.valid) {
@@ -181,6 +184,22 @@ export class BiddingService {
 
       // Get previous highest bidder for notification
       const previousBidderId = auction.currentBidder;
+
+      // CRITICAL: Check for existing bid BEFORE creating new bid (for incremental deposit calculation)
+      // This must be done before the transaction to avoid finding the bid we just created
+      const existingBids = await db
+        .select()
+        .from(bids)
+        .where(
+          and(
+            eq(bids.auctionId, data.auctionId),
+            eq(bids.vendorId, data.vendorId)
+          )
+        )
+        .orderBy(desc(bids.createdAt))
+        .limit(1);
+
+      const existingBid = existingBids.length > 0 ? existingBids[0] : null;
 
       // SCALABILITY: Use database transaction with row locking to prevent race conditions
       // This ensures atomic bid updates and prevents concurrent bid conflicts
@@ -246,26 +265,78 @@ export class BiddingService {
         };
       }
 
-      // Freeze funds for this bid
+      // Calculate deposit amount (Requirement 1.1: max(bid × rate, floor))
+      let depositAmount: number;
+      let incrementalDeposit: number;
       try {
-        await escrowService.freezeFunds(
-          data.vendorId,
+        const config = await configService.getConfig();
+        // Convert percentage to decimal (10% → 0.10)
+        const depositRateDecimal = config.depositRate / 100;
+        depositAmount = depositCalculatorService.calculateDeposit(
           data.amount,
-          data.auctionId,
-          user.id
+          depositRateDecimal,
+          config.minimumDepositFloor
         );
-        console.log(`✅ Funds frozen for vendor ${data.vendorId}: ₦${data.amount.toLocaleString()}`);
+        if (existingBid) {
+          // Calculate incremental deposit (only freeze the difference)
+          const previousBidAmount = parseFloat(existingBid.amount);
+          incrementalDeposit = depositCalculatorService.calculateIncrementalDeposit(
+            data.amount,
+            previousBidAmount,
+            depositRateDecimal,
+            config.minimumDepositFloor
+          );
+          console.log(`💰 Incremental deposit for ₦${data.amount.toLocaleString()} bid (previous: ₦${previousBidAmount.toLocaleString()}): ₦${incrementalDeposit.toLocaleString()} (total deposit: ₦${depositAmount.toLocaleString()})`);
+        } else {
+          // First bid - freeze full deposit
+          incrementalDeposit = depositAmount;
+          console.log(`💰 Deposit calculated for ₦${data.amount.toLocaleString()} bid: ₦${depositAmount.toLocaleString()} (${config.depositRate.toFixed(0)}% rate, ₦${config.minimumDepositFloor.toLocaleString()} floor)`);
+        }
       } catch (error) {
-        console.error('Failed to freeze funds:', error);
+        console.error('Failed to calculate deposit:', error);
+        // Fallback to 10% if config fails
+        depositAmount = Math.max(Math.ceil(data.amount * 0.10), 100000);
+        incrementalDeposit = depositAmount;
+        console.log(`⚠️ Using fallback deposit calculation: ₦${depositAmount.toLocaleString()}`);
+      }
+
+      // Freeze INCREMENTAL deposit funds for this bid (Requirement 3.1: Freeze deposit on bid placement)
+      try {
+        if (incrementalDeposit > 0) {
+          console.log(`\n🔒 FREEZING FUNDS:`);
+          console.log(`   Vendor: ${data.vendorId}`);
+          console.log(`   Bid Amount: ₦${data.amount.toLocaleString()}`);
+          console.log(`   Total Deposit Required: ₦${depositAmount.toLocaleString()}`);
+          console.log(`   Incremental Deposit to Freeze: ₦${incrementalDeposit.toLocaleString()}`);
+          console.log(`   Existing Bid: ${existingBid ? `₦${parseFloat(existingBid.amount).toLocaleString()}` : 'None (first bid)'}\n`);
+          
+          await escrowService.freezeFunds(
+            data.vendorId,
+            incrementalDeposit,  // ✅ INCREMENTAL ONLY
+            data.auctionId,
+            user.id
+          );
+          console.log(`✅ SUCCESS: Incremental deposit frozen for vendor ${data.vendorId}: ₦${incrementalDeposit.toLocaleString()}`);
+          console.log(`   Total deposit now: ₦${depositAmount.toLocaleString()} (for bid: ₦${data.amount.toLocaleString()})\n`);
+        } else {
+          console.log(`\nℹ️  NO FREEZE NEEDED:`);
+          console.log(`   Vendor: ${data.vendorId}`);
+          console.log(`   New Bid: ₦${data.amount.toLocaleString()}`);
+          console.log(`   Previous Bid: ₦${existingBid ? parseFloat(existingBid.amount).toLocaleString() : 'N/A'}`);
+          console.log(`   Total Deposit Required: ₦${depositAmount.toLocaleString()}`);
+          console.log(`   Reason: Bid increase within minimum floor (₦100k already frozen)\n`);
+        }
+      } catch (error) {
+        console.error('❌ FAILED to freeze deposit:', error);
         // Rollback bid creation if freeze fails
         await db.delete(bids).where(eq(bids.id, newBid!.id));
         return {
           success: false,
-          error: 'Failed to freeze funds. Please ensure you have sufficient wallet balance.',
+          error: 'Failed to freeze deposit. Please ensure you have sufficient wallet balance.',
         };
       }
 
-      // Unfreeze funds for previous bidder if exists and is different
+      // Unfreeze deposit for previous bidder if exists and is different (Requirement 4.1: Unfreeze on outbid)
       if (previousBidderId && previousBidderId !== data.vendorId) {
         try {
           // Get previous bid amount
@@ -278,7 +349,21 @@ export class BiddingService {
           });
 
           if (previousBid) {
-            const previousAmount = parseFloat(previousBid.amount);
+            const previousBidAmount = parseFloat(previousBid.amount);
+            
+            // Calculate previous deposit amount
+            let previousDepositAmount: number;
+            try {
+              const config = await configService.getConfig();
+              previousDepositAmount = depositCalculatorService.calculateDeposit(
+                previousBidAmount,
+                config.depositRate,
+                config.minimumDepositFloor
+              );
+            } catch (error) {
+              // Fallback to 10% if config fails
+              previousDepositAmount = Math.max(Math.ceil(previousBidAmount * 0.10), 100000);
+            }
             
             // Get previous bidder's user ID
             const [previousVendor] = await db
@@ -290,15 +375,15 @@ export class BiddingService {
             if (previousVendor) {
               await escrowService.unfreezeFunds(
                 previousBidderId,
-                previousAmount,
+                previousDepositAmount,  // ✅ DEPOSIT ONLY, not full amount
                 data.auctionId,
                 previousVendor.userId
               );
-              console.log(`✅ Funds unfrozen for previous bidder ${previousBidderId}: ₦${previousAmount.toLocaleString()}`);
+              console.log(`✅ Deposit unfrozen for previous bidder ${previousBidderId}: ₦${previousDepositAmount.toLocaleString()} (bid was: ₦${previousBidAmount.toLocaleString()})`);
             }
           }
         } catch (error) {
-          console.error('Failed to unfreeze previous bidder funds:', error);
+          console.error('Failed to unfreeze previous bidder deposit:', error);
           // Don't fail the bid placement if unfreezing fails - log for manual review
         }
       }
@@ -381,6 +466,7 @@ export class BiddingService {
    * @param otp - OTP code
    * @param phone - Vendor phone number
    * @param vendorId - Vendor ID (for balance check)
+   * @param auctionId - Auction ID (for incremental deposit check)
    * @returns Validation result
    */
   async validateBid(
@@ -391,7 +477,8 @@ export class BiddingService {
     vendorTier: string,
     otp: string,
     phone: string,
-    vendorId: string
+    vendorId: string,
+    auctionId: string
   ): Promise<ValidationResult> {
     const errors: string[] = [];
 
@@ -411,12 +498,66 @@ export class BiddingService {
       errors.push('Bid exceeds your Tier 1 limit of ₦500,000. Upgrade to Tier 2 for unlimited bidding and access to premium auctions.');
     }
 
-    // Check wallet balance - vendor must have sufficient funds
+    // Check for existing bid from this vendor (for incremental deposit calculation)
+    let requiredDeposit: number;
+    try {
+      const config = await configService.getConfig();
+      const depositRateDecimal = config.depositRate / 100;
+      
+      // Check if vendor already has a bid on this auction
+      const existingBids = await db
+        .select()
+        .from(bids)
+        .where(
+          and(
+            eq(bids.auctionId, auctionId),
+            eq(bids.vendorId, vendorId)
+          )
+        )
+        .orderBy(desc(bids.createdAt))
+        .limit(1);
+
+      const existingBid = existingBids.length > 0 ? existingBids[0] : null;
+
+      if (existingBid) {
+        // Calculate INCREMENTAL deposit (only the additional amount needed)
+        const previousBidAmount = parseFloat(existingBid.amount);
+        requiredDeposit = depositCalculatorService.calculateIncrementalDeposit(
+          bidAmount,
+          previousBidAmount,
+          depositRateDecimal,
+          config.minimumDepositFloor
+        );
+        console.log(`\n🔍 VALIDATION - Incremental Deposit Check:`);
+        console.log(`   Previous Bid: ₦${previousBidAmount.toLocaleString()}`);
+        console.log(`   New Bid: ₦${bidAmount.toLocaleString()}`);
+        console.log(`   Incremental Deposit Required: ₦${requiredDeposit.toLocaleString()}`);
+      } else {
+        // First bid - require full deposit
+        requiredDeposit = depositCalculatorService.calculateDeposit(
+          bidAmount,
+          depositRateDecimal,
+          config.minimumDepositFloor
+        );
+        console.log(`\n🔍 VALIDATION - First Bid Deposit Check:`);
+        console.log(`   Bid Amount: ₦${bidAmount.toLocaleString()}`);
+        console.log(`   Full Deposit Required: ₦${requiredDeposit.toLocaleString()}`);
+      }
+    } catch (error) {
+      console.error('Error calculating deposit:', error);
+      // Fallback to 10% with ₦100k minimum
+      requiredDeposit = Math.max(Math.ceil(bidAmount * 0.10), 100000);
+    }
+
+    // Check wallet balance - vendor must have sufficient funds for INCREMENTAL DEPOSIT
     try {
       const walletBalance = await escrowService.getBalance(vendorId);
-      if (walletBalance.availableBalance < bidAmount) {
+      console.log(`   Available Balance: ₦${walletBalance.availableBalance.toLocaleString()}`);
+      console.log(`   Balance Check: ${walletBalance.availableBalance >= requiredDeposit ? '✅ PASS' : '❌ FAIL'}\n`);
+      
+      if (walletBalance.availableBalance < requiredDeposit) {
         errors.push(
-          `Insufficient wallet balance. Available: ₦${walletBalance.availableBalance.toLocaleString()}, Required: ₦${bidAmount.toLocaleString()}. Please fund your wallet before bidding.`
+          `Insufficient wallet balance for deposit. Available: ₦${walletBalance.availableBalance.toLocaleString()}, Required Deposit: ₦${requiredDeposit.toLocaleString()}. Please fund your wallet before bidding.`
         );
       }
     } catch (error) {
