@@ -40,7 +40,7 @@ export function documentSignedTemplate(data: DocumentSignedTemplateData): string
     <p>Thank you for signing your <strong>${documentTitle}</strong>. Your digital signature has been recorded and the document is now legally binding.</p>
     
     <div style="background-color: #f9f9f9; border-left: 4px solid #4caf50; padding: 20px; margin: 25px 0; border-radius: 6px;">
-      <h3 style="margin: 0 0 15px 0; color: #4caf50; font-size: 18px;">✅ Signature Confirmed</h3>
+      <h3 style="margin: 0 0 15px 0; color: #4caf50; font-size: 18px;">Signature Confirmed</h3>
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
           <td style="padding: 8px 0; color: #666; font-size: 14px;"><strong>Document:</strong></td>
@@ -59,7 +59,7 @@ export function documentSignedTemplate(data: DocumentSignedTemplateData): string
     
     ${pickupAuthCode ? `
     <div style="background-color: #e8f5e9; border: 3px solid #4caf50; border-radius: 12px; padding: 25px; margin: 30px 0; text-align: center;">
-      <h3 style="margin: 0 0 15px 0; color: #2e7d32; font-size: 20px;">🎫 Your Pickup Authorization Code</h3>
+      <h3 style="margin: 0 0 15px 0; color: #2e7d32; font-size: 20px;">Your Pickup Authorization Code</h3>
       <div style="background-color: white; border: 2px dashed #4caf50; border-radius: 8px; padding: 20px; margin: 15px 0;">
         <p style="margin: 0 0 10px 0; color: #666; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Authorization Code</p>
         <p style="margin: 0; color: #2e7d32; font-size: 32px; font-weight: 700; font-family: 'Courier New', monospace; letter-spacing: 3px;">
@@ -67,14 +67,14 @@ export function documentSignedTemplate(data: DocumentSignedTemplateData): string
         </p>
       </div>
       <p style="margin: 15px 0 0 0; color: #2e7d32; font-size: 14px;">
-        ⚠️ Present this code at the pickup location. Keep it secure!
+        Present this code at the pickup location. Keep it secure!
       </p>
     </div>
     ` : ''}
     
     <div class="divider"></div>
     
-    <h3 style="color: #800020; font-size: 18px; margin: 25px 0 15px 0;">📋 Next Steps</h3>
+    <h3 style="color: #800020; font-size: 18px; margin: 25px 0 15px 0;">Next Steps</h3>
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; margin: 20px 0; border-radius: 6px;">
       <p style="margin: 0; color: #856404; font-size: 15px; line-height: 1.8;">
         ${nextSteps}
@@ -84,12 +84,12 @@ export function documentSignedTemplate(data: DocumentSignedTemplateData): string
     <div style="text-align: center; margin: 35px 0;">
       <a href="${downloadUrl}" 
          style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-        📥 Download Signed Document
+        Download Signed Document
       </a>
     </div>
     
     <div style="background-color: #e3f2fd; border-left: 4px solid #2196f3; padding: 20px; margin: 30px 0; border-radius: 6px;">
-      <h4 style="margin: 0 0 10px 0; color: #1976d2; font-size: 16px;">💡 Important Information</h4>
+      <h4 style="margin: 0 0 10px 0; color: #1976d2; font-size: 16px;">Important Information</h4>
       <ul style="margin: 0; padding-left: 20px; color: #1565c0; font-size: 14px; line-height: 1.8;">
         <li>Your signed document is stored securely in our system</li>
         <li>You can download a copy anytime from your dashboard</li>
@@ -100,8 +100,8 @@ export function documentSignedTemplate(data: DocumentSignedTemplateData): string
     
     <p style="margin-top: 30px;">If you have any questions or concerns, please contact our support team:</p>
     <ul style="color: #333; font-size: 15px; line-height: 1.8;">
-      <li>📞 Phone: <a href="tel:+2340201448956" style="color: #800020; text-decoration: none; font-weight: 600;">234-02-014489560</a></li>
-      <li>📧 Email: <a href="mailto:nemsupport@nem-insurance.com" style="color: #800020; text-decoration: none; font-weight: 600;">nemsupport@nem-insurance.com</a></li>
+      <li>Phone: <a href="tel:+2340201448956" style="color: #800020; text-decoration: none; font-weight: 600;">234-02-014489560</a></li>
+      <li>Email: <a href="mailto:nemsupport@nem-insurance.com" style="color: #800020; text-decoration: none; font-weight: 600;">nemsupport@nem-insurance.com</a></li>
     </ul>
     
     <p style="margin-top: 30px;">Thank you for your business!<br><strong>NEM Insurance Team</strong></p>

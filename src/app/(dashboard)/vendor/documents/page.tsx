@@ -7,10 +7,9 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '@/components/ui/toast';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { useCachedDocuments } from '@/hooks/use-cached-documents';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
@@ -38,57 +37,69 @@ interface AuctionDocuments {
 export default function VendorDocumentsPage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const toast = useToast();
   const [auctionDocuments, setAuctionDocuments] = useState<AuctionDocuments[]>([]);
-  
-  // Track which auctions have been processed to prevent duplicate calls
-  const processedAuctionsRef = useRef<Set<string>>(new Set());
   
   // Track if we need to scroll to a specific auction
   const [scrollToAuctionId, setScrollToAuctionId] = useState<string | null>(null);
-  
-  // Track if we're refreshing due to hash navigation
-  const [isHashRefreshing, setIsHashRefreshing] = useState(false);
 
-  // Use cached documents hook - pass null for auctionId since we're fetching all auctions
-  const { 
-    documents: cachedDocs, 
-    isLoading, 
-    isOffline, 
-    lastUpdated, 
-    refresh,
-    error: cacheError 
-  } = useCachedDocuments(null, async () => {
+  // CRITICAL: Wrap fetchFn in useCallback to prevent infinite loop
+  // Without this, fetchFn is recreated on every render, causing the hook to re-fetch infinitely
+  const fetchDocuments = useCallback(async () => {
+    console.log('🔵 [DOCUMENTS PAGE] Starting document fetch...');
+    console.log('   Navigation type:', window.location.hash ? 'HASH (from auction detail)' : 'NORMAL (direct navigation)');
+    console.log('   Hash:', window.location.hash || 'none');
+    console.log('   Timestamp:', new Date().toISOString());
+    console.log('   Session status:', session?.user?.vendorId ? 'READY' : 'NOT READY');
+    
     // Only fetch if we have a valid session
     if (!session?.user?.vendorId) {
+      console.log('❌ [DOCUMENTS PAGE] No vendor ID, returning empty');
       return [];
     }
 
+    console.log('✅ [DOCUMENTS PAGE] Vendor ID:', session.user.vendorId);
+
     // OPTIMIZED: Fetch won auctions first, then fetch documents in parallel
+    console.log('📡 [DOCUMENTS PAGE] Fetching won auctions...');
     const auctionsResponse = await fetch('/api/vendor/won-auctions');
     
     if (!auctionsResponse.ok) {
+      console.error('❌ [DOCUMENTS PAGE] Failed to fetch won auctions:', auctionsResponse.status);
       throw new Error('Failed to fetch documents');
     }
 
     const data = await auctionsResponse.json();
+    console.log('📦 [DOCUMENTS PAGE] Won auctions response:', {
+      status: data.status,
+      auctionCount: data.data?.auctions?.length || 0,
+      auctions: data.data?.auctions?.map((a: any) => ({ id: a.id, status: a.status })) || []
+    });
     
     if (data.status === 'success' && data.data.auctions && data.data.auctions.length > 0) {
       // CRITICAL FIX: Fetch ALL documents in parallel instead of sequentially
       // This reduces load time from N seconds to ~1 second
+      console.log('📄 [DOCUMENTS PAGE] Fetching documents for', data.data.auctions.length, 'auctions in parallel...');
+      
       const documentPromises = data.data.auctions.map((auction: any) =>
         fetch(`/api/auctions/${auction.id}/documents`)
-          .then(res => res.json())
-          .then(docsData => ({
-            auctionId: auction.id,
-            assetName: auction.assetName || 'Salvage Item',
-            winningBid: parseFloat(auction.currentBid || '0'),
-            closedAt: new Date(auction.closedAt),
-            status: auction.status,
-            documents: docsData.status === 'success' ? docsData.data.documents : [],
-          }))
+          .then(res => {
+            console.log(`   📄 Auction ${auction.id}: Response status ${res.status}`);
+            return res.json();
+          })
+          .then(docsData => {
+            const docCount = docsData.status === 'success' ? docsData.data.documents.length : 0;
+            console.log(`   ✅ Auction ${auction.id}: ${docCount} documents`);
+            return {
+              auctionId: auction.id,
+              assetName: auction.assetName || 'Salvage Item',
+              winningBid: parseFloat(auction.currentBid || '0'),
+              closedAt: new Date(auction.closedAt),
+              status: auction.status,
+              documents: docsData.status === 'success' ? docsData.data.documents : [],
+            };
+          })
           .catch(err => {
-            console.error(`Failed to fetch documents for auction ${auction.id}:`, err);
+            console.error(`   ❌ Auction ${auction.id}: Failed to fetch documents:`, err);
             return {
               auctionId: auction.id,
               assetName: auction.assetName || 'Salvage Item',
@@ -103,52 +114,94 @@ export default function VendorDocumentsPage() {
       const auctionsWithDocs = await Promise.all(documentPromises);
       
       // Only return auctions that have documents
-      return auctionsWithDocs.filter(a => a.documents.length > 0);
+      const filtered = auctionsWithDocs.filter(a => a.documents.length > 0);
+      console.log('🎯 [DOCUMENTS PAGE] Final result:', {
+        totalAuctions: auctionsWithDocs.length,
+        auctionsWithDocs: filtered.length,
+        details: filtered.map(a => ({ id: a.auctionId, docCount: a.documents.length }))
+      });
+      
+      return filtered;
     }
     
+    console.log('⚠️  [DOCUMENTS PAGE] No won auctions found, returning empty');
     return [];
-  });
+  }, [session?.user?.vendorId]); // Only recreate if vendorId changes
+
+  // Use cached documents hook - pass null for auctionId since we're fetching all auctions
+  // CRITICAL: Only pass fetchDocuments when session is ready to prevent premature fetches
+  const { 
+    documents: cachedDocs, 
+    isLoading, 
+    isOffline, 
+    lastUpdated, 
+    refresh,
+    error: cacheError 
+  } = useCachedDocuments(null, session?.user?.vendorId ? fetchDocuments : undefined);
 
   // Update local state when cached docs change
   useEffect(() => {
+    console.log('🔄 [DOCUMENTS PAGE] State update triggered:', {
+      cachedDocsLength: cachedDocs?.length || 0,
+      isLoading,
+      timestamp: new Date().toISOString()
+    });
+    
     if (cachedDocs && cachedDocs.length > 0) {
+      console.log('✅ [DOCUMENTS PAGE] Setting auction documents:', cachedDocs.length, 'auctions');
       setAuctionDocuments(cachedDocs as unknown as AuctionDocuments[]);
     } else if (!isLoading) {
       // Clear documents if no cached docs and not loading
+      console.log('⚠️  [DOCUMENTS PAGE] Clearing auction documents (no cached docs and not loading)');
       setAuctionDocuments([]);
     }
   }, [cachedDocs, isLoading]);
 
   // Handle anchor navigation from auction detail page
   useEffect(() => {
+    console.log('🔗 [DOCUMENTS PAGE] Hash navigation check:', {
+      hasHash: !!window.location.hash,
+      hash: window.location.hash,
+      timestamp: new Date().toISOString()
+    });
+    
     // Check if there's a hash in the URL (e.g., #auction-123)
     if (typeof window !== 'undefined' && window.location.hash) {
       const hash = window.location.hash.substring(1); // Remove the #
       if (hash.startsWith('auction-')) {
         const auctionId = hash.replace('auction-', '');
+        console.log('🎯 [DOCUMENTS PAGE] Hash navigation detected for auction:', auctionId);
         setScrollToAuctionId(auctionId);
         
-        // Force refresh when navigating with hash to ensure fresh data
-        setIsHashRefreshing(true);
-        refresh().finally(() => {
-          setIsHashRefreshing(false);
-        });
+        // FIXED: Removed forced refresh to prevent race condition
+        // The useCachedDocuments hook already handles caching intelligently
+        // Forcing a refresh here causes two simultaneous fetches which can result in
+        // "no documents" being shown due to timing issues
+        console.log('✅ [DOCUMENTS PAGE] Scroll target set, no forced refresh');
       }
+    } else {
+      console.log('ℹ️  [DOCUMENTS PAGE] Normal navigation (no hash)');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll to auction after documents are loaded
   useEffect(() => {
     if (scrollToAuctionId && auctionDocuments.length > 0 && !isLoading) {
+      console.log('📜 [DOCUMENTS PAGE] Attempting to scroll to auction:', scrollToAuctionId);
+      console.log('   Documents loaded:', auctionDocuments.length);
+      console.log('   Is loading:', isLoading);
+      
       // Wait longer for the DOM to fully render
       setTimeout(() => {
         const element = document.getElementById(`auction-${scrollToAuctionId}`);
         if (element) {
+          console.log('✅ [DOCUMENTS PAGE] Scrolling to auction:', scrollToAuctionId);
           element.scrollIntoView({ behavior: 'smooth', block: 'start' });
           // Clear the scroll target
           setScrollToAuctionId(null);
         } else {
-          console.warn(`Element auction-${scrollToAuctionId} not found in DOM`);
+          console.warn(`❌ [DOCUMENTS PAGE] Element auction-${scrollToAuctionId} not found in DOM`);
+          console.log('   Available auction IDs:', auctionDocuments.map(a => a.auctionId));
         }
       }, 300); // Increased from 100ms to 300ms
     }
@@ -177,7 +230,8 @@ export default function VendorDocumentsPage() {
     }
   };
 
-  if (isLoading || isHashRefreshing) {
+  if (isLoading) {
+    console.log('⏳ [DOCUMENTS PAGE] Showing loading state');
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -215,6 +269,7 @@ export default function VendorDocumentsPage() {
   }
 
   if (auctionDocuments.length === 0) {
+    console.log('📭 [DOCUMENTS PAGE] Showing empty state');
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

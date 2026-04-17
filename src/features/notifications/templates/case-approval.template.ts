@@ -55,7 +55,7 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     </div>
     
     <div style="background-color: #f9f9f9; padding: 25px; border-radius: 8px; margin: 30px 0; border-left: 4px solid #FFD700;">
-      <h3 style="margin: 0 0 20px 0; color: #800020; font-size: 18px;">📋 Case Details</h3>
+      <h3 style="margin: 0 0 20px 0; color: #800020; font-size: 18px;">Case Details</h3>
       <table style="width: 100%; border-collapse: collapse;">
         <tr style="border-bottom: 1px solid #e0e0e0;">
           <td style="padding: 12px 0; font-weight: 600; color: #800020; width: 40%;">Case ID:</td>
@@ -78,7 +78,7 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     
     ${hasAdjustments ? `
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; border-radius: 8px; margin: 30px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #856404; font-size: 16px;">💰 Price Adjustments Made:</h3>
+      <h3 style="margin: 0 0 15px 0; color: #856404; font-size: 16px;">Price Adjustments Made:</h3>
       <p style="margin: 0 0 15px 0; color: #856404; line-height: 1.6;">
         The manager has adjusted the following prices based on market expertise:
       </p>
@@ -125,7 +125,7 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     
     ${comment ? `
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; border-radius: 8px; margin: 30px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #856404; font-size: 16px;">💬 Manager's ${hasAdjustments ? 'Explanation' : 'Feedback'}:</h3>
+      <h3 style="margin: 0 0 15px 0; color: #856404; font-size: 16px;">Manager's ${hasAdjustments ? 'Explanation' : 'Feedback'}:</h3>
       <p style="margin: 0; color: #856404; line-height: 1.6;">
         ${comment}
       </p>
@@ -134,7 +134,7 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     
     ${isApproved ? `
     <div style="background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 20px; border-radius: 8px; margin: 30px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #0c5460; font-size: 16px;">🎉 Next Steps:</h3>
+      <h3 style="margin: 0 0 15px 0; color: #0c5460; font-size: 16px;">Next Steps:</h3>
       <ul style="margin: 0; padding-left: 20px; color: #0c5460; line-height: 1.8;">
         <li style="margin: 8px 0;">An auction has been automatically created for this case</li>
         ${hasAdjustments ? '<li style="margin: 8px 0;">The auction will use the adjusted prices set by the manager</li>' : ''}
@@ -145,7 +145,7 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     </div>
     ` : `
     <div style="background-color: #f8d7da; border-left: 4px solid #dc3545; padding: 20px; border-radius: 8px; margin: 30px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #721c24; font-size: 16px;">📝 Next Steps:</h3>
+      <h3 style="margin: 0 0 15px 0; color: #721c24; font-size: 16px;">Next Steps:</h3>
       <ul style="margin: 0; padding-left: 20px; color: #721c24; line-height: 1.8;">
         <li style="margin: 8px 0;">Review the manager's feedback above carefully</li>
         <li style="margin: 8px 0;">Make the necessary corrections to your case</li>

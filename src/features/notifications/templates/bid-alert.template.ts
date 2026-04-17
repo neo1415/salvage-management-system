@@ -20,7 +20,7 @@ export interface BidAlertTemplateData {
 export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
   const { vendorName, auctionId, assetName, alertType, yourBid, currentBid, timeRemaining, appUrl } = data;
   
-  let statusIcon = '📢';
+  let statusIcon = '';
   let statusTitle = 'Bid Alert';
   let statusMessage = '';
   let actionButton = '';
@@ -30,21 +30,21 @@ export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
   if (alertType === 'outbid') {
     alertColor = '#dc3545';
     alertBg = '#f8d7da';
-    statusIcon = '⚠️';
+    statusIcon = '';
     statusTitle = 'You\'ve Been Outbid!';
     statusMessage = `Another vendor has placed a higher bid on <strong>${assetName}</strong>. Your bid of <strong>₦${yourBid.toLocaleString()}</strong> is no longer the highest.`;
     actionButton = 'Place Higher Bid';
   } else if (alertType === 'winning') {
     alertColor = '#28a745';
     alertBg = '#d4edda';
-    statusIcon = '🎉';
+    statusIcon = '';
     statusTitle = 'You\'re Winning!';
     statusMessage = `Congratulations! Your bid of <strong>₦${yourBid.toLocaleString()}</strong> is currently the highest for <strong>${assetName}</strong>.`;
     actionButton = 'View Auction';
   } else if (alertType === 'won') {
     alertColor = '#FFD700';
     alertBg = '#fff9e6';
-    statusIcon = '🏆';
+    statusIcon = '';
     statusTitle = 'You Won the Auction!';
     statusMessage = `Congratulations! You have won the auction for <strong>${assetName}</strong> with your bid of <strong>₦${yourBid.toLocaleString()}</strong>.`;
     actionButton = 'Complete Payment';
@@ -54,30 +54,30 @@ export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
     <p><strong>Dear ${vendorName},</strong></p>
     
     <div style="background-color: ${alertBg}; border-left: 4px solid ${alertColor}; padding: 25px; margin: 25px 0; border-radius: 8px;">
-      <h2 style="margin: 0 0 12px 0; font-size: 22px; color: ${alertColor};">${statusIcon} ${statusTitle}</h2>
+      <h2 style="margin: 0 0 12px 0; font-size: 22px; color: ${alertColor};">${statusTitle}</h2>
       <p style="margin: 0; font-size: 16px;">${statusMessage}</p>
     </div>
     
     <div style="background-color: #f9f9f9; padding: 25px; border-radius: 8px; margin: 25px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">📋 Bid Details</h3>
+      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">Bid Details</h3>
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020; width: 45%;">🏷️ Auction:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020; width: 45%;">Auction:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${assetName}</td>
         </tr>
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">💰 Your Bid:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">Your Bid:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;"><strong>₦${yourBid.toLocaleString()}</strong></td>
         </tr>
         ${currentBid ? `
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">📊 Current Highest Bid:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">Current Highest Bid:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;"><strong style="color: #dc3545;">₦${currentBid.toLocaleString()}</strong></td>
         </tr>
         ` : ''}
         ${timeRemaining ? `
         <tr>
-          <td style="padding: 12px 0; font-weight: 600; color: #800020;">⏱️ Time Remaining:</td>
+          <td style="padding: 12px 0; font-weight: 600; color: #800020;">Time Remaining:</td>
           <td style="padding: 12px 0;"><strong>${timeRemaining}</strong></td>
         </tr>
         ` : ''}
@@ -86,19 +86,19 @@ export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
     
     ${alertType === 'outbid' ? `
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px 20px; margin: 25px 0; border-radius: 4px;">
-      <p style="margin: 0; color: #856404;"><strong>⚡ Act Fast!</strong> ${timeRemaining ? `Only ${timeRemaining} left to place a higher bid.` : 'Place a higher bid to win this auction.'}</p>
+      <p style="margin: 0; color: #856404;"><strong>Act Fast!</strong> ${timeRemaining ? `Only ${timeRemaining} left to place a higher bid.` : 'Place a higher bid to win this auction.'}</p>
     </div>
     ` : ''}
     
     ${alertType === 'winning' ? `
     <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px 20px; margin: 25px 0; border-radius: 4px;">
-      <p style="margin: 0; color: #155724;"><strong>🎯 Stay Alert!</strong> Other vendors can still outbid you. Keep an eye on the auction until it closes.</p>
+      <p style="margin: 0; color: #155724;"><strong>Stay Alert!</strong> Other vendors can still outbid you. Keep an eye on the auction until it closes.</p>
     </div>
     ` : ''}
     
     ${alertType === 'won' ? `
     <div style="background-color: #e7f3ff; border-left: 4px solid #0066cc; padding: 20px; margin: 25px 0; border-radius: 4px;">
-      <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #0066cc;">📋 Next Steps:</h3>
+      <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #0066cc;">Next Steps:</h3>
       <ul style="margin: 10px 0; padding-left: 20px; color: #333;">
         <li style="margin: 8px 0;">Complete payment within 24 hours to secure your purchase</li>
         <li style="margin: 8px 0;">Choose your payment method: Paystack, Flutterwave, or Bank Transfer</li>

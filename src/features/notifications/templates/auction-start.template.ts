@@ -31,33 +31,33 @@ export function getAuctionStartEmailTemplate(data: AuctionStartTemplateData): st
     </div>
     
     <div style="background-color: #f9f9f9; padding: 25px; border-radius: 8px; margin: 25px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">📋 Auction Details</h3>
+      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">Auction Details</h3>
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020; width: 40%;">📦 Asset Type:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020; width: 40%;">Asset Type:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${assetType}</td>
         </tr>
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">🏷️ Auction ID:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">Auction ID:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${auctionId}</td>
         </tr>
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">⏰ Start Time:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">Start Time:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${startTime}</td>
         </tr>
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">⏱️ End Time:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">End Time:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${endTime}</td>
         </tr>
         <tr>
-          <td style="padding: 12px 0; font-weight: 600; color: #800020;">📍 Location:</td>
+          <td style="padding: 12px 0; font-weight: 600; color: #800020;">Location:</td>
           <td style="padding: 12px 0;">${location}</td>
         </tr>
       </table>
     </div>
     
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px 20px; margin: 25px 0; border-radius: 4px;">
-      <p style="margin: 0; color: #856404;"><strong>⚡ Act Fast!</strong> Auctions are competitive. Place your bid early to stay ahead of other vendors.</p>
+      <p style="margin: 0; color: #856404;"><strong>Act Fast!</strong> Auctions are competitive. Place your bid early to stay ahead of other vendors.</p>
     </div>
     
     <div style="text-align: center; margin: 30px 0;">
@@ -65,7 +65,7 @@ export function getAuctionStartEmailTemplate(data: AuctionStartTemplateData): st
     </div>
     
     <div style="background-color: #e7f3ff; border-left: 4px solid #0066cc; padding: 20px; margin: 25px 0; border-radius: 4px;">
-      <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #0066cc;">💡 Bidding Tips:</h3>
+      <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #0066cc;">Bidding Tips:</h3>
       <ul style="margin: 10px 0; padding-left: 20px; color: #333;">
         <li style="margin: 8px 0;">Review all photos and damage assessment details carefully</li>
         <li style="margin: 8px 0;">Ensure you have sufficient funds in your escrow wallet</li>
@@ -85,7 +85,7 @@ export function getAuctionStartEmailTemplate(data: AuctionStartTemplateData): st
   `;
   
   return getBaseEmailTemplate({
-    title: '🎯 New Auction Available',
+    title: 'New Auction Available',
     preheader: `New auction for ${assetName} - Starting at ₦${reservePrice.toLocaleString()}`,
     content
   });

@@ -37,12 +37,12 @@ export function getOTPEmailTemplate(data: OTPTemplateData): string {
     
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; border-radius: 8px; margin: 30px 0;">
       <p style="margin: 0; color: #856404;">
-        <strong>⏰ Important:</strong> This code will expire in <strong>${expiryMinutes} minutes</strong>. Please use it immediately.
+        <strong>Important:</strong> This code will expire in <strong>${expiryMinutes} minutes</strong>. Please use it immediately.
       </p>
     </div>
     
     <div style="background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 20px; border-radius: 8px; margin: 30px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #0c5460; font-size: 16px;">🛡️ Security Tips:</h3>
+      <h3 style="margin: 0 0 15px 0; color: #0c5460; font-size: 16px;">Security Tips:</h3>
       <ul style="margin: 0; padding-left: 20px; color: #0c5460; line-height: 1.8;">
         <li style="margin: 8px 0;">Never share this code with anyone, including NEM Insurance staff</li>
         <li style="margin: 8px 0;">We will never ask for your OTP via phone or email</li>
@@ -59,7 +59,7 @@ export function getOTPEmailTemplate(data: OTPTemplateData): string {
   `;
   
   return getBaseEmailTemplate({
-    title: '🔐 OTP Verification Code',
+    title: 'OTP Verification Code',
     preheader: `Your verification code is ${otpCode}. Valid for ${expiryMinutes} minutes.`,
     content,
   });

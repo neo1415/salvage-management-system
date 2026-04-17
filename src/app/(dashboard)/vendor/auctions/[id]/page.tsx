@@ -940,28 +940,28 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           </div>
         )}
 
-        {/* Document Signing Section (if won but not all signed) */}
+        {/* Document Signing Section (if won but not all signed) - RESPONSIVE */}
         {auction.status === 'closed' && 
          session?.user?.vendorId && 
          auction.currentBidder === session.user.vendorId && (
-          <div className="bg-white border-2 border-yellow-400 rounded-lg shadow-lg p-6 mb-6" id={`auction-${auction.id}-documents`}>
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0">
-                <svg className="h-8 w-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white border-2 border-yellow-400 rounded-lg shadow-lg p-4 sm:p-6 mb-6" id={`auction-${auction.id}-documents`}>
+            <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+              <div className="flex-shrink-0 self-start">
+                <svg className="h-6 w-6 sm:h-8 sm:w-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <div className="flex-1">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="text-xl font-bold text-gray-900">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-900">
                     🎉 Congratulations! You Won This Auction
                   </h3>
                   <a
                     href={`/vendor/documents#auction-${auction.id}`}
-                    className="text-sm text-[#800020] hover:text-[#600018] font-medium flex items-center gap-1 whitespace-nowrap"
+                    className="text-xs sm:text-sm text-[#800020] hover:text-[#600018] font-medium flex items-center gap-1 self-start"
                   >
-                    View All Documents
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <span className="whitespace-nowrap">View All Documents</span>
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </a>
@@ -970,15 +970,15 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 {/* Show loading state while documents are being fetched */}
                 {isLoadingDocuments && documents.length === 0 && (
                   <div className="flex items-center gap-3 py-4">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#800020]"></div>
-                    <p className="text-gray-600">Loading your documents...</p>
+                    <div className="animate-spin rounded-full h-5 w-5 sm:h-6 sm:w-6 border-b-2 border-[#800020]"></div>
+                    <p className="text-sm sm:text-base text-gray-600">Loading your documents...</p>
                   </div>
                 )}
                 
                 {/* Show message if no documents found with refresh button */}
                 {!isLoadingDocuments && documents.length === 0 && (
                   <div className="py-4">
-                    <p className="text-gray-700 mb-4">
+                    <p className="text-sm sm:text-base text-gray-700 mb-4">
                       Your documents are being generated. This usually takes a few moments.
                     </p>
                     <button
@@ -987,9 +987,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                           fetchDocuments(auction.id, session.user.vendorId);
                         }
                       }}
-                      className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors flex items-center gap-2"
+                      className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors flex items-center gap-2 text-sm sm:text-base"
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
                       Refresh Documents
@@ -1000,38 +1000,38 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 {/* Show documents if available */}
                 {documents.length > 0 && (
                   <>
-                    <p className="text-gray-700 mb-4">
+                    <p className="text-xs sm:text-sm text-gray-700 mb-4">
                       Before payment can be processed, you must sign all required documents. 
                       Progress: <strong>{documents.filter(d => d.status === 'signed' && d.documentType !== 'pickup_authorization').length}/{documents.filter(d => d.documentType !== 'pickup_authorization').length} documents signed</strong>
                     </p>
                 
-                {/* FIXED: Document Cards in Row Layout */}
+                {/* RESPONSIVE: Document Cards - Stack on mobile, 2 cols on tablet, 3 cols on desktop */}
                 {/* Filter out pending pickup_authorization - it's generated AFTER payment, never shown as pending */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
                   {documents
                     .filter(doc => !(doc.documentType === 'pickup_authorization' && doc.status === 'pending'))
                     .map((doc) => (
                     <div 
                       key={doc.id}
-                      className={`flex flex-col p-4 rounded-lg border-2 transition-all ${
+                      className={`flex flex-col p-3 sm:p-4 rounded-lg border-2 transition-all ${
                         doc.status === 'signed' 
                           ? 'bg-green-50 border-green-300 shadow-sm' 
                           : 'bg-yellow-50 border-yellow-300 shadow-md hover:shadow-lg'
                       }`}
                     >
                       {/* Card Header */}
-                      <div className="flex items-start gap-3 mb-3">
+                      <div className="flex items-start gap-2 sm:gap-3 mb-3">
                         {doc.status === 'signed' ? (
-                          <svg className="w-6 h-6 text-green-600 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                         ) : (
-                          <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-900 text-sm leading-tight">{doc.title}</p>
+                          <p className="font-semibold text-gray-900 text-xs sm:text-sm leading-tight break-words">{doc.title}</p>
                           {doc.status === 'signed' && doc.signedAt && (
                             <p className="text-xs text-gray-600 mt-1">
                               Signed {new Date(doc.signedAt).toLocaleDateString('en-NG')}
@@ -1053,7 +1053,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                               setSelectedDocumentType(doc.documentType);
                               setShowDocumentModal(true);
                             }}
-                            className="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md font-medium transition-colors text-sm"
+                            className="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md font-medium transition-colors text-xs sm:text-sm"
                           >
                             Sign Now
                           </button>
@@ -1081,9 +1081,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                                 toast.error('Download Failed', 'Please try again');
                               }
                             }}
-                            className="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md font-medium transition-colors flex items-center justify-center gap-2 text-sm"
+                            className="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md font-medium transition-colors flex items-center justify-center gap-2 text-xs sm:text-sm"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             Download
@@ -1096,7 +1096,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
                 {/* Progress Bar */}
                 <div className="mt-4">
-                  <div className="flex justify-between text-sm text-gray-600 mb-1">
+                  <div className="flex justify-between text-xs sm:text-sm text-gray-600 mb-1">
                     <span>Document Signing Progress</span>
                     <span>{Math.round((documents.filter(d => d.status === 'signed').length / documents.length) * 100)}%</span>
                   </div>
@@ -1115,85 +1115,85 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           </div>
         )}
 
-        {/* Payment Verified Banner (show when payment is verified) */}
+        {/* Payment Verified Banner (show when payment is verified) - RESPONSIVE */}
         {auction.status === 'awaiting_payment' && 
          session?.user?.vendorId && 
          auction.currentBidder === session.user.vendorId &&
          hasVerifiedPayment && (
-          <div className="bg-gradient-to-r from-green-500 to-emerald-600 border-2 border-green-700 rounded-lg shadow-lg p-6 mb-6">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="flex-shrink-0 w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-gradient-to-r from-green-500 to-emerald-600 border-2 border-green-700 rounded-lg shadow-lg p-4 sm:p-6 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold text-white mb-1">
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-lg sm:text-xl font-bold text-white mb-1">
                     ✅ Payment Verified!
                   </h3>
-                  <p className="text-white/90 text-sm">
+                  <p className="text-white/90 text-xs sm:text-sm">
                     Your payment has been confirmed. You can now access your pickup authorization and all documents.
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center justify-end sm:justify-start">
                 <a
                   href={`/vendor/documents#auction-${auction.id}`}
-                  className="flex-shrink-0 px-6 py-3 bg-white text-green-700 font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-md flex items-center gap-2"
+                  className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-green-700 font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-md flex items-center justify-center gap-2 text-sm sm:text-base"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  View Documents
+                  <span className="whitespace-nowrap">View Documents</span>
                 </a>
               </div>
             </div>
           </div>
         )}
 
-        {/* Payment Method Selection Section (after documents signed) */}
+        {/* Payment Method Selection Section (after documents signed) - RESPONSIVE */}
         {auction.status === 'awaiting_payment' && 
          session?.user?.vendorId && 
          auction.currentBidder === session.user.vendorId &&
          !hasVerifiedPayment && (
           <div className="mb-6" id={`auction-${auction.id}-payment`}>
             {/* Prominent Pay Now Banner */}
-            <div className="bg-gradient-to-r from-[#800020] to-[#600018] border-2 border-[#800020] rounded-lg shadow-lg p-6 mb-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex-shrink-0 w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                    <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="bg-gradient-to-r from-[#800020] to-[#600018] border-2 border-[#800020] rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                  <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-full flex items-center justify-center">
+                    <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-white mb-1">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg sm:text-xl font-bold text-white mb-1">
                       🎉 Payment Required
                     </h3>
-                    <p className="text-white/90 text-sm">
+                    <p className="text-white/90 text-xs sm:text-sm">
                       All documents signed! Complete your payment to unlock pickup authorization.
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                   <a
                     href={`/vendor/documents#auction-${auction.id}`}
-                    className="text-sm text-white/90 hover:text-white font-medium flex items-center gap-1 whitespace-nowrap"
+                    className="text-xs sm:text-sm text-white/90 hover:text-white font-medium flex items-center justify-center gap-1 py-2 sm:py-0"
                   >
-                    View Documents
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <span>View Documents</span>
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </a>
                   <button
                     onClick={() => setShowPaymentModal(true)}
-                    className="flex-shrink-0 px-6 py-3 bg-white text-[#800020] font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-md flex items-center gap-2"
+                    className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-[#800020] font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-md flex items-center justify-center gap-2 text-sm sm:text-base"
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
-                    Pay Now
+                    <span className="whitespace-nowrap">Pay Now</span>
                   </button>
                 </div>
               </div>

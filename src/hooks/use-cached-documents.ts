@@ -104,24 +104,35 @@ export function useCachedDocuments(
     // CRITICAL FIX: Allow loading even without auctionId when fetchFn is provided
     // This enables pages to fetch all documents/auctions
     
+    console.log('🔄 [use-cached-documents] Effect triggered:', {
+      hasAuctionId: !!auctionId,
+      hasFetchFn: !!fetchFn,
+      isOffline,
+      timestamp: new Date().toISOString()
+    });
+    
     // Load data based on online status
     const loadData = async () => {
       if (isOffline) {
         // Only load from cache if we have an auctionId
         if (auctionId) {
+          console.log('📦 [use-cached-documents] Loading from cache (offline)');
           await loadFromCache();
         } else {
+          console.log('⚠️  [use-cached-documents] No auctionId, skipping cache load');
           setIsLoading(false);
         }
       } else {
         // When online, always try to fetch if we have a fetchFn
+        console.log('🌐 [use-cached-documents] Fetching data (online)');
         await fetchAndCache();
       }
     };
     
     loadData();
+    // CRITICAL FIX: Include fetchAndCache in dependencies to ensure it runs when fetchFn changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auctionId, isOffline]); // Only re-run when auctionId or online status changes
+  }, [auctionId, isOffline, fetchAndCache]); // Re-run when auctionId, online status, or fetchFn changes
 
   return {
     documents,

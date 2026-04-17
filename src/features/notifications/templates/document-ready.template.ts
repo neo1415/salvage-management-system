@@ -57,7 +57,7 @@ export function documentReadyTemplate(data: DocumentReadyTemplateData): string {
     
     ${documentType.toLowerCase().includes('waiver') || documentType.toLowerCase().includes('liability') ? `
     <div style="background-color: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; padding: 20px; margin: 25px 0;">
-      <h3 style="margin: 0 0 10px 0; color: #856404; font-size: 16px;">⚠️ Action Required</h3>
+      <h3 style="margin: 0 0 10px 0; color: #856404; font-size: 16px;">Action Required</h3>
       <p style="margin: 0; color: #856404; font-size: 14px;">
         This document requires your digital signature before you can proceed with payment. 
         Please review the terms carefully and sign electronically.
@@ -68,7 +68,7 @@ export function documentReadyTemplate(data: DocumentReadyTemplateData): string {
     <div style="text-align: center; margin: 35px 0;">
       <a href="${downloadUrl}" 
          style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-        📄 View & Sign Document
+        View & Sign Document
       </a>
     </div>
     
@@ -86,15 +86,15 @@ export function documentReadyTemplate(data: DocumentReadyTemplateData): string {
     ${expiresAt ? `
     <div style="background-color: #ffebee; border-left: 4px solid #d32f2f; padding: 15px; margin: 25px 0; border-radius: 6px;">
       <p style="margin: 0; color: #c62828; font-size: 14px; font-weight: 600;">
-        ⏰ This document expires on ${expiresAt}. Please sign before the deadline.
+        This document expires on ${expiresAt}. Please sign before the deadline.
       </p>
     </div>
     ` : ''}
     
     <p style="margin-top: 30px;">If you have any questions or need assistance, please contact our support team:</p>
     <ul style="color: #333; font-size: 15px; line-height: 1.8;">
-      <li>📞 Phone: <a href="tel:+2340201448956" style="color: #800020; text-decoration: none; font-weight: 600;">234-02-014489560</a></li>
-      <li>📧 Email: <a href="mailto:nemsupport@nem-insurance.com" style="color: #800020; text-decoration: none; font-weight: 600;">nemsupport@nem-insurance.com</a></li>
+      <li>Phone: <a href="tel:+2340201448956" style="color: #800020; text-decoration: none; font-weight: 600;">234-02-014489560</a></li>
+      <li>Email: <a href="mailto:nemsupport@nem-insurance.com" style="color: #800020; text-decoration: none; font-weight: 600;">nemsupport@nem-insurance.com</a></li>
     </ul>
     
     <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Document Team</strong></p>

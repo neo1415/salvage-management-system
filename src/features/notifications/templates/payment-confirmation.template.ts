@@ -26,20 +26,20 @@ export function getPaymentConfirmationEmailTemplate(data: PaymentConfirmationTem
     <p><strong>Dear ${vendorName},</strong></p>
     
     <div style="background-color: #d4edda; border: 2px solid #28a745; color: #155724; padding: 25px; text-align: center; border-radius: 8px; margin: 25px 0;">
-      <h2 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 700; color: #28a745;">✅ Payment Successful</h2>
+      <h2 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 700; color: #28a745;">Payment Successful</h2>
       <p style="margin: 5px 0; font-size: 16px;">Your payment has been verified and confirmed.</p>
     </div>
     
     <p>Congratulations! Your payment for <strong>${assetName}</strong> has been successfully processed. You can now proceed to collect your salvage item.</p>
     
     <div style="background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020; padding: 35px; text-align: center; border-radius: 8px; margin: 30px 0; box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);">
-      <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">🔑 Pickup Authorization Code</div>
+      <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Pickup Authorization Code</div>
       <div style="font-size: 48px; font-weight: 700; letter-spacing: 8px; margin: 15px 0; font-family: 'Courier New', monospace; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">${pickupAuthCode}</div>
       <div style="font-size: 13px; margin-top: 12px; opacity: 0.9;">Present this code at the pickup location</div>
     </div>
     
     <div style="background-color: #f9f9f9; padding: 25px; border-radius: 8px; margin: 25px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">💳 Payment Details</h3>
+      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">Payment Details</h3>
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020; width: 40%;">Amount Paid:</td>
@@ -61,7 +61,7 @@ export function getPaymentConfirmationEmailTemplate(data: PaymentConfirmationTem
     </div>
     
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; margin: 25px 0; border-radius: 4px;">
-      <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #856404;">📦 Pickup Instructions:</h3>
+      <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #856404;">Pickup Instructions:</h3>
       <ul style="margin: 10px 0; padding-left: 20px; color: #333;">
         <li style="margin: 10px 0;"><strong>Location:</strong> ${pickupLocation}</li>
         <li style="margin: 10px 0;"><strong>Deadline:</strong> <span style="color: #dc3545; font-weight: 600;">${pickupDeadline}</span></li>
@@ -71,7 +71,7 @@ export function getPaymentConfirmationEmailTemplate(data: PaymentConfirmationTem
     </div>
     
     <div style="background-color: #f8d7da; border-left: 4px solid #dc3545; padding: 15px 20px; margin: 25px 0; border-radius: 4px;">
-      <p style="margin: 0; color: #721c24;"><strong>⚠️ Important:</strong> You must collect the item by <strong>${pickupDeadline}</strong>. Failure to collect within the deadline may result in forfeiture without refund.</p>
+      <p style="margin: 0; color: #721c24;"><strong>Important:</strong> You must collect the item by <strong>${pickupDeadline}</strong>. Failure to collect within the deadline may result in forfeiture without refund.</p>
     </div>
     
     <div style="text-align: center; margin: 30px 0;">
@@ -85,7 +85,7 @@ export function getPaymentConfirmationEmailTemplate(data: PaymentConfirmationTem
   `;
   
   return getBaseEmailTemplate({
-    title: '✅ Payment Confirmed - Pickup Authorization',
+    title: 'Payment Confirmed - Pickup Authorization',
     preheader: `Payment confirmed for ${assetName}. Your pickup code: ${pickupAuthCode}`,
     content
   });

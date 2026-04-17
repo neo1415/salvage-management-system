@@ -27,7 +27,7 @@ export function getWelcomeEmailTemplate(data: WelcomeTemplateData): string {
     </p>
     
     <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-left: 4px solid #FFD700; padding: 25px; border-radius: 8px; margin: 30px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">🚀 Get Started in 3 Easy Steps:</h3>
+      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">Get Started in 3 Easy Steps:</h3>
       <ol style="margin: 0; padding-left: 20px; line-height: 1.8;">
         <li style="margin: 10px 0;"><strong>Verify Your Phone Number</strong> - Complete SMS OTP verification</li>
         <li style="margin: 10px 0;"><strong>Complete Tier 1 KYC</strong> - Verify with your BVN to start bidding up to ₦500,000</li>
@@ -42,17 +42,17 @@ export function getWelcomeEmailTemplate(data: WelcomeTemplateData): string {
     </div>
     
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; border-radius: 8px; margin: 30px 0;">
-      <h3 style="margin: 0 0 10px 0; color: #856404; font-size: 16px;">💡 Why Choose NEM Salvage?</h3>
+      <h3 style="margin: 0 0 10px 0; color: #856404; font-size: 16px;">Why Choose NEM Salvage?</h3>
       <ul style="margin: 10px 0; padding-left: 20px; color: #856404;">
-        <li style="margin: 8px 0;">⚡ <strong>Instant Payments</strong> - Get paid in minutes via Paystack/Flutterwave</li>
-        <li style="margin: 8px 0;">📱 <strong>Mobile-First</strong> - Bid from anywhere using our PWA</li>
-        <li style="margin: 8px 0;">🤖 <strong>AI Assessment</strong> - Accurate damage evaluation for fair pricing</li>
-        <li style="margin: 8px 0;">🏆 <strong>Gamified Experience</strong> - Earn rewards and climb the leaderboard</li>
+        <li style="margin: 8px 0;"><strong>Instant Payments</strong> - Get paid in minutes via Paystack/Flutterwave</li>
+        <li style="margin: 8px 0;"><strong>Mobile-First</strong> - Bid from anywhere using our PWA</li>
+        <li style="margin: 8px 0;"><strong>AI Assessment</strong> - Accurate damage evaluation for fair pricing</li>
+        <li style="margin: 8px 0;"><strong>Gamified Experience</strong> - Earn rewards and climb the leaderboard</li>
       </ul>
     </div>
     
     <div style="background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 20px; border-radius: 8px; margin: 30px 0;">
-      <h3 style="margin: 0 0 10px 0; color: #0c5460; font-size: 16px;">📞 Need Help?</h3>
+      <h3 style="margin: 0 0 10px 0; color: #0c5460; font-size: 16px;">Need Help?</h3>
       <p style="margin: 0; color: #0c5460;">
         Our support team is available 24/7 to assist you:<br>
         <strong>Phone:</strong> 234-02-014489560<br>
