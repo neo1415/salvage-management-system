@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db/drizzle';
+import { db } from '@/lib/db';
 import { bids } from '@/lib/db/schema/auctions';
 import { fraudAlerts } from '@/lib/db/schema/fraud-detection';
 import { gte, sql } from 'drizzle-orm';
