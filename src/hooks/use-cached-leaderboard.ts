@@ -69,7 +69,7 @@ export function useCachedLeaderboard(): UseCachedLeaderboardReturn {
       setIsLoading(true);
       setError(null);
       
-      const response = await fetch('/api/vendors/leaderboard');
+      const response = await fetch('/api/leaderboard');
       
       if (!response.ok) {
         throw new Error('Failed to fetch leaderboard data');

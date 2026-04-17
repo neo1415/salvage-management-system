@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { subDays } from 'date-fns';
@@ -76,10 +76,6 @@ export default function KPIDashboardPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button onClick={fetchReport} variant="outline" size="sm" disabled={loading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
           {reportData && <ExportButton reportType="kpi-dashboard" reportData={reportData} filters={filters} />}
         </div>
       </div>

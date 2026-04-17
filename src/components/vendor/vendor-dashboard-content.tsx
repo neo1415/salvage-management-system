@@ -250,7 +250,7 @@ function VendorDashboardContentInner() {
         )}
 
         {/* Performance Stats Cards - Mobile Optimized */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
           {/* Win Rate */}
           <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
             <div className="flex items-center justify-between mb-2">
@@ -267,8 +267,8 @@ function VendorDashboardContentInner() {
             </p>
           </div>
 
-          {/* Average Payment Time */}
-          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
+          {/* Average Payment Time - Hidden from vendor view (admin/manager only) */}
+          {/* <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500">Avg Payment Time</h3>
               <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -292,7 +292,7 @@ function VendorDashboardContentInner() {
                 )
                 : 'Time to payment'}
             </p>
-          </div>
+          </div> */}
 
           {/* On-Time Pickup Rate */}
           <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">

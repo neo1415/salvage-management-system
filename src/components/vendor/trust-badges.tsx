@@ -58,6 +58,13 @@ export interface TrustBadgesProps {
   showLabels?: boolean;
   
   /**
+   * Show payment time badge (Fast Payer)
+   * Set to false for vendor-facing displays
+   * @default true
+   */
+  showPaymentTimeBadge?: boolean;
+  
+  /**
    * Additional CSS classes
    */
   className?: string;
@@ -130,7 +137,8 @@ const SIZE_CONFIGS = {
 function getEligibleBadges(
   tier: 'tier1_bvn' | 'tier2_full',
   rating: number,
-  avgPaymentTimeHours: number
+  avgPaymentTimeHours: number,
+  showPaymentTimeBadge: boolean = true
 ): BadgeType[] {
   const badges: BadgeType[] = [];
 
@@ -144,13 +152,13 @@ function getEligibleBadges(
     badges.push('verified_business');
   }
 
-  // Top Rated: ≥4.5 stars
+  // Top Rated: ≥4.5 stars (only show if rating > 0)
   if (rating >= 4.5) {
     badges.push('top_rated');
   }
 
-  // Fast Payer: <6 hours average payment time
-  if (avgPaymentTimeHours > 0 && avgPaymentTimeHours < 6) {
+  // Fast Payer: <6 hours average payment time (only if enabled)
+  if (showPaymentTimeBadge && avgPaymentTimeHours > 0 && avgPaymentTimeHours < 6) {
     badges.push('fast_payer');
   }
 
@@ -245,9 +253,10 @@ export function TrustBadges({
   size = 'md',
   layout = 'horizontal',
   showLabels = true,
+  showPaymentTimeBadge = true,
   className = '',
 }: TrustBadgesProps) {
-  const eligibleBadges = getEligibleBadges(tier, rating, avgPaymentTimeHours);
+  const eligibleBadges = getEligibleBadges(tier, rating, avgPaymentTimeHours, showPaymentTimeBadge);
   
   if (eligibleBadges.length === 0) {
     return null;

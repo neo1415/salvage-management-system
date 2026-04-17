@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { MyPerformanceReport } from '@/components/reports/user-performance/my-performance-report';
@@ -58,10 +58,6 @@ export default function MyPerformancePage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button onClick={fetchReport} variant="outline" size="sm" disabled={loading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
           {reportData && <ExportButton reportType="my-performance" reportData={reportData} filters={filters} />}
         </div>
       </div>

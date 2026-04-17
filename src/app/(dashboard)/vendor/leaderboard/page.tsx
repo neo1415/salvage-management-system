@@ -315,7 +315,7 @@ export default function VendorLeaderboardPage() {
                       <div className="flex items-center justify-center gap-1">
                         <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                         <p className="text-lg font-bold text-gray-900">
-                          {parseFloat(entry.rating).toFixed(1)}
+                          {parseFloat(entry.rating) > 0 ? parseFloat(entry.rating).toFixed(1) : 'N/A'}
                         </p>
                       </div>
                     </td>
@@ -367,6 +367,7 @@ export default function VendorLeaderboardPage() {
                   rating={parseFloat(entry.rating)}
                   avgPaymentTimeHours={0}
                   size="sm"
+                  showPaymentTimeBadge={false}
                 />
               </div>
 
@@ -407,7 +408,7 @@ export default function VendorLeaderboardPage() {
                   <div className="flex items-center gap-1">
                     <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                     <p className="text-xl font-bold text-gray-900">
-                      {parseFloat(entry.rating).toFixed(1)}
+                      {parseFloat(entry.rating) > 0 ? parseFloat(entry.rating).toFixed(1) : 'N/A'}
                     </p>
                   </div>
                 </div>

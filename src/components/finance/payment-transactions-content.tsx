@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { AuctionCardWithActions } from './auction-card-with-actions';
-import { Filter, RefreshCw } from 'lucide-react';
+import { Filter } from 'lucide-react';
 
 interface AuctionData {
   id: string;
@@ -157,13 +157,6 @@ export function PaymentTransactionsContent() {
               </button>
             ))}
           </div>
-          <button
-            onClick={handleRefresh}
-            className="ml-auto flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
         </div>
       </div>
 

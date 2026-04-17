@@ -711,7 +711,7 @@ function DraftCard({ draft, onDelete }: DraftCardProps) {
 
         {draft.marketValue && draft.marketValue > 0 && (
           <div className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            <Banknote className="w-4 h-4 text-gray-400 flex-shrink-0" />
             <div className="min-w-0">
               <p className="text-xs text-gray-500">Value</p>
               <p className="font-medium text-[#800020]">
@@ -834,7 +834,7 @@ function CaseCard({ caseItem, onDelete, getStatusBadge, isOfflineCase = false }:
 
           {/* Field 2: Value with compact format */}
           <div className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-gray-400 flex-shrink-0" aria-hidden="true" />
+            <Banknote className="w-4 h-4 text-gray-400 flex-shrink-0" aria-hidden="true" />
             <div className="min-w-0">
               <p className="text-xs text-gray-500">Value</p>
               <p className="font-medium text-[#800020]">

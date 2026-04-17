@@ -8,7 +8,7 @@
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, DollarSign, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Banknote, BarChart3 } from 'lucide-react';
 import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -124,7 +124,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <CardTitle className="text-sm font-medium text-gray-600">
               Total Salvage Recovered
             </CardTitle>
-            <DollarSign className="h-4 w-4 text-[#800020]" />
+            <Banknote className="h-4 w-4 text-[#800020]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">

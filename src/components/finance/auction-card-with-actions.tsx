@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Clock, User, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, ArrowRight } from 'lucide-react';
+import { Clock, User, Banknote, AlertTriangle, CheckCircle2, XCircle, FileText, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 
@@ -239,7 +239,7 @@ export function AuctionCardWithActions({
                 onClick={() => setShowTransferModal(true)}
                 className="flex-1 min-w-[140px] px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
               >
-                <DollarSign className="w-4 h-4" />
+                <Banknote className="w-4 h-4" />
                 Transfer Forfeited Funds
               </button>
             )}

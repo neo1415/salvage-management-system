@@ -454,7 +454,7 @@ async function calculateComparisons(
     lastMonthAvgPaymentTime = totalPaymentTime / lastMonthPaymentTimesResult.length;
   }
 
-  // Calculate comparisons
+  // Calculate comparisons (excluding Average Payment Time for vendor view)
   const comparisons: Comparison[] = [
     {
       metric: 'Win Rate',
@@ -463,13 +463,7 @@ async function calculateComparisons(
       change: Math.round((currentStats.winRate - lastMonthWinRate) * 100) / 100,
       trend: currentStats.winRate > lastMonthWinRate ? 'up' : currentStats.winRate < lastMonthWinRate ? 'down' : 'neutral',
     },
-    {
-      metric: 'Average Payment Time',
-      currentValue: currentStats.avgPaymentTimeHours,
-      previousValue: Math.round(lastMonthAvgPaymentTime * 100) / 100,
-      change: Math.round((currentStats.avgPaymentTimeHours - lastMonthAvgPaymentTime) * 100) / 100,
-      trend: currentStats.avgPaymentTimeHours < lastMonthAvgPaymentTime ? 'up' : currentStats.avgPaymentTimeHours > lastMonthAvgPaymentTime ? 'down' : 'neutral',
-    },
+    // Average Payment Time removed - admin/manager only metric
     {
       metric: 'Total Bids',
       currentValue: currentStats.totalBids,

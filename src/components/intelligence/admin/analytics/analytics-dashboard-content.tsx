@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Download, RefreshCw, AlertCircle } from 'lucide-react';
+import { Download, AlertCircle, RefreshCw } from 'lucide-react';
 import { subDays } from 'date-fns';
 import { AnalyticsFiltersComponent, AnalyticsFilters } from './analytics-filters';
 import { AssetPerformanceMatrix } from './asset-performance-matrix';
@@ -278,16 +278,6 @@ export function AnalyticsDashboardContent() {
             />
             
             <div className="flex items-center gap-2">
-              <Button
-                onClick={fetchAllAnalytics}
-                variant="outline"
-                size="sm"
-                disabled={loading}
-              >
-                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-              
               <Button
                 onClick={handleExportAll}
                 variant="outline"

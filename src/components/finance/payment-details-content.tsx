@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, User, DollarSign, FileText, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown, Lock } from 'lucide-react';
+import { ArrowLeft, Clock, User, Banknote, FileText, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown, Lock } from 'lucide-react';
 import Link from 'next/link';
 
 interface TimelineEvent {
@@ -74,7 +74,7 @@ export function PaymentDetailsContent({ auctionId }: PaymentDetailsContentProps)
       document_signed: <CheckCircle2 className="w-4 h-4 text-green-600" />,
       extension_granted: <Clock className="w-4 h-4 text-yellow-600" />,
       forfeiture: <AlertTriangle className="w-4 h-4 text-red-600" />,
-      payment: <DollarSign className="w-4 h-4 text-green-600" />,
+      payment: <Banknote className="w-4 h-4 text-green-600" />,
       fallback: <User className="w-4 h-4 text-orange-600" />,
     };
     return icons[type] || <Clock className="w-4 h-4 text-gray-600" />;

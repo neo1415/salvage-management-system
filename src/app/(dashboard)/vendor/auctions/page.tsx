@@ -698,7 +698,7 @@ function AuctionBrowsingContent() {
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
             >
-              <DollarSign size={14} aria-hidden="true" />
+              <Banknote size={14} aria-hidden="true" />
               <span>My Bids</span>
             </button>
             <button
@@ -1066,6 +1066,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
   const [timeRemaining, setTimeRemaining] = useState('');
   const [timerColor, setTimerColor] = useState('text-green-600');
   const [timerLabel, setTimerLabel] = useState('Ends in');
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
   useEffect(() => {
     const updateTimer = () => {
@@ -1186,8 +1187,15 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
     return name;
   };
 
-  // Get main photo
-  const mainPhoto = auction.case.photos[0] || '/placeholder-auction.jpg';
+  // Get photos for carousel (at least 3 photos, or repeat if less)
+  const photos = auction.case.photos.length > 0 
+    ? auction.case.photos 
+    : ['/placeholder-auction.jpg'];
+  
+  // Ensure we have at least 3 photos for carousel by repeating if necessary
+  const carouselPhotos = photos.length >= 3 
+    ? photos 
+    : [...photos, ...photos, ...photos].slice(0, 3);
 
   // Get current bid or reserve price
   const displayPrice = auction.currentBid 
@@ -1195,6 +1203,12 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
     : Number(auction.case.reservePrice);
 
   const priceLabel = auction.currentBid ? 'Current Bid' : 'Reserve';
+
+  // Handle image carousel on hover/touch
+  const handleImageInteraction = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    setCurrentPhotoIndex((prev) => (prev + 1) % carouselPhotos.length);
+  };
 
   return (
     <div
@@ -1213,77 +1227,78 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
         e.currentTarget.style.transform = 'translateY(0)';
       }}
     >
-      {/* Image with Gradient Overlay - Modern 2026 Pattern */}
-      <div className="relative h-48 bg-gray-200">
+      {/* Image with Gradient Overlay - Modern 2026 Pattern with Carousel */}
+      <div 
+        className="relative h-48 bg-gray-200"
+        onMouseEnter={handleImageInteraction}
+        onTouchStart={handleImageInteraction}
+      >
         <Image
-          src={mainPhoto}
+          src={carouselPhotos[currentPhotoIndex]}
           alt={getAssetName()}
           fill
           className="object-cover group-hover:scale-105 transition-transform duration-300"
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />
         
-        {/* Dark gradient overlay for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+        {/* Photo indicator dots */}
+        {carouselPhotos.length > 1 && (
+          <div className="absolute top-2 left-2 flex gap-1 z-10">
+            {carouselPhotos.map((_, index) => (
+              <div
+                key={index}
+                className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
+                  index === currentPhotoIndex 
+                    ? 'bg-white w-4' 
+                    : 'bg-white/50'
+                }`}
+              />
+            ))}
+          </div>
+        )}
         
-        {/* Status Badge - Top Right */}
+        {/* Status Badge - Top Right - Only show for Won and Payment Due */}
         <div className="absolute top-2 right-2 z-10">
           {auction.isWinner && (auction.status === 'closed' || auction.status === 'awaiting_payment') ? (
             <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-[#388e3c] text-white shadow-lg">
               <Trophy size={12} aria-label="Won auction" />
-              <span>Won</span>
             </span>
-          ) : (
-            <span
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold shadow-lg ${
-                auction.status === 'scheduled'
-                  ? 'bg-blue-600 text-white'
-                  : auction.status === 'active'
-                  ? 'bg-[#388e3c] text-white'
-                  : auction.status === 'extended'
-                  ? 'bg-[#f57c00] text-white'
-                  : auction.status === 'awaiting_payment' && auction.isWinner
-                  ? 'bg-[#f57c00] text-white'
-                  : 'bg-gray-500 text-white'
-              }`}
-            >
+          ) : auction.status === 'awaiting_payment' && auction.isWinner ? (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-[#f57c00] text-white shadow-lg">
+              Payment Due
+            </span>
+          ) : auction.status === 'scheduled' ? (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-600 text-white shadow-lg">
+              <Clock size={12} aria-hidden="true" />
+            </span>
+          ) : auction.status === 'active' ? (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-[#388e3c] text-white shadow-lg">
               <Circle size={8} className="fill-current" aria-hidden="true" />
-              <span>
-                {auction.status === 'scheduled' && 'Scheduled'}
-                {auction.status === 'active' && 'Active'}
-                {auction.status === 'extended' && 'Extended'}
-                {auction.status === 'awaiting_payment' && auction.isWinner && 'Payment Due'}
-                {(auction.status === 'closed' || (auction.status === 'awaiting_payment' && !auction.isWinner)) && 'Closed'}
-              </span>
             </span>
-          )}
-        </div>
-
-        {/* Price & Timer ON IMAGE - Bottom section with gradient */}
-        <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
-          {/* Price - Large and prominent */}
-          <div className="mb-2">
-            <span className="text-2xl font-bold text-white drop-shadow-lg">
-              {formatCompactCurrency(displayPrice)}
+          ) : auction.status === 'extended' ? (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-[#f57c00] text-white shadow-lg">
+              <Circle size={8} className="fill-current" aria-hidden="true" />
             </span>
-          </div>
-
-          {/* Timer - Compact */}
-          <div className="flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-white/90 flex-shrink-0" aria-label="Time remaining" />
-            <span className="text-sm font-semibold text-white/90 drop-shadow">
-              {timerLabel && `${timerLabel} `}{timeRemaining}
-            </span>
-          </div>
+          ) : null}
         </div>
       </div>
 
-      {/* Compact Content Below Image - Only essential info */}
+      {/* Compact Content Below Image - Price moved here */}
       <div className="p-2.5">
         {/* Asset Name - Compact */}
         <h3 className="text-sm font-bold text-gray-900 mb-2 line-clamp-2" style={{ lineHeight: '1.3', letterSpacing: '-0.01em' }}>
           {getAssetName()}
         </h3>
+
+        {/* Price - Moved to bottom */}
+        <div className="mb-2">
+          <span className="text-lg font-bold text-[#800020]">
+            {formatCompactCurrency(displayPrice)}
+          </span>
+          <span className="text-xs text-gray-500 ml-1">
+            {priceLabel}
+          </span>
+        </div>
 
         {/* Watching Count - Single line */}
         <div className="flex items-center justify-between">

@@ -7,7 +7,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
-  TrendingUp, TrendingDown, DollarSign, FileText, 
+  TrendingUp, TrendingDown, Banknote, FileText, 
   Clock, CheckCircle, Users, Award, Activity,
   BarChart3, PieChart, LineChart
 } from 'lucide-react';
@@ -72,7 +72,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                     </span>
                   </div>
                 </div>
-                <DollarSign className="h-8 w-8 text-[#800020] opacity-20" />
+                <Banknote className="h-8 w-8 text-[#800020] opacity-20" />
               </div>
             </CardContent>
           </Card>
