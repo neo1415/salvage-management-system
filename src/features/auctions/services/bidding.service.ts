@@ -37,6 +37,7 @@ export interface PlaceBidData {
   otp: string;
   ipAddress: string;
   userAgent: string;
+  deviceFingerprint?: string;
 }
 
 /**
@@ -241,6 +242,8 @@ export class BiddingService {
               amount: data.amount.toString(),
               otpVerified: true,
               ipAddress: data.ipAddress,
+              userAgent: data.userAgent,
+              deviceFingerprint: data.deviceFingerprint,
               deviceType: this.getDeviceType(data.userAgent),
             })
             .returning();
@@ -421,6 +424,11 @@ export class BiddingService {
       // Requirement 21: Auto-extend if bid placed with <5 minutes remaining
       this.checkAndExtendAuction(data.auctionId, data.ipAddress, data.userAgent).catch((error) => {
         console.error('Failed to check auction extension:', error);
+      });
+
+      // Analyze IP patterns for fraud detection (async, don't wait)
+      this.analyzeIPPatterns(data.vendorId, data.ipAddress).catch((error) => {
+        console.error('Failed to analyze IP patterns:', error);
       });
 
       // Notify previous highest bidder (async, don't wait)
@@ -799,6 +807,20 @@ export class BiddingService {
     } catch (error) {
       console.error('Failed to check auction extension:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Analyze IP patterns for fraud detection
+   * Checks if multiple vendors from same IP are bidding against each other
+   */
+  private async analyzeIPPatterns(vendorId: string, ipAddress: string): Promise<void> {
+    try {
+      const { ipAnalysisService } = await import('@/features/fraud/services/ip-analysis.service');
+      await ipAnalysisService.analyzeBiddingPatterns(vendorId, ipAddress);
+    } catch (error) {
+      console.error('Failed to analyze IP patterns:', error);
+      // Don't throw - fraud detection should not block bidding
     }
   }
 

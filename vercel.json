@@ -7,10 +7,6 @@
     {
       "path": "/api/cron/check-missing-documents",
       "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/start-scheduled-auctions",
-      "schedule": "* * * * *"
     }
   ]
 }

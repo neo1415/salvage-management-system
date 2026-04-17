@@ -29,8 +29,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // RBAC: Verify user is System Admin
-    const authorizedRoles = ['admin', 'manager'];
+    // RBAC: Verify user is System Admin or Manager
+    const authorizedRoles = ['system_admin', 'salvage_manager'];
     if (!authorizedRoles.includes(session.user.role || '')) {
       return NextResponse.json(
         { 
@@ -76,8 +76,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // RBAC: Verify user is System Admin
-    const authorizedRoles = ['admin', 'manager'];
+    // RBAC: Verify user is System Admin or Manager
+    const authorizedRoles = ['system_admin', 'salvage_manager'];
     if (!authorizedRoles.includes(session.user.role || '')) {
       return NextResponse.json(
         { 

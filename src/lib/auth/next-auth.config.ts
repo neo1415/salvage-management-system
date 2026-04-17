@@ -289,6 +289,19 @@ export const authConfig: NextAuthConfig = {
   },
 
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      // If the URL is already a full URL starting with the base URL, use it
+      if (url.startsWith(baseUrl)) {
+        return url;
+      }
+      // If it's a relative URL, prepend the base URL
+      if (url.startsWith('/')) {
+        return `${baseUrl}${url}`;
+      }
+      // Default to base URL
+      return baseUrl;
+    },
+
     async signIn({ user, account, profile }) {
       // For OAuth providers, check if user exists or handle new registration
       if (account?.provider === 'google' || account?.provider === 'facebook') {

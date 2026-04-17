@@ -21,6 +21,7 @@ interface ConfigFormProps {
 
 export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
   const [config, setConfig] = useState<Record<string, number>>({});
+  const [originalConfig, setOriginalConfig] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -28,107 +29,107 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
 
   const parameters: ConfigParameter[] = [
     {
-      key: 'deposit_rate',
+      key: 'depositRate',
       label: 'Deposit Rate',
       description: 'Percentage of bid amount to freeze as deposit',
-      value: config.deposit_rate || 10,
+      value: 10,
       unit: '%',
       min: 1,
       max: 100,
       step: 1,
     },
     {
-      key: 'minimum_deposit_floor',
+      key: 'minimumDepositFloor',
       label: 'Minimum Deposit Floor',
       description: 'Minimum deposit amount regardless of bid',
-      value: config.minimum_deposit_floor || 100000,
+      value: 100000,
       unit: '₦',
       min: 1000,
       step: 1000,
     },
     {
-      key: 'tier_1_limit',
+      key: 'tier1Limit',
       label: 'Tier 1 Bid Limit',
       description: 'Maximum bid amount for Tier 1 vendors',
-      value: config.tier_1_limit || 500000,
+      value: 500000,
       unit: '₦',
       min: 100000,
       step: 10000,
     },
     {
-      key: 'minimum_bid_increment',
+      key: 'minimumBidIncrement',
       label: 'Minimum Bid Increment',
       description: 'Minimum amount between consecutive bids',
-      value: config.minimum_bid_increment || 20000,
+      value: 20000,
       unit: '₦',
       min: 1000,
       step: 1000,
     },
     {
-      key: 'document_validity_period',
+      key: 'documentValidityPeriod',
       label: 'Document Validity Period',
       description: 'Time window for signing required documents',
-      value: config.document_validity_period || 48,
+      value: 48,
       unit: 'hours',
       min: 1,
       max: 168,
       step: 1,
     },
     {
-      key: 'max_grace_extensions',
+      key: 'maxGraceExtensions',
       label: 'Maximum Grace Extensions',
       description: 'Maximum number of deadline extensions allowed',
-      value: config.max_grace_extensions || 2,
+      value: 2,
       unit: 'extensions',
       min: 0,
       max: 10,
       step: 1,
     },
     {
-      key: 'grace_extension_duration',
+      key: 'graceExtensionDuration',
       label: 'Grace Extension Duration',
       description: 'Additional time granted per extension',
-      value: config.grace_extension_duration || 24,
+      value: 24,
       unit: 'hours',
       min: 1,
       max: 72,
       step: 1,
     },
     {
-      key: 'fallback_buffer_period',
+      key: 'fallbackBufferPeriod',
       label: 'Fallback Buffer Period',
       description: 'Wait time before promoting next bidder',
-      value: config.fallback_buffer_period || 24,
+      value: 24,
       unit: 'hours',
       min: 1,
       max: 72,
       step: 1,
     },
     {
-      key: 'top_bidders_to_keep_frozen',
+      key: 'topBiddersToKeepFrozen',
       label: 'Top Bidders to Keep Frozen',
       description: 'Number of highest bidders whose deposits remain frozen',
-      value: config.top_bidders_to_keep_frozen || 3,
+      value: 3,
       unit: 'bidders',
       min: 1,
       max: 10,
       step: 1,
     },
     {
-      key: 'forfeiture_percentage',
+      key: 'forfeiturePercentage',
       label: 'Forfeiture Percentage',
       description: 'Percentage of deposit to forfeit on payment failure',
-      value: config.forfeiture_percentage || 100,
+      value: 100,
       unit: '%',
       min: 0,
       max: 100,
       step: 5,
     },
     {
-      key: 'payment_deadline_after_signing',
+      key: 'paymentDeadlineAfterSigning',
       label: 'Payment Deadline After Signing',
       description: 'Time window for payment after document signing',
-      value: config.payment_deadline_after_signing || 72,
+      value: 72,
       unit: 'hours',
       min: 1,
       max: 168,
@@ -146,7 +147,11 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
       const response = await fetch('/api/admin/config');
       if (response.ok) {
         const data = await response.json();
+        console.log('Fetched config:', data.config);
         setConfig(data.config);
+        setOriginalConfig(data.config);
+      } else {
+        console.error('Failed to fetch config:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Failed to fetch config:', error);
@@ -155,16 +160,24 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
     }
   };
 
+  // Convert camelCase to snake_case for API
+  const camelToSnake = (str: string): string => {
+    return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+  };
+
   const handleSave = async (parameter: string, value: number) => {
     try {
       setSaving(true);
       setMessage(null);
 
+      // Convert camelCase parameter to snake_case for API
+      const snakeCaseParameter = camelToSnake(parameter);
+
       const response = await fetch('/api/admin/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          parameter,
+          parameter: snakeCaseParameter,
           value,
           reason: reason.trim() || undefined,
         }),
@@ -173,6 +186,7 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
       if (response.ok) {
         const data = await response.json();
         setConfig(data.config);
+        setOriginalConfig(data.config);
         setMessage({ type: 'success', text: `${parameter} updated successfully` });
         setReason('');
         if (onSaveSuccess) onSaveSuccess();
@@ -181,7 +195,7 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
         setTimeout(() => setMessage(null), 3000);
       } else {
         const error = await response.json();
-        setMessage({ type: 'error', text: error.message || 'Failed to update configuration' });
+        setMessage({ type: 'error', text: error.error || 'Failed to update configuration' });
       }
     } catch (error) {
       console.error('Failed to save config:', error);
@@ -246,7 +260,9 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
 
       <div className="p-6 space-y-6">
         {parameters.map((param) => {
-          const currentValue = config[param.key] || param.value;
+          const currentValue = config[param.key] ?? param.value;
+          const originalValue = originalConfig[param.key] ?? param.value;
+          const hasChanged = currentValue !== originalValue;
           const validationError = validateValue(param, currentValue);
 
           return (
@@ -289,11 +305,11 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
                 </div>
                 <button
                   onClick={() => handleSave(param.key, currentValue)}
-                  disabled={saving || !!validationError || currentValue === param.value}
-                  className="px-4 py-2 bg-[#800020] text-white font-medium rounded-lg hover:bg-[#600018] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  disabled={saving || !!validationError || !hasChanged}
+                  className="px-4 py-2 bg-[#800020] text-white font-medium rounded-lg hover:bg-[#600018] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 min-w-[100px]"
                 >
                   <Save className="w-4 h-4" />
-                  Save
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>

@@ -31,9 +31,11 @@ import type { UniversalCondition } from '@/features/internet-search/services/que
 import { valuationQueryService } from '@/features/valuations/services/valuation-query.service';
 import { damageCalculationService } from '@/features/valuations/services/damage-calculation.service';
 import type { DamageInput } from '@/features/valuations/types';
+import { assessDamageWithClaude, initializeClaudeService, isClaudeEnabled } from '@/lib/integrations/claude-damage-detection';
 import { assessDamageWithGemini, initializeGeminiService } from '@/lib/integrations/gemini-damage-detection';
 import { assessDamageWithVision } from '@/lib/integrations/vision-damage-detection';
 import { isGeminiEnabled } from '@/lib/integrations/gemini-damage-detection';
+import { getClaudeRateLimiter } from '@/lib/integrations/claude-rate-limiter';
 import { getGeminiRateLimiter } from '@/lib/integrations/gemini-rate-limiter';
 import { type QualityTier, mapAnyConditionToQuality } from '@/features/valuations/services/condition-mapping.service';
 
@@ -281,7 +283,7 @@ export interface EnhancedDamageAssessment {
   // Metadata
   processedAt: Date;
   photoCount: number;
-  analysisMethod: 'gemini' | 'vision' | 'neutral' | 'mock';
+  analysisMethod: 'claude' | 'gemini' | 'vision' | 'neutral' | 'mock';
 }
 
 /**
@@ -305,7 +307,8 @@ export async function assessDamageEnhanced(params: {
     age: vehicleInfo.year ? new Date().getFullYear() - vehicleInfo.year : undefined,
   } : undefined);
   
-  // Initialize Gemini service if not already initialized
+  // Initialize AI services if not already initialized
+  await initializeClaudeService();
   await initializeGeminiService();
   
   console.log('🔍 Starting enhanced AI assessment...');
@@ -590,12 +593,15 @@ export async function assessDamageEnhanced(params: {
 }
 
 /**
- * Analyze photos with Gemini → Vision fallback chain
+ * Analyze photos with Gemini → Claude → Vision fallback chain
  * 
- * This function implements the fallback chain from the Gemini migration:
- * 1. Try Gemini 2.0 Flash (if enabled, rate limit allows, and vehicle context provided)
- * 2. Fall back to Vision API if Gemini fails or is unavailable
- * 3. Return neutral scores if both fail
+ * This function implements the complete fallback chain:
+ * 1. Try Gemini 2.5 Flash FIRST (FREE - if enabled, rate limit allows, and item context provided)
+ * 2. Fall back to Claude Sonnet 4.6 if Gemini fails or is unavailable (PAID backup)
+ * 3. Fall back to Vision API if both Claude and Gemini fail
+ * 4. Return neutral scores if all fail
+ * 
+ * Cost Strategy: Gemini handles 95%+ of cases for FREE, Claude only picks up the slack
  */
 async function analyzePhotosWithFallback(
   photos: string[],
@@ -604,10 +610,10 @@ async function analyzePhotosWithFallback(
 ): Promise<{
   damageScore: DamageScore;
   visionResults: { labels: Array<{ description: string; score: number }>; totalConfidence: number };
-  method: 'gemini' | 'vision' | 'neutral';
-  geminiTotalLoss?: boolean; // NEW: Capture Gemini's total loss flag
-  severity?: 'minor' | 'moderate' | 'severe'; // NEW: Capture Gemini's severity assessment
-  summary?: string; // NEW: Capture Gemini's summary for display
+  method: 'claude' | 'gemini' | 'vision' | 'neutral';
+  geminiTotalLoss?: boolean; // Capture AI's total loss flag (Claude or Gemini)
+  severity?: 'minor' | 'moderate' | 'severe'; // Capture AI's severity assessment
+  summary?: string; // Capture AI's summary for display
   itemDetails?: {
     detectedMake?: string;
     detectedModel?: string;
@@ -627,12 +633,12 @@ async function analyzePhotosWithFallback(
 }> {
   const requestId = `enhanced-assess-${Date.now()}`;
   
-  // ATTEMPT 1: Try Gemini (if enabled, rate limit allows, and item context provided)
   // Support both vehicle and universal item contexts
   const hasVehicleContext = vehicleInfo?.make && vehicleInfo?.model && vehicleInfo?.year;
   const hasUniversalContext = universalItemInfo?.brand && universalItemInfo?.model;
   const hasItemContext = hasVehicleContext || hasUniversalContext;
   
+  // ATTEMPT 1: Try Gemini FIRST (FREE - if enabled, rate limit allows, and item context provided)
   if (isGeminiEnabled() && hasItemContext) {
     try {
       // Check rate limiter
@@ -640,7 +646,7 @@ async function analyzePhotosWithFallback(
       const quotaStatus = rateLimiter.checkQuota();
       
       if (quotaStatus.allowed) {
-        console.log('🤖 Attempting Gemini damage detection...');
+        console.log('🤖 Attempting Gemini damage detection (FREE)...');
         console.log(`   Quota: ${quotaStatus.minuteRemaining}/minute, ${quotaStatus.dailyRemaining}/day`);
         
         // Prepare context for Gemini - support both vehicle and universal items
@@ -668,7 +674,7 @@ async function analyzePhotosWithFallback(
         // Record successful request
         rateLimiter.recordRequest();
         
-        console.log('✅ Gemini assessment successful');
+        console.log('✅ Gemini assessment successful (FREE)');
         console.log(`   Severity: ${geminiResult.severity}`);
         console.log(`   Damaged parts: ${geminiResult.damagedParts.length}`);
         
@@ -701,23 +707,102 @@ async function analyzePhotosWithFallback(
         const reason = quotaStatus.dailyRemaining === 0 
           ? `Daily quota exhausted`
           : `Minute quota exhausted`;
-        console.warn(`⚠️ Gemini rate limit exceeded: ${reason}. Falling back to Vision API.`);
+        console.warn(`⚠️ Gemini rate limit exceeded: ${reason}. Falling back to Claude.`);
       }
     } catch (geminiError: any) {
       console.error('❌ Gemini assessment failed:', geminiError?.message || 'Unknown error');
-      console.log('   Falling back to Vision API...');
+      console.log('   Falling back to Claude...');
     }
   } else {
     if (!isGeminiEnabled()) {
-      console.log('ℹ️ Gemini not enabled. Using Vision API.');
+      console.log('ℹ️ Gemini not enabled. Trying Claude.');
     } else if (!hasItemContext) {
-      console.log('ℹ️ Item context incomplete. Using Vision API.');
-      console.log(`   Vehicle context: ${hasVehicleContext ? 'available' : 'missing'}`);
-      console.log(`   Universal context: ${hasUniversalContext ? 'available' : 'missing'}`);
+      console.log('ℹ️ Item context incomplete. Trying Claude.');
     }
   }
   
-  // ATTEMPT 2: Fall back to Vision API
+  // ATTEMPT 2: Try Claude as BACKUP (PAID - only if Gemini failed or unavailable)
+  if (isClaudeEnabled() && hasItemContext) {
+    try {
+      // Check rate limiter
+      const claudeRateLimiter = getClaudeRateLimiter();
+      const quotaStatus = claudeRateLimiter.checkQuota();
+      
+      if (quotaStatus.allowed) {
+        console.log('🤖 Attempting Claude damage detection (PAID - Gemini failed)...');
+        console.log(`   Quota: ${quotaStatus.minuteRemaining}/minute, ${quotaStatus.dailyRemaining}/day`);
+        
+        // Prepare context for Claude - support both vehicle and universal items
+        let claudeContext: any;
+        if (hasVehicleContext) {
+          claudeContext = {
+            make: vehicleInfo!.make,
+            model: vehicleInfo!.model,
+            year: vehicleInfo!.year,
+          };
+          console.log(`   Vehicle context: ${vehicleInfo!.make} ${vehicleInfo!.model} ${vehicleInfo!.year}`);
+        } else if (hasUniversalContext) {
+          claudeContext = {
+            make: universalItemInfo!.brand,
+            model: universalItemInfo!.model,
+            year: universalItemInfo!.year || new Date().getFullYear(),
+            itemType: universalItemInfo!.type,
+          };
+          console.log(`   Universal item context: ${universalItemInfo!.brand} ${universalItemInfo!.model} (${universalItemInfo!.type})`);
+        }
+        
+        const claudeResult = await assessDamageWithClaude(photos, claudeContext);
+        
+        // Record successful request
+        claudeRateLimiter.recordRequest();
+        
+        console.log('✅ Claude assessment successful (PAID backup)');
+        console.log(`   Severity: ${claudeResult.severity}`);
+        console.log(`   Damaged parts: ${claudeResult.damagedParts.length}`);
+        
+        // Convert Claude's damagedParts array to legacy DamageScore format
+        const damageScore: DamageScore = convertDamagedPartsToScores(claudeResult.damagedParts);
+        
+        console.log(`   Converted scores - Structural: ${damageScore.structural}, Mechanical: ${damageScore.mechanical}`);
+        console.log(`   Cosmetic: ${damageScore.cosmetic}, Electrical: ${damageScore.electrical}, Interior: ${damageScore.interior}`);
+        
+        // Create mock vision results for backward compatibility
+        const visionResults = {
+          labels: [
+            { description: claudeResult.summary, score: claudeResult.confidence / 100 },
+          ],
+          totalConfidence: claudeResult.confidence / 100,
+        };
+        
+        return { 
+          damageScore, 
+          visionResults, 
+          method: 'claude',
+          geminiTotalLoss: claudeResult.totalLoss,
+          severity: claudeResult.severity,
+          summary: claudeResult.summary,
+          itemDetails: claudeResult.itemDetails,
+          damagedParts: claudeResult.damagedParts
+        };
+      } else {
+        const reason = quotaStatus.dailyRemaining === 0 
+          ? `Daily quota exhausted`
+          : `Minute quota exhausted`;
+        console.warn(`⚠️ Claude rate limit exceeded: ${reason}. Falling back to Vision API.`);
+      }
+    } catch (claudeError: any) {
+      console.error('❌ Claude assessment failed:', claudeError?.message || 'Unknown error');
+      console.log('   Falling back to Vision API...');
+    }
+  } else {
+    if (!isClaudeEnabled()) {
+      console.log('ℹ️ Claude not enabled. Using Vision API.');
+    } else if (!hasItemContext) {
+      console.log('ℹ️ Item context incomplete. Using Vision API.');
+    }
+  }
+  
+  // ATTEMPT 3: Fall back to Vision API
   try {
     console.log('👁️ Using Vision API for damage detection...');
     const visionAssessment = await assessDamageWithVision(photos);
@@ -741,8 +826,8 @@ async function analyzePhotosWithFallback(
     console.log('   Using neutral scores...');
   }
   
-  // ATTEMPT 3: Return neutral scores if both fail
-  console.warn('⚠️ Both Gemini and Vision failed. Using neutral scores.');
+  // ATTEMPT 4: Return neutral scores if all fail
+  console.warn('⚠️ All AI services failed (Gemini, Claude, Vision). Using neutral scores.');
   const neutralScore: DamageScore = {
     structural: 50,
     mechanical: 50,

@@ -32,14 +32,14 @@ This comprehensive security audit identified **27 critical vulnerabilities** acr
 #### Exposed Secrets:
 
 ```env
-DATABASE_URL=postgresql://postgres.htdehmkqfrwjewzjingm:K%40tsur0u1415@aws-1-eu-central-1.pooler.supabase.com:5432/postgres
-NEXTAUTH_SECRET=fHsfOrcyQhnzwSRlWV7xYQMS0tnJKYjLBBCSAnMljCM
-GOOGLE_CLIENT_SECRET=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
-PAYSTACK_SECRET_KEY=sk_test_45ca11545148bed4becda5de54198e677eecbcbf
-GEMINI_API_KEY=AIzaSyB_sUhe6VTP3Dz6_diIrgfFbgBqOeoUHpQ
-CLOUDINARY_API_SECRET=i89uqGTPhslWwuSHP3BfG9nXekQ
-KV_REST_API_TOKEN=ARWHAAImcDEwZThiNmFhZmM4MTc0MGI2YjIzYjAyMTEyNzY1YzUyN3AxNTUxMQ
-CRON_SECRET=cron_secret_a8f3b2e9c4d7f1a6b5e8c3d9f2a7b4e1c6d8f3a9b2e5c7d1f4a8b3e6c9d2f5a1
+DATABASE_URL=postgresql://user:password@host:5432/database
+NEXTAUTH_SECRET=your-nextauth-secret-here
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+PAYSTACK_SECRET_KEY=sk_test_your-paystack-secret-key
+GEMINI_API_KEY=your-gemini-api-key
+CLOUDINARY_API_SECRET=your-cloudinary-api-secret
+KV_REST_API_TOKEN=your-kv-rest-api-token
+CRON_SECRET=your-cron-secret
 ```
 
 #### Proof of Concept:
@@ -68,7 +68,7 @@ git log --all --full-history -- .env
 #### Vulnerable Code:
 ```bash
 # backups/backup.sh (Line 7)
-DATABASE_URL="postgresql://postgres.htdehmkqfrwjewzjingm:K%40tsur0u1415@aws-1-eu-central-1.pooler.supabase.com:5432/postgres"
+DATABASE_URL="postgresql://user:password@host:5432/database"
 ```
 
 #### Attack Scenario:

@@ -115,6 +115,64 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // CRITICAL: Check for duplicate vehicle BEFORE creating case
+    // This prevents fraud by detecting if the same vehicle is being submitted twice
+    if (body.assetType === 'vehicle') {
+      const { checkForDuplicateVehicle } = await import('@/features/fraud/services/duplicate-detection.service');
+      const { logFraudAttempt } = await import('@/features/fraud/services/fraud-logging.service');
+      
+      console.log('🔍 Checking for duplicate vehicle...');
+      const duplicateCheck = await checkForDuplicateVehicle({
+        photos: body.photos,
+        assetDetails: body.assetDetails,
+      });
+      
+      if (duplicateCheck.isDuplicate) {
+        console.log('🚨 DUPLICATE VEHICLE DETECTED - BLOCKING SUBMISSION');
+        
+        // Extract audit information for fraud logging
+        const headers = request.headers;
+        const ipAddress = getIpAddress(headers);
+        const userAgent = headers.get('user-agent') || 'unknown';
+        
+        // Log fraud attempt with full details
+        await logFraudAttempt({
+          type: 'duplicate_vehicle_submission',
+          userId: session.user.id,
+          userEmail: session.user.email || 'unknown',
+          userName: session.user.name || 'unknown',
+          ipAddress,
+          userAgent,
+          attemptedData: {
+            claimReference: body.claimReference,
+            assetType: body.assetType,
+            assetDetails: body.assetDetails,
+            marketValue: body.marketValue,
+            photoCount: body.photos.length,
+          },
+          matchedCase: duplicateCheck.matchedCase,
+          confidence: duplicateCheck.confidence,
+          timestamp: new Date(),
+        });
+        
+        // Block the submission
+        return NextResponse.json({
+          success: false,
+          error: 'Duplicate Vehicle Detected',
+          message: `This vehicle appears to match an existing case (${duplicateCheck.matchedCase?.claimReference || 'unknown'}). ` +
+                   `Confidence: ${Math.round(duplicateCheck.confidence * 100)}%. ` +
+                   `Please contact support if this is an error.`,
+          fraudAlert: true,
+          matchedCaseId: duplicateCheck.matchedCase?.id,
+          matchedClaimReference: duplicateCheck.matchedCase?.claimReference,
+          confidence: duplicateCheck.confidence,
+          reasoning: duplicateCheck.reasoning,
+        }, { status: 409 }); // 409 Conflict
+      }
+      
+      console.log('✅ No duplicate detected - proceeding with case creation');
+    }
+
     // Extract audit information
     const headers = request.headers;
     const ipAddress = getIpAddress(headers);

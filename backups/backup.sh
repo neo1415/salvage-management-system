@@ -6,7 +6,7 @@ set -e
 
 BACKUP_DIR="./backups"
 DATE=$(date +%Y_%m_%d_%H_%M_%S)
-DATABASE_URL="postgresql://postgres.htdehmkqfrwjewzjingm:K%40tsur0u1415@aws-1-eu-central-1.pooler.supabase.com:5432/postgres"
+DATABASE_URL="postgresql://user:password@host:5432/database"
 
 echo "🚀 Starting backup process at $(date)"
 

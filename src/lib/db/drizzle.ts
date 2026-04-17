@@ -30,13 +30,13 @@ const client = postgres(connectionString, {
   idle_timeout: isTest ? 30 : 20,
   // Max lifetime - longer in tests to prevent mid-test disconnections
   max_lifetime: isTest ? 300 : 60 * 10,
-  // Connection timeout - reasonable timeout for tests
-  connect_timeout: isTest ? 10 : 10,
+  // Connection timeout - increased to 30s to handle slow Supabase connections
+  connect_timeout: isTest ? 10 : 30,
   // SCALABILITY: Add connection queue management
   // Larger queue for tests to handle transaction queuing
   max_queue: isTest ? 100 : 1000,
-  // Queue timeout - reasonable timeout for tests
-  queue_timeout: isTest ? 10000 : 5000,
+  // Queue timeout - increased to 15s to handle slow Supabase connections
+  queue_timeout: isTest ? 10000 : 15000,
   // Prepare statements (disable in test for better cleanup)
   prepare: !isTest,
   // Add retry logic for transient connection failures

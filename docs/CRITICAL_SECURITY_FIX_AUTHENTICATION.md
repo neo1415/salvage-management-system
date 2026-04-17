@@ -226,7 +226,7 @@ npm run dev
 
 The current DATABASE_URL is correctly formatted:
 ```
-postgresql://postgres.htdehmkqfrwjewzjingm:K%40tsur0u1415@aws-1-eu-central-1.pooler.supabase.com:5432/postgres
+postgresql://user:password@host:5432/database
 ```
 
 ✅ Password special character `@` is properly encoded as `%40`  

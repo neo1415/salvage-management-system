@@ -79,11 +79,32 @@ function LoginForm() {
       }
 
       // Successful login - redirect based on role
-      // If there's a callbackUrl, use it; otherwise let the server redirect based on role
-      if (callbackUrl) {
+      // Fetch the session to get the user's role
+      const response = await fetch('/api/auth/session');
+      const session = await response.json();
+      
+      if (session?.user?.role) {
+        const role = session.user.role;
+        
+        // Redirect to role-specific dashboard
+        if (role === 'vendor') {
+          window.location.href = '/vendor/dashboard';
+        } else if (role === 'salvage_manager') {
+          window.location.href = '/manager/dashboard';
+        } else if (role === 'claims_adjuster') {
+          window.location.href = '/adjuster/dashboard';
+        } else if (role === 'finance_officer') {
+          window.location.href = '/finance/dashboard';
+        } else if (role === 'system_admin' || role === 'admin') {
+          window.location.href = '/admin/dashboard';
+        } else {
+          // Fallback to home if role is unknown
+          window.location.href = '/';
+        }
+      } else if (callbackUrl) {
         window.location.href = callbackUrl;
       } else {
-        // Force a full page reload to let middleware handle role-based redirect
+        // Fallback to home
         window.location.href = '/';
       }
     } catch (err) {

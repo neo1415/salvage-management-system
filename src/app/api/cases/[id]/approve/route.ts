@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
-import { db } from '@/lib/db/drizzle';
+import { db, withRetry } from '@/lib/db/drizzle';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { auctions } from '@/lib/db/schema/auctions';
 import { vendors } from '@/lib/db/schema/vendors';
@@ -72,12 +72,14 @@ export async function POST(
       );
     }
 
-    // Check if user is Salvage Manager
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, session.user.id))
-      .limit(1);
+    // Check if user is Salvage Manager (with retry for connection timeouts)
+    const [user] = await withRetry(async () => {
+      return await db
+        .select()
+        .from(users)
+        .where(eq(users.id, session.user.id))
+        .limit(1);
+    });
 
     if (!user || user.role !== 'salvage_manager') {
       return NextResponse.json(
@@ -119,13 +121,15 @@ export async function POST(
       }
     }
 
-    // Get case by ID
+    // Get case by ID (with retry for connection timeouts)
     const caseId = params.id;
-    const [caseRecord] = await db
-      .select()
-      .from(salvageCases)
-      .where(eq(salvageCases.id, caseId))
-      .limit(1);
+    const [caseRecord] = await withRetry(async () => {
+      return await db
+        .select()
+        .from(salvageCases)
+        .where(eq(salvageCases.id, caseId))
+        .limit(1);
+    });
 
     if (!caseRecord) {
       return NextResponse.json(
@@ -164,12 +168,14 @@ export async function POST(
       }
     }
 
-    // Get case creator details for notifications
-    const [creator] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, caseRecord.createdBy))
-      .limit(1);
+    // Get case creator details for notifications (with retry for connection timeouts)
+    const [creator] = await withRetry(async () => {
+      return await db
+        .select()
+        .from(users)
+        .where(eq(users.id, caseRecord.createdBy))
+        .limit(1);
+    });
 
     if (body.action === 'approve') {
       // APPROVE CASE

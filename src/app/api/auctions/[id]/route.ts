@@ -19,7 +19,7 @@ import { eq, desc, and } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 
 export async function GET(
-  _request: NextRequest, // Required by Next.js API route signature
+  request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -32,6 +32,11 @@ export async function GET(
         { status: 400 }
       );
     }
+
+    // Track vendor interaction (async, don't wait)
+    trackVendorView(request, id).catch(error => {
+      console.error('Failed to track vendor view:', error);
+    });
 
     // SCALABILITY: Cache auction details for 5 minutes
     // Auction details change less frequently than list
@@ -111,5 +116,54 @@ export async function GET(
       },
       { status: 500 }
     );
+  }
+}
+
+
+/**
+ * Track vendor viewing an auction for recommendations
+ */
+async function trackVendorView(request: NextRequest, auctionId: string): Promise<void> {
+  try {
+    const { auth } = await import('@/lib/auth/next-auth.config');
+    const session = await auth();
+    
+    if (!session?.user?.id) {
+      return; // Only track authenticated vendors
+    }
+    
+    // Get vendor ID
+    const { db } = await import('@/lib/db/drizzle');
+    const { vendors } = await import('@/lib/db/schema/vendors');
+    const { eq } = await import('drizzle-orm');
+    
+    const vendor = await db.query.vendors.findFirst({
+      where: eq(vendors.userId, session.user.id),
+    });
+    
+    if (!vendor) {
+      return; // Not a vendor
+    }
+    
+    // Track interaction
+    const { vendorInteractions } = await import('@/lib/db/schema/fraud-tracking');
+    const crypto = await import('crypto');
+    
+    await db.insert(vendorInteractions).values({
+      id: crypto.randomUUID(),
+      vendorId: vendor.id,
+      auctionId,
+      interactionType: 'view',
+      timestamp: new Date(),
+      metadata: {
+        userAgent: request.headers.get('user-agent'),
+        ipAddress: request.headers.get('x-user-ip') || 'unknown',
+      },
+    });
+    
+    console.log(`📊 Tracked view: vendor ${vendor.id} viewed auction ${auctionId}`);
+  } catch (error) {
+    // Silent fail - don't block auction viewing
+    console.error('Failed to track vendor view:', error);
   }
 }

@@ -39,10 +39,10 @@ Update your DATABASE_URL to use transaction mode:
 
 ```env
 # Change from:
-DATABASE_URL=postgresql://postgres.htdehmkqfrwjewzjingm:K%40tsur0u1415@aws-1-eu-central-1.pooler.supabase.com:5432/postgres
+DATABASE_URL=postgresql://user:password@host:5432/database
 
 # To:
-DATABASE_URL=postgresql://postgres.htdehmkqfrwjewzjingm:K%40tsur0u1415@aws-1-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+DATABASE_URL=postgresql://user:password@host:5432/database?pgbouncer=true
 ```
 
 Note: Port changed from 5432 to 6543 and added `?pgbouncer=true`

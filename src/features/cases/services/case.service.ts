@@ -116,7 +116,7 @@ export interface CreateCaseInput {
     priceSource?: string; // NEW: Price source (database, internet_search, etc.)
     recommendation?: string;
     warnings?: string[];
-    analysisMethod?: 'gemini' | 'vision' | 'neutral' | 'mock';
+    analysisMethod?: 'claude' | 'gemini' | 'vision' | 'neutral' | 'mock';
     qualityTier?: string;
     // CRITICAL: Detailed Gemini analysis results
     itemDetails?: {

@@ -63,11 +63,11 @@ export async function POST(
       );
     }
 
-    // Get IP address and user agent
-    const ipAddress = request.headers.get('x-forwarded-for') || 
-                     request.headers.get('x-real-ip') || 
-                     'unknown';
+    // Get IP address, user agent, and device fingerprint for fraud detection
+    const { getRealIPAddress, generateDeviceFingerprint } = await import('@/lib/utils/device-fingerprint');
+    const ipAddress = getRealIPAddress(request);
     const userAgent = request.headers.get('user-agent') || 'unknown';
+    const deviceFingerprint = generateDeviceFingerprint(request);
 
     const bidAmount = parseFloat(amount);
 
@@ -79,6 +79,7 @@ export async function POST(
       otp,
       ipAddress,
       userAgent,
+      deviceFingerprint,
     });
 
     if (!result.success) {
@@ -91,6 +92,11 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    // Track vendor interaction (async, don't wait)
+    trackVendorBid(vendor.id, id).catch(error => {
+      console.error('Failed to track vendor bid:', error);
+    });
 
     // Return bid confirmation
     return NextResponse.json({
@@ -155,5 +161,30 @@ export async function GET(
       },
       { status: 500 }
     );
+  }
+}
+
+
+/**
+ * Track vendor bidding on an auction for recommendations
+ */
+async function trackVendorBid(vendorId: string, auctionId: string): Promise<void> {
+  try {
+    const { db } = await import('@/lib/db/drizzle');
+    const { vendorInteractions } = await import('@/lib/db/schema/fraud-tracking');
+    const crypto = await import('crypto');
+    
+    await db.insert(vendorInteractions).values({
+      id: crypto.randomUUID(),
+      vendorId,
+      auctionId,
+      interactionType: 'bid',
+      timestamp: new Date(),
+    });
+    
+    console.log(`📊 Tracked bid: vendor ${vendorId} bid on auction ${auctionId}`);
+  } catch (error) {
+    // Silent fail - don't block bidding
+    console.error('Failed to track vendor bid:', error);
   }
 }

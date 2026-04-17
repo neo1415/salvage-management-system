@@ -55,7 +55,7 @@ Open your `.env` file and change this line:
 
 **FROM (current - Supabase):**
 ```bash
-TEST_DATABASE_URL=postgresql://postgres.htdehmkqfrwjewzjingm:K%40tsur0u1415@aws-1-eu-central-1.pooler.supabase.com:5432/postgres
+TEST_DATABASE_URL=postgresql://user:password@host:5432/database
 ```
 
 **TO (new - Local):**

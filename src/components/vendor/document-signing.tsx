@@ -34,6 +34,7 @@ interface DocumentSigningProps {
   auctionId: string;
   validityDeadline: string;
   onAllSigned?: () => void;
+  onDocumentSigned?: () => void; // NEW: Callback after each document is signed
   className?: string;
 }
 
@@ -41,6 +42,7 @@ export function DocumentSigning({
   auctionId,
   validityDeadline,
   onAllSigned,
+  onDocumentSigned, // NEW: Callback after each document is signed
   className = '',
 }: DocumentSigningProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -108,6 +110,11 @@ export function DocumentSigning({
 
       if (response.ok) {
         await fetchDocuments();
+        
+        // NEW: Trigger parent refresh after signing
+        if (onDocumentSigned) {
+          onDocumentSigned();
+        }
         
         // Check if all documents are signed
         const updatedDocs = await response.json();
