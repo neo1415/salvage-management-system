@@ -1071,6 +1071,14 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
     const updateTimer = () => {
       const now = new Date().getTime();
       
+      // Check if auction is closed or awaiting payment (ended)
+      if (auction.status === 'closed' || auction.status === 'awaiting_payment') {
+        setTimeRemaining('Ended');
+        setTimerColor('text-gray-600');
+        setTimerLabel('');
+        return;
+      }
+      
       // Check if auction is scheduled (not started yet)
       if (auction.status === 'scheduled' && auction.scheduledStartTime) {
         const start = new Date(auction.scheduledStartTime).getTime();
@@ -1234,7 +1242,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
                   ? 'bg-[#388e3c] text-white'
                   : auction.status === 'extended'
                   ? 'bg-[#f57c00] text-white'
-                  : auction.status === 'awaiting_payment'
+                  : auction.status === 'awaiting_payment' && auction.isWinner
                   ? 'bg-[#f57c00] text-white'
                   : 'bg-gray-500 text-white'
               }`}
@@ -1244,18 +1252,11 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
                 {auction.status === 'scheduled' && 'Scheduled'}
                 {auction.status === 'active' && 'Active'}
                 {auction.status === 'extended' && 'Extended'}
-                {auction.status === 'awaiting_payment' && 'Payment Due'}
-                {auction.status === 'closed' && 'Closed'}
+                {auction.status === 'awaiting_payment' && auction.isWinner && 'Payment Due'}
+                {(auction.status === 'closed' || (auction.status === 'awaiting_payment' && !auction.isWinner)) && 'Closed'}
               </span>
             </span>
           )}
-        </div>
-
-        {/* Asset Type Badge - Bottom Left (no overlap) */}
-        <div className="absolute bottom-2 left-2 z-10">
-          <span className="px-2.5 py-1 bg-white/95 backdrop-blur-sm rounded-full text-xs font-bold text-gray-800 shadow-lg">
-            {auction.case.assetType.toUpperCase()}
-          </span>
         </div>
 
         {/* Price & Timer ON IMAGE - Bottom section with gradient */}

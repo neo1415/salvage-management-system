@@ -57,12 +57,12 @@ const navigationItems: NavItem[] = [
     icon: Gavel,
     roles: ['vendor'],
   },
-  {
-    label: 'Market Insights',
-    href: '/vendor/market-insights',
-    icon: TrendingUp,
-    roles: ['vendor'],
-  },
+  // {
+  //   label: 'Market Insights',
+  //   href: '/vendor/market-insights',
+  //   icon: TrendingUp,
+  //   roles: ['vendor'],
+  // },
   {
     label: 'Wallet',
     href: '/vendor/wallet',
@@ -123,12 +123,6 @@ const navigationItems: NavItem[] = [
     href: '/admin/fraud',
     icon: AlertTriangle,
     roles: ['salvage_manager'],
-  },
-  {
-    label: 'Reports',
-    href: '/reports',
-    icon: BarChart3,
-    roles: ['salvage_manager', 'system_admin', 'admin', 'finance_officer', 'claims_adjuster'],
   },
 
   // Adjuster Navigation
@@ -196,18 +190,18 @@ const navigationItems: NavItem[] = [
     icon: Settings,
     roles: ['system_admin', 'admin'],
   },
-  {
-    label: 'Intelligence',
-    href: '/admin/intelligence',
-    icon: Brain,
-    roles: ['system_admin', 'admin'],
-    submenu: [
-      { name: 'Overview', href: '/admin/intelligence' },
-      { name: 'Analytics', href: '/admin/intelligence/analytics' },
-      { name: 'Configuration', href: '/admin/intelligence/config' },
-      { name: 'Data Export', href: '/admin/intelligence/export' },
-    ],
-  },
+  // {
+  //   label: 'Intelligence',
+  //   href: '/admin/intelligence',
+  //   icon: Brain,
+  //   roles: ['system_admin', 'admin'],
+  //   submenu: [
+  //     { name: 'Overview', href: '/admin/intelligence' },
+  //     { name: 'Analytics', href: '/admin/intelligence/analytics' },
+  //     { name: 'Configuration', href: '/admin/intelligence/config' },
+  //     { name: 'Data Export', href: '/admin/intelligence/export' },
+  //   ],
+  // },
   {
     label: 'Users',
     href: '/admin/users',
@@ -231,6 +225,12 @@ const navigationItems: NavItem[] = [
     href: '/admin/audit-logs',
     icon: ClipboardList,
     roles: ['system_admin', 'admin'],
+  },
+  {
+    label: 'Reports',
+    href: '/reports',
+    icon: BarChart3,
+    roles: ['salvage_manager', 'system_admin', 'admin', 'finance_officer', 'claims_adjuster'],
   },
 ];
 

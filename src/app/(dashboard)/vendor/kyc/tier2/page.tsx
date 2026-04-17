@@ -127,7 +127,7 @@ export default function Tier2KYCPage() {
     const options: DojahWidgetOptions = {
       app_id: widgetConfig.appId,
       p_key: widgetConfig.publicKey,
-      type: 'custom',
+      type: widgetConfig.widgetId ? 'custom' : 'verification',
       ...(widgetConfig.widgetId && { widget_id: widgetConfig.widgetId }),
       user_data: {
         first_name: nameParts[0],
