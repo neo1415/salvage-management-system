@@ -146,10 +146,22 @@ export default function Tier2KYCPage() {
       },
       onError: (err) => {
         console.error('[Dojah Widget] Error', err);
-        const errorMsg = typeof err === 'object' && err !== null && 'message' in err 
-          ? String(err.message) 
-          : 'Verification encountered an error. Please try again.';
-        setErrorMessage(errorMsg);
+        
+        // Check if this is a test credential limitation
+        const errorObj = err as { message?: string; referenceId?: string };
+        if (errorObj.message === 'Verification Failed' && !errorObj.referenceId) {
+          setErrorMessage(
+            'Verification failed. This may be due to test credential limitations. ' +
+            'Test credentials have limited functionality and may not support full verification. ' +
+            'Please contact support to upgrade to production credentials for real verification.'
+          );
+        } else {
+          const errorMsg = typeof err === 'object' && err !== null && 'message' in err 
+            ? String(err.message) 
+            : 'Verification encountered an error. Please try again.';
+          setErrorMessage(errorMsg);
+        }
+        
         setPageState('ready');
       },
       onClose: () => {
@@ -447,6 +459,17 @@ export default function Tier2KYCPage() {
                   <Shield className="w-4 h-4 inline mr-1 text-gray-500" />
                   Estimated verification cost: <strong>₦510–630</strong> (charged to your account)
                 </div>
+
+                {/* Test credentials warning */}
+                {widgetConfig?.publicKey?.startsWith('test_') && (
+                  <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-yellow-800">
+                      <p className="font-semibold mb-1">Test Mode Active</p>
+                      <p>You're using test credentials which have limited functionality. Verification may fail or return mock data. Contact support to upgrade to production credentials for real verification.</p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Error message */}
                 {errorMessage && (
