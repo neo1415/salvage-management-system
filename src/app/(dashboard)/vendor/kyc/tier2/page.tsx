@@ -14,8 +14,14 @@ import {
   Clock,
   XCircle,
   RefreshCw,
+  Camera,
 } from 'lucide-react';
 import type { KYCStatus } from '@/features/kyc/types/kyc.types';
+import { 
+  checkCameraPermission, 
+  requestCameraPermission, 
+  getCameraPermissionInstructions 
+} from '@/lib/utils/camera-permissions';
 
 declare global {
   interface Window {
@@ -63,6 +69,8 @@ export default function Tier2KYCPage() {
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [connect, setConnect] = useState<DojahConnect | null>(null);
+  const [cameraPermissionGranted, setCameraPermissionGranted] = useState(false);
+  const [checkingPermissions, setCheckingPermissions] = useState(false);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -119,12 +127,8 @@ export default function Tier2KYCPage() {
     const options: DojahWidgetOptions = {
       app_id: widgetConfig.appId,
       p_key: widgetConfig.publicKey,
-      type: widgetConfig.widgetId ? 'custom' : 'verification', // Use 'verification' if no widget_id
-      ...(widgetConfig.widgetId && { 
-        config: {
-          widget_id: widgetConfig.widgetId 
-        }
-      }),
+      type: 'custom',
+      ...(widgetConfig.widgetId && { widget_id: widgetConfig.widgetId }),
       user_data: {
         first_name: nameParts[0],
         last_name: nameParts.slice(1).join(' ') || undefined,
@@ -153,10 +157,16 @@ export default function Tier2KYCPage() {
       },
     };
 
-    const instance = new window.Connect(options);
-    instance.setup();
-    setConnect(instance);
-    setWidgetReady(true);
+    try {
+      const instance = new window.Connect(options);
+      instance.setup();
+      setConnect(instance);
+      setWidgetReady(true);
+    } catch (error) {
+      console.error('[Dojah Widget] Initialization failed:', error);
+      setErrorMessage('Failed to initialize verification widget. Please refresh the page.');
+      setPageState('error');
+    }
   }, [widgetConfig, session, pageState]);
 
   useEffect(() => {
@@ -196,6 +206,60 @@ export default function Tier2KYCPage() {
   }
 
   function handleStartVerification() {
+    if (!connect) {
+      setErrorMessage('Verification widget is not ready. Please refresh the page.');
+      return;
+    }
+    
+    // Check camera permission before opening widget
+    handleCameraPermissionCheck();
+  }
+
+  async function handleCameraPermissionCheck() {
+    setCheckingPermissions(true);
+    setErrorMessage(null);
+
+    try {
+      // First check if permission is already granted
+      const checkResult = await checkCameraPermission();
+      
+      if (checkResult.granted) {
+        setCameraPermissionGranted(true);
+        setCheckingPermissions(false);
+        openDojahWidget();
+        return;
+      }
+
+      if (checkResult.error && !checkResult.needsPrompt) {
+        // Permission is denied or there's a hard error
+        setErrorMessage(checkResult.error + ' ' + getCameraPermissionInstructions());
+        setCheckingPermissions(false);
+        return;
+      }
+
+      // Need to request permission
+      const requestResult = await requestCameraPermission();
+      
+      if (requestResult.granted) {
+        setCameraPermissionGranted(true);
+        setCheckingPermissions(false);
+        openDojahWidget();
+      } else {
+        // Even if permission request failed, still try to open widget
+        // Dojah will handle its own permission prompts
+        console.warn('Pre-check camera permission failed, but opening widget anyway');
+        setCheckingPermissions(false);
+        openDojahWidget();
+      }
+    } catch (error) {
+      console.error('Permission check failed:', error);
+      // Don't block the widget from opening - let Dojah handle it
+      setCheckingPermissions(false);
+      openDojahWidget();
+    }
+  }
+
+  function openDojahWidget() {
     if (!connect) {
       setErrorMessage('Verification widget is not ready. Please refresh the page.');
       return;
@@ -394,16 +458,26 @@ export default function Tier2KYCPage() {
 
                 <button
                   onClick={handleStartVerification}
-                  disabled={!widgetReady}
+                  disabled={!widgetReady || checkingPermissions}
                   aria-label="Start Tier 2 identity verification"
                   className="w-full bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-bold py-4 rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg min-h-[56px]"
                 >
-                  {!widgetReady ? (
+                  {checkingPermissions ? (
+                    <><Loader2 className="w-5 h-5 animate-spin" /> Checking camera access...</>
+                  ) : !widgetReady ? (
                     <><Loader2 className="w-5 h-5 animate-spin" /> Loading...</>
                   ) : (
                     <><Shield className="w-5 h-5" /> Start Verification</>
                   )}
                 </button>
+
+                {/* Camera permission info */}
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
+                  <Camera className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-800">
+                    This verification requires camera access for selfie and liveness checks. You'll be prompted to allow camera access when you start.
+                  </p>
+                </div>
 
                 <p className="text-xs text-gray-500 text-center mt-3">
                   Your data is encrypted and processed securely. Verification typically takes 2–5 minutes.
