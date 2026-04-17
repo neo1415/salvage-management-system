@@ -11,7 +11,7 @@ import {
   TrendingUp, 
   Users, 
   Eye, 
-  DollarSign, 
+  Banknote, 
   Calendar,
   MapPin,
   Car,

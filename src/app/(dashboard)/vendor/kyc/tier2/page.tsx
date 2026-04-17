@@ -137,8 +137,21 @@ export default function Tier2KYCPage() {
       metadata: { user_id: user?.id ?? '' },
       onSuccess: async (response) => {
         const referenceId = response?.reference_id;
+        
+        // Check if we're in test mode
+        const isTestMode = widgetConfig.publicKey?.startsWith('test_');
+        
         if (!referenceId) {
-          setErrorMessage('Verification completed but no reference ID received. Please contact support.');
+          if (isTestMode) {
+            setErrorMessage(
+              'Test credentials do not support full verification. ' +
+              'This is expected behavior in sandbox mode. ' +
+              'Test mode only provides simplified face verification without document checks, AML screening, or complete verification data. ' +
+              'To enable real verification with all features, please contact support@dojah.io to upgrade to production credentials.'
+            );
+          } else {
+            setErrorMessage('Verification completed but no reference ID received. Please contact support.');
+          }
           setPageState('error');
           return;
         }
@@ -465,8 +478,16 @@ export default function Tier2KYCPage() {
                   <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-yellow-800">
-                      <p className="font-semibold mb-1">Test Mode Active</p>
-                      <p>You're using test credentials which have limited functionality. Verification may fail or return mock data. Contact support to upgrade to production credentials for real verification.</p>
+                      <p className="font-semibold mb-1">Test Mode Active - Limited Functionality</p>
+                      <p className="mb-2">You're using test credentials which have significant limitations:</p>
+                      <ul className="list-disc list-inside space-y-1 mb-2">
+                        <li>Only simplified face verification (no real biometric check)</li>
+                        <li>No document verification or OCR</li>
+                        <li>No AML screening against real databases</li>
+                        <li>No NIN verification against NIMC database</li>
+                        <li>May return incomplete data or fail randomly</li>
+                      </ul>
+                      <p className="font-semibold">To enable full verification, contact support@dojah.io for production credentials.</p>
                     </div>
                   </div>
                 )}

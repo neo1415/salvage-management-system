@@ -10,7 +10,7 @@ import {
   CheckCircle, 
   XCircle, 
   Gavel,
-  DollarSign,
+  Banknote,
   Package,
   Search,
   MapPin,

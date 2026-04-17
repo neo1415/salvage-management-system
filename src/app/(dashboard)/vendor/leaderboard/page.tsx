@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth/use-auth';
 import { TrustBadges } from '@/components/vendor/trust-badges';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useCachedLeaderboard } from '@/hooks/use-cached-leaderboard';
+import { Trophy, Medal, Award, Star, TrendingUp, Target, Clock, WifiOff, AlertTriangle, Banknote } from 'lucide-react';
 
 interface LeaderboardEntry {
   rank: number;
@@ -17,6 +18,8 @@ interface LeaderboardEntry {
   totalBids: number;
   wins: number;
   totalSpent: string;
+  winRate: number;
+  participationRate: number;
   onTimePickupRate: number;
   rating: string;
 }
@@ -75,19 +78,19 @@ export default function VendorLeaderboardPage() {
     if (rank === 1) {
       return (
         <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full flex items-center justify-center shadow-lg">
-          <span className="text-2xl">🏆</span>
+          <Trophy className="w-6 h-6 text-white" />
         </div>
       );
     } else if (rank === 2) {
       return (
         <div className="w-12 h-12 bg-gradient-to-br from-gray-300 to-gray-500 rounded-full flex items-center justify-center shadow-lg">
-          <span className="text-2xl">🥈</span>
+          <Medal className="w-6 h-6 text-white" />
         </div>
       );
     } else if (rank === 3) {
       return (
         <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center shadow-lg">
-          <span className="text-2xl">🥉</span>
+          <Award className="w-6 h-6 text-white" />
         </div>
       );
     }
@@ -144,18 +147,10 @@ export default function VendorLeaderboardPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <AlertTriangle className="w-8 h-8 text-red-600" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Error</h2>
-          <p className="text-gray-600 mb-6">{error || cacheError?.message}</p>
-          <button
-            onClick={() => refresh()}
-            className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
-          >
-            Try Again
-          </button>
+          <p className="text-gray-600">{error || cacheError?.message}</p>
         </div>
       </div>
     );
@@ -174,9 +169,7 @@ export default function VendorLeaderboardPage() {
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-              </svg>
+              <Trophy className="w-6 h-6 text-white" />
             </div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
               Vendor Leaderboard
@@ -191,9 +184,7 @@ export default function VendorLeaderboardPage() {
         {isOffline && (
           <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
             <div className="flex items-center">
-              <svg className="w-5 h-5 text-yellow-600 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+              <WifiOff className="w-5 h-5 text-yellow-600 mr-3 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-yellow-800">
                   You are offline. Showing cached leaderboard.
@@ -214,9 +205,7 @@ export default function VendorLeaderboardPage() {
         {/* Update Info Banner */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
           <div className="flex items-start gap-3">
-            <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <Clock className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <p className="text-sm text-blue-900">
                 <span className="font-semibold">Last updated:</span> {formatDate(lastUpdated)}
@@ -247,10 +236,10 @@ export default function VendorLeaderboardPage() {
                     Wins
                   </th>
                   <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Total Spent
+                    Win Rate
                   </th>
                   <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    On-Time Pickup
+                    Total Spent
                   </th>
                   <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Rating
@@ -307,28 +296,24 @@ export default function VendorLeaderboardPage() {
                       <p className="text-lg font-bold text-green-600">{entry.wins}</p>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <p className="text-lg font-bold text-[#800020]">
-                        {formatCurrency(entry.totalSpent)}
-                      </p>
-                    </td>
-                    <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        <div className="w-16 bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-green-500 h-2 rounded-full transition-all"
-                            style={{ width: `${entry.onTimePickupRate}%` }}
-                          ></div>
-                        </div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          {entry.onTimePickupRate.toFixed(0)}%
+                        <Target className="w-4 h-4 text-[#800020]" />
+                        <p className="text-lg font-bold text-[#800020]">
+                          {(entry.winRate || 0).toFixed(1)}%
                         </p>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <svg className="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                        </svg>
+                        <Banknote className="w-4 h-4 text-gray-600" />
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatCurrency(entry.totalSpent)}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                         <p className="text-lg font-bold text-gray-900">
                           {parseFloat(entry.rating).toFixed(1)}
                         </p>
@@ -396,37 +381,35 @@ export default function VendorLeaderboardPage() {
                   <p className="text-xl font-bold text-green-600">{entry.wins}</p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-1">Total Spent</p>
-                  <p className="text-xl font-bold text-[#800020]">
-                    {formatCurrency(entry.totalSpent)}
-                  </p>
+                  <p className="text-xs text-gray-500 mb-1">Win Rate</p>
+                  <div className="flex items-center gap-1">
+                    <Target className="w-4 h-4 text-[#800020]" />
+                    <p className="text-xl font-bold text-[#800020]">
+                      {(entry.winRate || 0).toFixed(1)}%
+                    </p>
+                  </div>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-1">Rating</p>
+                  <p className="text-xs text-gray-500 mb-1">Total Spent</p>
                   <div className="flex items-center gap-1">
-                    <svg className="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                    </svg>
-                    <p className="text-xl font-bold text-gray-900">
-                      {parseFloat(entry.rating).toFixed(1)}
+                    <Banknote className="w-4 h-4 text-gray-600" />
+                    <p className="text-lg font-bold text-gray-900">
+                      {formatCurrency(entry.totalSpent)}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* On-Time Pickup Rate */}
+              {/* Rating */}
               <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm text-gray-600">On-Time Pickup Rate</p>
-                  <p className="text-sm font-bold text-gray-900">
-                    {entry.onTimePickupRate.toFixed(0)}%
-                  </p>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-green-500 h-2 rounded-full transition-all"
-                    style={{ width: `${entry.onTimePickupRate}%` }}
-                  ></div>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-600">Rating</p>
+                  <div className="flex items-center gap-1">
+                    <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                    <p className="text-xl font-bold text-gray-900">
+                      {parseFloat(entry.rating).toFixed(1)}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -437,9 +420,7 @@ export default function VendorLeaderboardPage() {
         {leaderboard.length === 0 && (
           <div className="bg-white rounded-lg shadow p-12 text-center">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <TrendingUp className="w-10 h-10 text-gray-400" />
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">No Leaderboard Data Yet</h3>
             <p className="text-gray-600 mb-6">
@@ -466,6 +447,33 @@ export default function VendorLeaderboardPage() {
             Back to Dashboard
           </button>
         </div>
+
+        {/* Future: Rewards & Penalties Section - Ready for Implementation */}
+        {/* 
+        <div className="mt-8 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-6 border border-purple-200">
+          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Gift className="w-5 h-5 text-purple-600" />
+            Rewards & Recognition
+          </h3>
+          <div className="grid md:grid-cols-3 gap-4">
+            <div className="bg-white rounded-lg p-4">
+              <Award className="w-8 h-8 text-yellow-500 mb-2" />
+              <h4 className="font-semibold text-gray-900">Top Performer</h4>
+              <p className="text-sm text-gray-600">Exclusive auction access</p>
+            </div>
+            <div className="bg-white rounded-lg p-4">
+              <Zap className="w-8 h-8 text-blue-500 mb-2" />
+              <h4 className="font-semibold text-gray-900">Fast Payer</h4>
+              <p className="text-sm text-gray-600">Priority bidding</p>
+            </div>
+            <div className="bg-white rounded-lg p-4">
+              <Shield className="w-8 h-8 text-green-500 mb-2" />
+              <h4 className="font-semibold text-gray-900">Reliable Vendor</h4>
+              <p className="text-sm text-gray-600">Lower deposit requirements</p>
+            </div>
+          </div>
+        </div>
+        */}
       </div>
     </div>
   );

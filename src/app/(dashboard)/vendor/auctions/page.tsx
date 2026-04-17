@@ -43,7 +43,7 @@ import { FilterChip } from '@/components/ui/filters/filter-chip';
 import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
 import { SearchInput } from '@/components/ui/filters/search-input';
 import { LocationAutocomplete } from '@/components/ui/filters/location-autocomplete';
-import { Filter as FilterIcon, X, Circle, DollarSign, Trophy, ClipboardList, Clock, Eye, RefreshCw, WifiOff } from 'lucide-react';
+import { Filter as FilterIcon, X, Circle, Trophy, ClipboardList, Clock, Eye, WifiOff, Banknote } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
 import { useCachedAuctions } from '@/hooks/use-cached-auctions';
 import { useScheduledAuctionChecker } from '@/hooks/use-scheduled-auction-checker';

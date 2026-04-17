@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { 
   Search, 
   TrendingUp, 
-  DollarSign, 
+  Banknote, 
   Users, 
   FileText, 
   BarChart3,
@@ -50,7 +50,7 @@ const REPORT_CATEGORIES: ReportCategory[] = [
     id: 'financial',
     name: 'Financial Reports',
     description: 'Revenue, payments, spending, and profitability analysis',
-    icon: DollarSign,
+    icon: Banknote,
     requiredPermission: 'canViewFinancial',
     reports: [
       {
@@ -65,7 +65,7 @@ const REPORT_CATEGORIES: ReportCategory[] = [
         name: 'Payment Analytics',
         description: 'Payment processing times and success rates',
         path: '/reports/financial/payment-analytics',
-        icon: DollarSign,
+        icon: Banknote,
       },
       {
         id: 'vendor-spending',

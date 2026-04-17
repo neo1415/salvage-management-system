@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ExternalLink, CheckCircle2, Clock, Users, FileText, Shield, Truck, DollarSign } from 'lucide-react';
+import { ExternalLink, CheckCircle2, Clock, Users, FileText, Shield, Truck, Banknote } from 'lucide-react';
 
 /**
  * TEMPORARY DEMO PAGE
@@ -83,7 +83,7 @@ export default function DemoPage() {
       description: 'Main vendor dashboard with stats and quick actions (mock data)',
       path: '/vendor/dashboard',
       status: 'complete',
-      icon: <DollarSign className="w-6 h-6" />,
+      icon: <Banknote className="w-6 h-6" />,
       category: 'Vendor',
     },
 

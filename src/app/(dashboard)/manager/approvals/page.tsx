@@ -26,7 +26,7 @@ import { AuctionScheduleSelector, type AuctionScheduleValue } from '@/components
 import { LocationMap } from '@/components/ui/location-map';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
-import { Star, DollarSign, Check, X, CheckCircle } from 'lucide-react';
+import { Star, Check, X, CheckCircle, Banknote } from 'lucide-react';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 
@@ -936,7 +936,7 @@ export default function ApprovalsPage() {
           <div className="bg-white rounded-lg shadow-md p-4">
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                <DollarSign className="w-5 h-5" aria-hidden="true" />
+                <Banknote className="w-5 h-5" aria-hidden="true" />
                 <span>Valuation</span>
               </h3>
               {!isEditMode && !selectedCase.approvedBy && (
