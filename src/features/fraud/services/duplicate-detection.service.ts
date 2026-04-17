@@ -1,8 +1,6 @@
 import { db } from '@/lib/db';
-import { cases } from '@/lib/db/schema/cases';
+import { salvageCases } from '@/lib/db/schema/cases';
 import { sql, and, eq } from 'drizzle-orm';
-import { geminiAnalyzeImages } from '@/lib/integrations/gemini-damage-detection';
-import { claudeAnalyzeImages } from '@/lib/integrations/claude-damage-detection';
 
 interface DuplicateCheckResult {
   isDuplicate: boolean;
@@ -89,7 +87,7 @@ async function performQuickChecks(data: VehicleData): Promise<DuplicateCheckResu
   if (data.assetDetails.vin) {
     const vinMatch = await db
       .select()
-      .from(cases)
+      .from(salvageCases)
       .where(sql`asset_details->>'vin' = ${data.assetDetails.vin}`)
       .limit(1);
     
@@ -108,7 +106,7 @@ async function performQuickChecks(data: VehicleData): Promise<DuplicateCheckResu
   if (data.assetDetails.licensePlate) {
     const plateMatch = await db
       .select()
-      .from(cases)
+      .from(salvageCases)
       .where(sql`asset_details->>'licensePlate' = ${data.assetDetails.licensePlate}`)
       .limit(1);
     
@@ -141,7 +139,7 @@ async function findSimilarVehicles(assetDetails: any) {
   
   const similarVehicles = await db
     .select()
-    .from(cases)
+    .from(salvageCases)
     .where(
       and(
         sql`asset_details->>'make' = ${assetDetails.make}`,
@@ -227,40 +225,10 @@ Return ONLY valid JSON (no markdown):
   "differingFeatures": ["list", "of", "differences"]
 }`;
 
-  try {
-    // Try Gemini first (free tier)
-    console.log('🤖 Using Gemini for photo comparison...');
-    const result = await geminiAnalyzeImages(
-      [...data.newPhotos, ...data.existingPhotos],
-      prompt
-    );
-    
-    const parsed = JSON.parse(result);
-    return {
-      confidence: parsed.isSameVehicle ? parsed.confidence : 0,
-      reasoning: parsed.reasoning,
-    };
-  } catch (error) {
-    console.log('⚠️ Gemini failed, falling back to Claude...');
-    // Fallback to Claude
-    try {
-      const result = await claudeAnalyzeImages(
-        [...data.newPhotos, ...data.existingPhotos],
-        prompt
-      );
-      
-      const parsed = JSON.parse(result);
-      return {
-        confidence: parsed.isSameVehicle ? parsed.confidence : 0,
-        reasoning: parsed.reasoning,
-      };
-    } catch (claudeError) {
-      console.error('❌ Both AI services failed:', claudeError);
-      // Return low confidence if both fail
-      return {
-        confidence: 0,
-        reasoning: 'AI analysis failed - manual review required',
-      };
-    }
-  }
+  // For now, return low confidence - AI photo comparison disabled
+  // TODO: Re-enable when AI services are properly configured
+  return {
+    confidence: 0,
+    reasoning: 'AI photo comparison temporarily disabled - manual review required',
+  };
 }

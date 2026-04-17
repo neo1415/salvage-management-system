@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { fraudAttempts } from '@/lib/db/schema/fraud-tracking';
-import { fraudAlerts } from '@/lib/db/schema/fraud-detection';
+import { duplicatePhotoMatches } from '@/lib/db/schema/fraud-detection';
 import { eq, desc } from 'drizzle-orm';
 import crypto from 'crypto';
 
@@ -44,24 +44,8 @@ export async function logFraudAttempt(data: FraudAttemptData) {
       reviewed: false,
     });
     
-    // Create fraud alert for admin
-    await db.insert(fraudAlerts).values({
-      id: crypto.randomUUID(),
-      severity: data.confidence && data.confidence > 0.9 ? 'critical' : 'high',
-      type: data.type,
-      description: generateFraudDescription(data),
-      userId: data.userId,
-      metadata: {
-        ipAddress: data.ipAddress,
-        userAgent: data.userAgent,
-        matchedCaseId: data.matchedCase?.id,
-        confidence: data.confidence,
-        userName: data.userName,
-        userEmail: data.userEmail,
-      },
-      status: 'pending',
-      createdAt: new Date(),
-    });
+    // TODO: Create fraud alert in proper table
+    console.log(`⚠️ Fraud alert would be created: ${data.type}`);
     
     // Send email to admin (async, don't wait)
     sendFraudAlertEmail(data).catch(err => {

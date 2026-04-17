@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { bids } from '@/lib/db/schema/auctions';
+import { bids } from '@/lib/db/schema/bids';
 import { auctions } from '@/lib/db/schema/auctions';
 import { vendors } from '@/lib/db/schema/vendors';
 import { eq, and, gte, desc, sql } from 'drizzle-orm';

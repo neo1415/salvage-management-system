@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { bids } from '@/lib/db/schema/auctions';
-import { fraudAlerts } from '@/lib/db/schema/fraud-detection';
-import { gte, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { shillBiddingDetectionService } from '@/features/fraud/services/shill-bidding-detection.service';
 import { paymentFraudDetectionService } from '@/features/fraud/services/payment-fraud-detection.service';
-import crypto from 'crypto';
 
 /**
  * Daily Cron Job: Fraud Detection
@@ -138,21 +135,6 @@ async function createFraudAlert(data: {
   description: string;
   metadata: any;
 }): Promise<void> {
-  try {
-    await db.insert(fraudAlerts).values({
-      id: crypto.randomUUID(),
-      severity: data.severity,
-      type: data.type,
-      description: data.description,
-      userId: data.vendorId,
-      metadata: data.metadata,
-      status: 'pending',
-      createdAt: new Date(),
-    });
-    
-    console.log(`✅ Fraud alert created: ${data.type} (${data.severity})`);
-  } catch (error) {
-    console.error('❌ Failed to create fraud alert:', error);
-    throw error;
-  }
+  // TODO: Create fraud alert in proper table
+  console.log(`⚠️ Fraud alert would be created: ${data.type} (${data.severity}) for vendor ${data.vendorId}`);
 }

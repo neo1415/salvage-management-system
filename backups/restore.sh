@@ -4,7 +4,7 @@
 set -e
 
 BACKUP_DIR="./backups"
-DATABASE_URL="postgresql://user:password@host:5432/database"
+DATABASE_URL="${DATABASE_URL}"
 
 if [ $# -eq 0 ]; then
     echo "Usage: $0 <backup_date> [table_type]"
