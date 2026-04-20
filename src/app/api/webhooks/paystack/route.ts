@@ -112,6 +112,12 @@ export async function POST(request: NextRequest) {
       console.log('🎯 Routing to auction payment handler');
       await paymentService.handlePaystackWebhook(reference, true);
       console.log('✅ Auction payment processed successfully');
+    } else if (reference.startsWith('REG-')) {
+      // Registration fee payment
+      console.log('💳 Routing to registration fee handler');
+      const { registrationFeeService } = await import('@/features/vendors/services/registration-fee.service');
+      await registrationFeeService.handleRegistrationFeeWebhook(reference, true);
+      console.log('✅ Registration fee processed successfully');
     } else {
       // Wallet funding or other payment
       console.log('💰 Routing to wallet funding handler');

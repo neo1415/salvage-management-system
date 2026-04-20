@@ -16,16 +16,30 @@ interface KYCStatusCardProps {
 export function KYCStatusCard({ currentTier, className = '' }: KYCStatusCardProps) {
   const router = useRouter();
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
+  const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/kyc/status')
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { setKycStatus(data); setLoading(false); })
+    Promise.all([
+      fetch('/api/kyc/status').then((r) => r.ok ? r.json() : null),
+      fetch('/api/vendors/registration-fee/status').then((r) => r.ok ? r.json() : null),
+    ])
+      .then(([kycData, feeData]) => {
+        setKycStatus(kycData);
+        setRegistrationFeePaid(feeData?.data?.paid ?? false);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, []);
 
-  const handleUpgradeClick = () => router.push('/vendor/kyc/tier2');
+  const handleUpgradeClick = () => {
+    // Check if registration fee is paid before allowing Tier 2 KYC
+    if (registrationFeePaid) {
+      router.push('/vendor/kyc/tier2');
+    } else {
+      router.push('/vendor/registration-fee');
+    }
+  };
 
   // Tier 2 approved — show expiry info if within 30 days
   if (currentTier === 'tier2_full' && kycStatus?.expiresAt) {
@@ -123,6 +137,39 @@ export function KYCStatusCard({ currentTier, className = '' }: KYCStatusCardProp
 
   // Tier 1 — show upgrade banner
   if (currentTier === 'tier1_bvn') {
+    // If registration fee not paid, show payment prompt
+    if (registrationFeePaid === false) {
+      return (
+        <div className={`relative bg-gradient-to-r from-[#800020] to-[#FFD700] text-white rounded-lg shadow-lg overflow-hidden ${className}`}>
+          <div className="absolute inset-0 opacity-10">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2" />
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full translate-y-1/2 -translate-x-1/2" />
+          </div>
+          <div className="relative p-4 md:p-6">
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+              <div className="flex-shrink-0 w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+                <Crown className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg md:text-xl font-bold mb-1">Complete Your Registration</h3>
+                <p className="text-white/90 text-sm md:text-base">
+                  Pay the one-time registration fee (₦12,500) to unlock Tier 2 KYC and unlimited bidding.
+                </p>
+              </div>
+              <button
+                onClick={handleUpgradeClick}
+                className="flex-shrink-0 px-6 py-3 bg-white text-[#800020] font-bold rounded-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2 whitespace-nowrap min-h-[44px]"
+              >
+                Pay Now
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // If registration fee paid, show Tier 2 upgrade prompt
     return (
       <div className={`relative bg-gradient-to-r from-[#800020] to-[#FFD700] text-white rounded-lg shadow-lg overflow-hidden ${className}`}>
         <div className="absolute inset-0 opacity-10">

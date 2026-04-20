@@ -262,8 +262,12 @@ export async function GET(request: NextRequest) {
         const assetDetails = record.caseAssetDetails;
         let description = 'Payment';
         
+        // Check if this is a registration fee (no auction ID)
+        if (!record.auctionId) {
+          description = 'Vendor Registration Fee';
+        }
         // Check if case exists and has valid data (must check for null BEFORE typeof check)
-        if (record.caseClaimReference) {
+        else if (record.caseClaimReference) {
           if (record.caseAssetType === 'vehicle' && assetDetails !== null && typeof assetDetails === 'object') {
             const year = (assetDetails as any)?.year || '';
             const make = (assetDetails as any)?.make || '';

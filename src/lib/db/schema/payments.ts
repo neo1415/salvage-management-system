@@ -22,8 +22,7 @@ export const paymentStatusEnum = pgEnum('payment_status', [
 export const payments = pgTable('payments', {
   id: uuid('id').primaryKey().defaultRandom(),
   auctionId: uuid('auction_id')
-    .notNull()
-    .references(() => auctions.id, { onDelete: 'cascade' }),
+    .references(() => auctions.id, { onDelete: 'cascade' }), // Nullable for registration fees
   vendorId: uuid('vendor_id')
     .notNull()
     .references(() => vendors.id),

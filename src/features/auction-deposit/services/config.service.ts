@@ -13,6 +13,7 @@ import { systemConfig, configChangeHistory } from '@/lib/db/schema/auction-depos
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 
 export interface SystemConfiguration {
+  registrationFee: number; // Naira
   depositRate: number; // Percentage (1-100)
   minimumDepositFloor: number; // Naira
   tier1Limit: number; // Naira
@@ -60,6 +61,7 @@ export interface GetConfigHistoryParams {
 export class ConfigService {
   // Default configuration values
   private readonly DEFAULT_CONFIG: SystemConfiguration = {
+    registrationFee: 12500, // ₦12,500
     depositRate: 10, // 10%
     minimumDepositFloor: 100000, // ₦100,000
     tier1Limit: 500000, // ₦500,000
@@ -262,6 +264,12 @@ export class ConfigService {
     const numValue = parseFloat(value);
 
     switch (parameter) {
+      case 'registration_fee':
+        if (numValue < 1000 || numValue > 50000) {
+          throw new Error('Registration fee must be between ₦1,000 and ₦50,000');
+        }
+        break;
+
       case 'deposit_rate':
         if (numValue < 1 || numValue > 100) {
           throw new Error('Deposit rate must be between 1% and 100%');
@@ -341,6 +349,7 @@ export class ConfigService {
    */
   private parameterToKey(parameter: string): string | null {
     const mapping: Record<string, string> = {
+      registration_fee: 'registrationFee',
       deposit_rate: 'depositRate',
       minimum_deposit_floor: 'minimumDepositFloor',
       tier_1_limit: 'tier1Limit',
@@ -383,6 +392,7 @@ export class ConfigService {
    */
   private getParameterDescription(parameter: string): string {
     const descriptions: Record<string, string> = {
+      registration_fee: 'One-time vendor registration fee in Naira (default ₦12,500)',
       deposit_rate: 'Percentage of bid amount to freeze as deposit (default 10%)',
       minimum_deposit_floor: 'Minimum deposit amount in Naira (default ₦100,000)',
       tier_1_limit: 'Maximum bid amount for Tier 1 vendors (default ₦500,000)',

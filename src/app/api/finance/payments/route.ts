@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     const view = searchParams.get('view') || 'all';
     const statusFilter = searchParams.get('status');
     const paymentMethodFilter = searchParams.get('paymentMethod');
+    const paymentTypeFilter = searchParams.get('paymentType'); // NEW: 'auction' | 'registration_fee'
     const dateFrom = searchParams.get('dateFrom');
     const dateTo = searchParams.get('dateTo');
 
@@ -77,6 +78,13 @@ export async function GET(request: NextRequest) {
       conditions.push(eq(payments.paymentMethod, paymentMethodFilter as any));
     }
 
+    // Apply payment type filter (NEW)
+    if (paymentTypeFilter === 'registration_fee') {
+      conditions.push(sql`${payments.auctionId} IS NULL`);
+    } else if (paymentTypeFilter === 'auction') {
+      conditions.push(sql`${payments.auctionId} IS NOT NULL`);
+    }
+
     // Apply date range filters
     if (dateFrom) {
       const fromDate = new Date(dateFrom);
@@ -89,7 +97,7 @@ export async function GET(request: NextRequest) {
       conditions.push(lte(payments.createdAt, toDate));
     }
 
-    // Fetch payments with filters
+    // Fetch payments with filters (LEFT JOIN for auctions to include registration fees)
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
     
     const filteredPayments = await db
@@ -103,8 +111,8 @@ export async function GET(request: NextRequest) {
       .from(payments)
       .innerJoin(vendors, eq(payments.vendorId, vendors.id))
       .innerJoin(users, eq(vendors.userId, users.id))
-      .innerJoin(auctions, eq(payments.auctionId, auctions.id))
-      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+      .leftJoin(auctions, eq(payments.auctionId, auctions.id)) // LEFT JOIN to include registration fees
+      .leftJoin(salvageCases, eq(auctions.caseId, salvageCases.id)) // LEFT JOIN since auction can be null
       .where(whereClause)
       .orderBy(sql`${payments.createdAt} DESC`);
 
@@ -136,6 +144,11 @@ export async function GET(request: NextRequest) {
       p => p.payment.status === 'pending' && !p.payment.autoVerified
     ).length;
     const overdue = filteredPayments.filter(p => p.payment.status === 'overdue').length;
+    
+    // NEW: Calculate registration fee stats
+    const registrationFees = filteredPayments.filter(p => !p.payment.auctionId);
+    const registrationFeeTotal = registrationFees.reduce((sum, p) => sum + p.payment.amount, 0);
+    const registrationFeeCount = registrationFees.length;
 
     // BATCH QUERY FIX: Extract unique vendor IDs and auction IDs from escrow wallet payments
     const escrowPayments = filteredPayments.filter(p => p.payment.paymentMethod === 'escrow_wallet');
@@ -186,7 +199,7 @@ export async function GET(request: NextRequest) {
       const base = {
         id: payment.id,
         auctionId: payment.auctionId,
-        auctionStatus: auction.status, // CRITICAL FIX: Include auction status for UI logic
+        auctionStatus: auction?.status, // Can be null for registration fees
         vendorId: payment.vendorId,
         amount: payment.amount,
         paymentMethod: payment.paymentMethod,
@@ -197,6 +210,7 @@ export async function GET(request: NextRequest) {
         paymentDeadline: payment.paymentDeadline.toISOString(),
         createdAt: payment.createdAt.toISOString(),
         escrowStatus: payment.escrowStatus,
+        paymentType: payment.auctionId ? 'auction' : 'registration_fee', // NEW: Identify payment type
         vendor: {
           id: vendor.id,
           businessName: vendor.businessName,
@@ -210,19 +224,19 @@ export async function GET(request: NextRequest) {
           bankName: vendor.bankName,
           bankAccountName: vendor.bankAccountName,
         },
-        case: {
+        case: caseData ? {
           claimReference: caseData.claimReference,
           assetType: caseData.assetType,
           assetDetails: caseData.assetDetails,
-        },
+        } : null, // Can be null for registration fees
       };
 
       // Debug logging for Paystack payments
       if (payment.paymentMethod === 'paystack') {
         console.log(`📋 Paystack Payment: ${payment.paymentReference}`);
         console.log(`   - Payment Status: ${payment.status}`);
-        console.log(`   - Auction Status: ${auction.status}`);
-        console.log(`   - Should hide buttons: ${payment.status === 'pending' && auction.status === 'awaiting_payment'}`);
+        console.log(`   - Auction Status: ${auction?.status || 'N/A (registration fee)'}`);
+        console.log(`   - Should hide buttons: ${payment.status === 'pending' && auction?.status === 'awaiting_payment'}`);
       }
 
       if (payment.paymentMethod !== 'escrow_wallet') {
@@ -262,6 +276,10 @@ export async function GET(request: NextRequest) {
         autoVerified,
         pendingManual,
         overdue,
+        registrationFees: {
+          count: registrationFeeCount,
+          total: registrationFeeTotal,
+        },
       },
       payments: formattedPayments,
     });

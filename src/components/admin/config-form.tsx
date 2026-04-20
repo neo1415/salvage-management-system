@@ -29,6 +29,16 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
 
   const parameters: ConfigParameter[] = [
     {
+      key: 'registrationFee',
+      label: 'Vendor Registration Fee',
+      description: 'One-time fee for vendor registration (Tier 1 to Tier 2 upgrade)',
+      value: 12500,
+      unit: '₦',
+      min: 1000,
+      max: 50000,
+      step: 500,
+    },
+    {
       key: 'depositRate',
       label: 'Deposit Rate',
       description: 'Percentage of bid amount to freeze as deposit',

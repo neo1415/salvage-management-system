@@ -22,8 +22,8 @@ const ErrorModal = dynamic(
 
 interface Payment {
   id: string;
-  auctionId: string;
-  auctionStatus: string; // CRITICAL FIX: Include auction status for UI logic
+  auctionId: string | null; // Can be null for registration fees
+  auctionStatus: string | null; // Can be null for registration fees
   vendorId: string;
   amount: string;
   paymentMethod: 'paystack' | 'flutterwave' | 'bank_transfer' | 'escrow_wallet';
@@ -34,6 +34,7 @@ interface Payment {
   paymentDeadline: string;
   createdAt: string;
   escrowStatus?: 'frozen' | 'released' | 'failed' | null;
+  paymentType: 'auction' | 'registration_fee'; // NEW: Payment type
   walletBalance?: {
     availableBalance: number;
     frozenAmount: number;
@@ -61,7 +62,7 @@ interface Payment {
     claimReference: string;
     assetType: string;
     assetDetails: Record<string, unknown>;
-  };
+  } | null; // Can be null for registration fees
 }
 
 interface PaymentStats {
@@ -69,6 +70,10 @@ interface PaymentStats {
   autoVerified: number;
   pendingManual: number;
   overdue: number;
+  registrationFees: {
+    count: number;
+    total: number;
+  };
 }
 
 type ViewTab = 'all' | 'today' | 'pending' | 'overdue';
@@ -118,6 +123,7 @@ export default function FinancePaymentsPage() {
   const [activeTab, setActiveTab] = useState<ViewTab>('all');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [methodFilter, setMethodFilter] = useState<string>('');
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<string>(''); // NEW: Payment type filter
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
 
@@ -140,6 +146,7 @@ export default function FinancePaymentsPage() {
       params.append('view', activeTab);
       if (statusFilter) params.append('status', statusFilter);
       if (methodFilter) params.append('paymentMethod', methodFilter);
+      if (paymentTypeFilter) params.append('paymentType', paymentTypeFilter); // NEW: Payment type filter
       if (dateFrom) params.append('dateFrom', dateFrom);
       if (dateTo) params.append('dateTo', dateTo);
 
@@ -168,6 +175,10 @@ export default function FinancePaymentsPage() {
         autoVerified: 0,
         pendingManual: 0,
         overdue: 0,
+        registrationFees: {
+          count: 0,
+          total: 0,
+        },
       });
     } catch (err) {
       console.error('Error fetching payments:', err);
@@ -181,7 +192,7 @@ export default function FinancePaymentsPage() {
   useEffect(() => {
     fetchPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, statusFilter, methodFilter, dateFrom, dateTo]);
+  }, [activeTab, statusFilter, methodFilter, paymentTypeFilter, dateFrom, dateTo]);
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -204,11 +215,12 @@ export default function FinancePaymentsPage() {
     setActiveTab('all');
     setStatusFilter('');
     setMethodFilter('');
+    setPaymentTypeFilter(''); // NEW: Clear payment type filter
     setDateFrom('');
     setDateTo('');
   };
 
-  const hasActiveFilters = statusFilter || methodFilter || dateFrom || dateTo;
+  const hasActiveFilters = statusFilter || methodFilter || paymentTypeFilter || dateFrom || dateTo;
 
   const handleVerifyPayment = async () => {
     if (!selectedPayment || !action) return;
@@ -891,13 +903,15 @@ export default function FinancePaymentsPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Overdue</p>
-              <p className="text-3xl font-bold text-red-600 mt-2">{stats.overdue}</p>
-              <p className="text-xs text-gray-500 mt-1">Past deadline</p>
+              <p className="text-sm font-medium text-gray-600">Registration Fees</p>
+              <p className="text-3xl font-bold text-purple-600 mt-2">{stats.registrationFees.count}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                ₦{stats.registrationFees.total.toLocaleString()} total
+              </p>
             </div>
-            <div className="p-3 bg-red-100 rounded-full">
-              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            <div className="p-3 bg-purple-100 rounded-full">
+              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
               </svg>
             </div>
           </div>
@@ -1061,7 +1075,7 @@ export default function FinancePaymentsPage() {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             {/* Status Filter */}
             <div>
               <label htmlFor="status-filter" className="block text-xs font-medium text-gray-700 mb-1">
@@ -1097,6 +1111,23 @@ export default function FinancePaymentsPage() {
                 <option value="flutterwave">Flutterwave</option>
                 <option value="bank_transfer">Bank Transfer</option>
                 <option value="escrow_wallet">Escrow Wallet</option>
+              </select>
+            </div>
+
+            {/* Payment Type Filter - NEW */}
+            <div>
+              <label htmlFor="payment-type-filter" className="block text-xs font-medium text-gray-700 mb-1">
+                Payment Type
+              </label>
+              <select
+                id="payment-type-filter"
+                value={paymentTypeFilter}
+                onChange={(e) => setPaymentTypeFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              >
+                <option value="">All Types</option>
+                <option value="auction">Auction Payments</option>
+                <option value="registration_fee">Registration Fees</option>
               </select>
             </div>
 
@@ -1182,12 +1213,17 @@ export default function FinancePaymentsPage() {
                     {/* Payment ID and Tags - Stack on mobile */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
                       <h3 className="text-sm font-medium text-gray-900 truncate">
-                        {payment.case.claimReference}
+                        {payment.case ? payment.case.claimReference : payment.paymentReference || 'Registration Fee'}
                       </h3>
                       {/* Tags container with wrapping */}
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {payment.case.assetType}
+                        {/* Payment Type Badge - NEW */}
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          payment.paymentType === 'registration_fee' 
+                            ? 'bg-purple-100 text-purple-800' 
+                            : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {payment.paymentType === 'registration_fee' ? '🎫 Registration Fee' : payment.case?.assetType || 'Auction'}
                         </span>
                         {/* Status Badge */}
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -1351,7 +1387,9 @@ export default function FinancePaymentsPage() {
                   {/* Don't show for: */}
                   {/* 1. escrow_wallet with frozen status (waiting for documents) */}
                   {/* 2. Paystack pending (vendor hasn't completed payment yet - auction status is awaiting_payment) */}
+                  {/* 3. Registration fees (auto-verified via webhook, no manual approval needed) */}
                   {payment.status === 'pending' && 
+                   payment.paymentType === 'auction' &&
                    !(payment.paymentMethod === 'escrow_wallet' && payment.escrowStatus === 'frozen') &&
                    !(payment.paymentMethod === 'paystack' && payment.auctionStatus === 'awaiting_payment') && (
                     <div className="w-full sm:w-auto sm:ml-4 flex flex-col gap-2">

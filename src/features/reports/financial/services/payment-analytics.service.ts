@@ -19,6 +19,12 @@ export interface PaymentAnalyticsReport {
     autoVerificationRate: number;
     successRate: number;
   };
+  registrationFees: {
+    totalCount: number;
+    totalAmount: number;
+    completedCount: number;
+    pendingCount: number;
+  };
   byMethod: Array<{
     method: string;
     count: number;
@@ -58,14 +64,20 @@ export class PaymentAnalyticsService {
    * Generate comprehensive payment analytics report
    */
   static async generateReport(filters: ReportFilters): Promise<PaymentAnalyticsReport> {
-    // Get payment data
+    // Get payment data (auction payments only)
     const paymentData = await FinancialDataRepository.getPaymentData(filters);
+    
+    // Get registration fee data
+    const registrationFeeData = await FinancialDataRepository.getRegistrationFeeData(filters);
     
     // Get aging data
     const agingData = await FinancialDataRepository.getPaymentAgingData(filters);
 
     // Calculate summary
     const summary = this.calculateSummary(paymentData);
+
+    // Calculate registration fee summary
+    const registrationFees = this.calculateRegistrationFeeSummary(registrationFeeData);
 
     // Group by method
     const byMethod = this.calculateByMethod(paymentData);
@@ -81,6 +93,7 @@ export class PaymentAnalyticsService {
 
     return {
       summary,
+      registrationFees,
       byMethod,
       byStatus,
       processingTimes,
@@ -118,6 +131,22 @@ export class PaymentAnalyticsService {
       averagePaymentTime: Math.round(avgPaymentTime * 100) / 100,
       autoVerificationRate: Math.round(autoVerificationRate * 100) / 100,
       successRate: Math.round(successRate * 100) / 100,
+    };
+  }
+
+  /**
+   * Calculate registration fee summary statistics
+   */
+  private static calculateRegistrationFeeSummary(data: any[]) {
+    const totalAmount = data.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    const completedCount = data.filter(p => p.status === 'verified').length;
+    const pendingCount = data.filter(p => p.status === 'pending').length;
+
+    return {
+      totalCount: data.length,
+      totalAmount: Math.round(totalAmount * 100) / 100,
+      completedCount,
+      pendingCount,
     };
   }
 

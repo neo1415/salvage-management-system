@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, numeric, jsonb, pgEnum, text } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, numeric, jsonb, pgEnum, text, boolean } from 'drizzle-orm/pg-core';
 import { users } from './users';
 
 export const vendorTierEnum = pgEnum('vendor_tier', ['tier1_bvn', 'tier2_full']);
@@ -91,6 +91,12 @@ export const vendors = pgTable('vendors', {
   // Tier 2 KYC — Fraud
   fraudRiskScore: numeric('fraud_risk_score', { precision: 5, scale: 2 }), // 0-100
   fraudFlags: jsonb('fraud_flags'), // array of flag objects
+
+  // Registration Fee
+  registrationFeePaid: boolean('registration_fee_paid').notNull().default(false),
+  registrationFeeAmount: numeric('registration_fee_amount', { precision: 12, scale: 2 }),
+  registrationFeePaidAt: timestamp('registration_fee_paid_at'),
+  registrationFeeReference: varchar('registration_fee_reference', { length: 255 }),
 
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),

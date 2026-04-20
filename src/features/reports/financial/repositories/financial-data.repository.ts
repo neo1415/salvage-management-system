@@ -32,7 +32,7 @@ export interface PaymentData {
   processingTimeHours: number | null;
   vendorId: string;
   vendorName: string;
-  auctionId: string;
+  auctionId: string | null; // Can be null for registration fees
 }
 
 export interface VendorSpendingData {
@@ -188,6 +188,73 @@ export class FinancialDataRepository {
         vendorId: row.vendorId,
         vendorName: row.vendorName || 'Unknown',
         auctionId: row.auctionId,
+      };
+    });
+  }
+
+  /**
+   * Get registration fee payment data
+   */
+  static async getRegistrationFeeData(filters: ReportFilters): Promise<PaymentData[]> {
+    const conditions = [];
+
+    // Date range
+    const dateCondition = this.buildDateCondition(
+      payments.createdAt,
+      filters.startDate,
+      filters.endDate
+    );
+    if (dateCondition) conditions.push(dateCondition);
+
+    // Only registration fee payments (no auction ID)
+    conditions.push(sql`${payments.auctionId} IS NULL`);
+
+    // Status filter
+    if (filters.status && filters.status.length > 0) {
+      conditions.push(inArray(payments.status, filters.status));
+    }
+
+    // Vendor filter
+    if (filters.vendorIds && filters.vendorIds.length > 0) {
+      conditions.push(inArray(payments.vendorId, filters.vendorIds));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const results = await db
+      .select({
+        paymentId: payments.id,
+        amount: payments.amount,
+        status: payments.status,
+        paymentMethod: payments.paymentMethod,
+        createdAt: payments.createdAt,
+        verifiedAt: payments.verifiedAt,
+        vendorId: payments.vendorId,
+        vendorName: vendors.businessName,
+      })
+      .from(payments)
+      .leftJoin(vendors, eq(payments.vendorId, vendors.id))
+      .where(whereClause)
+      .orderBy(desc(payments.createdAt));
+
+    return results.map(row => {
+      let processingTimeHours: number | null = null;
+      if (row.verifiedAt && row.createdAt) {
+        const diffMs = row.verifiedAt.getTime() - row.createdAt.getTime();
+        processingTimeHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+      }
+
+      return {
+        paymentId: row.paymentId,
+        amount: row.amount,
+        status: row.status,
+        method: row.paymentMethod || 'unknown',
+        createdAt: row.createdAt,
+        verifiedAt: row.verifiedAt,
+        processingTimeHours,
+        vendorId: row.vendorId,
+        vendorName: row.vendorName || 'Unknown',
+        auctionId: '', // No auction for registration fees
       };
     });
   }

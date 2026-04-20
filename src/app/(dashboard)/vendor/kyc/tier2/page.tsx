@@ -71,6 +71,7 @@ export default function Tier2KYCPage() {
   const [connect, setConnect] = useState<DojahConnect | null>(null);
   const [cameraPermissionGranted, setCameraPermissionGranted] = useState(false);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
+  const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -83,10 +84,23 @@ export default function Tier2KYCPage() {
 
     async function init() {
       try {
-        const [configRes, statusRes] = await Promise.all([
+        const [configRes, statusRes, feeRes] = await Promise.all([
           fetch('/api/kyc/widget-config'),
           fetch('/api/kyc/status'),
+          fetch('/api/vendors/registration-fee/status'),
         ]);
+
+        // Check registration fee first
+        if (feeRes.ok) {
+          const feeData = await feeRes.json();
+          setRegistrationFeePaid(feeData?.data?.paid ?? false);
+          
+          // If registration fee not paid, redirect to payment page
+          if (!feeData?.data?.paid) {
+            router.push('/vendor/registration-fee');
+            return;
+          }
+        }
 
         if (!configRes.ok) {
           setPageState('error');
@@ -115,7 +129,7 @@ export default function Tier2KYCPage() {
     }
 
     init();
-  }, [authStatus]);
+  }, [authStatus, router]);
 
   // Initialise Dojah widget once script is loaded and config is available
   const initWidget = useCallback(() => {
