@@ -18,8 +18,8 @@ const valueProps = [
   },
   {
     icon: Brain,
-    title: 'AI Assessment',
-    description: 'Google Vision AI analyzes damage photos instantly. Get accurate salvage valuations in seconds, not days.',
+    title: 'Complete Damage Assessment',
+    description: 'Comprehensive damage analysis with detailed reports and accurate salvage valuations.',
     color: 'from-green-400 to-teal-500',
   },
   {
@@ -115,21 +115,7 @@ export function ValuePropsSection() {
                     {prop.description}
                   </p>
 
-                  {/* Hover indicator */}
-                  <motion.div
-                    className="mt-4 flex items-center text-burgundy-700 font-semibold opacity-0 group-hover:opacity-100 transition-opacity"
-                    initial={{ x: -10 }}
-                    whileHover={{ x: 0 }}
-                  >
-                    <span className="text-sm">Learn more</span>
-                    <motion.span
-                      className="ml-2"
-                      animate={{ x: [0, 5, 0] }}
-                      transition={{ duration: 1.5, repeat: Infinity }}
-                    >
-                      →
-                    </motion.span>
-                  </motion.div>
+
                 </motion.div>
               </motion.div>
             );

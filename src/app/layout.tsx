@@ -7,6 +7,7 @@ import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { AuthProvider } from '@/lib/auth/auth-provider';
 import { QueryProvider } from '@/lib/query-provider';
 import { ToastProvider } from '@/components/ui/toast';
+import { CookieConsentBanner } from '@/components/legal/cookie-consent-banner';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
@@ -149,6 +150,7 @@ export default function RootLayout({
               <ServiceWorkerRegister />
               <OfflineIndicator />
               <InstallPrompt />
+              <CookieConsentBanner />
               {children}
             </ToastProvider>
           </QueryProvider>

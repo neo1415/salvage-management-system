@@ -1,13 +1,12 @@
 /**
- * Google Maps Geolocation API Integration
- * Provides accurate location data using Google's geolocation service
+ * Browser GPS Geolocation Integration
+ * Provides accurate location data using device GPS
  * 
- * Uses Google Maps Geolocation API to determine location from:
- * - GPS coordinates
- * - WiFi access points
- * - Cell tower information
+ * Uses browser's navigator.geolocation API with high accuracy mode enabled.
+ * This provides 5-50m accuracy using actual GPS hardware.
  * 
- * Much more accurate than browser geolocation, especially indoors.
+ * NOTE: Google Geolocation API was removed because without WiFi/cell tower data,
+ * it falls back to IP-based geolocation which is extremely inaccurate (100km+ radius).
  */
 
 export interface GeolocationResult {
@@ -24,121 +23,41 @@ export interface GeolocationError {
 }
 
 /**
- * Get accurate geolocation using browser GPS first, then Google API fallback
- * Browser GPS is more accurate (5-15m) than Google API (IP-based, 100km+)
+ * Get accurate geolocation using browser GPS ONLY
+ * Browser GPS is far more accurate (5-15m) than Google API IP-based fallback (100km+)
+ * 
+ * REMOVED: Google Geolocation API fallback because it uses IP-based location
+ * which is extremely inaccurate (100km+ radius) and causes wildly inconsistent results
  */
 export async function getAccurateGeolocation(): Promise<GeolocationResult> {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   
-  // Log which method we're using
-  console.log('🌍 Geolocation API Key configured:', !!apiKey);
+  // Log diagnostic info
   console.log('🌍 Online status:', navigator.onLine);
   console.log('🌍 Browser geolocation available:', isGeolocationAvailable());
   
-  // Try browser GPS first (more accurate: 5-15m vs 100km+ for Google API)
-  if (isGeolocationAvailable()) {
-    console.log('🌍 Attempting browser GPS first (more accurate)...');
-    try {
-      const browserLocation = await getBrowserGeolocation();
-      console.log('✅ Browser GPS succeeded:', browserLocation);
-      
-      // Only use browser GPS if accuracy is reasonable (< 100km)
-      // This filters out poor WiFi-based positioning on laptops
-      if (browserLocation.accuracy < 100000) {
-        console.log('✅ Browser GPS accuracy acceptable:', browserLocation.accuracy + 'm');
-        return browserLocation;
-      } else {
-        console.warn('⚠️ Browser GPS accuracy too poor (' + browserLocation.accuracy + 'm), trying Google API...');
-      }
-    } catch (error) {
-      console.warn('⚠️ Browser GPS failed, falling back to Google Geolocation API:', error);
-    }
-  } else {
-    console.log('⚠️ Browser geolocation not available');
+  // Use browser GPS - this is the most accurate method available
+  if (!isGeolocationAvailable()) {
+    throw {
+      code: 'API_ERROR',
+      message: 'Geolocation is not supported by your browser',
+    } as GeolocationError;
   }
 
-  // Fallback to Google API if browser GPS fails or is unavailable
-  if (navigator.onLine && apiKey && apiKey !== 'your-google-maps-api-key-here' && apiKey !== '') {
-    console.log('🌍 Using Google Geolocation API as fallback...');
-    try {
-      const googleLocation = await getGoogleGeolocation();
-      console.log('✅ Google Geolocation API succeeded:', googleLocation);
-      return googleLocation;
-    } catch (error) {
-      console.error('❌ Google Geolocation API also failed:', error);
-      throw error;
-    }
-  } else {
-    console.error('❌ No geolocation methods available. Reason:', 
-      !navigator.onLine ? 'Offline' : 
-      !apiKey || apiKey === 'your-google-maps-api-key-here' || apiKey === '' ? 'API key not configured' : 
-      'Unknown');
-    throw new Error('No geolocation methods available');
-  }
-}
-
-/**
- * Get location using Google Maps Geolocation API
- * Requires internet connection and API key
- */
-async function getGoogleGeolocation(): Promise<GeolocationResult> {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-
-  if (!apiKey) {
-    throw new Error('Google Maps API key not configured');
-  }
-
+  console.log('🌍 Using browser GPS (most accurate method)...');
   try {
-    // Call Google Maps Geolocation API
-    const response = await fetch(
-      `https://www.googleapis.com/geolocation/v1/geolocate?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          considerIp: true,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'Google Geolocation API request failed');
-    }
-
-    const data = await response.json();
-
-    if (!data.location) {
-      throw new Error('No location data returned from Google API');
-    }
-
-    // Get location name using reverse geocoding
-    let locationName: string | undefined;
-    try {
-      locationName = await reverseGeocode(data.location.lat, data.location.lng);
-    } catch (error) {
-      console.warn('Reverse geocoding failed:', error);
-      locationName = `${data.location.lat.toFixed(6)}, ${data.location.lng.toFixed(6)}`;
-    }
-
-    return {
-      latitude: data.location.lat,
-      longitude: data.location.lng,
-      accuracy: data.accuracy || 0,
-      locationName,
-      source: 'google-api',
-    };
+    const browserLocation = await getBrowserGeolocation();
+    console.log('✅ Browser GPS succeeded:', browserLocation);
+    return browserLocation;
   } catch (error) {
-    console.error('Error getting Google geolocation:', error);
+    console.error('❌ Browser GPS failed:', error);
     throw error;
   }
 }
 
 /**
  * Get location using browser Geolocation API
- * Works offline but less accurate
+ * This is the MOST ACCURATE method available (5-50m accuracy)
+ * Works both online and offline
  */
 async function getBrowserGeolocation(): Promise<GeolocationResult> {
   if (!navigator.geolocation) {
@@ -148,11 +67,13 @@ async function getBrowserGeolocation(): Promise<GeolocationResult> {
   try {
     const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 10000, // 10 seconds (reduced from 30s for faster fallback)
-        maximumAge: 0, // No cache
+        enableHighAccuracy: true, // Use GPS, not WiFi/IP
+        timeout: 30000, // 30 seconds - give GPS time to get accurate fix
+        maximumAge: 0, // No cache - always get fresh location
       });
     });
+
+    console.log('📍 GPS Accuracy:', position.coords.accuracy + 'm');
 
     // Get location name using reverse geocoding (if online)
     let locationName: string | undefined;

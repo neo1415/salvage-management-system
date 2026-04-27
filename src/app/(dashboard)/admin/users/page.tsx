@@ -332,6 +332,7 @@ export default function AdminUserManagement() {
               <option value="verified_tier_1">Tier 1</option>
               <option value="verified_tier_2">Tier 2</option>
               <option value="suspended">Suspended</option>
+              <option value="deleted">Deleted</option>
             </select>
           </div>
         </div>
@@ -364,180 +365,302 @@ export default function AdminUserManagement() {
 
       {/* Users Table */}
       {users.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          {users.length > 50 ? (
-            // Use virtualization for large lists (> 50 items)
-            <div className="h-[calc(100vh-400px)]">
-              <VirtualizedList
-                items={users}
-                renderItem={(user) => (
-                  <UserRow
-                    key={user.id}
-                    user={user}
-                    openDropdownId={openDropdownId}
-                    setOpenDropdownId={setOpenDropdownId}
-                    handleAction={handleAction}
-                    getRoleDisplayName={getRoleDisplayName}
-                    getStatusDisplayName={getStatusDisplayName}
-                    getStatusColor={getStatusColor}
-                    getRoleColor={getRoleColor}
-                  />
-                )}
-                estimateSize={80}
-                onLoadMore={loadMore}
-                hasMore={hasMore}
-                isLoading={isFetching}
-              />
-            </div>
-          ) : (
-            // Regular table rendering for small lists (<= 50 items)
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      User
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Contact
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Role
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Last Login
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Created
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-3">
-                          {/* Profile Picture */}
-                          <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 flex-shrink-0">
-                            {user.profilePictureUrl ? (
-                              <Image
-                                src={user.profilePictureUrl}
-                                alt={user.fullName}
-                                fill
-                                className="object-cover"
-                                sizes="40px"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                                <UserIcon className="w-5 h-5 text-gray-400" />
+        <>
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            {users.length > 50 ? (
+              // Use virtualization for large lists (> 50 items)
+              <div className="h-[calc(100vh-400px)]">
+                <VirtualizedList
+                  items={users}
+                  renderItem={(user) => (
+                    <UserRow
+                      key={user.id}
+                      user={user}
+                      openDropdownId={openDropdownId}
+                      setOpenDropdownId={setOpenDropdownId}
+                      handleAction={handleAction}
+                      getRoleDisplayName={getRoleDisplayName}
+                      getStatusDisplayName={getStatusDisplayName}
+                      getStatusColor={getStatusColor}
+                      getRoleColor={getRoleColor}
+                    />
+                  )}
+                  estimateSize={80}
+                  onLoadMore={loadMore}
+                  hasMore={hasMore}
+                  isLoading={isFetching}
+                />
+              </div>
+            ) : (
+              // Regular table rendering for small lists (<= 50 items)
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        User
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Contact
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Role
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Last Login
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Created
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {users.map((user) => (
+                      <tr key={user.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center gap-3">
+                            {/* Profile Picture */}
+                            <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 flex-shrink-0">
+                              {user.profilePictureUrl ? (
+                                <Image
+                                  src={user.profilePictureUrl}
+                                  alt={user.fullName}
+                                  fill
+                                  className="object-cover"
+                                  sizes="40px"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                  <UserIcon className="w-5 h-5 text-gray-400" />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
+                              <div className="text-sm text-gray-500">{user.id.substring(0, 8)}...</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{user.email}</div>
+                          <div className="text-sm text-gray-500">{user.phone}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getRoleColor(user.role)}`}>
+                            {getRoleDisplayName(user.role)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.status)}`}>
+                            {getStatusDisplayName(user.status)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {user.lastLoginAt ? (
+                            <>
+                              <div>{new Date(user.lastLoginAt).toLocaleDateString()}</div>
+                              <div className="text-xs">{user.loginDeviceType || 'Unknown'}</div>
+                            </>
+                          ) : (
+                            <span className="text-gray-400">Never</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(user.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="relative inline-block text-left">
+                            <button
+                              onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
+                              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-burgundy-500"
+                            >
+                              Actions
+                              <svg className="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+
+                            {openDropdownId === user.id && (
+                              <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                                <div className="py-1" role="menu">
+                                  <button
+                                    onClick={() => handleAction('view', user)}
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    👁️ View Details
+                                  </button>
+                                  <button
+                                    onClick={() => handleAction('changeRole', user)}
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    🔄 Change Role
+                                  </button>
+                                  <button
+                                    onClick={() => handleAction('resetPassword', user)}
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    🔑 Reset Password
+                                  </button>
+                                  {user.status === 'suspended' ? (
+                                    <button
+                                      onClick={() => handleAction('unsuspend', user)}
+                                      className="block w-full text-left px-4 py-2 text-sm text-green-700 hover:bg-green-50"
+                                    >
+                                      ✅ Unsuspend Account
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleAction('suspend', user)}
+                                      className="block w-full text-left px-4 py-2 text-sm text-orange-700 hover:bg-orange-50"
+                                    >
+                                      ⚠️ Suspend Account
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleAction('delete', user)}
+                                    className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                                  >
+                                    🗑️ Delete User
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </div>
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
-                            <div className="text-sm text-gray-500">{user.id.substring(0, 8)}...</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{user.email}</div>
-                        <div className="text-sm text-gray-500">{user.phone}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getRoleColor(user.role)}`}>
-                          {getRoleDisplayName(user.role)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.status)}`}>
-                          {getStatusDisplayName(user.status)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {user.lastLoginAt ? (
-                          <>
-                            <div>{new Date(user.lastLoginAt).toLocaleDateString()}</div>
-                            <div className="text-xs">{user.loginDeviceType || 'Unknown'}</div>
-                          </>
-                        ) : (
-                          <span className="text-gray-400">Never</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(user.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="relative inline-block text-left">
-                          <button
-                            onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
-                            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-burgundy-500"
-                          >
-                            Actions
-                            <svg className="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
-                          {openDropdownId === user.id && (
-                            <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
-                              <div className="py-1" role="menu">
-                                <button
-                                  onClick={() => handleAction('view', user)}
-                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                >
-                                  👁️ View Details
-                                </button>
-                                <button
-                                  onClick={() => handleAction('changeRole', user)}
-                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                >
-                                  🔄 Change Role
-                                </button>
-                                <button
-                                  onClick={() => handleAction('resetPassword', user)}
-                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                >
-                                  🔑 Reset Password
-                                </button>
-                                {user.status === 'suspended' ? (
-                                  <button
-                                    onClick={() => handleAction('unsuspend', user)}
-                                    className="block w-full text-left px-4 py-2 text-sm text-green-700 hover:bg-green-50"
-                                  >
-                                    ✅ Unsuspend Account
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => handleAction('suspend', user)}
-                                    className="block w-full text-left px-4 py-2 text-sm text-orange-700 hover:bg-orange-50"
-                                  >
-                                    ⚠️ Suspend Account
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => handleAction('delete', user)}
-                                  className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50"
-                                >
-                                  🗑️ Delete User
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Pagination Controls */}
+          <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 mt-4 rounded-lg shadow-sm">
+            <div className="flex-1 flex justify-between sm:hidden">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setCurrentPage(prev => prev + 1)}
+                disabled={currentPage * usersPerPage >= totalUsers}
+                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
             </div>
-          )}
-        </div>
+            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700">
+                  {totalUsers > 0 ? (
+                    <>
+                      Showing <span className="font-medium">{((currentPage - 1) * usersPerPage) + 1}</span> to{' '}
+                      <span className="font-medium">{Math.min(currentPage * usersPerPage, totalUsers)}</span> of{' '}
+                      <span className="font-medium">{totalUsers}</span> results
+                    </>
+                  ) : (
+                    <>
+                      Showing <span className="font-medium">0</span> results
+                    </>
+                  )}
+                </p>
+              </div>
+              <div>
+                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span className="sr-only">Previous</span>
+                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                  
+                  {/* Page Numbers */}
+                  {(() => {
+                    const totalPages = Math.ceil(totalUsers / usersPerPage);
+                    const pages = [];
+                    const maxVisiblePages = 7;
+                    
+                    if (totalPages <= maxVisiblePages) {
+                      // Show all pages if total is small
+                      for (let i = 1; i <= totalPages; i++) {
+                        pages.push(i);
+                      }
+                    } else {
+                      // Show first page, last page, and pages around current
+                      if (currentPage <= 3) {
+                        for (let i = 1; i <= 5; i++) pages.push(i);
+                        pages.push('...');
+                        pages.push(totalPages);
+                      } else if (currentPage >= totalPages - 2) {
+                        pages.push(1);
+                        pages.push('...');
+                        for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
+                      } else {
+                        pages.push(1);
+                        pages.push('...');
+                        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
+                        pages.push('...');
+                        pages.push(totalPages);
+                      }
+                    }
+                    
+                    return pages.map((page, idx) => {
+                      if (page === '...') {
+                        return (
+                          <span
+                            key={`ellipsis-${idx}`}
+                            className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700"
+                          >
+                            ...
+                          </span>
+                        );
+                      }
+                      
+                      return (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page as number)}
+                          className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                            currentPage === page
+                              ? 'z-10 bg-burgundy-50 border-burgundy-500 text-burgundy-600'
+                              : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      );
+                    });
+                  })()}
+                  
+                  <button
+                    onClick={() => setCurrentPage(prev => prev + 1)}
+                    disabled={currentPage * usersPerPage >= totalUsers}
+                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span className="sr-only">Next</span>
+                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </nav>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Empty State */}

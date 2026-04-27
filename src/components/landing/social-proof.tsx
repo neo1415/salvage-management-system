@@ -4,13 +4,6 @@ import { motion, useInView, useMotionValue, useSpring } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { Star, Shield, Lock, CheckCircle } from 'lucide-react';
 
-const stats = [
-  { value: 10, suffix: 'M+', prefix: '₦', label: 'Processed' },
-  { value: 500, suffix: '+', prefix: '', label: 'Active Vendors' },
-  { value: 40, suffix: '%', prefix: '', label: 'Recovery Rate' },
-  { value: 1200, suffix: '+', prefix: '', label: 'Auctions Completed' },
-];
-
 const testimonials = [
   {
     name: 'Chukwudi Okafor',
@@ -41,29 +34,6 @@ const trustBadges = [
   { icon: CheckCircle, text: 'SSL Encrypted' },
 ];
 
-function AnimatedCounter({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const motionValue = useMotionValue(0);
-  const springValue = useSpring(motionValue, { duration: 2000 });
-  const isInView = useInView(ref, { once: true, margin: '-100px' });
-
-  useEffect(() => {
-    if (isInView) {
-      motionValue.set(value);
-    }
-  }, [isInView, motionValue, value]);
-
-  useEffect(() => {
-    springValue.on('change', (latest) => {
-      if (ref.current) {
-        ref.current.textContent = `${prefix}${Math.floor(latest)}${suffix}`;
-      }
-    });
-  }, [springValue, prefix, suffix]);
-
-  return <span ref={ref}>{prefix}0{suffix}</span>;
-}
-
 export function SocialProofSection() {
   const [currentTestimonial, setCurrentTestimonial] = useState(0);
 
@@ -84,43 +54,6 @@ export function SocialProofSection() {
       </div>
 
       <div className="container mx-auto px-4 relative z-10">
-        {/* Stats */}
-        <motion.div
-          className="mb-20"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
-          <h2 className="text-4xl md:text-5xl font-black text-center mb-4 bg-gradient-to-r from-burgundy-900 to-gold-600 bg-clip-text text-transparent">
-            Trusted by Vendors Nationwide
-          </h2>
-          <p className="text-xl text-gray-600 text-center mb-12">
-            Join the fastest-growing salvage marketplace in Nigeria
-          </p>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {stats.map((stat, index) => (
-              <motion.div
-                key={index}
-                className="text-center"
-                initial={{ opacity: 0, scale: 0.5 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1, type: 'spring' }}
-              >
-                <motion.div
-                  className="text-4xl md:text-5xl font-black text-burgundy-800 mb-2"
-                  whileHover={{ scale: 1.1 }}
-                >
-                  <AnimatedCounter value={stat.value} prefix={stat.prefix} suffix={stat.suffix} />
-                </motion.div>
-                <div className="text-gray-600 font-medium">{stat.label}</div>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-
         {/* Testimonials Carousel */}
         <motion.div
           className="mb-20 max-w-4xl mx-auto"

@@ -14,8 +14,8 @@ const contactInfo = [
   {
     icon: Mail,
     label: 'Email',
-    value: 'nemsupport@nem-insurance.com',
-    href: 'mailto:nemsupport@nem-insurance.com',
+    value: 'noreply@nemsalvage.com',
+    href: 'mailto:noreply@nemsalvage.com',
   },
   {
     icon: MapPin,
@@ -38,12 +38,28 @@ export function ContactSection() {
     e.preventDefault();
     setStatus('loading');
 
-    // Simulate form submission
-    setTimeout(() => {
-      setStatus('success');
-      setFormData({ name: '', email: '', phone: '', message: '' });
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (response.ok) {
+        setStatus('success');
+        setFormData({ name: '', email: '', phone: '', message: '' });
+        setTimeout(() => setStatus('idle'), 3000);
+      } else {
+        setStatus('error');
+        setTimeout(() => setStatus('idle'), 3000);
+      }
+    } catch (error) {
+      console.error('Contact form error:', error);
+      setStatus('error');
       setTimeout(() => setStatus('idle'), 3000);
-    }, 1500);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {

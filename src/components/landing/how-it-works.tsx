@@ -9,14 +9,14 @@ const steps = [
     number: 1,
     icon: UserPlus,
     title: 'Register & Verify',
-    description: 'Sign up in minutes. Verify your BVN for Tier 1 access (up to ₦500k) or complete business verification for unlimited bidding.',
+    description: 'Sign up in minutes and complete business verification for unlimited bidding.',
     image: '📝',
   },
   {
     number: 2,
     icon: Search,
     title: 'Browse Auctions',
-    description: 'Explore live salvage auctions with AI-assessed damage reports, photos, and real-time bidding activity.',
+    description: 'Explore live salvage auctions with detailed damage reports, photos, and real-time bidding activity.',
     image: '🔍',
   },
   {
@@ -30,14 +30,14 @@ const steps = [
     number: 4,
     icon: CreditCard,
     title: 'Pay Instantly',
-    description: 'Win an auction? Pay securely via Paystack within 24 hours. Funds held in escrow until pickup confirmation.',
+    description: 'Win an auction? Pay securely within 24 hours. Funds held in escrow until pickup confirmation.',
     image: '💳',
   },
   {
     number: 5,
     icon: Package,
     title: 'Collect Salvage',
-    description: 'Receive pickup authorization via SMS. Collect your salvage and build your vendor reputation with ratings.',
+    description: 'Receive pickup authorization. Collect your salvage and build your vendor reputation with ratings.',
     image: '📦',
   },
 ];

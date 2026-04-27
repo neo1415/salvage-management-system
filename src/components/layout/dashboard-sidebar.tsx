@@ -184,12 +184,6 @@ const navigationItems: NavItem[] = [
     icon: LayoutDashboard,
     roles: ['system_admin', 'admin'],
   },
-  {
-    label: 'Auction Config',
-    href: '/admin/auction-config',
-    icon: Settings,
-    roles: ['system_admin', 'admin'],
-  },
   // {
   //   label: 'Intelligence',
   //   href: '/admin/intelligence',
@@ -218,6 +212,12 @@ const navigationItems: NavItem[] = [
     label: 'Fraud Alerts',
     href: '/admin/fraud',
     icon: AlertTriangle,
+    roles: ['system_admin', 'admin'],
+  },
+  {
+    label: 'Auction Config',
+    href: '/admin/auction-config',
+    icon: Settings,
     roles: ['system_admin', 'admin'],
   },
   {

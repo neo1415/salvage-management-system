@@ -14,10 +14,6 @@ const faqs = [
     answer: 'We accept card payments via Paystack (Visa, Mastercard, Verve) and bank transfers. Card payments are verified instantly, while bank transfers require manual verification by our finance team within 2-4 hours.',
   },
   {
-    question: 'How does the AI damage assessment work?',
-    answer: 'Our AI uses Google Vision technology to analyze photos of damaged vehicles or assets. It identifies damage patterns, calculates severity percentages, and estimates salvage values based on market data. The AI assessment is provided as a guide - you should always inspect items before bidding.',
-  },
-  {
     question: 'What happens if I win an auction?',
     answer: 'You\'ll receive an SMS and email notification with payment instructions. You have 24 hours to pay via Paystack or bank transfer. Once payment is verified, you\'ll receive a pickup authorization code. Collect the salvage within the specified timeframe.',
   },
@@ -159,13 +155,14 @@ export function FAQSection() {
           <p className="text-gray-600 mb-6">
             Our support team is here to help you get started
           </p>
-          <motion.button
-            className="px-8 py-3 bg-burgundy-800 text-white font-bold rounded-lg"
+          <motion.a
+            href="mailto:support@nemsalvage.com"
+            className="inline-block px-8 py-3 bg-burgundy-800 text-white font-bold rounded-lg"
             whileHover={{ scale: 1.05, backgroundColor: '#6b0019' }}
             whileTap={{ scale: 0.95 }}
           >
             Contact Support
-          </motion.button>
+          </motion.a>
         </motion.div>
       </div>
     </section>

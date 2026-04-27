@@ -6,7 +6,7 @@ import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { hash } from 'bcryptjs';
 import { emailService } from '@/features/notifications/services/email.service';
 import { z } from 'zod';
-import { eq, or, ilike, and, inArray } from 'drizzle-orm';
+import { eq, or, ilike, and, inArray, ne } from 'drizzle-orm';
 
 // Validation schema for staff account creation
 const createStaffSchema = z.object({
@@ -202,6 +202,9 @@ export async function GET(request: NextRequest) {
     if (statusFilter && statusFilter !== 'all') {
       const statuses = statusFilter.split(',') as Array<'unverified_tier_0' | 'phone_verified_tier_0' | 'verified_tier_1' | 'verified_tier_2' | 'suspended' | 'deleted'>;
       conditions.push(inArray(users.status, statuses));
+    } else {
+      // If no specific status filter, exclude deleted users by default
+      conditions.push(ne(users.status, 'deleted'));
     }
 
     // Search by name, email, or phone
@@ -243,10 +246,17 @@ export async function GET(request: NextRequest) {
     const hasMore = usersList.length > pageSize;
     const data = hasMore ? usersList.slice(0, pageSize) : usersList;
 
+    // Get total count for pagination
+    const totalCountResult = await db.query.users.findMany({
+      where: conditions.length > 0 ? and(...conditions) : undefined,
+      columns: { id: true },
+    });
+
     return NextResponse.json({
       success: true,
       users: data,
       count: data.length,
+      totalCount: totalCountResult.length,
       hasMore,
       page,
       pageSize,
