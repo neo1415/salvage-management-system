@@ -38,6 +38,9 @@ interface Case {
   auctionId: string | null;
   auctionStatus: string | null;
   auctionEndTime: string | null;
+  // Payment data for verification status
+  paymentId: string | null;
+  paymentStatus: string | null;
 }
 
 type StatusFilter = 'all' | 'draft' | 'pending_approval' | 'approved' | 'cancelled' | 'active_auction' | 'sold';
@@ -74,10 +77,10 @@ export default function AdjusterMyCasesPage() {
         return;
       }
 
+      // Only fetch once on mount, not on every navigation
       fetchMyCases();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, status, router]); // Removed fetchMyCases from dependencies to prevent infinite loop
+  }, [status]); // Removed session and router from dependencies to prevent auto-refresh
 
   useEffect(() => {
     filterCases();
@@ -130,7 +133,26 @@ export default function AdjusterMyCasesPage() {
         const result = await response.json();
         
         if (result.success) {
-          setCases(result.data || []);
+          // CRITICAL FIX: Deduplicate cases by ID
+          // The API LEFT JOINs with auctions and payments, which can create duplicate rows
+          // when a case has multiple auctions or payments
+          const rawCases = result.data || [];
+          const uniqueCases = new Map<string, Case>();
+          
+          for (const caseItem of rawCases) {
+            // If we haven't seen this case ID yet, or if this row has more complete data
+            if (!uniqueCases.has(caseItem.id)) {
+              uniqueCases.set(caseItem.id, caseItem);
+            } else {
+              // If we've seen this case, keep the row with payment data (if available)
+              const existing = uniqueCases.get(caseItem.id)!;
+              if (caseItem.paymentId && !existing.paymentId) {
+                uniqueCases.set(caseItem.id, caseItem);
+              }
+            }
+          }
+          
+          setCases(Array.from(uniqueCases.values()));
         } else {
           console.error('API returned error:', result.error);
           setCases([]);
@@ -166,11 +188,13 @@ export default function AdjusterMyCasesPage() {
       auctionId: null,
       auctionStatus: null,
       auctionEndTime: null,
+      paymentId: null,
+      paymentStatus: null,
     }));
     
     filtered = [...filtered, ...offlineCasesAsRegular];
 
-    // Filter by status
+    // Filter by status - CRITICAL: Each filter must be mutually exclusive
     if (statusFilter !== 'all') {
       if (statusFilter === 'draft') {
         // Draft filter will show drafts from IndexedDB (handled separately in render)
@@ -178,7 +202,49 @@ export default function AdjusterMyCasesPage() {
       } else if (statusFilter === 'approved') {
         // Approved filter shows all cases with approvedBy field
         filtered = filtered.filter(c => c.approvedBy !== null && c.approvedBy !== undefined);
+      } else if (statusFilter === 'pending_approval') {
+        // CRITICAL: Only show cases that are truly pending (not approved yet)
+        // Must have pending_approval status AND no approvedBy
+        filtered = filtered.filter(c => c.status === 'pending_approval' && !c.approvedBy);
+      } else if (statusFilter === 'active_auction') {
+        // CRITICAL: Only show auctions that are truly active (not closed)
+        filtered = filtered.filter(c => {
+          // Must have active_auction status
+          if (c.status !== 'active_auction') return false;
+          
+          // If case has auction data, check real-time status
+          if (c.auctionId && c.auctionStatus && c.auctionEndTime) {
+            const realTimeStatus = AuctionStatusService.getAuctionStatus({
+              status: c.auctionStatus,
+              endTime: new Date(c.auctionEndTime),
+            });
+            
+            // Only include if auction is not closed
+            return realTimeStatus !== 'closed';
+          }
+          
+          // If no auction data, include it
+          return true;
+        });
+      } else if (statusFilter === 'sold') {
+        // CRITICAL: Only show cases that are truly sold (with verified payment)
+        filtered = filtered.filter(c => {
+          // Must have sold status
+          if (c.status !== 'sold') return false;
+          
+          // If has payment data, check if verified
+          if (c.paymentId && c.paymentStatus) {
+            return c.paymentStatus === 'verified' || c.paymentStatus === 'completed';
+          }
+          
+          // If no payment data but status is sold, include it (legacy data)
+          return true;
+        });
+      } else if (statusFilter === 'cancelled') {
+        // Cancelled filter shows only cancelled cases
+        filtered = filtered.filter(c => c.status === 'cancelled');
       } else {
+        // Fallback: exact status match
         filtered = filtered.filter(c => c.status === statusFilter);
       }
     }
@@ -206,9 +272,9 @@ export default function AdjusterMyCasesPage() {
         endTime: new Date(caseItem.auctionEndTime),
       });
       
-      // If auction is closed but case status is still active_auction, show closed
+      // If auction is closed but case status is still active_auction, show awaiting payment
       if (realTimeStatus === 'closed' && caseItem.status === 'active_auction') {
-        displayStatus = 'closed_auction';
+        displayStatus = 'awaiting_payment';
       }
     }
     
@@ -238,10 +304,10 @@ export default function AdjusterMyCasesPage() {
         className: 'bg-blue-100 text-blue-800',
         icon: Gavel
       },
-      closed_auction: {
-        label: 'Auction Closed',
-        className: 'bg-gray-100 text-gray-800',
-        icon: Gavel
+      awaiting_payment: {
+        label: 'Awaiting Payment',
+        className: 'bg-orange-100 text-orange-800',
+        icon: Banknote
       },
       sold: {
         label: 'Sold',
@@ -262,15 +328,51 @@ export default function AdjusterMyCasesPage() {
   };
 
   const getStatusCounts = () => {
+    // Helper function to check if auction is truly active (not closed)
+    const isAuctionActive = (caseItem: Case) => {
+      if (caseItem.status !== 'active_auction') return false;
+      
+      // If case has auction data, check real-time status
+      if (caseItem.auctionId && caseItem.auctionStatus && caseItem.auctionEndTime) {
+        const realTimeStatus = AuctionStatusService.getAuctionStatus({
+          status: caseItem.auctionStatus,
+          endTime: new Date(caseItem.auctionEndTime),
+        });
+        
+        // Only count as active if auction is not closed
+        return realTimeStatus !== 'closed';
+      }
+      
+      // If no auction data, count as active
+      return true;
+    };
+    
+    // Helper function to check if case is truly sold (payment verified)
+    const isTrulySold = (caseItem: Case) => {
+      // Must have sold status
+      if (caseItem.status !== 'sold') return false;
+      
+      // If has payment data, check if verified
+      if (caseItem.paymentId && caseItem.paymentStatus) {
+        return caseItem.paymentStatus === 'verified' || caseItem.paymentStatus === 'completed';
+      }
+      
+      // If no payment data but status is sold, count it (legacy data)
+      return true;
+    };
+    
     return {
       all: cases.length + offlineCases.length,
       draft: drafts.length, // Count drafts from IndexedDB
-      pending_approval: cases.filter(c => c.status === 'pending_approval').length + offlineCases.filter(c => c.status === 'pending_approval').length,
+      // Only count cases that are truly pending (not approved yet)
+      pending_approval: cases.filter(c => c.status === 'pending_approval' && !c.approvedBy).length + offlineCases.filter(c => c.status === 'pending_approval').length,
       // Approved includes cases with approvedBy field (active_auction, sold, etc.)
       approved: cases.filter(c => c.approvedBy !== null && c.approvedBy !== undefined).length,
       cancelled: cases.filter(c => c.status === 'cancelled').length,
-      active_auction: cases.filter(c => c.status === 'active_auction').length,
-      sold: cases.filter(c => c.status === 'sold').length,
+      // Only count auctions that are truly active (not closed)
+      active_auction: cases.filter(c => isAuctionActive(c)).length,
+      // Sold includes only cases with verified payments
+      sold: cases.filter(c => isTrulySold(c)).length,
     };
   };
 

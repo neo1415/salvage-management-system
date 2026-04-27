@@ -82,6 +82,9 @@ export async function GET(request: NextRequest) {
           eq(auctions.status, 'extended')
         )
       );
+    } else if (tab === 'scheduled') {
+      // Show only scheduled auctions (not started yet)
+      conditions.push(eq(auctions.status, 'scheduled'));
     } else if (tab === 'my_bids' && vendorId) {
       // Show auctions where vendor has placed bids (any status)
       // Use EXISTS subquery to avoid separate query and connection
@@ -219,6 +222,7 @@ export async function GET(request: NextRequest) {
         caseId: auctions.caseId,
         startTime: auctions.startTime,
         endTime: auctions.endTime,
+        scheduledStartTime: auctions.scheduledStartTime,
         currentBid: auctions.currentBid,
         minimumIncrement: auctions.minimumIncrement,
         status: auctions.status,

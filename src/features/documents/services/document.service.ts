@@ -511,6 +511,17 @@ export async function signDocument(
 
           console.log(`✅ Auction status updated successfully: ${updatedAuction.status}`);
 
+          // CRITICAL FIX: Invalidate auction details cache to prevent stale data
+          try {
+            const { cache } = await import('@/lib/redis/client');
+            const cacheKey = `auction:details:${signedDoc.auctionId}`;
+            await cache.del(cacheKey);
+            console.log(`✅ Invalidated auction details cache: ${cacheKey}`);
+          } catch (cacheError) {
+            console.error(`❌ Failed to invalidate auction details cache:`, cacheError);
+            // Don't throw - cache invalidation failure shouldn't block the process
+          }
+
           // CRITICAL FIX: Broadcast status change via Socket.IO for real-time UI updates
           try {
             const { broadcastAuctionUpdate } = await import('@/lib/socket/server');

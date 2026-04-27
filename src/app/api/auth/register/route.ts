@@ -4,21 +4,66 @@ import { authService } from '@/features/auth/services/auth.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { otpService } from '@/features/auth/services/otp.service';
 import { ZodError } from 'zod';
+import { Ratelimit } from '@upstash/ratelimit';
+import { redis } from '@/lib/redis/client';
+
+// SECURITY: Rate limiting for registration endpoint
+// Prevents spam registrations and abuse
+const registerRateLimit = new Ratelimit({
+  redis: redis,
+  limiter: Ratelimit.slidingWindow(3, '1 h'), // 3 registrations per hour per IP
+  analytics: true,
+  prefix: 'ratelimit:register',
+});
 
 /**
  * POST /api/auth/register
  * Register a new vendor user
+ * 
+ * Security features:
+ * - Rate limiting: 3 registrations per hour per IP
+ * - Input validation with Zod
+ * - Audit logging
  */
 export async function POST(request: NextRequest) {
   try {
+    // SECURITY: Rate limiting check
+    const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    
+    const { success, limit, remaining, reset } = await registerRateLimit.limit(ipAddress);
+
+    if (!success) {
+      console.warn('[Security] Registration rate limit exceeded', {
+        ip: ipAddress,
+        limit,
+        remaining,
+        resetAt: new Date(reset).toISOString(),
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Too many registration attempts. Please try again later.',
+          retryAfter: Math.ceil((reset - Date.now()) / 1000), // seconds until reset
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': limit.toString(),
+            'X-RateLimit-Remaining': remaining.toString(),
+            'X-RateLimit-Reset': new Date(reset).toISOString(),
+            'Retry-After': Math.ceil((reset - Date.now()) / 1000).toString(),
+          },
+        }
+      );
+    }
+
     // Parse request body
     const body = await request.json();
 
     // Validate input
     const validatedInput = registrationSchema.parse(body);
 
-    // Get IP address and device type
-    const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    // Get device type
     const userAgent = request.headers.get('user-agent') || '';
     const deviceType = getDeviceType(userAgent);
 

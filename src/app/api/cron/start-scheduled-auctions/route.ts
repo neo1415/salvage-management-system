@@ -41,12 +41,23 @@ export const maxDuration = 60; // 60 seconds max execution time
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify cron secret for security (optional but recommended)
+    // SECURITY: Verify cron secret (REQUIRED)
     const authHeader = request.headers.get('authorization');
     const cronSecret = process.env.CRON_SECRET;
     
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      console.warn('Unauthorized cron job attempt');
+    if (!cronSecret) {
+      console.error('[Security] CRON_SECRET not configured - cron endpoints are vulnerable!');
+      return NextResponse.json(
+        { error: 'Server misconfiguration' },
+        { status: 500 }
+      );
+    }
+
+    if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
+      console.warn('[Security] Unauthorized cron attempt', {
+        hasAuthHeader: !!authHeader,
+        ip: request.headers.get('x-forwarded-for') || 'unknown',
+      });
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

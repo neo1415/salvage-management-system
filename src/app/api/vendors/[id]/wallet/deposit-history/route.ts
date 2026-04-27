@@ -9,8 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { depositEvents, vendors, auctions } from '@/lib/db/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { depositEvents, vendors, auctions, salvageCases } from '@/lib/db/schema';
+import { eq, desc } from 'drizzle-orm';
 
 /**
  * GET /api/vendors/[id]/wallet/deposit-history
@@ -81,12 +81,13 @@ export async function GET(
         auctionId: depositEvents.auctionId,
         auction: {
           id: auctions.id,
-          assetName: auctions.assetName,
+          assetName: salvageCases.assetType,
           status: auctions.status,
         },
       })
       .from(depositEvents)
       .leftJoin(auctions, eq(depositEvents.auctionId, auctions.id))
+      .leftJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
       .where(eq(depositEvents.vendorId, vendorId))
       .orderBy(desc(depositEvents.createdAt));
 
@@ -123,9 +124,9 @@ export async function GET(
         id: event.id,
         eventType: event.eventType,
         amount: parseFloat(event.amount),
-        balanceBefore: parseFloat(event.balanceBefore),
+        balanceBefore: event.balanceBefore ? parseFloat(event.balanceBefore) : null,
         balanceAfter: parseFloat(event.balanceAfter),
-        frozenBefore: parseFloat(event.frozenBefore),
+        frozenBefore: event.frozenBefore ? parseFloat(event.frozenBefore) : null,
         frozenAfter: parseFloat(event.frozenAfter),
         createdAt: event.createdAt,
         auction: event.auction ? {
@@ -164,9 +165,9 @@ export async function GET(
       id: event.id,
       eventType: event.eventType,
       amount: event.amount,
-      balanceBefore: event.balanceBefore,
+      balanceBefore: event.balanceBefore ?? null,
       balanceAfter: event.balanceAfter,
-      frozenBefore: event.frozenBefore,
+      frozenBefore: event.frozenBefore ?? null,
       frozenAfter: event.frozenAfter,
       createdAt: event.createdAt,
       auction: event.auction,

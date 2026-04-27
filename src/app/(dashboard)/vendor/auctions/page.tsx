@@ -1300,6 +1300,17 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
           </span>
         </div>
 
+        {/* Timer - Only show for active and scheduled auctions */}
+        {(auction.status === 'active' || auction.status === 'extended' || auction.status === 'scheduled') && timeRemaining && (
+          <div className="flex items-center gap-1.5 mb-2">
+            <Clock className="w-3.5 h-3.5 text-gray-500" aria-hidden="true" />
+            <span className="text-xs text-gray-600">
+              {timerLabel && <span className="font-medium">{timerLabel}: </span>}
+              <span className={`font-bold ${timerColor}`}>{timeRemaining}</span>
+            </span>
+          </div>
+        )}
+
         {/* Watching Count - Single line */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs text-gray-600">

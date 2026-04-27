@@ -31,17 +31,27 @@ import { auctionClosureService } from '@/features/auctions/services/closure.serv
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify cron secret (if using Vercel Cron)
+    // SECURITY: Verify cron secret (REQUIRED)
     const authHeader = request.headers.get('authorization');
     const cronSecret = process.env.CRON_SECRET;
 
-    if (cronSecret) {
-      if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
+    if (!cronSecret) {
+      console.error('[Security] CRON_SECRET not configured - cron endpoints are vulnerable!');
+      return NextResponse.json(
+        { error: 'Server misconfiguration' },
+        { status: 500 }
+      );
+    }
+
+    if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
+      console.warn('[Security] Unauthorized cron attempt', {
+        hasAuthHeader: !!authHeader,
+        ip: request.headers.get('x-forwarded-for') || 'unknown',
+      });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     console.log('Starting auction closure cron job...');

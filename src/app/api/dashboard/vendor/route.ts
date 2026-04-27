@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { auctions, bids, payments, vendors, salvageCases } from '@/lib/db/schema';
+import { auctions, bids, payments, vendors, salvageCases, auctionWinners } from '@/lib/db/schema';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 
@@ -222,8 +222,9 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
 
   const totalBids = totalBidsResult[0]?.count || 0;
 
-  // Get total wins (auctions where vendor is current bidder and status is closed)
-  const totalWinsResult = await db
+  // Get total wins from both legacy (currentBidder) and new (auction_winners) systems
+  // Legacy wins: auctions where vendor is currentBidder and status is closed
+  const legacyWinsResult = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(auctions)
     .where(
@@ -233,7 +234,23 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
       )
     );
 
-  const totalWins = totalWinsResult[0]?.count || 0;
+  const legacyWins = legacyWinsResult[0]?.count || 0;
+
+  // New deposit system wins: auction_winners where vendor has rank=1 and status is completed
+  const depositWinsResult = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(auctionWinners)
+    .where(
+      and(
+        eq(auctionWinners.vendorId, vendorId),
+        eq(auctionWinners.rank, 1)
+      )
+    );
+
+  const depositWins = depositWinsResult[0]?.count || 0;
+
+  // Total wins is the sum of both systems
+  const totalWins = legacyWins + depositWins;
 
   // Calculate win rate
   const winRate = totalBids > 0 ? (totalWins / totalBids) * 100 : 0;
@@ -295,19 +312,28 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
   const rating = parseFloat(vendorRecord[0]?.rating || '0');
 
   // Calculate leaderboard position
-  // Get all vendors ordered by total wins
+  // Get all vendors ordered by total wins (legacy + deposit system)
   const allVendorsResult = await db
     .select({
       vendorId: vendors.id,
-      totalWins: sql<number>`count(CASE WHEN ${auctions.currentBidder} = ${vendors.id} AND ${auctions.status} = 'closed' THEN 1 END)::int`,
+      legacyWins: sql<number>`count(DISTINCT CASE WHEN ${auctions.currentBidder} = ${vendors.id} AND ${auctions.status} = 'closed' THEN ${auctions.id} END)::int`,
+      depositWins: sql<number>`count(DISTINCT CASE WHEN ${auctionWinners.vendorId} = ${vendors.id} AND ${auctionWinners.rank} = 1 THEN ${auctionWinners.auctionId} END)::int`,
     })
     .from(vendors)
     .leftJoin(auctions, eq(auctions.currentBidder, vendors.id))
-    .groupBy(vendors.id)
-    .orderBy(desc(sql`count(CASE WHEN ${auctions.currentBidder} = ${vendors.id} AND ${auctions.status} = 'closed' THEN 1 END)`));
+    .leftJoin(auctionWinners, eq(auctionWinners.vendorId, vendors.id))
+    .groupBy(vendors.id);
 
-  const totalVendors = allVendorsResult.length;
-  const leaderboardPosition = allVendorsResult.findIndex(v => v.vendorId === vendorId) + 1;
+  // Calculate total wins for each vendor and sort
+  const vendorsWithTotalWins = allVendorsResult
+    .map(v => ({
+      vendorId: v.vendorId,
+      totalWins: v.legacyWins + v.depositWins,
+    }))
+    .sort((a, b) => b.totalWins - a.totalWins);
+
+  const totalVendors = vendorsWithTotalWins.length;
+  const leaderboardPosition = vendorsWithTotalWins.findIndex(v => v.vendorId === vendorId) + 1;
 
   return {
     winRate: Math.round(winRate * 100) / 100,
@@ -405,8 +431,8 @@ async function calculateComparisons(
 
   const lastMonthBids = lastMonthBidsResult[0]?.count || 0;
 
-  // Get last month's total wins
-  const lastMonthWinsResult = await db
+  // Get last month's total wins (legacy + deposit system)
+  const lastMonthLegacyWinsResult = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(auctions)
     .where(
@@ -418,7 +444,22 @@ async function calculateComparisons(
       )
     );
 
-  const lastMonthWins = lastMonthWinsResult[0]?.count || 0;
+  const lastMonthLegacyWins = lastMonthLegacyWinsResult[0]?.count || 0;
+
+  const lastMonthDepositWinsResult = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(auctionWinners)
+    .where(
+      and(
+        eq(auctionWinners.vendorId, vendorId),
+        eq(auctionWinners.rank, 1),
+        gte(auctionWinners.createdAt, lastMonthStart),
+        lte(auctionWinners.createdAt, lastMonthEnd)
+      )
+    );
+
+  const lastMonthDepositWins = lastMonthDepositWinsResult[0]?.count || 0;
+  const lastMonthWins = lastMonthLegacyWins + lastMonthDepositWins;
 
   // Calculate last month's win rate
   const lastMonthWinRate = lastMonthBids > 0 ? (lastMonthWins / lastMonthBids) * 100 : 0;

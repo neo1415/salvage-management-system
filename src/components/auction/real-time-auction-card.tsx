@@ -12,6 +12,7 @@
 import { useAuctionWatch, useAuctionUpdates } from '@/hooks/use-socket';
 import { useState, useEffect } from 'react';
 import { BidForm } from './bid-form';
+import { useSystemConfig } from '@/hooks/use-system-config';
 
 interface RealTimeAuctionCardProps {
   auctionId: string;
@@ -23,19 +24,35 @@ interface RealTimeAuctionCardProps {
 }
 
 export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionCardProps) {
+  const { config } = useSystemConfig();
   const { watchingCount } = useAuctionWatch(auctionId);
   const { auction, latestBid, isExtended, isClosed } = useAuctionUpdates(auctionId);
   
   const [currentBid, setCurrentBid] = useState(initialData?.currentBid || 0);
   const [status, setStatus] = useState(initialData?.status || 'active');
   const [showBidForm, setShowBidForm] = useState(false);
+  const [minimumBid, setMinimumBid] = useState<number>(0);
 
-  // Update current bid when new bid is received
+  // Update minimum bid when config loads or current bid changes
+  useEffect(() => {
+    if (config && currentBid) {
+      setMinimumBid(currentBid + config.minimumBidIncrement);
+    }
+  }, [config, currentBid]);
+
+  // Update current bid and minimum bid when new bid is received
   useEffect(() => {
     if (latestBid) {
       setCurrentBid(latestBid.amount);
+      // Use the minimum bid from the socket event if available
+      if (latestBid.minimumBid) {
+        setMinimumBid(latestBid.minimumBid);
+      } else if (config) {
+        // Fallback: calculate from config if socket doesn't provide it
+        setMinimumBid(latestBid.amount + config.minimumBidIncrement);
+      }
     }
-  }, [latestBid]);
+  }, [latestBid, config]);
 
   // Update status when auction is closed
   useEffect(() => {
@@ -139,7 +156,7 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
       <BidForm
         auctionId={auctionId}
         currentBid={currentBid}
-        minimumBid={currentBid ? currentBid + 20000 : 20000} // ₦20,000 minimum increment
+        minimumBid={minimumBid} // Use calculated minimum bid from config
         assetName="Asset Name"
         isOpen={showBidForm}
         onClose={() => setShowBidForm(false)}

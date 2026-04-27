@@ -4,14 +4,69 @@ import { redis } from '@/lib/redis/client';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
+import { Ratelimit } from '@upstash/ratelimit';
+
+// SECURITY: Rate limiting for OTP verification endpoint
+// Prevents brute force OTP guessing attacks
+const verifyOtpRateLimit = new Ratelimit({
+  redis: redis,
+  limiter: Ratelimit.slidingWindow(10, '15 m'), // 10 attempts per 15 minutes per IP
+  analytics: true,
+  prefix: 'ratelimit:verify-otp',
+});
+
+// SECURITY: Rate limiting for OTP resend endpoint
+// Prevents SMS/email spam
+const resendOtpRateLimit = new Ratelimit({
+  redis: redis,
+  limiter: Ratelimit.slidingWindow(3, '15 m'), // 3 resends per 15 minutes per phone
+  analytics: true,
+  prefix: 'ratelimit:resend-otp',
+});
 
 /**
  * POST /api/auth/verify-otp
  * Verify OTP for phone number verification
  * Supports both regular registration and OAuth completion
+ * 
+ * Security features:
+ * - Rate limiting: 10 verification attempts per 15 minutes per IP
+ * - Audit logging
  */
 export async function POST(request: NextRequest) {
   try {
+    // SECURITY: Rate limiting check
+    const ipAddress = request.headers.get('x-forwarded-for') || 
+                     request.headers.get('x-real-ip') || 
+                     'unknown';
+
+    const { success, limit, remaining, reset } = await verifyOtpRateLimit.limit(ipAddress);
+
+    if (!success) {
+      console.warn('[Security] OTP verification rate limit exceeded', {
+        ip: ipAddress,
+        limit,
+        remaining,
+        resetAt: new Date(reset).toISOString(),
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Too many verification attempts. Please try again later.',
+          retryAfter: Math.ceil((reset - Date.now()) / 1000), // seconds until reset
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': limit.toString(),
+            'X-RateLimit-Remaining': remaining.toString(),
+            'X-RateLimit-Reset': new Date(reset).toISOString(),
+            'Retry-After': Math.ceil((reset - Date.now()) / 1000).toString(),
+          },
+        }
+      );
+    }
+
     const body = await request.json();
     const { phone, otp, email, type } = body;
 
@@ -23,10 +78,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get IP address and device type
-    const ipAddress = request.headers.get('x-forwarded-for') || 
-                     request.headers.get('x-real-ip') || 
-                     'unknown';
+    // Get device type
     const userAgent = request.headers.get('user-agent') || '';
     const deviceType = userAgent.toLowerCase().includes('mobile') ? 'mobile' : 'desktop';
 
@@ -127,6 +179,9 @@ export async function POST(request: NextRequest) {
 /**
  * GET /api/auth/verify-otp/resend
  * Resend OTP to phone number
+ * 
+ * Security features:
+ * - Rate limiting: 3 resends per 15 minutes per phone number
  */
 export async function GET(request: NextRequest) {
   try {
@@ -137,6 +192,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'Phone number is required' },
         { status: 400 }
+      );
+    }
+
+    // SECURITY: Rate limiting check (per phone number to prevent spam)
+    const { success, limit, remaining, reset } = await resendOtpRateLimit.limit(phone);
+
+    if (!success) {
+      console.warn('[Security] OTP resend rate limit exceeded', {
+        phone,
+        limit,
+        remaining,
+        resetAt: new Date(reset).toISOString(),
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Too many OTP resend requests. Please try again later.',
+          retryAfter: Math.ceil((reset - Date.now()) / 1000), // seconds until reset
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': limit.toString(),
+            'X-RateLimit-Remaining': remaining.toString(),
+            'X-RateLimit-Reset': new Date(reset).toISOString(),
+            'Retry-After': Math.ceil((reset - Date.now()) / 1000).toString(),
+          },
+        }
       );
     }
 

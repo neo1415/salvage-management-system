@@ -9,6 +9,18 @@ import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 import { emailService } from '@/features/notifications/services/email.service';
 import { smsService } from '@/features/notifications/services/sms.service';
+import { Ratelimit } from '@upstash/ratelimit';
+import { redis } from '@/lib/redis/client';
+import DOMPurify from 'isomorphic-dompurify';
+
+// SECURITY: Rate limiting for payment verification endpoint
+// Prevents notification spam and abuse
+const paymentVerifyRateLimit = new Ratelimit({
+  redis: redis,
+  limiter: Ratelimit.slidingWindow(10, '5 m'), // 10 verifications per 5 minutes per IP
+  analytics: true,
+  prefix: 'ratelimit:payment-verify',
+});
 
 /**
  * POST /api/payments/[id]/verify
@@ -23,12 +35,48 @@ import { smsService } from '@/features/notifications/services/sms.service';
  * - Generate pickup authorization on approval
  * - Send SMS + Email notification
  * - Create audit log entry
+ * 
+ * Security features:
+ * - Rate limiting: 10 verifications per 5 minutes per IP
+ * - Role-based access control (finance_officer only)
+ * - Input validation
+ * - Audit logging
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // SECURITY: Rate limiting check
+    const ipAddress = getIpAddress(request.headers);
+    
+    const { success, limit, remaining, reset } = await paymentVerifyRateLimit.limit(ipAddress);
+
+    if (!success) {
+      console.warn('[Security] Payment verification rate limit exceeded', {
+        ip: ipAddress,
+        limit,
+        remaining,
+        resetAt: new Date(reset).toISOString(),
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Too many verification requests. Please try again later.',
+          retryAfter: Math.ceil((reset - Date.now()) / 1000), // seconds until reset
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': limit.toString(),
+            'X-RateLimit-Remaining': remaining.toString(),
+            'X-RateLimit-Reset': new Date(reset).toISOString(),
+            'Retry-After': Math.ceil((reset - Date.now()) / 1000).toString(),
+          },
+        }
+      );
+    }
+
     const { id: paymentId } = await params;
 
     // Validate UUID format
@@ -456,6 +504,7 @@ function generatePickupAuthorizationCode(): string {
 
 /**
  * Send rejection email to vendor
+ * SECURITY: Sanitizes all user-provided data to prevent XSS in email clients
  */
 async function sendRejectionEmail(
   vendor: typeof users.$inferSelect,
@@ -465,6 +514,23 @@ async function sendRejectionEmail(
   financeOfficer: typeof users.$inferSelect
 ): Promise<void> {
   try {
+    // SECURITY: Sanitize all user-provided data to prevent XSS in email clients
+    // Strip all HTML tags and only allow plain text
+    const sanitizedVendorName = DOMPurify.sanitize(vendor.fullName, {
+      ALLOWED_TAGS: [], // Strip all HTML
+      ALLOWED_ATTR: []
+    });
+    
+    const sanitizedRejectionReason = DOMPurify.sanitize(rejectionReason, {
+      ALLOWED_TAGS: [], // Strip all HTML
+      ALLOWED_ATTR: []
+    });
+    
+    const sanitizedFinanceOfficerName = DOMPurify.sanitize(financeOfficer.fullName, {
+      ALLOWED_TAGS: [], // Strip all HTML
+      ALLOWED_ATTR: []
+    });
+    
     const emailSubject = 'Payment Verification Failed - Action Required';
     const emailHtml = `
       <!DOCTYPE html>
@@ -576,13 +642,13 @@ async function sendRejectionEmail(
             </div>
             
             <div class="content">
-              <p><strong>Dear ${vendor.fullName},</strong></p>
+              <p><strong>Dear ${sanitizedVendorName},</strong></p>
               
               <p>Unfortunately, your payment proof could not be verified. Please review the reason below and resubmit the correct payment proof.</p>
               
               <div class="rejection-reason">
                 <h3>Rejection Reason:</h3>
-                <p>${rejectionReason}</p>
+                <p>${sanitizedRejectionReason}</p>
               </div>
               
               <div class="payment-details">
@@ -592,7 +658,7 @@ async function sendRejectionEmail(
                   <li><strong>Amount:</strong> ₦${parseFloat(payment.amount).toLocaleString()}</li>
                   <li><strong>Item:</strong> ${caseDetails.assetType}</li>
                   <li><strong>Claim Reference:</strong> ${caseDetails.claimReference}</li>
-                  <li><strong>Reviewed By:</strong> ${financeOfficer.fullName}</li>
+                  <li><strong>Reviewed By:</strong> ${sanitizedFinanceOfficerName}</li>
                   <li><strong>Reviewed At:</strong> ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}</li>
                 </ul>
               </div>

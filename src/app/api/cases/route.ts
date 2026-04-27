@@ -278,6 +278,7 @@ export async function GET(request: NextRequest) {
     const { salvageCases } = await import('@/lib/db/schema/cases');
     const { users } = await import('@/lib/db/schema/users');
     const { auctions } = await import('@/lib/db/schema/auctions');
+    const { payments } = await import('@/lib/db/schema/payments');
     const { eq, desc, and, or, sql } = await import('drizzle-orm');
     const { alias } = await import('drizzle-orm/pg-core');
     const { cache } = await import('@/lib/redis/client');
@@ -339,11 +340,15 @@ export async function GET(request: NextRequest) {
         auctionId: auctions.id,
         auctionStatus: auctions.status,
         auctionEndTime: auctions.endTime,
+        // Include payment data to check if payment is verified
+        paymentId: payments.id,
+        paymentStatus: payments.status,
       })
       .from(salvageCases)
       .leftJoin(adjusterUsers, eq(salvageCases.createdBy, adjusterUsers.id))
       .leftJoin(approverUsers, eq(salvageCases.approvedBy, approverUsers.id))
-      .leftJoin(auctions, eq(auctions.caseId, salvageCases.id));
+      .leftJoin(auctions, eq(auctions.caseId, salvageCases.id))
+      .leftJoin(payments, eq(payments.auctionId, auctions.id));
 
     // Build where conditions
     const whereConditions = [];

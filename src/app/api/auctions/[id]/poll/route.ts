@@ -16,8 +16,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
-import { eq } from 'drizzle-orm';
+import { payments } from '@/lib/db/schema/payments';
+import { eq, and } from 'drizzle-orm';
 import { redis } from '@/lib/redis/client';
+import { configService } from '@/features/auction-deposit/services/config.service';
 
 // Rate limiting: 1 request per 2 seconds per user
 const RATE_LIMIT_WINDOW = 2000; // 2 seconds in milliseconds
@@ -93,6 +95,22 @@ export async function GET(
       );
     }
 
+    // Check if payment is verified (for awaiting_payment status)
+    let hasVerifiedPayment = false;
+    if (auction.status === 'awaiting_payment') {
+      const [payment] = await db
+        .select()
+        .from(payments)
+        .where(
+          and(
+            eq(payments.auctionId, auctionId),
+            eq(payments.status, 'verified')
+          )
+        )
+        .limit(1);
+      hasVerifiedPayment = !!payment;
+    }
+
     // Get watching count from Redis
     let watchingCount = 0;
     try {
@@ -104,9 +122,12 @@ export async function GET(
       // Continue without watching count
     }
 
-    // Calculate minimum bid
+    // Get system configuration for minimum bid increment
+    const config = await configService.getConfig();
+
+    // Calculate minimum bid using configured increment
     const currentBid = auction.currentBid ? parseFloat(auction.currentBid) : null;
-    const minimumBid = currentBid ? currentBid + 20000 : null;
+    const minimumBid = currentBid ? currentBid + config.minimumBidIncrement : null;
 
     // Create response data
     const responseData = {
@@ -117,11 +138,12 @@ export async function GET(
       status: auction.status,
       endTime: auction.endTime,
       watchingCount,
+      hasVerifiedPayment,
       timestamp: new Date().toISOString(),
     };
 
-    // Generate ETag based on auction state
-    const etag = `"${auction.id}-${auction.currentBid}-${auction.status}-${auction.updatedAt?.getTime()}"`;
+    // Generate ETag based on auction state (include hasVerifiedPayment in hash)
+    const etag = `"${auction.id}-${auction.currentBid}-${auction.status}-${hasVerifiedPayment}-${auction.updatedAt?.getTime()}"`;
     
     // Check if client has cached version
     const clientEtag = request.headers.get('if-none-match');

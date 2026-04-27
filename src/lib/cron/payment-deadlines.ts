@@ -46,6 +46,12 @@ export async function enforcePaymentDeadlines(): Promise<EnforcementResults> {
 }
 
 async function sendPaymentReminders(now: Date, results: EnforcementResults) {
+  // Get grace extension duration from config (default 24 hours)
+  const { configService } = await import('@/features/auction-deposit/services/config.service');
+  const config = await configService.getConfig();
+  const graceExtensionHours = config.graceExtensionDuration;
+  
+  // Send reminders 12 hours before grace extension expires
   const twelveHoursFromNow = new Date(now.getTime() + 12 * 60 * 60 * 1000);
   const elevenHoursFromNow = new Date(now.getTime() + 11 * 60 * 60 * 1000);
 
@@ -95,7 +101,13 @@ async function sendPaymentReminders(now: Date, results: EnforcementResults) {
 }
 
 async function markPaymentsOverdue(now: Date, results: EnforcementResults) {
-  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  // Get grace extension duration from config (default 24 hours)
+  const { configService } = await import('@/features/auction-deposit/services/config.service');
+  const config = await configService.getConfig();
+  const graceExtensionHours = config.graceExtensionDuration;
+  
+  const graceExtensionMs = graceExtensionHours * 60 * 60 * 1000;
+  const graceExtensionAgo = new Date(now.getTime() - graceExtensionMs);
 
   try {
     const overduePayments = await db
@@ -112,7 +124,7 @@ async function markPaymentsOverdue(now: Date, results: EnforcementResults) {
       .where(
         and(
           eq(payments.status, 'pending'),
-          lte(payments.paymentDeadline, twentyFourHoursAgo)
+          lte(payments.paymentDeadline, graceExtensionAgo)
         )
       );
 
@@ -150,7 +162,13 @@ async function markPaymentsOverdue(now: Date, results: EnforcementResults) {
 }
 
 async function forfeitAuctionWinners(now: Date, results: EnforcementResults) {
-  const seventyTwoHoursAgo = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+  // Get payment deadline from config (default 72 hours)
+  const { configService } = await import('@/features/auction-deposit/services/config.service');
+  const config = await configService.getConfig();
+  const paymentDeadlineHours = config.paymentDeadlineAfterSigning;
+  
+  const paymentDeadlineMs = paymentDeadlineHours * 60 * 60 * 1000;
+  const paymentDeadlineAgo = new Date(now.getTime() - paymentDeadlineMs);
 
   try {
     const forfeitPayments = await db
@@ -167,7 +185,7 @@ async function forfeitAuctionWinners(now: Date, results: EnforcementResults) {
       .where(
         and(
           eq(payments.status, 'overdue'),
-          lte(payments.paymentDeadline, seventyTwoHoursAgo)
+          lte(payments.paymentDeadline, paymentDeadlineAgo)
         )
       );
 
@@ -209,7 +227,7 @@ async function forfeitAuctionWinners(now: Date, results: EnforcementResults) {
         // Send notification to vendor (NO suspension)
         await smsService.sendSMS({
           to: user.phone,
-          message: `Auction forfeited after 72 hours. Your funds remain frozen. Contact support at ${process.env.SUPPORT_PHONE || '234-02-014489560'} if still interested.`,
+          message: `Auction forfeited after ${paymentDeadlineHours} hours. Your funds remain frozen. Contact support at ${process.env.SUPPORT_PHONE || '234-02-014489560'} if still interested.`,
         });
 
         await emailService.sendEmail({
@@ -219,7 +237,7 @@ async function forfeitAuctionWinners(now: Date, results: EnforcementResults) {
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
               <h2 style="color: #dc2626;">Auction Forfeited</h2>
               <p>Dear ${user.fullName},</p>
-              <p>Your auction win for auction #${auction.id} has been forfeited after 72 hours without payment completion.</p>
+              <p>Your auction win for auction #${auction.id} has been forfeited after ${paymentDeadlineHours} hours without payment completion.</p>
               
               <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0;">
                 <h3 style="margin-top: 0; color: #991b1b;">What This Means</h3>
@@ -307,6 +325,7 @@ async function alertFinanceOfficersForForfeiture(
               <li>Funds remain frozen in vendor wallet</li>
               <li>Vendor notified to contact support</li>
               <li>NO account suspension applied</li>
+              <li>Forfeited after ${paymentDeadlineHours} hours without payment</li>
             </ul>
 
             <h3>Manual Review Required</h3>

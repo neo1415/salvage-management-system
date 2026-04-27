@@ -14,6 +14,29 @@ import { recommendationGenerationService } from '@/features/intelligence/service
  * Vercel Cron: 0 2 * * *
  */
 export async function GET(request: NextRequest) {
+  // SECURITY: Verify cron secret (REQUIRED)
+  const authHeader = request.headers.get('authorization');
+  const cronSecret = process.env.CRON_SECRET;
+  
+  if (!cronSecret) {
+    console.error('[Security] CRON_SECRET not configured - cron endpoints are vulnerable!');
+    return NextResponse.json(
+      { error: 'Server misconfiguration' },
+      { status: 500 }
+    );
+  }
+
+  if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
+    console.warn('[Security] Unauthorized cron attempt', {
+      hasAuthHeader: !!authHeader,
+      ip: request.headers.get('x-forwarded-for') || 'unknown',
+    });
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
   console.log('🎯 Starting daily recommendation generation...\n');
   
   const startTime = Date.now();

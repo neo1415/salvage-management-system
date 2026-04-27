@@ -40,12 +40,34 @@ export async function GET(
 
     // SCALABILITY: Cache auction details for 5 minutes
     // Auction details change less frequently than list
+    // CRITICAL FIX: Validate cache freshness to prevent stale status
     const cacheKey = `auction:details:${id}`;
-    const cached = await cache.get(cacheKey);
+    const cached = await cache.get(cacheKey) as { 
+      success: boolean; 
+      auction?: { 
+        status: string;
+        [key: string]: any;
+      } 
+    } | null;
     
-    if (cached) {
-      console.log(`✅ Cache HIT: ${cacheKey}`);
-      return NextResponse.json(cached);
+    if (cached?.auction) {
+      // CRITICAL: Verify cached data is not stale by checking auction status in DB
+      // This prevents returning "closed" when status is actually "awaiting_payment"
+      const [currentAuction] = await db
+        .select({ status: auctions.status, updatedAt: auctions.updatedAt })
+        .from(auctions)
+        .where(eq(auctions.id, id))
+        .limit(1);
+      
+      if (currentAuction && currentAuction.status === cached.auction.status) {
+        // Cache is fresh - status matches
+        console.log(`✅ Cache HIT: ${cacheKey} (status: ${cached.auction.status})`);
+        return NextResponse.json(cached);
+      } else {
+        // Cache is stale - status changed, invalidate and fetch fresh data
+        console.log(`⚠️  Cache STALE: ${cacheKey} (cached: ${cached.auction.status}, actual: ${currentAuction?.status})`);
+        await cache.del(cacheKey);
+      }
     }
     console.log(`❌ Cache MISS: ${cacheKey}`);
 

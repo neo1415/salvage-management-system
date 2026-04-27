@@ -76,7 +76,7 @@ const nextConfig: NextConfig = {
               "img-src 'self' data: https: blob: https://res.cloudinary.com https://*.cloudinary.com",
               "font-src 'self' data: https://checkout.paystack.com https://*.paystack.com",
               "connect-src 'self' https://api.paystack.co https://checkout.paystack.com https://*.paystack.com https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com https://*.cloudinary.com https://nominatim.openstreetmap.org https://widget.dojah.io https://identity.dojah.io https://api.dojah.io https://*.dojah.io https://www.googleapis.com",
-              "frame-src 'self' https://js.paystack.co https://checkout.paystack.com https://*.paystack.com https://checkout.flutterwave.com https://widget.dojah.io https://identity.dojah.io https://*.dojah.io https://res.cloudinary.com https://*.cloudinary.com",
+              "frame-src 'self' https://js.paystack.co https://checkout.paystack.com https://*.paystack.com https://checkout.flutterwave.com https://widget.dojah.io https://identity.dojah.io https://*.dojah.io https://res.cloudinary.com https://*.cloudinary.com https://www.google.com https://maps.google.com",
               "media-src 'self' https://res.cloudinary.com",
               "object-src 'none'",
               "base-uri 'self'",

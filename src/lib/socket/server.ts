@@ -20,6 +20,7 @@ import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { redis } from '@/lib/redis/client';
+import { configService } from '@/features/auction-deposit/services/config.service';
 
 // Socket.io event types
 export interface ServerToClientEvents {
@@ -450,9 +451,12 @@ export async function broadcastNewBid(auctionId: string, bid: any) {
   }
 
   try {
-    // Calculate new minimum bid (current bid + ₦20,000)
+    // Get system configuration for minimum bid increment
+    const config = await configService.getConfig();
+    
+    // Calculate new minimum bid using configured increment
     const currentBid = Number(bid.amount);
-    const minimumBid = currentBid + 20000;
+    const minimumBid = currentBid + config.minimumBidIncrement;
 
     // Get room info for debugging
     const room = socketServer.sockets.adapter.rooms.get(`auction:${auctionId}`);

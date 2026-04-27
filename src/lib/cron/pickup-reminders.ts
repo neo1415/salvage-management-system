@@ -36,10 +36,16 @@ export async function sendPickupReminders(): Promise<PickupReminderResults> {
   };
 
   try {
-    // Calculate time window: 23-25 hours ago (to catch payments verified ~24 hours ago)
-    // Pickup deadline is 48 hours from verification, so we remind at 24 hours before deadline
-    const twentyFiveHoursAgo = new Date(now.getTime() - 25 * 60 * 60 * 1000);
-    const twentyThreeHoursAgo = new Date(now.getTime() - 23 * 60 * 60 * 1000);
+    // Get document validity period from config (default 48 hours)
+    const { configService } = await import('@/features/auction-deposit/services/config.service');
+    const config = await configService.getConfig();
+    const documentValidityHours = config.documentValidityPeriod;
+    
+    // Calculate time window: remind at halfway point (e.g., 24 hours for 48-hour deadline)
+    // Use a 2-hour window to catch payments (e.g., 23-25 hours ago for 48-hour deadline)
+    const reminderHours = documentValidityHours / 2;
+    const windowStart = new Date(now.getTime() - (reminderHours + 1) * 60 * 60 * 1000);
+    const windowEnd = new Date(now.getTime() - (reminderHours - 1) * 60 * 60 * 1000);
 
     // Find verified payments that need reminders
     const paymentsNeedingReminders = await db
@@ -58,8 +64,8 @@ export async function sendPickupReminders(): Promise<PickupReminderResults> {
       .where(
         and(
           eq(payments.status, 'verified'),
-          gte(payments.verifiedAt, twentyFiveHoursAgo),
-          lte(payments.verifiedAt, twentyThreeHoursAgo),
+          gte(payments.verifiedAt, windowStart),
+          lte(payments.verifiedAt, windowEnd),
           // Only send to vendors who haven't confirmed pickup
           eq(auctions.pickupConfirmedVendor, false)
         )
@@ -67,9 +73,9 @@ export async function sendPickupReminders(): Promise<PickupReminderResults> {
 
     for (const { payment, auction, vendor: _vendor, user, case: salvageCase } of paymentsNeedingReminders) {
       try {
-        // Calculate pickup deadline (48 hours from verification)
+        // Calculate pickup deadline (documentValidityHours from verification)
         const pickupDeadline = new Date(
-          (payment.verifiedAt?.getTime() || now.getTime()) + 48 * 60 * 60 * 1000
+          (payment.verifiedAt?.getTime() || now.getTime()) + documentValidityHours * 60 * 60 * 1000
         );
         const deadlineFormatted = pickupDeadline.toLocaleDateString('en-NG', {
           weekday: 'short',

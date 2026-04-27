@@ -12,6 +12,15 @@ import { kv } from '@vercel/kv';
 import { redis } from '@/lib/redis/client';
 import { isPersonalEmail, getPersonalEmailErrorMessage } from '@/lib/utils/email-validation';
 
+// SECURITY: Validate E2E testing mode is not enabled in production
+if (process.env.NODE_ENV === 'production' && process.env.E2E_TESTING === 'true') {
+  throw new Error(
+    'SECURITY ERROR: E2E_TESTING cannot be enabled in production environment. ' +
+    'This would disable CSRF protection and create a security vulnerability. ' +
+    'Please set E2E_TESTING=false or remove it from production environment variables.'
+  );
+}
+
 // Device type detection helper
 function getDeviceType(userAgent: string | null): 'mobile' | 'desktop' | 'tablet' {
   if (!userAgent) return 'desktop';
@@ -114,8 +123,9 @@ async function createAuditLog(
 }
 
 export const authConfig: NextAuthConfig = {
-  // Skip CSRF check for E2E tests to allow Playwright automated login
-  skipCSRFCheck: process.env.E2E_TESTING === 'true',
+  // SECURITY: Skip CSRF check only in non-production environments with E2E testing enabled
+  // Production validation above ensures this can never be true in production
+  skipCSRFCheck: process.env.NODE_ENV !== 'production' && process.env.E2E_TESTING === 'true',
   
   providers: [
     // Credentials provider for email/phone + password login

@@ -1,5 +1,6 @@
 import { db } from '@/lib/db/drizzle';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
+import { sanitizeForAudit } from '@/lib/utils/audit-sanitizer';
 
 /**
  * Device types for audit logging
@@ -147,6 +148,9 @@ export interface AuditLogData {
 /**
  * Log an action to the audit trail
  * 
+ * SECURITY: Automatically sanitizes beforeState and afterState to remove sensitive data
+ * like password hashes, tokens, and other credentials.
+ * 
  * @param data - Audit log data
  * @returns Promise<void>
  * 
@@ -160,11 +164,17 @@ export interface AuditLogData {
  *   ipAddress: '192.168.1.1',
  *   deviceType: DeviceType.MOBILE,
  *   userAgent: 'Mozilla/5.0...',
+ *   beforeState: { email: 'user@example.com', passwordHash: 'hash123' }, // passwordHash will be removed
+ *   afterState: { email: 'newemail@example.com', passwordHash: 'hash456' }, // passwordHash will be removed
  * });
  * ```
  */
 export async function logAction(data: AuditLogData): Promise<void> {
   try {
+    // SECURITY: Sanitize beforeState and afterState to remove sensitive fields
+    const sanitizedBeforeState = data.beforeState ? sanitizeForAudit(data.beforeState) : null;
+    const sanitizedAfterState = data.afterState ? sanitizeForAudit(data.afterState) : null;
+    
     await db.insert(auditLogs).values({
       userId: data.userId,
       actionType: data.actionType,
@@ -173,8 +183,8 @@ export async function logAction(data: AuditLogData): Promise<void> {
       ipAddress: data.ipAddress,
       deviceType: data.deviceType,
       userAgent: data.userAgent,
-      beforeState: data.beforeState || null,
-      afterState: data.afterState || null,
+      beforeState: sanitizedBeforeState,
+      afterState: sanitizedAfterState,
     });
   } catch (error) {
     // Log error but don't throw to prevent audit logging from breaking application flow

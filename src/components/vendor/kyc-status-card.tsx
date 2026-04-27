@@ -153,7 +153,7 @@ export function KYCStatusCard({ currentTier, className = '' }: KYCStatusCardProp
               <div className="flex-1">
                 <h3 className="text-lg md:text-xl font-bold mb-1">Complete Your Registration</h3>
                 <p className="text-white/90 text-sm md:text-base">
-                  Pay the one-time registration fee (₦12,500) to unlock Tier 2 KYC and unlimited bidding.
+                  Pay the one-time registration fee to unlock Tier 2 KYC and unlimited bidding.
                 </p>
               </div>
               <button

@@ -61,6 +61,7 @@ interface AuctionDetails {
   currentBidder: string | null;
   minimumIncrement: string;
   status: 'scheduled' | 'active' | 'extended' | 'closed' | 'awaiting_payment' | 'cancelled';
+  scheduledStartTime?: string | null;
   watchingCount: number;
   case: {
     id: string;
@@ -188,6 +189,15 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     documentsGenerating,
     generatedDocuments,
   } = useAuctionUpdates(resolvedParams.id);
+
+  // CRITICAL FIX: Update hasVerifiedPayment from realtime auction updates (polling)
+  useEffect(() => {
+    if (realtimeAuction && 'hasVerifiedPayment' in realtimeAuction) {
+      const newValue = realtimeAuction.hasVerifiedPayment || false;
+      console.log(`📡 Updating hasVerifiedPayment from realtime data: ${newValue}`);
+      setHasVerifiedPayment(newValue);
+    }
+  }, [realtimeAuction?.hasVerifiedPayment]); // Only depend on hasVerifiedPayment field
   
   // Real-time notification listener for PAYMENT_UNLOCKED
   const { newNotification } = useRealtimeNotifications();
@@ -300,6 +310,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   // Use ref to track if we've already shown notification for this bid
   const lastNotifiedBidRef = useRef<string | null>(null);
+  
+  // Track previous currentBidder to detect who was outbid
+  const previousCurrentBidderRef = useRef<string | null>(null);
 
   // Show outbid notification and visual feedback - use useCallback to prevent recreation
   useEffect(() => {
@@ -311,24 +324,30 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       setShowNewBidAnimation(true);
       setTimeout(() => setShowNewBidAnimation(false), 2000);
       
-      // Check if the current user was the previous highest bidder
-      const wasHighestBidder = auction.currentBidder && latestBid.vendorId !== auction.currentBidder;
+      // Check if the current user was the previous highest bidder AND someone else just outbid them
+      const currentUserVendorId = session?.user?.vendorId;
+      const wasCurrentUserHighestBidder = currentUserVendorId && 
+                                          previousCurrentBidderRef.current === currentUserVendorId && 
+                                          latestBid.vendorId !== currentUserVendorId;
       
-      if (wasHighestBidder) {
-        // Show outbid notification
+      if (wasCurrentUserHighestBidder) {
+        // Show outbid notification ONLY to the user who was outbid
         toast.warning(
           'You\'ve been outbid!',
           `New bid: ₦${Number(latestBid.amount).toLocaleString()}. Place a higher bid to stay in the lead.`
         );
-      } else if (latestBid.vendorId !== auction.currentBidder) {
-        // Show general bid notification
+      } else if (latestBid.vendorId !== currentUserVendorId) {
+        // Show general bid notification to other users (not the bidder themselves)
         toast.info(
           'New bid placed',
           `Current bid: ₦${Number(latestBid.amount).toLocaleString()}`
         );
       }
+      
+      // Update previousCurrentBidderRef to the new current bidder for next comparison
+      previousCurrentBidderRef.current = auction.currentBidder;
     }
-  }, [latestBid?.id, auction?.currentBidder, toast]); // Add stable dependencies
+  }, [latestBid?.id, auction?.currentBidder, session?.user?.vendorId, toast]); // Add stable dependencies
   
   // Show extension notification
   const lastExtensionCountRef = useRef<number>(0);
@@ -424,6 +443,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           const data = await auctionResponse.value.json();
           setAuction(data.auction);
           
+          // Initialize previousCurrentBidderRef with the initial currentBidder
+          previousCurrentBidderRef.current = data.auction.currentBidder;
+          
           // Handle watching count
           if (watchingResponse.status === 'fulfilled' && watchingResponse.value.ok) {
             const watchingData = await watchingResponse.value.json();
@@ -468,8 +490,11 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     ) {
       console.log(`🔄 Starting document polling for closed auction ${auction.id}`);
       
+      // Store vendorId to avoid type issues in callbacks
+      const vendorId = session.user.vendorId;
+      
       // Fetch immediately
-      fetchDocuments(auction.id, session.user.vendorId);
+      fetchDocuments(auction.id, vendorId);
       
       // Then poll every 3 seconds until documents appear
       const pollInterval = setInterval(() => {
@@ -481,7 +506,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         }
         
         console.log(`📄 Polling for documents...`);
-        fetchDocuments(auction.id, session.user.vendorId);
+        fetchDocuments(auction.id, vendorId);
       }, 3000);
       
       return () => {
@@ -809,7 +834,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   const currentBid = auction.currentBid ? Number(auction.currentBid) : null;
   const reservePrice = Number(auction.case.reservePrice);
-  const minimumIncrement = 20000; // Fixed ₦20,000 minimum increment
+  // Fallback increment (only used if polling data not available yet)
+  // The actual increment comes from the polling endpoint which uses the configured value
+  const minimumIncrement = 50000; // Default ₦50,000 minimum increment (fallback only)
   
   // Calculate minimum bid: use realtime data if available, otherwise calculate from current bid
   const minimumBid = latestBid?.minimumBid 
@@ -1130,10 +1157,10 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="text-lg sm:text-xl font-bold text-white mb-1">
-                    ✅ Payment Verified!
+                    Payment Verified!
                   </h3>
                   <p className="text-white/90 text-xs sm:text-sm">
-                    Your payment has been confirmed. You can now access your pickup authorization and all documents.
+                    Your payment has been confirmed. Check your email for pickup authorization details.
                   </p>
                 </div>
               </div>
@@ -1546,13 +1573,30 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               {/* Countdown Timer */}
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">
-                  Time Remaining
+                  {auction.status === 'scheduled' ? 'Starts In' : 'Time Remaining'}
                 </h3>
                 <div className="text-center">
                   {(auction.status === 'closed' || auction.status === 'awaiting_payment' || auction.status === 'cancelled') ? (
                     <div className="text-2xl font-bold text-gray-500">
                       Expired
                     </div>
+                  ) : auction.status === 'scheduled' && auction.scheduledStartTime ? (
+                    <CountdownTimer
+                      endTime={auction.scheduledStartTime}
+                      className="text-xl md:text-2xl lg:text-xl font-mono"
+                      onComplete={async () => {
+                        // Refresh auction data when scheduled auction starts
+                        try {
+                          const response = await fetch(`/api/auctions/${resolvedParams.id}`);
+                          if (response.ok) {
+                            const data = await response.json();
+                            setAuction(data.auction);
+                          }
+                        } catch (error) {
+                          console.error('Failed to refresh auction after countdown:', error);
+                        }
+                      }}
+                    />
                   ) : (
                     <CountdownTimer
                       endTime={auction.endTime}

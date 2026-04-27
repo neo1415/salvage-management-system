@@ -617,6 +617,7 @@ export function useAuctionUpdates(auctionId: string | null) {
             currentBidder: data.currentBidder,
             status: data.status,
             endTime: data.endTime,
+            hasVerifiedPayment: data.hasVerifiedPayment,
           });
 
           // If there's a new bid, update latestBid

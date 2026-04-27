@@ -279,8 +279,8 @@ export class PaymentService {
         balanceAfter: newBalance.toFixed(2),
         frozenBefore: currentFrozen.toFixed(2),
         frozenAfter: newFrozen.toFixed(2),
-        availableBefore: currentAvailable.toFixed(2), // FIXED: Use currentAvailable
-        availableAfter: newAvailable.toFixed(2), // FIXED: Use newAvailable
+        availableBefore: (currentAvailable ?? 0).toFixed(2),
+        availableAfter: (newAvailable ?? 0).toFixed(2),
         description: `Deposit unfrozen after wallet payment`,
       });
 
@@ -329,6 +329,12 @@ export class PaymentService {
       auctionId,
       amount: finalBid,
     });
+
+    // CRITICAL: Invalidate auction cache so UI shows hasVerifiedPayment: true
+    console.log(`🗑️ Invalidating auction cache...`);
+    const { cache } = await import('@/lib/redis/client');
+    await cache.del(`auction:details:${auctionId}`);
+    console.log(`✅ Auction cache invalidated`);
 
     return result;
   }
@@ -432,7 +438,7 @@ export class PaymentService {
         paymentMethod: 'paystack',
         paymentReference: idempotencyKey,
         status: 'pending',
-        paymentDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+        paymentDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours (fallback buffer period)
       })
       .returning();
 
@@ -569,6 +575,11 @@ export class PaymentService {
     const auctionId = payment.auctionId;
     const paymentAmount = parseFloat(payment.amount);
 
+    // Validate auctionId exists (should always be present for auction payments)
+    if (!auctionId) {
+      throw new Error(`Payment ${payment.id} has no auctionId - cannot process auction payment`);
+    }
+
     // Get winner record to get deposit amount
     const [winner] = await db
       .select()
@@ -642,6 +653,12 @@ export class PaymentService {
 
       await depositNotificationService.sendPaymentConfirmationNotification(paymentInfo);
       await this.generatePickupAuthorization(paymentInfo);
+      
+      // CRITICAL: Invalidate auction cache so UI shows hasVerifiedPayment: true
+      console.log(`🗑️ Invalidating auction cache...`);
+      const { cache } = await import('@/lib/redis/client');
+      await cache.del(`auction:details:${auctionId}`);
+      console.log(`✅ Auction cache invalidated`);
       
       console.log(`✅ Payment processing complete for auction ${auctionId}`);
     } catch (error) {
@@ -1005,8 +1022,8 @@ export class PaymentService {
         balanceAfter: newBalance.toFixed(2),
         frozenBefore: currentFrozen.toFixed(2),
         frozenAfter: currentFrozen.toFixed(2), // Frozen unchanged
-        availableBefore: currentAvailable.toFixed(2),
-        availableAfter: newAvailable.toFixed(2),
+        availableBefore: (currentAvailable ?? 0).toFixed(2),
+        availableAfter: (newAvailable ?? 0).toFixed(2),
         description: `Hybrid payment - wallet portion deducted (₦${walletPortion.toFixed(2)})`,
       });
 
@@ -1052,7 +1069,7 @@ export class PaymentService {
           paymentMethod: 'paystack', // Using paystack method for hybrid
           paymentReference: idempotencyKey, // Will be updated with Paystack reference
           status: 'pending',
-          paymentDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+          paymentDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours (fallback buffer period)
         })
         .returning();
     }

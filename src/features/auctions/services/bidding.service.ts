@@ -25,7 +25,7 @@ import { escrowService } from '@/features/payments/services/escrow.service';
 import { createOutbidNotification } from '@/features/notifications/services/notification.service';
 import { cache } from '@/lib/redis/client';
 import { depositCalculatorService } from './deposit-calculator.service';
-import { configService } from '@/features/auction-deposit/services/config.service';
+import { configService, SystemConfiguration } from '@/features/auction-deposit/services/config.service';
 
 /**
  * Bid placement data
@@ -36,7 +36,7 @@ export interface PlaceBidData {
   amount: number;
   otp: string;
   ipAddress: string;
-  userAgent: string;
+  userAgent: string | null;
   deviceFingerprint?: string;
 }
 
@@ -121,6 +121,9 @@ export class BiddingService {
         };
       }
 
+      // ✅ FIX: Load config EARLY (before validation) so we can use it throughout
+      const config = await configService.getConfig();
+
       // Fetch auction with case details
       const auction = await db.query.auctions.findFirst({
         where: eq(auctions.id, data.auctionId),
@@ -172,7 +175,8 @@ export class BiddingService {
         data.otp,
         user.phone,
         data.vendorId,
-        data.auctionId
+        data.auctionId,
+        config  // ✅ FIX: Pass config to validation
       );
 
       if (!validation.valid) {
@@ -222,7 +226,10 @@ export class BiddingService {
           // Re-validate bid amount against locked auction state
           // This prevents race condition where two bids arrive simultaneously
           const currentBidAmount = lockedAuction.currentBid ? Number(lockedAuction.currentBid) : null;
-          const minimumBid = currentBidAmount ? currentBidAmount + 20000 : Number(lockedAuction.minimumIncrement);
+          // ✅ FIX: Use config.minimumBidIncrement instead of hardcoded 20000
+          const minimumBid = currentBidAmount 
+            ? currentBidAmount + config.minimumBidIncrement 
+            : Number(lockedAuction.minimumIncrement);
           
           if (data.amount < minimumBid) {
             throw new Error(`Bid too low. Minimum bid: ₦${minimumBid.toLocaleString()}`);
@@ -242,9 +249,7 @@ export class BiddingService {
               amount: data.amount.toString(),
               otpVerified: true,
               ipAddress: data.ipAddress,
-              userAgent: data.userAgent,
-              deviceFingerprint: data.deviceFingerprint,
-              deviceType: this.getDeviceType(data.userAgent),
+              deviceType: this.getDeviceType(data.userAgent || 'unknown'),
             })
             .returning();
 
@@ -297,10 +302,19 @@ export class BiddingService {
         }
       } catch (error) {
         console.error('Failed to calculate deposit:', error);
-        // Fallback to 10% if config fails
-        depositAmount = Math.max(Math.ceil(data.amount * 0.10), 100000);
-        incrementalDeposit = depositAmount;
-        console.log(`⚠️ Using fallback deposit calculation: ₦${depositAmount.toLocaleString()}`);
+        // Fallback to default config values if calculation fails
+        try {
+          const config = await configService.getConfig();
+          const depositRateDecimal = config.depositRate / 100;
+          depositAmount = Math.max(Math.ceil(data.amount * depositRateDecimal), config.minimumDepositFloor);
+          incrementalDeposit = depositAmount;
+          console.log(`⚠️ Using fallback deposit calculation with config defaults: ₦${depositAmount.toLocaleString()}`);
+        } catch (configError) {
+          // Ultimate fallback if even config fetch fails
+          depositAmount = Math.max(Math.ceil(data.amount * 0.10), 100000);
+          incrementalDeposit = depositAmount;
+          console.log(`⚠️ Using hardcoded fallback deposit calculation: ₦${depositAmount.toLocaleString()}`);
+        }
       }
 
       // Freeze INCREMENTAL deposit funds for this bid (Requirement 3.1: Freeze deposit on bid placement)
@@ -364,8 +378,15 @@ export class BiddingService {
                 config.minimumDepositFloor
               );
             } catch (error) {
-              // Fallback to 10% if config fails
-              previousDepositAmount = Math.max(Math.ceil(previousBidAmount * 0.10), 100000);
+              // Fallback to default config values if calculation fails
+              try {
+                const config = await configService.getConfig();
+                const depositRateDecimal = config.depositRate / 100;
+                previousDepositAmount = Math.max(Math.ceil(previousBidAmount * depositRateDecimal), config.minimumDepositFloor);
+              } catch (configError) {
+                // Ultimate fallback if even config fetch fails
+                previousDepositAmount = Math.max(Math.ceil(previousBidAmount * 0.10), 100000);
+              }
             }
             
             // Get previous bidder's user ID
@@ -404,8 +425,8 @@ export class BiddingService {
         entityType: AuditEntityType.BID,
         entityId: newBid!.id,
         ipAddress: data.ipAddress,
-        deviceType: this.getDeviceType(data.userAgent),
-        userAgent: data.userAgent,
+        deviceType: this.getDeviceType(data.userAgent || 'unknown'),
+        userAgent: data.userAgent || 'unknown',
         afterState: {
           bidId: newBid!.id,
           auctionId: data.auctionId,
@@ -422,7 +443,7 @@ export class BiddingService {
 
       // Check and extend auction if needed (async, don't wait)
       // Requirement 21: Auto-extend if bid placed with <5 minutes remaining
-      this.checkAndExtendAuction(data.auctionId, data.ipAddress, data.userAgent).catch((error) => {
+      this.checkAndExtendAuction(data.auctionId, data.ipAddress, data.userAgent || 'unknown').catch((error) => {
         console.error('Failed to check auction extension:', error);
       });
 
@@ -475,6 +496,7 @@ export class BiddingService {
    * @param phone - Vendor phone number
    * @param vendorId - Vendor ID (for balance check)
    * @param auctionId - Auction ID (for incremental deposit check)
+   * @param config - System configuration
    * @returns Validation result
    */
   async validateBid(
@@ -486,12 +508,13 @@ export class BiddingService {
     otp: string,
     phone: string,
     vendorId: string,
-    auctionId: string
+    auctionId: string,
+    config: SystemConfiguration  // ✅ FIX: Add config parameter
   ): Promise<ValidationResult> {
     const errors: string[] = [];
 
-    // Calculate minimum bid: if no current bid, use reserve price; otherwise current bid + ₦20,000
-    const minimumBid = currentBid ? currentBid + 20000 : minimumIncrement; // minimumIncrement is actually reserve price when no bids
+    // ✅ FIX: Use config.minimumBidIncrement instead of hardcoded 20000
+    const minimumBid = currentBid ? currentBid + config.minimumBidIncrement : minimumIncrement;
     if (bidAmount < minimumBid) {
       errors.push(`Minimum bid: ₦${minimumBid.toLocaleString()}`);
     }
@@ -501,9 +524,9 @@ export class BiddingService {
       errors.push(`Auction must be in active or extended status (current: ${auctionStatus})`);
     }
 
-    // Validate vendor tier vs bid amount (Requirement 5.6)
-    if (bidAmount > 500000 && vendorTier === 'tier1_bvn') {
-      errors.push('Bid exceeds your Tier 1 limit of ₦500,000. Upgrade to Tier 2 for unlimited bidding and access to premium auctions.');
+    // ✅ FIX: Use config.tier1Limit instead of hardcoded 500000
+    if (bidAmount > config.tier1Limit && vendorTier === 'tier1_bvn') {
+      errors.push(`Bid exceeds your Tier 1 limit of ₦${config.tier1Limit.toLocaleString()}. Upgrade to Tier 2 for unlimited bidding and access to premium auctions.`);
     }
 
     // Check for existing bid from this vendor (for incremental deposit calculation)
@@ -553,8 +576,15 @@ export class BiddingService {
       }
     } catch (error) {
       console.error('Error calculating deposit:', error);
-      // Fallback to 10% with ₦100k minimum
-      requiredDeposit = Math.max(Math.ceil(bidAmount * 0.10), 100000);
+      // Fallback to default config values if calculation fails
+      try {
+        const config = await configService.getConfig();
+        const depositRateDecimal = config.depositRate / 100;
+        requiredDeposit = Math.max(Math.ceil(bidAmount * depositRateDecimal), config.minimumDepositFloor);
+      } catch (configError) {
+        // Ultimate fallback if even config fetch fails
+        requiredDeposit = Math.max(Math.ceil(bidAmount * 0.10), 100000);
+      }
     }
 
     // Check wallet balance - vendor must have sufficient funds for INCREMENTAL DEPOSIT

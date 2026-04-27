@@ -23,11 +23,23 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify cron secret to prevent unauthorized access
+    // SECURITY: Verify cron secret (REQUIRED)
     const authHeader = request.headers.get('authorization');
     const cronSecret = process.env.CRON_SECRET;
+    
+    if (!cronSecret) {
+      console.error('[Security] CRON_SECRET not configured - cron endpoints are vulnerable!');
+      return NextResponse.json(
+        { error: 'Server misconfiguration' },
+        { status: 500 }
+      );
+    }
 
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
+      console.warn('[Security] Unauthorized cron attempt', {
+        hasAuthHeader: !!authHeader,
+        ip: request.headers.get('x-forwarded-for') || 'unknown',
+      });
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
