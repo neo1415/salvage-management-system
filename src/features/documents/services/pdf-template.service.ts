@@ -129,25 +129,29 @@ export class PDFTemplateService {
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     
-    // Footer position - fixed at bottom with proper margin
-    const footerY = pageHeight - 20;
+    // Footer position - fixed at bottom with proper margin (increased spacing)
+    const footerY = pageHeight - 25;
     
     // Thin burgundy line above footer
     doc.setDrawColor(128, 0, 32);
     doc.setLineWidth(0.5);
-    doc.line(20, footerY - 5, pageWidth - 20, footerY - 5);
+    doc.line(20, footerY - 8, pageWidth - 20, footerY - 8);
     
-    // Footer text
+    // Footer text with better spacing
     doc.setFontSize(8);
     doc.setTextColor(100, 100, 100);
     doc.setFont('helvetica', 'normal');
-    doc.text('NEM Insurance Plc | 199 Ikorodu Road, Obanikoro, Lagos, Nigeria', pageWidth / 2, footerY, { align: 'center' });
-    doc.text('Tel: 234-02-014489560 | Email: nemsupport@nem-insurance.com', pageWidth / 2, footerY + 4, { align: 'center' });
     
-    // Generation timestamp
+    // Line 1: Company name and address
+    doc.text('NEM Insurance Plc | 199 Ikorodu Road, Obanikoro, Lagos, Nigeria', pageWidth / 2, footerY, { align: 'center' });
+    
+    // Line 2: Contact information (increased spacing from 4 to 5)
+    doc.text('Tel: 234-02-014489560 | Email: nemsupport@nem-insurance.com', pageWidth / 2, footerY + 5, { align: 'center' });
+    
+    // Line 3: Generation timestamp (increased spacing from 8 to 10)
     const timestamp = `Generated: ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}`;
     const footerText = additionalInfo ? `${timestamp} | ${additionalInfo}` : timestamp;
-    doc.text(footerText, pageWidth / 2, footerY + 8, { align: 'center' });
+    doc.text(footerText, pageWidth / 2, footerY + 10, { align: 'center' });
   }
   
   /**
@@ -158,7 +162,7 @@ export class PDFTemplateService {
    */
   static getMaxContentY(doc: jsPDF): number {
     const pageHeight = doc.internal.pageSize.getHeight();
-    // Reserve 35px for footer (20px footer height + 15px spacing)
-    return pageHeight - 35;
+    // Reserve 45px for footer (25px footer height + 20px spacing)
+    return pageHeight - 45;
   }
 }

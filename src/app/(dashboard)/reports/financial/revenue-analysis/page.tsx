@@ -146,7 +146,9 @@ export default function RevenueAnalysisPage() {
 
       {/* Report Content */}
       {reportData && (
-        <RevenueAnalysisReport data={reportData} loading={loading} />
+        <div data-report-content>
+          <RevenueAnalysisReport data={reportData} loading={loading} />
+        </div>
       )}
 
       {/* Loading State */}

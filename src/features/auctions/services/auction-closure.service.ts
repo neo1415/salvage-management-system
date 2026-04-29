@@ -230,6 +230,20 @@ export class AuctionClosureService {
           })
           .where(eq(auctions.id, auctionId));
 
+        // FIX: Update case status to "sold" when auction closes with winner
+        if (auction.caseId) {
+          const { salvageCases } = await import('@/lib/db/schema/cases');
+          await tx
+            .update(salvageCases)
+            .set({
+              status: 'sold',
+              updatedAt: new Date(),
+            })
+            .where(eq(salvageCases.id, auction.caseId));
+          
+          console.log(`   - Case status updated to "sold"`);
+        }
+
         const winner = topBidders[0];
         const winningBid = parseFloat(winner.amount);
 

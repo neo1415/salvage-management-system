@@ -100,3 +100,148 @@ img {
 .animate-ripple {
   animation: ripple 600ms ease-out;
 }
+
+
+/* Print Styles for PDF Export */
+@media print {
+  /* Hide navigation, sidebars, and UI elements */
+  nav,
+  aside,
+  header,
+  footer,
+  .no-print,
+  button,
+  [role="navigation"],
+  [role="banner"],
+  [role="contentinfo"] {
+    display: none !important;
+  }
+
+  /* Optimize page for printing */
+  body {
+    background: white !important;
+    color: black !important;
+    margin: 0;
+    padding: 20px;
+  }
+
+  /* Ensure content fits on page */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Preserve colors for charts and important elements */
+  .print-color,
+  [class*="chart"],
+  [class*="graph"],
+  table {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Page breaks */
+  .page-break {
+    page-break-after: always;
+  }
+
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+
+  /* Tables */
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* Links */
+  a[href]:after {
+    content: none !important;
+  }
+
+  /* Ensure full width */
+  .container,
+  .main-content,
+  [class*="report"] {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+}
+
+
+/* Print-specific styles for PDF export */
+@media print {
+  /* Hide navigation, buttons, and UI elements */
+  nav,
+  header:not([data-report-header]),
+  footer:not([data-report-footer]),
+  button,
+  .no-print,
+  [class*="Button"]:not([data-print-visible]),
+  [role="button"]:not([data-print-visible]),
+  .sidebar,
+  [class*="Sidebar"],
+  [class*="Navigation"] {
+    display: none !important;
+  }
+
+  /* Ensure report content takes full width */
+  [data-report-content] {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 20px !important;
+  }
+
+  /* Ensure charts render properly */
+  canvas {
+    max-width: 100% !important;
+    height: auto !important;
+    page-break-inside: avoid;
+  }
+
+  /* Ensure tables don't break across pages */
+  table {
+    page-break-inside: avoid;
+  }
+
+  /* Ensure cards don't break across pages */
+  .card,
+  [class*="Card"] {
+    page-break-inside: avoid;
+  }
+
+  /* Remove shadows and borders for cleaner print */
+  * {
+    box-shadow: none !important;
+  }
+
+  /* Ensure proper page breaks */
+  .page-break {
+    page-break-after: always;
+  }
+
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+
+  /* Ensure background colors print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

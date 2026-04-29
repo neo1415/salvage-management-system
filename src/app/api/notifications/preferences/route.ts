@@ -1,27 +1,11 @@
-/**
- * Notification Preferences API
- * Allows users to customize notification preferences
- * 
- * Features:
- * - Toggle SMS, Email, Push on/off
- * - Per-notification-type control (bid alerts, auction ending, payment reminders, leaderboard updates)
- * - Prevent opt-out of critical notifications (OTP, payment deadlines, account suspension)
- * - Save preferences to user profile
- * - Audit logging
- * 
- * Requirements: 39, Enterprise Standards Section 7
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
-import { db } from '@/lib/db/drizzle';
-import { users, NotificationPreferences } from '@/lib/db/schema/users';
+import { db } from '@/lib/db';
+import { notificationPreferences } from '@/lib/db/schema/push-subscriptions';
 import { eq } from 'drizzle-orm';
-import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { z } from 'zod';
 
-// Validation schema for notification preferences
-const notificationPreferencesSchema = z.object({
+const preferencesSchema = z.object({
   pushEnabled: z.boolean().optional(),
   smsEnabled: z.boolean().optional(),
   emailEnabled: z.boolean().optional(),
@@ -31,46 +15,69 @@ const notificationPreferencesSchema = z.object({
   leaderboardUpdates: z.boolean().optional(),
 });
 
-type NotificationPreferencesUpdate = z.infer<typeof notificationPreferencesSchema>;
-
 /**
  * GET /api/notifications/preferences
- * Get current notification preferences for authenticated user
+ * Get user notification preferences
  */
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    // Check authentication
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Fetch user's current preferences
-    const [user] = await db
-      .select({
-        notificationPreferences: users.notificationPreferences,
-      })
-      .from(users)
-      .where(eq(users.id, session.user.id))
+    // Get or create preferences
+    let [preferences] = await db
+      .select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, session.user.id))
       .limit(1);
 
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
+    if (!preferences) {
+      // Create default preferences with conflict handling
+      try {
+        [preferences] = await db
+          .insert(notificationPreferences)
+          .values({
+            userId: session.user.id,
+            pushEnabled: true,
+            smsEnabled: true,
+            emailEnabled: true,
+            bidAlerts: true,
+            auctionEnding: true,
+            paymentReminders: true,
+            leaderboardUpdates: false,
+          })
+          .onConflictDoNothing()
+          .returning();
+
+        // If onConflictDoNothing returned nothing, fetch the existing record
+        if (!preferences) {
+          [preferences] = await db
+            .select()
+            .from(notificationPreferences)
+            .where(eq(notificationPreferences.userId, session.user.id))
+            .limit(1);
+        }
+      } catch (error) {
+        // If insert fails due to race condition, fetch the existing record
+        console.log('Notification preferences already exist, fetching...');
+        [preferences] = await db
+          .select()
+          .from(notificationPreferences)
+          .where(eq(notificationPreferences.userId, session.user.id))
+          .limit(1);
+      }
     }
 
     return NextResponse.json({
-      preferences: user.notificationPreferences,
+      success: true,
+      preferences,
     });
   } catch (error) {
-    console.error('Error fetching notification preferences:', error);
+    console.error('Get preferences error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch notification preferences' },
+      { error: 'Failed to get notification preferences' },
       { status: 500 }
     );
   }
@@ -78,141 +85,70 @@ export async function GET(_request: NextRequest) {
 
 /**
  * PUT /api/notifications/preferences
- * Update notification preferences for authenticated user
+ * Update user notification preferences
  */
 export async function PUT(request: NextRequest) {
   try {
-    // Check authentication
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Parse and validate request body
     const body = await request.json();
-    const validationResult = notificationPreferencesSchema.safeParse(body);
+    const validation = preferencesSchema.safeParse(body);
 
-    if (!validationResult.success) {
+    if (!validation.success) {
       return NextResponse.json(
-        { 
-          error: 'Invalid notification preferences', 
-          details: validationResult.error.issues 
-        },
+        { error: 'Invalid preferences data', details: validation.error.errors },
         { status: 400 }
       );
     }
 
-    const updates = validationResult.data;
+    const updates = validation.data;
 
-    // Fetch current user preferences
-    const [currentUser] = await db
-      .select({
-        notificationPreferences: users.notificationPreferences,
-      })
-      .from(users)
-      .where(eq(users.id, session.user.id))
+    // Check if preferences exist
+    const [existing] = await db
+      .select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, session.user.id))
       .limit(1);
 
-    if (!currentUser) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
+    let preferences;
+
+    if (existing) {
+      // Update existing preferences
+      [preferences] = await db
+        .update(notificationPreferences)
+        .set({
+          ...updates,
+          updatedAt: new Date(),
+        })
+        .where(eq(notificationPreferences.userId, session.user.id))
+        .returning();
+    } else {
+      // Create new preferences
+      [preferences] = await db
+        .insert(notificationPreferences)
+        .values({
+          userId: session.user.id,
+          pushEnabled: updates.pushEnabled ?? true,
+          smsEnabled: updates.smsEnabled ?? true,
+          emailEnabled: updates.emailEnabled ?? true,
+          bidAlerts: updates.bidAlerts ?? true,
+          auctionEnding: updates.auctionEnding ?? true,
+          paymentReminders: updates.paymentReminders ?? true,
+          leaderboardUpdates: updates.leaderboardUpdates ?? false,
+        })
+        .returning();
     }
-
-    // Merge updates with current preferences
-    const currentPreferences = (currentUser.notificationPreferences || {
-      pushEnabled: true,
-      smsEnabled: true,
-      emailEnabled: true,
-      bidAlerts: true,
-      auctionEnding: true,
-      paymentReminders: true,
-      leaderboardUpdates: true,
-    }) as NotificationPreferences;
-    
-    const updatedPreferences: NotificationPreferences = {
-      pushEnabled: updates.pushEnabled ?? currentPreferences.pushEnabled,
-      smsEnabled: updates.smsEnabled ?? currentPreferences.smsEnabled,
-      emailEnabled: updates.emailEnabled ?? currentPreferences.emailEnabled,
-      bidAlerts: updates.bidAlerts ?? currentPreferences.bidAlerts,
-      auctionEnding: updates.auctionEnding ?? currentPreferences.auctionEnding,
-      paymentReminders: updates.paymentReminders ?? currentPreferences.paymentReminders,
-      leaderboardUpdates: updates.leaderboardUpdates ?? currentPreferences.leaderboardUpdates,
-    };
-
-    // Validate that critical notification types cannot be fully disabled
-    // Users must have at least one channel enabled for critical notifications
-    const criticalNotificationTypes = ['paymentReminders']; // OTP and account suspension are always sent regardless
-    
-    for (const criticalType of criticalNotificationTypes) {
-      if (updates[criticalType as keyof NotificationPreferencesUpdate] === false) {
-        // Check if at least one channel is still enabled
-        const hasEnabledChannel = 
-          updatedPreferences.pushEnabled || 
-          updatedPreferences.smsEnabled || 
-          updatedPreferences.emailEnabled;
-
-        if (!hasEnabledChannel) {
-          return NextResponse.json(
-            { 
-              error: 'Cannot disable all notification channels for critical notifications',
-              message: 'You must keep at least one notification channel (SMS, Email, or Push) enabled for payment reminders and other critical notifications.'
-            },
-            { status: 400 }
-          );
-        }
-      }
-    }
-
-    // Update user preferences in database
-    const [updatedUser] = await db
-      .update(users)
-      .set({
-        notificationPreferences: updatedPreferences,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, session.user.id))
-      .returning({
-        id: users.id,
-        notificationPreferences: users.notificationPreferences,
-      });
-
-    // Get device type and IP address for audit log
-    const userAgent = request.headers.get('user-agent') || 'unknown';
-    const deviceType = userAgent.toLowerCase().includes('mobile') 
-      ? DeviceType.MOBILE 
-      : userAgent.toLowerCase().includes('tablet')
-      ? DeviceType.TABLET
-      : DeviceType.DESKTOP;
-
-    const ipAddress = 
-      request.headers.get('x-forwarded-for')?.split(',')[0] ||
-      request.headers.get('x-real-ip') ||
-      'unknown';
-
-    // Create audit log entry
-    await logAction({
-      userId: session.user.id,
-      actionType: AuditActionType.PROFILE_UPDATED,
-      entityType: AuditEntityType.USER,
-      entityId: session.user.id,
-      ipAddress,
-      deviceType,
-      userAgent,
-      beforeState: currentPreferences as unknown as Record<string, unknown>,
-      afterState: updatedPreferences as unknown as Record<string, unknown>,
-    });
 
     return NextResponse.json({
-      message: 'Notification preferences updated successfully',
-      preferences: updatedUser.notificationPreferences,
+      success: true,
+      message: 'Preferences updated',
+      preferences,
     });
   } catch (error) {
-    console.error('Error updating notification preferences:', error);
+    console.error('Update preferences error:', error);
     return NextResponse.json(
       { error: 'Failed to update notification preferences' },
       { status: 500 }

@@ -490,14 +490,12 @@ export default function ApprovalsPage() {
           type: 'success',
           title: 'Case Approved',
           message: hasOverrides
-            ? `Case approved with price adjustments! Auction created and ${result.data.notifiedVendors} vendors notified.`
-            : `Case approved! Auction created and ${result.data.notifiedVendors} vendors notified.`,
+            ? 'Case approved with price adjustments! Auction created.'
+            : 'Case approved! Auction created.',
           details: hasOverrides ? [
             'Price adjustments have been applied',
-            `${result.data.notifiedVendors} vendors have been notified`,
             'Auction is now live',
           ] : [
-            `${result.data.notifiedVendors} vendors have been notified`,
             'Auction is now live',
           ],
         });

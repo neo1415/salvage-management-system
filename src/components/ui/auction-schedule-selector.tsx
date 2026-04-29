@@ -58,19 +58,41 @@ export function AuctionScheduleSelector({
   const [selectedMinute, setSelectedMinute] = React.useState<string>(
     value.scheduledTime ? value.scheduledTime.getMinutes().toString().padStart(2, '0') : '00'
   );
-  const [durationValue, setDurationValue] = React.useState<number>(
-    value.durationHours ? Math.floor(value.durationHours / 24) || value.durationHours : 5
-  );
-  const [durationUnit, setDurationUnit] = React.useState<'minutes' | 'hours' | 'days' | 'weeks'>(
-    value.durationHours >= 168 ? 'weeks' : value.durationHours >= 24 ? 'days' : value.durationHours >= 1 ? 'hours' : 'minutes'
-  );
+  const [durationValue, setDurationValue] = React.useState<number>(() => {
+    if (!value.durationHours) return 5;
+    
+    // Ensure minimum 1 hour
+    const hours = Math.max(1, value.durationHours);
+    
+    // Determine best unit and value
+    if (hours >= 168) {
+      return Math.floor(hours / 168); // weeks
+    } else if (hours >= 24) {
+      return Math.floor(hours / 24); // days
+    } else {
+      return Math.round(hours); // hours (rounded to nearest whole number)
+    }
+  });
+  const [durationUnit, setDurationUnit] = React.useState<'hours' | 'days' | 'weeks'>(() => {
+    if (!value.durationHours) return 'days';
+    
+    // Ensure minimum 1 hour
+    const hours = Math.max(1, value.durationHours);
+    
+    // Determine best unit
+    if (hours >= 168) {
+      return 'weeks';
+    } else if (hours >= 24) {
+      return 'days';
+    } else {
+      return 'hours';
+    }
+  });
   const [error, setError] = React.useState<string>('');
 
   // Calculate duration in hours
-  const calculateDurationHours = (value: number, unit: 'minutes' | 'hours' | 'days' | 'weeks'): number => {
+  const calculateDurationHours = (value: number, unit: 'hours' | 'days' | 'weeks'): number => {
     switch (unit) {
-      case 'minutes':
-        return value / 60;
       case 'hours':
         return value;
       case 'days':
@@ -121,7 +143,7 @@ export function AuctionScheduleSelector({
 
   // Update duration
   const updateDuration = React.useCallback(
-    (newValue: number, newUnit: 'minutes' | 'hours' | 'days' | 'weeks') => {
+    (newValue: number, newUnit: 'hours' | 'days' | 'weeks') => {
       const durationHours = calculateDurationHours(newValue, newUnit);
       
       // Validate duration (min 1 hour, max 720 hours = 30 days)
@@ -145,11 +167,13 @@ export function AuctionScheduleSelector({
 
   // Handle mode change
   const handleModeChange = (mode: 'now' | 'scheduled') => {
+    const currentDurationHours = calculateDurationHours(durationValue, durationUnit);
+    
     if (mode === 'now') {
       setError('');
       onChange({ 
         mode: 'now',
-        durationHours: calculateDurationHours(durationValue, durationUnit),
+        durationHours: currentDurationHours,
       });
     } else {
       // When switching to scheduled mode, set default time if not already set
@@ -206,7 +230,7 @@ export function AuctionScheduleSelector({
 
   // Handle duration unit change
   const handleDurationUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newUnit = e.target.value as 'minutes' | 'hours' | 'days' | 'weeks';
+    const newUnit = e.target.value as 'hours' | 'days' | 'weeks';
     setDurationUnit(newUnit);
     updateDuration(durationValue, newUnit);
   };
@@ -281,7 +305,7 @@ export function AuctionScheduleSelector({
             <input
               type="number"
               min="1"
-              max={durationUnit === 'minutes' ? '43200' : durationUnit === 'hours' ? '720' : durationUnit === 'days' ? '30' : '4'}
+              max={durationUnit === 'hours' ? '720' : durationUnit === 'days' ? '30' : '4'}
               value={durationValue}
               onChange={handleDurationValueChange}
               className={cn(
@@ -302,7 +326,6 @@ export function AuctionScheduleSelector({
                 'disabled:cursor-not-allowed disabled:opacity-50'
               )}
             >
-              <option value="minutes">Minutes</option>
               <option value="hours">Hours</option>
               <option value="days">Days</option>
               <option value="weeks">Weeks</option>

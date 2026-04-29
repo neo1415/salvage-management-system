@@ -391,6 +391,22 @@ export const authConfig: NextAuthConfig = {
         token.profilePictureUrl = user.profilePictureUrl;
         token.vendorId = user.vendorId;
         
+        // Check BVN verification status for vendors
+        if (user.role === 'vendor' && user.vendorId) {
+          const { vendors } = await import('@/lib/db/schema/vendors');
+          const [vendor] = await withRetry(async () => {
+            return await db
+              .select({ bvnVerifiedAt: vendors.bvnVerifiedAt })
+              .from(vendors)
+              .where(eq(vendors.id, user.vendorId!))
+              .limit(1);
+          });
+          
+          token.bvnVerified = !!vendor?.bvnVerifiedAt;
+        } else {
+          token.bvnVerified = true; // Non-vendors don't need BVN verification
+        }
+        
         // Generate a unique session identifier to bind this token to this specific login
         // This prevents token reuse across different browser contexts
         token.sessionId = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -527,18 +543,28 @@ export const authConfig: NextAuthConfig = {
           token.requirePasswordChange = updatedUser.requirePasswordChange === 'true';
           token.profilePictureUrl = updatedUser.profilePictureUrl ?? undefined;
           
-          // Refresh vendorId if user is a vendor
+          // CRITICAL: Always refresh vendorId and BVN verification status for vendors
+          // This ensures the session is updated immediately after BVN verification
           if (updatedUser.role === 'vendor') {
             const { vendors } = await import('@/lib/db/schema/vendors');
             const [vendor] = await withRetry(async () => {
               return await db
-                .select({ id: vendors.id })
+                .select({ id: vendors.id, bvnVerifiedAt: vendors.bvnVerifiedAt })
                 .from(vendors)
                 .where(eq(vendors.userId, updatedUser.id))
                 .limit(1);
             });
             
             token.vendorId = vendor?.id;
+            token.bvnVerified = !!vendor?.bvnVerifiedAt;
+            
+            console.log('[JWT Update] Refreshed vendor BVN status:', {
+              vendorId: vendor?.id,
+              bvnVerified: !!vendor?.bvnVerifiedAt,
+              bvnVerifiedAt: vendor?.bvnVerifiedAt,
+            });
+          } else {
+            token.bvnVerified = true; // Non-vendors don't need BVN verification
           }
           
           // Update validation timestamp after refresh
@@ -561,6 +587,7 @@ export const authConfig: NextAuthConfig = {
         session.user.needsPhoneNumber = token.needsPhoneNumber as boolean;
         session.user.profilePictureUrl = token.profilePictureUrl as string | undefined;
         session.user.vendorId = token.vendorId as string | undefined;
+        session.user.bvnVerified = token.bvnVerified as boolean;
         
         // Include access token in session for Socket.io authentication
         session.accessToken = token.accessToken as string;

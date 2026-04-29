@@ -164,6 +164,44 @@ export default function ProfitabilityPage() {
               </div>
             </CardContent>
           </Card>
+
+          {reportData.itemBreakdown && reportData.itemBreakdown.length > 0 && (
+            <Card>
+              <CardContent className="pt-6">
+                <h3 className="text-lg font-semibold mb-4">Detailed Item Breakdown</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-2 font-medium">Claim Reference</th>
+                        <th className="text-left p-2 font-medium">Asset Type</th>
+                        <th className="text-right p-2 font-medium">Market Value</th>
+                        <th className="text-right p-2 font-medium">Salvage Recovery</th>
+                        <th className="text-right p-2 font-medium">Net Loss</th>
+                        <th className="text-right p-2 font-medium">Recovery Rate</th>
+                        <th className="text-right p-2 font-medium">ROI</th>
+                        <th className="text-left p-2 font-medium">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData.itemBreakdown.map((item: any, index: number) => (
+                        <tr key={index} className="border-b hover:bg-gray-50">
+                          <td className="p-2 font-medium">{item.claimReference}</td>
+                          <td className="p-2 capitalize">{item.assetType}</td>
+                          <td className="p-2 text-right">₦{item.marketValue.toLocaleString()}</td>
+                          <td className="p-2 text-right text-green-600">₦{item.salvageRecovery.toLocaleString()}</td>
+                          <td className="p-2 text-right text-red-600">₦{item.netLoss.toLocaleString()}</td>
+                          <td className="p-2 text-right">{item.recoveryRate.toFixed(2)}%</td>
+                          <td className="p-2 text-right">{item.roi.toFixed(2)}%</td>
+                          <td className="p-2">{new Date(item.date).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
     </div>

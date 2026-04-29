@@ -6,8 +6,8 @@
  */
 
 import { db } from '@/lib/db/drizzle';
-import { salvageCases, auctions, payments, bids, vendors, users } from '@/lib/db/schema';
-import { eq, and, gte, lte, sql, inArray, desc, sum, count, avg } from 'drizzle-orm';
+import { salvageCases, auctions, payments, vendors, users } from '@/lib/db/schema';
+import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
 
 export interface RevenueData {
@@ -82,7 +82,12 @@ export class FinancialDataRepository {
 
     // Asset types filter
     if (filters.assetTypes && filters.assetTypes.length > 0) {
-      conditions.push(inArray(salvageCases.assetType, filters.assetTypes));
+      const validAssetTypes = filters.assetTypes.filter((type): type is 'vehicle' | 'property' | 'electronics' | 'machinery' => 
+        ['vehicle', 'property', 'electronics', 'machinery'].includes(type)
+      );
+      if (validAssetTypes.length > 0) {
+        conditions.push(inArray(salvageCases.assetType, validAssetTypes));
+      }
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -96,6 +101,7 @@ export class FinancialDataRepository {
         createdAt: salvageCases.createdAt,
         paymentAmount: payments.amount,
         paymentStatus: payments.status,
+        locationName: salvageCases.locationName,
       })
       .from(payments)
       .innerJoin(auctions, eq(payments.auctionId, auctions.id))
@@ -109,6 +115,17 @@ export class FinancialDataRepository {
       const netLoss = marketValue - salvageRecovery; // Loss after salvage recovery
       const recoveryRate = marketValue > 0 ? (salvageRecovery / marketValue) * 100 : 0;
 
+      // Extract region from locationName (format: "City, State")
+      let region = 'Unknown';
+      if (row.locationName) {
+        const parts = row.locationName.split(',');
+        if (parts.length >= 2) {
+          region = parts[1].trim(); // Get state/region
+        } else {
+          region = row.locationName.trim();
+        }
+      }
+
       return {
         caseId: row.caseId,
         claimReference: row.claimReference,
@@ -118,7 +135,7 @@ export class FinancialDataRepository {
         recoveryRate: Math.round(recoveryRate * 100) / 100,
         netLoss: Math.round(netLoss * 100) / 100,
         createdAt: row.createdAt,
-        region: 'Unknown', // Region field doesn't exist in schema yet
+        region,
       };
     });
   }
@@ -143,7 +160,12 @@ export class FinancialDataRepository {
 
     // Status filter
     if (filters.status && filters.status.length > 0) {
-      conditions.push(inArray(payments.status, filters.status));
+      const validStatuses = filters.status.filter((status): status is 'pending' | 'verified' | 'rejected' | 'overdue' =>
+        ['pending', 'verified', 'rejected', 'overdue'].includes(status)
+      );
+      if (validStatuses.length > 0) {
+        conditions.push(inArray(payments.status, validStatuses));
+      }
     }
 
     // Vendor filter
@@ -211,7 +233,12 @@ export class FinancialDataRepository {
 
     // Status filter
     if (filters.status && filters.status.length > 0) {
-      conditions.push(inArray(payments.status, filters.status));
+      const validStatuses = filters.status.filter((status): status is 'pending' | 'verified' | 'rejected' | 'overdue' =>
+        ['pending', 'verified', 'rejected', 'overdue'].includes(status)
+      );
+      if (validStatuses.length > 0) {
+        conditions.push(inArray(payments.status, validStatuses));
+      }
     }
 
     // Vendor filter
@@ -230,10 +257,12 @@ export class FinancialDataRepository {
         createdAt: payments.createdAt,
         verifiedAt: payments.verifiedAt,
         vendorId: payments.vendorId,
-        vendorName: vendors.businessName,
+        vendorBusinessName: vendors.businessName,
+        userFullName: sql<string>`u.full_name`,
       })
       .from(payments)
       .leftJoin(vendors, eq(payments.vendorId, vendors.id))
+      .leftJoin(sql`users u`, sql`${vendors.userId} = u.id`)
       .where(whereClause)
       .orderBy(desc(payments.createdAt));
 
@@ -244,6 +273,9 @@ export class FinancialDataRepository {
         processingTimeHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
       }
 
+      // Use business_name if available, otherwise fall back to user's full_name
+      const vendorName = row.vendorBusinessName || row.userFullName || 'Unknown';
+
       return {
         paymentId: row.paymentId,
         amount: row.amount,
@@ -253,7 +285,7 @@ export class FinancialDataRepository {
         verifiedAt: row.verifiedAt,
         processingTimeHours,
         vendorId: row.vendorId,
-        vendorName: row.vendorName || 'Unknown',
+        vendorName,
         auctionId: '', // No auction for registration fees
       };
     });

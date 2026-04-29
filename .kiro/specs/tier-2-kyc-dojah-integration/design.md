@@ -64,19 +64,64 @@ graph TD
 ### Data Flow Summary
 
 1. Vendor opens `/vendor/kyc/tier2` — page loads Dojah widget config from server
-2. Vendor completes widget (NIN entry, selfie, document scan) — all handled by Dojah widget
-3. Widget calls `onSuccess({ reference_id: "DJ-XXXXX" })`
-4. Client POSTs `reference_id` to `POST /api/kyc/complete`
-5. Server fetches full result from Dojah, validates with Zod, encrypts NIN, stores to DB
-6. Server runs AML screening, calculates fraud score, sends notifications, writes audit log
-7. If auto-approved (Low risk, all scores pass): vendor tier upgraded immediately
-8. If flagged: pending approval record created, managers notified
-9. Manager reviews at `/manager/kyc-approvals`, approves or rejects
-10. Vendor notified of final decision
+2. **NEW:** Page fetches vendor data (phone from `users.phone`, BVN from `vendors.bvnEncrypted`)
+3. **NEW:** Page parses vendor's full name using `NameParsingService` into first/middle/last components
+4. **NEW:** Widget is initialized with parsed names (editable), phone (immutable), and BVN (immutable)
+5. Vendor completes widget (NIN entry, selfie, document scan) — all handled by Dojah widget
+6. **NEW:** Vendor can edit first/middle/last names in widget if parsing was incorrect
+7. Widget calls `onSuccess({ reference_id: "DJ-XXXXX" })`
+8. Client POSTs `reference_id` to `POST /api/kyc/complete`
+9. Server fetches full result from Dojah, validates with Zod, encrypts NIN, stores to DB
+10. **NEW:** Server compares submitted names against original full_name, logs significant changes for audit
+11. **NEW:** Server validates phone and BVN match Tier 1 values (reject if different)
+12. **NEW:** Server stores corrected names in `tier2CorrectedFirstName/MiddleName/LastName` if vendor edited them
+13. Server runs AML screening, calculates fraud score, sends notifications, writes audit log
+14. If auto-approved (Low risk, all scores pass): vendor tier upgraded immediately
+15. If flagged: pending approval record created, managers notified
+16. Manager reviews at `/manager/kyc-approvals`, approves or rejects
+17. Vendor notified of final decision
 
 ---
 
 ## Components and Interfaces
+
+### NameParsingService (`src/features/kyc/services/name-parsing.service.ts`)
+
+Intelligent name parser that handles various cultural name formats. Nigerian names can have different structures (first-last, last-first, multiple middle names), so we parse with confidence scores and allow vendor correction.
+
+```typescript
+interface ParsedName {
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  confidence: 'high' | 'medium' | 'low';
+  reasoning: string;
+}
+
+class NameParsingService {
+  /**
+   * Parse full name into components with cultural awareness
+   * 
+   * Examples:
+   * - "Chukwuemeka Okonkwo" → first: "Chukwuemeka", last: "Okonkwo" (high confidence)
+   * - "Okonkwo Chukwuemeka Nnamdi" → first: "Chukwuemeka", middle: "Nnamdi", last: "Okonkwo" (medium confidence)
+   * - "John" → first: "John", last: "" (low confidence)
+   * 
+   * Strategy:
+   * - 2 words: first word = first name, second word = last name (high confidence)
+   * - 3+ words: first word = last name, second word = first name, rest = middle names (medium confidence)
+   * - 1 word: single word = first name, empty last name (low confidence)
+   * 
+   * Note: All fields are editable in the Dojah widget, so this is just a best-guess pre-population
+   */
+  parseFullName(fullName: string): ParsedName
+
+  /**
+   * Reconstruct full name from components for display/comparison
+   */
+  reconstructFullName(parsed: ParsedName): string
+}
+```
 
 ### DojahService (`src/features/kyc/services/dojah.service.ts`)
 
@@ -148,10 +193,105 @@ class KYCRepository {
 
 Replaces the existing basic form. New responsibilities:
 - Fetch widget config from `/api/kyc/widget-config`
+- Fetch vendor data (phone, BVN, full name) from authenticated session
+- Parse full name using `NameParsingService` to extract first/middle/last names
 - Load Dojah widget script via `<Script>` tag
-- Initialize widget with config and callbacks
+- Initialize widget with config, parsed names, phone (immutable), BVN (immutable), and callbacks
 - On `onSuccess`: POST reference_id to `/api/kyc/complete`, poll for result
 - Display status states: idle, in-progress, pending-review, approved, rejected
+
+**Widget Configuration Updates:**
+
+```typescript
+// Current (BROKEN):
+const nameParts = (user?.name ?? '').split(' ');
+const options: DojahWidgetOptions = {
+  user_data: {
+    first_name: nameParts[0],
+    last_name: nameParts.slice(1).join(' ') || undefined,
+    email: user?.email ?? undefined,
+  },
+  // ...
+};
+
+// New (FIXED):
+import { NameParsingService } from '@/features/kyc/services/name-parsing.service';
+
+const nameParser = new NameParsingService();
+const parsedName = nameParser.parseFullName(user?.name ?? '');
+
+const options: DojahWidgetOptions = {
+  user_data: {
+    first_name: parsedName.firstName,
+    middle_name: parsedName.middleName,
+    last_name: parsedName.lastName,
+    phone: vendor?.phone, // From Tier 1 BVN verification - IMMUTABLE
+    bvn: vendor?.bvnNumber, // From Tier 1 - IMMUTABLE (if Dojah supports)
+    email: user?.email ?? undefined,
+  },
+  config: {
+    // Make phone and BVN read-only in the widget
+    otp: {
+      phone_number: vendor?.phone,
+      phone_number_editable: false, // IMMUTABLE
+    },
+    // Note: Check Dojah documentation for exact field names and immutability options
+  },
+  // ...
+};
+```
+
+**Field Editability Rules:**
+- **first_name**: Editable (vendor can correct parsing errors)
+- **middle_name**: Editable (vendor can correct parsing errors)
+- **last_name**: Editable (vendor can correct parsing errors)
+- **phone**: Read-only/immutable (already verified in Tier 1)
+- **bvn**: Read-only/immutable (already verified in Tier 1)
+- **email**: Pre-filled but may be editable depending on Dojah widget behavior
+
+### Dojah Widget Options Interface
+
+Updated interface to include all required fields with immutability specifications:
+
+```typescript
+interface DojahWidgetOptions {
+  app_id: string;
+  p_key: string;
+  type: string;
+  widget_id?: string;
+  user_data?: {
+    first_name?: string;        // Editable - vendor can correct
+    middle_name?: string;        // Editable - vendor can correct (NEW)
+    last_name?: string;          // Editable - vendor can correct
+    phone?: string;              // Immutable - from Tier 1 BVN verification (NEW)
+    bvn?: string;                // Immutable - from Tier 1 (NEW, if supported by Dojah)
+    dob?: string;
+    email?: string;
+  };
+  config?: {
+    otp?: {
+      phone_number?: string;           // Pre-filled phone from Tier 1
+      phone_number_editable?: boolean; // Set to false for immutability
+    };
+    // Additional Dojah configuration options for field immutability
+    // Consult Dojah documentation for exact field names
+  };
+  metadata?: Record<string, string>;
+  onSuccess: (response: { reference_id?: string }) => void;
+  onError: (err: unknown) => void;
+  onClose: () => void;
+}
+```
+
+**Dojah Documentation Research Required:**
+
+The implementation team must consult Dojah's official widget documentation to determine:
+1. The exact parameter names for making fields read-only/immutable
+2. Whether BVN can be pre-filled and made immutable in the widget
+3. The correct configuration structure for field-level editability controls
+4. Any widget version requirements for these features
+
+If Dojah does not support field-level immutability through widget configuration, implement client-side validation to warn users if they attempt to change phone/BVN fields, and server-side validation to reject submissions where phone/BVN differ from Tier 1 values.
 
 ### Manager Approvals UI (`src/app/(dashboard)/manager/kyc-approvals/`)
 
@@ -174,6 +314,11 @@ Daily job (triggered by Vercel Cron or external scheduler) that:
 ### Vendors Table Extensions
 
 The existing `vendors` table needs 25 new columns. These are added via a Drizzle migration.
+
+**Note on Phone and BVN Storage:**
+- Phone number is stored in the `users` table (`users.phone`) and is already verified during Tier 1 BVN verification
+- BVN is stored encrypted in the `vendors` table (`vendors.bvnEncrypted`) and is already verified during Tier 1
+- Both fields should be fetched from existing records and passed to Dojah widget as immutable
 
 ```typescript
 // New columns added to vendors table in src/lib/db/schema/vendors.ts
@@ -215,6 +360,12 @@ tier2ApprovedBy: uuid('tier2_approved_by').references(() => users.id),
 tier2RejectionReason: text('tier2_rejection_reason'),
 tier2ExpiresAt: timestamp('tier2_expires_at'),                   // approved_at + 12 months
 tier2DojahReferenceId: varchar('tier2_dojah_reference_id', { length: 100 }),
+
+// Name correction tracking (NEW)
+// Store vendor-corrected names from Dojah widget if they differ from parsed full_name
+tier2CorrectedFirstName: varchar('tier2_corrected_first_name', { length: 100 }),
+tier2CorrectedMiddleName: varchar('tier2_corrected_middle_name', { length: 100 }),
+tier2CorrectedLastName: varchar('tier2_corrected_last_name', { length: 100 }),
 
 // Fraud
 fraudRiskScore: numeric('fraud_risk_score', { precision: 5, scale: 2 }),
@@ -457,7 +608,58 @@ interface KYCStatus {
 
 ---
 
+### Property 17: Name Parsing Round-Trip Consistency
+
+*For any* full name string, reconstructing the full name from parsed components must preserve the essential name information (allowing for whitespace normalization and word order adjustments).
+
+`similarity(fullName, reconstructFullName(parseFullName(fullName))) >= 0.9`
+
+**Validates: Name parsing correctness**
+
+---
+
+### Property 18: Phone Number Immutability Enforcement
+
+*For any* Tier 2 verification submission, if the submitted phone number differs from the vendor's Tier 1 verified phone number, the submission must be rejected.
+
+`submittedPhone !== tier1Phone` implies `verificationStatus === "rejected"`
+
+**Validates: Phone number immutability requirement**
+
+---
+
+### Property 19: BVN Immutability Enforcement
+
+*For any* Tier 2 verification submission, if the submitted BVN differs from the vendor's Tier 1 verified BVN, the submission must be rejected.
+
+`submittedBVN !== tier1BVN` implies `verificationStatus === "rejected"`
+
+**Validates: BVN immutability requirement**
+
+---
+
+### Property 20: Name Correction Audit Trail
+
+*For any* Tier 2 verification where the vendor edits their name in the Dojah widget, the system must log both the original parsed names and the corrected names in the audit trail.
+
+`correctedName !== parsedName` implies `auditLog.contains(originalName AND correctedName)`
+
+**Validates: Name correction tracking requirement**
+
+---
+
 ## Error Handling
+
+### Name Parsing and Validation
+
+| Scenario | Handling Strategy |
+|---|---|
+| Single-word name | Parse as first name only, flag low confidence, allow vendor to add last name in widget |
+| Very long name (>5 words) | Parse first word as last name, second as first name, rest as middle names, flag medium confidence |
+| Name contains special characters | Preserve special characters, normalize whitespace, validate against Dojah requirements |
+| Vendor edits names significantly | Log original vs. corrected names in audit trail, flag for manager review if >50% character difference |
+| Phone number mismatch | Reject submission with error: "Phone number must match your Tier 1 verified number" |
+| BVN mismatch | Reject submission with error: "BVN must match your Tier 1 verified BVN" |
 
 ### Dojah API Errors
 
@@ -511,9 +713,11 @@ Tag format: `// Feature: tier-2-kyc-dojah-integration, Property {N}: {property_t
 - `src/features/kyc/services/__tests__/encryption.service.pbt.test.ts` — Properties 1, 11, 12
 - `src/features/kyc/services/__tests__/dojah.service.pbt.test.ts` — Properties 2, 3, 4, 5, 6, 7, 8, 9
 - `src/features/kyc/services/__tests__/fraud.service.pbt.test.ts` — Property 14
-- `src/features/kyc/utils/__tests__/validation.pbt.test.ts` — Properties 15, 16
+- `src/features/kyc/services/__tests__/name-parsing.service.pbt.test.ts` — Property 17 (NEW)
+- `src/features/kyc/utils/__tests__/validation.pbt.test.ts` — Properties 15, 16, 18, 19 (NEW: 18, 19)
 - `src/hooks/__tests__/use-tier-upgrade.pbt.test.ts` — Property 10
 - `src/app/api/cron/__tests__/kyc-expiry.pbt.test.ts` — Property 13
+- `src/app/api/kyc/__tests__/complete.pbt.test.ts` — Property 20 (NEW)
 
 **Example property test structure**:
 ```typescript
@@ -533,6 +737,40 @@ it('Property 1: decrypt(encrypt(nin)) === nin for all valid NINs', () => {
     { numRuns: 100 }
   );
 });
+
+// Feature: tier-2-kyc-dojah-integration, Property 17: Name parsing round-trip consistency
+it('Property 17: Name parsing preserves essential information', () => {
+  const parser = new NameParsingService();
+  fc.assert(
+    fc.property(
+      fc.array(fc.string({ minLength: 2, maxLength: 20 }), { minLength: 1, maxLength: 5 }).map(arr => arr.join(' ')),
+      (fullName) => {
+        const parsed = parser.parseFullName(fullName);
+        const reconstructed = parser.reconstructFullName(parsed);
+        const similarity = calculateSimilarity(fullName, reconstructed);
+        expect(similarity).toBeGreaterThanOrEqual(0.9);
+      }
+    ),
+    { numRuns: 100 }
+  );
+});
+
+// Feature: tier-2-kyc-dojah-integration, Property 18: Phone number immutability
+it('Property 18: Phone mismatch rejects verification', () => {
+  fc.assert(
+    fc.property(
+      fc.string({ minLength: 10, maxLength: 15 }), // tier1Phone
+      fc.string({ minLength: 10, maxLength: 15 }), // submittedPhone
+      async (tier1Phone, submittedPhone) => {
+        fc.pre(tier1Phone !== submittedPhone); // Only test when phones differ
+        const result = await verifyTier2({ phone: submittedPhone }, { tier1Phone });
+        expect(result.status).toBe('rejected');
+        expect(result.error).toContain('Phone number must match');
+      }
+    ),
+    { numRuns: 100 }
+  );
+});
 ```
 
 ### Unit Testing
@@ -540,15 +778,59 @@ it('Property 1: decrypt(encrypt(nin)) === nin for all valid NINs', () => {
 Unit tests focus on:
 - Specific Dojah API response fixtures (valid NIN, expired document, low liveness, sanctions match)
 - Integration between `DojahService` → `KYCRepository` → `AuditLogger`
+- **NEW:** Name parsing edge cases (single word, 5+ words, special characters, Nigerian name patterns)
+- **NEW:** Phone/BVN immutability validation (reject when values differ from Tier 1)
+- **NEW:** Name correction tracking (audit log entries when vendor edits names)
 - Manager approval/rejection flow end-to-end
 - Notification dispatch on tier change
 - Error message formatting for each failure type
 
 **Unit test file locations**:
 - `src/features/kyc/services/__tests__/dojah.service.test.ts`
+- `src/features/kyc/services/__tests__/name-parsing.service.test.ts` (NEW)
 - `src/features/kyc/repositories/__tests__/kyc.repository.test.ts`
-- `src/app/api/kyc/__tests__/complete.test.ts`
+- `src/app/api/kyc/__tests__/complete.test.ts` (updated with phone/BVN validation tests)
 - `src/app/api/kyc/__tests__/approvals.test.ts`
+
+**Example unit tests for name parsing**:
+```typescript
+describe('NameParsingService', () => {
+  const parser = new NameParsingService();
+
+  it('should parse two-word names correctly', () => {
+    const result = parser.parseFullName('Chukwuemeka Okonkwo');
+    expect(result).toEqual({
+      firstName: 'Chukwuemeka',
+      lastName: 'Okonkwo',
+      middleName: undefined,
+      confidence: 'high',
+      reasoning: 'Two-word name: first word is first name, second is last name'
+    });
+  });
+
+  it('should parse three-word names with last name first', () => {
+    const result = parser.parseFullName('Okonkwo Chukwuemeka Nnamdi');
+    expect(result).toEqual({
+      firstName: 'Chukwuemeka',
+      middleName: 'Nnamdi',
+      lastName: 'Okonkwo',
+      confidence: 'medium',
+      reasoning: 'Three+ word name: assuming last name first (Nigerian pattern)'
+    });
+  });
+
+  it('should handle single-word names', () => {
+    const result = parser.parseFullName('John');
+    expect(result).toEqual({
+      firstName: 'John',
+      lastName: '',
+      middleName: undefined,
+      confidence: 'low',
+      reasoning: 'Single word: cannot determine last name'
+    });
+  });
+});
+```
 
 ### Integration Tests
 
@@ -562,3 +844,129 @@ Unit tests focus on:
 - Flagged path: vendor completes widget, gets flagged, manager approves
 - Rejection path: vendor gets rejected, sees rejection reason, can resubmit after 24h
 - Tier enforcement: Tier 1 vendor blocked from high-value bid, sees upgrade prompt
+
+
+## Implementation Approach for Name Handling and Field Immutability
+
+### Phase 1: Name Parsing Service
+
+1. Create `src/features/kyc/services/name-parsing.service.ts`
+2. Implement parsing logic with cultural awareness:
+   - 2 words: `[firstName, lastName]`
+   - 3+ words: `[lastName, firstName, ...middleNames]` (Nigerian pattern)
+   - 1 word: `[firstName]` with empty lastName
+3. Add confidence scoring based on word count and patterns
+4. Implement reconstruction function for round-trip validation
+5. Write comprehensive unit tests covering edge cases
+
+### Phase 2: Database Schema Updates
+
+1. Add migration for new columns:
+   - `tier2_corrected_first_name`
+   - `tier2_corrected_middle_name`
+   - `tier2_corrected_last_name`
+2. Update `vendors` schema in Drizzle
+3. Run migration in development and test environments
+
+### Phase 3: Widget Configuration Updates
+
+1. Research Dojah documentation for:
+   - Field immutability configuration options
+   - BVN pre-fill support
+   - Phone number read-only configuration
+2. Update `tier2/page.tsx`:
+   - Import and use `NameParsingService`
+   - Fetch vendor phone from `users.phone`
+   - Fetch vendor BVN from `vendors.bvnEncrypted` (decrypt if needed for widget)
+   - Parse full name into components
+   - Configure widget with all fields and immutability settings
+3. Add client-side warnings if Dojah doesn't support field-level immutability
+
+### Phase 4: Server-Side Validation
+
+1. Update `POST /api/kyc/complete` handler:
+   - Fetch Tier 1 phone and BVN from database
+   - Compare submitted phone/BVN against Tier 1 values
+   - Reject if mismatch detected
+   - Extract submitted names from Dojah response
+   - Compare against parsed names
+   - Store corrected names if different
+   - Log name changes in audit trail
+2. Add validation error responses with clear messages
+
+### Phase 5: Audit Trail Enhancement
+
+1. Update audit logging to capture:
+   - Original parsed names
+   - Vendor-corrected names (if edited)
+   - Phone/BVN validation results
+   - Rejection reasons for immutability violations
+2. Add audit log queries for compliance reporting
+
+### Phase 6: Testing
+
+1. Write property-based tests for:
+   - Name parsing round-trip (Property 17)
+   - Phone immutability (Property 18)
+   - BVN immutability (Property 19)
+   - Name correction audit trail (Property 20)
+2. Write unit tests for name parsing edge cases
+3. Write integration tests for complete verification flow
+4. Write E2E tests for name correction and immutability enforcement
+
+### Phase 7: Documentation
+
+1. Document name parsing algorithm and cultural considerations
+2. Document Dojah widget configuration for immutability
+3. Update API documentation with new validation rules
+4. Create troubleshooting guide for name parsing issues
+
+---
+
+## Summary of Changes
+
+This design update addresses two critical issues in the Tier 2 KYC Dojah Integration:
+
+### 1. Name Parsing Problem (FIXED)
+
+**Issue:** The current naive `split(' ')` approach fails for Nigerian names where the last name may come first, or there are multiple middle names.
+
+**Solution:**
+- Created `NameParsingService` with cultural awareness
+- Implements intelligent parsing: 2 words = first/last, 3+ words = last/first/middle
+- All name fields are editable in the Dojah widget (vendor can correct errors)
+- System stores corrected names if vendor edits them
+- Audit trail logs original vs. corrected names for compliance
+
+### 2. Phone Number and BVN Immutability (FIXED)
+
+**Issue:** Phone and BVN should be immutable since they're already verified in Tier 1, but current implementation doesn't enforce this.
+
+**Solution:**
+- Phone fetched from `users.phone` (Tier 1 verified)
+- BVN fetched from `vendors.bvnEncrypted` (Tier 1 verified)
+- Both pre-filled in Dojah widget and configured as read-only
+- Server-side validation rejects submissions if phone/BVN differ from Tier 1
+- Clear error messages guide vendors to contact support if values need updating
+
+### New Database Columns
+
+- `tier2_corrected_first_name` - Stores vendor-edited first name
+- `tier2_corrected_middle_name` - Stores vendor-edited middle name
+- `tier2_corrected_last_name` - Stores vendor-edited last name
+
+### New Correctness Properties
+
+- **Property 17:** Name parsing round-trip consistency
+- **Property 18:** Phone number immutability enforcement
+- **Property 19:** BVN immutability enforcement
+- **Property 20:** Name correction audit trail
+
+### Implementation Priority
+
+1. **High Priority:** Name parsing service (blocks Tier 2 verification)
+2. **High Priority:** Phone/BVN immutability validation (security requirement)
+3. **Medium Priority:** Database schema updates (can be done in parallel)
+4. **Medium Priority:** Audit trail enhancements (compliance requirement)
+5. **Low Priority:** Additional E2E tests (quality assurance)
+

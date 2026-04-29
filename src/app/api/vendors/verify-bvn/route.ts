@@ -251,7 +251,21 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(users.id, userId));
 
-    // 12. Log successful verification
+    // 12. CRITICAL: Invalidate Redis cache to force session refresh
+    // The JWT callback caches user data in Redis for 30 minutes
+    // We must clear this cache so the next request gets fresh data with bvnVerified=true
+    const { redis } = await import('@/lib/redis/client');
+    const userCacheKey = `user:${userId}`;
+    
+    try {
+      await redis.del(userCacheKey);
+      console.log('[BVN Verification] Cleared user cache:', userCacheKey);
+    } catch (cacheError) {
+      console.error('[BVN Verification] Failed to clear user cache (non-fatal):', cacheError);
+      // Continue - this is non-fatal, session will refresh eventually
+    }
+
+    // 13. Log successful verification
     await logAction(
       createAuditLogData(
         request,
@@ -296,6 +310,8 @@ export async function POST(request: NextRequest) {
           bvnVerified: true,
           maxBidAmount: 500000,
         },
+        // Signal to client to refresh session
+        refreshSession: true,
       },
       { status: 200 }
     );

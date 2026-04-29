@@ -36,11 +36,54 @@ ChartJS.register(
 );
 
 interface RevenueAnalysisData {
-  totalRevenue: number;
-  recoveryRate: number;
-  trends: Array<{ period: string; revenue: number; recoveryRate: number }>;
-  byAssetType: Array<{ assetType: string; revenue: number; count: number }>;
-  byRegion: Array<{ region: string; revenue: number; count: number }>;
+  summary: {
+    totalCases: number;
+    totalClaimsPaid: number;
+    totalSalvageRecovered: number;
+    totalRegistrationFees: number;
+    totalRevenue: number;
+    totalNetLoss: number;
+    averageRecoveryRate: number;
+  };
+  byAssetType: Array<{
+    assetType: string;
+    count: number;
+    claimsPaid: number;
+    salvageRecovered: number;
+    netLoss: number;
+    recoveryRate: number;
+  }>;
+  byRegion?: Array<{
+    region: string;
+    count: number;
+    claimsPaid: number;
+    salvageRecovered: number;
+    recoveryRate: number;
+  }>;
+  itemBreakdown: Array<{
+    claimReference: string;
+    assetType: string;
+    marketValue: number;
+    salvageRecovery: number;
+    netLoss: number;
+    recoveryRate: number;
+    region: string;
+    date: string;
+  }>;
+  registrationFees: Array<{
+    vendorName: string;
+    amount: number;
+    paymentMethod: string;
+    date: string;
+    status: string;
+  }>;
+  trend: Array<{
+    date: string;
+    claimsPaid: number;
+    salvageRecovered: number;
+    recoveryRate: number;
+    count: number;
+  }>;
 }
 
 interface RevenueAnalysisReportProps {
@@ -55,27 +98,36 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
 
   // Ensure data has required properties with defaults
   const safeData = {
-    totalRevenue: data.totalRevenue || 0,
-    recoveryRate: data.recoveryRate || 0,
-    trends: data.trends || [],
+    summary: data.summary || {
+      totalCases: 0,
+      totalClaimsPaid: 0,
+      totalSalvageRecovered: 0,
+      totalRegistrationFees: 0,
+      totalRevenue: 0,
+      totalNetLoss: 0,
+      averageRecoveryRate: 0,
+    },
     byAssetType: data.byAssetType || [],
     byRegion: data.byRegion || [],
+    itemBreakdown: data.itemBreakdown || [],
+    registrationFees: data.registrationFees || [],
+    trend: data.trend || [],
   };
 
   // Calculate trend direction
-  const trendDirection = safeData.trends.length >= 2
-    ? safeData.trends[safeData.trends.length - 1].revenue > safeData.trends[safeData.trends.length - 2].revenue
+  const trendDirection = safeData.trend.length >= 2
+    ? safeData.trend[safeData.trend.length - 1].salvageRecovered > safeData.trend[safeData.trend.length - 2].salvageRecovered
       ? 'up'
       : 'down'
     : 'neutral';
 
   // Chart data for salvage recovery trends
   const trendChartData = {
-    labels: safeData.trends.map(t => t?.period || 'N/A'),
+    labels: safeData.trend.map(t => t?.date || 'N/A'),
     datasets: [
       {
         label: 'Salvage Recovered (₦)',
-        data: safeData.trends.map(t => t?.revenue || 0),
+        data: safeData.trend.map(t => t?.salvageRecovered || 0),
         borderColor: '#800020',
         backgroundColor: 'rgba(128, 0, 32, 0.1)',
         fill: true,
@@ -90,7 +142,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
     datasets: [
       {
         label: 'Salvage Recovered by Asset Type (₦)',
-        data: safeData.byAssetType.map(a => a?.revenue || 0),
+        data: safeData.byAssetType.map(a => a?.salvageRecovered || 0),
         backgroundColor: ['#800020', '#A00028', '#C00030', '#E00038'],
       },
     ],
@@ -118,17 +170,17 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
-              Total Salvage Recovered
+              Total Revenue
             </CardTitle>
             <Banknote className="h-4 w-4 text-[#800020]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ₦{safeData.totalRevenue.toLocaleString()}
+              ₦{safeData.summary.totalRevenue.toLocaleString()}
             </div>
             <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
               {trendDirection === 'up' ? (
@@ -146,16 +198,16 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
-              Recovery Rate
+              Salvage Recovered
             </CardTitle>
-            <BarChart3 className="h-4 w-4 text-[#800020]" />
+            <Banknote className="h-4 w-4 text-[#800020]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {safeData.recoveryRate.toFixed(2)}%
+              ₦{safeData.summary.totalSalvageRecovered.toLocaleString()}
             </div>
             <p className="text-xs text-gray-600 mt-1">
-              Of claim payouts recovered
+              From {safeData.summary.totalCases} cases
             </p>
           </CardContent>
         </Card>
@@ -163,16 +215,33 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
-              Total Cases
+              Registration Fees
+            </CardTitle>
+            <Banknote className="h-4 w-4 text-[#800020]" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              ₦{safeData.summary.totalRegistrationFees.toLocaleString()}
+            </div>
+            <p className="text-xs text-gray-600 mt-1">
+              {safeData.registrationFees.length} payments
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Recovery Rate
             </CardTitle>
             <BarChart3 className="h-4 w-4 text-[#800020]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {safeData.byAssetType.reduce((sum, a) => sum + a.count, 0)}
+              {safeData.summary.averageRecoveryRate.toFixed(2)}%
             </div>
             <p className="text-xs text-gray-600 mt-1">
-              Across all asset types
+              Of claim payouts recovered
             </p>
           </CardContent>
         </Card>
@@ -217,10 +286,10 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-[#800020]">
-                      ₦{(asset?.revenue || 0).toLocaleString()}
+                      ₦{(asset?.salvageRecovered || 0).toLocaleString()}
                     </p>
                     <p className="text-xs text-gray-600">
-                      ₦{Math.round((asset?.revenue || 0) / (asset?.count || 1)).toLocaleString()} avg
+                      ₦{Math.round((asset?.salvageRecovered || 0) / (asset?.count || 1)).toLocaleString()} avg
                     </p>
                   </div>
                 </div>
@@ -244,12 +313,12 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                   <p className="text-sm text-gray-600">{region?.count || 0} cases</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold">₦{(region?.revenue || 0).toLocaleString()}</p>
+                  <p className="font-bold">₦{(region?.salvageRecovered || 0).toLocaleString()}</p>
                   <div className="w-32 bg-gray-200 rounded-full h-2 mt-1">
                     <div
                       className="bg-[#800020] h-2 rounded-full"
                       style={{
-                        width: `${safeData.totalRevenue > 0 ? ((region?.revenue || 0) / safeData.totalRevenue) * 100 : 0}%`,
+                        width: `${safeData.summary.totalSalvageRecovered > 0 ? ((region?.salvageRecovered || 0) / safeData.summary.totalSalvageRecovered) * 100 : 0}%`,
                       }}
                     />
                   </div>
@@ -259,6 +328,88 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
           </div>
         </CardContent>
       </Card>
+
+      {/* Item Breakdown Table */}
+      {safeData.itemBreakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Detailed Item Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-2 font-medium">Claim Reference</th>
+                    <th className="text-left p-2 font-medium">Asset Type</th>
+                    <th className="text-right p-2 font-medium">Market Value</th>
+                    <th className="text-right p-2 font-medium">Salvage Recovery</th>
+                    <th className="text-right p-2 font-medium">Net Loss</th>
+                    <th className="text-right p-2 font-medium">Recovery Rate</th>
+                    <th className="text-left p-2 font-medium">Region</th>
+                    <th className="text-left p-2 font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {safeData.itemBreakdown.map((item, index) => (
+                    <tr key={index} className="border-b hover:bg-gray-50">
+                      <td className="p-2 font-medium">{item.claimReference}</td>
+                      <td className="p-2 capitalize">{item.assetType}</td>
+                      <td className="p-2 text-right">₦{item.marketValue.toLocaleString()}</td>
+                      <td className="p-2 text-right text-green-600">₦{item.salvageRecovery.toLocaleString()}</td>
+                      <td className="p-2 text-right text-red-600">₦{item.netLoss.toLocaleString()}</td>
+                      <td className="p-2 text-right">{item.recoveryRate.toFixed(2)}%</td>
+                      <td className="p-2">{item.region}</td>
+                      <td className="p-2">{new Date(item.date).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Registration Fees Table */}
+      {safeData.registrationFees.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Registration Fees Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-2 font-medium">Vendor Name</th>
+                    <th className="text-right p-2 font-medium">Amount</th>
+                    <th className="text-left p-2 font-medium">Payment Method</th>
+                    <th className="text-left p-2 font-medium">Status</th>
+                    <th className="text-left p-2 font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {safeData.registrationFees.map((fee, index) => (
+                    <tr key={index} className="border-b hover:bg-gray-50">
+                      <td className="p-2 font-medium">{fee.vendorName}</td>
+                      <td className="p-2 text-right text-green-600">₦{fee.amount.toLocaleString()}</td>
+                      <td className="p-2 capitalize">{fee.paymentMethod}</td>
+                      <td className="p-2">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          fee.status === 'verified' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {fee.status}
+                        </span>
+                      </td>
+                      <td className="p-2">{new Date(fee.date).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

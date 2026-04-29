@@ -14,7 +14,9 @@ export interface RevenueAnalysisReport {
     totalCases: number;
     totalClaimsPaid: number; // Market value = ACV paid out
     totalSalvageRecovered: number; // What we got from auctions
-    totalNetLoss: number; // Claims paid - Salvage recovered
+    totalRegistrationFees: number; // Registration fees collected
+    totalRevenue: number; // Salvage + Registration fees
+    totalNetLoss: number; // Claims paid - Total revenue
     averageRecoveryRate: number; // % of claims recovered through salvage
   };
   byAssetType: Array<{
@@ -31,6 +33,23 @@ export interface RevenueAnalysisReport {
     claimsPaid: number;
     salvageRecovered: number;
     recoveryRate: number;
+  }>;
+  itemBreakdown: Array<{
+    claimReference: string;
+    assetType: string;
+    marketValue: number;
+    salvageRecovery: number;
+    netLoss: number;
+    recoveryRate: number;
+    region: string;
+    date: string;
+  }>;
+  registrationFees: Array<{
+    vendorName: string;
+    amount: number;
+    paymentMethod: string;
+    date: string;
+    status: string;
   }>;
   trend: Array<{
     date: string;
@@ -56,13 +75,20 @@ export class RevenueAnalysisService {
    * Generate comprehensive salvage recovery analysis report
    */
   static async generateReport(filters: ReportFilters): Promise<RevenueAnalysisReport> {
-    // Get revenue data
+    // Get revenue data (auction payments)
     const revenueData = await FinancialDataRepository.getRevenueData(filters);
+
+    // Get registration fee data
+    const registrationFeeData = await FinancialDataRepository.getRegistrationFeeData(filters);
 
     // Calculate summary statistics
     const totalClaimsPaid = revenueData.reduce((sum, row) => sum + parseFloat(row.marketValue), 0);
     const totalSalvageRecovered = revenueData.reduce((sum, row) => sum + parseFloat(row.salvageRecovery), 0);
-    const totalNetLoss = totalClaimsPaid - totalSalvageRecovered;
+    const totalRegistrationFees = registrationFeeData
+      .filter(fee => fee.status === 'verified')
+      .reduce((sum, fee) => sum + parseFloat(fee.amount), 0);
+    const totalRevenue = totalSalvageRecovered + totalRegistrationFees;
+    const totalNetLoss = totalClaimsPaid - totalRevenue;
     const averageRecoveryRate = totalClaimsPaid > 0 ? (totalSalvageRecovered / totalClaimsPaid) * 100 : 0;
 
     // Group by asset type
@@ -70,6 +96,27 @@ export class RevenueAnalysisService {
 
     // Group by region
     const byRegion = this.calculateByRegion(revenueData);
+
+    // Create item breakdown
+    const itemBreakdown = revenueData.map(row => ({
+      claimReference: row.claimReference,
+      assetType: row.assetType,
+      marketValue: parseFloat(row.marketValue),
+      salvageRecovery: parseFloat(row.salvageRecovery),
+      netLoss: row.netLoss,
+      recoveryRate: row.recoveryRate,
+      region: row.region || 'Unknown',
+      date: row.createdAt.toISOString().split('T')[0],
+    }));
+
+    // Create registration fees breakdown
+    const registrationFees = registrationFeeData.map(fee => ({
+      vendorName: fee.vendorName,
+      amount: parseFloat(fee.amount),
+      paymentMethod: fee.method,
+      date: fee.createdAt.toISOString().split('T')[0],
+      status: fee.status,
+    }));
 
     // Calculate trend
     const trend = this.calculateTrend(revenueData);
@@ -82,11 +129,15 @@ export class RevenueAnalysisService {
         totalCases: revenueData.length,
         totalClaimsPaid: Math.round(totalClaimsPaid * 100) / 100,
         totalSalvageRecovered: Math.round(totalSalvageRecovered * 100) / 100,
+        totalRegistrationFees: Math.round(totalRegistrationFees * 100) / 100,
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
         totalNetLoss: Math.round(totalNetLoss * 100) / 100,
         averageRecoveryRate: Math.round(averageRecoveryRate * 100) / 100,
       },
       byAssetType,
       byRegion,
+      itemBreakdown,
+      registrationFees,
       trend,
       forecast,
     };

@@ -245,3 +245,97 @@ if (workbox) {
   console.error('Workbox failed to load');
 }
 
+// Push Notification Handler
+self.addEventListener('push', (event) => {
+  console.log('Push notification received:', event);
+
+  if (!event.data) {
+    console.warn('Push event has no data');
+    return;
+  }
+
+  try {
+    const data = event.data.json();
+    console.log('Push notification data:', data);
+
+    const options = {
+      body: data.body || 'You have a new notification',
+      icon: data.icon || '/icons/Nem-insurance-Logo.jpg',
+      badge: data.badge || '/icons/Nem-insurance-Logo.jpg',
+      data: data.data || {},
+      tag: data.tag || 'default',
+      requireInteraction: data.requireInteraction || false,
+      actions: data.actions || [],
+      vibrate: [200, 100, 200],
+      timestamp: Date.now(),
+    };
+
+    event.waitUntil(
+      self.registration.showNotification(data.title || 'NEM Insurance', options)
+    );
+  } catch (error) {
+    console.error('Error handling push notification:', error);
+    
+    // Fallback notification
+    event.waitUntil(
+      self.registration.showNotification('NEM Insurance', {
+        body: 'You have a new notification',
+        icon: '/icons/Nem-insurance-Logo.jpg',
+        badge: '/icons/Nem-insurance-Logo.jpg',
+      })
+    );
+  }
+});
+
+// Notification Click Handler
+self.addEventListener('notificationclick', (event) => {
+  console.log('Notification clicked:', event);
+
+  event.notification.close();
+
+  const data = event.notification.data || {};
+  const action = event.action;
+
+  // Determine URL based on notification type and action
+  let url = '/';
+  
+  if (data.type === 'outbid' || data.type === 'auction-ending') {
+    if (action === 'view' || action === 'bid') {
+      url = data.auctionId ? `/vendor/auctions/${data.auctionId}` : '/vendor/auctions';
+    }
+  } else if (data.type === 'payment-confirmation') {
+    if (action === 'view') {
+      url = '/vendor/documents';
+    }
+  } else if (data.type === 'leaderboard-update') {
+    if (action === 'view') {
+      url = '/vendor/leaderboard';
+    }
+  }
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // Check if there's already a window open
+      for (const client of clientList) {
+        if (client.url.includes(url) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      
+      // Open new window if no matching window found
+      if (clients.openWindow) {
+        return clients.openWindow(url);
+      }
+    })
+  );
+});
+
+// Notification Close Handler
+self.addEventListener('notificationclose', (event) => {
+  console.log('Notification closed:', event);
+  
+  // Track notification dismissal (optional analytics)
+  const data = event.notification.data || {};
+  console.log('Notification dismissed:', data.type);
+});
+

@@ -26,6 +26,16 @@ export interface ProfitabilityReport {
     recoveryRate: number;
     roi: number;
   }>;
+  itemBreakdown: Array<{
+    claimReference: string;
+    assetType: string;
+    marketValue: number;
+    salvageRecovery: number;
+    netLoss: number;
+    recoveryRate: number;
+    roi: number;
+    date: string;
+  }>;
   profitDistribution: {
     profitable: number;
     breakEven: number;
@@ -93,9 +103,22 @@ export class ProfitabilityService {
         : 0,
     }));
 
+    // Create item breakdown with ROI
+    const itemBreakdown = data.details.map(row => ({
+      claimReference: row.claimReference,
+      assetType: row.assetType,
+      marketValue: parseFloat(row.marketValue),
+      salvageRecovery: parseFloat(row.salvageRecovery),
+      netLoss: row.netLoss,
+      recoveryRate: row.recoveryRate,
+      roi: row.recoveryRate, // Recovery rate IS the ROI for salvage
+      date: row.createdAt.toISOString().split('T')[0],
+    }));
+
     return {
       summary: summaryWithROI,
       byAssetType: byAssetTypeArray,
+      itemBreakdown,
       profitDistribution,
       topPerformers: performers.top,
       bottomPerformers: performers.bottom,

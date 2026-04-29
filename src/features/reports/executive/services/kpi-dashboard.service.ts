@@ -306,24 +306,30 @@ export class KPIDashboardService {
     const startDate = filters.startDate ? new Date(filters.startDate).toISOString() : new Date('2000-01-01').toISOString();
     const endDate = filters.endDate ? new Date(filters.endDate).toISOString() : new Date('2099-12-31').toISOString();
 
-    // Cases breakdown
+    // Cases breakdown - use DISTINCT ON to prevent duplicates
     const casesResult = await db.execute(sql`
-      SELECT 
+      SELECT DISTINCT ON (sc.id)
         sc.id,
         sc.claim_reference,
         u.full_name as adjuster_name,
         sc.asset_type,
         sc.market_value,
         EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400 as processing_days,
-        COALESCE(p.amount, '0') as revenue,
+        COALESCE(
+          (SELECT p.amount 
+           FROM payments p 
+           JOIN auctions a ON p.auction_id = a.id 
+           WHERE a.case_id = sc.id AND p.status = 'verified' 
+           ORDER BY p.created_at DESC 
+           LIMIT 1), 
+          '0'
+        ) as revenue,
         sc.status
       FROM salvage_cases sc
       LEFT JOIN users u ON sc.created_by = u.id
-      LEFT JOIN auctions a ON sc.id = a.case_id
-      LEFT JOIN payments p ON a.id = p.auction_id AND p.status = 'verified'
       WHERE sc.created_at >= ${startDate}
         AND sc.created_at <= ${endDate}
-      ORDER BY sc.created_at DESC
+      ORDER BY sc.id, sc.created_at DESC
       LIMIT 100
     `);
 

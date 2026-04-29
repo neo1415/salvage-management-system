@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 import { AlertCircle, CheckCircle2, Loader2, Phone, ArrowLeft } from 'lucide-react';
 
 /**
@@ -20,6 +21,7 @@ function VerifyOTPForm() {
   const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(300); // 5 minutes in seconds
   const [canResend, setCanResend] = useState(false);
 
@@ -71,7 +73,7 @@ function VerifyOTPForm() {
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/verify-otp', {
+      const response = await fetch('/api/otp/verify', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,14 +96,47 @@ function VerifyOTPForm() {
       setSuccess(true);
 
       // For OAuth completion, redirect to login page
-      // For regular registration, redirect to KYC
-      setTimeout(() => {
-        if (result.isOAuthComplete) {
+      if (result.isOAuthComplete) {
+        setTimeout(() => {
           router.push('/login?message=Registration completed. Please sign in with Google.');
+        }, 2000);
+        return;
+      }
+
+      // For regular registration, auto-login the user then redirect to BVN verification
+      // Get user's email from the registration flow (stored in session storage during registration)
+      const registrationEmail = sessionStorage.getItem('registration_email');
+      const registrationPassword = sessionStorage.getItem('registration_password');
+
+      if (registrationEmail && registrationPassword) {
+        // Auto-login using credentials
+        const signInResult = await signIn('credentials', {
+          email: registrationEmail,
+          password: registrationPassword,
+          redirect: false,
+        });
+
+        // Clear sensitive data from session storage
+        sessionStorage.removeItem('registration_email');
+        sessionStorage.removeItem('registration_password');
+
+        if (signInResult?.ok) {
+          // Successfully logged in, redirect to BVN verification
+          setTimeout(() => {
+            router.push('/vendor/kyc/tier1');
+          }, 2000);
         } else {
-          router.push('/vendor/kyc/tier1');
+          // Login failed, redirect to login page with message
+          setTimeout(() => {
+            router.push('/login?message=Phone verified! Please sign in to continue.');
+          }, 2000);
         }
-      }, 2000);
+      } else {
+        // No credentials found, redirect to login page
+        setTimeout(() => {
+          router.push('/login?message=Phone verified! Please sign in to continue.');
+        }, 2000);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verification failed. Please try again.');
       // Clear OTP inputs on error
@@ -184,7 +219,7 @@ function VerifyOTPForm() {
     setError(null);
 
     try {
-      const response = await fetch(`/api/auth/verify-otp/resend?phone=${encodeURIComponent(phone)}`, {
+      const response = await fetch(`/api/otp/resend?phone=${encodeURIComponent(phone)}`, {
         method: 'GET',
       });
 
@@ -200,9 +235,9 @@ function VerifyOTPForm() {
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
 
-      // Show success message briefly
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      // Show resend success message briefly
+      setResendSuccess(true);
+      setTimeout(() => setResendSuccess(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to resend OTP. Please try again.');
     } finally {
@@ -251,16 +286,27 @@ function VerifyOTPForm() {
 
         {/* OTP Form Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8">
-          {/* Success Message */}
+          {/* Verification Success Message */}
           {success && (
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
               <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
               <div>
-                <h3 className="font-semibold text-green-900">
-                  {isResending ? 'OTP Resent!' : 'Phone Verified Successfully!'}
-                </h3>
+                <h3 className="font-semibold text-green-900">Phone Verified Successfully!</h3>
                 <p className="text-sm text-green-700 mt-1">
-                  {isResending ? 'Check your phone for the new code.' : 'Redirecting you to complete your profile...'}
+                  Redirecting you to complete your profile...
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Resend Success Message */}
+          {resendSuccess && !success && (
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-blue-900">OTP Resent Successfully!</h3>
+                <p className="text-sm text-blue-700 mt-1">
+                  Check your phone and email for the new verification code.
                 </p>
               </div>
             </div>

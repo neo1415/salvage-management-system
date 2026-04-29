@@ -68,7 +68,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                       <TrendingDown className="h-4 w-4 text-red-600 mr-1" />
                     )}
                     <span className={`text-sm ${data.executiveSummary.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatPercent(Math.abs(data.executiveSummary.revenueGrowth))}
+                      {formatPercent(Math.abs(data.executiveSummary.revenueGrowth))} growth
                     </span>
                   </div>
                 </div>
@@ -170,7 +170,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
       <section>
         <h2 className="text-2xl font-bold mb-4 text-[#800020]">Financial Performance</h2>
         
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-4">
+        <div className="grid gap-4 md:grid-cols-3 mb-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">Gross Profit</CardTitle>
@@ -185,14 +185,6 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">{formatPercent(data.financial.profitability.profitMargin)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Operational Costs</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{formatCurrency(data.financial.profitability.operationalCosts)}</p>
             </CardContent>
           </Card>
           <Card>

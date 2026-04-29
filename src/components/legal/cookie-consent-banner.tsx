@@ -92,201 +92,170 @@ export function CookieConsentBanner() {
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 100, opacity: 0 }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="fixed bottom-0 left-0 right-0 z-50 p-4 md:p-6"
+        className="fixed bottom-3 left-3 right-3 md:left-auto md:right-3 md:max-w-xs z-50"
       >
-        <div className="container mx-auto max-w-6xl">
-          <div className="bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
-            {/* Main Banner */}
-            {!showSettings ? (
-              <div className="p-6 md:p-8">
-                <div className="flex items-start gap-4">
-                  {/* Cookie Icon */}
-                  <div className="flex-shrink-0">
-                    <div className="w-12 h-12 bg-burgundy-100 rounded-full flex items-center justify-center">
-                      <Cookie className="w-6 h-6 text-burgundy-700" />
-                    </div>
+        <div className="bg-white rounded-md shadow-lg border border-gray-200 overflow-hidden">
+          {/* Main Banner */}
+          {!showSettings ? (
+            <div className="p-2.5">
+              <div className="flex items-start gap-2">
+                {/* Cookie Icon */}
+                <div className="flex-shrink-0">
+                  <div className="w-6 h-6 bg-burgundy-100 rounded-full flex items-center justify-center">
+                    <Cookie className="w-3 h-3 text-burgundy-700" />
                   </div>
-
-                  {/* Content */}
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">
-                      We Value Your Privacy
-                    </h3>
-                    <p className="text-gray-600 text-sm md:text-base mb-4">
-                      We use cookies to enhance your experience, analyze site usage, and assist in our marketing efforts. 
-                      By clicking "Accept All", you consent to our use of cookies. You can manage your preferences or learn 
-                      more in our{' '}
-                      <Link href="/cookies" className="text-burgundy-700 hover:text-burgundy-900 underline font-medium">
-                        Cookie Policy
-                      </Link>
-                      {' '}and{' '}
-                      <Link href="/privacy" className="text-burgundy-700 hover:text-burgundy-900 underline font-medium">
-                        Privacy Policy
-                      </Link>
-                      .
-                    </p>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <button
-                        onClick={handleAcceptAll}
-                        className="px-6 py-2.5 bg-burgundy-700 hover:bg-burgundy-800 text-white font-semibold rounded-lg transition-colors"
-                      >
-                        Accept All
-                      </button>
-                      <button
-                        onClick={handleRejectNonEssential}
-                        className="px-6 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold rounded-lg transition-colors"
-                      >
-                        Reject Non-Essential
-                      </button>
-                      <button
-                        onClick={() => setShowSettings(true)}
-                        className="px-6 py-2.5 bg-white hover:bg-gray-50 text-gray-700 font-semibold rounded-lg border border-gray-300 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <Settings className="w-4 h-4" />
-                        Customize
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Close Button */}
-                  <button
-                    onClick={handleClose}
-                    className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-                    aria-label="Close"
-                  >
-                    <X className="w-5 h-5 text-gray-500" />
-                  </button>
                 </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-[11px] font-bold text-gray-900 mb-0.5">
+                    Cookies
+                  </h3>
+                  <p className="text-[10px] text-gray-600 mb-2 leading-tight">
+                    We use cookies.{' '}
+                    <Link href="/cookies" className="text-burgundy-700 hover:underline">
+                      Learn more
+                    </Link>
+                  </p>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      onClick={handleAcceptAll}
+                      className="px-2 py-1 bg-burgundy-700 hover:bg-burgundy-800 text-white text-[10px] font-semibold rounded transition-colors"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={handleRejectNonEssential}
+                      className="px-2 py-1 bg-gray-200 hover:bg-gray-300 text-gray-800 text-[10px] font-semibold rounded transition-colors"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => setShowSettings(true)}
+                      className="px-2 py-1 bg-white hover:bg-gray-50 text-gray-700 text-[10px] font-semibold rounded border border-gray-300 transition-colors flex items-center gap-0.5"
+                    >
+                      <Settings className="w-2.5 h-2.5" />
+                      <span className="hidden sm:inline">Settings</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Close Button */}
+                <button
+                  onClick={handleClose}
+                  className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-3 h-3 text-gray-500" />
+                </button>
               </div>
-            ) : (
+            </div>
+          ) : (
               /* Settings Panel */
-              <div className="p-6 md:p-8">
-                <div className="flex items-start justify-between mb-6">
+              <div className="p-2.5 max-h-[60vh] overflow-y-auto">
+                <div className="flex items-start justify-between mb-2">
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-1">
-                      Cookie Preferences
+                    <h3 className="text-[11px] font-bold text-gray-900 mb-0.5">
+                      Cookie Settings
                     </h3>
-                    <p className="text-sm text-gray-600">
-                      Manage your cookie settings. Essential cookies cannot be disabled.
+                    <p className="text-[10px] text-gray-600">
+                      Essential always on.
                     </p>
                   </div>
                   <button
                     onClick={() => setShowSettings(false)}
-                    className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+                    className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
                     aria-label="Back"
                   >
-                    <X className="w-5 h-5 text-gray-500" />
+                    <X className="w-3 h-3 text-gray-500" />
                   </button>
                 </div>
 
                 {/* Cookie Categories */}
-                <div className="space-y-4 mb-6">
+                <div className="space-y-1.5 mb-2">
                   {/* Essential Cookies */}
-                  <div className="flex items-start justify-between p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-semibold text-gray-900">Essential Cookies</h4>
-                        <span className="px-2 py-0.5 bg-green-100 text-green-800 text-xs font-medium rounded">
-                          Always Active
+                  <div className="flex items-center justify-between p-1.5 bg-gray-50 rounded">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        <h4 className="text-[10px] font-semibold text-gray-900">Essential</h4>
+                        <span className="px-1 py-0.5 bg-green-100 text-green-800 text-[9px] font-medium rounded">
+                          On
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600">
-                        Required for the platform to function. These cookies enable core functionality such as 
-                        authentication, security, and session management.
-                      </p>
                     </div>
-                    <div className="ml-4">
-                      <div className="w-12 h-6 bg-green-500 rounded-full flex items-center justify-end px-1">
-                        <div className="w-4 h-4 bg-white rounded-full"></div>
+                    <div className="ml-1.5">
+                      <div className="w-7 h-4 bg-green-500 rounded-full flex items-center justify-end px-0.5">
+                        <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
                       </div>
                     </div>
                   </div>
 
                   {/* Functional Cookies */}
-                  <div className="flex items-start justify-between p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900 mb-1">Functional Cookies</h4>
-                      <p className="text-sm text-gray-600">
-                        Enable enhanced functionality and personalization, such as remembering your preferences 
-                        and settings.
-                      </p>
+                  <div className="flex items-center justify-between p-1.5 bg-gray-50 rounded">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-[10px] font-semibold text-gray-900">Functional</h4>
                     </div>
-                    <div className="ml-4">
+                    <div className="ml-1.5">
                       <button
                         onClick={() => setPreferences(prev => ({ ...prev, functional: !prev.functional }))}
-                        className={`w-12 h-6 rounded-full flex items-center transition-colors ${
+                        className={`w-7 h-4 rounded-full flex items-center transition-colors ${
                           preferences.functional 
                             ? 'bg-burgundy-600 justify-end' 
                             : 'bg-gray-300 justify-start'
-                        } px-1`}
+                        } px-0.5`}
                         aria-label="Toggle functional cookies"
                       >
-                        <div className="w-4 h-4 bg-white rounded-full"></div>
+                        <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
                       </button>
                     </div>
                   </div>
 
                   {/* Analytics Cookies */}
-                  <div className="flex items-start justify-between p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900 mb-1">Analytics Cookies</h4>
-                      <p className="text-sm text-gray-600">
-                        Help us understand how visitors interact with our platform by collecting and reporting 
-                        information anonymously.
-                      </p>
+                  <div className="flex items-center justify-between p-1.5 bg-gray-50 rounded">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-[10px] font-semibold text-gray-900">Analytics</h4>
                     </div>
-                    <div className="ml-4">
+                    <div className="ml-1.5">
                       <button
                         onClick={() => setPreferences(prev => ({ ...prev, analytics: !prev.analytics }))}
-                        className={`w-12 h-6 rounded-full flex items-center transition-colors ${
+                        className={`w-7 h-4 rounded-full flex items-center transition-colors ${
                           preferences.analytics 
                             ? 'bg-burgundy-600 justify-end' 
                             : 'bg-gray-300 justify-start'
-                        } px-1`}
+                        } px-0.5`}
                         aria-label="Toggle analytics cookies"
                       >
-                        <div className="w-4 h-4 bg-white rounded-full"></div>
+                        <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
                       </button>
                     </div>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex flex-wrap gap-1">
                   <button
                     onClick={handleSavePreferences}
-                    className="px-6 py-2.5 bg-burgundy-700 hover:bg-burgundy-800 text-white font-semibold rounded-lg transition-colors"
+                    className="px-2 py-1 bg-burgundy-700 hover:bg-burgundy-800 text-white text-[10px] font-semibold rounded transition-colors"
                   >
-                    Save Preferences
+                    Save
                   </button>
                   <button
                     onClick={handleAcceptAll}
-                    className="px-6 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold rounded-lg transition-colors"
+                    className="px-2 py-1 bg-gray-200 hover:bg-gray-300 text-gray-800 text-[10px] font-semibold rounded transition-colors"
                   >
                     Accept All
                   </button>
                   <button
                     onClick={() => setShowSettings(false)}
-                    className="px-6 py-2.5 bg-white hover:bg-gray-50 text-gray-700 font-semibold rounded-lg border border-gray-300 transition-colors"
+                    className="px-2 py-1 bg-white hover:bg-gray-50 text-gray-700 text-[10px] font-semibold rounded border border-gray-300 transition-colors"
                   >
                     Cancel
                   </button>
                 </div>
-
-                {/* Learn More Link */}
-                <div className="mt-4 text-center">
-                  <Link 
-                    href="/cookies" 
-                    className="text-sm text-burgundy-700 hover:text-burgundy-900 underline"
-                  >
-                    Learn more about our cookie usage
-                  </Link>
-                </div>
               </div>
             )}
-          </div>
         </div>
       </motion.div>
     </AnimatePresence>

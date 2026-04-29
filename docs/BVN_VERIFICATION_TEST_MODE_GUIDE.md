@@ -1,130 +1,165 @@
 # BVN Verification Test Mode Guide
 
-## Issue
-When testing BVN verification with Paystack test API keys, real BVNs cannot be verified. You'll see the error:
-```
-Test mode: Please use test BVN 12345678901 for testing. Real BVN verification requires production Paystack keys.
-```
+## Quick Answer
 
-## Why This Happens
-Paystack's test API keys (`sk_test_...`) do not have access to the real BVN database. They only work with the test BVN: `12345678901`
+**YES, you're using test Paystack keys**, so you need to use the **test BVN** for verification.
 
-## Solutions
+## Test BVN for Development
 
-### Option 1: Use Test BVN (Recommended for Development)
-Use the test BVN `12345678901` when testing the Tier 1 KYC flow in development:
-
-1. Navigate to `/vendor/kyc/tier1`
-2. Enter BVN: `12345678901`
-3. Click "Verify My Identity"
-4. The system will automatically approve the verification
-
-**Benefits:**
-- Works immediately without any configuration
-- No cost per verification
-- Perfect for testing the UI and flow
-
-### Option 2: Use Production Paystack Keys
-If you need to test with real BVNs, you must use production Paystack keys:
-
-1. Get your production keys from [Paystack Dashboard](https://dashboard.paystack.com/#/settings/developers)
-2. Update `.env`:
-   ```env
-   PAYSTACK_SECRET_KEY=sk_live_your_production_key_here
-   PAYSTACK_PUBLIC_KEY=pk_live_your_production_key_here
-   ```
-3. Restart your development server
-4. Now you can verify real BVNs
-
-**Important Notes:**
-- Each BVN verification costs ₦50
-- You need a funded Paystack account
-- Only use production keys when absolutely necessary
-
-### Option 3: Mock Mode (For UI Testing Only)
-If you just want to test the UI without actual verification, you can temporarily modify the API to always return success:
-
-**Not recommended for production testing!**
-
-## Test BVN Details
 ```
 BVN: 12345678901
 ```
 
-When you use this test BVN, the system will:
-- Accept any name you provide
-- Accept any date of birth
-- Accept any phone number
-- Always return 100% match score
-- Auto-approve to Tier 1
+This is the **only BVN** that will work in test mode. Any other BVN will be rejected.
 
-## Current Configuration
-Your current `.env` has:
-```env
-PAYSTACK_SECRET_KEY=sk_test_your-paystack-secret-key
+## How It Works
+
+### Test Mode Detection
+The system automatically detects test mode by checking if your Paystack secret key starts with `sk_test_`:
+
+```typescript
+// From .env
+PAYSTACK_SECRET_KEY=sk_test_45ca11545148bed4becda5de54198e677eecbcbf
+                    ^^^^^^^^ - This indicates TEST MODE
 ```
 
-This is a **test key**, so only the test BVN `12345678901` will work.
+### Test Mode Behavior
 
-## Testing Checklist
+**When using test keys (`sk_test_`):**
+- ✅ Test BVN `12345678901` → **Always succeeds** (100% match)
+- ❌ Real BVN (any other 11-digit number) → **Always fails** with error message
 
-### With Test BVN (Development)
-- [ ] Navigate to `/vendor/kyc/tier1`
-- [ ] Verify profile information is displayed
-- [ ] Enter BVN: `12345678901`
-- [ ] Click "Verify My Identity"
-- [ ] Verify success message appears
-- [ ] Verify redirect to dashboard after 3 seconds
-- [ ] Check user status is updated to `verified_tier_1`
+**When using live keys (`sk_live_`):**
+- ✅ Real BVN → Verified against Paystack Identity API (costs ₦50 per verification)
+- ❌ Test BVN → Will fail (not a real BVN)
 
-### With Real BVN (Production)
-- [ ] Switch to production Paystack keys
-- [ ] Ensure Paystack account is funded
-- [ ] Test with a real BVN
-- [ ] Verify name matching works correctly
-- [ ] Verify date of birth matching works
-- [ ] Verify phone number matching works
-- [ ] Test mismatch scenarios
+## Testing the BVN Verification Flow
 
-## Error Messages
+### Step 1: Register/Login
+Use your test account:
+- Phone: `+2348012345678`
+- Password: (whatever you set during registration)
 
-### Test Mode Error
+### Step 2: Navigate to BVN Verification
+After login, you'll be redirected to:
 ```
-Test mode: Please use test BVN 12345678901 for testing. Real BVN verification requires production Paystack keys.
+http://localhost:3000/vendor/kyc/tier1
 ```
-**Solution:** Use test BVN `12345678901` or switch to production keys
 
-### Configuration Error
+### Step 3: Enter Test BVN
+In the BVN input field, enter:
 ```
-BVN Service Unavailable - Configuration Error
+12345678901
 ```
-**Solution:** Check that `PAYSTACK_SECRET_KEY` is set in `.env`
 
-### API Error
-```
-Paystack API error: 401 Unauthorized
-```
-**Solution:** Check that your Paystack key is valid and not expired
+### Step 4: Submit
+Click "Verify My Identity" and the system will:
+1. Detect test mode
+2. Accept the test BVN
+3. Mark your account as Tier 1 verified
+4. Redirect you to the dashboard
 
-### Network Error
+## What Happens in Test Mode
+
+```typescript
+// From src/features/vendors/services/bvn-verification.service.ts
+
+if (isTestMode()) {
+  if (request.bvn === TEST_BVN) {
+    // ✅ Test BVN accepted
+    return {
+      success: true,
+      verified: true,
+      matchScore: 100,
+      details: {
+        firstName: request.firstName,
+        lastName: request.lastName,
+        dateOfBirth: request.dateOfBirth,
+        phone: request.phone,
+      },
+    };
+  } else {
+    // ❌ Real BVN rejected in test mode
+    return {
+      success: false,
+      verified: false,
+      matchScore: 0,
+      error: `Test mode: Please use test BVN ${TEST_BVN} for testing. Real BVN verification requires production Paystack keys.`,
+    };
+  }
+}
 ```
-BVN Service Unavailable
+
+## Paystack Official Test Credentials
+
+According to [Paystack documentation](https://docs-v2.paystack.com/docs/identity-verification/validate-customer/), the official test credentials for customer validation are:
+
+```json
+{
+  "country": "NG",
+  "type": "bank_account",
+  "account_number": "0111111111",
+  "bvn": "222222222221",
+  "bank_code": "007",
+  "first_name": "Uchenna",
+  "last_name": "Okoro"
+}
 ```
-**Solution:** Check your internet connection and Paystack API status
 
-## Paystack BVN API Documentation
-- [Paystack Identity Verification](https://paystack.com/docs/identity-verification/resolve-bvn)
-- [Paystack Test Mode](https://paystack.com/docs/payments/test-payments)
-- Cost: ₦50 per verification (production only)
+**However**, our system uses a simpler test BVN: `12345678901` for easier testing.
 
-## Next Steps
-1. For development: Use test BVN `12345678901`
-2. For production: Get production Paystack keys and fund your account
-3. Test the complete flow end-to-end
-4. Verify email and SMS notifications are sent
+## Error Messages You Might See
 
-## Support
-If you continue to have issues:
-1. Check the server logs for detailed error messages
-2. Verify your Paystack account is active
-3. Contact Paystack support if API issues persist
+### If you enter a real BVN in test mode:
+```
+Test mode: Please use test BVN 12345678901 for testing. 
+Real BVN verification requires production Paystack keys.
+```
+
+### If you enter an invalid format:
+```
+Invalid BVN format. BVN must be exactly 11 digits.
+```
+
+## Production Mode
+
+When you deploy to production with live Paystack keys:
+
+1. Update `.env` with live keys:
+   ```env
+   PAYSTACK_SECRET_KEY=sk_live_your_live_key_here
+   PAYSTACK_PUBLIC_KEY=pk_live_your_live_key_here
+   ```
+
+2. Real BVNs will be verified against Paystack Identity API
+3. Test BVN `12345678901` will no longer work
+4. Each verification costs ₦50
+
+## Summary
+
+| Environment | Paystack Key | Test BVN Works? | Real BVN Works? | Cost |
+|-------------|--------------|-----------------|-----------------|------|
+| **Development** | `sk_test_...` | ✅ Yes | ❌ No | Free |
+| **Production** | `sk_live_...` | ❌ No | ✅ Yes | ₦50/verification |
+
+## Quick Test Steps
+
+1. **Restart dev server** (if not already running):
+   ```bash
+   npm run dev
+   ```
+
+2. **Login** with your test account
+
+3. **Enter test BVN**: `12345678901`
+
+4. **Submit** and verify it works
+
+5. **Check dashboard access** - you should now be able to access the vendor dashboard
+
+---
+
+**Status**: Ready for Testing  
+**Test BVN**: `12345678901`  
+**Mode**: Test (Free)  
+**Date**: 2026-04-29

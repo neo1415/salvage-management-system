@@ -879,21 +879,23 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 </div>
               )}
 
-              {/* Status Badge */}
-              <span
-                className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                  auction.status === 'active'
-                    ? 'bg-green-500 text-white'
-                    : auction.status === 'extended'
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-gray-500 text-white'
-                }`}
-              >
-                {auction.status === 'active' && '🟢 Active'}
-                {auction.status === 'extended' && '🟠 Extended'}
-                {auction.status === 'closed' && '⚫ Closed'}
-                {auction.status === 'cancelled' && '⚫ Cancelled'}
-              </span>
+              {/* Status Badge - Hide for awaiting_payment since payment status is shown in dedicated sections below */}
+              {auction.status !== 'awaiting_payment' && (
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                    auction.status === 'active'
+                      ? 'bg-green-500 text-white'
+                      : auction.status === 'extended'
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-500 text-white'
+                  }`}
+                >
+                  {auction.status === 'active' && '🟢 Active'}
+                  {auction.status === 'extended' && '🟠 Extended'}
+                  {auction.status === 'closed' && '⚫ Closed'}
+                  {auction.status === 'cancelled' && '⚫ Cancelled'}
+                </span>
+              )}
             </div>
           </div>
         </div>

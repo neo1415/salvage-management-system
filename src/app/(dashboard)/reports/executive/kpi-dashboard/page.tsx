@@ -203,8 +203,8 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.cases.map((c: any) => (
-                            <tr key={c.id} className="border-b hover:bg-gray-50">
+                          {reportData.breakdowns.cases.map((c: any, index: number) => (
+                            <tr key={`case-${c.id}-${index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{c.claimReference}</td>
                               <td className="p-2">{c.adjusterName}</td>
                               <td className="p-2 capitalize">{c.assetType}</td>
@@ -248,8 +248,8 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.auctions.map((a: any) => (
-                            <tr key={a.id} className="border-b hover:bg-gray-50">
+                          {reportData.breakdowns.auctions.map((a: any, index: number) => (
+                            <tr key={`auction-${a.id}-${index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{a.caseReference}</td>
                               <td className="text-right p-2">{a.uniqueBidders}</td>
                               <td className="text-right p-2">{a.totalBids}</td>
@@ -294,8 +294,8 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.adjusters.map((adj: any) => (
-                            <tr key={adj.id} className="border-b hover:bg-gray-50">
+                          {reportData.breakdowns.adjusters.map((adj: any, index: number) => (
+                            <tr key={`adjuster-${adj.id}-${index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{adj.name}</td>
                               <td className="text-right p-2">{adj.totalCases}</td>
                               <td className="text-right p-2 text-green-600">{adj.approved}</td>
@@ -341,8 +341,8 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.vendors.map((v: any) => (
-                            <tr key={v.id} className="border-b hover:bg-gray-50">
+                          {reportData.breakdowns.vendors.map((v: any, index: number) => (
+                            <tr key={`vendor-${v.id}-${index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{v.businessName}</td>
                               <td className="p-2">
                                 <span className={`px-2 py-1 rounded text-xs ${

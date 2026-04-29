@@ -70,45 +70,45 @@ export function InstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md z-50 animate-slide-up">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 border-2 border-burgundy-900">
+    <div className="fixed bottom-3 left-3 right-3 md:left-auto md:right-3 md:max-w-[280px] z-50 animate-slide-up">
+      <div className="bg-white rounded-md shadow-lg p-2 border border-burgundy-900">
         <button
           onClick={handleDismiss}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+          className="absolute top-1.5 right-1.5 text-gray-400 hover:text-gray-600 transition-colors"
           aria-label="Dismiss"
         >
-          <X size={20} />
+          <X size={14} />
         </button>
 
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-2">
           <div className="flex-shrink-0">
             <Image
               src="/icons/Nem-insurance-Logo.jpg"
               alt="NEM Insurance"
-              width={64}
-              height={64}
-              className="rounded-xl"
+              width={32}
+              height={32}
+              className="rounded"
             />
           </div>
 
-          <div className="flex-1">
-            <h3 className="text-lg font-bold text-burgundy-900 mb-2">
-              Install NEM Salvage App
+          <div className="flex-1 min-w-0 pr-3">
+            <h3 className="text-[11px] font-bold text-burgundy-900 mb-0.5">
+              Install App
             </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Install our app for faster access, offline support, and a better experience!
+            <p className="text-[10px] text-gray-600 mb-1.5 leading-tight">
+              Faster access & offline!
             </p>
 
-            <div className="flex gap-3">
+            <div className="flex gap-1.5">
               <button
                 onClick={handleInstall}
-                className="flex-1 bg-burgundy-900 text-white px-4 py-2 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors"
+                className="flex-1 bg-burgundy-900 text-white px-2 py-1 rounded text-[10px] font-semibold hover:bg-burgundy-800 transition-colors"
               >
                 Install
               </button>
               <button
                 onClick={handleDismiss}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                className="px-2 py-1 text-[10px] text-gray-600 hover:text-gray-800 transition-colors"
               >
                 Not now
               </button>

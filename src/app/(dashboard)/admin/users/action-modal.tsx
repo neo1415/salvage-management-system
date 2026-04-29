@@ -153,6 +153,14 @@ export default function ActionModal({ actionModal, selectedUser, onClose, onSucc
           return;
       }
 
+      // Check if response is JSON before parsing
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text.substring(0, 500));
+        throw new Error(`Server returned HTML instead of JSON. This usually means the API endpoint is not found or there's a server error. Please restart the dev server and try again.`);
+      }
+
       const data = await response.json();
 
       if (!response.ok) {

@@ -72,28 +72,8 @@ export async function GET(request: NextRequest) {
       session.user.id,
       session.user.role,
       async (filters) => {
-        const reportData = await RevenueAnalysisService.generateReport(filters);
-        
-        // Transform to match component expectations
-        return {
-          totalRevenue: reportData.summary.totalSalvageRecovered,
-          recoveryRate: reportData.summary.averageRecoveryRate,
-          trends: reportData.trend.map(t => ({
-            period: t.date,
-            revenue: t.salvageRecovered,
-            recoveryRate: t.recoveryRate,
-          })),
-          byAssetType: reportData.byAssetType.map(a => ({
-            assetType: a.assetType,
-            revenue: a.salvageRecovered,
-            count: a.count,
-          })),
-          byRegion: reportData.byRegion?.map(r => ({
-            region: r.region,
-            revenue: r.salvageRecovered,
-            count: r.count,
-          })) || [],
-        };
+        // Return the complete report data structure from the service
+        return await RevenueAnalysisService.generateReport(filters);
       },
       {
         useCache: true,

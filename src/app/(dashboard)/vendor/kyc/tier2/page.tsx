@@ -40,6 +40,11 @@ interface DojahWidgetOptions {
     dob?: string;
     email?: string;
   };
+  gov_data?: {
+    bvn?: string;
+    nin?: string;
+    mobile?: string; // Phone number goes here according to Dojah React SDK docs
+  };
   metadata?: Record<string, string>;
   onSuccess: (response: { reference_id?: string }) => void;
   onError: (err: unknown) => void;
@@ -64,7 +69,14 @@ export default function Tier2KYCPage() {
   const { data: session, status: authStatus } = useSession();
 
   const [pageState, setPageState] = useState<PageState>('loading_config');
-  const [widgetConfig, setWidgetConfig] = useState<{ appId: string; publicKey: string; widgetId?: string } | null>(null);
+  const [widgetConfig, setWidgetConfig] = useState<{ 
+    appId: string; 
+    publicKey: string; 
+    widgetId?: string;
+    phone?: string;
+    bvn?: string;
+    dob?: string;
+  } | null>(null);
   const [widgetReady, setWidgetReady] = useState(false);
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -136,19 +148,50 @@ export default function Tier2KYCPage() {
     if (!widgetConfig || !window.Connect) return;
 
     const user = session?.user;
-    const nameParts = (user?.name ?? '').split(' ');
+    
+    // Parse full name - first word is first name, rest is last name
+    // User can edit these in the widget if needed
+    const nameParts = (user?.name ?? '').trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    // Build user_data object - only include defined values
+    const userData: DojahWidgetOptions['user_data'] = {
+      first_name: firstName || undefined,
+      last_name: lastName || undefined,
+      email: user?.email ?? undefined,
+    };
+    
+    // Add DOB if available (from registration) - format: YYYY-MM-DD
+    if (widgetConfig.dob) {
+      userData.dob = widgetConfig.dob;
+    }
+
+    // Build gov_data object - only include defined values
+    // According to Dojah docs: phone goes in gov_data.mobile, NOT user_data.phone
+    const govData: DojahWidgetOptions['gov_data'] = {};
+    
+    // Add phone if available (from Tier 1 verification)
+    // Phone must be in gov_data.mobile according to Dojah React SDK docs
+    if (widgetConfig.phone) {
+      govData.mobile = widgetConfig.phone;
+    }
+    
+    // Add BVN if available (from Tier 1 verification)
+    if (widgetConfig.bvn) {
+      govData.bvn = widgetConfig.bvn;
+    }
 
     const options: DojahWidgetOptions = {
       app_id: widgetConfig.appId,
       p_key: widgetConfig.publicKey,
       type: widgetConfig.widgetId ? 'custom' : 'verification',
       ...(widgetConfig.widgetId && { widget_id: widgetConfig.widgetId }),
-      user_data: {
-        first_name: nameParts[0],
-        last_name: nameParts.slice(1).join(' ') || undefined,
-        email: user?.email ?? undefined,
+      user_data: userData,
+      gov_data: Object.keys(govData).length > 0 ? govData : undefined,
+      metadata: { 
+        user_id: user?.id ?? '',
       },
-      metadata: { user_id: user?.id ?? '' },
       onSuccess: async (response) => {
         const referenceId = response?.reference_id;
         
@@ -475,9 +518,9 @@ export default function Tier2KYCPage() {
                   <h3 className="font-semibold text-blue-900 mb-2">What you'll need:</h3>
                   <ul className="text-sm text-blue-800 space-y-1">
                     <li>• Your NIN (National Identification Number)</li>
-                    <li>• A government-issued photo ID (Passport, Voter's Card, or Driver's License)</li>
-                    <li>• A selfie for liveness and biometric verification</li>
-                    <li>• A recent utility bill (within 3 months)</li>
+                    <li>• A government-issued photo ID</li>
+                    <li>• A selfie for verification</li>
+                    <li>• A recent utility bill</li>
                   </ul>
                 </div>
 

@@ -14,6 +14,7 @@ import { MasterReportData } from '@/features/reports/executive/services/master-r
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { format } from 'date-fns';
+import { usePDFExport } from '@/hooks/use-pdf-export';
 
 export default function MasterReportPage() {
   const router = useRouter();
@@ -21,6 +22,16 @@ export default function MasterReportPage() {
   const [reportData, setReportData] = useState<MasterReportData | null>(null);
   const [startDate, setStartDate] = useState<Date>(new Date(2026, 1, 1)); // Feb 1, 2026
   const [endDate, setEndDate] = useState<Date>(new Date());
+
+  const { exportToPDF, isExporting } = usePDFExport({
+    reportType: 'master-report',
+    onSuccess: () => {
+      // Optional: Show success message
+    },
+    onError: (error) => {
+      alert(`Failed to export report: ${error.message}`);
+    },
+  });
 
   useEffect(() => {
     fetchMasterReport();
@@ -46,40 +57,12 @@ export default function MasterReportPage() {
     }
   };
 
-  const handleExport = async () => {
-    if (!reportData) return;
-
-    try {
-      const response = await fetch('/api/reports/export/pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reportType: 'master-report',
-          data: reportData,
-          filters: {
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-          },
-        }),
+  const handleExport = () => {
+    if (reportData) {
+      exportToPDF(reportData, {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
       });
-
-      if (!response.ok) {
-        throw new Error('Export failed');
-      }
-
-      // Open HTML in new window for printing to PDF
-      const html = await response.text();
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(html);
-        printWindow.document.close();
-        alert('Report opened in new window. Click "Print to PDF" button to save.');
-      } else {
-        alert('Please allow popups to export PDF');
-      }
-    } catch (error) {
-      console.error('Export failed:', error);
-      alert('Failed to export report');
     }
   };
 
@@ -146,13 +129,13 @@ export default function MasterReportPage() {
               </div>
             </PopoverContent>
           </Popover>
-          <Button onClick={fetchMasterReport} variant="outline" size="sm">
+          <Button onClick={fetchMasterReport} variant="outline" size="sm" disabled={loading}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
-          <Button onClick={handleExport} className="bg-[#800020] hover:bg-[#600018]">
+          <Button onClick={handleExport} className="bg-[#800020] hover:bg-[#600018]" disabled={isExporting || !reportData}>
             <Download className="mr-2 h-4 w-4" />
-            Export PDF
+            {isExporting ? 'Exporting...' : 'Export PDF'}
           </Button>
         </div>
       </div>

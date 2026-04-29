@@ -39,6 +39,7 @@ import { BidHistoryChart } from '@/components/charts/bid-history-chart';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { SuccessModal } from '@/components/modals/success-modal';
 import { ErrorModal } from '@/components/modals/error-modal';
+import { RestartAuctionModal } from '@/components/modals/restart-auction-modal';
 import { useToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 
@@ -123,7 +124,7 @@ export default function AuctionDetailPage() {
   const [extendingAuction, setExtendingAuction] = useState(false);
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [restartingAuction, setRestartingAuction] = useState(false);
-  const [restartSchedule, setRestartSchedule] = useState<AuctionScheduleValue>({ mode: 'now' });
+  const [restartSchedule, setRestartSchedule] = useState<AuctionScheduleValue>({ mode: 'now', durationHours: 120 });
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -150,8 +151,12 @@ export default function AuctionDetailPage() {
   useEffect(() => {
     if (!isAuthenticated || !user || !auctionId) return;
     
-    fetchAuctionDetails();
-  }, [auctionId, isAuthenticated, user]);
+    // Only fetch if we don't have data yet or if explicitly needed
+    // This prevents automatic refresh when tab becomes visible again
+    if (!data) {
+      fetchAuctionDetails();
+    }
+  }, [auctionId, isAuthenticated, user]); // Removed data from dependencies to prevent refresh loop
 
   const fetchAuctionDetails = async () => {
     try {
@@ -274,7 +279,7 @@ export default function AuctionDetailPage() {
       await fetchAuctionDetails();
       
       setShowRestartModal(false);
-      setRestartSchedule({ mode: 'now' });
+      setRestartSchedule({ mode: 'now', durationHours: 120 });
       
       // Show success modal
       if (restartSchedule.mode === 'scheduled') {
@@ -469,16 +474,19 @@ export default function AuctionDetailPage() {
           {/* Status and Actions */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
-                data.auction.status === 'active' ? 'bg-green-100 text-green-800' :
-                data.auction.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                data.auction.status === 'extended' ? 'bg-orange-100 text-orange-800' :
-                data.auction.status === 'closed' ? 'bg-gray-100 text-gray-800' :
-                'bg-red-100 text-red-800'
-              }`}>
-                {getStatusIcon(data.auction.status)}
-                {data.auction.status.charAt(0).toUpperCase() + data.auction.status.slice(1)}
-              </span>
+              {/* Hide status badge for awaiting_payment since payment status is shown in dedicated section below */}
+              {data.auction.status !== 'awaiting_payment' && (
+                <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
+                  data.auction.status === 'active' ? 'bg-green-100 text-green-800' :
+                  data.auction.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                  data.auction.status === 'extended' ? 'bg-orange-100 text-orange-800' :
+                  data.auction.status === 'closed' ? 'bg-gray-100 text-gray-800' :
+                  'bg-red-100 text-red-800'
+                }`}>
+                  {getStatusIcon(data.auction.status)}
+                  {data.auction.status.charAt(0).toUpperCase() + data.auction.status.slice(1)}
+                </span>
+              )}
               
               {data.auction.status === 'active' && (
                 <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-white border border-gray-200">
@@ -1041,67 +1049,17 @@ export default function AuctionDetailPage() {
         </div>
 
         {/* Restart Auction Modal */}
-        {showRestartModal && (
-          <div className="fixed inset-0" style={{ zIndex: 999998 }}>
-            {/* Backdrop */}
-            <div
-              className="fixed inset-0 bg-black/50 transition-opacity"
-              onClick={() => {
-                if (!restartingAuction) {
-                  setShowRestartModal(false);
-                  setRestartSchedule({ mode: 'now' });
-                }
-              }}
-            />
-            
-            {/* Modal Container */}
-            <div className="fixed inset-0 flex items-center justify-center p-4">
-              <div 
-                className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6">
-                  <h3 className="text-xl font-bold text-gray-900 mb-4">Restart Auction</h3>
-                  <p className="text-sm text-gray-600 mb-6">
-                    Configure the restart schedule for this auction. All previous bids will be cleared and vendors will be notified.
-                  </p>
-                  
-                  <AuctionScheduleSelector
-                    value={restartSchedule}
-                    onChange={setRestartSchedule}
-                  />
-                  
-                  <div className="flex gap-3 mt-6">
-                    <button
-                      onClick={() => {
-                        setShowRestartModal(false);
-                        setRestartSchedule({ mode: 'now' });
-                      }}
-                      disabled={restartingAuction}
-                      className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={confirmRestartAuction}
-                      disabled={restartingAuction}
-                      className="flex-1 px-4 py-3 bg-[#800020] text-white rounded-lg font-medium hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {restartingAuction ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Restarting...
-                        </span>
-                      ) : (
-                        'Confirm Restart'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        <RestartAuctionModal
+          isOpen={showRestartModal}
+          onClose={() => {
+            setShowRestartModal(false);
+            setRestartSchedule({ mode: 'now', durationHours: 120 });
+          }}
+          restartSchedule={restartSchedule}
+          onScheduleChange={setRestartSchedule}
+          onConfirm={confirmRestartAuction}
+          isRestarting={restartingAuction}
+        />
 
         {/* Success Modal */}
         <SuccessModal

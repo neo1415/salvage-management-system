@@ -9,6 +9,9 @@ import { redis } from '@/lib/redis/client';
 
 // SECURITY: Rate limiting for registration endpoint
 // Prevents spam registrations and abuse
+// Can be disabled in development with DISABLE_REGISTRATION_RATE_LIMIT=true
+const DISABLE_RATE_LIMIT = process.env.DISABLE_REGISTRATION_RATE_LIMIT === 'true';
+
 const registerRateLimit = new Ratelimit({
   redis: redis,
   limiter: Ratelimit.slidingWindow(3, '1 h'), // 3 registrations per hour per IP
@@ -27,34 +30,39 @@ const registerRateLimit = new Ratelimit({
  */
 export async function POST(request: NextRequest) {
   try {
-    // SECURITY: Rate limiting check
+    // Get IP address (needed for both rate limiting and audit logging)
     const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
     
-    const { success, limit, remaining, reset } = await registerRateLimit.limit(ipAddress);
+    // SECURITY: Rate limiting check (can be disabled in development)
+    if (!DISABLE_RATE_LIMIT) {
+      const { success, limit, remaining, reset } = await registerRateLimit.limit(ipAddress);
 
-    if (!success) {
-      console.warn('[Security] Registration rate limit exceeded', {
-        ip: ipAddress,
-        limit,
-        remaining,
-        resetAt: new Date(reset).toISOString(),
-      });
+      if (!success) {
+        console.warn('[Security] Registration rate limit exceeded', {
+          ip: ipAddress,
+          limit,
+          remaining,
+          resetAt: new Date(reset).toISOString(),
+        });
 
-      return NextResponse.json(
-        {
-          error: 'Too many registration attempts. Please try again later.',
-          retryAfter: Math.ceil((reset - Date.now()) / 1000), // seconds until reset
-        },
-        {
-          status: 429,
-          headers: {
-            'X-RateLimit-Limit': limit.toString(),
-            'X-RateLimit-Remaining': remaining.toString(),
-            'X-RateLimit-Reset': new Date(reset).toISOString(),
-            'Retry-After': Math.ceil((reset - Date.now()) / 1000).toString(),
+        return NextResponse.json(
+          {
+            error: 'Too many registration attempts. Please try again later.',
+            retryAfter: Math.ceil((reset - Date.now()) / 1000), // seconds until reset
           },
-        }
-      );
+          {
+            status: 429,
+            headers: {
+              'X-RateLimit-Limit': limit.toString(),
+              'X-RateLimit-Remaining': remaining.toString(),
+              'X-RateLimit-Reset': new Date(reset).toISOString(),
+              'Retry-After': Math.ceil((reset - Date.now()) / 1000).toString(),
+            },
+          }
+        );
+      }
+    } else {
+      console.log('[Development] Registration rate limiting is DISABLED');
     }
 
     // Parse request body

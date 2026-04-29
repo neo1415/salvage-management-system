@@ -6,7 +6,7 @@
  */
 
 import { db } from '@/lib/db/drizzle';
-import { salvageCases, auctions, bids, vendors, users } from '@/lib/db/schema';
+import { salvageCases, auctions, bids, users } from '@/lib/db/schema';
 import { eq, and, gte, lte, sql, inArray, desc, count } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
 
@@ -20,11 +20,16 @@ export interface CaseProcessingData {
   processingTimeHours: number | null;
   adjusterId: string;
   adjusterName: string;
+  marketValue: string;
+  estimatedSalvageValue: string | null;
+  reservePrice: string | null;
 }
 
 export interface AuctionPerformanceData {
   auctionId: string;
   caseId: string;
+  claimReference: string;
+  assetType: string;
   status: string;
   currentBid: string;
   reservePrice: string;
@@ -36,6 +41,11 @@ export interface AuctionPerformanceData {
   winnerId: string | null;
   durationHours: number;
   reserveMet: boolean;
+  winningBid: string | null;
+  bidderIds: string[];
+  averageBidIncrement: number;
+  timeToFirstBidMinutes: number | null;
+  lastMinuteBids: number;
 }
 
 export interface VendorPerformanceData {
@@ -63,6 +73,7 @@ export class OperationalDataRepository {
 
   /**
    * Get case processing data
+   * FIX: Exclude draft cases and calculate processing time in DAYS (to match Master Report)
    */
   static async getCaseProcessingData(filters: ReportFilters): Promise<CaseProcessingData[]> {
     const conditions = [];
@@ -75,14 +86,17 @@ export class OperationalDataRepository {
     );
     if (dateCondition) conditions.push(dateCondition);
 
-    // Asset types
+    // CRITICAL FIX: Exclude draft cases (Master Report excludes drafts)
+    conditions.push(sql`${salvageCases.status} != 'draft'`);
+
+    // Asset types - use sql template for enum filtering
     if (filters.assetTypes && filters.assetTypes.length > 0) {
-      conditions.push(inArray(salvageCases.assetType, filters.assetTypes));
+      conditions.push(sql`${salvageCases.assetType} = ANY(${filters.assetTypes})`);
     }
 
-    // Status
+    // Status - use sql template for enum filtering
     if (filters.status && filters.status.length > 0) {
-      conditions.push(inArray(salvageCases.status, filters.status));
+      conditions.push(sql`${salvageCases.status} = ANY(${filters.status})`);
     }
 
     // Adjuster filter
@@ -102,6 +116,9 @@ export class OperationalDataRepository {
         approvedAt: salvageCases.approvedAt,
         adjusterId: salvageCases.createdBy,
         adjusterName: users.fullName,
+        marketValue: salvageCases.marketValue,
+        estimatedSalvageValue: salvageCases.estimatedSalvageValue,
+        reservePrice: salvageCases.reservePrice,
       })
       .from(salvageCases)
       .leftJoin(users, eq(salvageCases.createdBy, users.id))
@@ -109,6 +126,7 @@ export class OperationalDataRepository {
       .orderBy(desc(salvageCases.createdAt));
 
     return results.map(row => {
+      // FIX: Calculate processing time in HOURS (service will convert to days for display)
       let processingTimeHours: number | null = null;
       if (row.approvedAt && row.createdAt) {
         const diffMs = row.approvedAt.getTime() - row.createdAt.getTime();
@@ -125,53 +143,65 @@ export class OperationalDataRepository {
         processingTimeHours,
         adjusterId: row.adjusterId,
         adjusterName: row.adjusterName || 'Unknown',
+        marketValue: row.marketValue || '0',
+        estimatedSalvageValue: row.estimatedSalvageValue,
+        reservePrice: row.reservePrice,
       };
     });
   }
 
   /**
-   * Get auction performance data
+   * Get auction performance data with comprehensive metrics
+   * FIX: Match Master Report - filter by auction end_time (when auction closed)
+   * Use DISTINCT ON to avoid duplicate auctions (in case of multiple payments per auction)
+   * CRITICAL: Get the LATEST payment per auction to handle duplicate payments correctly
    */
   static async getAuctionPerformanceData(filters: ReportFilters): Promise<AuctionPerformanceData[]> {
-    const conditions = [];
+    const startDate = filters.startDate || '2000-01-01';
+    const endDate = filters.endDate || '2099-12-31';
 
-    // Date range
-    const dateCondition = this.buildDateCondition(
-      auctions.createdAt,
-      filters.startDate,
-      filters.endDate
-    );
-    if (dateCondition) conditions.push(dateCondition);
+    // FIX: Use raw SQL with proper DISTINCT ON to handle duplicate payments
+    // Get the LATEST payment per auction (highest created_at)
+    // Filter by auction end_time to match the date range selector
+    const auctionResults = await db.execute(sql`
+      SELECT DISTINCT ON (a.id)
+        a.id as auction_id,
+        a.case_id,
+        sc.claim_reference,
+        sc.asset_type,
+        a.status,
+        a.current_bid,
+        sc.reserve_price,
+        a.start_time,
+        a.end_time,
+        a.updated_at as closed_at,
+        a.current_bidder,
+        p.amount as winning_bid,
+        p.id as payment_id
+      FROM auctions a
+      LEFT JOIN salvage_cases sc ON a.case_id = sc.id
+      LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
+      WHERE a.end_time >= ${startDate}::timestamp
+        AND a.end_time <= ${endDate}::timestamp
+        AND a.status IN ('closed', 'awaiting_payment')
+        AND sc.status != 'draft'
+      ORDER BY a.id, p.created_at DESC NULLS LAST
+    `) as any[];
 
-    // Status
-    if (filters.status && filters.status.length > 0) {
-      conditions.push(inArray(auctions.status, filters.status));
-    }
-
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    // Get auctions
-    const auctionResults = await db
-      .select({
-        auctionId: auctions.id,
-        caseId: auctions.caseId,
-        status: auctions.status,
-        currentBid: auctions.currentBid,
-        reservePrice: salvageCases.reservePrice,
-        startTime: auctions.startTime,
-        endTime: auctions.endTime,
-        closedAt: auctions.updatedAt, // Use updatedAt as proxy for closedAt
-        currentBidder: auctions.currentBidder,
-      })
-      .from(auctions)
-      .leftJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
-      .where(whereClause);
-
-    // Get bid counts for each auction
-    const auctionIds = auctionResults.map(a => a.auctionId);
+    // Get comprehensive bid data for each auction
+    const auctionIds = auctionResults.map((a: any) => a.auction_id);
     
-    let bidCounts: Record<string, { count: number; uniqueBidders: number }> = {};
+    let bidData: Record<string, { 
+      count: number; 
+      uniqueBidders: number;
+      bidderIds: string[];
+      avgIncrement: number;
+      timeToFirstBid: number | null;
+      lastMinuteBids: number;
+    }> = {};
+
     if (auctionIds.length > 0) {
+      // Get bid counts and unique bidders
       const bidResults = await db
         .select({
           auctionId: bids.auctionId,
@@ -182,146 +212,203 @@ export class OperationalDataRepository {
         .where(inArray(bids.auctionId, auctionIds))
         .groupBy(bids.auctionId);
 
-      bidCounts = Object.fromEntries(
-        bidResults.map(r => [
-          r.auctionId,
-          { count: r.bidCount, uniqueBidders: Number(r.uniqueBidders) },
-        ])
-      );
+      // Get all bids for detailed analysis
+      const allBids = await db
+        .select({
+          auctionId: bids.auctionId,
+          vendorId: bids.vendorId,
+          amount: bids.amount,
+          createdAt: bids.createdAt,
+        })
+        .from(bids)
+        .where(inArray(bids.auctionId, auctionIds))
+        .orderBy(bids.auctionId, bids.createdAt);
+
+      // Process bid data for each auction
+      const auctionBids: Record<string, any[]> = {};
+      allBids.forEach(bid => {
+        if (!auctionBids[bid.auctionId]) auctionBids[bid.auctionId] = [];
+        auctionBids[bid.auctionId].push(bid);
+      });
+
+      // Calculate metrics for each auction
+      bidResults.forEach(result => {
+        const auctionId = result.auctionId;
+        const bidsForAuction = auctionBids[auctionId] || [];
+        
+        // Get unique bidder IDs
+        const bidderIds = [...new Set(bidsForAuction.map(b => b.vendorId))];
+        
+        // Calculate average bid increment
+        let avgIncrement = 0;
+        if (bidsForAuction.length > 1) {
+          const increments = [];
+          for (let i = 1; i < bidsForAuction.length; i++) {
+            const increment = parseFloat(bidsForAuction[i].amount) - parseFloat(bidsForAuction[i-1].amount);
+            if (increment > 0) increments.push(increment);
+          }
+          avgIncrement = increments.length > 0 
+            ? increments.reduce((sum, inc) => sum + inc, 0) / increments.length 
+            : 0;
+        }
+        
+        // Calculate time to first bid (in minutes)
+        let timeToFirstBid: number | null = null;
+        if (bidsForAuction.length > 0) {
+          const auction = auctionResults.find((a: any) => a.auction_id === auctionId);
+          if (auction) {
+            const firstBidTime = new Date(bidsForAuction[0].createdAt).getTime();
+            const startTime = new Date(auction.start_time).getTime();
+            timeToFirstBid = Math.round((firstBidTime - startTime) / (1000 * 60));
+          }
+        }
+        
+        // Calculate last minute bids (bids in final hour)
+        let lastMinuteBids = 0;
+        if (bidsForAuction.length > 0) {
+          const auction = auctionResults.find((a: any) => a.auction_id === auctionId);
+          if (auction) {
+            const endTime = new Date(auction.end_time).getTime();
+            const oneHourBefore = endTime - (60 * 60 * 1000);
+            lastMinuteBids = bidsForAuction.filter(b => 
+              new Date(b.createdAt).getTime() >= oneHourBefore
+            ).length;
+          }
+        }
+
+        bidData[auctionId] = {
+          count: result.bidCount,
+          uniqueBidders: Number(result.uniqueBidders),
+          bidderIds,
+          avgIncrement,
+          timeToFirstBid,
+          lastMinuteBids,
+        };
+      });
     }
 
-    return auctionResults.map(row => {
-      const bidData = bidCounts[row.auctionId] || { count: 0, uniqueBidders: 0 };
+    return auctionResults.map((row: any) => {
+      const data = bidData[row.auction_id] || { 
+        count: 0, 
+        uniqueBidders: 0,
+        bidderIds: [],
+        avgIncrement: 0,
+        timeToFirstBid: null,
+        lastMinuteBids: 0,
+      };
       
-      const durationMs = row.closedAt
-        ? row.closedAt.getTime() - row.startTime.getTime()
-        : row.endTime.getTime() - row.startTime.getTime();
+      const startTime = new Date(row.start_time);
+      const endTime = new Date(row.end_time);
+      const closedAt = row.closed_at ? new Date(row.closed_at) : null;
+      
+      const durationMs = closedAt
+        ? closedAt.getTime() - startTime.getTime()
+        : endTime.getTime() - startTime.getTime();
       const durationHours = Math.round((durationMs / (1000 * 60 * 60)) * 100) / 100;
 
-      const currentBid = parseFloat(row.currentBid || '0');
-      const reservePrice = parseFloat(row.reservePrice || '0');
+      const currentBid = parseFloat(row.current_bid || '0');
+      const reservePrice = parseFloat(row.reserve_price || '0');
       const reserveMet = currentBid >= reservePrice;
 
+      // FIX: Winning bid comes from verified payment, not currentBid
+      const winningBid = row.winning_bid || null;
+
       return {
-        auctionId: row.auctionId,
-        caseId: row.caseId,
+        auctionId: row.auction_id,
+        caseId: row.case_id,
+        claimReference: row.claim_reference || 'Unknown',
+        assetType: row.asset_type || 'unknown',
         status: row.status,
-        currentBid: row.currentBid,
-        reservePrice: row.reservePrice,
-        bidCount: bidData.count,
-        uniqueBidders: bidData.uniqueBidders,
-        startTime: row.startTime,
-        endTime: row.endTime,
-        closedAt: row.closedAt,
-        winnerId: row.currentBidder,
+        currentBid: row.current_bid || '0',
+        reservePrice: row.reserve_price || '0',
+        bidCount: data.count,
+        uniqueBidders: data.uniqueBidders,
+        startTime,
+        endTime,
+        closedAt,
+        winnerId: row.current_bidder,
         durationHours,
         reserveMet,
+        winningBid,
+        bidderIds: data.bidderIds,
+        averageBidIncrement: Math.round(data.avgIncrement),
+        timeToFirstBidMinutes: data.timeToFirstBid,
+        lastMinuteBids: data.lastMinuteBids,
       };
     });
   }
 
   /**
    * Get vendor performance data
+   * FIX: Match Master Report logic - use verified payments for totalSpent, fix win rate calculation
    */
   static async getVendorPerformanceData(filters: ReportFilters): Promise<VendorPerformanceData[]> {
-    const conditions = [];
+    // Use raw SQL to match Master Report logic exactly
+    const startDate = filters.startDate || '2000-01-01';
+    const endDate = filters.endDate || '2099-12-31';
 
-    // Date range for bids
-    const dateCondition = this.buildDateCondition(
-      bids.createdAt,
-      filters.startDate,
-      filters.endDate
-    );
-    if (dateCondition) conditions.push(dateCondition);
-
-    // Vendor filter
-    if (filters.vendorIds && filters.vendorIds.length > 0) {
-      conditions.push(inArray(bids.vendorId, filters.vendorIds));
-    }
-
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    // Get all bids with vendor info
-    const bidQuery = db
-      .select({
-        vendorId: bids.vendorId,
-        vendorName: vendors.businessName,
-        vendorTier: vendors.tier,
-        bidAmount: bids.amount,
-        auctionId: bids.auctionId,
-        currentBidder: auctions.currentBidder,
-      })
-      .from(bids)
-      .leftJoin(vendors, eq(bids.vendorId, vendors.id))
-      .leftJoin(auctions, eq(bids.auctionId, auctions.id));
-
-    const bidResults = whereClause 
-      ? await bidQuery.where(whereClause)
-      : await bidQuery;
-
-    // Group by vendor
-    const vendorMap = new Map<string, {
-      name: string;
-      tier: string;
-      bids: number[];
-      wins: number;
-      auctions: Set<string>;
-    }>();
-
-    for (const row of bidResults) {
-      if (!vendorMap.has(row.vendorId)) {
-        vendorMap.set(row.vendorId, {
-          name: row.vendorName || 'Unknown',
-          tier: row.vendorTier || 'bronze',
-          bids: [],
-          wins: 0,
-          auctions: new Set(),
-        });
-      }
-
-      const vendor = vendorMap.get(row.vendorId)!;
-      vendor.bids.push(parseFloat(row.bidAmount));
-      vendor.auctions.add(row.auctionId);
-      
-      if (row.currentBidder === row.vendorId) {
-        vendor.wins++;
-      }
-    }
+    const results = await db.execute(sql`
+      WITH vendor_payments AS (
+        SELECT 
+          v.id as vendor_id,
+          COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as total_spent,
+          COUNT(DISTINCT p.auction_id) as paid_auctions
+        FROM vendors v
+        LEFT JOIN payments p ON p.vendor_id = v.id AND p.status = 'verified'
+        WHERE p.created_at >= ${startDate} AND p.created_at <= ${endDate}
+        GROUP BY v.id
+      )
+      SELECT 
+        v.id as vendor_id,
+        v.business_name as vendor_name,
+        v.tier,
+        COUNT(DISTINCT b.auction_id) as auctions_participated,
+        COUNT(DISTINCT a.id) FILTER (WHERE a.current_bidder = v.id) as auctions_won,
+        CASE 
+          WHEN COUNT(DISTINCT b.auction_id) > 0 
+          THEN (COUNT(DISTINCT a.id) FILTER (WHERE a.current_bidder = v.id)::NUMERIC / COUNT(DISTINCT b.auction_id) * 100)
+          ELSE 0
+        END as win_rate,
+        COALESCE(vp.total_spent, 0) as total_spent,
+        CASE 
+          WHEN COUNT(b.id) > 0 
+          THEN AVG(CAST(b.amount AS NUMERIC))
+          ELSE 0
+        END as avg_bid,
+        COUNT(b.id) as total_bids
+      FROM vendors v
+      LEFT JOIN bids b ON v.id = b.vendor_id 
+        AND b.created_at >= ${startDate}
+        AND b.created_at <= ${endDate}
+      LEFT JOIN auctions a ON b.auction_id = a.id AND a.current_bidder = v.id
+      LEFT JOIN vendor_payments vp ON v.id = vp.vendor_id
+      GROUP BY v.id, v.business_name, v.tier, vp.total_spent, vp.paid_auctions
+      HAVING COUNT(DISTINCT b.auction_id) > 0
+      ORDER BY total_spent DESC, auctions_won DESC
+      LIMIT 50
+    `);
 
     // Get total auctions for participation rate
-    const auctionDateCondition = this.buildDateCondition(auctions.createdAt, filters.startDate, filters.endDate);
-    
-    const totalAuctionsQuery = db
-      .select({ count: count(auctions.id) })
-      .from(auctions);
-    
-    const totalAuctions = auctionDateCondition
-      ? await totalAuctionsQuery.where(auctionDateCondition)
-      : await totalAuctionsQuery;
+    const totalAuctionsResult = await db.execute(sql`
+      SELECT COUNT(*) as count
+      FROM auctions
+      WHERE created_at >= ${startDate} AND created_at <= ${endDate}
+    `);
 
-    const totalAuctionCount = totalAuctions[0]?.count || 0;
+    const totalAuctionCount = parseInt((totalAuctionsResult[0] as any)?.count || '0');
 
-    return Array.from(vendorMap.entries()).map(([vendorId, data]) => {
-      const totalBids = data.bids.length;
-      const averageBidAmount = totalBids > 0
-        ? data.bids.reduce((sum, bid) => sum + bid, 0) / totalBids
-        : 0;
-      const winRate = totalBids > 0 ? (data.wins / totalBids) * 100 : 0;
-      const participationRate = totalAuctionCount > 0
-        ? (data.auctions.size / totalAuctionCount) * 100
-        : 0;
-
-      return {
-        vendorId,
-        vendorName: data.name,
-        tier: data.tier,
-        totalBids,
-        totalWins: data.wins,
-        winRate: Math.round(winRate * 100) / 100,
-        averageBidAmount: Math.round(averageBidAmount * 100) / 100,
-        totalSpent: Math.round(data.bids.reduce((sum, bid) => sum + bid, 0) * 100) / 100,
-        participationRate: Math.round(participationRate * 100) / 100,
-      };
-    }).sort((a, b) => b.totalWins - a.totalWins);
+    return (results as any[]).map(row => ({
+      vendorId: row.vendor_id,
+      vendorName: row.vendor_name || 'Unknown',
+      tier: row.tier || 'bronze',
+      totalBids: parseInt(row.total_bids || '0'),
+      totalWins: parseInt(row.auctions_won || '0'),
+      winRate: Math.round(parseFloat(row.win_rate || '0') * 100) / 100,
+      averageBidAmount: Math.round(parseFloat(row.avg_bid || '0') * 100) / 100,
+      totalSpent: Math.round(parseFloat(row.total_spent || '0') * 100) / 100,
+      participationRate: totalAuctionCount > 0 
+        ? Math.round((parseInt(row.auctions_participated || '0') / totalAuctionCount * 100) * 100) / 100
+        : 0,
+    }));
   }
 }

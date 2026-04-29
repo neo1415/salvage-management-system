@@ -114,11 +114,26 @@ export default function Tier1KYCPage() {
 
       // Show success
       setSuccess(true);
+      
+      // Refresh session to update bvnVerified flag
+      if (result.refreshSession) {
+        // Force a full session refresh by calling update() with force flag
+        // This triggers the JWT callback with trigger='update'
+        const { update } = await import('next-auth/react');
+        
+        // Call update to trigger session refresh
+        await update();
+        
+        // Wait a bit for session to propagate
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
 
-      // Redirect to dashboard after 3 seconds
+      // Redirect to dashboard after 2 seconds
       setTimeout(() => {
         router.push('/vendor/dashboard');
-      }, 3000);
+        // Force a hard refresh to ensure middleware picks up new session
+        router.refresh();
+      }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verification failed. Please try again.');
     } finally {

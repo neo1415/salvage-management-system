@@ -13,6 +13,7 @@ export * from './internet-search';
 export * from './vehicle-valuations';
 export * from './seed-registry';
 export * from './notifications';
+export * from './push-subscriptions';
 export * from './release-forms';
 export * from './verification-costs';
 export * from './auction-deposit';

@@ -375,12 +375,12 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   // Get max content Y to avoid footer overlap using PDFTemplateService
   const maxContentY = PDFTemplateService.getMaxContentY(doc);
   
-  // Signature and QR code section - positioned above footer
+  // Signature and QR code section - positioned above footer with more spacing
   yPos += 20;
   
-  // Ensure signature section doesn't overlap footer
-  if (yPos + 80 > maxContentY) {
-    yPos = maxContentY - 80;
+  // Ensure signature section doesn't overlap footer (increased buffer from 80 to 90)
+  if (yPos + 90 > maxContentY) {
+    yPos = maxContentY - 90;
   }
   
   doc.setDrawColor(0, 0, 0);
@@ -434,16 +434,16 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
     doc.text('Date: ___/___/______', 110, yPos);
   }
   
-  // Vendor details below signature
-  yPos += 8;
+  // Vendor details below signature (with better spacing)
+  yPos += 10;
   doc.setFontSize(8);
   doc.text(`Name: ${data.vendorName}`, 20, yPos);
-  yPos += 4;
+  yPos += 5;
   doc.text(`Email: ${data.vendorEmail}`, 20, yPos);
-  yPos += 4;
+  yPos += 5;
   doc.text(`Phone: ${data.vendorPhone}`, 20, yPos);
   if (data.vendorBvn) {
-    yPos += 4;
+    yPos += 5;
     doc.text(`BVN: ****${data.vendorBvn}`, 20, yPos);
   }
   

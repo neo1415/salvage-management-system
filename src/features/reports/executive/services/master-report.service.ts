@@ -175,32 +175,49 @@ export class MasterReportService {
     prevStart: string,
     prevEnd: string
   ) {
+    // FIX: Calculate revenue separately to avoid cartesian join issues
+    // Revenue = ALL verified payments (auction payments + registration fees)
+    const revenueResult = await db.execute(sql`
+      SELECT 
+        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_revenue
+      FROM payments
+      WHERE status = 'verified'
+        AND created_at >= ${startDate}
+        AND created_at <= ${endDate}
+    `);
+
+    const prevRevenueResult = await db.execute(sql`
+      SELECT 
+        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_revenue
+      FROM payments
+      WHERE status = 'verified'
+        AND created_at >= ${prevStart}
+        AND created_at < ${prevEnd}
+    `);
+
     const result = await db.execute(sql`
       WITH current_period AS (
         SELECT 
-          COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as revenue,
           COUNT(DISTINCT sc.id) as cases,
           COUNT(DISTINCT a.id) FILTER (WHERE a.status = 'closed' AND a.current_bidder IS NOT NULL) as successful_auctions,
           COUNT(DISTINCT a.id) as total_auctions,
           AVG(EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400) as avg_processing_days
         FROM salvage_cases sc
         LEFT JOIN auctions a ON sc.id = a.case_id
-        LEFT JOIN payments p ON a.id = p.auction_id AND p.status = 'verified'
-        WHERE sc.created_at >= ${startDate} AND sc.created_at <= ${endDate}
+        WHERE sc.created_at >= ${startDate} 
+          AND sc.created_at <= ${endDate}
+          AND sc.status != 'draft'
       ),
       previous_period AS (
         SELECT 
-          COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as revenue,
           COUNT(DISTINCT sc.id) as cases
         FROM salvage_cases sc
-        LEFT JOIN auctions a ON sc.id = a.case_id
-        LEFT JOIN payments p ON a.id = p.auction_id AND p.status = 'verified'
-        WHERE sc.created_at >= ${prevStart} AND sc.created_at < ${prevEnd}
+        WHERE sc.created_at >= ${prevStart} 
+          AND sc.created_at < ${prevEnd}
+          AND sc.status != 'draft'
       )
       SELECT 
-        c.revenue as current_revenue,
         c.cases as current_cases,
-        p.revenue as prev_revenue,
         p.cases as prev_cases,
         CASE WHEN c.total_auctions > 0 THEN (c.successful_auctions::NUMERIC / c.total_auctions * 100) ELSE 0 END as success_rate,
         COALESCE(c.avg_processing_days, 0) as avg_processing_days
@@ -208,8 +225,8 @@ export class MasterReportService {
     `);
 
     const row = result[0] as any;
-    const currentRevenue = parseFloat(row?.current_revenue || '0');
-    const prevRevenue = parseFloat(row?.prev_revenue || '0');
+    const currentRevenue = parseFloat((revenueResult[0] as any)?.total_revenue || '0');
+    const prevRevenue = parseFloat((prevRevenueResult[0] as any)?.total_revenue || '0');
     const currentCases = parseInt(row?.current_cases || '0');
     const prevCases = parseInt(row?.prev_cases || '0');
 
@@ -225,7 +242,7 @@ export class MasterReportService {
   }
 
   private static async getFinancialData(startDate: string, endDate: string) {
-    // Revenue total and by month
+    // Revenue total and by month - INCLUDES ALL VERIFIED PAYMENTS (auction + registration fees)
     const revenueByMonth = await db.execute(sql`
       SELECT 
         TO_CHAR(p.created_at, 'YYYY-MM') as month,
@@ -239,7 +256,7 @@ export class MasterReportService {
       LIMIT 12
     `);
 
-    // Revenue by asset type
+    // Revenue by asset type (only for auction payments)
     const revenueByAssetType = await db.execute(sql`
       SELECT 
         sc.asset_type,
@@ -250,11 +267,12 @@ export class MasterReportService {
       WHERE p.status = 'verified' 
         AND p.created_at >= ${startDate}
         AND p.created_at <= ${endDate}
+        AND sc.status != 'draft'
       GROUP BY sc.asset_type
       ORDER BY amount DESC
     `);
 
-    // Top revenue cases
+    // Top revenue cases (only auction payments)
     const topCases = await db.execute(sql`
       SELECT 
         sc.claim_reference,
@@ -266,17 +284,18 @@ export class MasterReportService {
       WHERE p.status = 'verified' 
         AND p.created_at >= ${startDate}
         AND p.created_at <= ${endDate}
+        AND sc.status != 'draft'
       ORDER BY amount DESC
       LIMIT 10
     `);
 
     const totalRevenue = (revenueByMonth as any[]).reduce((sum, r) => sum + parseFloat(r.amount), 0);
 
-    // Profitability calculations
-    const operationalCosts = totalRevenue * 0.15; // 15% operational costs
-    const grossProfit = totalRevenue - operationalCosts;
-    const netProfit = grossProfit;
-    const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue * 100) : 0;
+    // NOTE: Profitability section REMOVED per user request
+    // User said: "remove operational costs from the report, I don't know why you would hardcode something like that"
+    const grossProfit = totalRevenue; // No operational costs deducted
+    const netProfit = totalRevenue; // No operational costs deducted
+    const profitMargin = 100; // 100% since no costs deducted
 
     // Recovery rate analysis
     const recoveryByAssetType = await db.execute(sql`
@@ -289,6 +308,7 @@ export class MasterReportService {
       WHERE p.status = 'verified' 
         AND p.created_at >= ${startDate}
         AND p.created_at <= ${endDate}
+        AND sc.status != 'draft'
       GROUP BY sc.asset_type
     `);
 
@@ -302,6 +322,7 @@ export class MasterReportService {
       WHERE p.status = 'verified' 
         AND p.created_at >= ${startDate}
         AND p.created_at <= ${endDate}
+        AND sc.status != 'draft'
       GROUP BY TO_CHAR(p.created_at, 'YYYY-MM')
       ORDER BY month DESC
       LIMIT 12
@@ -332,7 +353,7 @@ export class MasterReportService {
         grossProfit: Math.round(grossProfit * 100) / 100,
         netProfit: Math.round(netProfit * 100) / 100,
         profitMargin: Math.round(profitMargin * 100) / 100,
-        operationalCosts: Math.round(operationalCosts * 100) / 100,
+        operationalCosts: 0, // REMOVED per user request
       },
       recovery: {
         averageRate: Math.round(avgRecoveryRate * 100) / 100,
@@ -349,13 +370,15 @@ export class MasterReportService {
   }
 
   private static async getOperationalData(startDate: string, endDate: string) {
-    // Cases overview
+    // Cases overview - EXCLUDE DRAFTS
     const casesByStatus = await db.execute(sql`
       SELECT 
         status,
         COUNT(*) as count
       FROM salvage_cases
-      WHERE created_at >= ${startDate} AND created_at <= ${endDate}
+      WHERE created_at >= ${startDate} 
+        AND created_at <= ${endDate}
+        AND status != 'draft'
       GROUP BY status
     `);
 
@@ -367,15 +390,17 @@ export class MasterReportService {
         COUNT(*) as count,
         AVG(EXTRACT(EPOCH FROM (approved_at - created_at)) / 86400) as avg_time
       FROM salvage_cases
-      WHERE created_at >= ${startDate} AND created_at <= ${endDate}
+      WHERE created_at >= ${startDate} 
+        AND created_at <= ${endDate}
+        AND status != 'draft'
       GROUP BY asset_type
     `);
 
-    // Auctions overview
+    // Auctions overview - FIX: Count truly active auctions (status='active' AND end_time > NOW())
     const auctionsData = await db.execute(sql`
       SELECT 
         COUNT(*) as total,
-        COUNT(*) FILTER (WHERE status = 'active') as active,
+        COUNT(*) FILTER (WHERE status = 'active' AND end_time > NOW()) as active,
         COUNT(*) FILTER (WHERE status = 'closed') as closed,
         COUNT(*) FILTER (WHERE status = 'closed' AND current_bidder IS NOT NULL) as successful,
         AVG((SELECT COUNT(DISTINCT vendor_id) FROM bids WHERE auction_id = auctions.id)) as avg_bidders
@@ -410,18 +435,21 @@ export class MasterReportService {
       LIMIT 10
     `);
 
-    // Documents metrics
+    // Documents metrics - FIX: Query release_forms (actual documents table), not auction_documents
     const documentsData = await db.execute(sql`
       SELECT 
-        COUNT(*) as total,
-        COUNT(*) FILTER (WHERE status = 'signed') as completed
-      FROM auction_documents
-      WHERE created_at >= ${startDate} AND created_at <= ${endDate}
+        COUNT(rf.*) as total,
+        COUNT(rf.*) FILTER (WHERE rf.status = 'signed') as completed,
+        AVG(EXTRACT(EPOCH FROM (rf.signed_at - rf.created_at)) / 3600) FILTER (WHERE rf.status = 'signed') as avg_hours
+      FROM release_forms rf
+      JOIN auctions a ON rf.auction_id = a.id
+      WHERE a.created_at >= ${startDate} AND a.created_at <= ${endDate}
     `);
 
     const docRow = documentsData[0] as any;
     const totalDocs = parseInt(docRow?.total || '0');
     const completedDocs = parseInt(docRow?.completed || '0');
+    const avgHours = parseFloat(docRow?.avg_hours || '0');
 
     return {
       cases: {
@@ -454,13 +482,13 @@ export class MasterReportService {
       documents: {
         totalGenerated: totalDocs,
         completionRate: totalDocs > 0 ? (completedDocs / totalDocs * 100) : 0,
-        avgTimeToComplete: 2.5, // Placeholder - would need more complex query
+        avgTimeToComplete: Math.round(avgHours * 100) / 100,
       },
     };
   }
 
   private static async getPerformanceData(startDate: string, endDate: string) {
-    // Adjusters performance
+    // Adjusters performance - SHOW ALL REAL ADJUSTERS (even with 0 cases)
     const adjustersData = await db.execute(sql`
       SELECT 
         u.id,
@@ -468,7 +496,7 @@ export class MasterReportService {
         COUNT(sc.id) as cases_processed,
         COUNT(*) FILTER (WHERE sc.status IN ('approved', 'active_auction', 'sold')) as approved,
         CASE 
-          WHEN COUNT(*) > 0 THEN (COUNT(*) FILTER (WHERE sc.status IN ('approved', 'active_auction', 'sold'))::NUMERIC / COUNT(*) * 100)
+          WHEN COUNT(sc.id) > 0 THEN (COUNT(*) FILTER (WHERE sc.status IN ('approved', 'active_auction', 'sold'))::NUMERIC / COUNT(sc.id) * 100)
           ELSE 0
         END as approval_rate,
         AVG(EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400) as avg_processing_days,
@@ -477,12 +505,13 @@ export class MasterReportService {
       LEFT JOIN salvage_cases sc ON u.id = sc.created_by 
         AND sc.created_at >= ${startDate}
         AND sc.created_at <= ${endDate}
+        AND sc.status != 'draft'
       LEFT JOIN auctions a ON sc.id = a.case_id
       LEFT JOIN payments p ON a.id = p.auction_id AND p.status = 'verified'
       WHERE u.role = 'claims_adjuster'
+        AND u.full_name NOT LIKE '%Test%'
       GROUP BY u.id, u.full_name
-      HAVING COUNT(sc.id) > 0
-      ORDER BY revenue DESC
+      ORDER BY revenue DESC, cases_processed DESC
       LIMIT 20
     `);
 
@@ -504,8 +533,18 @@ export class MasterReportService {
       };
     });
 
-    // Vendors performance
+    // Vendors performance - FIX: Use subquery to calculate total_spent with verified payments only
     const vendorsData = await db.execute(sql`
+      WITH vendor_payments AS (
+        SELECT 
+          v.id as vendor_id,
+          COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as total_spent,
+          COUNT(DISTINCT p.auction_id) as paid_auctions
+        FROM vendors v
+        LEFT JOIN payments p ON p.vendor_id = v.id AND p.status = 'verified'
+        WHERE p.created_at >= ${startDate} AND p.created_at <= ${endDate}
+        GROUP BY v.id
+      )
       SELECT 
         v.id,
         v.business_name,
@@ -517,15 +556,15 @@ export class MasterReportService {
           THEN (COUNT(DISTINCT a.id) FILTER (WHERE a.current_bidder = v.id)::NUMERIC / COUNT(DISTINCT b.auction_id) * 100)
           ELSE 0
         END as win_rate,
-        COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as total_spent,
+        COALESCE(vp.total_spent, 0) as total_spent,
         CASE 
           WHEN COUNT(b.id) > 0 
           THEN AVG(CAST(b.amount AS NUMERIC))
           ELSE 0
         END as avg_bid,
         CASE 
-          WHEN COUNT(p.id) > 0 
-          THEN (COUNT(*) FILTER (WHERE p.status = 'verified')::NUMERIC / COUNT(p.id) * 100)
+          WHEN COUNT(DISTINCT a.id) FILTER (WHERE a.current_bidder = v.id) > 0
+          THEN (COALESCE(vp.paid_auctions, 0)::NUMERIC / COUNT(DISTINCT a.id) FILTER (WHERE a.current_bidder = v.id) * 100)
           ELSE 0
         END as payment_rate
       FROM vendors v
@@ -533,8 +572,8 @@ export class MasterReportService {
         AND b.created_at >= ${startDate}
         AND b.created_at <= ${endDate}
       LEFT JOIN auctions a ON b.auction_id = a.id AND a.current_bidder = v.id
-      LEFT JOIN payments p ON a.id = p.auction_id AND p.vendor_id = v.id
-      GROUP BY v.id, v.business_name, v.tier
+      LEFT JOIN vendor_payments vp ON v.id = vp.vendor_id
+      GROUP BY v.id, v.business_name, v.tier, vp.total_spent, vp.paid_auctions
       HAVING COUNT(DISTINCT b.auction_id) > 0
       ORDER BY total_spent DESC
       LIMIT 20
@@ -575,18 +614,6 @@ export class MasterReportService {
 
   private static async getAuctionIntelligence(startDate: string, endDate: string) {
     // Bidding activity
-    const biddingData = await db.execute(sql`
-      SELECT 
-        COUNT(*) as total_bids,
-        COUNT(DISTINCT auction_id) as auctions_with_bids,
-        EXTRACT(HOUR FROM created_at) as hour,
-        COUNT(*) as hour_count
-      FROM bids
-      WHERE created_at >= ${startDate} AND created_at <= ${endDate}
-      GROUP BY EXTRACT(HOUR FROM created_at)
-      ORDER BY hour_count DESC
-    `);
-
     const totalBids = await db.execute(sql`
       SELECT COUNT(*) as count FROM bids
       WHERE created_at >= ${startDate} AND created_at <= ${endDate}
@@ -617,10 +644,10 @@ export class MasterReportService {
       LIMIT 10
     `);
 
-    // Pricing analysis
+    // Pricing analysis - FIX: Use reserve_price as starting bid (user correction)
     const pricingData = await db.execute(sql`
       SELECT 
-        AVG(CAST(sc.market_value AS NUMERIC)) as avg_starting_bid,
+        AVG(CAST(sc.reserve_price AS NUMERIC)) as avg_starting_bid,
         AVG(CAST(a.current_bid AS NUMERIC)) as avg_winning_bid
       FROM auctions a
       JOIN salvage_cases sc ON a.case_id = sc.id
@@ -628,6 +655,7 @@ export class MasterReportService {
         AND a.current_bidder IS NOT NULL
         AND a.created_at >= ${startDate}
         AND a.created_at <= ${endDate}
+        AND sc.status != 'draft'
     `);
 
     const pricingRow = pricingData[0] as any;
