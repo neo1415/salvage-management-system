@@ -1,7 +1,7 @@
 import { pgTable, uuid, varchar, timestamp, numeric, jsonb, pgEnum, text, boolean } from 'drizzle-orm/pg-core';
 import { users } from './users';
 
-export const vendorTierEnum = pgEnum('vendor_tier', ['tier1_bvn', 'tier2_full']);
+export const vendorTierEnum = pgEnum('vendor_tier', ['tier0', 'tier1_bvn', 'tier2_full']);
 export const vendorStatusEnum = pgEnum('vendor_status', ['pending', 'approved', 'suspended']);
 export const assetTypeEnum = pgEnum('asset_type', ['vehicle', 'property', 'electronics', 'machinery']);
 
@@ -11,7 +11,7 @@ export const vendors = pgTable('vendors', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   businessName: varchar('business_name', { length: 255 }),
-  tier: vendorTierEnum('tier').notNull().default('tier1_bvn'),
+  tier: vendorTierEnum('tier').notNull().default('tier0'),
   bvnEncrypted: varchar('bvn_encrypted', { length: 255 }),
   bvnVerifiedAt: timestamp('bvn_verified_at'),
   cacNumber: varchar('cac_number', { length: 50 }),

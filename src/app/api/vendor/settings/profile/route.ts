@@ -47,36 +47,52 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch vendor data if exists
+    // CRITICAL FIX: Only select fields that actually exist in the vendors schema
     const [vendor] = await db
       .select({
         businessName: vendors.businessName,
+        businessType: vendors.businessType,
+        cacNumber: vendors.cacNumber,
+        tin: vendors.tin,
         bankAccountNumber: vendors.bankAccountNumber,
+        bankAccountName: vendors.bankAccountName,
         bankName: vendors.bankName,
         tier: vendors.tier,
         status: vendors.status,
+        tier2ApprovedAt: vendors.tier2ApprovedAt,
+        tier2ExpiresAt: vendors.tier2ExpiresAt,
       })
       .from(vendors)
       .where(eq(vendors.userId, session.user.id))
       .limit(1);
 
-    return NextResponse.json({
+    // Build response with explicit null handling for ALL fields
+    const response = {
       user: {
         id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        phone: user.phone,
-        dateOfBirth: user.dateOfBirth,
-        status: user.status,
-        createdAt: user.createdAt,
+        fullName: user.fullName || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        dateOfBirth: user.dateOfBirth || null,
+        status: user.status || 'unverified_tier_0',
+        createdAt: user.createdAt || new Date(),
       },
       vendor: vendor ? {
-        businessName: vendor.businessName,
-        bankAccountNumber: vendor.bankAccountNumber,
-        bankName: vendor.bankName,
-        tier: vendor.tier,
-        status: vendor.status,
+        businessName: vendor.businessName || null,
+        businessType: vendor.businessType || null,
+        cacNumber: vendor.cacNumber || null,
+        tin: vendor.tin || null,
+        bankAccountNumber: vendor.bankAccountNumber || null,
+        bankAccountName: vendor.bankAccountName || null,
+        bankName: vendor.bankName || null,
+        tier: vendor.tier || 'tier0',
+        status: vendor.status || 'pending',
+        tier2ApprovedAt: vendor.tier2ApprovedAt || null,
+        tier2ExpiresAt: vendor.tier2ExpiresAt || null,
       } : null,
-    });
+    };
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Error fetching profile:', error);
     return NextResponse.json(

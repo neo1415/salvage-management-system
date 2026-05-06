@@ -254,6 +254,21 @@ export async function creditWallet(
       },
     });
 
+    // PHASE 2.2: Record ledger entry AFTER wallet credit succeeds
+    try {
+      const { ledgerService } = await import('@/features/ledger/services/ledger.service');
+      await ledgerService.recordWalletFunding(
+        wallet.vendorId,
+        amount,
+        reference,
+        `Wallet funded ₦${amount.toLocaleString()} via Paystack`
+      );
+      console.log(`[Ledger] Recorded wallet funding: ₦${amount.toLocaleString()}`);
+    } catch (ledgerError) {
+      // Log error but don't block payment - ledger is for reconciliation only
+      console.error('[Ledger] Failed to record wallet funding (non-blocking):', ledgerError);
+    }
+
     return {
       balance: parseFloat(updatedWallet.balance),
       availableBalance: parseFloat(updatedWallet.availableBalance),
@@ -517,6 +532,22 @@ export async function releaseFunds(
     });
 
     console.log(`✅ ATOMIC RELEASE: Balance ${currentBalance} → ${newBalance}, Frozen ${currentFrozen} → ${newFrozen}`);
+
+    // PHASE 2.2: Record ledger entry AFTER fund release succeeds
+    try {
+      const { ledgerService } = await import('@/features/ledger/services/ledger.service');
+      await ledgerService.recordPaymentDebit(
+        vendorId,
+        amount,
+        auctionId,
+        transferReference,
+        `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to NEM Insurance`
+      );
+      console.log(`[Ledger] Recorded payment debit: ₦${amount.toLocaleString()}`);
+    } catch (ledgerError) {
+      // Log error but don't block payment - ledger is for reconciliation only
+      console.error('[Ledger] Failed to record payment debit (non-blocking):', ledgerError);
+    }
 
     return {
       balance: parseFloat(updatedWallet.balance),

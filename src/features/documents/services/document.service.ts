@@ -448,6 +448,18 @@ export async function signDocument(
       throw new Error('Failed to update document');
     }
 
+    // CRITICAL FIX: Invalidate auction cache IMMEDIATELY after document signing
+    // This ensures UI gets fresh data even if not all documents are signed yet
+    try {
+      const { cache } = await import('@/lib/redis/client');
+      const cacheKey = `auction:details:${signedDoc.auctionId}`;
+      await cache.del(cacheKey);
+      console.log(`✅ Invalidated auction details cache after document signing: ${cacheKey}`);
+    } catch (cacheError) {
+      console.error(`❌ Failed to invalidate auction details cache:`, cacheError);
+      // Don't throw - cache invalidation failure shouldn't block the process
+    }
+
     // NEW: Send document signing progress notifications
     try {
       const [vendor] = await db.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);

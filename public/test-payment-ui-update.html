@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment UI Update Test</title>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #00ff00;
+    }
+    h1 {
+      color: #00ff00;
+      border-bottom: 2px solid #00ff00;
+      padding-bottom: 10px;
+    }
+    .section {
+      background: #2a2a2a;
+      border: 1px solid #00ff00;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    .step {
+      margin: 15px 0;
+      padding: 10px;
+      background: #1a1a1a;
+      border-left: 4px solid #00ff00;
+    }
+    .code {
+      background: #0a0a0a;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+      margin: 10px 0;
+    }
+    .success { color: #00ff00; }
+    .error { color: #ff0000; }
+    .warning { color: #ffaa00; }
+    .info { color: #00aaff; }
+    button {
+      background: #00ff00;
+      color: #1a1a1a;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #00cc00;
+    }
+    #logs {
+      background: #0a0a0a;
+      padding: 15px;
+      border-radius: 4px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .log-entry {
+      margin: 5px 0;
+      padding: 5px;
+      border-left: 3px solid #00ff00;
+      padding-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 Payment UI Update Diagnostic Tool</h1>
+  
+  <div class="section">
+    <h2>📋 Test Instructions</h2>
+    <div class="step">
+      <strong>Step 1:</strong> Open the auction detail page in another tab
+      <div class="code">
+        URL: /vendor/auctions/c1c20342-25ba-4d1a-9132-0d79ba0efd42
+      </div>
+    </div>
+    
+    <div class="step">
+      <strong>Step 2:</strong> Open browser console (F12) on that page
+    </div>
+    
+    <div class="step">
+      <strong>Step 3:</strong> Look for these specific console logs:
+      <div class="code">
+        <div class="success">✅ "📊 Poll: Auction ... updated"</div>
+        <div class="success">✅ "   - hasVerifiedPayment: true"</div>
+        <div class="success">✅ "✅ Auction state updated with hasVerifiedPayment: true"</div>
+        <div class="success">✅ "🔍 useEffect triggered for hasVerifiedPayment update"</div>
+        <div class="success">✅ "📡 Updating hasVerifiedPayment from realtime data: true"</div>
+        <div class="success">✅ "🎯 Component render state:"</div>
+      </div>
+    </div>
+    
+    <div class="step">
+      <strong>Step 4:</strong> Check the "🎯 Component render state:" log
+      <div class="code">
+        Look for these values:
+        - hasVerifiedPayment: <span class="success">true</span> (should be true)
+        - realtimeAuctionHasVerifiedPayment: <span class="success">true</span> (should be true)
+        - shouldShowPaymentVerified: <span class="success">true</span> (should be true)
+        - shouldShowPayNow: <span class="error">false</span> (should be false)
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>🔬 Quick Diagnosis</h2>
+    <button onclick="testPollingAPI()">Test Polling API</button>
+    <button onclick="clearLogs()">Clear Logs</button>
+    <div id="logs"></div>
+  </div>
+
+  <div class="section">
+    <h2>🐛 Common Issues & Solutions</h2>
+    
+    <div class="step">
+      <strong class="error">Issue 1:</strong> "📊 Poll" log shows hasVerifiedPayment: false
+      <div class="code">
+        <strong>Cause:</strong> Payment not verified in database
+        <strong>Solution:</strong> Check payment status in database
+      </div>
+    </div>
+    
+    <div class="step">
+      <strong class="error">Issue 2:</strong> "🔍 useEffect triggered" log is missing
+      <div class="code">
+        <strong>Cause:</strong> realtimeAuction object doesn't have hasVerifiedPayment field
+        <strong>Solution:</strong> Check hook is setting the field correctly
+      </div>
+    </div>
+    
+    <div class="step">
+      <strong class="error">Issue 3:</strong> "📡 Updating hasVerifiedPayment" shows true, but UI shows "Pay Now"
+      <div class="code">
+        <strong>Cause:</strong> State update not triggering re-render OR another update overwriting it
+        <strong>Solution:</strong> Check "🎯 Component render state:" log to see actual state values
+      </div>
+    </div>
+    
+    <div class="step">
+      <strong class="error">Issue 4:</strong> "🎯 Component render state:" shows hasVerifiedPayment: false
+      <div class="code">
+        <strong>Cause:</strong> State is being reset somewhere
+        <strong>Solution:</strong> Check for other useEffects that might be resetting the state
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function addLog(message, type = 'info') {
+      const logs = document.getElementById('logs');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logs.appendChild(entry);
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    function clearLogs() {
+      document.getElementById('logs').innerHTML = '';
+      addLog('Logs cleared', 'info');
+    }
+
+    async function testPollingAPI() {
+      addLog('Testing polling API...', 'info');
+      
+      try {
+        const auctionId = 'c1c20342-25ba-4d1a-9132-0d79ba0efd42';
+        addLog(`Fetching: /api/auctions/${auctionId}/poll`, 'info');
+        
+        const response = await fetch(`/api/auctions/${auctionId}/poll`);
+        
+        if (!response.ok) {
+          addLog(`❌ API Error: ${response.status} ${response.statusText}`, 'error');
+          return;
+        }
+        
+        const data = await response.json();
+        addLog('✅ API Response received', 'success');
+        addLog(`Status: ${data.data.status}`, 'info');
+        addLog(`hasVerifiedPayment: ${data.data.hasVerifiedPayment}`, data.data.hasVerifiedPayment ? 'success' : 'error');
+        addLog(`Current Bid: ₦${data.data.currentBid?.toLocaleString() || 'None'}`, 'info');
+        
+        if (data.data.hasVerifiedPayment) {
+          addLog('✅ Payment is verified! UI should show "Payment Verified" banner', 'success');
+        } else {
+          addLog('⚠️  Payment not verified. UI should show "Pay Now" banner', 'warning');
+        }
+        
+        addLog('Full response:', 'info');
+        addLog(JSON.stringify(data, null, 2), 'info');
+        
+      } catch (error) {
+        addLog(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    // Auto-test on load
+    window.addEventListener('load', () => {
+      addLog('🚀 Diagnostic tool loaded', 'success');
+      addLog('Click "Test Polling API" to check the API response', 'info');
+    });
+  </script>
+</body>
+</html>

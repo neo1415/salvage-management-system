@@ -151,7 +151,7 @@ export class CaseProcessingService {
       const totalSalvageValue = items.reduce((sum, c) => sum + parseFloat(c.estimatedSalvageValue || '0'), 0);
       const averageMarketValue = items.length > 0 ? totalMarketValue / items.length : 0;
 
-      // Build case list with details
+      // Build case list with details - sorted by date descending (latest first)
       const cases = items.map(c => ({
         claimReference: c.claimReference,
         status: c.status,
@@ -159,7 +159,7 @@ export class CaseProcessingService {
         salvageValue: Math.round(parseFloat(c.estimatedSalvageValue || '0')),
         processingDays: c.processingTimeHours ? Math.round((c.processingTimeHours / 24) * 10) / 10 : 0,
         createdAt: new Date(c.createdAt).toISOString().split('T')[0],
-      })).sort((a, b) => b.marketValue - a.marketValue); // Sort by market value descending
+      })).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); // Sort by date descending (latest first)
 
       return {
         assetType,
@@ -413,13 +413,16 @@ export class AuctionPerformanceService {
       : 0;
 
     // Financial metrics
-    const successfulAuctions = data.filter(a => a.status === 'closed' && a.winnerId && a.winningBid);
-    const totalRevenue = successfulAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
-    const avgWinningBid = successfulAuctions.length > 0 ? totalRevenue / successfulAuctions.length : 0;
+    // FIX: Use currentBid for all auctions (sold or awaiting_payment), not just winningBid
+    // winningBid is only populated for "sold" status (payment verified)
+    // currentBid contains the highest bid for all closed auctions
+    const auctionsWithBids = data.filter(a => (a.status === 'sold' || a.status === 'awaiting_payment') && a.currentBid);
+    const totalRevenue = auctionsWithBids.reduce((sum, a) => sum + parseFloat(a.currentBid || '0'), 0);
+    const avgWinningBid = auctionsWithBids.length > 0 ? totalRevenue / auctionsWithBids.length : 0;
     
-    const auctionsWithReserve = data.filter(a => a.reservePrice && a.winningBid);
+    const auctionsWithReserve = data.filter(a => a.reservePrice && a.currentBid);
     const priceRealization = auctionsWithReserve.length > 0
-      ? auctionsWithReserve.reduce((sum, a) => sum + (parseFloat(a.winningBid) / parseFloat(a.reservePrice) * 100), 0) / auctionsWithReserve.length
+      ? auctionsWithReserve.reduce((sum, a) => sum + (parseFloat(a.currentBid) / parseFloat(a.reservePrice) * 100), 0) / auctionsWithReserve.length
       : 0;
 
     // Vendor metrics
@@ -457,9 +460,10 @@ export class AuctionPerformanceService {
       const reserveMet = items.filter(a => a.reserveMet).length;
       const reserveMetRate = items.length > 0 ? (reserveMet / items.length) * 100 : 0;
       
-      const successfulItems = items.filter(a => a.status === 'closed' && a.winnerId && a.winningBid);
-      const totalRevenue = successfulItems.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
-      const avgWinningBid = successfulItems.length > 0 ? totalRevenue / successfulItems.length : 0;
+      // FIX: Use currentBid for all auctions (sold or awaiting_payment), not just winningBid
+      const auctionsWithBids = items.filter(a => (a.status === 'sold' || a.status === 'awaiting_payment') && a.currentBid);
+      const totalRevenue = auctionsWithBids.reduce((sum, a) => sum + parseFloat(a.currentBid || '0'), 0);
+      const avgWinningBid = auctionsWithBids.length > 0 ? totalRevenue / auctionsWithBids.length : 0;
       
       const competitive = items.filter(a => a.uniqueBidders >= 2).length;
 
@@ -586,25 +590,26 @@ export class AuctionPerformanceService {
   }
 
   private static calculateFinancialMetrics(data: any[]) {
-    const successfulAuctions = data.filter(a => a.status === 'closed' && a.winnerId && a.winningBid);
-    const totalRevenue = successfulAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
-    const avgWinningBid = successfulAuctions.length > 0 ? totalRevenue / successfulAuctions.length : 0;
+    // FIX: Use currentBid for all auctions (sold or awaiting_payment), not just winningBid
+    const auctionsWithBids = data.filter(a => (a.status === 'sold' || a.status === 'awaiting_payment') && a.currentBid);
+    const totalRevenue = auctionsWithBids.reduce((sum, a) => sum + parseFloat(a.currentBid || '0'), 0);
+    const avgWinningBid = auctionsWithBids.length > 0 ? totalRevenue / auctionsWithBids.length : 0;
     
     const auctionsWithReserve = data.filter(a => a.reservePrice);
     const avgReservePrice = auctionsWithReserve.length > 0
       ? auctionsWithReserve.reduce((sum, a) => sum + parseFloat(a.reservePrice), 0) / auctionsWithReserve.length
       : 0;
     
-    const priceRealizationAuctions = data.filter(a => a.reservePrice && a.winningBid);
+    const priceRealizationAuctions = data.filter(a => a.reservePrice && a.currentBid);
     const priceRealization = priceRealizationAuctions.length > 0
-      ? priceRealizationAuctions.reduce((sum, a) => sum + (parseFloat(a.winningBid) / parseFloat(a.reservePrice) * 100), 0) / priceRealizationAuctions.length
+      ? priceRealizationAuctions.reduce((sum, a) => sum + (parseFloat(a.currentBid) / parseFloat(a.reservePrice) * 100), 0) / priceRealizationAuctions.length
       : 0;
     
     // Revenue by asset type
-    const grouped = DataAggregationService.groupBy(successfulAuctions, 'assetType');
+    const grouped = DataAggregationService.groupBy(auctionsWithBids, 'assetType');
     const revenueByAssetType = grouped && Object.keys(grouped).length > 0
       ? Object.entries(grouped).map(([assetType, items]) => {
-          const revenue = items.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
+          const revenue = items.reduce((sum, a) => sum + parseFloat(a.currentBid || '0'), 0);
           return {
             assetType,
             revenue: Math.round(revenue),
@@ -639,9 +644,10 @@ export class AuctionPerformanceService {
         grouped[date] = { count: 0, successful: 0, totalBids: 0, uniqueBidders: new Set(), revenue: 0 };
       }
       grouped[date].count++;
-      if (item.status === 'closed' && item.winnerId) {
+      // FIX: Count sold and awaiting_payment as successful, use currentBid for revenue
+      if ((item.status === 'sold' || item.status === 'awaiting_payment') && item.currentBid) {
         grouped[date].successful++;
-        grouped[date].revenue += parseFloat(item.winningBid || '0');
+        grouped[date].revenue += parseFloat(item.currentBid || '0');
       }
       grouped[date].totalBids += item.bidCount;
       (item.bidderIds || []).forEach((id: string) => grouped[date].uniqueBidders.add(id));

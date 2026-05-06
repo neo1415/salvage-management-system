@@ -15,6 +15,22 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   
+  // API configuration - increase body size limit for file uploads
+  // KYC documents can be up to 5MB each, with 5 files = 25MB max
+  // Adding buffer for form data overhead = 30MB
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '30mb',
+    },
+  },
+  
+  // Increase API route body size limit
+  api: {
+    bodyParser: {
+      sizeLimit: '30mb',
+    },
+  },
+  
   // Performance optimizations
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
@@ -58,6 +74,9 @@ const nextConfig: NextConfig = {
   // Optimize bundle
   experimental: {
     optimizePackageImports: ['framer-motion', 'lucide-react'],
+    serverActions: {
+      bodySizeLimit: '30mb',
+    },
   },
   
   // Headers for PWA and performance

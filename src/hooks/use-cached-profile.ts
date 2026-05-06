@@ -71,10 +71,21 @@ export function useCachedProfile(): UseCachedProfileReturn {
       const response = await fetch('/api/vendor/settings/profile');
       
       if (!response.ok) {
-        throw new Error('Failed to fetch profile data');
+        const errorData = await response.json().catch(() => ({ error: 'Failed to fetch profile data' }));
+        throw new Error(errorData.error || 'Failed to fetch profile data');
       }
 
       const data: ProfileData = await response.json();
+      
+      // Validate response structure
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid profile data received');
+      }
+      
+      if (!data.user || typeof data.user !== 'object') {
+        throw new Error('Invalid user data in profile response');
+      }
+      
       setProfile(data);
       setLastCached(new Date());
 

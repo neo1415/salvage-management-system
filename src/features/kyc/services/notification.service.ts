@@ -1,4 +1,5 @@
 import { SMSService } from '@/features/notifications/services/sms.service';
+import { emailService } from '@/features/notifications/services/email.service';
 import { createKYCUpdateNotification } from '@/features/notifications/services/notification.service';
 import type { AMLRiskLevel } from '../types/kyc.types';
 
@@ -37,7 +38,29 @@ export class KYCNotificationService {
         vendor.phone,
         `Hi ${vendor.fullName}, your Tier 2 KYC application has been received. We'll review it within 24-48 hours and notify you of the outcome.`
       ),
-      createKYCUpdateNotification(vendor.userId, 'submitted').catch((e) =>
+      this.sendEmailNotification(
+        vendor.email,
+        'KYC Application Received',
+        `
+          <h2>KYC Application Received</h2>
+          <p>Hi ${vendor.fullName},</p>
+          <p>Your Tier 2 KYC application has been successfully received and is now under review.</p>
+          <p><strong>What happens next:</strong></p>
+          <ul>
+            <li>Our team will review your documents within 24-48 hours</li>
+            <li>You'll receive an SMS and email notification once the review is complete</li>
+            <li>If approved, you'll gain unlimited bidding access immediately</li>
+          </ul>
+          <p>Thank you for your patience!</p>
+          <p>Best regards,<br>NEM Insurance Salvage Team</p>
+        `
+      ),
+      createKYCUpdateNotification(
+        vendor.userId,
+        'tier2',
+        'pending',
+        'Your Tier 2 KYC application has been received and is under review.'
+      ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
     ]);
@@ -50,7 +73,12 @@ export class KYCNotificationService {
         vendor.phone,
         `Congratulations ${vendor.fullName}! Your Tier 2 KYC has been approved. You can now bid on unlimited high-value auctions. Login to your dashboard to get started.`
       ),
-      createKYCUpdateNotification(vendor.userId, 'approved').catch((e) =>
+      createKYCUpdateNotification(
+        vendor.userId,
+        'tier2',
+        'approved',
+        'Congratulations! Your Tier 2 KYC has been approved. You now have unlimited bidding access.'
+      ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
     ]);
@@ -63,7 +91,29 @@ export class KYCNotificationService {
         vendor.phone,
         `Hi ${vendor.fullName}, your Tier 2 KYC application is under review. Our team will complete the review within 24-48 hours. You'll be notified of the outcome.`
       ),
-      createKYCUpdateNotification(vendor.userId, 'pending').catch((e) =>
+      this.sendEmailNotification(
+        vendor.email,
+        'KYC Application Under Review',
+        `
+          <h2>KYC Application Under Review</h2>
+          <p>Hi ${vendor.fullName},</p>
+          <p>Your Tier 2 KYC application is currently under review by our team.</p>
+          <p><strong>Review Timeline:</strong></p>
+          <ul>
+            <li>Our team will complete the review within 24-48 hours</li>
+            <li>You'll receive an SMS and email notification once the review is complete</li>
+            <li>If you have any questions, please contact our support team</li>
+          </ul>
+          <p>Thank you for your patience!</p>
+          <p>Best regards,<br>NEM Insurance Salvage Team</p>
+        `
+      ),
+      createKYCUpdateNotification(
+        vendor.userId,
+        'tier2',
+        'pending',
+        'Your Tier 2 KYC application is under review by our team. You will be notified within 24-48 hours.'
+      ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
     ]);
@@ -84,7 +134,12 @@ export class KYCNotificationService {
         vendor.phone,
         `Hi ${vendor.fullName}, your Tier 2 KYC application was not approved. Reason: ${reason}. You may resubmit after 24 hours. Contact support for assistance.`
       ),
-      createKYCUpdateNotification(vendor.userId, 'rejected').catch((e) =>
+      createKYCUpdateNotification(
+        vendor.userId,
+        'tier2',
+        'rejected',
+        `Your Tier 2 KYC application was not approved. Reason: ${reason}. You may resubmit after 24 hours.`
+      ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
     ]);
@@ -116,7 +171,12 @@ export class KYCNotificationService {
         vendor.phone,
         `Hi ${vendor.fullName}, your Tier 2 KYC verification expires in ${daysUntilExpiry} days. Please renew to maintain unlimited bidding access.`
       ),
-      createKYCUpdateNotification(vendor.userId, 'expiry_reminder').catch((e) =>
+      createKYCUpdateNotification(
+        vendor.userId,
+        'tier2',
+        'pending',
+        `Your Tier 2 KYC verification expires in ${daysUntilExpiry} days. Please renew to maintain unlimited bidding access.`
+      ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
     ]);
@@ -129,7 +189,12 @@ export class KYCNotificationService {
         vendor.phone,
         `Hi ${vendor.fullName}, your Tier 2 KYC verification has expired. You have been downgraded to Tier 1. Please re-verify to restore unlimited bidding access.`
       ),
-      createKYCUpdateNotification(vendor.userId, 'expired').catch((e) =>
+      createKYCUpdateNotification(
+        vendor.userId,
+        'tier2',
+        'rejected',
+        'Your Tier 2 KYC verification has expired. You have been downgraded to Tier 1. Please re-verify to restore unlimited bidding access.'
+      ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
     ]);
@@ -151,6 +216,23 @@ export class KYCNotificationService {
       }
     } catch (e) {
       console.error('[KYCNotification] SMS send error', { phone, error: e });
+    }
+  }
+
+  /** Send email notification */
+  private async sendEmailNotification(email: string, subject: string, html: string): Promise<void> {
+    try {
+      const result = await emailService.sendEmail({
+        to: email,
+        subject,
+        html,
+      });
+      
+      if (!result.success) {
+        console.error('[KYCNotification] Email failed', { email, error: result.error });
+      }
+    } catch (e) {
+      console.error('[KYCNotification] Email send error', { email, error: e });
     }
   }
 }

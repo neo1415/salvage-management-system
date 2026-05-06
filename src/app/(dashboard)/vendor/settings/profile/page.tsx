@@ -31,10 +31,16 @@ interface ProfileData {
   };
   vendor?: {
     businessName: string | null;
+    businessType: string | null;
+    cacNumber: string | null;
+    tin: string | null;
     bankAccountNumber: string | null;
+    bankAccountName: string | null;
     bankName: string | null;
     tier: string;
     status: string;
+    tier2ApprovedAt: string | null;
+    tier2ExpiresAt: string | null;
   };
 }
 
@@ -89,12 +95,18 @@ export default function ProfilePage() {
     return `****${lastFour}`;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'Not available';
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Invalid date';
+    }
   };
 
   if (loading) {
@@ -164,42 +176,42 @@ export default function ProfilePage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
               <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
-                {profile.user.fullName}
+                {profile.user?.fullName || 'Not provided'}
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
-                {profile.user.email}
+                {profile.user?.email || 'Not provided'}
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
               <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
-                {profile.user.phone}
+                {profile.user?.phone || 'Not provided'}
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
               <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
-                {formatDate(profile.user.dateOfBirth)}
+                {formatDate(profile.user?.dateOfBirth)}
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
               <div className="px-4 py-3 bg-gray-50 rounded-lg">
-                {getStatusBadge(profile.user.status)}
+                {getStatusBadge(profile.user?.status || 'unverified_tier_0')}
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Member Since</label>
               <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
-                {formatDate(profile.user.createdAt)}
+                {formatDate(profile.user?.createdAt)}
               </div>
             </div>
           </div>
@@ -216,18 +228,18 @@ export default function ProfilePage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">KYC Tier</label>
                 <div className="px-4 py-3 bg-gray-50 rounded-lg">
-                  {getTierBadge(profile.vendor.tier)}
+                  {getTierBadge(profile.vendor?.tier || 'tier0')}
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Status</label>
                 <div className="px-4 py-3 bg-gray-50 rounded-lg">
-                  {getStatusBadge(profile.vendor.status)}
+                  {getStatusBadge(profile.vendor?.status || 'pending')}
                 </div>
               </div>
 
-              {profile.vendor.businessName && (
+              {profile.vendor?.businessName && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
                   <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
@@ -236,7 +248,60 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              {profile.vendor.bankAccountNumber && (
+              {/* Tier 2 Fields */}
+              {profile.vendor?.tier === 'tier2_full' && (
+                <>
+                  {profile.vendor?.businessType && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Business Type</label>
+                      <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
+                        {profile.vendor.businessType === 'limited_company' ? 'Limited Company' :
+                         profile.vendor.businessType === 'sole_proprietorship' ? 'Sole Proprietorship' :
+                         profile.vendor.businessType === 'partnership' ? 'Partnership' :
+                         profile.vendor.businessType}
+                      </div>
+                    </div>
+                  )}
+
+                  {profile.vendor?.cacNumber && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">CAC Number</label>
+                      <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
+                        {profile.vendor.cacNumber}
+                      </div>
+                    </div>
+                  )}
+
+                  {profile.vendor?.tin && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">TIN</label>
+                      <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
+                        {profile.vendor.tin}
+                      </div>
+                    </div>
+                  )}
+
+                  {profile.vendor?.tier2ApprovedAt && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tier 2 Approved</label>
+                      <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
+                        {formatDate(profile.vendor.tier2ApprovedAt)}
+                      </div>
+                    </div>
+                  )}
+
+                  {profile.vendor?.tier2ExpiresAt && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tier 2 Expires</label>
+                      <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
+                        {formatDate(profile.vendor.tier2ExpiresAt)}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {profile.vendor?.bankAccountNumber && (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Bank Account</label>
@@ -245,7 +310,16 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  {profile.vendor.bankName && (
+                  {profile.vendor?.bankAccountName && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
+                      <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
+                        {profile.vendor.bankAccountName}
+                      </div>
+                    </div>
+                  )}
+
+                  {profile.vendor?.bankName && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
                       <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">

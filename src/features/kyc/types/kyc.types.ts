@@ -10,7 +10,7 @@ export type AMLRiskLevel = 'Low' | 'Medium' | 'High';
 
 export interface KYCStatus {
   status: KYCVerificationStatus;
-  tier: 'tier1_bvn' | 'tier2_full';
+  tier: 'tier0' | 'tier1_bvn' | 'tier2_full';
   submittedAt?: Date;
   approvedAt?: Date;
   expiresAt?: Date;

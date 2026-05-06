@@ -10,6 +10,7 @@ import {
   Activity,
   TrendingUp,
   Package,
+  Database,
 } from 'lucide-react';
 import Link from 'next/link';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
@@ -284,20 +285,20 @@ function AdminDashboardContentInner() {
           </Link>
 
           <Link
+            href="/manager/kyc-approvals"
+            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
+          >
+            <Users className="w-8 h-8 mx-auto mb-2 text-[#800020]" />
+            <p className="font-medium">KYC Approvals</p>
+          </Link>
+
+          <Link
             href="/admin/audit-logs"
             className="p-4 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
           >
             <ClipboardList className="w-8 h-8 mx-auto mb-2 text-[#800020]" />
             <p className="font-medium">View Logs</p>
           </Link>
-
-          <button
-            onClick={fetchDashboardStats}
-            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
-          >
-            <Activity className="w-8 h-8 mx-auto mb-2 text-[#800020]" />
-            <p className="font-medium">Refresh Stats</p>
-          </button>
         </div>
       </div>
     </div>

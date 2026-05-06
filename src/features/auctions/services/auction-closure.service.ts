@@ -75,7 +75,7 @@ export class AuctionClosureService {
   ): Promise<AuctionClosureResult> {
     try {
       // Use database transaction for atomicity
-      return await db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         // Get auction details
         const [auction] = await tx
           .select()
@@ -201,11 +201,13 @@ export class AuctionClosureService {
           );
 
           try {
+            // CRITICAL FIX: Pass transaction context to avoid nested transactions
             await escrowService.unfreezeDeposit(
               bidder.vendorId,
               depositAmount,
               auctionId,
-              'system' // System user ID for automated operations
+              'system', // System user ID for automated operations
+              tx // Pass transaction context to prevent nested transaction issues
             );
 
             unfrozenCount++;
@@ -213,11 +215,46 @@ export class AuctionClosureService {
               `   ✅ Unfroze deposit for Vendor ${bidder.vendorId} - ₦${depositAmount.toLocaleString()}`
             );
           } catch (unfreezeError) {
+            const errorMessage = unfreezeError instanceof Error ? unfreezeError.message : 'Unknown error';
+            const stackTrace = unfreezeError instanceof Error ? unfreezeError.stack : undefined;
+            
             console.error(
-              `   ❌ Failed to unfreeze deposit for Vendor ${bidder.vendorId}:`,
+              `   ❌ CRITICAL: Failed to unfreeze deposit for Vendor ${bidder.vendorId}:`,
               unfreezeError
             );
-            // Log error but continue with other bidders
+            console.error(`      - Auction ID: ${auctionId}`);
+            console.error(`      - Deposit Amount: ₦${depositAmount.toLocaleString()}`);
+            console.error(`      - Error: ${errorMessage}`);
+            if (stackTrace) {
+              console.error(`      - Stack:`, stackTrace);
+            }
+            
+            // Log to audit trail for monitoring
+            try {
+              const { logAction, AuditActionType, AuditEntityType, DeviceType } = await import('@/lib/utils/audit-logger');
+              await logAction({
+                userId: 'system',
+                actionType: AuditActionType.FUNDS_UNFROZEN,
+                entityType: AuditEntityType.AUCTION,
+                entityId: auctionId,
+                ipAddress: '0.0.0.0',
+                deviceType: DeviceType.DESKTOP,
+                userAgent: 'auction-closure',
+                afterState: {
+                  error: errorMessage,
+                  stackTrace,
+                  vendorId: bidder.vendorId,
+                  depositAmount: depositAmount.toFixed(2),
+                  timestamp: new Date().toISOString(),
+                  context: 'auction_closure_unfreeze_deposit_failed',
+                  success: false,
+                },
+              });
+            } catch (logError) {
+              console.error('      - Failed to log error to audit trail:', logError);
+            }
+            
+            // Continue with other bidders instead of failing entire closure
           }
         }
 
@@ -273,6 +310,59 @@ export class AuctionClosureService {
           unfrozenBiddersCount: unfrozenCount,
         };
       });
+      
+      // CRITICAL FIX: Verify winner record was actually created after transaction commits
+      // This ensures the transaction didn't silently roll back
+      const [verifyWinner] = await db
+        .select()
+        .from(auctionWinners)
+        .where(
+          and(
+            eq(auctionWinners.auctionId, auctionId),
+            eq(auctionWinners.rank, 1)
+          )
+        )
+        .limit(1);
+
+      if (!verifyWinner) {
+        const errorMessage = 'Winner record verification failed - transaction may have been rolled back';
+        console.error(`❌ CRITICAL: ${errorMessage} for auction ${auctionId}`);
+        console.error(`   - Transaction completed but winner record not found in database`);
+        console.error(`   - This indicates a database issue or silent transaction rollback`);
+        console.error(`   - Manual intervention required`);
+        
+        // Log critical failure to audit trail
+        try {
+          const { logAction, AuditActionType, AuditEntityType, DeviceType } = await import('@/lib/utils/audit-logger');
+          await logAction({
+            userId: 'system',
+            actionType: AuditActionType.AUCTION_CLOSURE_FAILED,
+            entityType: AuditEntityType.AUCTION,
+            entityId: auctionId,
+            ipAddress: '0.0.0.0',
+            deviceType: DeviceType.DESKTOP,
+            userAgent: 'auction-closure',
+            afterState: {
+              error: errorMessage,
+              phase: 'winner_record_verification',
+              timestamp: new Date().toISOString(),
+              context: 'post_transaction_verification',
+            },
+          });
+        } catch (logError) {
+          console.error('Failed to log verification failure to audit trail:', logError);
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      console.log(`✅ Winner record verified: ${verifyWinner.id}`);
+      console.log(`   - Vendor ID: ${verifyWinner.vendorId}`);
+      console.log(`   - Bid Amount: ₦${parseFloat(verifyWinner.bidAmount).toLocaleString()}`);
+      console.log(`   - Deposit Amount: ₦${parseFloat(verifyWinner.depositAmount).toLocaleString()}`);
+      
+      // Return the result from the transaction
+      return result;
     } catch (error) {
       console.error(`Failed to close auction ${auctionId}:`, error);
       return {

@@ -51,8 +51,13 @@ function verifySignature(payload: string, signature: string): boolean {
  * Handle Paystack webhook for auction payments
  */
 export async function POST(request: NextRequest) {
+  const webhookStartTime = Date.now();
+  const webhookReceivedAt = new Date().toISOString();
+  
   try {
     console.log('📥 Paystack webhook received');
+    console.log(`   - Timestamp: ${webhookReceivedAt}`);
+    console.log(`   - Start time: ${webhookStartTime}ms`);
     
     // Get raw body for signature verification
     const rawBody = await request.text();
@@ -100,21 +105,37 @@ export async function POST(request: NextRequest) {
     
     // Process the webhook
     console.log('✅ Processing successful payment...');
+    const processingStartTime = Date.now();
+    
     await paymentService.handlePaystackWebhook(payload.data.reference, true);
     
+    const processingDuration = Date.now() - processingStartTime;
+    const totalDuration = Date.now() - webhookStartTime;
+    
     console.log('✅ Webhook processed successfully');
+    console.log(`   - Processing time: ${processingDuration}ms (${(processingDuration / 1000).toFixed(2)}s)`);
+    console.log(`   - Total webhook time: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)}s)`);
+    console.log(`   - Completed at: ${new Date().toISOString()}`);
     
     return NextResponse.json(
-      { message: 'Webhook processed successfully' },
+      { 
+        message: 'Webhook processed successfully',
+        processingTime: processingDuration,
+        totalTime: totalDuration,
+      },
       { status: 200 }
     );
   } catch (error) {
+    const totalDuration = Date.now() - webhookStartTime;
     console.error('❌ Webhook processing error:', error);
+    console.error(`   - Failed after: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)}s)`);
+    console.error(`   - Error at: ${new Date().toISOString()}`);
     
     return NextResponse.json(
       {
         error: 'Webhook processing failed',
         message: error instanceof Error ? error.message : 'Unknown error',
+        failedAfter: totalDuration,
       },
       { status: 500 }
     );

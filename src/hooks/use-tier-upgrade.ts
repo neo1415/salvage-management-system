@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
-export type VendorTier = 'tier1_bvn' | 'tier2_full';
+export type VendorTier = 'tier1_bvn' | 'tier2_full' | 'tier0';
 
 interface UseTierUpgradeOptions {
   currentTier: VendorTier;
@@ -12,8 +12,27 @@ interface UseTierUpgradeOptions {
 export function useTierUpgrade({ currentTier, onUpgradeRequired }: UseTierUpgradeOptions) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [blockedAuctionValue, setBlockedAuctionValue] = useState<number | undefined>();
+  const [tier1Limit, setTier1Limit] = useState<number>(500000); // Default fallback
 
-  const TIER_1_LIMIT = 500000; // ₦500,000
+  // Fetch tier1Limit from system configuration
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const response = await fetch('/api/admin/config');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.config?.tier1Limit) {
+            setTier1Limit(data.config.tier1Limit);
+            console.log(`✅ Tier 1 limit loaded from config: ₦${data.config.tier1Limit.toLocaleString()}`);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch tier1Limit from config, using default:', error);
+      }
+    };
+
+    fetchConfig();
+  }, []);
 
   /**
    * Check if vendor can access an auction based on their tier
@@ -26,10 +45,10 @@ export function useTierUpgrade({ currentTier, onUpgradeRequired }: UseTierUpgrad
         return true; // Tier 2 vendors have unlimited access
       }
 
-      // Tier 1 vendors can only access auctions up to ₦500k
-      return auctionValue <= TIER_1_LIMIT;
+      // Tier 1 vendors can only access auctions up to the configured limit
+      return auctionValue <= tier1Limit;
     },
-    [currentTier]
+    [currentTier, tier1Limit]
   );
 
   /**
@@ -65,10 +84,10 @@ export function useTierUpgrade({ currentTier, onUpgradeRequired }: UseTierUpgrad
    */
   const getTierLimit = useCallback((): number | null => {
     if (currentTier === 'tier1_bvn') {
-      return TIER_1_LIMIT;
+      return tier1Limit;
     }
     return null; // Tier 2 has no limit
-  }, [currentTier]);
+  }, [currentTier, tier1Limit]);
 
   /**
    * Check if vendor is Tier 1
@@ -89,6 +108,6 @@ export function useTierUpgrade({ currentTier, onUpgradeRequired }: UseTierUpgrad
     getTierLimit,
     isTier1,
     isTier2,
-    TIER_1_LIMIT,
+    TIER_1_LIMIT: tier1Limit,
   };
 }

@@ -139,7 +139,7 @@ export function PaymentOptions({
         
         // Check if payment already pending
         if (data.authorization_url === 'ALREADY_PENDING') {
-          setError('A payment is already in progress. Please complete or cancel the existing payment first.');
+          setError('A payment is already being processed. Please wait for the payment confirmation email, or refresh the page to check your payment status.');
           return;
         }
         
@@ -294,8 +294,10 @@ export function PaymentOptions({
             )}
             
             <div className="space-y-2">
-            {/* Wallet Only */}
-            <button
+            {/* Wallet Only - TEMPORARILY DISABLED */}
+            {/* REASON: Wallet payment has issues with balance validation and transaction history */}
+            {/* TODO: Fix wallet payment flow before re-enabling */}
+            {/* <button
               onClick={() => setSelectedMethod('wallet')}
               disabled={!breakdown.canPayWithWallet}
               className={`w-full p-3 border-2 rounded-lg text-left transition-all ${
@@ -333,7 +335,7 @@ export function PaymentOptions({
                   <CheckCircle2 className="w-5 h-5 text-[#800020] flex-shrink-0" />
                 )}
               </div>
-            </button>
+            </button> */}
 
             {/* Paystack Only */}
             <button
@@ -365,8 +367,10 @@ export function PaymentOptions({
               </div>
             </button>
 
-            {/* Hybrid Payment */}
-            {breakdown.walletBalance > 0 && breakdown.walletBalance < breakdown.remainingAmount && (
+            {/* Hybrid Payment - TEMPORARILY DISABLED */}
+            {/* TODO: Hybrid payment needs redesign to include auction-specific frozen deposit */}
+            {/* See conversation summary for details on architectural changes needed */}
+            {/* {breakdown.walletBalance > 0 && breakdown.walletBalance < breakdown.remainingAmount && (
               <button
                 onClick={() => setSelectedMethod('hybrid')}
                 className={`w-full p-3 border-2 rounded-lg text-left transition-all cursor-pointer ${
@@ -411,7 +415,7 @@ export function PaymentOptions({
                   )}
                 </div>
               </button>
-            )}
+            )} */}
           </div>
 
           {/* Info Box */}

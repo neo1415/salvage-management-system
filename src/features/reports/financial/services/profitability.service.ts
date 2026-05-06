@@ -103,17 +103,19 @@ export class ProfitabilityService {
         : 0,
     }));
 
-    // Create item breakdown with ROI
-    const itemBreakdown = data.details.map(row => ({
-      claimReference: row.claimReference,
-      assetType: row.assetType,
-      marketValue: parseFloat(row.marketValue),
-      salvageRecovery: parseFloat(row.salvageRecovery),
-      netLoss: row.netLoss,
-      recoveryRate: row.recoveryRate,
-      roi: row.recoveryRate, // Recovery rate IS the ROI for salvage
-      date: row.createdAt.toISOString().split('T')[0],
-    }));
+    // Create item breakdown with ROI - sorted by date descending (latest first)
+    const itemBreakdown = data.details
+      .map(row => ({
+        claimReference: row.claimReference,
+        assetType: row.assetType,
+        marketValue: parseFloat(row.marketValue),
+        salvageRecovery: parseFloat(row.salvageRecovery),
+        netLoss: row.netLoss,
+        recoveryRate: row.recoveryRate,
+        roi: row.recoveryRate, // Recovery rate IS the ROI for salvage
+        date: row.createdAt.toISOString().split('T')[0],
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date)); // Sort by date descending
 
     return {
       summary: summaryWithROI,

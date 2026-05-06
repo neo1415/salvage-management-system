@@ -20,7 +20,7 @@ import { payments } from '@/lib/db/schema/payments';
 import { depositEvents, auctionWinners } from '@/lib/db/schema/auction-deposit';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, ne } from 'drizzle-orm';
 import { depositNotificationService } from './deposit-notification.service';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
@@ -312,6 +312,13 @@ export class PaymentService {
     console.log(`   - Unfreeze transaction created in walletTransactions`);
     console.log(`   - Money transferred to NEM Insurance via Paystack Transfers API`);
 
+    // Keep auction status as 'awaiting_payment' (DO NOT change to 'closed')
+    // CRITICAL: The auction status must remain 'awaiting_payment' so that:
+    // - The API can compute hasVerifiedPayment: true
+    // - The UI shows the green "Payment Verified" banner
+    // - The "Pay Now" button is hidden
+    console.log(`✅ Auction status remains 'awaiting_payment' (payment verified)`);
+
     // Unfreeze all non-winner deposits (fallback chain complete)
     console.log(`🔓 Unfreezing all non-winner deposits for auction ${auctionId}`);
     await this.unfreezeNonWinnerDeposits(auctionId, vendorId);
@@ -330,8 +337,9 @@ export class PaymentService {
       amount: finalBid,
     });
 
-    // CRITICAL: Invalidate auction cache so UI shows hasVerifiedPayment: true
-    console.log(`🗑️ Invalidating auction cache...`);
+    // CRITICAL: Invalidate auction cache IMMEDIATELY after wallet payment
+    // This ensures UI shows updated payment status without delay
+    console.log(`🗑️ Invalidating auction cache after wallet payment...`);
     const { cache } = await import('@/lib/redis/client');
     await cache.del(`auction:details:${auctionId}`);
     console.log(`✅ Auction cache invalidated`);
@@ -619,6 +627,35 @@ export class PaymentService {
           .where(eq(payments.id, payment.id));
         
         console.log(`✅ Payment ${payment.id} marked as verified`);
+        
+        // CRITICAL FIX: Auto-cancel any other pending payments for this auction
+        // This prevents duplicate payment records when user clicks "Pay Now" multiple times
+        const otherPendingPayments = await tx
+          .select()
+          .from(payments)
+          .where(
+            and(
+              eq(payments.auctionId, auctionId),
+              eq(payments.status, 'pending'),
+              ne(payments.id, payment.id) // Not the current payment
+            )
+          );
+        
+        if (otherPendingPayments.length > 0) {
+          console.log(`🗑️  Auto-canceling ${otherPendingPayments.length} duplicate pending payment(s)`);
+          
+          for (const duplicatePayment of otherPendingPayments) {
+            await tx
+              .update(payments)
+              .set({
+                status: 'rejected',
+                updatedAt: new Date(),
+              })
+              .where(eq(payments.id, duplicatePayment.id));
+            
+            console.log(`   ✅ Cancelled duplicate payment: ${duplicatePayment.id} (${duplicatePayment.paymentReference})`);
+          }
+        }
       });
 
       // Step 2: Release funds (unfreeze + debit + transfer)
@@ -643,7 +680,14 @@ export class PaymentService {
       console.log(`🔓 Unfreezing all non-winner deposits for auction ${auctionId}`);
       await this.unfreezeNonWinnerDeposits(auctionId, vendorId);
 
-      // Step 4: Send notifications and generate pickup authorization
+      // Step 4: Keep auction status as 'awaiting_payment' (DO NOT change to 'closed')
+      // CRITICAL: The auction status must remain 'awaiting_payment' so that:
+      // - The API can compute hasVerifiedPayment: true
+      // - The UI shows the green "Payment Verified" banner
+      // - The "Pay Now" button is hidden
+      console.log(`✅ Auction status remains 'awaiting_payment' (payment verified)`);
+
+      // Step 5: Send notifications and generate pickup authorization
       const paymentInfo = {
         vendorId,
         auctionId,
@@ -654,7 +698,7 @@ export class PaymentService {
       await depositNotificationService.sendPaymentConfirmationNotification(paymentInfo);
       await this.generatePickupAuthorization(paymentInfo);
       
-      // CRITICAL: Invalidate auction cache so UI shows hasVerifiedPayment: true
+      // CRITICAL: Invalidate auction cache so UI shows updated status
       console.log(`🗑️ Invalidating auction cache...`);
       const { cache } = await import('@/lib/redis/client');
       await cache.del(`auction:details:${auctionId}`);
@@ -1051,6 +1095,7 @@ export class PaymentService {
       [payment] = await db
         .update(payments)
         .set({
+          amount: paystackPortion.toFixed(2), // ✅ FIXED: Update to Paystack portion for hybrid
           paymentMethod: 'paystack', // Using paystack method for hybrid
           paymentReference: idempotencyKey, // Will be updated with Paystack reference
           updatedAt: new Date(),
@@ -1065,7 +1110,7 @@ export class PaymentService {
         .values({
           auctionId,
           vendorId,
-          amount: finalBid.toFixed(2),
+          amount: paystackPortion.toFixed(2), // ✅ FIXED: Store only Paystack portion for hybrid
           paymentMethod: 'paystack', // Using paystack method for hybrid
           paymentReference: idempotencyKey, // Will be updated with Paystack reference
           status: 'pending',

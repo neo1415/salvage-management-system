@@ -73,79 +73,86 @@ export class OperationalDataRepository {
 
   /**
    * Get case processing data
-   * FIX: Exclude draft cases and calculate processing time in DAYS (to match Master Report)
+   * FIX: Exclude draft cases and TEST cases, determine correct status from auction state
    */
   static async getCaseProcessingData(filters: ReportFilters): Promise<CaseProcessingData[]> {
-    const conditions = [];
+    const startDate = filters.startDate || '2000-01-01';
+    const endDate = filters.endDate || '2099-12-31';
 
-    // Date range
-    const dateCondition = this.buildDateCondition(
-      salvageCases.createdAt,
-      filters.startDate,
-      filters.endDate
-    );
-    if (dateCondition) conditions.push(dateCondition);
+    // Use raw SQL to get correct status by joining with auctions and payments
+    const results = await db.execute(sql`
+      SELECT 
+        sc.id as case_id,
+        sc.claim_reference,
+        sc.asset_type,
+        sc.status as case_status,
+        sc.created_at,
+        sc.approved_at,
+        sc.created_by as adjuster_id,
+        u.full_name as adjuster_name,
+        sc.market_value,
+        sc.estimated_salvage_value,
+        sc.reserve_price,
+        a.id as auction_id,
+        a.status as auction_status,
+        a.end_time as auction_end_time,
+        p.id as payment_id,
+        p.status as payment_status
+      FROM salvage_cases sc
+      LEFT JOIN users u ON sc.created_by = u.id
+      LEFT JOIN auctions a ON a.case_id = sc.id
+      LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
+      WHERE sc.created_at >= ${startDate}::timestamp
+        AND sc.created_at <= ${endDate}::timestamp
+        AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
+      ORDER BY sc.created_at DESC
+    `) as any[];
 
-    // CRITICAL FIX: Exclude draft cases (Master Report excludes drafts)
-    conditions.push(sql`${salvageCases.status} != 'draft'`);
+    return results.map((row: any) => {
+      // Determine correct display status based on auction and payment state
+      let displayStatus = row.case_status;
+      
+      if (row.auction_id) {
+        // Case has an auction
+        if (row.payment_id && row.payment_status === 'verified') {
+          // Auction has verified payment = SOLD
+          displayStatus = 'sold';
+        } else if (row.auction_status === 'closed') {
+          // Auction closed but no payment yet = SOLD (awaiting payment)
+          displayStatus = 'sold';
+        } else if (row.auction_status === 'active' && new Date(row.auction_end_time) > new Date()) {
+          // Auction is active and hasn't ended yet = ACTIVE AUCTION
+          displayStatus = 'active_auction';
+        } else if (row.auction_status === 'active' && new Date(row.auction_end_time) <= new Date()) {
+          // Auction ended but not closed yet = SOLD (system will close it)
+          displayStatus = 'sold';
+        } else if (row.case_status === 'approved' && !row.payment_id) {
+          // Case approved but auction hasn't started or no payment = APPROVED
+          displayStatus = 'approved';
+        }
+      }
 
-    // Asset types - use sql template for enum filtering
-    if (filters.assetTypes && filters.assetTypes.length > 0) {
-      conditions.push(sql`${salvageCases.assetType} = ANY(${filters.assetTypes})`);
-    }
-
-    // Status - use sql template for enum filtering
-    if (filters.status && filters.status.length > 0) {
-      conditions.push(sql`${salvageCases.status} = ANY(${filters.status})`);
-    }
-
-    // Adjuster filter
-    if (filters.userIds && filters.userIds.length > 0) {
-      conditions.push(inArray(salvageCases.createdBy, filters.userIds));
-    }
-
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    const results = await db
-      .select({
-        caseId: salvageCases.id,
-        claimReference: salvageCases.claimReference,
-        assetType: salvageCases.assetType,
-        status: salvageCases.status,
-        createdAt: salvageCases.createdAt,
-        approvedAt: salvageCases.approvedAt,
-        adjusterId: salvageCases.createdBy,
-        adjusterName: users.fullName,
-        marketValue: salvageCases.marketValue,
-        estimatedSalvageValue: salvageCases.estimatedSalvageValue,
-        reservePrice: salvageCases.reservePrice,
-      })
-      .from(salvageCases)
-      .leftJoin(users, eq(salvageCases.createdBy, users.id))
-      .where(whereClause)
-      .orderBy(desc(salvageCases.createdAt));
-
-    return results.map(row => {
-      // FIX: Calculate processing time in HOURS (service will convert to days for display)
+      // Calculate processing time in HOURS
       let processingTimeHours: number | null = null;
-      if (row.approvedAt && row.createdAt) {
-        const diffMs = row.approvedAt.getTime() - row.createdAt.getTime();
+      if (row.approved_at && row.created_at) {
+        const diffMs = new Date(row.approved_at).getTime() - new Date(row.created_at).getTime();
         processingTimeHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
       }
 
       return {
-        caseId: row.caseId,
-        claimReference: row.claimReference,
-        assetType: row.assetType,
-        status: row.status,
-        createdAt: row.createdAt,
-        approvedAt: row.approvedAt,
+        caseId: row.case_id,
+        claimReference: row.claim_reference,
+        assetType: row.asset_type,
+        status: displayStatus,
+        createdAt: new Date(row.created_at),
+        approvedAt: row.approved_at ? new Date(row.approved_at) : null,
         processingTimeHours,
-        adjusterId: row.adjusterId,
-        adjusterName: row.adjusterName || 'Unknown',
-        marketValue: row.marketValue || '0',
-        estimatedSalvageValue: row.estimatedSalvageValue,
-        reservePrice: row.reservePrice,
+        adjusterId: row.adjuster_id,
+        adjusterName: row.adjuster_name || 'Unknown',
+        marketValue: row.market_value || '0',
+        estimatedSalvageValue: row.estimated_salvage_value,
+        reservePrice: row.reserve_price,
       };
     });
   }
@@ -155,6 +162,7 @@ export class OperationalDataRepository {
    * FIX: Match Master Report - filter by auction end_time (when auction closed)
    * Use DISTINCT ON to avoid duplicate auctions (in case of multiple payments per auction)
    * CRITICAL: Get the LATEST payment per auction to handle duplicate payments correctly
+   * FIX: Filter TEST auctions and determine correct status (sold vs closed)
    */
   static async getAuctionPerformanceData(filters: ReportFilters): Promise<AuctionPerformanceData[]> {
     const startDate = filters.startDate || '2000-01-01';
@@ -163,13 +171,14 @@ export class OperationalDataRepository {
     // FIX: Use raw SQL with proper DISTINCT ON to handle duplicate payments
     // Get the LATEST payment per auction (highest created_at)
     // Filter by auction end_time to match the date range selector
+    // Filter TEST auctions with sc.claim_reference NOT LIKE 'TEST%'
     const auctionResults = await db.execute(sql`
       SELECT DISTINCT ON (a.id)
         a.id as auction_id,
         a.case_id,
         sc.claim_reference,
         sc.asset_type,
-        a.status,
+        a.status as auction_status,
         a.current_bid,
         sc.reserve_price,
         a.start_time,
@@ -177,14 +186,16 @@ export class OperationalDataRepository {
         a.updated_at as closed_at,
         a.current_bidder,
         p.amount as winning_bid,
-        p.id as payment_id
+        p.id as payment_id,
+        p.status as payment_status
       FROM auctions a
       LEFT JOIN salvage_cases sc ON a.case_id = sc.id
       LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
       WHERE a.end_time >= ${startDate}::timestamp
         AND a.end_time <= ${endDate}::timestamp
-        AND a.status IN ('closed', 'awaiting_payment')
+        AND a.status IN ('active', 'closed', 'awaiting_payment')
         AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
       ORDER BY a.id, p.created_at DESC NULLS LAST
     `) as any[];
 
@@ -313,12 +324,32 @@ export class OperationalDataRepository {
       // FIX: Winning bid comes from verified payment, not currentBid
       const winningBid = row.winning_bid || null;
 
+      // FIX: Determine correct display status
+      // sold = auction closed AND payment verified
+      // awaiting_payment = auction closed but NO payment verified yet
+      // active = auction still running (end_time not reached)
+      let displayStatus = row.auction_status;
+      
+      if (row.payment_id && row.payment_status === 'verified') {
+        // Payment verified = SOLD
+        displayStatus = 'sold';
+      } else if (row.auction_status === 'closed' || row.auction_status === 'awaiting_payment') {
+        // Auction closed but no verified payment = AWAITING_PAYMENT
+        displayStatus = 'awaiting_payment';
+      } else if (row.auction_status === 'active' && new Date(row.end_time) > new Date()) {
+        // Auction is active and hasn't ended yet = ACTIVE
+        displayStatus = 'active';
+      } else if (row.auction_status === 'active' && new Date(row.end_time) <= new Date()) {
+        // Auction ended but not closed yet = AWAITING_PAYMENT (system will close it)
+        displayStatus = 'awaiting_payment';
+      }
+
       return {
         auctionId: row.auction_id,
         caseId: row.case_id,
         claimReference: row.claim_reference || 'Unknown',
         assetType: row.asset_type || 'unknown',
-        status: row.status,
+        status: displayStatus,
         currentBid: row.current_bid || '0',
         reservePrice: row.reserve_price || '0',
         bidCount: data.count,
@@ -360,7 +391,7 @@ export class OperationalDataRepository {
       )
       SELECT 
         v.id as vendor_id,
-        v.business_name as vendor_name,
+        COALESCE(v.business_name, u.full_name, 'Unknown') as vendor_name,
         v.tier,
         COUNT(DISTINCT b.auction_id) as auctions_participated,
         COUNT(DISTINCT a.id) FILTER (WHERE a.current_bidder = v.id) as auctions_won,
@@ -377,14 +408,14 @@ export class OperationalDataRepository {
         END as avg_bid,
         COUNT(b.id) as total_bids
       FROM vendors v
+      LEFT JOIN users u ON v.user_id = u.id
       LEFT JOIN bids b ON v.id = b.vendor_id 
         AND b.created_at >= ${startDate}
         AND b.created_at <= ${endDate}
       LEFT JOIN auctions a ON b.auction_id = a.id AND a.current_bidder = v.id
       LEFT JOIN vendor_payments vp ON v.id = vp.vendor_id
-      GROUP BY v.id, v.business_name, v.tier, vp.total_spent, vp.paid_auctions
-      HAVING COUNT(DISTINCT b.auction_id) > 0
-      ORDER BY total_spent DESC, auctions_won DESC
+      GROUP BY v.id, v.business_name, u.full_name, v.tier, vp.total_spent, vp.paid_auctions
+      ORDER BY total_spent DESC, auctions_won DESC, total_bids DESC
       LIMIT 50
     `);
 

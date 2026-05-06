@@ -65,11 +65,35 @@ export async function GET(request: NextRequest) {
 
     // Build query conditions
     const conditions = [];
-    if (statusFilter) {
-      conditions.push(eq(vendors.status, statusFilter as 'pending' | 'approved' | 'suspended'));
-    }
+    // NOTE: Do NOT filter by vendors.status here - we need to filter by Tier 2 KYC status AFTER determining it
+    // The statusFilter will be applied after we calculate kycStatus based on tier2ApprovedAt/tier2RejectionReason/tier2SubmittedAt
+    
     if (tierFilter) {
-      conditions.push(eq(vendors.tier, tierFilter as 'tier1_bvn' | 'tier2_full'));
+      // Map frontend tier values to database enum values
+      const tierMap: Record<string, string> = {
+        'tier0': 'tier0',
+        'tier1_bvn': 'tier1_bvn',
+        'tier2_full': 'tier2_full',
+      };
+      
+      const dbTier = tierMap[tierFilter] || tierFilter;
+      
+      // For tier2_full filter, also include vendors with pending tier2 submissions
+      if (dbTier === 'tier2_full') {
+        conditions.push(
+          or(
+            eq(vendors.tier, 'tier2_full'),
+            and(
+              eq(vendors.tier, 'tier1_bvn'),
+              sql`${vendors.tier2SubmittedAt} IS NOT NULL`,
+              sql`${vendors.tier2ApprovedAt} IS NULL`,
+              sql`${vendors.tier2RejectionReason} IS NULL`
+            )
+          )
+        );
+      } else {
+        conditions.push(eq(vendors.tier, dbTier as 'tier0' | 'tier1_bvn' | 'tier2_full'));
+      }
     }
     
     // Search filter (company name, email, phone number)
@@ -107,6 +131,12 @@ export async function GET(request: NextRequest) {
         cacCertificateUrl: vendors.cacCertificateUrl,
         bankStatementUrl: vendors.bankStatementUrl,
         ninCardUrl: vendors.ninCardUrl,
+        photoIdUrl: vendors.photoIdUrl,
+        addressProofUrl: vendors.addressProofUrl,
+        tier2SubmittedAt: vendors.tier2SubmittedAt,
+        tier2ApprovedAt: vendors.tier2ApprovedAt,
+        tier2RejectionReason: vendors.tier2RejectionReason,
+        ninVerificationData: vendors.ninVerificationData,
         createdAt: vendors.createdAt,
         user: {
           fullName: users.fullName,
@@ -126,25 +156,65 @@ export async function GET(request: NextRequest) {
     const data = hasMore ? vendorsList.slice(0, pageSize) : vendorsList;
 
     // For Tier 2 pending applications, return verification statuses from database
-    const vendorsWithVerification = data.map((vendor) => ({
-      ...vendor,
-      // BVN is verified if bvnVerifiedAt is set
-      bvnVerified: !!vendor.bvnVerifiedAt,
-      // NIN and bank account verification from database
-      ninVerified: !!vendor.ninVerified,
-      bankAccountVerified: !!vendor.bankAccountVerified,
-      // CAC verification is manual, so it's pending for review
-      cacVerified: false,
-      // Document URLs from database
-      cacCertificateUrl: vendor.cacCertificateUrl || '',
-      bankStatementUrl: vendor.bankStatementUrl || '',
-      ninCardUrl: vendor.ninCardUrl || '',
-    }));
+    const vendorsWithVerification = data.map((vendor) => {
+      // Determine KYC status based on Tier 2 approval workflow
+      // CRITICAL: Status should be based on tier2ApprovedAt/tier2RejectionReason, NOT vendor.status or vendor.tier
+      let kycStatus: 'pending' | 'approved' | 'rejected' = 'pending';
+      
+      // Check Tier 2 specific approval status
+      if (vendor.tier2ApprovedAt) {
+        // Has been approved for Tier 2
+        kycStatus = 'approved';
+      } else if (vendor.tier2RejectionReason) {
+        // Has been rejected for Tier 2
+        kycStatus = 'rejected';
+      } else if (vendor.tier2SubmittedAt) {
+        // Has submitted Tier 2 but not yet approved or rejected = pending
+        kycStatus = 'pending';
+      } else if (vendor.status === 'suspended') {
+        // Account suspended
+        kycStatus = 'rejected';
+      } else {
+        // No Tier 2 submission yet - default to pending
+        kycStatus = 'pending';
+      }
+
+      return {
+        ...vendor,
+        // KYC status and rejection reason
+        kycStatus,
+        kycRejectionReason: vendor.tier2RejectionReason || undefined,
+        // BVN is verified if bvnVerifiedAt is set
+        bvnVerified: !!vendor.bvnVerifiedAt,
+        // NIN and bank account verification from database
+        ninVerified: !!vendor.ninVerified,
+        bankAccountVerified: !!vendor.bankAccountVerified,
+        // CAC verification is manual, so it's pending for review
+        cacVerified: false,
+        // Document URLs from database
+        cacCertificateUrl: vendor.cacCertificateUrl || '',
+        bankStatementUrl: vendor.bankStatementUrl || '',
+        ninCardUrl: vendor.ninCardUrl || '',
+        photoIdUrl: vendor.photoIdUrl || '',
+        addressProofUrl: vendor.addressProofUrl || '',
+        // Tier 2 submission status
+        tier2SubmittedAt: vendor.tier2SubmittedAt,
+        tier2ApprovedAt: vendor.tier2ApprovedAt,
+        tier2RejectionReason: vendor.tier2RejectionReason,
+        // AI verification data for manual KYC
+        ninVerificationData: vendor.ninVerificationData,
+      };
+    });
+
+    // CRITICAL: Apply status filter AFTER calculating kycStatus
+    const filteredVendors = statusFilter 
+      ? vendorsWithVerification.filter(v => v.kycStatus === statusFilter)
+      : vendorsWithVerification;
 
     const response = {
       success: true,
-      vendors: vendorsWithVerification,
-      count: vendorsWithVerification.length,
+      vendors: filteredVendors,
+      count: filteredVendors.length,
       hasMore,
       page,
       pageSize,

@@ -27,6 +27,7 @@ import Image from 'next/image';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { CountdownTimer } from '@/components/ui/countdown-timer';
 import { BidForm } from '@/components/auction/bid-form';
+import { type VendorTier } from '@/hooks/use-tier-upgrade';
 import { ReleaseFormModal } from '@/components/documents/release-form-modal';
 import { useAuctionWatch, useAuctionUpdates, useRealtimeNotifications } from '@/hooks/use-socket';
 import { formatConditionForDisplay, type QualityTier } from '@/features/valuations/services/condition-mapping.service';
@@ -129,6 +130,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   const [showBidForm, setShowBidForm] = useState(false);
   const [isWatching, setIsWatching] = useState(false);
   const [isWatchLoading, setIsWatchLoading] = useState(false);
+  const [vendorTier, setVendorTier] = useState<VendorTier>('tier1_bvn'); // Track vendor tier
   
   // Real-time UI feedback state
   const [showNewBidAnimation, setShowNewBidAnimation] = useState(false);
@@ -168,6 +170,10 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Track if verified payment exists (to hide "Pay Now" button)
   const [hasVerifiedPayment, setHasVerifiedPayment] = useState(false);
 
+  // Verify payment button state (show after 2 minutes if payment still pending)
+  const [showVerifyButton, setShowVerifyButton] = useState(false);
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+
   // Prediction state
   const [prediction, setPrediction] = useState<any>(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
@@ -192,12 +198,87 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   // CRITICAL FIX: Update hasVerifiedPayment from realtime auction updates (polling)
   useEffect(() => {
+    console.log('🔍 useEffect triggered for hasVerifiedPayment update', {
+      realtimeAuction,
+      hasField: realtimeAuction && 'hasVerifiedPayment' in realtimeAuction,
+      value: realtimeAuction?.hasVerifiedPayment,
+    });
+    
     if (realtimeAuction && 'hasVerifiedPayment' in realtimeAuction) {
       const newValue = realtimeAuction.hasVerifiedPayment || false;
       console.log(`📡 Updating hasVerifiedPayment from realtime data: ${newValue}`);
       setHasVerifiedPayment(newValue);
+    } else if (realtimeAuction) {
+      console.warn('⚠️  realtimeAuction exists but hasVerifiedPayment field is missing:', realtimeAuction);
     }
-  }, [realtimeAuction?.hasVerifiedPayment]); // Only depend on hasVerifiedPayment field
+  }, [realtimeAuction]); // ✅ FIXED: Depend on entire object, not just one field
+
+  // Show "Verify Payment" button after 2 minutes if payment still pending
+  useEffect(() => {
+    if (auction?.status === 'awaiting_payment' && !hasVerifiedPayment) {
+      console.log('⏱️  Starting 2-minute timer for verify payment button');
+      
+      // Show verify button after 2 minutes
+      const timer = setTimeout(() => {
+        console.log('✅ 2 minutes elapsed - showing verify payment button');
+        setShowVerifyButton(true);
+      }, 2 * 60 * 1000); // 2 minutes
+      
+      return () => {
+        console.log('🧹 Cleaning up verify payment timer');
+        clearTimeout(timer);
+      };
+    } else {
+      // Hide button if payment is verified or status changed
+      setShowVerifyButton(false);
+    }
+  }, [auction?.status, hasVerifiedPayment]);
+
+  // Handler for manual payment verification
+  const handleVerifyPayment = async () => {
+    if (!auction) return;
+    
+    setIsVerifyingPayment(true);
+    console.log('🔍 Manual payment verification requested');
+    console.log(`   - Auction ID: ${auction.id}`);
+    
+    try {
+      const response = await fetch(`/api/auctions/${auction.id}/payment/verify`, {
+        method: 'POST',
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('✅ Payment verified successfully!');
+        console.log(`   - Processing time: ${data.processingTime}ms`);
+        
+        toast.success(
+          'Payment Verified!',
+          'Your payment has been confirmed. Refreshing page...'
+        );
+        
+        // Refresh the page to show updated status
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        console.log('⚠️  Payment verification failed:', data.message);
+        toast.error(
+          'Verification Failed',
+          data.message || 'Unable to verify payment. Please try again.'
+        );
+      }
+    } catch (error) {
+      console.error('❌ Error verifying payment:', error);
+      toast.error(
+        'Verification Error',
+        'Failed to verify payment. Please try again or contact support.'
+      );
+    } finally {
+      setIsVerifyingPayment(false);
+    }
+  };
   
   // Real-time notification listener for PAYMENT_UNLOCKED
   const { newNotification } = useRealtimeNotifications();
@@ -432,10 +513,11 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         setError(null);
 
         // Fetch all data in parallel to reduce loading time
-        const [auctionResponse, watchingResponse, watchStatusResponse] = await Promise.allSettled([
+        const [auctionResponse, watchingResponse, watchStatusResponse, vendorProfileResponse] = await Promise.allSettled([
           fetch(`/api/auctions/${resolvedParams.id}`),
           fetch(`/api/auctions/${resolvedParams.id}/watching-count`),
           fetch(`/api/auctions/${resolvedParams.id}/watch/status`),
+          fetch('/api/vendor/settings/profile'), // Fetch vendor profile to get tier
         ]);
 
         // Handle auction data
@@ -458,6 +540,15 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           if (watchStatusResponse.status === 'fulfilled' && watchStatusResponse.value.ok) {
             const watchData = await watchStatusResponse.value.json();
             setIsWatching(watchData.isWatching || false);
+          }
+          
+          // Handle vendor profile (to get tier)
+          if (vendorProfileResponse.status === 'fulfilled' && vendorProfileResponse.value.ok) {
+            const profileData = await vendorProfileResponse.value.json();
+            if (profileData.vendor?.tier) {
+              setVendorTier(profileData.vendor.tier as VendorTier);
+              console.log(`✅ Vendor tier loaded: ${profileData.vendor.tier}`);
+            }
           }
         } else {
           throw new Error('Failed to fetch auction details');
@@ -845,6 +936,23 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   
   const bidHistoryData = getBidHistoryData();
 
+  // DEBUG: Log render-time state values
+  console.log('🎯 Component render state:', {
+    auctionStatus: auction.status,
+    hasVerifiedPayment,
+    realtimeAuctionHasVerifiedPayment: realtimeAuction?.hasVerifiedPayment,
+    currentBidder: auction.currentBidder,
+    sessionVendorId: session?.user?.vendorId,
+    shouldShowPaymentVerified: auction.status === 'awaiting_payment' && 
+                                session?.user?.vendorId && 
+                                auction.currentBidder === session.user.vendorId &&
+                                hasVerifiedPayment,
+    shouldShowPayNow: auction.status === 'awaiting_payment' && 
+                      session?.user?.vendorId && 
+                      auction.currentBidder === session.user.vendorId &&
+                      !hasVerifiedPayment,
+  });
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -1215,6 +1323,33 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </a>
+                  
+                  {/* Show Verify Payment button if payment pending for > 2 minutes */}
+                  {showVerifyButton && (
+                    <button
+                      onClick={handleVerifyPayment}
+                      disabled={isVerifyingPayment}
+                      className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-yellow-500 text-white font-bold rounded-lg hover:bg-yellow-600 disabled:bg-yellow-300 disabled:cursor-not-allowed transition-colors shadow-md flex items-center justify-center gap-2 text-sm sm:text-base"
+                    >
+                      {isVerifyingPayment ? (
+                        <>
+                          <svg className="animate-spin w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span className="whitespace-nowrap">Verifying...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="whitespace-nowrap">Verify Payment</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  
                   <button
                     onClick={() => setShowPaymentModal(true)}
                     className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-[#800020] font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-md flex items-center justify-center gap-2 text-sm sm:text-base"
@@ -1828,6 +1963,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         assetName={getAssetName()}
         isOpen={showBidForm}
         onClose={() => setShowBidForm(false)}
+        vendorTier={vendorTier} // Pass the vendor's actual tier
         onSuccess={async () => {
           setShowBidForm(false);
           // Immediately fetch updated auction data

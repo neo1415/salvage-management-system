@@ -32,21 +32,26 @@ import { SearchInput } from '@/components/ui/filters/search-input';
 import { Filter as FilterIcon, X } from 'lucide-react';
 
 /**
- * Tier 2 KYC Review Queue for Salvage Manager
+ * Vendor Management Page for Salvage Manager
  * 
- * Allows Salvage Manager to review and approve/reject Tier 2 vendor applications
+ * Comprehensive vendor KYC management with tier-based tabs
  * Features:
- * - Display Tier 2 KYC review queue with virtualization for large lists
- * - Show vendor details and uploaded documents
- * - Display verification statuses (BVN ✓, NIN ✓, Bank Account ✓, CAC pending)
- * - Add approve/reject buttons with comment field
+ * - Tabs for Tier 0 (no BVN), Tier 1 (BVN verified), Tier 2 (full business KYC)
+ * - Filter by approval status: Pending, Approved, Rejected
+ * - Approve/reject vendors with reason
+ * - Email and SMS notifications on rejection
+ * - Allow rejected vendors to resubmit KYC
+ * - Hide KYC page for approved vendors
  * 
  * Requirements: 7, NFR5.3
  */
 
 interface VendorApplication extends Vendor {}
 
-export default function Tier2ReviewQueuePage() {
+type TierTab = 'tier0' | 'tier1' | 'tier2';
+type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
+
+export default function VendorManagementPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -56,12 +61,12 @@ export default function Tier2ReviewQueuePage() {
         </div>
       </div>
     }>
-      <Tier2ReviewQueueContent />
+      <VendorManagementContent />
     </Suspense>
   );
 }
 
-function Tier2ReviewQueueContent() {
+function VendorManagementContent() {
   const router = useRouter();
   const { status: sessionStatus } = useSession();
   const searchParams = useSearchParams();
@@ -73,7 +78,13 @@ function Tier2ReviewQueueContent() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter state with URL persistence
+  // Tab and filter state with URL persistence
+  const [activeTab, setActiveTab] = useState<TierTab>(
+    (searchParams.get('tier') as TierTab) || 'tier0'
+  );
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    (searchParams.get('status') as StatusFilter) || 'all'
+  );
   const [verificationFilter, setVerificationFilter] = useState<string[]>(
     searchParams.get('verification')?.split(',').filter(Boolean) || []
   );
@@ -83,21 +94,34 @@ function Tier2ReviewQueueContent() {
   // Update URL when filters change
   useEffect(() => {
     const params = new URLSearchParams();
+    params.set('tier', activeTab);
+    if (statusFilter !== 'all') params.set('status', statusFilter);
     if (verificationFilter.length > 0) params.set('verification', verificationFilter.join(','));
     if (searchQuery) params.set('search', searchQuery);
     
     const newUrl = params.toString() ? `?${params.toString()}` : '';
     window.history.replaceState(null, '', `/manager/vendors${newUrl}`);
-  }, [verificationFilter, searchQuery]);
+  }, [activeTab, statusFilter, verificationFilter, searchQuery]);
 
   // Check if any filters are active
-  const hasActiveFilters = verificationFilter.length > 0 || searchQuery !== '';
-  const activeFilterCount = verificationFilter.length + (searchQuery ? 1 : 0);
+  const hasActiveFilters = verificationFilter.length > 0 || searchQuery !== '' || statusFilter !== 'all';
+  const activeFilterCount = verificationFilter.length + (searchQuery ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0);
 
   // Clear all filters
   const clearAllFilters = () => {
     setVerificationFilter([]);
     setSearchQuery('');
+    setStatusFilter('all');
+  };
+
+  // Determine tier query parameter based on active tab
+  const getTierParam = (): string => {
+    switch (activeTab) {
+      case 'tier0': return 'tier0';
+      case 'tier1': return 'tier1_bvn';
+      case 'tier2': return 'tier2_full';
+      default: return 'tier0';
+    }
   };
 
   // Virtualized list for vendors
@@ -109,14 +133,18 @@ function Tier2ReviewQueueContent() {
     loadMore,
     reset,
   } = useVirtualizedList<VendorApplication>({
-    queryKey: ['vendors', { status: 'pending', tier: 'tier2_full' }],
+    queryKey: ['vendors', { tier: getTierParam(), status: statusFilter }],
     fetchFn: async (page) => {
       const params = new URLSearchParams({
-        status: 'pending',
-        tier: 'tier2_full',
+        tier: getTierParam(),
         page: page.toString(),
         pageSize: '50',
       });
+      
+      // Only add status filter if not 'all'
+      if (statusFilter !== 'all') {
+        params.set('status', statusFilter);
+      }
       
       const response = await fetch(`/api/vendors?${params}`);
       if (!response.ok) throw new Error('Failed to fetch applications');
@@ -132,8 +160,8 @@ function Tier2ReviewQueueContent() {
 
   // Client-side filtering
   const applications = allApplications.filter(app => {
-    // Verification filter
-    if (verificationFilter.length > 0) {
+    // Verification filter (only for tier1 and tier2)
+    if (activeTab !== 'tier0' && verificationFilter.length > 0) {
       const hasAllVerifications = verificationFilter.every(filter => {
         switch (filter) {
           case 'bvn': return app.bvnVerified;
@@ -149,7 +177,7 @@ function Tier2ReviewQueueContent() {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      const matchesBusinessName = app.businessName.toLowerCase().includes(query);
+      const matchesBusinessName = app.businessName?.toLowerCase().includes(query);
       const matchesFullName = app.user.fullName.toLowerCase().includes(query);
       const matchesEmail = app.user.email.toLowerCase().includes(query);
       const matchesCac = app.cacNumber?.toLowerCase().includes(query);
@@ -162,13 +190,28 @@ function Tier2ReviewQueueContent() {
     return true;
   });
 
-  // Verification filter options
-  const verificationOptions: FilterOption[] = [
-    { value: 'bvn', label: 'BVN Verified', count: allApplications.filter(a => a.bvnVerified).length },
-    { value: 'nin', label: 'NIN Verified', count: allApplications.filter(a => a.ninVerified).length },
-    { value: 'bank', label: 'Bank Verified', count: allApplications.filter(a => a.bankAccountVerified).length },
-    { value: 'cac', label: 'CAC Verified', count: allApplications.filter(a => a.cacVerified).length },
-  ];
+  // Verification filter options (conditional based on tier)
+  const getVerificationOptions = (): FilterOption[] => {
+    switch (activeTab) {
+      case 'tier0':
+        return []; // No verification filters for tier 0
+      case 'tier1':
+        return [
+          { value: 'bvn', label: 'BVN Verified', count: allApplications.filter(a => a.bvnVerified).length },
+        ];
+      case 'tier2':
+        return [
+          { value: 'bvn', label: 'BVN Verified', count: allApplications.filter(a => a.bvnVerified).length },
+          { value: 'nin', label: 'NIN Verified', count: allApplications.filter(a => a.ninVerified).length },
+          { value: 'bank', label: 'Bank Verified', count: allApplications.filter(a => a.bankAccountVerified).length },
+          { value: 'cac', label: 'CAC Verified', count: allApplications.filter(a => a.cacVerified).length },
+        ];
+      default:
+        return [];
+    }
+  };
+
+  const verificationOptions = getVerificationOptions();
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -191,6 +234,12 @@ function Tier2ReviewQueueContent() {
     setError(null);
 
     try {
+      console.log('🔄 Submitting vendor review:', {
+        vendorId: selectedApplication.id,
+        action: reviewAction,
+        hasComment: !!comment,
+      });
+
       const response = await fetch(`/api/vendors/${selectedApplication.id}/approve`, {
         method: 'POST',
         headers: {
@@ -202,11 +251,23 @@ function Tier2ReviewQueueContent() {
         }),
       });
 
+      console.log('📡 API Response status:', response.status, response.statusText);
+
       const result = await response.json();
+      console.log('📦 API Response data:', result);
 
       if (!response.ok) {
+        console.error('❌ API returned error:', result);
         throw new Error(result.error || result.message || 'Review submission failed');
       }
+
+      // Verify the response has success flag
+      if (!result.success) {
+        console.error('❌ API response missing success flag:', result);
+        throw new Error('Review submission failed - invalid response from server');
+      }
+
+      console.log('✅ Vendor review submitted successfully');
 
       // Success - refresh list and close modal
       reset();
@@ -214,6 +275,7 @@ function Tier2ReviewQueueContent() {
       setReviewAction(null);
       setComment('');
     } catch (err) {
+      console.error('❌ Error submitting vendor review:', err);
       setError(err instanceof Error ? err.message : 'Review submission failed');
     } finally {
       setSubmitting(false);
@@ -244,14 +306,116 @@ function Tier2ReviewQueueContent() {
             </button>
           </div>
           
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 bg-[#800020] rounded-full flex items-center justify-center">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Tier 2 KYC Review Queue</h1>
-              <p className="text-gray-600">Review and approve vendor applications</p>
+              <h1 className="text-3xl font-bold text-gray-900">Vendor Management</h1>
+              <p className="text-gray-600">Manage vendor KYC approvals across all tiers</p>
             </div>
+          </div>
+
+          {/* Tier Tabs */}
+          <div className="flex gap-2 mb-6 border-b border-gray-200">
+            <button
+              onClick={() => {
+                setActiveTab('tier0');
+                reset();
+              }}
+              className={`px-6 py-3 font-semibold transition-all border-b-2 ${
+                activeTab === 'tier0'
+                  ? 'border-[#800020] text-[#800020]'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Tier 0
+              <span className="ml-2 text-xs text-gray-500">(No BVN)</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('tier1');
+                reset();
+              }}
+              className={`px-6 py-3 font-semibold transition-all border-b-2 ${
+                activeTab === 'tier1'
+                  ? 'border-[#800020] text-[#800020]'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Tier 1
+              <span className="ml-2 text-xs text-gray-500">(BVN Verified)</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('tier2');
+                reset();
+              }}
+              className={`px-6 py-3 font-semibold transition-all border-b-2 ${
+                activeTab === 'tier2'
+                  ? 'border-[#800020] text-[#800020]'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Tier 2
+              <span className="ml-2 text-xs text-gray-500">(Full Business KYC)</span>
+            </button>
+          </div>
+
+          {/* Status Filter Buttons */}
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => {
+                setStatusFilter('all');
+                reset();
+              }}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                statusFilter === 'all'
+                  ? 'bg-[#800020] text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => {
+                setStatusFilter('pending');
+                reset();
+              }}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                statusFilter === 'pending'
+                  ? 'bg-yellow-600 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              Pending
+            </button>
+            <button
+              onClick={() => {
+                setStatusFilter('approved');
+                reset();
+              }}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                statusFilter === 'approved'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              Approved
+            </button>
+            <button
+              onClick={() => {
+                setStatusFilter('rejected');
+                reset();
+              }}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                statusFilter === 'rejected'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              Rejected
+            </button>
           </div>
 
           {/* Search Bar */}
@@ -264,22 +428,33 @@ function Tier2ReviewQueueContent() {
 
           {/* Filter Bar */}
           <div className="flex items-center gap-2 flex-wrap mb-4">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2"
-              aria-label="Toggle filters"
-              aria-expanded={showFilters}
-            >
-              <FilterIcon size={18} aria-hidden="true" />
-              <span className="text-sm font-medium">Filters</span>
-              {activeFilterCount > 0 && (
-                <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-medium">
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
+            {verificationOptions.length > 0 && (
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2"
+                aria-label="Toggle filters"
+                aria-expanded={showFilters}
+              >
+                <FilterIcon size={18} aria-hidden="true" />
+                <span className="text-sm font-medium">Filters</span>
+                {activeFilterCount > 0 && (
+                  <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-medium">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Active Filter Chips */}
+            {statusFilter !== 'all' && (
+              <FilterChip
+                label={`Status: ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`}
+                onRemove={() => {
+                  setStatusFilter('all');
+                  reset();
+                }}
+              />
+            )}
             {verificationFilter.map(filter => {
               const labels: Record<string, string> = {
                 bvn: 'BVN Verified',
@@ -316,12 +491,12 @@ function Tier2ReviewQueueContent() {
           </div>
 
           {/* Expandable Filters Panel */}
-          {showFilters && (
+          {showFilters && verificationOptions.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-gray-900">Filter Options</h3>
                 <span className="text-xs text-gray-500">
-                  {applications.length} of {allApplications.length} applications
+                  {applications.length} of {allApplications.length} vendors
                 </span>
               </div>
 
@@ -340,7 +515,7 @@ function Tier2ReviewQueueContent() {
           {/* Results Count */}
           {hasActiveFilters && (
             <div className="text-sm text-gray-600">
-              Showing <span className="font-semibold text-gray-900">{applications.length}</span> of <span className="font-semibold text-gray-900">{allApplications.length}</span> applications
+              Showing <span className="font-semibold text-gray-900">{applications.length}</span> of <span className="font-semibold text-gray-900">{allApplications.length}</span> vendors
             </div>
           )}
         </div>
@@ -368,13 +543,22 @@ function Tier2ReviewQueueContent() {
               {searchQuery 
                 ? `No results found for "${searchQuery}"` 
                 : hasActiveFilters 
-                  ? 'No applications match your filters' 
-                  : 'No Pending Applications'}
+                  ? 'No vendors match your filters' 
+                  : statusFilter === 'pending'
+                    ? 'No Pending Vendors'
+                    : statusFilter === 'approved'
+                      ? 'No Approved Vendors'
+                      : statusFilter === 'rejected'
+                        ? 'No Rejected Vendors'
+                        : 'No Vendors'
+              }
             </h2>
             <p className="text-gray-600">
               {hasActiveFilters 
                 ? 'Try adjusting your filters to see more results.' 
-                : 'All Tier 2 applications have been reviewed. Check back later for new submissions.'
+                : statusFilter === 'pending'
+                  ? 'All vendors have been reviewed. Check back later for new submissions.'
+                  : 'No vendors found in this category.'
               }
             </p>
             {hasActiveFilters && (
@@ -395,6 +579,7 @@ function Tier2ReviewQueueContent() {
                 <div className="px-4 py-2">
                   <ApplicationCard
                     application={application}
+                    tier={activeTab}
                     onReview={() => setSelectedApplication(application)}
                   />
                 </div>
@@ -413,6 +598,7 @@ function Tier2ReviewQueueContent() {
               <ApplicationCard
                 key={application.id}
                 application={application}
+                tier={activeTab}
                 onReview={() => setSelectedApplication(application)}
               />
             ))}
@@ -423,6 +609,7 @@ function Tier2ReviewQueueContent() {
         {selectedApplication && (
           <ReviewModal
             application={selectedApplication}
+            tier={activeTab}
             reviewAction={reviewAction}
             comment={comment}
             submitting={submitting}
@@ -446,11 +633,39 @@ function Tier2ReviewQueueContent() {
 // Application Card Component
 function ApplicationCard({ 
   application, 
+  tier,
   onReview 
 }: { 
-  application: VendorApplication; 
+  application: VendorApplication;
+  tier: TierTab;
   onReview: () => void;
 }) {
+  // Determine status badge
+  const getStatusBadge = () => {
+    if (application.kycStatus === 'approved') {
+      return (
+        <div className="flex items-center gap-2 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+          <CheckCircle2 className="w-4 h-4" />
+          Approved
+        </div>
+      );
+    } else if (application.kycStatus === 'rejected') {
+      return (
+        <div className="flex items-center gap-2 px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
+          <XCircle className="w-4 h-4" />
+          Rejected
+        </div>
+      );
+    } else {
+      return (
+        <div className="flex items-center gap-2 px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-medium">
+          <Clock className="w-4 h-4" />
+          Pending Review
+        </div>
+      );
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
       <div className="p-6">
@@ -461,15 +676,12 @@ function ApplicationCard({
               <Building2 className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-gray-900">{application.businessName}</h3>
+              <h3 className="text-lg font-bold text-gray-900">{application.businessName || 'Individual Vendor'}</h3>
               <p className="text-sm text-gray-600">{application.user.fullName}</p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2 px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-medium">
-            <Clock className="w-4 h-4" />
-            Pending Review
-          </div>
+          {getStatusBadge()}
         </div>
 
         {/* Vendor Details */}
@@ -501,51 +713,73 @@ function ApplicationCard({
           </div>
         </div>
 
-        {/* Business Details */}
-        <div className="bg-gray-50 rounded-lg p-4 mb-4">
-          <h4 className="font-semibold text-gray-900 mb-3">Business Details</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-            <div>
-              <span className="text-gray-600">CAC Number:</span>
-              <span className="ml-2 font-medium text-gray-900">{application.cacNumber}</span>
-            </div>
-            <div>
-              <span className="text-gray-600">TIN:</span>
-              <span className="ml-2 font-medium text-gray-900">{application.tin}</span>
-            </div>
-            <div>
-              <span className="text-gray-600">Bank:</span>
-              <span className="ml-2 font-medium text-gray-900">{application.bankName}</span>
-            </div>
-            <div>
-              <span className="text-gray-600">Account:</span>
-              <span className="ml-2 font-medium text-gray-900">{application.bankAccountNumber}</span>
+        {/* Business Details (Tier 2 only) */}
+        {tier === 'tier2' && (
+          <div className="bg-gray-50 rounded-lg p-4 mb-4">
+            <h4 className="font-semibold text-gray-900 mb-3">Business Details</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-gray-600">CAC Number:</span>
+                <span className="ml-2 font-medium text-gray-900">{application.cacNumber || 'N/A'}</span>
+              </div>
+              <div>
+                <span className="text-gray-600">TIN:</span>
+                <span className="ml-2 font-medium text-gray-900">{application.tin || 'N/A'}</span>
+              </div>
+              <div>
+                <span className="text-gray-600">Bank:</span>
+                <span className="ml-2 font-medium text-gray-900">{application.bankName || 'N/A'}</span>
+              </div>
+              <div>
+                <span className="text-gray-600">Account:</span>
+                <span className="ml-2 font-medium text-gray-900">{application.bankAccountNumber || 'N/A'}</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Verification Status */}
-        <div className="mb-4">
-          <h4 className="font-semibold text-gray-900 mb-3">Verification Status</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <VerificationBadge
-              label="BVN"
-              verified={application.bvnVerified}
-            />
-            <VerificationBadge
-              label="NIN"
-              verified={application.ninVerified}
-            />
-            <VerificationBadge
-              label="Bank Account"
-              verified={application.bankAccountVerified}
-            />
-            <VerificationBadge
-              label="CAC"
-              verified={application.cacVerified}
-            />
+        {tier !== 'tier0' && (
+          <div className="mb-4">
+            <h4 className="font-semibold text-gray-900 mb-3">Verification Status</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {tier === 'tier1' && (
+                <VerificationBadge
+                  label="BVN"
+                  verified={application.bvnVerified}
+                />
+              )}
+              {tier === 'tier2' && (
+                <>
+                  <VerificationBadge
+                    label="BVN"
+                    verified={application.bvnVerified}
+                  />
+                  <VerificationBadge
+                    label="NIN"
+                    verified={application.ninVerified}
+                  />
+                  <VerificationBadge
+                    label="Bank Account"
+                    verified={application.bankAccountVerified}
+                  />
+                  <VerificationBadge
+                    label="CAC"
+                    verified={application.cacVerified}
+                  />
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Rejection Reason (if rejected) */}
+        {application.kycStatus === 'rejected' && application.kycRejectionReason && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <h4 className="font-semibold text-red-900 mb-2">Rejection Reason</h4>
+            <p className="text-sm text-red-700">{application.kycRejectionReason}</p>
+          </div>
+        )}
 
         {/* Action Button */}
         <button
@@ -553,7 +787,7 @@ function ApplicationCard({
           className="w-full bg-[#800020] text-white font-bold py-3 px-4 rounded-lg hover:bg-[#600018] transition-colors flex items-center justify-center gap-2"
         >
           <Shield className="w-5 h-5" />
-          Review Application
+          {application.kycStatus === 'pending' ? 'Review Application' : 'View Details'}
         </button>
       </div>
     </div>
@@ -581,6 +815,7 @@ function VerificationBadge({ label, verified }: { label: string; verified: boole
 // Review Modal Component
 function ReviewModal({
   application,
+  tier,
   reviewAction,
   comment,
   submitting,
@@ -591,6 +826,7 @@ function ReviewModal({
   onSubmit,
 }: {
   application: VendorApplication;
+  tier: TierTab;
   reviewAction: 'approve' | 'reject' | null;
   comment: string;
   submitting: boolean;
@@ -600,6 +836,34 @@ function ReviewModal({
   onCommentChange: (comment: string) => void;
   onSubmit: () => void;
 }) {
+  const [signedUrls, setSignedUrls] = useState<Record<string, string | null>>({});
+  const [loadingUrls, setLoadingUrls] = useState(true);
+
+  // Fetch signed URLs for documents
+  useEffect(() => {
+    if (tier === 'tier2') {
+      const fetchSignedUrls = async () => {
+        try {
+          setLoadingUrls(true);
+          const response = await fetch(`/api/kyc/documents/${application.id}`);
+          if (response.ok) {
+            const data = await response.json();
+            setSignedUrls(data.documents || {});
+          } else {
+            console.error('Failed to fetch signed URLs:', response.statusText);
+          }
+        } catch (err) {
+          console.error('Error fetching signed URLs:', err);
+        } finally {
+          setLoadingUrls(false);
+        }
+      };
+      fetchSignedUrls();
+    } else {
+      setLoadingUrls(false);
+    }
+  }, [application.id, tier]);
+
   if (typeof document === 'undefined') return null;
   
   return createPortal(
@@ -676,64 +940,104 @@ function ReviewModal({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div>
                   <span className="text-gray-600">Business Name:</span>
-                  <span className="ml-2 font-medium text-gray-900">{application.businessName}</span>
+                  <span className="ml-2 font-medium text-gray-900">{application.businessName || 'Individual Vendor'}</span>
                 </div>
-                <div>
-                  <span className="text-gray-600">CAC Number:</span>
-                  <span className="ml-2 font-medium text-gray-900">{application.cacNumber}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">TIN:</span>
-                  <span className="ml-2 font-medium text-gray-900">{application.tin}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">Bank:</span>
-                  <span className="ml-2 font-medium text-gray-900">{application.bankName}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">Account Number:</span>
-                  <span className="ml-2 font-medium text-gray-900">{application.bankAccountNumber}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">Account Name:</span>
-                  <span className="ml-2 font-medium text-gray-900">{application.bankAccountName}</span>
-                </div>
+                {tier === 'tier2' && (
+                  <>
+                    <div>
+                      <span className="text-gray-600">CAC Number:</span>
+                      <span className="ml-2 font-medium text-gray-900">{application.cacNumber || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">TIN:</span>
+                      <span className="ml-2 font-medium text-gray-900">{application.tin || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Bank:</span>
+                      <span className="ml-2 font-medium text-gray-900">{application.bankName || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Account Number:</span>
+                      <span className="ml-2 font-medium text-gray-900">{application.bankAccountNumber || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Account Name:</span>
+                      <span className="ml-2 font-medium text-gray-900">{application.bankAccountName || 'N/A'}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
           {/* Verification Status */}
-          <div>
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Verification Status</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <VerificationBadge label="BVN" verified={application.bvnVerified} />
-              <VerificationBadge label="NIN" verified={application.ninVerified} />
-              <VerificationBadge label="Bank Account" verified={application.bankAccountVerified} />
-              <VerificationBadge label="CAC" verified={application.cacVerified} />
+          {tier !== 'tier0' && (
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Verification Status</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {tier === 'tier1' && (
+                  <VerificationBadge label="BVN" verified={application.bvnVerified} />
+                )}
+                {tier === 'tier2' && (
+                  <>
+                    <VerificationBadge label="BVN" verified={application.bvnVerified} />
+                    <VerificationBadge label="NIN" verified={application.ninVerified} />
+                    <VerificationBadge label="Bank Account" verified={application.bankAccountVerified} />
+                    <VerificationBadge label="CAC" verified={application.cacVerified} />
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Uploaded Documents */}
-          <div>
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Uploaded Documents</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <DocumentPreview
-                label="CAC Certificate"
-                url={application.cacCertificateUrl}
-                icon={<Building2 className="w-6 h-6" />}
-              />
-              <DocumentPreview
-                label="Bank Statement"
-                url={application.bankStatementUrl}
-                icon={<CreditCard className="w-6 h-6" />}
-              />
-              <DocumentPreview
-                label="NIN Card"
-                url={application.ninCardUrl}
-                icon={<IdCard className="w-6 h-6" />}
-              />
+          {/* Uploaded Documents (Tier 2 only) */}
+          {tier === 'tier2' && (
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Uploaded Documents</h3>
+              {loadingUrls ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 text-[#800020] animate-spin" />
+                  <span className="ml-3 text-gray-600">Loading documents...</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <DocumentPreview
+                    label="CAC Certificate"
+                    url={signedUrls.cacCertificateUrl}
+                    icon={<Building2 className="w-6 h-6" />}
+                  />
+                  <DocumentPreview
+                    label="NIN Card"
+                    url={signedUrls.ninCardUrl}
+                    icon={<IdCard className="w-6 h-6" />}
+                  />
+                  <DocumentPreview
+                    label="Address Proof"
+                    url={signedUrls.addressProofUrl}
+                    icon={<FileText className="w-6 h-6" />}
+                  />
+                  <DocumentPreview
+                    label="Bank Statement"
+                    url={signedUrls.bankStatementUrl}
+                    icon={<CreditCard className="w-6 h-6" />}
+                  />
+                  <DocumentPreview
+                    label="Photo ID"
+                    url={signedUrls.photoIdUrl}
+                    icon={<User className="w-6 h-6" />}
+                  />
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
+          {/* Previous Rejection Reason (if exists) */}
+          {application.kycStatus === 'rejected' && application.kycRejectionReason && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <h3 className="text-lg font-bold text-red-900 mb-2">Previous Rejection Reason</h3>
+              <p className="text-sm text-red-700">{application.kycRejectionReason}</p>
+            </div>
+          )}
 
           {/* Review Actions */}
           <div>
@@ -843,9 +1147,30 @@ function DocumentPreview({
   icon 
 }: { 
   label: string; 
-  url: string; 
+  url: string | null | undefined; 
   icon: React.ReactNode;
 }) {
+  // Handle missing documents
+  if (!url) {
+    return (
+      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 opacity-60">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="text-gray-400">{icon}</div>
+          <h4 className="font-semibold text-gray-600 text-sm">{label}</h4>
+        </div>
+        
+        <div className="bg-white rounded-lg p-8 flex flex-col items-center justify-center border border-gray-200 mb-3">
+          <FileText className="w-12 h-12 text-gray-300 mb-2" />
+          <p className="text-sm text-gray-500">Not provided</p>
+        </div>
+        
+        <div className="flex items-center justify-center w-full px-4 py-2 bg-gray-300 text-gray-500 text-sm font-medium rounded-lg cursor-not-allowed">
+          Not Available
+        </div>
+      </div>
+    );
+  }
+
   const isPDF = url.toLowerCase().endsWith('.pdf');
 
   return (

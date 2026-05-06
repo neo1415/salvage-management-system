@@ -85,7 +85,7 @@ export function KYCStatusCard({ currentTier, className = '' }: KYCStatusCardProp
               </span>
             </p>
             <p className="text-sm text-green-700">
-              Unlimited bidding · Valid until {expiresAt.toLocaleDateString()}
+              Unlimited bidding
             </p>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { eq, lte, and, isNotNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
+import { users } from '@/lib/db/schema/users';
 import { verificationCosts } from '@/lib/db/schema/verification-costs';
 import type {
   KYCStatus,
@@ -152,12 +153,18 @@ export class KYCRepository {
         photoIdUrl: vendors.photoIdUrl,
         photoIdType: vendors.photoIdType,
         addressProofUrl: vendors.addressProofUrl,
+        ninCardUrl: vendors.ninCardUrl,
+        bankStatementUrl: vendors.bankStatementUrl,
+        cacCertificateUrl: vendors.cacCertificateUrl,
         ninVerificationData: vendors.ninVerificationData,
         livenessScore: vendors.livenessScore,
         biometricMatchScore: vendors.biometricMatchScore,
         amlScreeningData: vendors.amlScreeningData,
+        userEmail: users.email,
+        userPhone: users.phone,
       })
       .from(vendors)
+      .innerJoin(users, eq(vendors.userId, users.id))
       .where(
         and(
           isNotNull(vendors.tier2SubmittedAt),
@@ -176,7 +183,7 @@ export class KYCRepository {
       return {
         vendorId: r.id,
         vendorName: r.businessName ?? 'Unknown',
-        vendorEmail: '',
+        vendorEmail: r.userEmail,
         submittedAt: r.tier2SubmittedAt!,
         amlRiskLevel: (r.amlRiskLevel as PendingApproval['amlRiskLevel']) ?? undefined,
         fraudRiskScore: r.fraudRiskScore ? Number(r.fraudRiskScore) : undefined,

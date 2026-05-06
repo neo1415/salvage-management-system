@@ -61,80 +61,62 @@ export class FinancialDataRepository {
   /**
    * Get revenue data with recovery calculations
    * 
-   * NOTE: We query from payments (not cases) because case status workflow is broken.
-   * Cases remain in "active_auction" status even after payment is verified.
-   * This ensures we count all verified payments, regardless of case status.
+   * FIX: Use DISTINCT ON to avoid duplicate cases when multiple payments exist
+   * Get the LATEST payment per case (highest payment.created_at)
    */
   static async getRevenueData(filters: ReportFilters): Promise<RevenueData[]> {
-    const conditions = [];
+    const startDate = filters.startDate || '2000-01-01';
+    const endDate = filters.endDate || '2099-12-31';
 
-    // Date range - use payment creation date for consistency with other reports
-    const dateCondition = this.buildDateCondition(
-      payments.createdAt,
-      filters.startDate,
-      filters.endDate
-    );
-    if (dateCondition) conditions.push(dateCondition);
+    // Use raw SQL with DISTINCT ON to handle duplicate payments per case
+    // Get the LATEST verified payment per case
+    const results = await db.execute(sql`
+      SELECT DISTINCT ON (sc.id)
+        sc.id as case_id,
+        sc.claim_reference,
+        sc.asset_type,
+        sc.market_value,
+        sc.created_at,
+        sc.location_name,
+        p.amount as payment_amount,
+        p.status as payment_status
+      FROM payments p
+      INNER JOIN auctions a ON p.auction_id = a.id
+      INNER JOIN salvage_cases sc ON a.case_id = sc.id
+      WHERE p.created_at >= ${startDate}::timestamp
+        AND p.created_at <= ${endDate}::timestamp
+        AND p.status = 'verified'
+        AND p.auction_id IS NOT NULL
+      ORDER BY sc.id, p.created_at DESC
+    `) as any[];
 
-    // Only verified payments with auctionId (same as vendor spending)
-    conditions.push(eq(payments.status, 'verified'));
-    conditions.push(sql`${payments.auctionId} IS NOT NULL`);
-
-    // Asset types filter
-    if (filters.assetTypes && filters.assetTypes.length > 0) {
-      const validAssetTypes = filters.assetTypes.filter((type): type is 'vehicle' | 'property' | 'electronics' | 'machinery' => 
-        ['vehicle', 'property', 'electronics', 'machinery'].includes(type)
-      );
-      if (validAssetTypes.length > 0) {
-        conditions.push(inArray(salvageCases.assetType, validAssetTypes));
-      }
-    }
-
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    const results = await db
-      .select({
-        caseId: salvageCases.id,
-        claimReference: salvageCases.claimReference,
-        assetType: salvageCases.assetType,
-        marketValue: salvageCases.marketValue,
-        createdAt: salvageCases.createdAt,
-        paymentAmount: payments.amount,
-        paymentStatus: payments.status,
-        locationName: salvageCases.locationName,
-      })
-      .from(payments)
-      .innerJoin(auctions, eq(payments.auctionId, auctions.id))
-      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
-      .where(whereClause);
-
-    return results.map(row => {
-      const marketValue = parseFloat(row.marketValue || '0'); // ACV - claim payout
+    return results.map((row: any) => {
+      const marketValue = parseFloat(row.market_value || '0'); // ACV - claim payout
       // Only use actual verified payment amounts, not bids
-      const salvageRecovery = parseFloat(row.paymentAmount || '0');
+      const salvageRecovery = parseFloat(row.payment_amount || '0');
       const netLoss = marketValue - salvageRecovery; // Loss after salvage recovery
       const recoveryRate = marketValue > 0 ? (salvageRecovery / marketValue) * 100 : 0;
 
       // Extract region from locationName (format: "City, State")
       let region = 'Unknown';
-      if (row.locationName) {
-        const parts = row.locationName.split(',');
+      if (row.location_name) {
+        const parts = row.location_name.split(',');
         if (parts.length >= 2) {
           region = parts[1].trim(); // Get state/region
         } else {
-          region = row.locationName.trim();
+          region = row.location_name.trim();
         }
       }
 
       return {
-        caseId: row.caseId,
-        claimReference: row.claimReference,
-        assetType: row.assetType,
-        marketValue: row.marketValue,
+        caseId: row.case_id,
+        claimReference: row.claim_reference,
+        assetType: row.asset_type,
+        marketValue: row.market_value,
         salvageRecovery: salvageRecovery.toString(),
         recoveryRate: Math.round(recoveryRate * 100) / 100,
         netLoss: Math.round(netLoss * 100) / 100,
-        createdAt: row.createdAt,
+        createdAt: new Date(row.created_at),
         region,
       };
     });
@@ -319,7 +301,8 @@ export class FinancialDataRepository {
     const paymentResults = await db
       .select({
         vendorId: payments.vendorId,
-        vendorName: vendors.businessName,
+        vendorBusinessName: vendors.businessName,
+        userFullName: sql<string>`u.full_name`,
         vendorTier: vendors.tier,
         amount: payments.amount,
         createdAt: payments.createdAt,
@@ -327,6 +310,7 @@ export class FinancialDataRepository {
       })
       .from(payments)
       .leftJoin(vendors, eq(payments.vendorId, vendors.id))
+      .leftJoin(sql`users u`, sql`${vendors.userId} = u.id`)
       .leftJoin(auctions, eq(payments.auctionId, auctions.id))
       .leftJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
       .where(whereClause);
@@ -342,8 +326,11 @@ export class FinancialDataRepository {
 
     for (const row of paymentResults) {
       if (!vendorMap.has(row.vendorId)) {
+        // Use business_name if available, otherwise fall back to user's full_name
+        const vendorName = row.vendorBusinessName || row.userFullName || 'Unknown';
+        
         vendorMap.set(row.vendorId, {
-          vendorName: row.vendorName || 'Unknown',
+          vendorName,
           tier: row.vendorTier || 'bronze',
           amounts: [],
           dates: [],

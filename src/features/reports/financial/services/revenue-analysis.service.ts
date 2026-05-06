@@ -97,17 +97,19 @@ export class RevenueAnalysisService {
     // Group by region
     const byRegion = this.calculateByRegion(revenueData);
 
-    // Create item breakdown
-    const itemBreakdown = revenueData.map(row => ({
-      claimReference: row.claimReference,
-      assetType: row.assetType,
-      marketValue: parseFloat(row.marketValue),
-      salvageRecovery: parseFloat(row.salvageRecovery),
-      netLoss: row.netLoss,
-      recoveryRate: row.recoveryRate,
-      region: row.region || 'Unknown',
-      date: row.createdAt.toISOString().split('T')[0],
-    }));
+    // Create item breakdown - sorted by date descending (latest first)
+    const itemBreakdown = revenueData
+      .map(row => ({
+        claimReference: row.claimReference,
+        assetType: row.assetType,
+        marketValue: parseFloat(row.marketValue),
+        salvageRecovery: parseFloat(row.salvageRecovery),
+        netLoss: row.netLoss,
+        recoveryRate: row.recoveryRate,
+        region: row.region || 'Unknown',
+        date: row.createdAt.toISOString().split('T')[0],
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date)); // Sort by date descending
 
     // Create registration fees breakdown
     const registrationFees = registrationFeeData.map(fee => ({

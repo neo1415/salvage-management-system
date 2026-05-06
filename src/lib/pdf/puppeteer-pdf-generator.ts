@@ -89,6 +89,27 @@ export class PuppeteerPDFGenerator {
 
       console.log('Generating PDF...');
 
+      // Hide any cookie banners or overlays before generating PDF
+      await page.evaluate(() => {
+        // Remove cookie banners and overlays
+        const selectors = [
+          '[class*="cookie"]',
+          '[id*="cookie"]',
+          '[class*="banner"]',
+          '[class*="overlay"]',
+          '[class*="modal"]',
+          '[role="dialog"]',
+          '[aria-modal="true"]'
+        ];
+        
+        selectors.forEach(selector => {
+          document.querySelectorAll(selector).forEach(el => {
+            const element = el as HTMLElement;
+            element.style.display = 'none';
+          });
+        });
+      });
+
       // Generate PDF with optimized settings
       const pdfBuffer = await page.pdf({
         format: 'A4',

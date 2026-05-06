@@ -63,46 +63,151 @@ export default function KPIDashboardPage() {
   );
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => router.push('/reports')}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">KPI Dashboard</h1>
-            <p className="text-muted-foreground">Monitor key performance indicators and executive-level metrics</p>
+    <>
+      {/* Print-specific styles */}
+      <style jsx global>{`
+        @media print {
+          /* Hide UI elements */
+          nav, header, footer, .no-print,
+          button, [role="button"],
+          .sidebar, .navigation,
+          input, select, textarea,
+          [role="navigation"],
+          [role="banner"],
+          [role="complementary"] {
+            display: none !important;
+          }
+
+          /* Reset body and html */
+          html, body {
+            background: white !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+
+          /* Container adjustments */
+          .container {
+            max-width: 100% !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+
+          /* Page setup */
+          @page {
+            size: A4 portrait;
+            margin: 15mm;
+          }
+
+          /* Report content */
+          [data-report-content] {
+            display: block !important;
+            width: 100% !important;
+            overflow: visible !important;
+            page-break-after: auto;
+          }
+
+          /* Cards and sections */
+          .space-y-6 > * {
+            page-break-inside: avoid;
+            margin-bottom: 10px !important;
+          }
+
+          /* Grid layouts */
+          .grid {
+            display: grid !important;
+            page-break-inside: avoid;
+          }
+
+          /* Cards */
+          [class*="card"], [class*="Card"] {
+            page-break-inside: avoid;
+            break-inside: avoid;
+            margin-bottom: 10px !important;
+            box-shadow: none !important;
+            border: 1px solid #ddd !important;
+          }
+
+          /* Tables */
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            page-break-inside: auto;
+          }
+
+          thead {
+            display: table-header-group;
+          }
+
+          tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
+
+          th, td {
+            padding: 6px !important;
+            border: 1px solid #ddd !important;
+            font-size: 10px !important;
+          }
+
+          /* Ensure all content is visible */
+          * {
+            overflow: visible !important;
+            box-sizing: border-box !important;
+          }
+
+          /* Remove shadows and transitions */
+          * {
+            box-shadow: none !important;
+            text-shadow: none !important;
+            transition: none !important;
+            animation: none !important;
+          }
+        }
+      `}</style>
+
+      <div className="container mx-auto py-6 space-y-6">
+        <div className="flex items-center justify-between no-print">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="sm" onClick={() => router.push('/reports')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold">KPI Dashboard</h1>
+              <p className="text-muted-foreground">Monitor key performance indicators and executive-level metrics</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {reportData && <ExportButton reportType="kpi-dashboard" reportData={reportData} filters={filters} />}
           </div>
         </div>
-        <div className="flex gap-2">
-          {reportData && <ExportButton reportType="kpi-dashboard" reportData={reportData} filters={filters} />}
-        </div>
-      </div>
 
-      <Card>
-        <CardContent className="pt-6">
-          <ReportFiltersComponent
-            filters={filters}
-            onFiltersChange={setFilters}
-            onApply={fetchReport}
-            onReset={() => setFilters({ startDate: subDays(new Date(), 30), endDate: new Date() })}
-            showAssetTypes={false}
-            showRegions={false}
-          />
-        </CardContent>
-      </Card>
-
-      {loading && (
-        <Card>
+        <Card className="no-print">
           <CardContent className="pt-6">
-            <div className="text-center py-8">Loading KPI data...</div>
+            <ReportFiltersComponent
+              filters={filters}
+              onFiltersChange={setFilters}
+              onApply={fetchReport}
+              onReset={() => setFilters({ startDate: subDays(new Date(), 30), endDate: new Date() })}
+              showAssetTypes={false}
+              showRegions={false}
+            />
           </CardContent>
         </Card>
-      )}
+
+        {loading && (
+          <Card className="no-print">
+            <CardContent className="pt-6">
+              <div className="text-center py-8">Loading KPI data...</div>
+            </CardContent>
+          </Card>
+        )}
 
       {!loading && reportData && (
-        <div className="space-y-6">
+        <div data-report-content className="space-y-6">
           <div>
             <h2 className="text-xl font-semibold mb-4">Financial KPIs</h2>
             <div className="grid grid-cols-4 gap-4">
@@ -380,5 +485,6 @@ export default function KPIDashboardPage() {
         </div>
       )}
     </div>
+    </>
   );
 }

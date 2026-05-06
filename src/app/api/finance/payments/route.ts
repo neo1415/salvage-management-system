@@ -270,6 +270,32 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // CRITICAL FIX: Filter out duplicate pending payments when a verified payment exists
+    // This prevents finance officers from seeing duplicate payment records
+    // when vendors click "Pay Now" multiple times before UI updates
+    const filteredForDuplicates = formattedPayments.filter((payment, index, self) => {
+      // If this is a pending payment
+      if (payment.status === 'pending') {
+        // Check if there's a verified payment for the same auction
+        const hasVerifiedPayment = self.some(
+          p => p.auctionId === payment.auctionId && 
+               p.auctionId !== null && // Only check auction payments (not registration fees)
+               p.status === 'verified' && 
+               p.id !== payment.id
+        );
+        
+        // Hide this pending payment if a verified one exists
+        if (hasVerifiedPayment) {
+          console.log(`🔍 Hiding duplicate pending payment ${payment.id} (verified payment exists for auction ${payment.auctionId})`);
+          return false;
+        }
+      }
+      
+      return true;
+    });
+
+    console.log(`📊 Duplicate filtering: ${formattedPayments.length} → ${filteredForDuplicates.length} payments`);
+
     return NextResponse.json({
       stats: {
         total: totalFiltered,
@@ -281,7 +307,7 @@ export async function GET(request: NextRequest) {
           total: registrationFeeTotal,
         },
       },
-      payments: formattedPayments,
+      payments: filteredForDuplicates, // Return filtered list
     });
   } catch (error) {
     console.error('Error fetching finance payments:', error);

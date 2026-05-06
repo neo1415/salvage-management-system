@@ -19,5 +19,30 @@ export async function GET() {
   const repo = getKYCRepository();
   const approvals = await repo.getPendingApprovals();
 
-  return NextResponse.json({ approvals, total: approvals.length });
+  console.log('[KYC Approvals API] Fetched approvals:', {
+    count: approvals.length,
+    approvals: approvals.map(a => ({
+      vendorId: a.vendorId,
+      vendorName: a.vendorName,
+      vendorEmail: a.vendorEmail,
+      submittedAt: a.submittedAt,
+    })),
+  });
+
+  return NextResponse.json(
+    { approvals, total: approvals.length },
+    {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Surrogate-Control': 'no-store',
+        'CDN-Cache-Control': 'no-store',
+      },
+    }
+  );
 }
+
+// Disable Next.js static optimization for this route
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;

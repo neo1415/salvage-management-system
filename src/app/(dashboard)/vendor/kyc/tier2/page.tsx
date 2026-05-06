@@ -88,6 +88,23 @@ export default function Tier2KYCPage() {
   // Redirect if not authenticated
   useEffect(() => {
     if (authStatus === 'unauthenticated') router.push('/login');
+    if (authStatus === 'authenticated') {
+      // Check if registration fee is paid
+      fetch('/api/vendors/registration-fee/status')
+        .then(res => res.json())
+        .then(data => {
+          if (!data?.data?.paid) {
+            router.push('/vendor/registration-fee');
+          } else {
+            // Redirect to manual KYC page
+            router.push('/vendor/kyc/tier2-manual');
+          }
+        })
+        .catch(() => {
+          // If check fails, redirect to manual KYC anyway
+          router.push('/vendor/kyc/tier2-manual');
+        });
+    }
   }, [authStatus, router]);
 
   // Load widget config and current KYC status

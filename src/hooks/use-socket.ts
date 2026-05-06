@@ -610,6 +610,7 @@ export function useAuctionUpdates(auctionId: string | null) {
           console.log(`📊 Poll: Auction ${auctionId} updated`);
           console.log(`   - Current bid: ₦${data.currentBid?.toLocaleString() || 'None'}`);
           console.log(`   - Status: ${data.status}`);
+          console.log(`   - hasVerifiedPayment: ${data.hasVerifiedPayment}`);
 
           // Update auction state
           setAuction({
@@ -619,6 +620,8 @@ export function useAuctionUpdates(auctionId: string | null) {
             endTime: data.endTime,
             hasVerifiedPayment: data.hasVerifiedPayment,
           });
+          
+          console.log(`✅ Auction state updated with hasVerifiedPayment: ${data.hasVerifiedPayment}`);
 
           // If there's a new bid, update latestBid
           if (data.currentBid && data.currentBidder) {

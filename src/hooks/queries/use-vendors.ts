@@ -29,6 +29,8 @@ export interface Vendor {
   bankAccountName: string;
   tier: string;
   status: string;
+  kycStatus: 'pending' | 'approved' | 'rejected'; // Derived from status and tier2 fields
+  kycRejectionReason?: string; // From tier2RejectionReason
   bvnVerified: boolean;
   ninVerified: boolean;
   bankAccountVerified: boolean;

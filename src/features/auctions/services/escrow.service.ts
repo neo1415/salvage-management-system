@@ -107,6 +107,21 @@ export class EscrowService {
       // Verify invariant after update
       await this.verifyInvariantInTransaction(tx, vendorId);
     });
+
+    // PHASE 2.2: Record ledger entry AFTER deposit freeze succeeds
+    try {
+      const { ledgerService } = await import('@/features/ledger/services/ledger.service');
+      await ledgerService.recordDepositFreeze(
+        vendorId,
+        amount,
+        auctionId,
+        `Deposit frozen for auction ${auctionId}`
+      );
+      console.log(`[Ledger] Recorded deposit freeze: ₦${amount.toLocaleString()}`);
+    } catch (ledgerError) {
+      // Log error but don't block operation - ledger is for reconciliation only
+      console.error('[Ledger] Failed to record deposit freeze (non-blocking):', ledgerError);
+    }
   }
 
   /**
@@ -122,10 +137,13 @@ export class EscrowService {
     vendorId: string,
     amount: number,
     auctionId: string,
-    userId: string
+    userId: string,
+    existingTx?: any // Optional transaction context to avoid nested transactions
   ): Promise<void> {
-    // Use database transaction for atomicity
-    await db.transaction(async (tx) => {
+    // CRITICAL FIX: Accept optional transaction context to avoid nested transactions
+    // When called from auction-closure.service.ts, use the existing transaction
+    // to prevent transaction rollback issues that cause winner records to disappear
+    const executeInTransaction = async (tx: any) => {
       // Lock wallet row for update
       const [wallet] = await tx
         .select()
@@ -186,7 +204,29 @@ export class EscrowService {
 
       // Verify invariant after update
       await this.verifyInvariantInTransaction(tx, vendorId);
-    });
+    };
+
+    // CRITICAL FIX: Use existing transaction if provided, otherwise create new one
+    if (existingTx) {
+      await executeInTransaction(existingTx);
+    } else {
+      await db.transaction(executeInTransaction);
+    }
+
+    // PHASE 2.2: Record ledger entry AFTER deposit unfreeze succeeds
+    try {
+      const { ledgerService } = await import('@/features/ledger/services/ledger.service');
+      await ledgerService.recordDepositUnfreeze(
+        vendorId,
+        amount,
+        auctionId,
+        `Deposit unfrozen for auction ${auctionId}`
+      );
+      console.log(`[Ledger] Recorded deposit unfreeze: ₦${amount.toLocaleString()}`);
+    } catch (ledgerError) {
+      // Log error but don't block operation - ledger is for reconciliation only
+      console.error('[Ledger] Failed to record deposit unfreeze (non-blocking):', ledgerError);
+    }
   }
 
   /**

@@ -370,24 +370,50 @@ export class AuctionClosureService {
 
       // STEP 3: Handle deposit system logic (Requirement 5: Top N Bidders Retention)
       // This must happen BEFORE status update to 'closed'
-      try {
-        const { auctionClosureService: depositClosureService } = await import('./auction-closure.service');
-        const depositResult = await depositClosureService.closeAuction(auctionId);
+      // CRITICAL FIX: Winner record creation is now MANDATORY - if it fails, don't mark auction as closed
+      const { auctionClosureService: depositClosureService } = await import('./auction-closure.service');
+      const depositResult = await depositClosureService.closeAuction(auctionId);
+      
+      if (!depositResult.success) {
+        const errorMessage = `Deposit system closure failed: ${depositResult.error}`;
+        console.error(`❌ CRITICAL: ${errorMessage} for auction ${auctionId}`);
+        console.error(`   - Auction will remain in '${auction.status}' status`);
+        console.error(`   - Winner record was NOT created`);
+        console.error(`   - This auction needs manual intervention`);
         
-        if (depositResult.success) {
-          console.log(`✅ Deposit system closure complete for auction ${auctionId}`);
-          console.log(`   - Top bidders: ${depositResult.topBiddersCount} (deposits kept frozen)`);
-          console.log(`   - Unfrozen bidders: ${depositResult.unfrozenBiddersCount}`);
-        } else {
-          console.warn(`⚠️  Deposit system closure had issues for auction ${auctionId}: ${depositResult.error}`);
-          // Don't fail the entire closure if deposit logic fails - log for manual review
-        }
-      } catch (error) {
-        console.error(`❌ Failed to execute deposit system closure for auction ${auctionId}:`, error);
-        // Don't fail the entire closure - log for manual review
+        // Log critical failure to audit trail
+        await logAction({
+          userId: vendor.userId,
+          actionType: AuditActionType.AUCTION_CLOSURE_FAILED,
+          entityType: AuditEntityType.AUCTION,
+          entityId: auctionId,
+          ipAddress: '0.0.0.0',
+          deviceType: DeviceType.DESKTOP,
+          userAgent: 'auction-closure',
+          afterState: {
+            error: errorMessage,
+            phase: 'deposit_system_closure',
+            auctionStatus: auction.status,
+            winnerId: vendor.id,
+            winningBid: auction.currentBid.toString(),
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
+        // Return error - DO NOT mark auction as closed
+        return {
+          success: false,
+          auctionId,
+          error: errorMessage,
+        };
       }
+      
+      console.log(`✅ Deposit system closure complete for auction ${auctionId}`);
+      console.log(`   - Winner record created: Vendor ${depositResult.winnerId}`);
+      console.log(`   - Top bidders: ${depositResult.topBiddersCount} (deposits kept frozen)`);
+      console.log(`   - Unfrozen bidders: ${depositResult.unfrozenBiddersCount}`);
 
-      // STEP 4: Update auction status to 'closed' (final state - only after documents succeed)
+      // STEP 4: Update auction status to 'closed' (final state - only after winner record is created)
       await db
         .update(auctions)
         .set({
@@ -397,6 +423,16 @@ export class AuctionClosureService {
         .where(eq(auctions.id, auctionId));
 
       console.log(`✅ Auction ${auctionId} status: closed`);
+
+      // CRITICAL: Invalidate auction cache after status change
+      try {
+        const { cache } = await import('@/lib/redis/client');
+        await cache.del(`auction:details:${auctionId}`);
+        console.log(`✅ Invalidated auction cache after closure`);
+      } catch (cacheError) {
+        console.error(`❌ Failed to invalidate auction cache:`, cacheError);
+        // Don't throw - cache invalidation failure shouldn't block closure
+      }
 
       // STEP 4: Broadcast auction closure to all viewers via Socket.io
       try {

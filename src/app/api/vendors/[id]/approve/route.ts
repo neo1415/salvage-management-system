@@ -4,527 +4,345 @@ import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
-import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
-import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
-import { z } from 'zod';
+import { smsService } from '@/features/notifications/services/sms.service';
 
 /**
- * Tier 2 Approval Workflow API
- * Allows Salvage Manager to approve/reject Tier 2 vendor applications
+ * Vendor Approval/Rejection API
  * 
- * Requirements (Requirement 7):
- * - Display all uploaded documents and verification statuses
- * - Require comment for rejection
- * - Update vendor status to 'verified_tier_2' on approval
- * - Send SMS + Email notification
- * - Create audit log entry
+ * Allows Salvage Managers to approve or reject vendor KYC applications
+ * Sends email and SMS notifications to vendors
+ * 
+ * Requirements: 7, NFR5.3
  */
-
-// Validation schema
-const approvalSchema = z.object({
-  action: z.enum(['approve', 'reject']),
-  comment: z.string().optional(),
-});
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const startTime = Date.now();
+  let vendorId: string | undefined;
+  
   try {
-    // Await params (Next.js 15 requirement)
-    const { id: vendorId } = await params;
-    
+    // Await params (Next.js 15+ requirement)
+    const { id } = await params;
+    vendorId = id;
+
+    console.log('🔄 [VENDOR APPROVAL] Starting approval process for vendor:', id);
+
     // Authenticate user
     const session = await getSession();
     if (!session || !session.user) {
+      console.error('❌ [VENDOR APPROVAL] Unauthorized - no session');
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Unauthorized', success: false },
         { status: 401 }
       );
     }
 
-    const managerId = session.user.id;
+    console.log('✅ [VENDOR APPROVAL] User authenticated:', session.user.id);
 
     // Check if user is a Salvage Manager
     const [manager] = await db
       .select()
       .from(users)
-      .where(eq(users.id, managerId))
+      .where(eq(users.id, session.user.id))
       .limit(1);
 
     if (!manager || manager.role !== 'salvage_manager') {
+      console.error('❌ [VENDOR APPROVAL] Forbidden - user is not a salvage manager:', {
+        userId: session.user.id,
+        role: manager?.role,
+      });
       return NextResponse.json(
-        { error: 'Only Salvage Managers can approve/reject Tier 2 applications' },
+        { error: 'Only Salvage Managers can review vendor applications', success: false },
         { status: 403 }
       );
     }
 
+    console.log('✅ [VENDOR APPROVAL] Manager verified:', manager.id);
+
     // Parse request body
     const body = await request.json();
-    const validation = approvalSchema.safeParse(body);
+    const { action, comment } = body;
 
-    if (!validation.success) {
+    console.log('📦 [VENDOR APPROVAL] Request body:', { action, hasComment: !!comment });
+
+    // Validate action
+    if (!action || !['approve', 'reject'].includes(action)) {
+      console.error('❌ [VENDOR APPROVAL] Invalid action:', action);
       return NextResponse.json(
-        { error: 'Validation failed', details: validation.error.issues },
+        { error: 'Invalid action. Must be "approve" or "reject"', success: false },
         { status: 400 }
       );
     }
 
-    const { action, comment } = validation.data;
-
-    // Require comment for rejection
+    // Validate comment for rejection
     if (action === 'reject' && (!comment || comment.trim().length === 0)) {
+      console.error('❌ [VENDOR APPROVAL] Rejection requires comment');
       return NextResponse.json(
-        { error: 'Comment is required when rejecting an application' },
+        { error: 'Comment is required for rejection', success: false },
         { status: 400 }
       );
     }
 
-    // Get vendor by ID (already extracted from params above)
-    
-    // Validate UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(vendorId)) {
-      return NextResponse.json(
-        { error: 'Invalid vendor ID format' },
-        { status: 400 }
-      );
-    }
-    
+    // Get vendor
+    console.log('🔍 [VENDOR APPROVAL] Fetching vendor from database...');
     const [vendor] = await db
-      .select()
+      .select({
+        id: vendors.id,
+        userId: vendors.userId,
+        businessName: vendors.businessName,
+        tier: vendors.tier,
+        status: vendors.status,
+        tier2SubmittedAt: vendors.tier2SubmittedAt,
+      })
       .from(vendors)
-      .where(eq(vendors.id, vendorId))
+      .where(eq(vendors.id, id))
       .limit(1);
 
     if (!vendor) {
+      console.error('❌ [VENDOR APPROVAL] Vendor not found:', id);
       return NextResponse.json(
-        { error: 'Vendor not found' },
+        { error: 'Vendor not found', success: false },
         { status: 404 }
       );
     }
 
-    // Check if vendor is in pending status
-    if (vendor.status !== 'pending') {
-      return NextResponse.json(
-        { error: `Vendor is not in pending status. Current status: ${vendor.status}` },
-        { status: 400 }
-      );
-    }
+    console.log('✅ [VENDOR APPROVAL] Vendor found:', {
+      id: vendor.id,
+      businessName: vendor.businessName,
+      tier: vendor.tier,
+      status: vendor.status,
+      tier2SubmittedAt: vendor.tier2SubmittedAt,
+    });
 
-    // Get vendor user details
+    // Get vendor user details for notifications
+    console.log('🔍 [VENDOR APPROVAL] Fetching vendor user details...');
     const [vendorUser] = await db
-      .select()
+      .select({
+        fullName: users.fullName,
+        email: users.email,
+        phone: users.phone,
+      })
       .from(users)
       .where(eq(users.id, vendor.userId))
       .limit(1);
 
     if (!vendorUser) {
+      console.error('❌ [VENDOR APPROVAL] Vendor user not found:', vendor.userId);
       return NextResponse.json(
-        { error: 'Vendor user not found' },
+        { error: 'Vendor user not found', success: false },
         { status: 404 }
       );
     }
 
+    console.log('✅ [VENDOR APPROVAL] Vendor user found:', {
+      fullName: vendorUser.fullName,
+      email: vendorUser.email,
+    });
+
+    // Update vendor based on action
     if (action === 'approve') {
-      // Approve Tier 2 application
-      await db
-        .update(vendors)
-        .set({
-          status: 'approved',
-          tier: 'tier2_full',
-          approvedBy: managerId,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(vendors.id, vendorId));
-
-      // Update user status to verified_tier_2
-      await db
-        .update(users)
-        .set({
-          status: 'verified_tier_2',
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, vendor.userId));
-
-      // Log approval
-      await logAction({
-        userId: managerId,
-        actionType: AuditActionType.TIER2_APPLICATION_APPROVED,
-        entityType: AuditEntityType.KYC,
-        entityId: vendorId,
-        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-        deviceType: DeviceType.DESKTOP,
-        userAgent: request.headers.get('user-agent') || 'unknown',
-        afterState: {
-          vendorId,
-          vendorName: vendorUser.fullName,
-          businessName: vendor.businessName,
-          approvedBy: manager.fullName,
-          comment: comment || 'No comment provided',
-        },
+      console.log('✅ [VENDOR APPROVAL] Processing approval...');
+      
+      // Determine if this is a Tier 2 approval based on tier2SubmittedAt
+      const isTier2Approval = vendor.tier2SubmittedAt !== null;
+      
+      console.log('📊 [VENDOR APPROVAL] Approval type:', {
+        isTier2Approval,
+        currentTier: vendor.tier,
+        tier2SubmittedAt: vendor.tier2SubmittedAt,
       });
 
-      // Send SMS notification to vendor
-      try {
-        await smsService.sendSMS({
-          to: vendorUser.phone,
-          message: `Congratulations! Your Tier 2 verification is complete. You can now bid on high-value auctions above ₦500,000. - NEM Salvage`,
-        });
-      } catch (error) {
-        console.error('Error sending SMS:', error);
+      const updateData = {
+        status: 'approved' as const,
+        tier: isTier2Approval ? ('tier2_full' as const) : vendor.tier,
+        approvedBy: manager.id,
+        approvedAt: new Date(),
+        tier2ApprovedAt: isTier2Approval ? new Date() : undefined,
+        tier2ApprovedBy: isTier2Approval ? manager.id : undefined,
+        tier2ExpiresAt: isTier2Approval 
+          ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year from now
+          : undefined,
+        tier2RejectionReason: null, // Clear any previous rejection reason
+        updatedAt: new Date(),
+      };
+
+      console.log('💾 [VENDOR APPROVAL] Updating vendor in database:', updateData);
+
+      const updateResult = await db
+        .update(vendors)
+        .set(updateData)
+        .where(eq(vendors.id, id))
+        .returning();
+
+      console.log('✅ [VENDOR APPROVAL] Database update result:', {
+        rowsAffected: updateResult.length,
+        updatedVendor: updateResult[0],
+      });
+
+      if (updateResult.length === 0) {
+        console.error('❌ [VENDOR APPROVAL] Database update failed - no rows affected');
+        throw new Error('Failed to update vendor in database');
       }
 
-      // Send email notification to vendor
+      // Determine tier display text for email
+      const tierDisplayText = isTier2Approval 
+        ? 'Tier 2 (Full Business KYC)' 
+        : vendor.tier === 'tier1_bvn' 
+          ? 'Tier 1 (BVN Verified)' 
+          : 'Tier 0 (No BVN)';
+
+      console.log('📧 [VENDOR APPROVAL] Sending approval email...');
+      
+      // Send approval email
       try {
         await emailService.sendEmail({
           to: vendorUser.email,
-          subject: 'Tier 2 Verification Approved - NEM Salvage',
+          subject: 'KYC Application Approved - NEM Insurance Salvage Platform',
           html: `
-            <!DOCTYPE html>
-            <html lang="en">
-              <head>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Tier 2 Verification Approved</title>
-                <style>
-                  body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    margin: 0;
-                    padding: 0;
-                    background-color: #f5f5f5;
-                  }
-                  .container {
-                    max-width: 600px;
-                    margin: 0 auto;
-                    background-color: #ffffff;
-                  }
-                  .header {
-                    background-color: #800020;
-                    color: white;
-                    padding: 30px 20px;
-                    text-align: center;
-                  }
-                  .header h1 {
-                    margin: 0;
-                    font-size: 24px;
-                  }
-                  .content {
-                    padding: 30px 20px;
-                  }
-                  .success-badge {
-                    background-color: #4CAF50;
-                    color: white;
-                    padding: 10px 20px;
-                    border-radius: 6px;
-                    text-align: center;
-                    font-weight: 600;
-                    margin: 20px 0;
-                  }
-                  .benefits {
-                    background-color: #f9f9f9;
-                    border-left: 4px solid #FFD700;
-                    padding: 15px 20px;
-                    margin: 20px 0;
-                  }
-                  .benefits ul {
-                    margin: 10px 0;
-                    padding-left: 20px;
-                  }
-                  .benefits li {
-                    margin: 8px 0;
-                  }
-                  .button {
-                    display: inline-block;
-                    padding: 14px 28px;
-                    background-color: #FFD700;
-                    color: #800020;
-                    text-decoration: none;
-                    border-radius: 6px;
-                    font-weight: 600;
-                    margin: 20px 0;
-                  }
-                  .button-container {
-                    text-align: center;
-                    margin: 30px 0;
-                  }
-                  .footer {
-                    text-align: center;
-                    padding: 20px;
-                    font-size: 12px;
-                    color: #666;
-                    background-color: #f5f5f5;
-                    border-top: 1px solid #e0e0e0;
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="container">
-                  <div class="header">
-                    <h1>🎉 Tier 2 Verification Approved!</h1>
-                  </div>
-                  
-                  <div class="content">
-                    <p><strong>Dear ${vendorUser.fullName},</strong></p>
-                    
-                    <div class="success-badge">
-                      ✓ Your Tier 2 verification is complete
-                    </div>
-                    
-                    <p>Congratulations! Your Tier 2 KYC application has been approved by our team. You now have full access to all premium features.</p>
-                    
-                    <div class="benefits">
-                      <h3 style="margin-top: 0; color: #800020;">Your New Benefits:</h3>
-                      <ul>
-                        <li><strong>Unlimited Bidding:</strong> Bid on high-value auctions above ₦500,000</li>
-                        <li><strong>Priority Support:</strong> Get faster response times from our support team</li>
-                        <li><strong>Leaderboard Eligibility:</strong> Compete for top positions and recognition</li>
-                        <li><strong>Tier 2 Badge:</strong> Display your verified business status</li>
-                      </ul>
-                    </div>
-                    
-                    <div class="button-container">
-                      <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com'}/vendor/auctions" class="button">Browse Premium Auctions</a>
-                    </div>
-                    
-                    <p style="margin-top: 30px;">Best regards,<br><strong>NEM Salvage Management Team</strong></p>
-                  </div>
-                  
-                  <div class="footer">
-                    <p><strong>NEM Insurance Plc</strong></p>
-                    <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
-                    <p>Phone: 234-02-014489560 | Email: nemsupport@nem-insurance.com</p>
-                  </div>
-                </div>
-              </body>
-            </html>
+            <h2>Congratulations! Your KYC Application Has Been Approved</h2>
+            <p>Dear ${vendorUser.fullName},</p>
+            <p>We are pleased to inform you that your KYC application for <strong>${vendor.businessName || 'your vendor account'}</strong> has been approved.</p>
+            <p><strong>Tier:</strong> ${tierDisplayText}</p>
+            ${comment ? `<p><strong>Manager's Note:</strong> ${comment}</p>` : ''}
+            <p>You can now participate in auctions and bid on salvage assets.</p>
+            ${isTier2Approval ? '<p><strong>Tier 2 Benefits:</strong> Unlimited bidding, leaderboard access, and priority support.</p>' : ''}
+            <p>Thank you for choosing NEM Insurance Salvage Platform.</p>
+            <p>Best regards,<br>NEM Insurance Team</p>
           `,
         });
-      } catch (error) {
-        console.error('Error sending email:', error);
+        console.log('✅ [VENDOR APPROVAL] Approval email sent successfully');
+      } catch (emailError) {
+        console.error('⚠️ [VENDOR APPROVAL] Failed to send approval email:', emailError);
+        // Don't fail the entire request if email fails
       }
+
+      console.log('📱 [VENDOR APPROVAL] Sending approval SMS...');
+      
+      // Send approval SMS
+      try {
+        await smsService.sendSMS({
+          to: vendorUser.phone,
+          message: `NEM Insurance: Your KYC application has been approved! You can now participate in auctions. Welcome aboard!`,
+        });
+        console.log('✅ [VENDOR APPROVAL] Approval SMS sent successfully');
+      } catch (smsError) {
+        console.error('⚠️ [VENDOR APPROVAL] Failed to send approval SMS:', smsError);
+        // Don't fail the entire request if SMS fails
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ [VENDOR APPROVAL] Approval completed successfully in ${duration}ms`);
 
       return NextResponse.json({
         success: true,
-        message: 'Tier 2 application approved successfully',
-        data: {
-          vendorId,
+        message: 'Vendor approved successfully',
+        vendor: {
+          id: vendor.id,
           status: 'approved',
-          tier: 'tier2_full',
-          approvedBy: manager.fullName,
-          approvedAt: new Date().toISOString(),
+          tier: updateData.tier,
         },
       });
     } else {
-      // Reject Tier 2 application
-      // Maintain Tier 1 status, set vendor status back to approved
-      await db
-        .update(vendors)
-        .set({
-          status: 'approved', // Keep as approved Tier 1
-          updatedAt: new Date(),
-        })
-        .where(eq(vendors.id, vendorId));
+      console.log('❌ [VENDOR APPROVAL] Processing rejection...');
+      
+      const updateData = {
+        status: 'suspended' as const,
+        tier2RejectionReason: comment.trim(),
+        updatedAt: new Date(),
+      };
 
-      // Log rejection
-      await logAction({
-        userId: managerId,
-        actionType: AuditActionType.TIER2_APPLICATION_REJECTED,
-        entityType: AuditEntityType.KYC,
-        entityId: vendorId,
-        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-        deviceType: DeviceType.DESKTOP,
-        userAgent: request.headers.get('user-agent') || 'unknown',
-        afterState: {
-          vendorId,
-          vendorName: vendorUser.fullName,
-          businessName: vendor.businessName,
-          rejectedBy: manager.fullName,
-          reason: comment,
-        },
+      console.log('💾 [VENDOR APPROVAL] Updating vendor in database:', updateData);
+
+      const updateResult = await db
+        .update(vendors)
+        .set(updateData)
+        .where(eq(vendors.id, id))
+        .returning();
+
+      console.log('✅ [VENDOR APPROVAL] Database update result:', {
+        rowsAffected: updateResult.length,
+        updatedVendor: updateResult[0],
       });
 
-      // Send SMS notification to vendor
-      try {
-        await smsService.sendSMS({
-          to: vendorUser.phone,
-          message: `Your Tier 2 application requires additional information. Please check your email for details. - NEM Salvage`,
-        });
-      } catch (error) {
-        console.error('Error sending SMS:', error);
+      if (updateResult.length === 0) {
+        console.error('❌ [VENDOR APPROVAL] Database update failed - no rows affected');
+        throw new Error('Failed to update vendor in database');
       }
 
-      // Send email notification to vendor with rejection reason
+      console.log('📧 [VENDOR APPROVAL] Sending rejection email...');
+      
+      // Send rejection email
       try {
         await emailService.sendEmail({
           to: vendorUser.email,
-          subject: 'Tier 2 Application - Additional Information Required',
+          subject: 'KYC Application Requires Attention - NEM Insurance Salvage Platform',
           html: `
-            <!DOCTYPE html>
-            <html lang="en">
-              <head>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Tier 2 Application Update</title>
-                <style>
-                  body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    margin: 0;
-                    padding: 0;
-                    background-color: #f5f5f5;
-                  }
-                  .container {
-                    max-width: 600px;
-                    margin: 0 auto;
-                    background-color: #ffffff;
-                  }
-                  .header {
-                    background-color: #800020;
-                    color: white;
-                    padding: 30px 20px;
-                    text-align: center;
-                  }
-                  .header h1 {
-                    margin: 0;
-                    font-size: 24px;
-                  }
-                  .content {
-                    padding: 30px 20px;
-                  }
-                  .info-box {
-                    background-color: #fff3cd;
-                    border-left: 4px solid #ffc107;
-                    padding: 15px 20px;
-                    margin: 20px 0;
-                  }
-                  .reason-box {
-                    background-color: #f9f9f9;
-                    border: 1px solid #e0e0e0;
-                    padding: 15px 20px;
-                    margin: 20px 0;
-                    border-radius: 6px;
-                  }
-                  .reason-box h3 {
-                    margin-top: 0;
-                    color: #800020;
-                  }
-                  .next-steps {
-                    background-color: #f9f9f9;
-                    border-left: 4px solid #FFD700;
-                    padding: 15px 20px;
-                    margin: 20px 0;
-                  }
-                  .next-steps ol {
-                    margin: 10px 0;
-                    padding-left: 20px;
-                  }
-                  .next-steps li {
-                    margin: 8px 0;
-                  }
-                  .button {
-                    display: inline-block;
-                    padding: 14px 28px;
-                    background-color: #FFD700;
-                    color: #800020;
-                    text-decoration: none;
-                    border-radius: 6px;
-                    font-weight: 600;
-                    margin: 20px 0;
-                  }
-                  .button-container {
-                    text-align: center;
-                    margin: 30px 0;
-                  }
-                  .footer {
-                    text-align: center;
-                    padding: 20px;
-                    font-size: 12px;
-                    color: #666;
-                    background-color: #f5f5f5;
-                    border-top: 1px solid #e0e0e0;
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="container">
-                  <div class="header">
-                    <h1>Tier 2 Application Update</h1>
-                  </div>
-                  
-                  <div class="content">
-                    <p><strong>Dear ${vendorUser.fullName},</strong></p>
-                    
-                    <div class="info-box">
-                      <p style="margin: 0;"><strong>Your Tier 2 application requires additional information before we can proceed.</strong></p>
-                    </div>
-                    
-                    <p>Thank you for submitting your Tier 2 KYC application. After careful review, we need some additional information or clarification to complete your verification.</p>
-                    
-                    <div class="reason-box">
-                      <h3>Feedback from Our Team:</h3>
-                      <p>${comment || 'Please contact support for more details.'}</p>
-                    </div>
-                    
-                    <div class="next-steps">
-                      <h3 style="margin-top: 0; color: #800020;">Next Steps:</h3>
-                      <ol>
-                        <li>Review the feedback above carefully</li>
-                        <li>Prepare the required documents or corrections</li>
-                        <li>Resubmit your Tier 2 application with the updated information</li>
-                      </ol>
-                    </div>
-                    
-                    <p><strong>Good News:</strong> Your Tier 1 status remains active, so you can continue bidding on auctions up to ₦500,000 while you prepare your resubmission.</p>
-                    
-                    <div class="button-container">
-                      <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com'}/vendor/kyc/tier2" class="button">Resubmit Application</a>
-                    </div>
-                    
-                    <p>If you have any questions or need assistance, please don't hesitate to contact our support team:</p>
-                    <ul>
-                      <li>Phone: 234-02-014489560</li>
-                      <li>Email: nemsupport@nem-insurance.com</li>
-                    </ul>
-                    
-                    <p style="margin-top: 30px;">Best regards,<br><strong>NEM Salvage Management Team</strong></p>
-                  </div>
-                  
-                  <div class="footer">
-                    <p><strong>NEM Insurance Plc</strong></p>
-                    <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
-                    <p>Phone: 234-02-014489560 | Email: nemsupport@nem-insurance.com</p>
-                  </div>
-                </div>
-              </body>
-            </html>
+            <h2>KYC Application Update Required</h2>
+            <p>Dear ${vendorUser.fullName},</p>
+            <p>Thank you for submitting your KYC application for <strong>${vendor.businessName || 'your vendor account'}</strong>.</p>
+            <p>Unfortunately, we need you to update your application before we can proceed with approval.</p>
+            <p><strong>Reason:</strong></p>
+            <p>${comment}</p>
+            <p><strong>Next Steps:</strong></p>
+            <ul>
+              <li>Log in to your account</li>
+              <li>Navigate to the KYC section</li>
+              <li>Update your information based on the feedback above</li>
+              <li>Resubmit your application</li>
+            </ul>
+            <p>If you have any questions, please contact our support team.</p>
+            <p>Best regards,<br>NEM Insurance Team</p>
           `,
         });
-      } catch (error) {
-        console.error('Error sending email:', error);
+        console.log('✅ [VENDOR APPROVAL] Rejection email sent successfully');
+      } catch (emailError) {
+        console.error('⚠️ [VENDOR APPROVAL] Failed to send rejection email:', emailError);
+        // Don't fail the entire request if email fails
       }
+
+      console.log('📱 [VENDOR APPROVAL] Sending rejection SMS...');
+      
+      // Send rejection SMS
+      try {
+        await smsService.sendSMS({
+          to: vendorUser.phone,
+          message: `NEM Insurance: Your KYC application needs updates. Reason: ${comment.substring(0, 100)}${comment.length > 100 ? '...' : ''}. Please check your email for details.`,
+        });
+        console.log('✅ [VENDOR APPROVAL] Rejection SMS sent successfully');
+      } catch (smsError) {
+        console.error('⚠️ [VENDOR APPROVAL] Failed to send rejection SMS:', smsError);
+        // Don't fail the entire request if SMS fails
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ [VENDOR APPROVAL] Rejection completed successfully in ${duration}ms`);
 
       return NextResponse.json({
         success: true,
-        message: 'Tier 2 application rejected. Vendor notified with feedback.',
-        data: {
-          vendorId,
-          status: 'approved', // Maintains Tier 1
-          tier: 'tier1_bvn',
-          rejectedBy: manager.fullName,
-          reason: comment,
+        message: 'Vendor rejected successfully',
+        vendor: {
+          id: vendor.id,
+          status: 'rejected',
+          rejectionReason: comment.trim(),
         },
       });
     }
   } catch (error) {
-    console.error('Error processing Tier 2 approval:', error);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [VENDOR APPROVAL] Error processing vendor review (${duration}ms):`, {
+      vendorId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: error instanceof Error ? error.message : 'Internal server error',
+        success: false,
+      },
       { status: 500 }
     );
   }

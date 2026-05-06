@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconciliation Navigation Diagnostic</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #800020;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            border-left: 4px solid #800020;
+        }
+        .section h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+        button {
+            background: #800020;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        button:hover {
+            background: #600018;
+        }
+        .info-box {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+        }
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .check-icon {
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Reconciliation Navigation Diagnostic</h1>
+        <p class="subtitle">This tool helps diagnose why the Reconciliation link isn't showing in your sidebar</p>
+
+        <div class="section">
+            <h2>Step 1: Check Your Session</h2>
+            <button onclick="checkSession()">Check My Session</button>
+            <div id="sessionResult" style="margin-top: 15px;"></div>
+        </div>
+
+        <div class="section">
+            <h2>Step 2: Navigation Configuration</h2>
+            <div class="info-box">
+                <strong>Expected Configuration:</strong>
+                <ul>
+                    <li><strong>Label:</strong> Reconciliation</li>
+                    <li><strong>Path:</strong> /finance/reconciliation</li>
+                    <li><strong>Icon:</strong> Database</li>
+                    <li><strong>Authorized Roles:</strong> finance_officer, system_admin</li>
+                    <li><strong>Location:</strong> Finance section in sidebar</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Step 3: Troubleshooting Checklist</h2>
+            <div id="checklist">
+                <div class="check-item">
+                    <span class="check-icon">⏳</span>
+                    <span>Click "Check My Session" above to start diagnosis</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Step 4: Quick Fixes</h2>
+            <div class="info-box">
+                <strong>Try these solutions:</strong>
+                <ol>
+                    <li><strong>Hard Refresh:</strong> Press Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac)</li>
+                    <li><strong>Clear Cache:</strong> Clear your browser cache and cookies</li>
+                    <li><strong>Re-login:</strong> Log out completely and log back in</li>
+                    <li><strong>Check Console:</strong> Open browser DevTools (F12) and check for JavaScript errors</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function checkSession() {
+            const resultDiv = document.getElementById('sessionResult');
+            const checklistDiv = document.getElementById('checklist');
+            
+            resultDiv.innerHTML = '<p>⏳ Checking session...</p>';
+            
+            try {
+                const response = await fetch('/api/auth/session');
+                const session = await response.json();
+                
+                console.log('Session data:', session);
+                
+                if (!session || !session.user) {
+                    resultDiv.innerHTML = `
+                        <div class="status error">❌ NOT LOGGED IN</div>
+                        <p style="margin-top: 10px;">You are not currently logged in. Please log in first.</p>
+                    `;
+                    
+                    checklistDiv.innerHTML = `
+                        <div class="check-item">
+                            <span class="check-icon">❌</span>
+                            <span><strong>Not logged in</strong> - Please log in to continue</span>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const userRole = session.user.role;
+                const userEmail = session.user.email;
+                const userName = session.user.name;
+                
+                const isAuthorized = userRole === 'finance_officer' || userRole === 'system_admin';
+                
+                resultDiv.innerHTML = `
+                    <div class="status ${isAuthorized ? 'success' : 'error'}">
+                        ${isAuthorized ? '✅ AUTHORIZED' : '❌ NOT AUTHORIZED'}
+                    </div>
+                    <pre>${JSON.stringify(session, null, 2)}</pre>
+                `;
+                
+                // Build checklist
+                let checklistHTML = '';
+                
+                // Check 1: Logged in
+                checklistHTML += `
+                    <div class="check-item">
+                        <span class="check-icon">✅</span>
+                        <span><strong>Logged in as:</strong> ${userName} (${userEmail})</span>
+                    </div>
+                `;
+                
+                // Check 2: Role
+                if (isAuthorized) {
+                    checklistHTML += `
+                        <div class="check-item">
+                            <span class="check-icon">✅</span>
+                            <span><strong>Role:</strong> ${userRole} (Authorized for Reconciliation)</span>
+                        </div>
+                    `;
+                } else {
+                    checklistHTML += `
+                        <div class="check-item">
+                            <span class="check-icon">❌</span>
+                            <span><strong>Role:</strong> ${userRole} (NOT authorized - need finance_officer or system_admin)</span>
+                        </div>
+                    `;
+                }
+                
+                // Check 3: Session structure
+                if (session.user && session.user.role) {
+                    checklistHTML += `
+                        <div class="check-item">
+                            <span class="check-icon">✅</span>
+                            <span><strong>Session structure:</strong> Valid (role field present)</span>
+                        </div>
+                    `;
+                } else {
+                    checklistHTML += `
+                        <div class="check-item">
+                            <span class="check-icon">❌</span>
+                            <span><strong>Session structure:</strong> Invalid (role field missing)</span>
+                        </div>
+                    `;
+                }
+                
+                // Check 4: Navigation should be visible
+                if (isAuthorized) {
+                    checklistHTML += `
+                        <div class="check-item">
+                            <span class="check-icon">✅</span>
+                            <span><strong>Navigation visibility:</strong> Reconciliation link SHOULD be visible</span>
+                        </div>
+                        <div class="info-box" style="margin-top: 15px;">
+                            <strong>✅ You are authorized!</strong>
+                            <p>The Reconciliation link should appear in your sidebar under the Finance section.</p>
+                            <p><strong>If you still don't see it:</strong></p>
+                            <ol>
+                                <li>Hard refresh the page (Ctrl+Shift+R or Cmd+Shift+R)</li>
+                                <li>Check browser console (F12) for JavaScript errors</li>
+                                <li>Try logging out and logging back in</li>
+                                <li>Clear browser cache and cookies</li>
+                            </ol>
+                        </div>
+                    `;
+                } else {
+                    checklistDiv.innerHTML += `
+                        <div class="info-box" style="margin-top: 15px; background: #fff3cd; border-color: #ffc107;">
+                            <strong>⚠️ Not Authorized</strong>
+                            <p>Your current role (${userRole}) is not authorized to see the Reconciliation link.</p>
+                            <p><strong>Authorized roles:</strong> finance_officer, system_admin</p>
+                            <p>Please contact your administrator to change your role if needed.</p>
+                        </div>
+                    `;
+                }
+                
+                checklistDiv.innerHTML = checklistHTML;
+                
+            } catch (error) {
+                console.error('Error checking session:', error);
+                resultDiv.innerHTML = `
+                    <div class="status error">❌ ERROR</div>
+                    <p style="margin-top: 10px;">Failed to check session: ${error.message}</p>
+                `;
+                
+                checklistDiv.innerHTML = `
+                    <div class="check-item">
+                        <span class="check-icon">❌</span>
+                        <span><strong>Error:</strong> ${error.message}</span>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -34,7 +34,74 @@ export default function KYCApprovalDetailPage() {
       .then((r) => r.ok ? r.json() : Promise.reject(r))
       .then((data) => {
         const found = (data.approvals as PendingApproval[]).find((a) => a.vendorId === vendorId);
-        setApproval(found ?? null);
+        if (found) {
+          setApproval(found);
+        } else {
+          // Try fetching from vendors API for manual KYC submissions
+          fetch(`/api/vendors?tier=tier2_full`)
+            .then((r) => r.ok ? r.json() : Promise.reject(r))
+            .then((vendorsData) => {
+              const vendor = vendorsData.vendors?.find((v: any) => v.id === vendorId);
+              if (vendor && vendor.tier2SubmittedAt && !vendor.tier2ApprovedAt && !vendor.tier2RejectionReason) {
+                // Convert vendor data to PendingApproval format
+                const aiVerification = vendor.ninVerificationData as any;
+                
+                // Fetch signed URLs for documents
+                fetch(`/api/kyc/documents/${vendorId}`)
+                  .then((r) => r.ok ? r.json() : Promise.reject(r))
+                  .then((docsData) => {
+                    setApproval({
+                      vendorId: vendor.id,
+                      vendorName: vendor.businessName || vendor.user?.fullName || 'Unknown',
+                      vendorEmail: vendor.user?.email || '',
+                      submittedAt: vendor.tier2SubmittedAt,
+                      amlRiskLevel: undefined,
+                      fraudRiskScore: aiVerification?.score ? 100 - aiVerification.score : undefined,
+                      flaggedReasons: aiVerification?.findings?.concerns || [],
+                      selfieUrl: undefined,
+                      photoIdUrl: docsData.documents?.photoId || vendor.photoIdUrl,
+                      photoIdType: 'NIN Card',
+                      addressProofUrl: docsData.documents?.addressProof || vendor.addressProofUrl,
+                      bankStatementUrl: docsData.documents?.bankStatement || vendor.bankStatementUrl,
+                      cacCertificateUrl: docsData.documents?.cacCertificate || vendor.cacCertificateUrl,
+                      ninVerificationData: aiVerification,
+                      livenessScore: undefined,
+                      biometricMatchScore: undefined,
+                      amlScreeningData: undefined,
+                    });
+                    setLoading(false);
+                  })
+                  .catch(() => {
+                    // Fallback to vendor data without signed URLs
+                    setApproval({
+                      vendorId: vendor.id,
+                      vendorName: vendor.businessName || vendor.user?.fullName || 'Unknown',
+                      vendorEmail: vendor.user?.email || '',
+                      submittedAt: vendor.tier2SubmittedAt,
+                      amlRiskLevel: undefined,
+                      fraudRiskScore: aiVerification?.score ? 100 - aiVerification.score : undefined,
+                      flaggedReasons: aiVerification?.findings?.concerns || [],
+                      selfieUrl: undefined,
+                      photoIdUrl: vendor.photoIdUrl,
+                      photoIdType: 'NIN Card',
+                      addressProofUrl: vendor.addressProofUrl,
+                      bankStatementUrl: vendor.bankStatementUrl,
+                      cacCertificateUrl: vendor.cacCertificateUrl,
+                      ninVerificationData: aiVerification,
+                      livenessScore: undefined,
+                      biometricMatchScore: undefined,
+                      amlScreeningData: undefined,
+                    });
+                    setLoading(false);
+                  });
+              } else {
+                setApproval(null);
+                setLoading(false);
+              }
+            })
+            .catch(() => { setError('Failed to load application'); setLoading(false); });
+          return;
+        }
         setLoading(false);
       })
       .catch(() => { setError('Failed to load application'); setLoading(false); });
@@ -170,17 +237,61 @@ export default function KYCApprovalDetailPage() {
         </div>
       )}
 
+      {/* AI Verification Results (for manual KYC) */}
+      {approval.ninVerificationData && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="w-4 h-4 text-blue-600" />
+            <h2 className="font-semibold text-blue-900">AI Verification Results</h2>
+          </div>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Overall Score</p>
+                <p className={`text-2xl font-bold ${(approval.ninVerificationData as any).score >= 80 ? 'text-green-600' : (approval.ninVerificationData as any).score >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                  {(approval.ninVerificationData as any).score}/100
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Recommendation</p>
+                <p className={`text-lg font-semibold capitalize ${(approval.ninVerificationData as any).recommendation === 'approve' ? 'text-green-600' : (approval.ninVerificationData as any).recommendation === 'reject' ? 'text-red-600' : 'text-yellow-600'}`}>
+                  {(approval.ninVerificationData as any).recommendation}
+                </p>
+              </div>
+            </div>
+            {(approval.ninVerificationData as any).findings && (
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="font-medium text-gray-700">Document Quality:</span>
+                  <span className="ml-2 text-gray-600">{(approval.ninVerificationData as any).findings.documentQuality}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Data Consistency:</span>
+                  <span className="ml-2 text-gray-600">{(approval.ninVerificationData as any).findings.dataConsistency}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Authenticity:</span>
+                  <span className="ml-2 text-gray-600">{(approval.ninVerificationData as any).findings.authenticity}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Document previews */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
         <div className="flex items-center gap-2 mb-4">
           <FileText className="w-4 h-4 text-gray-500" />
           <h2 className="font-semibold text-gray-900">Documents</h2>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {[
+            { label: 'Photo ID / NIN Card', url: approval.photoIdUrl },
+            { label: 'Address Proof / Utility Bill', url: approval.addressProofUrl },
+            { label: 'Bank Statement', url: (approval as any).bankStatementUrl },
+            { label: 'CAC Certificate', url: (approval as any).cacCertificateUrl },
             { label: 'Selfie', url: approval.selfieUrl },
-            { label: `Photo ID (${approval.photoIdType ?? 'ID'})`, url: approval.photoIdUrl },
-            { label: 'Address Proof', url: approval.addressProofUrl },
           ].map(({ label, url }) => (
             <div key={label} className="text-center">
               <p className="text-xs text-gray-500 mb-2">{label}</p>

@@ -7,6 +7,18 @@
     {
       "path": "/api/cron/check-missing-documents",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-wallets",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-paystack-transactions",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-ledger-summary",
+      "schedule": "0 * * * *"
     }
   ]
 }

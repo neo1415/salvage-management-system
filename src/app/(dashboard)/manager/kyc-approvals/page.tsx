@@ -1,16 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Loader2, AlertCircle, Clock, Shield, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertCircle, Clock, Shield, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import type { PendingApproval } from '@/features/kyc/types/kyc.types';
 
 export default function KYCApprovalsPage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'High' | 'Medium' | 'Low'>('all');
 
@@ -18,13 +19,57 @@ export default function KYCApprovalsPage() {
     if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
 
-  useEffect(() => {
+  const fetchApprovals = useCallback(async (isRefresh = false) => {
     if (status !== 'authenticated') return;
-    fetch('/api/kyc/approvals')
-      .then((r) => r.ok ? r.json() : Promise.reject(r))
-      .then((data) => { setApprovals(data.approvals ?? []); setLoading(false); })
-      .catch(() => { setError('Failed to load applications'); setLoading(false); });
+    
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
+    try {
+      // Force no-cache with timestamp to bypass all caching layers
+      const timestamp = Date.now();
+      const response = await fetch(`/api/kyc/approvals?_t=${timestamp}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      });
+
+      console.log('KYC Approvals API Response Status:', response.status);
+      console.log('KYC Approvals API Response Headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('KYC Approvals fetched - Full Response:', data);
+      console.log('KYC Approvals fetched - Approvals Array:', data.approvals);
+      console.log('KYC Approvals fetched - Array Length:', data.approvals?.length ?? 0);
+      
+      setApprovals(data.approvals ?? []);
+    } catch (err) {
+      console.error('Failed to fetch KYC approvals:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load applications');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [status]);
+
+  useEffect(() => {
+    console.log('[KYC DEBUG] useEffect triggered, session status:', status);
+    alert(`KYC Page Loaded - Session Status: ${status}`);
+    fetchApprovals();
+  }, [fetchApprovals]);
 
   const filtered = filter === 'all' ? approvals : approvals.filter((a) => a.amlRiskLevel === filter);
 
@@ -50,6 +95,14 @@ export default function KYCApprovalsPage() {
         <span className="ml-auto bg-[#800020] text-white text-sm font-semibold px-3 py-1 rounded-full">
           {approvals.length} pending
         </span>
+        <button
+          onClick={() => fetchApprovals(true)}
+          disabled={refreshing}
+          className="p-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+          title="Refresh"
+        >
+          <RefreshCw className={`w-5 h-5 text-gray-600 ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
       {error && (

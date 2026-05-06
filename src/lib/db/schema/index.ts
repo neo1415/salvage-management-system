@@ -23,3 +23,7 @@ export * from './intelligence';
 export * from './analytics';
 export * from './ml-training';
 export * from './fraud-detection';
+
+// Payment Reconciliation schemas
+export * from './reconciliation';
+export * from './ledger';
