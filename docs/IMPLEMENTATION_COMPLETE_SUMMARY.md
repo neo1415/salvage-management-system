@@ -92,20 +92,20 @@ Check `.env` file has:
 
 ```env
 # Cloudinary (already set)
-CLOUDINARY_CLOUD_NAME=dcysgnrdh
-CLOUDINARY_API_KEY=878644841215554
-CLOUDINARY_API_SECRET=i89uqGTPhslWwuSHP3BfG9nXekQ
+CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_api_key
+CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
 # Gemini AI (already set)
-GEMINI_API_KEY=AIzaSyBO6QGIipx3JO3Z2jzzbMmzPRnucZeQlGs
+GEMINI_API_KEY=your_gemini_api_key
 
 # Claude AI (already set)
-CLAUDE_API_KEY=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
+CLAUDE_API_KEY=your_claude_api_key
 
 # Dojah (already set - for future use)
-DOJAH_API_KEY=test_sk_pIx711BlgnN7h4snm0vpoAO1F
-DOJAH_PUBLIC_KEY=test_pk_YpNzZ8oEx6nLZkSzpBH6bB530
-DOJAH_APP_ID=6982591d63c5ea4d5eb76564
+DOJAH_API_KEY=your_dojah_api_key
+DOJAH_PUBLIC_KEY=your_dojah_public_key
+DOJAH_APP_ID=your_dojah_app_id
 ```
 
 ✅ All environment variables are already set!
