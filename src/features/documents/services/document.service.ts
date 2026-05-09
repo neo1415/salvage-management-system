@@ -355,11 +355,11 @@ export async function signDocument(
       throw new Error('Cannot sign documents for a forfeited auction. Please contact support for assistance.');
     }
 
-    // If this is a liability waiver, regenerate the PDF with the signature
+    // If this is a liability waiver or bill of sale, regenerate the PDF with the signature
     let updatedPdfUrl = existingDoc.pdfUrl;
     let updatedPdfPublicId = existingDoc.pdfPublicId;
     
-    if (existingDoc.documentType === 'liability_waiver') {
+    if (existingDoc.documentType === 'liability_waiver' || existingDoc.documentType === 'bill_of_sale') {
       try {
         // Fetch auction and vendor data to regenerate PDF
         const [auctionData] = await db
@@ -382,31 +382,68 @@ export async function signDocument(
             make?: string;
             model?: string;
             year?: number;
+            vin?: string;
           };
           const assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || caseData.assetType;
           
-          // Regenerate waiver PDF with signature
-          const waiverData: LiabilityWaiverData = {
-            vendorName: vendorUser.fullName,
-            vendorEmail: vendorUser.email,
-            vendorPhone: vendorUser.phone,
-            vendorBvn: vendor.bvnEncrypted ? '****' : undefined,
-            assetDescription,
-            assetCondition: caseData.vehicleCondition || 'salvage',
-            auctionId: existingDoc.auctionId,
-            transactionDate: new Date().toLocaleDateString('en-NG'),
-            signatureData, // Include the signature
-            signedDate: new Date().toLocaleDateString('en-NG'),
-            verificationUrl: `${APP_URL}/verify-document/${existingDoc.auctionId}`,
-          };
+          let pdfBuffer: Buffer;
+          let documentName: string;
           
-          const pdfBuffer = await generateLiabilityWaiverPDF(waiverData);
+          if (existingDoc.documentType === 'liability_waiver') {
+            // Regenerate waiver PDF with signature
+            const waiverData: LiabilityWaiverData = {
+              vendorName: vendorUser.fullName,
+              vendorEmail: vendorUser.email,
+              vendorPhone: vendorUser.phone,
+              vendorBvn: vendor.bvnEncrypted ? '****' : undefined,
+              assetDescription,
+              assetCondition: caseData.vehicleCondition || 'salvage',
+              auctionId: existingDoc.auctionId,
+              transactionDate: new Date().toLocaleDateString('en-NG'),
+              signatureData, // Include the signature
+              signedDate: new Date().toLocaleDateString('en-NG'),
+              verificationUrl: `${APP_URL}/verify-document/${existingDoc.auctionId}`,
+            };
+            
+            pdfBuffer = await generateLiabilityWaiverPDF(waiverData);
+            documentName = `liability_waiver_signed_${Date.now()}`;
+          } else {
+            // Regenerate Bill of Sale PDF with signature
+            const billOfSaleData: BillOfSaleData = {
+              transactionId: existingDoc.auctionId,
+              transactionDate: new Date().toLocaleDateString('en-NG'),
+              buyerName: vendorUser.fullName,
+              buyerEmail: vendorUser.email,
+              buyerPhone: vendorUser.phone,
+              buyerBvn: vendor.bvnEncrypted ? '****' : undefined,
+              sellerName: 'NEM Insurance Plc',
+              sellerAddress: '199 Ikorodu Road, Obanikoro, Lagos, Nigeria',
+              sellerContact: '234-02-014489560',
+              assetType: caseData.assetType,
+              assetDescription,
+              assetCondition: caseData.vehicleCondition || 'salvage',
+              vin: assetDetails.vin,
+              make: assetDetails.make,
+              model: assetDetails.model,
+              year: assetDetails.year,
+              salePrice: Number(auction.currentBid || 0),
+              paymentMethod: 'Escrow Wallet',
+              pickupLocation: caseData.locationName || 'NEM Insurance Salvage Yard',
+              pickupDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG'),
+              signatureData, // Include the signature
+              signedDate: new Date().toLocaleDateString('en-NG'),
+              verificationUrl: `${APP_URL}/verify-document/${existingDoc.auctionId}`,
+            };
+            
+            pdfBuffer = await generateBillOfSalePDF(billOfSaleData);
+            documentName = `bill_of_sale_signed_${Date.now()}`;
+          }
           
           // Upload new PDF with signature
           const folder = `${CLOUDINARY_FOLDERS.SALVAGE_CASES}/${existingDoc.auctionId}/documents`;
           const uploadResult = await uploadFile(pdfBuffer, {
             folder,
-            publicId: `liability_waiver_signed_${Date.now()}`,
+            publicId: documentName,
             resourceType: 'raw',
             compress: false,
           });
@@ -414,7 +451,7 @@ export async function signDocument(
           updatedPdfUrl = uploadResult.secureUrl;
           updatedPdfPublicId = uploadResult.publicId;
           
-          console.log(`✅ Regenerated waiver PDF with signature: ${documentId}`);
+          console.log(`✅ Regenerated ${existingDoc.documentType} PDF with signature: ${documentId}`);
         }
       } catch (error) {
         console.error('Error regenerating PDF with signature:', error);

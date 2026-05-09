@@ -55,6 +55,10 @@ export interface BillOfSaleData {
   pickupLocation: string;
   pickupDeadline: string;
   
+  // Signature information (optional - added when signed)
+  signatureData?: string;
+  signedDate?: string;
+  
   // Verification
   verificationUrl: string;
 }
@@ -254,30 +258,70 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
   // Get max content Y to avoid footer overlap using PDFTemplateService
   const maxContentY = PDFTemplateService.getMaxContentY(doc);
   
-  // QR Code section - positioned above footer with proper spacing
+  // Signature and QR code section - use structured layout with fixed containers
   yPos += 20;
   
-  // Ensure QR code doesn't overlap footer
-  if (yPos + 80 > maxContentY) {
-    yPos = maxContentY - 80;
+  // Calculate remaining space and ensure we have enough room
+  const requiredSpace = 70; // Space needed for signature + QR + spacing
+  if (yPos + requiredSpace > maxContentY) {
+    yPos = maxContentY - requiredSpace;
   }
   
+  const sectionStartY = yPos;
+  
+  // LEFT COLUMN: Signature section (if signature data provided)
+  if (data.signatureData) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Buyer Signature:', 20, yPos);
+    yPos += 5;
+    
+    try {
+      // Add signature image with constrained dimensions (max 120px width, 50px height)
+      const signatureWidth = 80;
+      const signatureHeight = 40;
+      doc.addImage(data.signatureData, 'PNG', 20, yPos, signatureWidth, signatureHeight);
+      yPos += signatureHeight + 5;
+    } catch (error) {
+      console.error('Error adding signature to PDF:', error);
+      // Fallback to signature line if image fails
+      doc.line(20, yPos + 40, 100, yPos + 40);
+      yPos += 45;
+    }
+    
+    // Signature line and label
+    doc.line(20, yPos, 100, yPos);
+    yPos += 5;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Buyer Signature', 20, yPos);
+    
+    // Add signed date
+    if (data.signedDate) {
+      doc.text(`Date: ${data.signedDate}`, 20, yPos + 5);
+    }
+  }
+  
+  // RIGHT COLUMN: QR Code section (separate column, no overlap)
   const qrCodeDataUrl = await QRCode.toDataURL(data.verificationUrl, {
     width: 80,
     margin: 1,
   });
   
-  // Add QR code description
+  // Position QR code in right column with fixed coordinates
+  const qrX = pageWidth - 50;
+  const qrY = sectionStartY;
+  
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
-  doc.text('Scan to verify document', pageWidth - 50, yPos);
+  doc.text('Scan to verify', qrX + 15, qrY, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  doc.text('authenticity online', pageWidth - 50, yPos + 4);
+  doc.text('document online', qrX + 15, qrY + 4, { align: 'center' });
   
-  // Add QR code (80x80px max, positioned in bottom-right, above footer)
-  doc.addImage(qrCodeDataUrl, 'PNG', pageWidth - 50, yPos + 8, 30, 30);
+  // Add QR code with fixed size (30x30px)
+  doc.addImage(qrCodeDataUrl, 'PNG', qrX, qrY + 8, 30, 30);
   
-  // Add professional footer using PDFTemplateService
+  // Add professional footer using PDFTemplateService (anchored at bottom)
   PDFTemplateService.addFooter(doc);
   
   // Convert to buffer
@@ -375,18 +419,20 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   // Get max content Y to avoid footer overlap using PDFTemplateService
   const maxContentY = PDFTemplateService.getMaxContentY(doc);
   
-  // Signature and QR code section - positioned above footer with more spacing
+  // Signature and QR code section - use structured layout with fixed containers
   yPos += 20;
   
-  // Ensure signature section doesn't overlap footer (increased buffer from 80 to 90)
-  if (yPos + 90 > maxContentY) {
-    yPos = maxContentY - 90;
+  // Calculate remaining space and ensure we have enough room
+  const requiredSpace = 70; // Space needed for signature + QR + vendor details + spacing
+  if (yPos + requiredSpace > maxContentY) {
+    yPos = maxContentY - requiredSpace;
   }
   
-  doc.setDrawColor(0, 0, 0);
+  const sectionStartY = yPos;
   
-  // Signature section (left side)
-  const signatureStartY = yPos;
+  // LEFT COLUMN: Signature section (fixed width container)
+  const leftColumnWidth = 100;
+  const rightColumnX = pageWidth - 50;
   
   // If signature data is provided, add the signature image
   if (data.signatureData) {
@@ -396,9 +442,11 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
     yPos += 5;
     
     try {
-      // Add signature image (max 50px height, 200px width)
-      doc.addImage(data.signatureData, 'PNG', 20, yPos, 80, 40);
-      yPos += 45;
+      // Add signature image with constrained dimensions (max 120px width, 50px height)
+      const signatureWidth = 80;
+      const signatureHeight = 40;
+      doc.addImage(data.signatureData, 'PNG', 20, yPos, signatureWidth, signatureHeight);
+      yPos += signatureHeight + 5;
     } catch (error) {
       console.error('Error adding signature to PDF:', error);
       // Fallback to signature line if image fails
@@ -413,9 +461,9 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
     doc.setFont('helvetica', 'normal');
     doc.text('Vendor Signature', 20, yPos);
     
-    // Add signed date on same line (right side)
+    // Add signed date
     if (data.signedDate) {
-      doc.text(`Date: ${data.signedDate}`, 110, yPos);
+      doc.text(`Date: ${data.signedDate}`, 20, yPos + 5);
     }
   } else {
     // No signature yet - show signature line
@@ -429,33 +477,31 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
     doc.text('Vendor Signature', 20, yPos);
-    
-    doc.line(110, yPos - 5, 170, yPos - 5);
-    doc.text('Date: ___/___/______', 110, yPos);
+    doc.text('Date: ___/___/______', 20, yPos + 5);
   }
   
-  // Vendor details below signature (with better spacing)
+  // Vendor details below signature (with proper spacing)
   yPos += 10;
   doc.setFontSize(8);
   doc.text(`Name: ${data.vendorName}`, 20, yPos);
-  yPos += 5;
+  yPos += 4;
   doc.text(`Email: ${data.vendorEmail}`, 20, yPos);
-  yPos += 5;
+  yPos += 4;
   doc.text(`Phone: ${data.vendorPhone}`, 20, yPos);
   if (data.vendorBvn) {
-    yPos += 5;
+    yPos += 4;
     doc.text(`BVN: ****${data.vendorBvn}`, 20, yPos);
   }
   
-  // QR Code (right side, aligned with signature section)
+  // RIGHT COLUMN: QR Code section (separate column, no overlap)
   const qrCodeDataUrl = await QRCode.toDataURL(data.verificationUrl, {
     width: 80,
     margin: 1,
   });
   
-  // Position QR code on right side, aligned with signature
-  const qrX = pageWidth - 50;
-  const qrY = signatureStartY;
+  // Position QR code in right column with fixed coordinates
+  const qrX = rightColumnX;
+  const qrY = sectionStartY;
   
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
@@ -463,10 +509,10 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   doc.setFont('helvetica', 'normal');
   doc.text('document online', qrX + 15, qrY + 4, { align: 'center' });
   
-  // Add QR code (80x80px max)
+  // Add QR code with fixed size (30x30px)
   doc.addImage(qrCodeDataUrl, 'PNG', qrX, qrY + 8, 30, 30);
   
-  // Add professional footer using PDFTemplateService
+  // Add professional footer using PDFTemplateService (anchored at bottom)
   PDFTemplateService.addFooter(doc);
   
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));

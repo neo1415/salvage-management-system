@@ -146,7 +146,7 @@ export class PDFTemplateService {
     doc.text('NEM Insurance Plc | 199 Ikorodu Road, Obanikoro, Lagos, Nigeria', pageWidth / 2, footerY, { align: 'center' });
     
     // Line 2: Contact information (increased spacing from 4 to 5)
-    doc.text('Tel: 234-02-014489560 | Email: nemsupport@nem-insurance.com', pageWidth / 2, footerY + 5, { align: 'center' });
+    doc.text('Tel: 234-02-014489560 | Email: noreply@nemsalvage.com', pageWidth / 2, footerY + 5, { align: 'center' });
     
     // Line 3: Generation timestamp (increased spacing from 8 to 10)
     const timestamp = `Generated: ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}`;
