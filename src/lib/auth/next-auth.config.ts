@@ -391,7 +391,8 @@ export const authConfig: NextAuthConfig = {
         token.profilePictureUrl = user.profilePictureUrl;
         token.vendorId = user.vendorId;
         
-        // Check BVN verification status for vendors
+        // CRITICAL FIX: Always check BVN verification status for vendors on EVERY login
+        // This ensures the redirect to tier1 KYC works correctly after phone verification
         if (user.role === 'vendor' && user.vendorId) {
           const { vendors } = await import('@/lib/db/schema/vendors');
           const [vendor] = await withRetry(async () => {
@@ -403,6 +404,12 @@ export const authConfig: NextAuthConfig = {
           });
           
           token.bvnVerified = !!vendor?.bvnVerifiedAt;
+          
+          console.log('[JWT Initial Login] Vendor BVN status:', {
+            vendorId: user.vendorId,
+            bvnVerified: !!vendor?.bvnVerifiedAt,
+            bvnVerifiedAt: vendor?.bvnVerifiedAt,
+          });
         } else {
           token.bvnVerified = true; // Non-vendors don't need BVN verification
         }
@@ -434,6 +441,48 @@ export const authConfig: NextAuthConfig = {
         
         // Skip validation on initial sign-in since user object is present and trusted
         return token;
+      }
+      
+      // CRITICAL FIX: Also refresh BVN status on existing sessions for vendors
+      // This handles cases where the user's session is reused after phone verification
+      if (token.role === 'vendor' && token.vendorId && !user) {
+        // Check if we should refresh BVN status (every 5 minutes to catch recent verifications)
+        const lastBvnCheck = token.lastBvnCheck as number | undefined;
+        const now = Math.floor(Date.now() / 1000);
+        const bvnCheckInterval = 5 * 60; // 5 minutes
+        
+        const shouldCheckBvn = !lastBvnCheck || (now - lastBvnCheck) > bvnCheckInterval;
+        
+        if (shouldCheckBvn) {
+          try {
+            const { vendors } = await import('@/lib/db/schema/vendors');
+            const [vendor] = await withRetry(async () => {
+              return await db
+                .select({ bvnVerifiedAt: vendors.bvnVerifiedAt })
+                .from(vendors)
+                .where(eq(vendors.id, token.vendorId as string))
+                .limit(1);
+            });
+            
+            const newBvnStatus = !!vendor?.bvnVerifiedAt;
+            
+            // Only log if status changed
+            if (newBvnStatus !== token.bvnVerified) {
+              console.log('[JWT Session Refresh] Vendor BVN status changed:', {
+                vendorId: token.vendorId,
+                oldStatus: token.bvnVerified,
+                newStatus: newBvnStatus,
+                bvnVerifiedAt: vendor?.bvnVerifiedAt,
+              });
+            }
+            
+            token.bvnVerified = newBvnStatus;
+            token.lastBvnCheck = now;
+          } catch (error) {
+            console.error('[JWT] Failed to refresh BVN status:', error);
+            // Keep existing status on error
+          }
+        }
       }
 
       // SCALABILITY FIX: Only validate token integrity periodically, not on every request
