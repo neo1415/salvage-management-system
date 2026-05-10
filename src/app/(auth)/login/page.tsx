@@ -86,26 +86,27 @@ function LoginForm() {
       if (session?.user?.role) {
         const role = session.user.role;
         
-        // Redirect to role-specific dashboard
+        // Use router.push instead of window.location.href
+        // This ensures Next.js middleware runs and can intercept the navigation
         if (role === 'vendor') {
-          window.location.href = '/vendor/dashboard';
+          router.push('/vendor/dashboard');
         } else if (role === 'salvage_manager') {
-          window.location.href = '/manager/dashboard';
+          router.push('/manager/dashboard');
         } else if (role === 'claims_adjuster') {
-          window.location.href = '/adjuster/dashboard';
+          router.push('/adjuster/dashboard');
         } else if (role === 'finance_officer') {
-          window.location.href = '/finance/dashboard';
+          router.push('/finance/dashboard');
         } else if (role === 'system_admin' || role === 'admin') {
-          window.location.href = '/admin/dashboard';
+          router.push('/admin/dashboard');
         } else {
           // Fallback to home if role is unknown
-          window.location.href = '/';
+          router.push('/');
         }
       } else if (callbackUrl) {
-        window.location.href = callbackUrl;
+        router.push(callbackUrl);
       } else {
         // Fallback to home
-        window.location.href = '/';
+        router.push('/');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');

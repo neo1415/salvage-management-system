@@ -1,192 +1,131 @@
-# Fix: BVN Redirect After Phone Verification
+# BVN Redirect Fix - Production Deployment
 
-## Problem
-Vendors who register and verify their phone are not being redirected to Tier 1 (BVN) verification page on production, but it works on localhost.
+## Problem Summary
+
+After vendors register and verify their phone number, they should be redirected to `/vendor/kyc/tier1` (BVN verification) on next login. This worked correctly on localhost but **NOT on production**.
 
 ## Root Cause
-The JWT token's `bvnVerified` flag was only checked during initial sign-in. When a user logged in again after phone verification, the session was reused with the stale `bvnVerified: false` value, preventing the middleware redirect.
 
-## Solution Applied
-Modified `src/lib/auth/next-auth.config.ts` to:
-1. **Always check BVN status on initial login** (already existed)
-2. **NEW: Periodically refresh BVN status for existing sessions** (every 5 minutes)
-3. **NEW: Log BVN status changes** for debugging
-
-This ensures that even if a session is reused, the BVN verification status is refreshed within 5 minutes.
-
-## Deployment Steps
-
-### 1. Commit and Push Changes
-```bash
-# Check what changed
-git status
-git diff src/lib/auth/next-auth.config.ts
-
-# Stage the fix
-git add src/lib/auth/next-auth.config.ts
-git add DEPLOYMENT_SYNC_CHECKLIST.md
-git add FIX_BVN_REDIRECT_DEPLOYMENT.md
-
-# Commit with clear message
-git commit -m "fix: refresh BVN verification status on existing sessions
-
-- Add periodic BVN status check (every 5 minutes) for vendor sessions
-- Ensures middleware redirect works after phone verification
-- Fixes production issue where localhost worked but prod didn't
-- Adds logging for BVN status changes for debugging"
-
-# Push to production
-git push origin main
-```
-
-### 2. Verify Deployment
-Check your hosting platform (Vercel, Railway, etc.) to ensure:
-- ✅ Build succeeded
-- ✅ Deployment is live
-- ✅ No environment variable errors
-
-### 3. Clear Production Caches (Important!)
-The fix won't take effect for existing sessions until they expire or are cleared.
-
-#### Option A: Wait for Natural Expiry
-- Sessions expire after 24 hours (desktop) or 2 hours (mobile)
-- BVN status will refresh within 5 minutes of next request
-
-#### Option B: Force Cache Clear (Recommended)
-Create a temporary admin script to clear affected user caches:
+The issue was in `src/app/(auth)/login/page.tsx` (lines 82-103). After successful login, the page performed a **client-side redirect** using `window.location.href`:
 
 ```typescript
-// scripts/clear-vendor-session-cache.ts
-import { redis } from '@/lib/redis/client';
-import { db } from '@/lib/db/drizzle';
-import { users } from '@/lib/db/schema/users';
-import { eq } from 'drizzle-orm';
-
-async function clearVendorSessions() {
-  // Get all vendors
-  const vendors = await db
-    .select({ id: users.id, email: users.email })
-    .from(users)
-    .where(eq(users.role, 'vendor'));
-  
-  console.log(`Found ${vendors.length} vendors`);
-  
-  for (const vendor of vendors) {
-    try {
-      // Clear user cache
-      await redis.del(`user:${vendor.id}`);
-      
-      // Clear session mapping
-      const sessionId = await redis.get(`user:${vendor.id}:session`);
-      if (sessionId) {
-        await redis.del(`session:${sessionId}`);
-      }
-      await redis.del(`user:${vendor.id}:session`);
-      
-      console.log(`✅ Cleared cache for ${vendor.email}`);
-    } catch (error) {
-      console.error(`❌ Failed to clear cache for ${vendor.email}:`, error);
-    }
-  }
-  
-  console.log('Done!');
-}
-
-clearVendorSessions();
+// OLD CODE (BROKEN)
+window.location.href = '/vendor/dashboard';
 ```
 
-Run it:
-```bash
-npx tsx scripts/clear-vendor-session-cache.ts
+**Why this broke the BVN redirect:**
+- `window.location.href` performs a **full page reload** with client-side navigation
+- Next.js middleware (`src/middleware.ts`) **only runs on server-side navigation**
+- The client-side redirect bypassed the middleware entirely
+- Therefore, the middleware's BVN verification check never ran
+- Vendors were sent directly to `/vendor/dashboard` instead of being intercepted
+
+## Why It Worked on Localhost
+
+The behavior difference between localhost and production was likely due to:
+- **Session timing**: On localhost, the session might not be fully established when the redirect happens
+- **Browser caching**: Production has more aggressive caching, so the client-side redirect completes faster
+- **Network latency**: Production has higher latency, giving the session more time to propagate
+
+However, the **fundamental issue** was the use of `window.location.href` which bypasses middleware in **both** environments.
+
+## The Fix
+
+Changed all `window.location.href` redirects to `router.push()` in the login page:
+
+```typescript
+// NEW CODE (FIXED)
+router.push('/vendor/dashboard');
 ```
 
-### 4. Test the Fix
+**Why this fixes it:**
+- `router.push()` uses Next.js client-side routing
+- Next.js client-side routing **triggers middleware** on navigation
+- Middleware can now intercept the navigation and check BVN status
+- If `bvnVerified === false`, middleware redirects to `/vendor/kyc/tier1`
 
-#### Test Case 1: New User Registration
+## Files Changed
+
+### `src/app/(auth)/login/page.tsx`
+- **Lines 82-103**: Changed all `window.location.href` to `router.push()`
+- Added comment explaining why `router.push()` is used
+
+## How Middleware Works
+
+The middleware in `src/middleware.ts` checks:
+
+1. **Is this a dashboard route?** (e.g., `/vendor/dashboard`)
+2. **Is the user a vendor?** (check `token.role === 'vendor'`)
+3. **Is BVN verified?** (check `token.bvnVerified`)
+4. **If BVN not verified** → Redirect to `/vendor/kyc/tier1`
+
+This middleware **only runs** when:
+- Server-side navigation occurs (initial page load, `router.push()`)
+- **NOT** when `window.location.href` is used (full page reload)
+
+## Testing the Fix
+
+### On Localhost
 1. Register a new vendor account
-2. Verify phone with OTP
+2. Verify phone number with OTP
 3. Log out
 4. Log in again
-5. **Expected**: Redirect to `/vendor/kyc/tier1`
+5. **Expected**: Should redirect to `/vendor/kyc/tier1` (BVN verification)
 
-#### Test Case 2: Existing User (After Cache Clear)
-1. Log in as existing vendor (without BVN verification)
-2. **Expected**: Redirect to `/vendor/kyc/tier1` within 5 minutes
+### On Production
+1. Deploy the fix
+2. Clear browser cache and site data
+3. Register a new vendor account
+4. Verify phone number with OTP
+5. Log out
+6. Log in again
+7. **Expected**: Should redirect to `/vendor/kyc/tier1` (BVN verification)
 
-#### Test Case 3: Verify Logs
-Check production logs for:
-```
-[JWT Initial Login] Vendor BVN status: { vendorId: '...', bvnVerified: false, ... }
-[JWT Session Refresh] Vendor BVN status changed: { oldStatus: false, newStatus: true, ... }
-```
+## Deployment Checklist
 
-### 5. Monitor Production
+- [x] Fix applied to `src/app/(auth)/login/page.tsx`
+- [ ] Commit changes with message: "fix: use router.push instead of window.location.href for BVN redirect"
+- [ ] Push to repository
+- [ ] Deploy to production
+- [ ] Clear browser cache and test with a new vendor account
+- [ ] Verify middleware logs show BVN check running
 
-Watch for these indicators:
-- ✅ Vendors are redirected to tier1 KYC page
-- ✅ No infinite redirect loops
-- ✅ BVN status logs appear in production logs
-- ✅ No increase in database query load
+## Related Files
 
-## Rollback Plan
-
-If issues occur, revert the change:
-```bash
-git revert HEAD
-git push origin main
-```
-
-The previous behavior will be restored (BVN check only on initial sign-in).
-
-## Why This Fixes Both Localhost and Production
-
-### Before Fix:
-- **Localhost**: You were likely clearing cookies/cache between tests, forcing fresh JWT generation → BVN check ran → redirect worked
-- **Production**: Sessions persisted, JWT was reused with stale `bvnVerified: false` → no redirect
-
-### After Fix:
-- **Both environments**: BVN status is refreshed every 5 minutes for existing sessions
-- **Both environments**: Fresh logins always check BVN status
-- **Both environments**: Middleware redirect works correctly
-
-## Performance Impact
-
-- **Minimal**: BVN check runs every 5 minutes per vendor session
-- **Optimized**: Uses existing database connection pool
-- **Cached**: User data is still cached for 30 minutes (separate from BVN check)
-- **Scalable**: Only affects vendors, not all users
+- `src/app/(auth)/login/page.tsx` - Login page with redirect logic
+- `src/middleware.ts` - Middleware that checks BVN verification
+- `src/lib/auth/next-auth.config.ts` - JWT callback that sets `bvnVerified` flag
 
 ## Additional Notes
 
-### Why 5 Minutes?
-- Fast enough to catch recent verifications (user won't wait long)
-- Slow enough to avoid excessive database queries
-- Balances UX and performance
+### Why Not Remove Client-Side Redirect Entirely?
 
-### Why Not Check on Every Request?
-- Would cause excessive database load
-- The 30-minute user validation already exists
-- 5 minutes is acceptable for this use case
+We still need to fetch the session to determine the user's role and redirect to the correct dashboard. The key change is using `router.push()` instead of `window.location.href`.
 
-### Alternative Solutions Considered
-1. ❌ **Force logout after phone verification**: Bad UX
-2. ❌ **Check BVN on every request**: Performance issue
-3. ❌ **WebSocket notification**: Over-engineered
-4. ✅ **Periodic refresh (5 min)**: Best balance
+### Why Does Middleware Check BVN?
+
+The middleware checks BVN verification to ensure vendors complete KYC before accessing the dashboard. This is a security requirement to prevent unverified vendors from participating in auctions.
+
+### Session Refresh Logic
+
+The JWT callback in `src/lib/auth/next-auth.config.ts` has logic to refresh BVN status every 5 minutes for existing sessions. This ensures that if a vendor verifies their BVN in another tab, the session is updated automatically.
+
+## Verification Commands
+
+```bash
+# Check if middleware is running
+grep -r "BVN verification check" src/middleware.ts
+
+# Check if JWT callback refreshes BVN status
+grep -r "JWT Session Refresh" src/lib/auth/next-auth.config.ts
+
+# Test the fix locally
+npm run dev
+# Then test the login flow
+```
 
 ## Success Criteria
 
-- ✅ New vendors redirected to tier1 KYC after phone verification
-- ✅ Existing vendors redirected within 5 minutes
-- ✅ No performance degradation
-- ✅ Logs show BVN status checks working
-- ✅ No user complaints about redirect issues
-
-## Questions?
-
-If the issue persists after deployment:
-1. Check production logs for BVN status messages
-2. Verify environment variables are correct
-3. Confirm database has correct `bvnVerifiedAt` values
-4. Check if Redis/KV is working properly
-5. Test with a fresh incognito window (no cached session)
+✅ Vendors are redirected to `/vendor/kyc/tier1` after phone verification on **both** localhost and production
+✅ Middleware logs show BVN check running
+✅ No more client-side redirects using `window.location.href` in login flow

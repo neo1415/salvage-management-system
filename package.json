@@ -24,7 +24,8 @@
     "db:check-index-usage": "tsx scripts/check-index-usage.ts",
     "db:cleanup-redundant-indexes": "tsx scripts/cleanup-redundant-indexes.ts",
     "socket:verify-auction-id": "tsx scripts/verify-auction-id-match.ts",
-    "socket:diagnose": "tsx scripts/diagnose-socket-io.ts"
+    "socket:diagnose": "tsx scripts/diagnose-socket-io.ts",
+    "docs:generate": "tsx scripts/generate-documentation.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
