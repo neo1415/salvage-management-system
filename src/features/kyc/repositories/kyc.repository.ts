@@ -1,4 +1,4 @@
-import { eq, lte, and, isNotNull, sql, inArray, desc } from 'drizzle-orm';
+import { eq, lte, and, isNotNull, isNull, sql, inArray, desc, or } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
@@ -11,6 +11,13 @@ import type {
   VerificationCost,
   PendingApproval,
 } from '../types/kyc.types';
+
+async function hasProviderVerificationTable(): Promise<boolean> {
+  const [{ exists } = { exists: false }] = await db.execute<{ exists: boolean }>(
+    sql`select to_regclass('public.provider_verification_records') is not null as "exists"`
+  );
+  return Boolean(exists);
+}
 
 /**
  * KYCRepository
@@ -140,43 +147,111 @@ export class KYCRepository {
 
   /**
    * Get all pending Tier 2 KYC applications for manager review.
+   * Includes legacy submissions and Dojah provider records awaiting manual review.
    */
   async getPendingApprovals(): Promise<PendingApproval[]> {
-    const rows = await db
-      .select({
-        id: vendors.id,
-        businessName: vendors.businessName,
-        tier2SubmittedAt: vendors.tier2SubmittedAt,
-        amlRiskLevel: vendors.amlRiskLevel,
-        fraudRiskScore: vendors.fraudRiskScore,
-        fraudFlags: vendors.fraudFlags,
-        selfieUrl: vendors.selfieUrl,
-        photoIdUrl: vendors.photoIdUrl,
-        photoIdType: vendors.photoIdType,
-        addressProofUrl: vendors.addressProofUrl,
-        ninCardUrl: vendors.ninCardUrl,
-        bankStatementUrl: vendors.bankStatementUrl,
-        cacCertificateUrl: vendors.cacCertificateUrl,
-        ninVerificationData: vendors.ninVerificationData,
-        livenessScore: vendors.livenessScore,
-        biometricMatchScore: vendors.biometricMatchScore,
-        amlScreeningData: vendors.amlScreeningData,
-        userEmail: users.email,
-        userPhone: users.phone,
-      })
-      .from(vendors)
-      .innerJoin(users, eq(vendors.userId, users.id))
-      .where(
-        and(
-          isNotNull(vendors.tier2SubmittedAt),
-          sql`${vendors.tier2ApprovedAt} IS NULL`,
-          sql`${vendors.tier2RejectionReason} IS NULL`
-        )
-      )
-      .orderBy(vendors.tier2SubmittedAt);
+    const providerTableExists = await hasProviderVerificationTable();
 
-    const vendorIds = rows.map((r) => r.id);
-    const evidenceRows = vendorIds.length
+    const baseSelection = {
+      id: vendors.id,
+      businessName: vendors.businessName,
+      tier2SubmittedAt: vendors.tier2SubmittedAt,
+      amlRiskLevel: vendors.amlRiskLevel,
+      fraudRiskScore: vendors.fraudRiskScore,
+      fraudFlags: vendors.fraudFlags,
+      selfieUrl: vendors.selfieUrl,
+      photoIdUrl: vendors.photoIdUrl,
+      photoIdType: vendors.photoIdType,
+      addressProofUrl: vendors.addressProofUrl,
+      ninCardUrl: vendors.ninCardUrl,
+      bankStatementUrl: vendors.bankStatementUrl,
+      cacCertificateUrl: vendors.cacCertificateUrl,
+      ninVerificationData: vendors.ninVerificationData,
+      livenessScore: vendors.livenessScore,
+      biometricMatchScore: vendors.biometricMatchScore,
+      amlScreeningData: vendors.amlScreeningData,
+      userEmail: users.email,
+      userPhone: users.phone,
+    };
+
+    const rows = providerTableExists
+      ? await db
+          .select({
+            ...baseSelection,
+            providerUpdatedAt: providerVerificationRecords.updatedAt,
+          })
+          .from(vendors)
+          .innerJoin(users, eq(vendors.userId, users.id))
+          .leftJoin(
+            providerVerificationRecords,
+            and(
+              eq(providerVerificationRecords.vendorId, vendors.id),
+              eq(providerVerificationRecords.provider, 'dojah'),
+              eq(providerVerificationRecords.verificationType, 'tier2')
+            )
+          )
+          .where(
+            and(
+              isNull(vendors.tier2ApprovedAt),
+              isNull(vendors.tier2RejectionReason),
+              or(
+                isNotNull(vendors.tier2SubmittedAt),
+                inArray(
+                  vendors.id,
+                  db
+                    .select({ vendorId: providerVerificationRecords.vendorId })
+                    .from(providerVerificationRecords)
+                    .where(
+                      and(
+                        eq(providerVerificationRecords.provider, 'dojah'),
+                        eq(providerVerificationRecords.verificationType, 'tier2'),
+                        inArray(providerVerificationRecords.status, [
+                          'pending',
+                          'review_required',
+                          'passed',
+                          'failed',
+                          'provider_unavailable',
+                          'completed',
+                          'submitted',
+                        ]),
+                        isNotNull(providerVerificationRecords.vendorId)
+                      )
+                    )
+                )
+              )
+            )
+          )
+          .orderBy(sql`COALESCE(${vendors.tier2SubmittedAt}, ${providerVerificationRecords.updatedAt}) DESC NULLS LAST`)
+      : await db
+          .select({
+            ...baseSelection,
+            providerUpdatedAt: sql<Date | null>`NULL`,
+          })
+          .from(vendors)
+          .innerJoin(users, eq(vendors.userId, users.id))
+          .where(
+            and(
+              isNotNull(vendors.tier2SubmittedAt),
+              isNull(vendors.tier2ApprovedAt),
+              isNull(vendors.tier2RejectionReason)
+            )
+          )
+          .orderBy(sql`${vendors.tier2SubmittedAt} DESC NULLS LAST`);
+
+    const uniqueRows = [...rows.reduce((map, row) => {
+      const existing = map.get(row.id);
+      if (!existing) {
+        map.set(row.id, row);
+        return map;
+      }
+      const existingTs = existing.providerUpdatedAt?.getTime() ?? existing.tier2SubmittedAt?.getTime() ?? 0;
+      const rowTs = row.providerUpdatedAt?.getTime() ?? row.tier2SubmittedAt?.getTime() ?? 0;
+      if (rowTs >= existingTs) map.set(row.id, row);
+      return map;
+    }, new Map<string, (typeof rows)[number]>()).values()];
+
+    const vendorIds = uniqueRows.map((r) => r.id);
+    const evidenceRows = providerTableExists && vendorIds.length
       ? await db
           .select()
           .from(providerVerificationRecords)
@@ -184,18 +259,20 @@ export class KYCRepository {
           .orderBy(desc(providerVerificationRecords.updatedAt))
       : [];
 
-    return rows.map((r) => {
+    return uniqueRows.map((r) => {
       const flags = (r.fraudFlags as Array<{ description: string }> | null) ?? [];
       const flaggedReasons = flags.map((f) => f.description);
       if (r.amlRiskLevel === 'High') flaggedReasons.unshift('High AML risk');
       if (r.amlRiskLevel === 'Medium') flaggedReasons.unshift('Medium AML risk');
       const providerEvidence = evidenceRows.find((record) => record.vendorId === r.id);
 
+      const submittedAt = r.tier2SubmittedAt ?? providerEvidence?.updatedAt ?? new Date();
+
       return {
         vendorId: r.id,
         vendorName: r.businessName ?? 'Unknown',
         vendorEmail: r.userEmail,
-        submittedAt: r.tier2SubmittedAt!,
+        submittedAt,
         amlRiskLevel: (r.amlRiskLevel as PendingApproval['amlRiskLevel']) ?? undefined,
         fraudRiskScore: r.fraudRiskScore ? Number(r.fraudRiskScore) : undefined,
         flaggedReasons,
@@ -225,6 +302,14 @@ export class KYCRepository {
           : undefined,
       };
     });
+  }
+
+  /**
+   * Get a single pending approval with latest provider evidence.
+   */
+  async getPendingApprovalByVendorId(vendorId: string): Promise<PendingApproval | null> {
+    const approvals = await this.getPendingApprovals();
+    return approvals.find((approval) => approval.vendorId === vendorId) ?? null;
   }
 
   /**

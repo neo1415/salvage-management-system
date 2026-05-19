@@ -182,7 +182,7 @@ const DojahAddressDataSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const DojahVerificationResultSchema = z.object({
-  status: z.boolean(),
+  status: z.boolean().optional().nullable(),
   message: z.string().optional().nullable(),
   reference_id: z.string().optional().nullable(),
   verification_status: z.string().optional().nullable(),
@@ -264,15 +264,18 @@ export const DojahVerificationResultSchema = z.object({
             .object({
               first_name: z.string().optional().nullable(),
               last_name: z.string().optional().nullable(),
+              email: z.string().optional().nullable(),
               dob: z
                 .string()
                 .optional()
                 .nullable()
                 .transform((v) => (v ? toISODate(v) : v)),
             })
+            .passthrough()
             .optional()
             .nullable(),
         })
+        .passthrough()
         .optional()
         .nullable(),
       phone_number: z
@@ -308,6 +311,7 @@ export const DojahVerificationResultSchema = z.object({
       ipinfo: z.record(z.unknown()).optional().nullable(),
       device_info: z.string().optional().nullable(),
     })
+    .passthrough()
     .optional()
     .nullable(),
 });

@@ -96,6 +96,19 @@ export async function POST(
       { decision, reason }
     )
   );
+  await logAction(
+    createAuditLogData(
+      request,
+      session.user.id,
+      decision === 'approve'
+        ? AuditActionType.VENDOR_TIER2_APPROVED
+        : AuditActionType.VENDOR_TIER2_REJECTED,
+      AuditEntityType.KYC,
+      vendorId,
+      undefined,
+      { decision, reason, source: 'manager_review' }
+    )
+  );
 
   if (vendorUser) {
     const target = {

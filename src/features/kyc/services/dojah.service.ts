@@ -19,6 +19,17 @@ interface DojahConfig {
   easyDetectIngestKey?: string;
 }
 
+export class DojahVerificationLookupError extends Error {
+  constructor(
+    message: string,
+    public readonly referenceId: string,
+    public readonly reason: 'not_found_or_invalid_reference' | 'unexpected_response'
+  ) {
+    super(message);
+    this.name = 'DojahVerificationLookupError';
+  }
+}
+
 /**
  * DojahService
  *
@@ -65,11 +76,36 @@ export class DojahService {
 
     const res = await this.fetchWithRetry(url, { method: 'GET', headers: this.headers });
     const json = await res.json();
+    const candidate = (json?.entity && typeof json.entity === 'object') ? json.entity : json;
 
-    const parsed = DojahVerificationResultSchema.safeParse(json);
+    const parsed = DojahVerificationResultSchema.safeParse(candidate);
+    const hasVerificationData = Boolean(
+      candidate?.reference_id ||
+      candidate?.verification_status ||
+      candidate?.data ||
+      candidate?.aml
+    );
+    if (parsed.success && !hasVerificationData) {
+      throw new DojahVerificationLookupError(
+        'Dojah did not return verification details for this reference.',
+        referenceId,
+        'not_found_or_invalid_reference'
+      );
+    }
     if (!parsed.success) {
-      console.error('[DojahService] getVerificationResult parse error', parsed.error.flatten());
-      throw new Error('Dojah verification result failed schema validation');
+      console.error('[DojahService] getVerificationResult parse error', {
+        referenceId,
+        hasVerificationData,
+        fields: candidate && typeof candidate === 'object' ? Object.keys(candidate) : [],
+        validation: parsed.error.flatten(),
+      });
+      throw new DojahVerificationLookupError(
+        hasVerificationData
+          ? 'Dojah returned an unexpected verification response shape.'
+          : 'Dojah did not return verification details for this reference.',
+        referenceId,
+        hasVerificationData ? 'unexpected_response' : 'not_found_or_invalid_reference'
+      );
     }
     return parsed.data;
   }

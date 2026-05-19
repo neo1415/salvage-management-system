@@ -3,8 +3,50 @@ import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, or, sql } from 'drizzle-orm';
+import { eq, and, or, sql, inArray, isNotNull, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
+import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
+
+const DOJAH_TIER2_REVIEW_STATUSES = [
+  'pending',
+  'review_required',
+  'passed',
+  'failed',
+  'provider_unavailable',
+  'completed',
+  'submitted',
+] as const;
+
+type ProviderEvidenceRow = {
+  vendorId: string | null;
+  provider: string;
+  providerReference: string | null;
+  verificationType: string;
+  status: string;
+  riskLevel: string;
+  checksCompleted: string[];
+  pendingChecks: string[];
+  failedChecks: string[];
+  reasonCodes: string[];
+  displayMessage: string | null;
+  normalizedResult: Record<string, unknown> | null;
+  updatedAt: Date;
+};
+
+function normalizeTierParam(tier: string | null): string | null {
+  if (!tier) return null;
+  if (tier === 'tier1') return 'tier1_bvn';
+  if (tier === 'tier2') return 'tier2_full';
+  return tier;
+}
+
+function normalizeStatusParam(status: string | null): 'pending' | 'approved' | 'rejected' | null {
+  if (!status || status === 'all') return null;
+  if (['pending', 'pending_review', 'review_required', 'submitted'].includes(status)) return 'pending';
+  if (['approved', 'verified', 'passed'].includes(status)) return 'approved';
+  if (['rejected', 'failed'].includes(status)) return 'rejected';
+  return null;
+}
 
 /**
  * Vendors API - Get vendors list
@@ -46,8 +88,8 @@ export async function GET(request: NextRequest) {
 
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
-    const statusFilter = searchParams.get('status');
-    const tierFilter = searchParams.get('tier');
+    const statusFilter = normalizeStatusParam(searchParams.get('status'));
+    const tierFilter = normalizeTierParam(searchParams.get('tier'));
     const search = searchParams.get('search') || '';
     const page = parseInt(searchParams.get('page') || '1', 10);
     const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
@@ -55,13 +97,22 @@ export async function GET(request: NextRequest) {
     // SCALABILITY: Cache key for this specific query
     // Cache for 10 minutes to balance freshness with performance
     const cacheKey = `vendors:list:${statusFilter}:${tierFilter}:${search}:${page}:${pageSize}`;
-    const cached = await cache.get(cacheKey);
+    const bypassCache = statusFilter === 'pending' || tierFilter === 'tier2_full' || tierFilter === 'tier2';
+    const cached = bypassCache ? null : await cache.get(cacheKey);
     
     if (cached) {
       console.log(`✅ Cache HIT: ${cacheKey}`);
       return NextResponse.json(cached);
     }
     console.log(`❌ Cache MISS: ${cacheKey}`);
+
+    const [{ exists: providerVerificationTableExists } = { exists: false }] = await db.execute<{
+      exists: boolean;
+    }>(sql`select to_regclass('public.provider_verification_records') is not null as "exists"`);
+
+    if (!providerVerificationTableExists) {
+      console.warn('[Vendors API] provider_verification_records table missing; returning legacy vendor data only. Run migration 0034 for Dojah reconciliation.');
+    }
 
     // Build query conditions
     const conditions = [];
@@ -72,24 +123,72 @@ export async function GET(request: NextRequest) {
       // Map frontend tier values to database enum values
       const tierMap: Record<string, string> = {
         'tier0': 'tier0',
+        'tier1': 'tier1_bvn',
         'tier1_bvn': 'tier1_bvn',
+        'tier2': 'tier2_full',
         'tier2_full': 'tier2_full',
       };
       
       const dbTier = tierMap[tierFilter] || tierFilter;
       
-      // For tier2_full filter, also include vendors with pending tier2 submissions
+      // For tier2_full filter, include legacy submissions and Dojah provider pending review
       if (dbTier === 'tier2_full') {
         conditions.push(
           or(
             eq(vendors.tier, 'tier2_full'),
             and(
               eq(vendors.tier, 'tier1_bvn'),
-              sql`${vendors.tier2SubmittedAt} IS NOT NULL`,
               sql`${vendors.tier2ApprovedAt} IS NULL`,
-              sql`${vendors.tier2RejectionReason} IS NULL`
+              sql`${vendors.tier2RejectionReason} IS NULL`,
+              providerVerificationTableExists
+                ? or(
+                    isNotNull(vendors.tier2SubmittedAt),
+                    inArray(
+                      vendors.id,
+                      db
+                        .select({ vendorId: providerVerificationRecords.vendorId })
+                        .from(providerVerificationRecords)
+                        .where(
+                          and(
+                            eq(providerVerificationRecords.provider, 'dojah'),
+                            eq(providerVerificationRecords.verificationType, 'tier2'),
+                            inArray(providerVerificationRecords.status, [...DOJAH_TIER2_REVIEW_STATUSES]),
+                            isNotNull(providerVerificationRecords.vendorId)
+                          )
+                        )
+                    )
+                  )
+                : isNotNull(vendors.tier2SubmittedAt)
             )
           )
+        );
+      } else if (dbTier === 'tier1_bvn') {
+        conditions.push(
+          providerVerificationTableExists
+            ? or(
+                eq(vendors.tier, 'tier1_bvn'),
+                eq(vendors.tier, 'tier2_full'),
+                isNotNull(vendors.bvnVerifiedAt),
+                inArray(
+                  vendors.id,
+                  db
+                    .select({ vendorId: providerVerificationRecords.vendorId })
+                    .from(providerVerificationRecords)
+                    .where(
+                      and(
+                        eq(providerVerificationRecords.provider, 'dojah'),
+                        inArray(providerVerificationRecords.verificationType, ['bvn', 'tier1']),
+                        inArray(providerVerificationRecords.status, ['passed', 'review_required']),
+                        isNotNull(providerVerificationRecords.vendorId)
+                      )
+                    )
+                )
+              )
+            : or(
+                eq(vendors.tier, 'tier1_bvn'),
+                eq(vendors.tier, 'tier2_full'),
+                isNotNull(vendors.bvnVerifiedAt)
+              )
         );
       } else {
         conditions.push(eq(vendors.tier, dbTier as 'tier0' | 'tier1_bvn' | 'tier2_full'));
@@ -147,35 +246,85 @@ export async function GET(request: NextRequest) {
       .from(vendors)
       .innerJoin(users, eq(vendors.userId, users.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(vendors.createdAt)
+      .orderBy(sql`${vendors.createdAt} DESC`)
       .limit(pageSize + 1)
       .offset(offset);
 
     // Check if there are more items
     const hasMore = vendorsList.length > pageSize;
     const data = hasMore ? vendorsList.slice(0, pageSize) : vendorsList;
+    const vendorIds = data.map((vendor) => vendor.id);
+
+    const providerRows: ProviderEvidenceRow[] = providerVerificationTableExists && vendorIds.length
+      ? await db
+          .select({
+            vendorId: providerVerificationRecords.vendorId,
+            provider: providerVerificationRecords.provider,
+            providerReference: providerVerificationRecords.providerReference,
+            verificationType: providerVerificationRecords.verificationType,
+            status: providerVerificationRecords.status,
+            riskLevel: providerVerificationRecords.riskLevel,
+            checksCompleted: providerVerificationRecords.checksCompleted,
+            pendingChecks: providerVerificationRecords.pendingChecks,
+            failedChecks: providerVerificationRecords.failedChecks,
+            reasonCodes: providerVerificationRecords.reasonCodes,
+            displayMessage: providerVerificationRecords.displayMessage,
+            normalizedResult: providerVerificationRecords.normalizedResult,
+            updatedAt: providerVerificationRecords.updatedAt,
+          })
+          .from(providerVerificationRecords)
+          .where(inArray(providerVerificationRecords.vendorId, vendorIds))
+          .orderBy(desc(providerVerificationRecords.updatedAt))
+      : [];
+
+    const dojahPendingVendorIdSet = new Set<string>();
+    if (providerVerificationTableExists && tierFilter === 'tier2_full') {
+      const dojahPendingRows = await db
+        .select({ vendorId: providerVerificationRecords.vendorId })
+        .from(providerVerificationRecords)
+        .where(
+          and(
+            eq(providerVerificationRecords.provider, 'dojah'),
+            eq(providerVerificationRecords.verificationType, 'tier2'),
+            inArray(providerVerificationRecords.status, [...DOJAH_TIER2_REVIEW_STATUSES]),
+            isNotNull(providerVerificationRecords.vendorId)
+          )
+        );
+      for (const row of dojahPendingRows) {
+        if (row.vendorId) dojahPendingVendorIdSet.add(row.vendorId);
+      }
+    }
 
     // For Tier 2 pending applications, return verification statuses from database
     const vendorsWithVerification = data.map((vendor) => {
-      // Determine KYC status based on Tier 2 approval workflow
-      // CRITICAL: Status should be based on tier2ApprovedAt/tier2RejectionReason, NOT vendor.status or vendor.tier
+      const latestProviderEvidence = providerRows.find((record) => record.vendorId === vendor.id);
+      const hasDojahTier1Passed = providerRows.some((record) =>
+        record.vendorId === vendor.id &&
+        ['bvn', 'tier1'].includes(record.verificationType) &&
+        ['passed', 'review_required'].includes(record.status)
+      );
+
+      // Determine KYC status based on the selected tier workflow.
       let kycStatus: 'pending' | 'approved' | 'rejected' = 'pending';
-      
-      // Check Tier 2 specific approval status
-      if (vendor.tier2ApprovedAt) {
-        // Has been approved for Tier 2
+
+      if (tierFilter === 'tier1_bvn') {
+        if (vendor.status === 'suspended') {
+          kycStatus = 'rejected';
+        } else if (vendor.bvnVerifiedAt || hasDojahTier1Passed || vendor.tier === 'tier1_bvn' || vendor.tier === 'tier2_full') {
+          kycStatus = 'approved';
+        }
+      } else if (vendor.tier2ApprovedAt || vendor.tier === 'tier2_full') {
         kycStatus = 'approved';
       } else if (vendor.tier2RejectionReason) {
-        // Has been rejected for Tier 2
         kycStatus = 'rejected';
-      } else if (vendor.tier2SubmittedAt) {
-        // Has submitted Tier 2 but not yet approved or rejected = pending
+      } else if (
+        vendor.tier2SubmittedAt ||
+        (dojahPendingVendorIdSet.has(vendor.id) && !vendor.tier2ApprovedAt && !vendor.tier2RejectionReason)
+      ) {
         kycStatus = 'pending';
       } else if (vendor.status === 'suspended') {
-        // Account suspended
         kycStatus = 'rejected';
       } else {
-        // No Tier 2 submission yet - default to pending
         kycStatus = 'pending';
       }
 
@@ -203,6 +352,23 @@ export async function GET(request: NextRequest) {
         tier2RejectionReason: vendor.tier2RejectionReason,
         // AI verification data for manual KYC
         ninVerificationData: vendor.ninVerificationData,
+        verificationSource: latestProviderEvidence?.provider === 'dojah' ? 'dojah' : 'legacy',
+        providerEvidence: latestProviderEvidence
+          ? {
+              provider: latestProviderEvidence.provider,
+              providerReference: latestProviderEvidence.providerReference,
+              verificationType: latestProviderEvidence.verificationType,
+              status: latestProviderEvidence.status,
+              riskLevel: latestProviderEvidence.riskLevel,
+              checksCompleted: latestProviderEvidence.checksCompleted,
+              pendingChecks: latestProviderEvidence.pendingChecks,
+              failedChecks: latestProviderEvidence.failedChecks,
+              reasonCodes: latestProviderEvidence.reasonCodes,
+              displayMessage: latestProviderEvidence.displayMessage,
+              normalizedResult: latestProviderEvidence.normalizedResult,
+              updatedAt: latestProviderEvidence.updatedAt,
+            }
+          : undefined,
       };
     });
 
@@ -220,11 +386,19 @@ export async function GET(request: NextRequest) {
       pageSize,
     };
 
-    // SCALABILITY: Cache the response for 10 minutes (600 seconds)
-    await cache.set(cacheKey, response, 600);
-    console.log(`✅ Cached response: ${cacheKey}`);
+    // Keep Tier 2 review queues fresh; stale cache can hide newly submitted Dojah evidence.
+    if (!bypassCache) {
+      await cache.set(cacheKey, response, 600);
+      console.log(`✅ Cached response: ${cacheKey}`);
+    }
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, bypassCache ? {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
+    } : undefined);
   } catch (error) {
     console.error('Error fetching vendors:', error);
     return NextResponse.json(

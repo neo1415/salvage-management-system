@@ -22,6 +22,34 @@ async function json(response: Response) {
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+describe('provider evidence display helpers', () => {
+  it('masks sensitive identifiers and uses safe fallbacks', async () => {
+    const { maskIdentifier, displayOrFallback, buildDojahEvidenceSections } = await import(
+      '@/features/kyc/utils/provider-evidence-display'
+    );
+
+    expect(maskIdentifier('RC123456789')).toBe('*******6789');
+    expect(displayOrFallback(null)).toBe('Not provided by Dojah');
+
+    const sections = buildDojahEvidenceSections(
+      { livenessScore: 88, verificationStatus: 'completed' },
+      {
+        provider: 'dojah',
+        providerReference: 'ref-1',
+        status: 'review_required',
+        riskLevel: 'medium',
+        checksCompleted: ['liveness'],
+        pendingChecks: [],
+        failedChecks: [],
+        reasonCodes: [],
+      }
+    );
+
+    expect(sections.liveness['Liveness score']).toBe('88%');
+    expect(sections.providerSummary.Provider).toBe('dojah');
+  });
+});
+
 describe('Dojah widget config route', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -53,6 +81,20 @@ describe('Dojah widget config route', () => {
     vi.doMock('@/lib/db/schema/vendors', () => ({ vendors: { id: 'vendors.id', userId: 'vendors.userId' } }));
     vi.doMock('@/lib/db/schema/users', () => ({ users: { id: 'users.id', dateOfBirth: 'users.dateOfBirth' } }));
     vi.doMock('drizzle-orm', () => ({ eq: vi.fn(() => ({ op: 'eq' })) }));
+    vi.doMock('@/features/kyc/services/provider-verification.service', () => ({
+      getProviderVerificationService: () => ({
+        getOrCreatePendingWorkflow: vi.fn(async () => ({
+          providerReference: 'nem-tier2-vendor-1-reference',
+          created: true,
+        })),
+      }),
+    }));
+    vi.doMock('@/features/kyc/services/dojah-reconcile.service', () => ({
+      reconcileTier2FromDojah: vi.fn(async () => ({ synced: false })),
+    }));
+    vi.doMock('@/lib/utils/audit-logger', () => ({
+      getIpAddress: vi.fn(() => '127.0.0.1'),
+    }));
     vi.doMock('@/lib/db/drizzle', () => ({
       db: {
         select: vi.fn(() => makeChain([{ vendorId: 'vendor-1', dateOfBirth: new Date('1990-01-15T00:00:00Z') }])),
@@ -60,7 +102,7 @@ describe('Dojah widget config route', () => {
     }));
 
     const route = await import('@/app/api/kyc/widget-config/route');
-    const response = await route.GET();
+    const response = await route.GET(new Request('http://localhost:3000/api/kyc/widget-config'));
     const body = await json(response);
 
     expect(response.status).toBe(200);
@@ -72,6 +114,7 @@ describe('Dojah widget config route', () => {
       dob: '1990-01-15',
       vendorId: 'vendor-1',
       workflowSlug: 'salvage',
+      verificationReference: 'nem-tier2-vendor-1-reference',
     });
 
     const serialized = JSON.stringify(body).toLowerCase();
@@ -200,6 +243,7 @@ describe('Provider verification service', () => {
   });
 
   it('creates/updates provider records and creates fraud alerts for Dojah risk signals', async () => {
+    vi.doUnmock('@/features/kyc/services/provider-verification.service');
     const insert = vi.fn(() => makeChain());
     const update = vi.fn(() => makeChain());
     const select = vi.fn(() => makeChain([{ id: 'admin-1' }]));

@@ -1,4 +1,5 @@
-import { and, eq } from 'drizzle-orm';
+import crypto from 'crypto';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
   providerVerificationRecords,
@@ -19,6 +20,15 @@ interface PersistVerificationInput {
   result: NormalizedVerificationResult;
   rawPayload?: unknown;
   actorId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+interface StartWorkflowInput {
+  userId: string;
+  vendorId: string;
+  actorId: string;
+  workflowSlug?: string;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -63,6 +73,107 @@ function actionForStatus(status: VerificationStatus): AuditActionType {
 }
 
 export class ProviderVerificationService {
+  async getOrCreatePendingWorkflow(input: StartWorkflowInput): Promise<{ providerReference: string; created: boolean }> {
+    const existing = await db.query.providerVerificationRecords.findFirst({
+      where: and(
+        eq(providerVerificationRecords.provider, 'dojah'),
+        eq(providerVerificationRecords.vendorId, input.vendorId),
+        eq(providerVerificationRecords.verificationType, 'tier2'),
+        inArray(providerVerificationRecords.status, ['pending', 'provider_unavailable'])
+      ),
+      orderBy: [desc(providerVerificationRecords.updatedAt)],
+    });
+
+    if (existing?.providerReference) {
+      return { providerReference: existing.providerReference, created: false };
+    }
+
+    const providerReference = `nem-tier2-${input.vendorId}-${crypto.randomUUID()}`;
+    const now = new Date();
+    const pendingChecks = [
+      'business_data',
+      'business_id',
+      'digital_address',
+      'government_id',
+      'liveness',
+      'government_data',
+      'aml_screening',
+      'duplicate_id_face',
+      'ip_device_screening',
+    ];
+
+    await db.insert(providerVerificationRecords).values({
+      provider: 'dojah',
+      providerReference,
+      workflowReference: input.workflowSlug || 'salvage',
+      userId: input.userId,
+      vendorId: input.vendorId,
+      verificationType: 'tier2',
+      status: 'pending',
+      riskLevel: 'low',
+      checksCompleted: [],
+      pendingChecks,
+      failedChecks: [],
+      reasonCodes: [],
+      displayMessage: 'Dojah Tier 2 verification workflow has been started.',
+      normalizedResult: {
+        workflowSlug: input.workflowSlug || 'salvage',
+        startedAt: now.toISOString(),
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await logAction({
+      userId: input.actorId,
+      actionType: AuditActionType.DOJAH_WORKFLOW_STARTED,
+      entityType: AuditEntityType.KYC,
+      entityId: input.vendorId,
+      ipAddress: input.ipAddress ?? 'system',
+      deviceType: DeviceType.DESKTOP,
+      userAgent: input.userAgent ?? 'system',
+      afterState: {
+        provider: 'dojah',
+        providerReference,
+        workflowSlug: input.workflowSlug || 'salvage',
+        verificationType: 'tier2',
+      },
+    });
+
+    await logAction({
+      userId: input.actorId,
+      actionType: AuditActionType.DOJAH_REFERENCE_CREATED,
+      entityType: AuditEntityType.KYC,
+      entityId: input.vendorId,
+      ipAddress: input.ipAddress ?? 'system',
+      deviceType: DeviceType.DESKTOP,
+      userAgent: input.userAgent ?? 'system',
+      afterState: {
+        provider: 'dojah',
+        providerReference,
+        workflowSlug: input.workflowSlug || 'salvage',
+        verificationType: 'tier2',
+      },
+    });
+
+    await logAction({
+      userId: input.actorId,
+      actionType: AuditActionType.DOJAH_VERIFICATION_STARTED,
+      entityType: AuditEntityType.KYC,
+      entityId: input.vendorId,
+      ipAddress: input.ipAddress ?? 'system',
+      deviceType: DeviceType.DESKTOP,
+      userAgent: input.userAgent ?? 'system',
+      afterState: {
+        provider: 'dojah',
+        providerReference,
+        verificationType: 'tier2',
+      },
+    });
+
+    return { providerReference, created: true };
+  }
+
   async recordWebhookEvent(input: WebhookEventInput): Promise<{ duplicate: boolean }> {
     const encrypted = encryptPayload(input.rawPayload);
     const existing = await db.query.providerWebhookEvents.findFirst({
@@ -164,6 +275,23 @@ export class ProviderVerificationService {
     }
 
     if (actorId) {
+      await logAction({
+        userId: actorId,
+        actionType: AuditActionType.PROVIDER_VERIFICATION_STORED,
+        entityType: AuditEntityType.KYC,
+        entityId,
+        ipAddress: input.ipAddress ?? 'system',
+        deviceType: DeviceType.DESKTOP,
+        userAgent: input.userAgent ?? 'system',
+        afterState: {
+          provider: input.result.provider,
+          providerReference: input.result.providerReference,
+          verificationType: input.result.verificationType,
+          status: input.result.status,
+          riskLevel: input.result.riskLevel,
+        },
+      });
+
       await logAction({
         userId: actorId,
         actionType: actionForStatus(input.result.status),

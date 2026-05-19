@@ -6,9 +6,26 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import {
   Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle,
-  Shield, User, FileText, Eye, Download
+  Shield, User, FileText, Eye, Download, RefreshCw
 } from 'lucide-react';
 import type { PendingApproval } from '@/features/kyc/types/kyc.types';
+import type { DojahEvidenceSections } from '@/features/kyc/utils/provider-evidence-display';
+
+function EvidenceSectionGrid({ title, fields }: { title: string; fields: Record<string, string> }) {
+  return (
+    <div className="mb-4">
+      <h3 className="text-sm font-semibold text-gray-800 mb-2">{title}</h3>
+      <dl className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+        {Object.entries(fields).map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-gray-500">{label}</dt>
+            <dd className="font-medium text-gray-900 break-words">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
 
 export default function KYCApprovalDetailPage() {
   const router = useRouter();
@@ -24,89 +41,69 @@ export default function KYCApprovalDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<'approved' | 'rejected' | null>(null);
   const [exportingEvidence, setExportingEvidence] = useState(false);
+  const [evidenceSections, setEvidenceSections] = useState<DojahEvidenceSections | null>(null);
+  const [verificationSource, setVerificationSource] = useState<'dojah' | 'legacy_manual' | 'unknown'>('unknown');
+  const [refreshingEvidence, setRefreshingEvidence] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
 
+  async function loadApproval(refresh = false) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/kyc/approvals/${vendorId}${refresh ? '?refresh=1' : ''}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Failed to load application');
+      }
+      const data = await res.json();
+      setApproval(data.approval as PendingApproval);
+      setEvidenceSections((data.evidenceSections as DojahEvidenceSections | null) ?? null);
+      setVerificationSource((data.verificationSource as typeof verificationSource) ?? 'unknown');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load application');
+      setApproval(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (status !== 'authenticated') return;
-    fetch('/api/kyc/approvals')
-      .then((r) => r.ok ? r.json() : Promise.reject(r))
-      .then((data) => {
-        const found = (data.approvals as PendingApproval[]).find((a) => a.vendorId === vendorId);
-        if (found) {
-          setApproval(found);
-        } else {
-          // Try fetching from vendors API for manual KYC submissions
-          fetch(`/api/vendors?tier=tier2_full`)
-            .then((r) => r.ok ? r.json() : Promise.reject(r))
-            .then((vendorsData) => {
-              const vendor = vendorsData.vendors?.find((v: any) => v.id === vendorId);
-              if (vendor && vendor.tier2SubmittedAt && !vendor.tier2ApprovedAt && !vendor.tier2RejectionReason) {
-                // Convert vendor data to PendingApproval format
-                const aiVerification = vendor.ninVerificationData as any;
-                
-                // Fetch signed URLs for documents
-                fetch(`/api/kyc/documents/${vendorId}`)
-                  .then((r) => r.ok ? r.json() : Promise.reject(r))
-                  .then((docsData) => {
-                    setApproval({
-                      vendorId: vendor.id,
-                      vendorName: vendor.businessName || vendor.user?.fullName || 'Unknown',
-                      vendorEmail: vendor.user?.email || '',
-                      submittedAt: vendor.tier2SubmittedAt,
-                      amlRiskLevel: undefined,
-                      fraudRiskScore: aiVerification?.score ? 100 - aiVerification.score : undefined,
-                      flaggedReasons: aiVerification?.findings?.concerns || [],
-                      selfieUrl: undefined,
-                      photoIdUrl: docsData.documents?.photoId || vendor.photoIdUrl,
-                      photoIdType: 'NIN Card',
-                      addressProofUrl: docsData.documents?.addressProof || vendor.addressProofUrl,
-                      bankStatementUrl: docsData.documents?.bankStatement || vendor.bankStatementUrl,
-                      cacCertificateUrl: docsData.documents?.cacCertificate || vendor.cacCertificateUrl,
-                      ninVerificationData: aiVerification,
-                      livenessScore: undefined,
-                      biometricMatchScore: undefined,
-                      amlScreeningData: undefined,
-                    });
-                    setLoading(false);
-                  })
-                  .catch(() => {
-                    // Fallback to vendor data without signed URLs
-                    setApproval({
-                      vendorId: vendor.id,
-                      vendorName: vendor.businessName || vendor.user?.fullName || 'Unknown',
-                      vendorEmail: vendor.user?.email || '',
-                      submittedAt: vendor.tier2SubmittedAt,
-                      amlRiskLevel: undefined,
-                      fraudRiskScore: aiVerification?.score ? 100 - aiVerification.score : undefined,
-                      flaggedReasons: aiVerification?.findings?.concerns || [],
-                      selfieUrl: undefined,
-                      photoIdUrl: vendor.photoIdUrl,
-                      photoIdType: 'NIN Card',
-                      addressProofUrl: vendor.addressProofUrl,
-                      bankStatementUrl: vendor.bankStatementUrl,
-                      cacCertificateUrl: vendor.cacCertificateUrl,
-                      ninVerificationData: aiVerification,
-                      livenessScore: undefined,
-                      biometricMatchScore: undefined,
-                      amlScreeningData: undefined,
-                    });
-                    setLoading(false);
-                  });
-              } else {
-                setApproval(null);
-                setLoading(false);
-              }
-            })
-            .catch(() => { setError('Failed to load application'); setLoading(false); });
-          return;
-        }
-        setLoading(false);
-      })
-      .catch(() => { setError('Failed to load application'); setLoading(false); });
+    void loadApproval(true);
   }, [status, vendorId]);
+
+  async function handleRefreshProviderEvidence() {
+    setRefreshingEvidence(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/kyc/approvals/${vendorId}/refresh-evidence`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed to refresh provider evidence');
+      if (data.approval) {
+        setApproval(data.approval as PendingApproval);
+        if (data.evidenceSections) {
+          setEvidenceSections(data.evidenceSections as DojahEvidenceSections);
+        } else {
+          await loadApproval(false);
+        }
+      } else if (!data.reconcile?.synced) {
+        setError(
+          'Could not pull a completed Dojah result for the stored reference. If the dashboard uses a different reference, ask an admin to refresh with that reference.'
+        );
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to refresh provider evidence');
+    } finally {
+      setRefreshingEvidence(false);
+    }
+  }
 
   async function handleDecision(decision: 'approve' | 'reject') {
     if (decision === 'reject' && !rejectReason.trim()) {
@@ -188,6 +185,15 @@ export default function KYCApprovalDetailPage() {
   const scoreColor = (score?: number, threshold = 80) =>
     score === undefined ? 'text-gray-500' : score >= threshold ? 'text-green-600' : 'text-red-600';
 
+  const normalized = (approval.providerEvidence?.normalizedResult ?? {}) as Record<string, unknown>;
+  const displayLiveness =
+    approval.livenessScore ??
+    (typeof normalized.livenessScore === 'number' ? normalized.livenessScore : undefined);
+  const displayBiometric =
+    approval.biometricMatchScore ??
+    (typeof normalized.biometricMatchScore === 'number' ? normalized.biometricMatchScore : undefined);
+  const scoreUnavailable = verificationSource === 'dojah' ? 'Not available in this verification' : '—';
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <button onClick={() => router.back()} className="mb-6 flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors">
@@ -201,14 +207,26 @@ export default function KYCApprovalDetailPage() {
           {approval.amlRiskLevel === 'High' && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">High Risk</span>}
           {approval.amlRiskLevel === 'Medium' && <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">Medium Risk</span>}
         </div>
-        <button
-          onClick={handleEvidenceExport}
-          disabled={exportingEvidence}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-[#800020] text-[#800020] font-semibold rounded-lg hover:bg-[#800020] hover:text-white transition-colors disabled:opacity-50"
-        >
-          {exportingEvidence ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          Export Evidence CSV
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {verificationSource === 'dojah' && (
+            <button
+              onClick={handleRefreshProviderEvidence}
+              disabled={refreshingEvidence}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              {refreshingEvidence ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Refresh Dojah Evidence
+            </button>
+          )}
+          <button
+            onClick={handleEvidenceExport}
+            disabled={exportingEvidence}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-[#800020] text-[#800020] font-semibold rounded-lg hover:bg-[#800020] hover:text-white transition-colors disabled:opacity-50"
+          >
+            {exportingEvidence ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Export Evidence CSV
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -234,14 +252,14 @@ export default function KYCApprovalDetailPage() {
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-gray-500">Liveness Score</dt>
-              <dd className={`font-semibold ${scoreColor(approval.livenessScore, 50)}`}>
-                {approval.livenessScore !== undefined ? `${approval.livenessScore}%` : '—'}
+              <dd className={`font-semibold ${scoreColor(displayLiveness, 50)}`}>
+                {displayLiveness !== undefined ? `${displayLiveness}%` : scoreUnavailable}
               </dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-500">Biometric Match</dt>
-              <dd className={`font-semibold ${scoreColor(approval.biometricMatchScore, 80)}`}>
-                {approval.biometricMatchScore !== undefined ? `${approval.biometricMatchScore}%` : '—'}
+              <dd className={`font-semibold ${scoreColor(displayBiometric, 80)}`}>
+                {displayBiometric !== undefined ? `${displayBiometric}%` : scoreUnavailable}
               </dd>
             </div>
             <div className="flex justify-between">
@@ -345,6 +363,21 @@ export default function KYCApprovalDetailPage() {
           </div>
           {approval.providerEvidence.displayMessage && (
             <p className="mt-4 text-sm text-gray-600">{approval.providerEvidence.displayMessage}</p>
+          )}
+          {evidenceSections && (
+            <div className="mt-6 pt-6 border-t border-gray-100 space-y-2">
+              <EvidenceSectionGrid title="Verification Overview" fields={evidenceSections.providerSummary} />
+              <EvidenceSectionGrid title="Pending Reason" fields={evidenceSections.pendingReason} />
+              <EvidenceSectionGrid title="Business data" fields={evidenceSections.business} />
+              <EvidenceSectionGrid title="Government Data" fields={evidenceSections.governmentData} />
+              <EvidenceSectionGrid title="Liveness" fields={evidenceSections.liveness} />
+              <EvidenceSectionGrid title="Address" fields={evidenceSections.address} />
+              <EvidenceSectionGrid title="Government ID" fields={evidenceSections.governmentId} />
+              <EvidenceSectionGrid title="Business ID" fields={evidenceSections.businessId} />
+              <EvidenceSectionGrid title="IP/Device" fields={evidenceSections.ipDevice} />
+              <EvidenceSectionGrid title="Documents" fields={evidenceSections.documents} />
+              <EvidenceSectionGrid title="AML" fields={evidenceSections.aml} />
+            </div>
           )}
         </div>
       )}

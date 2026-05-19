@@ -54,9 +54,23 @@ interface DojahWidgetOptions {
     mobile?: string; // Phone number goes here according to Dojah React SDK docs
   };
   metadata?: Record<string, string>;
-  onSuccess: (response: { reference_id?: string }) => void;
+  onSuccess: (response: DojahWidgetResponse) => void;
+  onComplete?: (response: DojahWidgetResponse) => void;
   onError: (err: unknown) => void;
   onClose: () => void;
+}
+
+interface DojahWidgetResponse {
+  reference_id?: string;
+  referenceId?: string;
+  reference?: string;
+  verification_reference?: string;
+  workflow_reference?: string;
+  data?: {
+    reference_id?: string;
+    referenceId?: string;
+    reference?: string;
+  };
 }
 
 interface DojahConnect {
@@ -119,6 +133,7 @@ export default function Tier2KYCPage() {
     dob?: string;
     vendorId?: string;
     workflowSlug?: string;
+    verificationReference?: string;
   } | null>(null);
   const [widgetReady, setWidgetReady] = useState(false);
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
@@ -245,11 +260,7 @@ export default function Tier2KYCPage() {
         ? 'test'
         : 'unknown';
     const widgetType = widgetConfig.widgetId ? 'custom' : 'verification';
-    const verificationReference = [
-      'nem',
-      widgetConfig.vendorId ?? user?.id ?? 'vendor',
-      Date.now().toString(36),
-    ].join('-');
+    const verificationReference = widgetConfig.verificationReference;
 
     console.info('[Dojah Widget] Initializing', {
       publicKeyMode,
@@ -258,9 +269,39 @@ export default function Tier2KYCPage() {
       hasVendorId: Boolean(widgetConfig.vendorId),
       hasPhone: Boolean(widgetConfig.phone),
       hasDob: Boolean(widgetConfig.dob),
+      hasVerificationReference: Boolean(verificationReference),
       type: widgetType,
       origin: window.location.origin,
     });
+
+    const resolveReferenceId = (response?: DojahWidgetResponse) =>
+      response?.reference_id ||
+      response?.referenceId ||
+      response?.reference ||
+      response?.verification_reference ||
+      response?.workflow_reference ||
+      response?.data?.reference_id ||
+      response?.data?.referenceId ||
+      response?.data?.reference ||
+      verificationReference;
+
+    const handleWidgetCompletion = async (response: DojahWidgetResponse | undefined, source: 'success' | 'complete') => {
+      const referenceId = resolveReferenceId(response);
+
+      console.info('[Dojah Widget] Completion callback received', {
+        source,
+        hasProviderReference: Boolean(referenceId),
+        usedStoredReference: Boolean(referenceId && referenceId === verificationReference),
+      });
+
+      if (!referenceId) {
+        setErrorMessage('Verification completed, but the app could not identify the verification reference. Please contact support.');
+        setPageState('error');
+        return;
+      }
+
+      await handleVerificationComplete(referenceId);
+    };
 
     const options: DojahWidgetOptions = {
       app_id: widgetConfig.appId,
@@ -274,29 +315,10 @@ export default function Tier2KYCPage() {
         user_id: user?.id ?? '',
         vendor_id: widgetConfig.vendorId ?? '',
         workflow_slug: widgetConfig.workflowSlug ?? 'salvage',
+        reference_id: verificationReference ?? '',
       },
-      onSuccess: async (response) => {
-        const referenceId = response?.reference_id;
-        
-        // Check if we're in test mode
-        const isTestMode = widgetConfig.publicKey?.startsWith('test_');
-        
-        if (!referenceId) {
-          if (isTestMode) {
-            setErrorMessage(
-              'Test credentials do not support full verification. ' +
-              'This is expected behavior in sandbox mode. ' +
-              'Test mode only provides simplified face verification without document checks, AML screening, or complete verification data. ' +
-              'To enable real verification with all features, please contact support@dojah.io to upgrade to production credentials.'
-            );
-          } else {
-            setErrorMessage('Verification completed but no reference ID received. Please contact support.');
-          }
-          setPageState('error');
-          return;
-        }
-        await handleVerificationComplete(referenceId);
-      },
+      onSuccess: async (response) => handleWidgetCompletion(response, 'success'),
+      onComplete: async (response) => handleWidgetCompletion(response, 'complete'),
       onError: (err) => {
         const errorObj = err as { message?: string; referenceId?: string };
         console.error('[Dojah Widget] Error', {

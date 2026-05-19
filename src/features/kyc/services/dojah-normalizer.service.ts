@@ -156,6 +156,7 @@ export function normalizeDojahWorkflowResult(
     if (amlStatus === false || hasAmlHit(amlResult)) {
       failed.add('aml_screening');
       reasonCodes.add('dojah_aml_flagged');
+      reasonCodes.add('dojah_watchlist_flagged');
     }
   } else {
     pending.add('aml_screening');
@@ -213,6 +214,11 @@ export function normalizeDojahWorkflowResult(
       verificationStatus: result.verification_status ?? null,
       verificationMode: result.verification_mode ?? null,
       verificationType: result.verification_type ?? null,
+      providerMessage: result.message ?? null,
+      pendingReason:
+        amlStatus === false || hasAmlHit(amlResult)
+          ? 'This user has been flagged on PEP/warning/adverse-media/sanction watchlists.'
+          : null,
       livenessScore: livenessScore ?? null,
       biometricMatchScore: biometricMatchScore ?? null,
       idStatus: idStatus ?? null,
@@ -226,6 +232,7 @@ export function normalizeDojahWorkflowResult(
             businessNumber: businessId.business_number ?? null,
             businessAddress: businessId.business_address ?? null,
             registrationDate: businessId.registration_date ?? null,
+            country: (businessId as Record<string, unknown>).country ?? null,
           }
         : null,
       businessData: businessData
@@ -235,6 +242,7 @@ export function normalizeDojahWorkflowResult(
             businessNumber: businessData.business_number ?? null,
             businessAddress: businessData.business_address ?? null,
             registrationDate: businessData.registration_date ?? null,
+            country: (businessData as Record<string, unknown>).country ?? null,
           }
         : null,
       addressStatus: addressData?.status ?? null,

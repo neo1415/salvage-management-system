@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { eq, or } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { vendors } from '@/lib/db/schema/vendors';
@@ -9,7 +9,10 @@ import { providerVerificationRecords } from '@/lib/db/schema/provider-verificati
 import { getDojahService } from '@/features/kyc/services/dojah.service';
 import { normalizeDojahWorkflowResult } from '@/features/kyc/services/dojah-normalizer.service';
 import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
+import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
+import { createRoleNotifications } from '@/features/notifications/services/notification.service';
 import { logAction, AuditActionType, AuditEntityType, DeviceType, getIpAddress } from '@/lib/utils/audit-logger';
+import type { NormalizedVerificationResult } from '@/features/kyc/types/provider-verification.types';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +26,8 @@ const DojahWebhookSchema = z.object({
   reference: z.string().optional(),
   verification_reference: z.string().optional(),
   workflow_reference: z.string().optional(),
+  referenceId: z.string().optional(),
+  customer_reference: z.string().optional(),
   status: z.union([z.string(), z.boolean()]).optional(),
   data: z.record(z.unknown()).optional(),
   metadata: z.record(z.unknown()).optional(),
@@ -69,6 +74,35 @@ function verifyWebhookSecret(request: NextRequest, rawBody: string): boolean {
 
 function stringFrom(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function isCompletionLikeWebhook(payload: z.infer<typeof DojahWebhookSchema>, eventType: string): boolean {
+  const status = String(payload.status ?? payload.data?.status ?? payload.data?.verification_status ?? '').toLowerCase();
+  const event = eventType.toLowerCase();
+  return [
+    event,
+    status,
+  ].some((value) =>
+    value.includes('complete') ||
+    value.includes('completed') ||
+    value.includes('success') ||
+    value.includes('pass') ||
+    value.includes('fail') ||
+    value.includes('review') ||
+    value.includes('submitted')
+  );
+}
+
+function withProviderReference(
+  result: NormalizedVerificationResult,
+  providerReference?: string,
+  workflowReference?: string
+): NormalizedVerificationResult {
+  return {
+    ...result,
+    providerReference: result.providerReference || providerReference,
+    workflowReference: result.workflowReference || workflowReference || providerReference,
+  };
 }
 
 async function resolveVendor(payload: z.infer<typeof DojahWebhookSchema>, providerReference?: string) {
@@ -124,10 +158,17 @@ export async function POST(request: NextRequest) {
   const eventType = payload.event || payload.event_type || payload.type || 'unknown';
   const providerReference =
     payload.reference_id ||
+    payload.referenceId ||
     payload.reference ||
+    payload.customer_reference ||
     payload.verification_reference ||
+    stringFrom(payload.metadata?.reference_id) ||
+    stringFrom(payload.metadata?.referenceId) ||
+    stringFrom(payload.metadata?.customer_reference) ||
     stringFrom(payload.data?.reference_id) ||
-    stringFrom(payload.data?.reference);
+    stringFrom(payload.data?.referenceId) ||
+    stringFrom(payload.data?.reference) ||
+    stringFrom(payload.data?.customer_reference);
   const workflowReference = payload.workflow_reference || providerReference;
   const eventId =
     payload.event_id ||
@@ -189,20 +230,53 @@ export async function POST(request: NextRequest) {
   try {
     const vendor = await resolveVendor(payload, providerReference);
     if (!vendor) {
+      await logAction({
+        userId: systemActorId,
+        actionType: AuditActionType.DOJAH_WEBHOOK_UNMATCHED,
+        entityType: AuditEntityType.KYC,
+        entityId: providerReference || eventId,
+        ipAddress,
+        deviceType: DeviceType.DESKTOP,
+        userAgent,
+        afterState: { provider: 'dojah', eventType, providerReference },
+      });
       await providerService.markWebhookProcessed('dojah', eventId);
       return NextResponse.json({ ok: true, ignored: 'vendor_not_found' });
     }
+
+    await logAction({
+      userId: systemActorId,
+      actionType: AuditActionType.DOJAH_WEBHOOK_MATCHED,
+      entityType: AuditEntityType.KYC,
+      entityId: vendor.id,
+      ipAddress,
+      deviceType: DeviceType.DESKTOP,
+      userAgent,
+      afterState: { provider: 'dojah', eventType, providerReference, vendorId: vendor.id },
+    });
 
     const user = await db.query.users.findFirst({
       where: eq(users.id, vendor.userId),
     });
 
-    const verificationResult = providerReference
-      ? await getDojahService().getVerificationResult(providerReference)
-      : null;
+    let verificationResult = null;
+    if (providerReference) {
+      try {
+        verificationResult = await getDojahService().getVerificationResult(providerReference);
+      } catch (error) {
+        console.error('[Dojah Webhook] Provider result fetch failed; storing webhook payload for review', {
+          providerReference,
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
 
-    const normalized = normalizeDojahWorkflowResult(
-      verificationResult ?? (payload as unknown as Parameters<typeof normalizeDojahWorkflowResult>[0])
+    const normalized = withProviderReference(
+      normalizeDojahWorkflowResult(
+        verificationResult ?? (payload as unknown as Parameters<typeof normalizeDojahWorkflowResult>[0])
+      ),
+      providerReference,
+      workflowReference
     );
     await providerService.persistVerification({
       userId: vendor.userId,
@@ -213,6 +287,35 @@ export async function POST(request: NextRequest) {
       ipAddress,
       userAgent,
     });
+
+    if (isCompletionLikeWebhook(payload, eventType)) {
+      await getKYCRepository().upsertVerificationData(vendor.id, {
+        dojahReferenceId: normalized.providerReference || providerReference || eventId,
+        tier2SubmittedAt: new Date(),
+      });
+
+      await logAction({
+        userId: systemActorId,
+        actionType: AuditActionType.VENDOR_TIER2_PENDING_REVIEW,
+        entityType: AuditEntityType.KYC,
+        entityId: vendor.id,
+        ipAddress,
+        deviceType: DeviceType.DESKTOP,
+        userAgent,
+        afterState: {
+          provider: 'dojah',
+          providerReference: normalized.providerReference || providerReference,
+          source: 'webhook',
+        },
+      });
+
+      await createRoleNotifications(['salvage_manager', 'system_admin'], {
+        type: 'tier2_pending_review',
+        title: 'Tier 2 KYC Ready for Review',
+        message: 'A vendor completed Dojah verification and is ready for manual review.',
+        data: { vendorId: vendor.id, providerReference: normalized.providerReference || providerReference, url: `/manager/kyc-approvals/${vendor.id}` },
+      }).catch((error) => console.error('[Dojah Webhook] manager notification failed', error));
+    }
 
     await providerService.markWebhookProcessed('dojah', eventId);
     return NextResponse.json({ ok: true, userId: user?.id ?? vendor.userId });

@@ -1,14 +1,20 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { vendors } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
+import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
+import { getIpAddress } from '@/lib/utils/audit-logger';
+
+export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/kyc/status
  * Returns the current KYC status for the authenticated vendor.
+ * Reconciles stored Dojah references when the dashboard shows completion but NEM Salvage lags.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await auth();
 
@@ -16,52 +22,46 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get vendor record
-    const [vendor] = await db
-      .select({
-        tier: vendors.tier,
-        tier2SubmittedAt: vendors.tier2SubmittedAt,
-        tier2ApprovedAt: vendors.tier2ApprovedAt,
-        tier2ExpiresAt: vendors.tier2ExpiresAt,
-        tier2RejectionReason: vendors.tier2RejectionReason,
-      })
+    const [vendorRow] = await db
+      .select({ id: vendors.id })
       .from(vendors)
       .where(eq(vendors.userId, session.user.id))
       .limit(1);
 
-    if (!vendor) {
+    if (!vendorRow) {
       return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
     }
 
-    // Determine status
-    let status = 'not_started';
-    
-    // Check if Tier 2 is approved and active
-    if (vendor.tier === 'tier2_full' && vendor.tier2ApprovedAt) {
-      const now = new Date();
-      status = vendor.tier2ExpiresAt && vendor.tier2ExpiresAt < now ? 'expired' : 'approved';
-    } 
-    // Check if rejected
-    else if (vendor.tier2RejectionReason) {
-      status = 'rejected';
-    } 
-    // Check if pending review (submitted but not yet approved or rejected)
-    else if (vendor.tier2SubmittedAt && !vendor.tier2ApprovedAt && !vendor.tier2RejectionReason) {
-      status = 'pending_review';
-    }
-    // Otherwise not started or in progress
-    else if (vendor.tier2SubmittedAt) {
-      status = 'in_progress';
+    await reconcileTier2FromDojah({
+      vendorId: vendorRow.id,
+      userId: session.user.id,
+      actorId: session.user.id,
+      ipAddress: getIpAddress(request.headers),
+      userAgent: request.headers.get('user-agent') ?? 'unknown',
+    }).catch((error) => {
+      console.error('[KYC Status] reconcile skipped', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+
+    const kycStatus = await getKYCRepository().getVerificationStatus(vendorRow.id);
+    if (!kycStatus) {
+      return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
     }
 
-    return NextResponse.json({
-      status,
-      tier: vendor.tier,
-      submittedAt: vendor.tier2SubmittedAt,
-      approvedAt: vendor.tier2ApprovedAt,
-      expiresAt: vendor.tier2ExpiresAt,
-      rejectionReason: vendor.tier2RejectionReason,
-    });
+    return NextResponse.json(
+      {
+        status: kycStatus.status,
+        tier: kycStatus.tier,
+        submittedAt: kycStatus.submittedAt,
+        approvedAt: kycStatus.approvedAt,
+        expiresAt: kycStatus.expiresAt,
+        rejectionReason: kycStatus.rejectionReason,
+        dojahReferenceId: kycStatus.dojahReferenceId,
+        steps: kycStatus.steps,
+      },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (error) {
     console.error('[KYC Status] Error:', error);
     return NextResponse.json(

@@ -83,6 +83,51 @@ https://nemsalvage.com
 4. If Dojah rejects `localhost`, use an HTTPS tunnel for browser testing too, set `NEXT_PUBLIC_APP_URL` and `NEXTAUTH_URL` to that tunnel URL for that local session, and add the tunnel origin in Dojah while testing.
 5. The browser must only receive public widget config. Do not return BVN, NIN, full government ID numbers, raw documents, private keys, or raw provider payloads to the client.
 
+## Completion-to-Review Pipeline
+
+The Tier 2 widget must not rely on a browser-only reference. `/api/kyc/widget-config` creates or reuses a server-side `provider_verification_records` row before the widget opens, returns only the safe `verificationReference` to the browser, and passes the same reference to Dojah as `reference_id` plus metadata.
+
+When the widget completes, the app handles both frontend callbacks and webhook delivery:
+
+- Frontend `onSuccess` / `onComplete` calls `/api/kyc/complete` with the reference.
+- `/api/webhooks/dojah` accepts Dojah KYC Widget events, resolves the vendor from metadata or the stored provider reference, stores normalized evidence, and marks Tier 2 as pending review.
+- NEM Salvage keeps the final decision manual. A completed Dojah workflow creates evidence and moves the vendor to pending review; it does not auto-approve Tier 2 access.
+
+If Dojah says "Verification Complete" but the vendor does not appear in `/manager/vendors?tier=tier2_full&status=pending`, check:
+
+1. `provider_verification_records` has a `dojah` / `tier2` row with the same provider reference.
+2. The vendor row has `tier2_submitted_at` and `tier2_dojah_reference_id`.
+3. Dojah webhook events are arriving at `/api/webhooks/dojah`.
+4. The webhook payload includes either the metadata sent by the widget or the same reference stored before launch.
+
+The Dojah address autocomplete step is controlled by the embedded Dojah widget. If the address step only proceeds after selecting an autocomplete result, treat that as Dojah widget behavior. The app can prefill safe profile metadata, but it should not bypass Dojah's address control or store raw geolocation coordinates.
+
+## Fetch-by-Reference (Server-Side)
+
+Dojah exposes `GET /api/v1/kyc/verification?reference_id=...` (see `DojahService.getVerificationResult`). NEM Salvage uses it only on the server from:
+
+- `/api/kyc/complete` (widget callback)
+- `/api/webhooks/dojah` (after a signed webhook)
+- `/api/kyc/status` and `/api/kyc/widget-config` (reconcile stored references)
+- `POST /api/kyc/approvals/[id]/refresh-evidence` (Salvage Manager manual refresh)
+
+Callbacks and webhooks remain the primary source of truth. Reconcile/fetch is a backfill when Dojah dashboard shows "complete" but NEM Salvage never received the callback/webhook.
+
+If reconcile fails, the manager can sync with an explicit `reference_id` using `/manager/vendors?tier=tier2&status=pending` or `POST /api/kyc/dojah/sync-reference`. This is for early attempts created before the server-side reference fix. The sync route fetches Dojah by reference and only attaches evidence when it can match the vendor by stored reference, metadata, or one unambiguous email/phone match. If matching is ambiguous, pass `vendorId` explicitly.
+
+Data that Dojah does not return on the verification API (e.g. downloadable document binaries) is shown as metadata only in manager review; use Dojah dashboard or export for provider-held files.
+
+## Dojah Widget Notifications vs NEM Emails
+
+Dojah's flow settings include user notification controls such as "Send Verification Status to Users" and dashboard-level branding (logo/brand color/support email). For NEM-owned user communications:
+
+1. In the Dojah dashboard, open the Easy Onboard / verification flow configuration and disable user-facing status emails if available.
+2. Keep webhook/business notifications enabled for `kyc_widget`.
+3. Let NEM Salvage send branded emails/SMS from its own notification service when webhook/callback/review events move the user to under review, approved, or rejected.
+4. Do not include AML/PEP/sanctions details in vendor-facing emails. Show only safe operational status and next steps.
+
+Dojah file links for selfies/documents expire within one hour. NEM Salvage does not expose raw Dojah document URLs in normal manager UI; use server-side refresh or provider metadata.
+
 ## Embedded Camera Permissions
 
 The Tier 2 liveness/selfie step runs inside Dojah's embedded verification page, usually from `https://identity.dojah.io` through the Dojah widget script. Browser permission for `http://localhost:3000` and permission for the embedded Dojah origin are not always the same thing.

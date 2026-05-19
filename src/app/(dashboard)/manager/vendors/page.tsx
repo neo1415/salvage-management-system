@@ -77,6 +77,9 @@ function VendorManagementContent() {
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncReference, setSyncReference] = useState('');
+  const [syncVendorId, setSyncVendorId] = useState('');
+  const [syncingReference, setSyncingReference] = useState(false);
 
   // Tab and filter state with URL persistence
   const [activeTab, setActiveTab] = useState<TierTab>(
@@ -112,6 +115,38 @@ function VendorManagementContent() {
     setVerificationFilter([]);
     setSearchQuery('');
     setStatusFilter('all');
+  };
+
+  const handleManualDojahSync = async () => {
+    if (!syncReference.trim()) {
+      setError('Enter the Dojah reference ID from the dashboard.');
+      return;
+    }
+
+    setSyncingReference(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/kyc/dojah/sync-reference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reference_id: syncReference.trim(),
+          vendorId: syncVendorId.trim() || undefined,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Dojah reference sync failed');
+
+      setActiveTab('tier2');
+      setStatusFilter('pending');
+      setSyncReference('');
+      setSyncVendorId('');
+      reset();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Dojah reference sync failed');
+    } finally {
+      setSyncingReference(false);
+    }
   };
 
   // Determine tier query parameter based on active tab
@@ -426,6 +461,36 @@ function VendorManagementContent() {
             className="w-full mb-4"
           />
 
+          {activeTab === 'tier2' && (
+            <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Sync Dojah Reference</h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Use this for one-time reconciliation when a completed Dojah dashboard record was created before NEM stored the reference.
+              </p>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]">
+                <input
+                  value={syncReference}
+                  onChange={(event) => setSyncReference(event.target.value)}
+                  placeholder="Dojah reference ID"
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800020]"
+                />
+                <input
+                  value={syncVendorId}
+                  onChange={(event) => setSyncVendorId(event.target.value)}
+                  placeholder="Vendor ID (optional if unambiguous)"
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800020]"
+                />
+                <button
+                  onClick={handleManualDojahSync}
+                  disabled={syncingReference}
+                  className="px-4 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] disabled:opacity-50"
+                >
+                  {syncingReference ? 'Syncing...' : 'Sync'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Filter Bar */}
           <div className="flex items-center gap-2 flex-wrap mb-4">
             {verificationOptions.length > 0 && (
@@ -580,7 +645,7 @@ function VendorManagementContent() {
                   <ApplicationCard
                     application={application}
                     tier={activeTab}
-                    onReview={() => setSelectedApplication(application)}
+                    onReview={() => activeTab === 'tier2' ? router.push(`/manager/kyc-approvals/${application.id}`) : setSelectedApplication(application)}
                   />
                 </div>
               )}
@@ -599,7 +664,7 @@ function VendorManagementContent() {
                 key={application.id}
                 application={application}
                 tier={activeTab}
-                onReview={() => setSelectedApplication(application)}
+                onReview={() => activeTab === 'tier2' ? router.push(`/manager/kyc-approvals/${application.id}`) : setSelectedApplication(application)}
               />
             ))}
           </div>
@@ -640,6 +705,13 @@ function ApplicationCard({
   tier: TierTab;
   onReview: () => void;
 }) {
+  const providerEvidence = application.providerEvidence;
+  const normalized = (providerEvidence?.normalizedResult ?? {}) as Record<string, unknown>;
+  const submittedAt = application.tier2SubmittedAt || providerEvidence?.updatedAt || application.createdAt;
+  const flagCount = providerEvidence
+    ? (providerEvidence.failedChecks?.length ?? 0) + (providerEvidence.reasonCodes?.length ?? 0)
+    : 0;
+
   // Determine status badge
   const getStatusBadge = () => {
     if (application.kycStatus === 'approved') {
@@ -708,10 +780,44 @@ function ApplicationCard({
             <Calendar className="w-4 h-4 text-gray-400" />
             <span className="text-gray-600">Submitted:</span>
             <span className="font-medium text-gray-900">
-              {new Date(application.createdAt).toLocaleDateString()}
+              {new Date(submittedAt).toLocaleDateString()}
             </span>
           </div>
         </div>
+
+        {tier === 'tier2' && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4 text-sm">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-gray-500">Provider</p>
+              <p className="font-semibold text-gray-900 capitalize">{application.verificationSource === 'dojah' ? 'Dojah' : 'Legacy'}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-gray-500">Provider Status</p>
+              <p className="font-semibold text-gray-900 capitalize">
+                {providerEvidence?.status?.replace(/_/g, ' ') || 'Not available'}
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-gray-500">Risk</p>
+              <p className={`font-semibold capitalize ${
+                providerEvidence?.riskLevel === 'critical' || providerEvidence?.riskLevel === 'high'
+                  ? 'text-red-600'
+                  : providerEvidence?.riskLevel === 'medium'
+                    ? 'text-yellow-600'
+                    : 'text-gray-900'
+              }`}>
+                {providerEvidence?.riskLevel || 'Not available'}
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-gray-500">Flags</p>
+              <p className="font-semibold text-gray-900">
+                {flagCount}
+                {normalized.amlStatus === false ? ' (AML flagged)' : ''}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Business Details (Tier 2 only) */}
         {tier === 'tier2' && (
@@ -720,7 +826,7 @@ function ApplicationCard({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
               <div>
                 <span className="text-gray-600">CAC Number:</span>
-                <span className="ml-2 font-medium text-gray-900">{application.cacNumber || 'N/A'}</span>
+                <span className="ml-2 font-medium text-gray-900">{application.cacNumber || String((normalized.businessData as Record<string, unknown> | null)?.businessNumber ?? (normalized.businessId as Record<string, unknown> | null)?.businessNumber ?? 'Not provided by Dojah')}</span>
               </div>
               <div>
                 <span className="text-gray-600">TIN:</span>
@@ -787,7 +893,7 @@ function ApplicationCard({
           className="w-full bg-[#800020] text-white font-bold py-3 px-4 rounded-lg hover:bg-[#600018] transition-colors flex items-center justify-center gap-2"
         >
           <Shield className="w-5 h-5" />
-          {application.kycStatus === 'pending' ? 'Review Application' : 'View Details'}
+          {application.kycStatus === 'pending' ? 'Review' : 'View Details'}
         </button>
       </div>
     </div>
