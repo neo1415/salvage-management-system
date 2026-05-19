@@ -22,6 +22,11 @@ import {
   requestCameraPermission, 
   getCameraPermissionInstructions 
 } from '@/lib/utils/camera-permissions';
+import {
+  checkGeolocationPermission,
+  requestGeolocationPermission,
+  getGeolocationPermissionInstructions,
+} from '@/lib/utils/geolocation-permissions';
 
 declare global {
   interface Window {
@@ -61,7 +66,7 @@ interface DojahConnect {
 
 type PageState = 'idle' | 'loading_config' | 'ready' | 'verifying' | 'pending_review' | 'approved' | 'rejected' | 'expired' | 'error';
 
-const DOJAH_IFRAME_ALLOW = 'camera; microphone; fullscreen; autoplay';
+const DOJAH_IFRAME_ALLOW = 'camera; microphone; geolocation; fullscreen; autoplay';
 const TIER2_KYC_PROVIDER = process.env.NEXT_PUBLIC_TIER2_KYC_PROVIDER === 'manual' ? 'manual' : 'dojah';
 
 function formatEmbeddedCameraHelp(prefix: string) {
@@ -120,6 +125,7 @@ export default function Tier2KYCPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [connect, setConnect] = useState<DojahConnect | null>(null);
   const [cameraPermissionGranted, setCameraPermissionGranted] = useState(false);
+  const [geolocationPermissionGranted, setGeolocationPermissionGranted] = useState(false);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
 
@@ -407,42 +413,69 @@ export default function Tier2KYCPage() {
     setErrorMessage(null);
 
     try {
-      // First check if permission is already granted
-      const checkResult = await checkCameraPermission();
+      // First check camera permission
+      const cameraCheckResult = await checkCameraPermission();
       
-      if (checkResult.granted) {
+      if (cameraCheckResult.granted) {
         setCameraPermissionGranted(true);
+      } else if (cameraCheckResult.error && !cameraCheckResult.needsPrompt) {
+        // Camera permission is denied or there's a hard error
+        setErrorMessage(formatEmbeddedCameraHelp(`${cameraCheckResult.error} ${getCameraPermissionInstructions()}`));
+        setCheckingPermissions(false);
+        return;
+      } else if (cameraCheckResult.needsPrompt) {
+        // Need to request camera permission
+        const cameraRequestResult = await requestCameraPermission();
+        
+        if (cameraRequestResult.granted) {
+          setCameraPermissionGranted(true);
+        } else {
+          console.warn('Camera permission request failed, but continuing to geolocation check');
+        }
+      }
+
+      // Now check geolocation permission
+      const geoCheckResult = await checkGeolocationPermission();
+      
+      if (geoCheckResult.granted) {
+        setGeolocationPermissionGranted(true);
         setCheckingPermissions(false);
         openDojahWidget();
         return;
       }
 
-      if (checkResult.error && !checkResult.needsPrompt) {
-        // Permission is denied or there's a hard error
-        setErrorMessage(formatEmbeddedCameraHelp(`${checkResult.error} ${getCameraPermissionInstructions()}`));
+      if (geoCheckResult.error && !geoCheckResult.needsPrompt) {
+        // Geolocation permission is denied or there's a hard error
+        const instructions = getGeolocationPermissionInstructions();
+        setErrorMessage(
+          `Location permission is required for verification. ${geoCheckResult.error}. ${instructions} After allowing location, please try again.`
+        );
         setCheckingPermissions(false);
         return;
       }
 
-      // Need to request permission
-      const requestResult = await requestCameraPermission();
+      // Need to request geolocation permission
+      const geoRequestResult = await requestGeolocationPermission();
       
-      if (requestResult.granted) {
-        setCameraPermissionGranted(true);
+      if (geoRequestResult.granted) {
+        setGeolocationPermissionGranted(true);
         setCheckingPermissions(false);
         openDojahWidget();
       } else {
-        // Even if permission request failed, still try to open widget
-        // Dojah will handle its own permission prompts
-        console.warn('Pre-check camera permission failed, but opening widget anyway');
+        // Show clear message about location requirement
+        const instructions = getGeolocationPermissionInstructions();
+        setErrorMessage(
+          `Location permission is required for verification. ${geoRequestResult.error || 'Please allow location access'}. ${instructions} After allowing location, please try again.`
+        );
         setCheckingPermissions(false);
-        openDojahWidget();
       }
     } catch (error) {
       console.error('Permission check failed:', error);
-      // Don't block the widget from opening - let Dojah handle it
+      // Show error but allow user to retry
+      setErrorMessage(
+        'Unable to check permissions. Please ensure your browser allows camera and location access for this site, then try again.'
+      );
       setCheckingPermissions(false);
-      openDojahWidget();
     }
   }
 
@@ -672,7 +705,7 @@ export default function Tier2KYCPage() {
                   className="w-full bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-bold py-4 rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg min-h-[56px]"
                 >
                   {checkingPermissions ? (
-                    <><Loader2 className="w-5 h-5 animate-spin" /> Checking camera access...</>
+                    <><Loader2 className="w-5 h-5 animate-spin" /> Checking permissions...</>
                   ) : !widgetReady ? (
                     <><Loader2 className="w-5 h-5 animate-spin" /> Loading...</>
                   ) : (
@@ -680,11 +713,11 @@ export default function Tier2KYCPage() {
                   )}
                 </button>
 
-                {/* Camera permission info */}
+                {/* Camera and location permission info */}
                 <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
                   <Camera className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-blue-800">
-                    This verification requires camera access for selfie and liveness checks. Camera access is requested inside Dojah's verification window, so your browser may ask for permission again.
+                    This verification requires camera and location access. Your browser will ask for these permissions before starting. Location is used for identity verification only and coordinates are not stored.
                   </p>
                 </div>
 

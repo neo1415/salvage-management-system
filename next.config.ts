@@ -107,7 +107,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(self "https://identity.dojah.io" "https://widget.dojah.io"), microphone=(self "https://identity.dojah.io" "https://widget.dojah.io"), fullscreen=(self "https://identity.dojah.io" "https://widget.dojah.io"), geolocation=(self), payment=(self)',
+            value: 'camera=(self "https://identity.dojah.io" "https://widget.dojah.io"), microphone=(self "https://identity.dojah.io" "https://widget.dojah.io"), fullscreen=(self "https://identity.dojah.io" "https://widget.dojah.io"), geolocation=(self "https://identity.dojah.io" "https://widget.dojah.io"), payment=(self)',
           },
           {
             key: 'X-DNS-Prefetch-Control',
