@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 interface DashboardStats {
   totalCases: number;
@@ -90,11 +91,7 @@ export default function AdjusterDashboardPage() {
   };
 
   if (status === 'loading' || loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020]"></div>
-      </div>
-    );
+    return <DataLoadingState label="Dashboard" variant="page" />;
   }
 
   return (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { CreditCard, CheckCircle, Clock, AlertCircle, Wallet, Banknote } from 'lucide-react';
@@ -26,6 +26,7 @@ function FinanceDashboardContentInner() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const statsRef = useRef<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -59,7 +60,11 @@ function FinanceDashboardContentInner() {
   }, [session, status, router]);
 
   const fetchDashboardStats = async () => {
+    const showFullPageLoader = statsRef.current == null;
     try {
+      if (showFullPageLoader) {
+        setLoading(true);
+      }
       const response = await fetch('/api/dashboard/finance');
       
       if (!response.ok) {
@@ -67,11 +72,11 @@ function FinanceDashboardContentInner() {
       }
 
       const data = await response.json();
+      statsRef.current = data;
       setStats(data);
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error);
-      // Set default values on error
-      setStats({
+      const fallback: DashboardStats = {
         totalPayments: 0,
         pendingVerification: 0,
         verified: 0,
@@ -84,7 +89,11 @@ function FinanceDashboardContentInner() {
           bank_transfer: 0,
           escrow_wallet: 0,
         },
-      });
+      };
+      if (showFullPageLoader) {
+        statsRef.current = fallback;
+        setStats(fallback);
+      }
     } finally {
       setLoading(false);
     }
@@ -94,7 +103,7 @@ function FinanceDashboardContentInner() {
     return `₦${amount.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   };
 
-  if (status === 'loading' || loading) {
+  if (status === 'loading' || (loading && !stats)) {
     return null; // Skeleton will be shown by parent
   }
 

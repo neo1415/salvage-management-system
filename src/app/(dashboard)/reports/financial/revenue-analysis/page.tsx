@@ -8,6 +8,8 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useReportFetchState } from '@/hooks/use-report-fetch-state';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,17 +19,18 @@ import { ReportFiltersComponent, ReportFilters } from '@/components/reports/comm
 import { ExportButton } from '@/components/reports/common/export-button';
 import { RevenueAnalysisReport } from '@/components/reports/financial/revenue-analysis-report';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 
 export default function RevenueAnalysisPage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+    useReportFetchState();
   const [error, setError] = useState<string | null>(null);
   const [reportData, setReportData] = useState<any>(null);
   
   const [filters, setFilters] = useState<ReportFilters>({
-    startDate: undefined,
-    endDate: undefined,
+    ...defaultReportFilters(),
     groupBy: 'month',
   });
 
@@ -35,32 +38,33 @@ export default function RevenueAnalysisPage() {
     fetchReport();
   }, []);
 
-  const fetchReport = async () => {
-    setLoading(true);
+  const fetchReport = async (force = false) => {
+    startFetch();
     setError(null);
 
     try {
-      const params = new URLSearchParams();
-      if (filters.startDate) params.append('startDate', filters.startDate.toISOString());
-      if (filters.endDate) params.append('endDate', filters.endDate.toISOString());
-      if (filters.assetTypes?.length) params.append('assetTypes', filters.assetTypes.join(','));
-      if (filters.regions?.length) params.append('regions', filters.regions.join(','));
-      if (filters.groupBy) params.append('groupBy', filters.groupBy);
+      const extraParams: Record<string, string> = {};
+      if (filters.assetTypes?.length) extraParams.assetTypes = filters.assetTypes.join(',');
+      if (filters.regions?.length) extraParams.regions = filters.regions.join(',');
+      if (filters.groupBy) extraParams.groupBy = filters.groupBy;
 
-      const response = await fetch(`/api/reports/financial/revenue-analysis?${params}`);
+      const result = await loadReportFromApi(
+        '/api/reports/financial/revenue-analysis',
+        filters,
+        { force, extraParams }
+      );
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch report');
+      if (result.data) {
+        setReportData(result.data);
+        markHasData();
+      } else {
+        throw new Error('Failed to fetch report');
       }
-
-      const result = await response.json();
-      setReportData(result.data);
     } catch (err) {
       console.error('Report fetch error:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch report');
     } finally {
-      setLoading(false);
+      endFetch();
     }
   };
 
@@ -70,11 +74,10 @@ export default function RevenueAnalysisPage() {
 
   const handleResetFilters = () => {
     setFilters({
-      startDate: undefined,
-    endDate: undefined,
+      ...defaultReportFilters(),
       groupBy: 'month',
     });
-    setTimeout(() => fetchReport(), 100);
+    setTimeout(() => fetchReport(true), 100);
   };
 
   return (
@@ -214,9 +217,9 @@ export default function RevenueAnalysisPage() {
             onClick={fetchReport}
             variant="outline"
             size="sm"
-            disabled={loading}
+            disabled={isBusy}
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`mr-2 h-4 w-4 ${isBusy ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
           {reportData && (
@@ -224,7 +227,7 @@ export default function RevenueAnalysisPage() {
               reportType="revenue-analysis"
               reportData={reportData}
               filters={filters}
-              disabled={loading}
+              disabled={isBusy}
             />
           )}
         </div>
@@ -256,21 +259,17 @@ export default function RevenueAnalysisPage() {
       )}
 
       {/* Report Content */}
+      {isRefreshing && reportData && <DataRefreshingHint />}
+
       {reportData && (
         <div data-report-content>
-          <RevenueAnalysisReport data={reportData} loading={loading} />
+          <RevenueAnalysisReport data={reportData} loading={isRefreshing} />
         </div>
       )}
 
       {/* Loading State */}
       {loading && !reportData && (
-        <Card className="no-print">
-          <CardContent className="py-12 text-center">
-            <RefreshCw className="h-12 w-12 animate-spin text-[#800020] mx-auto mb-4" />
-            <p className="text-lg font-medium">Generating Report...</p>
-            <p className="text-gray-600 mt-2">This may take a few moments</p>
-          </CardContent>
-        </Card>
+        <DataLoadingState label="Salvage recovery analysis" variant="report" className="no-print" />
       )}
     </div>
     </>

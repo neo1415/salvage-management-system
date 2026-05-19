@@ -26,6 +26,7 @@ import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { CountdownTimer } from '@/components/ui/countdown-timer';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import { BidForm } from '@/components/auction/bid-form';
 import { type VendorTier } from '@/hooks/use-tier-upgrade';
 import { ReleaseFormModal } from '@/components/documents/release-form-modal';
@@ -550,8 +551,11 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   // Fetch documents for closed auction
   const fetchDocuments = useCallback(async (auctionId: string, vendorId: string) => {
+    const showDocSpinner = documentCountRef.current === 0;
     try {
-      setIsLoadingDocuments(true);
+      if (showDocSpinner) {
+        setIsLoadingDocuments(true);
+      }
       console.log(`📄 Fetching documents for auction ${auctionId}, vendor ${vendorId}`);
       
       const response = await fetch(`/api/auctions/${auctionId}/documents`);
@@ -591,7 +595,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       setDocuments([]);
       documentCountRef.current = 0;
     } finally {
-      setIsLoadingDocuments(false);
+      if (showDocSpinner) {
+        setIsLoadingDocuments(false);
+      }
     }
   }, []); // No dependencies - stable function
 
@@ -677,25 +683,24 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       // Fetch immediately
       fetchDocuments(auction.id, vendorId);
       
-      // Then poll every 3 seconds until documents appear
+      // Poll every 3s until expected documents exist (generation can be async)
       const pollInterval = setInterval(() => {
-        // Stop polling if we have documents
-        if (documents.length > 0) {
+        if (documentCountRef.current > 0) {
           console.log(`✅ Documents loaded, stopping poll`);
           clearInterval(pollInterval);
           return;
         }
-        
+
         console.log(`📄 Polling for documents...`);
         fetchDocuments(auction.id, vendorId);
       }, 3000);
-      
+
       return () => {
         console.log(`🛑 Stopping document polling`);
         clearInterval(pollInterval);
       };
     }
-  }, [auction?.id, auction?.status, auction?.currentBidder, session?.user?.vendorId, documents.length, fetchDocuments]);
+  }, [auction?.id, auction?.status, auction?.currentBidder, session?.user?.vendorId, fetchDocuments]);
 
   // Fetch prediction for active/extended auctions
   useEffect(() => {
@@ -980,16 +985,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     }));
   }, [auction?.bids]);
 
-  // Loading state
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading auction details...</p>
-        </div>
-      </div>
-    );
+    return <DataLoadingState label="Auction details" variant="page" />;
   }
 
   // Error state

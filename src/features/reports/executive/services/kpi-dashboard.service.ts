@@ -6,6 +6,7 @@
 import { db } from '@/lib/db/drizzle';
 import { sql } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
+import { resolveReportIsoDateRange } from '../../utils/report-date-range';
 
 export interface KPIDashboardReport {
   financial: {
@@ -91,8 +92,7 @@ export class KPIDashboardService {
   }
 
   private static async getFinancialKPIs(filters: ReportFilters) {
-    const startDate = filters.startDate ? new Date(filters.startDate).toISOString() : new Date('2000-01-01').toISOString();
-    const endDate = filters.endDate ? new Date(filters.endDate).toISOString() : new Date('2099-12-31').toISOString();
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
 
     const result = await db.execute(sql`
       WITH revenue_data AS (
@@ -196,8 +196,7 @@ export class KPIDashboardService {
   }
 
   private static async getOperationalKPIs(filters: ReportFilters) {
-    const startDate = filters.startDate ? new Date(filters.startDate).toISOString() : new Date('2000-01-01').toISOString();
-    const endDate = filters.endDate ? new Date(filters.endDate).toISOString() : new Date('2099-12-31').toISOString();
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
 
     const result = await db.execute(sql`
       WITH case_data AS (
@@ -250,8 +249,7 @@ export class KPIDashboardService {
   }
 
   private static async getPerformanceKPIs(filters: ReportFilters) {
-    const startDate = filters.startDate ? new Date(filters.startDate).toISOString() : new Date('2000-01-01').toISOString();
-    const endDate = filters.endDate ? new Date(filters.endDate).toISOString() : new Date('2099-12-31').toISOString();
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
 
     const result = await db.execute(sql`
       WITH adjuster_performance AS (
@@ -301,8 +299,7 @@ export class KPIDashboardService {
   }
 
   private static async getTrendData(filters: ReportFilters) {
-    const startDate = filters.startDate ? new Date(filters.startDate).toISOString() : new Date('2000-01-01').toISOString();
-    const endDate = filters.endDate ? new Date(filters.endDate).toISOString() : new Date('2099-12-31').toISOString();
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
 
     const revenueByMonth = await db.execute(sql`
       WITH latest_auction_payments AS (
@@ -389,8 +386,7 @@ export class KPIDashboardService {
   }
 
   private static async getDetailedBreakdowns(filters: ReportFilters) {
-    const startDate = filters.startDate ? new Date(filters.startDate).toISOString() : new Date('2000-01-01').toISOString();
-    const endDate = filters.endDate ? new Date(filters.endDate).toISOString() : new Date('2099-12-31').toISOString();
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
 
     // Cases breakdown - use DISTINCT ON to prevent duplicates
     const casesResult = await db.execute(sql`

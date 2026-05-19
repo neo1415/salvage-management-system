@@ -25,6 +25,12 @@ Environment split:
 
 Do not set local `NEXT_PUBLIC_APP_URL` to `https://nemsalvage.com`. That makes local testing look like production and can register or validate the wrong callback/origin.
 
+## Email Notifications
+
+NEM Salvage should own vendor-facing KYC emails wherever possible. In the Dojah EasyOnboard dashboard, edit the `salvage` verification flow and keep **Enable user notifications (optional)** disabled. Keep webhook/business notifications enabled so NEM Salvage receives provider events, reconciles evidence, and sends NEM-branded under-review/approval/rejection messages from the app.
+
+Do not include sensitive AML, PEP, sanctions, adverse-media, BVN, NIN, document image, or raw provider details in vendor emails.
+
 Production webhook URL to configure in Dojah:
 
 ```text

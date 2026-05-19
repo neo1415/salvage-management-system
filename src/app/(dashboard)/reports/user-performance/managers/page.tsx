@@ -1,43 +1,39 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useReportFetchState } from '@/hooks/use-report-fetch-state';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
+import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
 
 export default function ManagerMetricsPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+    useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
-  const [filters, setFilters] = useState<ReportFilters>({
-    startDate: undefined,
-    endDate: undefined,
-  });
+  const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
   useEffect(() => {
     fetchReport();
   }, []);
 
-  const fetchReport = async () => {
-    setLoading(true);
+  const fetchReport = async (force = false) => {
+    startFetch();
     try {
-      const params = new URLSearchParams();
-      if (filters.startDate) params.append('startDate', filters.startDate.toISOString());
-      if (filters.endDate) params.append('endDate', filters.endDate.toISOString());
-
-      const response = await fetch(`/api/reports/user-performance/managers?${params}`);
-      const result = await response.json();
-      
+      const result = await loadReportFromApi('/api/reports/user-performance/managers', filters, { force });
       if (result.status === 'success') {
         setReportData(result.data);
+        markHasData();
       }
     } catch (error) {
       console.error('Failed to fetch report:', error);
     } finally {
-      setLoading(false);
+      endFetch();
     }
   };
 
@@ -170,22 +166,20 @@ export default function ManagerMetricsPage() {
               filters={filters}
               onFiltersChange={setFilters}
               onApply={fetchReport}
-              onReset={() => setFilters({ startDate: undefined, endDate: undefined })}
+              onReset={() => setFilters(defaultReportFilters())}
               showAssetTypes={false}
               showRegions={false}
             />
           </CardContent>
         </Card>
 
-        {loading && (
-          <Card className="no-print">
-            <CardContent className="pt-6">
-              <div className="text-center py-8">Loading manager metrics...</div>
-            </CardContent>
-          </Card>
+        {loading && !reportData && (
+          <DataLoadingState label="Manager performance" variant="report" className="no-print" />
         )}
 
-        {!loading && reportData && (
+        {isRefreshing && reportData && <DataRefreshingHint />}
+
+        {reportData && (
           <div data-report-content className="grid gap-6">
             <Card>
               <CardContent className="pt-6">

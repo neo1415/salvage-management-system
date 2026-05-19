@@ -6,6 +6,7 @@ import { users } from '@/lib/db/schema/users';
 import { eq, and, or, sql, inArray, isNotNull, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
+import { hasProviderVerificationStorage, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
 
 const DOJAH_TIER2_REVIEW_STATUSES = [
   'pending',
@@ -15,6 +16,9 @@ const DOJAH_TIER2_REVIEW_STATUSES = [
   'provider_unavailable',
   'completed',
   'submitted',
+  'pending_review',
+  'under_review',
+  'manual_review',
 ] as const;
 
 type ProviderEvidenceRow = {
@@ -79,9 +83,9 @@ export async function GET(request: NextRequest) {
       .where(eq(users.id, session.user.id))
       .limit(1);
 
-    if (!user || user.role !== 'salvage_manager') {
+    if (!user || (user.role !== 'salvage_manager' && user.role !== 'system_admin')) {
       return NextResponse.json(
-        { error: 'Only Salvage Managers can view vendor applications' },
+        { error: 'Only Salvage Managers and System Admins can view vendor applications' },
         { status: 403 }
       );
     }
@@ -106,12 +110,16 @@ export async function GET(request: NextRequest) {
     }
     console.log(`❌ Cache MISS: ${cacheKey}`);
 
-    const [{ exists: providerVerificationTableExists } = { exists: false }] = await db.execute<{
-      exists: boolean;
-    }>(sql`select to_regclass('public.provider_verification_records') is not null as "exists"`);
+    const providerVerificationTableExists = await hasProviderVerificationStorage();
 
     if (!providerVerificationTableExists) {
-      console.warn('[Vendors API] provider_verification_records table missing; returning legacy vendor data only. Run migration 0034 for Dojah reconciliation.');
+      if (tierFilter === 'tier2_full' || statusFilter === 'pending') {
+        return NextResponse.json(
+          { error: PROVIDER_VERIFICATION_MIGRATION_MISSING },
+          { status: 503 }
+        );
+      }
+      console.warn('[Vendors API] provider_verification_records table missing; returning legacy vendor data only for non-Dojah queue.');
     }
 
     // Build query conditions

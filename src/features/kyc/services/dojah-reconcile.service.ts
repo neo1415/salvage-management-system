@@ -5,9 +5,11 @@ import { providerVerificationRecords } from '@/lib/db/schema/provider-verificati
 import { getDojahService } from './dojah.service';
 import { normalizeDojahWorkflowResult } from './dojah-normalizer.service';
 import { getProviderVerificationService } from './provider-verification.service';
+import { ingestDojahMediaForVendor } from './dojah-media-ingest.service';
 import { getKYCRepository } from '../repositories/kyc.repository';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import type { DojahVerificationResult } from '../schemas/dojah.schemas';
+import { assertProviderVerificationStorageReady } from './provider-verification-readiness';
 
 export interface ReconcileTier2Result {
   synced: boolean;
@@ -18,7 +20,7 @@ export interface ReconcileTier2Result {
 }
 
 function isDojahResultComplete(result: DojahVerificationResult): boolean {
-  const statusText = String(result.verification_status ?? result.status ?? '').toLowerCase();
+  const statusText = String(result.verification_status ?? result.verificationStatus ?? result.status ?? '').toLowerCase();
   if (
     statusText.includes('complete') ||
     statusText.includes('success') ||
@@ -65,6 +67,8 @@ export async function reconcileTier2FromDojah(input: {
   userAgent?: string;
   explicitReference?: string;
 }): Promise<ReconcileTier2Result> {
+  await assertProviderVerificationStorageReady();
+
   const [vendor] = await db
     .select({
       id: vendors.id,
@@ -124,6 +128,32 @@ export async function reconcileTier2FromDojah(input: {
       const normalized = normalizeDojahWorkflowResult(verificationResult);
       normalized.providerReference = normalized.providerReference || providerReference;
       normalized.workflowReference = normalized.workflowReference || providerReference;
+      const media = await ingestDojahMediaForVendor({
+        vendorId: input.vendorId,
+        userId: input.userId,
+        providerReference: normalized.providerReference || providerReference,
+        verificationResult,
+      }).catch((error) => {
+        console.warn('[DojahReconcile] media ingest failed', {
+          providerReference,
+          message: error instanceof Error ? error.message : 'Unknown media ingest error',
+        });
+        return null;
+      });
+      normalized.normalizedResult = {
+        ...normalized.normalizedResult,
+        dojahMedia: media
+          ? {
+              assets: media.assets.map((asset) => ({
+                type: asset.type,
+                sourceKey: asset.sourceKey,
+                storedUrl: asset.storedUrl,
+              })),
+              diagnostics: media.diagnostics,
+              profilePictureImported: Boolean(media.profilePictureUrl),
+            }
+          : null,
+      };
 
       await providerService.persistVerification({
         userId: input.userId,
@@ -143,6 +173,7 @@ export async function reconcileTier2FromDojah(input: {
         await repo.upsertVerificationData(input.vendorId, {
           dojahReferenceId: normalized.providerReference || providerReference,
           tier2SubmittedAt: vendor.tier2SubmittedAt ?? new Date(),
+          ...(media?.verificationData ?? {}),
         });
       }
 
@@ -232,6 +263,9 @@ export const DOJAH_PENDING_PROVIDER_STATUSES = [
   'provider_unavailable',
   'completed',
   'submitted',
+  'pending_review',
+  'under_review',
+  'manual_review',
 ] as const;
 
 export function isDojahPendingProviderStatus(status: string): boolean {

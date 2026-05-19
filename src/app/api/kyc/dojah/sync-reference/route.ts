@@ -9,6 +9,8 @@ import { DojahVerificationLookupError, getDojahService } from '@/features/kyc/se
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { logAction, AuditActionType, AuditEntityType, DeviceType, getIpAddress } from '@/lib/utils/audit-logger';
+import { extractVendorIdFromDojahReference } from '@/features/kyc/utils/dojah-reference';
+import { assertProviderVerificationStorageReady, isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,7 +64,10 @@ async function resolveVendorForReference(input: {
     return { ok: false, status: 409, error: 'Stored provider reference is linked to multiple vendors; manual cleanup required.' };
   }
 
-  const targetVendorId = input.requestedVendorId || input.metadataVendorId;
+  const targetVendorId =
+    input.requestedVendorId ||
+    input.metadataVendorId ||
+    extractVendorIdFromDojahReference(input.providerReference);
   if (targetVendorId) {
     const [vendor] = await db
       .select({ id: vendors.id, userId: vendors.userId })
@@ -133,6 +138,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'reference_id is required' }, { status: 400 });
   }
 
+  try {
+    await assertProviderVerificationStorageReady();
+  } catch (error) {
+    if (isProviderVerificationStorageError(error)) {
+      return NextResponse.json({ error: PROVIDER_VERIFICATION_MIGRATION_MISSING }, { status: 503 });
+    }
+    throw error;
+  }
+
   let verificationResult;
   try {
     verificationResult = await getDojahService().getVerificationResult(providerReference);
@@ -142,10 +156,11 @@ export async function POST(request: NextRequest) {
         {
           error:
             error.reason === 'not_found_or_invalid_reference'
-              ? 'Dojah did not return verification details for this reference. Copy the Dojah dashboard reference_id (often DJ-...) or provide the vendor ID if this is an old NEM-generated reference.'
-              : 'Dojah returned a verification response shape this app could not normalize yet.',
+              ? 'Verification details were not found for this reference. Check the reference ID, environment, product access, and credentials.'
+              : 'The verification response shape could not be normalized yet.',
           reference_id: providerReference,
           reason: error.reason,
+          diagnostic: error.diagnostic,
         },
         { status: error.reason === 'not_found_or_invalid_reference' ? 404 : 502 }
       );

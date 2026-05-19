@@ -29,6 +29,7 @@ import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { useToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useCachedBidHistory } from '@/hooks/use-cached-bid-history';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 
 interface BidHistoryItem {
   auction: {
@@ -109,7 +110,7 @@ export default function BidHistoryPage() {
   // Use cached bid history hook
   const { 
     data, 
-    isLoading: loading, 
+    isLoading: loading,
     isOffline, 
     lastCached, 
     refresh, 
@@ -301,15 +302,8 @@ export default function BidHistoryPage() {
     }
   };
 
-  if (isLoading || loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading bid history...</p>
-        </div>
-      </div>
-    );
+  if ((isLoading || loading) && data.length === 0) {
+    return <DataLoadingState label="Bid history" variant="page" />;
   }
 
   if (error || cacheError) {
@@ -465,8 +459,8 @@ export default function BidHistoryPage() {
 
         {/* Auction Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {loading ? (
-            // Loading skeleton
+          {loading && data.length === 0 ? (
+            // Loading skeleton (first load only)
             Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="bg-white rounded-xl shadow-lg overflow-hidden animate-pulse">
                 <div className="h-48 bg-gray-200"></div>

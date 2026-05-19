@@ -22,6 +22,7 @@ import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils'
 import { AuctionStatusService } from '@/features/auctions/services/status.service';
 import { getAllDrafts, type DraftCase, getAllOfflineCases, type OfflineCase } from '@/lib/db/indexeddb';
 import { useOffline } from '@/hooks/use-offline';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 interface Case {
   id: string;
@@ -541,12 +542,8 @@ export default function AdjusterMyCasesPage() {
     return str;
   };
 
-  if (status === 'loading' || loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020]"></div>
-      </div>
-    );
+  if (status === 'loading' || (loading && cases.length === 0)) {
+    return <DataLoadingState label="My cases" variant="page" />;
   }
 
   const statusCounts = getStatusCounts();

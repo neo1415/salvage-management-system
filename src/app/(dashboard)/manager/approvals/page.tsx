@@ -23,6 +23,7 @@ import { PriceField } from '@/components/manager/price-field';
 import { validatePriceOverrides as validatePrices, type PriceOverrides } from '@/lib/validation/price-validation';
 import { formatConditionForDisplay } from '@/features/valuations/services/condition-mapping.service';
 import { AuctionScheduleSelector, type AuctionScheduleValue } from '@/components/ui/auction-schedule-selector';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import { LocationMap } from '@/components/ui/location-map';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
@@ -601,16 +602,8 @@ export default function ApprovalsPage() {
     return badge;
   };
 
-  // Loading state
   if (status === 'loading' || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading cases...</p>
-        </div>
-      </div>
-    );
+    return <DataLoadingState label="Case approvals" variant="page" />;
   }
 
   // Unauthenticated state

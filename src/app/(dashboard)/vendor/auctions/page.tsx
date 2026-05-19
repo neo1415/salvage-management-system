@@ -40,6 +40,7 @@ import Image from 'next/image';
 import { formatConditionForDisplay, type QualityTier } from '@/features/valuations/services/condition-mapping.service';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { FilterChip } from '@/components/ui/filters/filter-chip';
+import { AppSpinner, AppSpinnerWithLabel, DataLoadingState } from '@/components/ui/loading-states';
 import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
 import { SearchInput } from '@/components/ui/filters/search-input';
 import { LocationAutocomplete } from '@/components/ui/filters/location-autocomplete';
@@ -120,14 +121,7 @@ export default function AuctionBrowsingPage() {
           }
         }
       `}</style>
-      <Suspense fallback={
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading auctions...</p>
-          </div>
-        </div>
-      }>
+      <Suspense fallback={<DataLoadingState label="Auctions" variant="page" />}>
         <AuctionBrowsingContent />
       </Suspense>
     </>
@@ -530,7 +524,7 @@ function AuctionBrowsingContent() {
       {/* Pull-to-refresh indicator - Modern glassmorphism */}
       {isPullRefreshing && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-md shadow-md p-4 flex items-center justify-center border-b border-white/30">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#800020]"></div>
+          <AppSpinner size="sm" />
           <span className="ml-2 text-sm text-gray-600">Refreshing...</span>
         </div>
       )}
@@ -967,12 +961,7 @@ function AuctionBrowsingContent() {
       <div className="max-w-7xl mx-auto px-2 md:px-4 py-6">
         {/* Loading State */}
         {isLoading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading auctions...</p>
-            </div>
-          </div>
+          <DataLoadingState label="Auctions" variant="page" />
         )}
 
         {/* Empty State */}

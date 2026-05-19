@@ -6,6 +6,7 @@
 import { db } from '@/lib/db/drizzle';
 import { sql } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
+import { resolveReportIsoDateRange } from '../../utils/report-date-range';
 
 export interface MasterReportData {
   executiveSummary: {
@@ -128,8 +129,7 @@ export interface MasterReportData {
 export class MasterReportService {
   static async generateComprehensiveReport(filters: ReportFilters): Promise<MasterReportData> {
     // Calculate date ranges in TypeScript BEFORE passing to SQL
-    const startDate = filters.startDate ? new Date(filters.startDate).toISOString() : new Date('2000-01-01').toISOString();
-    const endDate = filters.endDate ? new Date(filters.endDate).toISOString() : new Date('2099-12-31').toISOString();
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
     
     // Calculate previous period for growth comparison
     const start = new Date(startDate);

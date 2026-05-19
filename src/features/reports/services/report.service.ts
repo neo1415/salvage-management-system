@@ -8,6 +8,7 @@
 import { ReportConfig, ReportResult, ReportType, ReportFilters, UserRole, ROLE_PERMISSIONS } from '../types';
 import { ReportCacheService } from './report-cache.service';
 import { ReportAuditService } from './report-audit.service';
+import { resolveReportDateRange } from '../utils/report-date-range';
 import { v4 as uuidv4 } from 'uuid';
 
 export class ReportService {
@@ -184,18 +185,7 @@ export class ReportService {
    * Validate date range
    */
   static validateDateRange(startDate?: string, endDate?: string): { start: Date; end: Date } {
-    const start = startDate ? new Date(startDate) : new Date('2000-01-01T00:00:00.000Z');
-    const end = endDate ? new Date(endDate) : new Date('2099-12-31T23:59:59.999Z');
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      throw new Error('Invalid date format. Use ISO date strings');
-    }
-
-    if (start > end) {
-      throw new Error('startDate must be before endDate');
-    }
-
-    return { start, end };
+    return resolveReportDateRange(startDate, endDate);
   }
 
   /**

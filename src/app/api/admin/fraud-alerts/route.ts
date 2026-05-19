@@ -263,6 +263,7 @@ export async function GET(request: NextRequest) {
         (metadata?.providerReference && record.providerReference === metadata.providerReference) ||
         (primaryVendorId && record.vendorId === primaryVendorId)
       );
+      const normalizedProviderResult = (linkedProviderRecord?.normalizedResult as Record<string, unknown> | null) ?? null;
       const timeline = alertTimelineLogs
         .filter(log => log.entityId === alert.id || log.entityId === primaryVendorId || log.entityId === alert.entityId)
         .slice(0, 12)
@@ -302,6 +303,10 @@ export async function GET(request: NextRequest) {
           checksCompleted: metadata?.checksCompleted || [],
           failedChecks: metadata?.failedChecks || [],
           ipAddress: metadata?.ipAddress,
+          pendingReason: normalizedProviderResult?.pendingReason,
+          providerMessage: normalizedProviderResult?.providerMessage,
+          amlStatus: normalizedProviderResult?.amlStatus,
+          amlMatchDetails: normalizedProviderResult?.amlMatchDetails,
         },
         providerVerification: linkedProviderRecord ? {
           id: linkedProviderRecord.id,

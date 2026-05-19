@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
+import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,9 @@ export async function GET(request: NextRequest) {
       ipAddress: getIpAddress(request.headers),
       userAgent: request.headers.get('user-agent') ?? 'unknown',
     }).catch((error) => {
+      if (isProviderVerificationStorageError(error)) {
+        throw error;
+      }
       console.error('[KYC Status] reconcile skipped', {
         message: error instanceof Error ? error.message : 'Unknown error',
       });
@@ -57,12 +61,19 @@ export async function GET(request: NextRequest) {
         approvedAt: kycStatus.approvedAt,
         expiresAt: kycStatus.expiresAt,
         rejectionReason: kycStatus.rejectionReason,
+        rejectedSections: kycStatus.rejectedSections,
         dojahReferenceId: kycStatus.dojahReferenceId,
         steps: kycStatus.steps,
       },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
+    if (isProviderVerificationStorageError(error)) {
+      return NextResponse.json(
+        { error: PROVIDER_VERIFICATION_MIGRATION_MISSING },
+        { status: 503 }
+      );
+    }
     console.error('[KYC Status] Error:', error);
     return NextResponse.json(
       { error: 'Failed to fetch KYC status' },

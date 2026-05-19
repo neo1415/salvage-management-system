@@ -57,21 +57,26 @@ function createReceiptDocument(auction: any, payment: any): Document | null {
   };
 }
 
-async function fetchReceiptDocument(auction: any): Promise<Document | null> {
-  if (auction.payment?.id) {
-    return createReceiptDocument(auction, auction.payment);
-  }
-
-  try {
-    const response = await fetch(`/api/payments?auctionId=${auction.id}`);
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    return createReceiptDocument(auction, data.data?.payment);
-  } catch (error) {
-    console.warn(`Unable to load receipt for auction ${auction.id}:`, error);
-    return null;
-  }
+function mapApiDocument(doc: {
+  id: string;
+  auctionId: string;
+  documentType: Document['documentType'];
+  title: string;
+  status: Document['status'];
+  pdfUrl: string;
+  createdAt: string;
+  signedAt: string | null;
+}): Document {
+  return {
+    id: doc.id,
+    auctionId: doc.auctionId,
+    documentType: doc.documentType,
+    title: doc.title,
+    status: doc.status,
+    signedAt: doc.signedAt ? new Date(doc.signedAt) : null,
+    createdAt: new Date(doc.createdAt),
+    pdfUrl: doc.pdfUrl,
+  };
 }
 
 export default function VendorDocumentsPage() {
@@ -85,93 +90,77 @@ export default function VendorDocumentsPage() {
   // CRITICAL: Wrap fetchFn in useCallback to prevent infinite loop
   // Without this, fetchFn is recreated on every render, causing the hook to re-fetch infinitely
   const fetchDocuments = useCallback(async () => {
-    console.log('🔵 [DOCUMENTS PAGE] Starting document fetch...');
-    console.log('   Navigation type:', window.location.hash ? 'HASH (from auction detail)' : 'NORMAL (direct navigation)');
-    console.log('   Hash:', window.location.hash || 'none');
-    console.log('   Timestamp:', new Date().toISOString());
-    console.log('   Session status:', session?.user?.vendorId ? 'READY' : 'NOT READY');
-    
-    // Only fetch if we have a valid session
     if (!session?.user?.vendorId) {
-      console.log('❌ [DOCUMENTS PAGE] No vendor ID, returning empty');
       return [];
     }
 
-    console.log('✅ [DOCUMENTS PAGE] Vendor ID:', session.user.vendorId);
+    const [auctionsResponse, documentsResponse] = await Promise.all([
+      fetch('/api/vendor/won-auctions'),
+      fetch('/api/vendor/documents'),
+    ]);
 
-    // OPTIMIZED: Fetch won auctions first, then fetch documents in parallel
-    console.log('📡 [DOCUMENTS PAGE] Fetching won auctions...');
-    const auctionsResponse = await fetch('/api/vendor/won-auctions');
-    
     if (!auctionsResponse.ok) {
-      console.error('❌ [DOCUMENTS PAGE] Failed to fetch won auctions:', auctionsResponse.status);
       throw new Error('Failed to fetch documents');
     }
 
-    const data = await auctionsResponse.json();
-    console.log('📦 [DOCUMENTS PAGE] Won auctions response:', {
-      status: data.status,
-      auctionCount: data.data?.auctions?.length || 0,
-      auctions: data.data?.auctions?.map((a: any) => ({ id: a.id, status: a.status })) || []
-    });
-    
-    if (data.status === 'success' && data.data.auctions && data.data.auctions.length > 0) {
-      // CRITICAL FIX: Fetch ALL documents in parallel instead of sequentially
-      // This reduces load time from N seconds to ~1 second
-      console.log('📄 [DOCUMENTS PAGE] Fetching documents for', data.data.auctions.length, 'auctions in parallel...');
-      
-      const documentPromises = data.data.auctions.map(async (auction: any) => {
-        const receiptDocument = await fetchReceiptDocument(auction);
+    const auctionsPayload = await auctionsResponse.json();
+    const documentsPayload = documentsResponse.ok
+      ? await documentsResponse.json()
+      : { documents: [] };
 
-        return fetch(`/api/auctions/${auction.id}/documents`)
-          .then(res => {
-            console.log(`   📄 Auction ${auction.id}: Response status ${res.status}`);
-            return res.json();
-          })
-          .then(docsData => {
-            const docCount = docsData.status === 'success' ? docsData.data.documents.length : 0;
-            console.log(`   ✅ Auction ${auction.id}: ${docCount} documents`);
-            return {
-              auctionId: auction.id,
-              assetName: auction.assetName || 'Salvage Item',
-              winningBid: parseFloat(auction.currentBid || '0'),
-              closedAt: new Date(auction.closedAt),
-              status: auction.status,
-              documents: [
-                ...(docsData.status === 'success' ? docsData.data.documents : []),
-                ...(receiptDocument ? [receiptDocument] : []),
-              ],
-            };
-          })
-          .catch(err => {
-            console.error(`   ❌ Auction ${auction.id}: Failed to fetch documents:`, err);
-            return {
-              auctionId: auction.id,
-              assetName: auction.assetName || 'Salvage Item',
-              winningBid: parseFloat(auction.currentBid || '0'),
-              closedAt: new Date(auction.closedAt),
-              status: auction.status,
-              documents: receiptDocument ? [receiptDocument] : [],
-            };
-          })
-      });
+    const wonAuctions = auctionsPayload.data?.auctions ?? [];
 
-      const auctionsWithDocs = await Promise.all(documentPromises);
-      
-      // Only return auctions that have documents
-      const filtered = auctionsWithDocs.filter(a => a.documents.length > 0);
-      console.log('🎯 [DOCUMENTS PAGE] Final result:', {
-        totalAuctions: auctionsWithDocs.length,
-        auctionsWithDocs: filtered.length,
-        details: filtered.map(a => ({ id: a.auctionId, docCount: a.documents.length }))
-      });
-      
-      return filtered;
+    const docsByAuction = new Map();
+    for (const raw of documentsPayload.documents ?? []) {
+      const doc = mapApiDocument(raw);
+      const existing = docsByAuction.get(doc.auctionId) ?? [];
+      existing.push(doc);
+      docsByAuction.set(doc.auctionId, existing);
     }
-    
-    console.log('⚠️  [DOCUMENTS PAGE] No won auctions found, returning empty');
-    return [];
-  }, [session?.user?.vendorId]); // Only recreate if vendorId changes
+
+    const auctionMeta = new Map(wonAuctions.map((auction) => [auction.id, auction]));
+    const auctionIds = new Set([
+      ...wonAuctions.map((a) => a.id),
+      ...docsByAuction.keys(),
+    ]);
+
+    const grouped = [];
+
+    for (const auctionId of auctionIds) {
+      const auction = auctionMeta.get(auctionId);
+      const receipt = auction?.payment?.id
+        ? createReceiptDocument(auction, auction.payment)
+        : null;
+
+      const documents = [
+        ...(docsByAuction.get(auctionId) ?? []),
+        ...(receipt ? [receipt] : []),
+      ];
+
+      if (documents.length === 0) continue;
+
+      const saleFromDoc = (documentsPayload.documents ?? []).find(
+        (d) => d.auctionId === auctionId
+      );
+
+      grouped.push({
+        auctionId,
+        assetName:
+          auction?.assetName ||
+          saleFromDoc?.documentData?.assetDescription ||
+          'Salvage Item',
+        winningBid: auction
+          ? parseFloat(auction.currentBid || '0')
+          : saleFromDoc?.documentData?.salePrice ?? 0,
+        closedAt: auction ? new Date(auction.closedAt) : documents[0].createdAt,
+        status: auction?.status ?? 'closed',
+        documents,
+      });
+    }
+
+    grouped.sort((a, b) => b.closedAt.getTime() - a.closedAt.getTime());
+    return grouped;
+  }, [session?.user?.vendorId]);
 
   // Use cached documents hook - pass null for auctionId since we're fetching all auctions
   // CRITICAL: Only pass fetchDocuments when session is ready to prevent premature fetches

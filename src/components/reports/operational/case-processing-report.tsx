@@ -8,7 +8,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileText, Clock, CheckCircle } from 'lucide-react';
 import { Bar, Line } from 'react-chartjs-2';
-import { ChartFrame, MetricGrid, MetricValue, ReportLoadingState, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
+import { ChartFrame, MetricGrid, MetricValue, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -78,10 +78,6 @@ interface CaseProcessingReportProps {
 }
 
 export function CaseProcessingReport({ data, loading }: CaseProcessingReportProps) {
-  if (loading) {
-    return <ReportLoadingState label="Loading case processing report" />;
-  }
-
   if (!data || !data.byStatus || !data.byAssetType || !data.trend) {
     return <div>No data available</div>;
   }

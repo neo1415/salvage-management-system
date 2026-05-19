@@ -7,6 +7,7 @@ import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { buildDojahEvidenceSections } from '@/features/kyc/utils/provider-evidence-display';
 import { getIpAddress } from '@/lib/utils/audit-logger';
+import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,19 +56,30 @@ export async function GET(
     });
   }
 
-  const approval = await getKYCRepository().getPendingApprovalByVendorId(vendorId);
+  let detail;
+  try {
+    detail = await getKYCRepository().getApprovalDetailByVendorId(vendorId);
+  } catch (error) {
+    if (isProviderVerificationStorageError(error)) {
+      return NextResponse.json({ error: PROVIDER_VERIFICATION_MIGRATION_MISSING }, { status: 503 });
+    }
+    throw error;
+  }
 
-  if (!approval) {
+  if (!detail) {
     return NextResponse.json(
-      { error: 'Application not found or already reviewed' },
+      { error: 'Application not found' },
       { status: 404 }
     );
   }
 
+  const { approval, reviewStatus, rejectionReason } = detail;
+
   const evidenceSections = approval.providerEvidence
     ? buildDojahEvidenceSections(
         (approval.providerEvidence.normalizedResult as Record<string, unknown> | null) ?? null,
-        approval.providerEvidence
+        approval.providerEvidence,
+        { viewerRole: session.user.role === 'system_admin' ? 'system_admin' : 'salvage_manager' }
       )
     : null;
 
@@ -80,8 +92,11 @@ export async function GET(
   return NextResponse.json(
     {
       approval,
+      reviewStatus,
+      rejectionReason,
       verificationSource,
       evidenceSections,
+      viewerRole: session.user.role,
     },
     {
       headers: {

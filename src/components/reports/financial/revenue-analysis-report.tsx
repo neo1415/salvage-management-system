@@ -10,7 +10,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, TrendingDown, Banknote, BarChart3 } from 'lucide-react';
 import { Line, Bar } from 'react-chartjs-2';
-import { ChartFrame, MetricGrid, MetricValue, ReportLoadingState, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
+import { ChartFrame, MetricGrid, MetricValue, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -93,8 +94,8 @@ interface RevenueAnalysisReportProps {
 }
 
 export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportProps) {
-  if (loading || !data) {
-    return <ReportLoadingState label="Loading revenue analysis" />;
+  if (!data) {
+    return <DataLoadingState label="Salvage recovery analysis" variant="report" />;
   }
 
   // Ensure data has required properties with defaults

@@ -7,19 +7,21 @@
  * POST /api/cases/[id]/approve
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db, withRetry } from '@/lib/db/drizzle';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { auctions } from '@/lib/db/schema/auctions';
-import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, arrayContains } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
-import { smsService } from '@/features/notifications/services/sms.service';
-import { emailService } from '@/features/notifications/services/email.service';
 import { validatePriceOverrides } from '@/lib/validation/price-validation';
-import { createNotification, createRoleNotifications } from '@/features/notifications/services/notification.service';
+import {
+  notifyAdjusterOfCaseApproval,
+  notifyAdjusterOfCaseRejection,
+  notifyMatchingVendorsOfNewAuction,
+  notifyStaffOfCaseApproval,
+} from '@/features/notifications/services/case-approval-notifications.service';
 
 /**
  * Price override data structure
@@ -338,98 +340,9 @@ export async function POST(
         })
         .where(eq(salvageCases.id, caseId));
 
-      // Notify vendors only if starting now (not scheduled)
-      let notifiedVendorsCount = 0;
-      if (scheduleData.mode === 'now') {
-        // Notify vendors matching asset categories
-        const assetType = caseRecord.assetType;
-        const matchingVendors = await db
-          .select({
-            vendorId: vendors.id,
-            userId: vendors.userId,
-            phone: users.phone,
-            email: users.email,
-            fullName: users.fullName,
-          })
-          .from(vendors)
-          .innerJoin(users, eq(vendors.userId, users.id))
-          .where(
-            and(
-              eq(vendors.status, 'approved'),
-              arrayContains(vendors.categories, [assetType])
-            )
-          );
-
-        console.log(`Found ${matchingVendors.length} vendors matching asset type: ${assetType}`);
-
-        // Filter out test vendors to save email quota and speed up approval
-        const realVendors = matchingVendors.filter(vendor => {
-          const isTestEmail = vendor.email.endsWith('@test.com') || vendor.email.endsWith('@example.com');
-          if (isTestEmail) {
-            console.log(`⏭️ Skipping test vendor: ${vendor.email}`);
-          }
-          return !isTestEmail;
-        });
-
-        console.log(`Sending notifications to ${realVendors.length} real vendors (${matchingVendors.length - realVendors.length} test vendors skipped)`);
-
-        // Send notifications to real vendors only
-        for (const vendor of realVendors) {
-          // Send SMS notification
-          const smsMessage = `New auction available! ${assetType.toUpperCase()} - Reserve: ₦${caseRecord.reservePrice}. Ends in 5 days. Bid now: ${appUrl}/vendor/auctions/${auction.id}`;
-          
-          try {
-            await smsService.sendSMS({
-              to: vendor.phone,
-              message: smsMessage,
-            });
-          } catch (error) {
-            console.error(`Failed to send SMS to vendor ${vendor.vendorId}:`, error);
-          }
-
-          // Send email notification using professional template
-          try {
-            await emailService.sendAuctionStartEmail(vendor.email, {
-              vendorName: vendor.fullName,
-              auctionId: auction.id,
-              assetType: assetType,
-              assetName: `${assetType.toUpperCase()} - ${caseRecord.claimReference}`,
-              reservePrice: parseFloat(caseRecord.reservePrice),
-              startTime: now.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
-              endTime: endTime.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
-              location: caseRecord.locationName,
-              appUrl: appUrl,
-            });
-          } catch (error) {
-            console.error(`Failed to send email to vendor ${vendor.vendorId}:`, error);
-          }
-        }
-        
-        notifiedVendorsCount = realVendors.length;
-      }
-
-      // Notify case creator (adjuster) about approval (Requirement: 6.5)
-      if (creator) {
-        const hasOverrides = body.priceOverrides && Object.keys(body.priceOverrides).length > 0;
-        
-        // Send SMS notification
-        const smsMessage = hasOverrides
-          ? `Your case ${caseRecord.claimReference} was approved with price adjustments by ${user.fullName}. Check your email for details.`
-          : `Your case ${caseRecord.claimReference} was approved by ${user.fullName}. Auction is now live!`;
-        
-        try {
-          await smsService.sendSMS({
-            to: creator.phone,
-            message: smsMessage,
-          });
-        } catch (error) {
-          console.error(`Failed to send SMS to adjuster ${creator.id}:`, error);
-        }
-
-        // Send email notification with price adjustment details
-        try {
-          // Build price adjustments object if overrides exist
-          const priceAdjustments = hasOverrides ? {
+      const hasOverrides = !!(body.priceOverrides && Object.keys(body.priceOverrides).length > 0);
+      const priceAdjustments = hasOverrides
+        ? {
             ...(body.priceOverrides!.marketValue !== undefined && {
               marketValue: {
                 original: aiEstimates.marketValue,
@@ -454,58 +367,16 @@ export async function POST(
                 adjusted: body.priceOverrides!.reservePrice,
               },
             }),
-          } : undefined;
+          }
+        : undefined;
 
-          await createNotification({
-            userId: creator.id,
-            type: 'case_approved',
-            title: 'Case Approved',
-            message: `Case ${caseRecord.claimReference} was approved and ${scheduleData.mode === 'scheduled' ? 'scheduled for auction' : 'auction is live'}.`,
-            data: {
-              caseId,
-              auctionId: auction.id,
-              url: `/adjuster/cases/${caseId}`,
-            },
-          });
-
-          await emailService.sendCaseApprovalEmail(creator.email, {
-            adjusterName: creator.fullName,
-            caseId: caseId,
-            claimReference: caseRecord.claimReference,
-            assetType: caseRecord.assetType,
-            status: 'approved',
-            comment: body.comment,
-            managerName: user.fullName,
-            appUrl: appUrl,
-            priceAdjustments: priceAdjustments,
-          });
-        } catch (error) {
-          console.error(`Failed to send email to adjuster ${creator.id}:`, error);
-        }
-      }
-
-      try {
-        await createRoleNotifications(['salvage_manager', 'system_admin'], {
-          type: 'auction_approved',
-          title: scheduleData.mode === 'scheduled' ? 'Auction Scheduled' : 'Auction Approved',
-          message: `Case ${caseRecord.claimReference} has been approved for auction.`,
-          data: {
-            caseId,
-            auctionId: auction.id,
-            url: '/manager/approvals',
-          },
-        });
-      } catch (notificationError) {
-        console.error('Failed to create staff auction approval notifications:', notificationError);
-      }
-
-      return NextResponse.json({
+      const responseBody = {
         success: true,
-        message: body.priceOverrides 
+        message: body.priceOverrides
           ? 'Case approved with price adjustments and auction created successfully'
           : scheduleData.mode === 'scheduled'
-          ? 'Case approved and auction scheduled successfully'
-          : 'Case approved and auction created successfully',
+            ? 'Case approved and auction scheduled successfully'
+            : 'Case approved and auction created successfully',
         data: {
           case: {
             id: updatedCase.id,
@@ -524,8 +395,60 @@ export async function POST(
             isScheduled: auction.isScheduled,
             scheduledStartTime: auction.scheduledStartTime,
           },
-          notifiedVendors: notifiedVendorsCount,
+          notifiedVendors: scheduleData.mode === 'now' ? null : 0,
+          notificationsQueued: true,
         },
+      };
+
+      // SMS/email to many vendors can take 30s+ — run after the manager gets success UI.
+      after(async () => {
+        let notifiedVendorsCount = 0;
+
+        if (scheduleData.mode === 'now') {
+          notifiedVendorsCount = await notifyMatchingVendorsOfNewAuction({
+            auctionId: auction.id,
+            assetType: caseRecord.assetType,
+            claimReference: caseRecord.claimReference,
+            reservePrice: caseRecord.reservePrice,
+            locationName: caseRecord.locationName,
+            endTime,
+            appUrl,
+          });
+        }
+
+        if (creator) {
+          await notifyAdjusterOfCaseApproval({
+            creatorId: creator.id,
+            creatorPhone: creator.phone,
+            creatorEmail: creator.email,
+            creatorName: creator.fullName,
+            caseId,
+            claimReference: caseRecord.claimReference,
+            assetType: caseRecord.assetType,
+            auctionId: auction.id,
+            managerName: user.fullName,
+            appUrl,
+            scheduleMode: scheduleData.mode,
+            comment: body.comment,
+            hasOverrides,
+            priceAdjustments,
+          });
+        }
+
+        await notifyStaffOfCaseApproval({
+          claimReference: caseRecord.claimReference,
+          caseId,
+          auctionId: auction.id,
+          scheduleMode: scheduleData.mode,
+        });
+
+        console.log(
+          `[CaseApproval] Background notifications finished (vendors: ${notifiedVendorsCount})`
+        );
+      });
+
+      return NextResponse.json({
+        ...responseBody,
       });
     } else {
       // REJECT CASE
@@ -557,46 +480,24 @@ export async function POST(
         )
       );
 
-      // Notify case creator (Claims Adjuster) about rejection
+      const rejectAppUrl =
+        process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+
       if (creator) {
-        // Send SMS notification
-        const smsMessage = `Your case ${caseRecord.claimReference} was rejected. Reason: ${body.comment}. Please review and resubmit.`;
-        
-        try {
-          await smsService.sendSMS({
-            to: creator.phone,
-            message: smsMessage,
-          });
-        } catch (error) {
-          console.error(`Failed to send SMS to adjuster ${creator.id}:`, error);
-        }
-
-        // Send email notification using professional template
-        try {
-          await createNotification({
-            userId: creator.id,
-            type: 'case_rejected',
-            title: 'Case Returned',
-            message: `Case ${caseRecord.claimReference} was returned for review. Reason: ${body.comment}`,
-            data: {
-              caseId,
-              url: `/adjuster/cases/${caseId}`,
-            },
-          });
-
-          await emailService.sendCaseApprovalEmail(creator.email, {
-            adjusterName: creator.fullName,
-            caseId: caseId,
+        after(async () => {
+          await notifyAdjusterOfCaseRejection({
+            creatorId: creator.id,
+            creatorPhone: creator.phone,
+            creatorEmail: creator.email,
+            creatorName: creator.fullName,
+            caseId,
             claimReference: caseRecord.claimReference,
             assetType: caseRecord.assetType,
-            status: 'rejected',
-            comment: body.comment,
+            comment: body.comment!,
             managerName: user.fullName,
-            appUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com',
+            appUrl: rejectAppUrl,
           });
-        } catch (error) {
-          console.error(`Failed to send email to adjuster ${creator.id}:`, error);
-        }
+        });
       }
 
       return NextResponse.json({

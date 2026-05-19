@@ -59,7 +59,8 @@ export async function POST(
   const evidenceSections = approval?.providerEvidence
     ? buildDojahEvidenceSections(
         (approval.providerEvidence.normalizedResult as Record<string, unknown> | null) ?? null,
-        approval.providerEvidence
+        approval.providerEvidence,
+        { viewerRole: session.user.role === 'system_admin' ? 'system_admin' : 'salvage_manager' }
       )
     : null;
 
@@ -67,5 +68,6 @@ export async function POST(
     reconcile: reconcileResult,
     approval: approval ?? null,
     evidenceSections,
+    viewerRole: session.user.role,
   });
 }

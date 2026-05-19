@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
+import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
 
 /**
  * GET /api/kyc/widget-config
@@ -54,14 +55,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Vendor profile not found' }, { status: 404 });
   }
 
-  const workflow = await getProviderVerificationService().getOrCreatePendingWorkflow({
-    userId: session.user.id,
-    vendorId: result.vendorId,
-    actorId: session.user.id,
-    workflowSlug,
-    ipAddress: getIpAddress(request.headers),
-    userAgent: request.headers.get('user-agent') ?? 'unknown',
-  });
+  let workflow: { providerReference: string; created: boolean };
+  try {
+    workflow = await getProviderVerificationService().getOrCreatePendingWorkflow({
+      userId: session.user.id,
+      vendorId: result.vendorId,
+      actorId: session.user.id,
+      workflowSlug,
+      ipAddress: getIpAddress(request.headers),
+      userAgent: request.headers.get('user-agent') ?? 'unknown',
+    });
+  } catch (error) {
+    if (isProviderVerificationStorageError(error)) {
+      return NextResponse.json({ error: PROVIDER_VERIFICATION_MIGRATION_MISSING }, { status: 503 });
+    }
+    throw error;
+  }
 
   const reconcileResult = await reconcileTier2FromDojah({
     vendorId: result.vendorId,

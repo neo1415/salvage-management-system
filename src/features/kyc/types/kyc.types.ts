@@ -15,6 +15,7 @@ export interface KYCStatus {
   approvedAt?: Date;
   expiresAt?: Date;
   rejectionReason?: string;
+  rejectedSections?: string[];
   amlRiskLevel?: AMLRiskLevel;
   fraudRiskScore?: number;
   dojahReferenceId?: string;
@@ -37,6 +38,9 @@ export interface KYCVerificationData {
   photoIdUrl?: string;
   photoIdType?: string;
   photoIdVerifiedAt?: Date;
+  ninCardUrl?: string;
+  cacCertificateUrl?: string;
+  bankStatementUrl?: string;
   // Biometrics
   selfieUrl?: string;
   livenessScore?: number;
@@ -60,6 +64,7 @@ export interface ManagerDecision {
   decision: 'approve' | 'reject';
   managerId: string;
   reason?: string;
+  rejectedSections?: string[];
   decidedAt: Date;
 }
 
@@ -83,6 +88,15 @@ export interface PendingApproval {
   photoIdUrl?: string;
   photoIdType?: string;
   addressProofUrl?: string;
+  ninCardUrl?: string;
+  bankStatementUrl?: string;
+  cacCertificateUrl?: string;
+  providerDocuments?: Array<{
+    label: string;
+    type: string;
+    url: string;
+    sourceKey?: string;
+  }>;
   ninVerificationData?: Record<string, unknown>;
   livenessScore?: number;
   biometricMatchScore?: number;

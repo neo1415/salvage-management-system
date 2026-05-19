@@ -9,6 +9,7 @@ import { db } from '@/lib/db/drizzle';
 import { salvageCases, auctions, bids, users } from '@/lib/db/schema';
 import { eq, and, gte, lte, sql, inArray, desc, count } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
+import { resolveReportIsoDateRange } from '../../utils/report-date-range';
 
 export interface CaseProcessingData {
   caseId: string;
@@ -76,8 +77,7 @@ export class OperationalDataRepository {
    * FIX: Exclude draft cases and TEST cases, determine correct status from auction state
    */
   static async getCaseProcessingData(filters: ReportFilters): Promise<CaseProcessingData[]> {
-    const startDate = filters.startDate || '2000-01-01';
-    const endDate = filters.endDate || '2099-12-31';
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
 
     // Use raw SQL to get correct status by joining with auctions and payments
     const results = await db.execute(sql`
@@ -165,8 +165,7 @@ export class OperationalDataRepository {
    * FIX: Filter TEST auctions and determine correct status (sold vs closed)
    */
   static async getAuctionPerformanceData(filters: ReportFilters): Promise<AuctionPerformanceData[]> {
-    const startDate = filters.startDate || '2000-01-01';
-    const endDate = filters.endDate || '2099-12-31';
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
 
     // FIX: Use raw SQL with proper DISTINCT ON to handle duplicate payments
     // Get the LATEST payment per auction (highest created_at)
@@ -375,8 +374,7 @@ export class OperationalDataRepository {
    */
   static async getVendorPerformanceData(filters: ReportFilters): Promise<VendorPerformanceData[]> {
     // Use raw SQL to match Master Report logic exactly
-    const startDate = filters.startDate || '2000-01-01';
-    const endDate = filters.endDate || '2099-12-31';
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
 
     const results = await db.execute(sql`
       WITH vendor_payments AS (

@@ -10,7 +10,8 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 
@@ -50,6 +51,10 @@ interface FraudAlert {
     checksCompleted?: string[];
     failedChecks?: string[];
     ipAddress?: string;
+    pendingReason?: string;
+    providerMessage?: string;
+    amlStatus?: boolean | null;
+    amlMatchDetails?: string;
   };
   providerVerification?: {
     id: string;
@@ -123,7 +128,9 @@ interface FraudAlert {
 export default function FraudAlertDashboard() {
   const router = useRouter();
   const [fraudAlerts, setFraudAlerts] = useState<FraudAlert[]>([]);
+  const fraudAlertsRef = useRef<FraudAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<FraudAlert | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -185,23 +192,35 @@ export default function FraudAlertDashboard() {
   };
 
   const fetchFraudAlerts = async () => {
+    const showFullPageLoader = fraudAlertsRef.current.length === 0;
     try {
-      setLoading(true);
+      if (showFullPageLoader) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       setError(null);
 
       const response = await fetch('/api/admin/fraud-alerts');
-      
+
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || 'Failed to fetch fraud alerts');
       }
 
       const data = await response.json();
-      setFraudAlerts(data.fraudAlerts || []);
+      const nextAlerts = data.fraudAlerts || [];
+      fraudAlertsRef.current = nextAlerts;
+      setFraudAlerts(nextAlerts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      if (showFullPageLoader) {
+        fraudAlertsRef.current = [];
+        setFraudAlerts([]);
+      }
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -411,6 +430,10 @@ export default function FraudAlertDashboard() {
     });
   };
 
+  const formatReasonCode = (reason: string) => {
+    return reason.replace(/^dojah_/i, '').replace(/_/g, ' ');
+  };
+
   const getPatternBadgeColor = (pattern: string) => {
     if (pattern.includes('Same IP')) return 'bg-red-100 text-red-800';
     if (pattern.includes('Unusual bid')) return 'bg-orange-100 text-orange-800';
@@ -425,20 +448,18 @@ export default function FraudAlertDashboard() {
     return 'bg-blue-100 text-blue-800';
   };
 
-  if (loading) {
+  if (loading && fraudAlerts.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-900 mb-8">Fraud Alert Dashboard</h1>
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-900"></div>
-          </div>
+          <DataLoadingState label="Fraud alerts" variant="table" />
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (error && fraudAlerts.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
@@ -465,6 +486,7 @@ export default function FraudAlertDashboard() {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Fraud Alert Dashboard</h1>
           <p className="text-gray-600">
             Review and take action on flagged auctions with suspicious activity
+            {isRefreshing && <DataRefreshingHint className="inline-flex mb-0 ml-2" />}
           </p>
         </div>
 
@@ -531,7 +553,7 @@ export default function FraudAlertDashboard() {
                         🚨 Fraud Alert - Auction #{alert.auctionId.slice(0, 8)}
                       </h3>
                       <p className="text-sm text-red-700">
-                        {alert.evidenceSummary?.source === 'dojah' ? 'Dojah vendor verification alert' : 'Flagged activity'} - {formatDate(alert.flaggedAt)}
+                        {alert.evidenceSummary?.source === 'dojah' ? 'Vendor verification alert' : 'Flagged activity'} - {formatDate(alert.flaggedAt)}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2 justify-end">
@@ -550,7 +572,7 @@ export default function FraudAlertDashboard() {
                           key={idx}
                           className={`px-3 py-1 rounded-full text-xs font-medium ${getPatternBadgeColor(pattern)}`}
                         >
-                          {pattern}
+                          {formatReasonCode(pattern)}
                         </span>
                       ))}
                     </div>
@@ -676,8 +698,8 @@ export default function FraudAlertDashboard() {
                         <div className="space-y-3">
                           {alert.details.map((detail, idx) => (
                             <div key={idx} className="bg-red-50 border border-red-200 rounded-lg p-4">
-                              <div className="font-medium text-red-900 mb-1">{detail.pattern}</div>
-                              <div className="text-sm text-red-700">{detail.evidence}</div>
+                              <div className="font-medium text-red-900 mb-1">{detail.pattern === 'Dojah KYC risk' ? 'KYC verification risk' : detail.pattern}</div>
+                              <div className="text-sm text-red-700">{formatReasonCode(detail.evidence)}</div>
                             </div>
                           ))}
                         </div>
@@ -824,14 +846,28 @@ export default function FraudAlertDashboard() {
                   </section>
 
                   <section className="border border-gray-200 rounded-lg p-5">
-                    <h4 className="font-semibold text-gray-900 mb-4">Dojah / Provider Evidence</h4>
+                    <h4 className="font-semibold text-gray-900 mb-4">Verification Evidence</h4>
                     <dl className="space-y-2 text-sm">
-                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Provider ref</dt><dd className="font-medium text-right break-all">{selectedAlert.evidenceSummary?.providerReference || selectedAlert.providerVerification?.providerReference || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Verification ref</dt><dd className="font-medium text-right break-all">{selectedAlert.evidenceSummary?.providerReference || selectedAlert.providerVerification?.providerReference || 'N/A'}</dd></div>
                       <div className="flex justify-between gap-4"><dt className="text-gray-500">Workflow ref</dt><dd className="font-medium text-right break-all">{selectedAlert.evidenceSummary?.workflowReference || selectedAlert.providerVerification?.workflowReference || 'N/A'}</dd></div>
                       <div className="flex justify-between gap-4"><dt className="text-gray-500">Verification type</dt><dd className="font-medium text-right">{selectedAlert.evidenceSummary?.verificationType || selectedAlert.providerVerification?.verificationType || 'N/A'}</dd></div>
-                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Provider status</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.status || 'N/A'}</dd></div>
-                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Provider risk</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.riskLevel || selectedAlert.evidenceSummary?.riskLevel || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Verification status</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.status || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Risk level</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.riskLevel || selectedAlert.evidenceSummary?.riskLevel || 'N/A'}</dd></div>
+                    <div className="flex justify-between gap-4"><dt className="text-gray-500">AML status</dt><dd className="font-medium text-right">{selectedAlert.evidenceSummary?.amlStatus === false ? 'Flagged' : selectedAlert.evidenceSummary?.amlStatus === true ? 'No named hits' : 'N/A'}</dd></div>
                     </dl>
+                  {(selectedAlert.evidenceSummary?.pendingReason || selectedAlert.evidenceSummary?.providerMessage || selectedAlert.evidenceSummary?.amlMatchDetails) && (
+                    <div className="mt-4 rounded-lg bg-red-50 border border-red-100 p-3 text-sm">
+                      {selectedAlert.evidenceSummary?.pendingReason && (
+                        <p className="text-red-900"><span className="font-semibold">Review reason:</span> {selectedAlert.evidenceSummary.pendingReason}</p>
+                      )}
+                      {selectedAlert.evidenceSummary?.providerMessage && (
+                        <p className="mt-1 text-red-900"><span className="font-semibold">Verification message:</span> {selectedAlert.evidenceSummary.providerMessage}</p>
+                      )}
+                      {selectedAlert.evidenceSummary?.amlMatchDetails && (
+                        <p className="mt-1 text-red-900"><span className="font-semibold">AML match detail:</span> {selectedAlert.evidenceSummary.amlMatchDetails}</p>
+                      )}
+                    </div>
+                  )}
                   </section>
                 </div>
 
@@ -840,7 +876,7 @@ export default function FraudAlertDashboard() {
                   <div className="flex flex-wrap gap-2 mb-4">
                     {(selectedAlert.reasonCodes?.length ? selectedAlert.reasonCodes : selectedAlert.patterns).map((reason) => (
                       <span key={reason} className="px-3 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
-                        {reason}
+                        {formatReasonCode(reason)}
                       </span>
                     ))}
                   </div>

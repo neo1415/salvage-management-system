@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
@@ -78,9 +79,33 @@ interface PaymentStats {
 
 type ViewTab = 'all' | 'today' | 'pending' | 'overdue';
 
+const DEFAULT_STATS: PaymentStats = {
+  total: 0,
+  autoVerified: 0,
+  pendingManual: 0,
+  overdue: 0,
+  registrationFees: { count: 0, total: 0 },
+};
+
+function paymentsCacheKey(
+  view: ViewTab,
+  status: string,
+  method: string,
+  paymentType: string,
+  from: string,
+  to: string
+) {
+  return `${view}|${status}|${method}|${paymentType}|${from}|${to}`;
+}
+
 export default function FinancePaymentsPage() {
   const { data: session } = useSession();
   const [payments, setPayments] = useState<Payment[]>([]);
+  const paymentsRef = useRef<Payment[]>([]);
+  const paymentsCacheRef = useRef<
+    Map<string, { payments: Payment[]; stats: PaymentStats }>
+  >(new Map());
+  const prefetchedViewsRef = useRef(false);
   const [stats, setStats] = useState<PaymentStats>({
     total: 0,
     autoVerified: 0,
@@ -133,67 +158,116 @@ export default function FinancePaymentsPage() {
   const [exporting, setExporting] = useState(false);
 
   const fetchPayments = useCallback(async () => {
+    const cacheKey = paymentsCacheKey(
+      activeTab,
+      statusFilter,
+      methodFilter,
+      paymentTypeFilter,
+      dateFrom,
+      dateTo
+    );
+    const cached = paymentsCacheRef.current.get(cacheKey);
+    const showFullPageLoader =
+      paymentsRef.current.length === 0 && !cached;
+
+    if (cached) {
+      paymentsRef.current = cached.payments;
+      setPayments(cached.payments);
+      setStats(cached.stats);
+    }
+
     try {
-      // Use different loading state for initial load vs filtering
-      if (payments.length === 0) {
+      if (showFullPageLoader) {
         setLoading(true);
       } else {
         setIsFiltering(true);
       }
       setError(null);
 
-      // Build query parameters
       const params = new URLSearchParams();
       params.append('view', activeTab);
       if (statusFilter) params.append('status', statusFilter);
       if (methodFilter) params.append('paymentMethod', methodFilter);
-      if (paymentTypeFilter) params.append('paymentType', paymentTypeFilter); // NEW: Payment type filter
+      if (paymentTypeFilter) params.append('paymentType', paymentTypeFilter);
       if (dateFrom) params.append('dateFrom', dateFrom);
       if (dateTo) params.append('dateTo', dateTo);
 
       const response = await fetch(`/api/finance/payments?${params.toString()}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch payments');
       }
 
       const data = await response.json();
-      
-      // Debug logging for Paystack payments
-      const paystackPayments = (data.payments || []).filter((p: Payment) => p.paymentMethod === 'paystack');
-      if (paystackPayments.length > 0) {
-        console.log('🔍 Client: Received Paystack payments from API:');
-        paystackPayments.forEach((p: Payment) => {
-          console.log(`   - ${p.paymentReference}`);
-          console.log(`     Status: ${p.status}, Auction Status: ${p.auctionStatus || 'MISSING!'}`);
-          console.log(`     Should hide buttons: ${p.status === 'pending' && p.auctionStatus === 'awaiting_payment'}`);
-        });
-      }
-      
-      setPayments(data.payments || []);
-      setStats(data.stats || {
-        total: 0,
-        autoVerified: 0,
-        pendingManual: 0,
-        overdue: 0,
-        registrationFees: {
-          count: 0,
-          total: 0,
-        },
+      const nextPayments = data.payments || [];
+      const nextStats = data.stats || DEFAULT_STATS;
+
+      paymentsCacheRef.current.set(cacheKey, {
+        payments: nextPayments,
+        stats: nextStats,
       });
+      paymentsRef.current = nextPayments;
+      setPayments(nextPayments);
+      setStats(nextStats);
     } catch (err) {
       console.error('Error fetching payments:', err);
       setError(err instanceof Error ? err.message : 'Failed to load payments');
+      if (showFullPageLoader) {
+        paymentsRef.current = [];
+        setPayments([]);
+      }
     } finally {
       setLoading(false);
       setIsFiltering(false);
     }
-  }, [activeTab, statusFilter, methodFilter, dateFrom, dateTo, payments.length]);
+  }, [
+    activeTab,
+    statusFilter,
+    methodFilter,
+    paymentTypeFilter,
+    dateFrom,
+    dateTo,
+  ]);
+
+  const invalidateAndRefreshPayments = useCallback(async () => {
+    paymentsCacheRef.current.clear();
+    prefetchedViewsRef.current = false;
+    await fetchPayments();
+  }, [fetchPayments]);
 
   useEffect(() => {
     fetchPayments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, statusFilter, methodFilter, paymentTypeFilter, dateFrom, dateTo]);
+  }, [fetchPayments]);
+
+  // Prefetch view tabs (no extra filters) so tab switches feel instant
+  useEffect(() => {
+    if (prefetchedViewsRef.current) return;
+    if (statusFilter || methodFilter || paymentTypeFilter || dateFrom || dateTo) {
+      return;
+    }
+    prefetchedViewsRef.current = true;
+
+    const views: ViewTab[] = ['all', 'today', 'pending', 'overdue'];
+    void Promise.all(
+      views.map(async (view) => {
+        const key = paymentsCacheKey(view, '', '', '', '', '');
+        if (paymentsCacheRef.current.has(key)) return;
+        try {
+          const response = await fetch(
+            `/api/finance/payments?view=${encodeURIComponent(view)}`
+          );
+          if (!response.ok) return;
+          const data = await response.json();
+          paymentsCacheRef.current.set(key, {
+            payments: data.payments || [],
+            stats: data.stats || DEFAULT_STATS,
+          });
+        } catch {
+          // Prefetch is best-effort
+        }
+      })
+    );
+  }, [statusFilter, methodFilter, paymentTypeFilter, dateFrom, dateTo]);
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -268,8 +342,7 @@ export default function FinancePaymentsPage() {
       setSuccessMessage(message);
       setShowSuccessModal(true);
 
-      // Refresh payments list
-      await fetchPayments();
+      await invalidateAndRefreshPayments();
     } catch (err) {
       console.error('Error verifying payment:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to verify payment';
@@ -382,8 +455,7 @@ export default function FinancePaymentsPage() {
       setSuccessMessage(`Funds released successfully! ₦${parseFloat(selectedPayment.amount).toLocaleString()} transferred to NEM Insurance.`);
       setShowSuccessModal(true);
       
-      // Refresh payments list
-      await fetchPayments();
+      await invalidateAndRefreshPayments();
     } catch (err) {
       console.error('Error releasing funds:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to release funds';
@@ -425,8 +497,7 @@ export default function FinancePaymentsPage() {
       // Close details modal
       closeModal();
       
-      // Refresh payments list
-      await fetchPayments();
+      await invalidateAndRefreshPayments();
     } catch (err) {
       console.error('Error granting grace period:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to grant grace period';
@@ -744,15 +815,8 @@ export default function FinancePaymentsPage() {
     return str;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading payments...</p>
-        </div>
-      </div>
-    );
+  if (loading && payments.length === 0) {
+    return <DataLoadingState label="Payment verification" variant="page" />;
   }
 
   return (
@@ -765,12 +829,8 @@ export default function FinancePaymentsPage() {
           <p className="mt-1 text-sm text-gray-500">
             Review and verify vendor payments
             {isFiltering && (
-              <span className="ml-2 inline-flex items-center text-[#800020]">
-                <svg className="animate-spin h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Updating...
+              <span className="ml-2 inline-flex items-center">
+                <DataRefreshingHint className="mb-0" />
               </span>
             )}
           </p>
@@ -838,7 +898,7 @@ export default function FinancePaymentsPage() {
             type="button"
             onClick={(e) => {
               e.preventDefault();
-              fetchPayments();
+              void invalidateAndRefreshPayments();
             }}
             disabled={isFiltering}
             className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"

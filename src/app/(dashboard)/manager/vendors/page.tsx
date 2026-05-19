@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -23,9 +23,9 @@ import {
   Calendar,
   ExternalLink
 } from 'lucide-react';
-import { VirtualizedList } from '@/components/ui/virtualized-list';
-import { useVirtualizedList } from '@/hooks/use-virtualized-list';
 import { Vendor } from '@/hooks/queries/use-vendors';
+import { useVendorTierCache, type VendorTierTab } from '@/hooks/use-vendor-tier-cache';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import { FilterChip } from '@/components/ui/filters/filter-chip';
 import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
 import { SearchInput } from '@/components/ui/filters/search-input';
@@ -48,19 +48,20 @@ import { Filter as FilterIcon, X } from 'lucide-react';
 
 interface VendorApplication extends Vendor {}
 
-type TierTab = 'tier0' | 'tier1' | 'tier2';
+type TierTab = VendorTierTab;
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
+
+function vendorDisplayName(application: VendorApplication): string {
+  const business = application.businessName?.trim();
+  if (business) return business;
+  const fullName = application.user.fullName?.trim();
+  if (fullName) return fullName;
+  return application.user.email || 'Unknown vendor';
+}
 
 export default function VendorManagementPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading vendors...</p>
-        </div>
-      </div>
-    }>
+    <Suspense fallback={<DataLoadingState label="Vendor management" variant="page" />}>
       <VendorManagementContent />
     </Suspense>
   );
@@ -68,8 +69,9 @@ export default function VendorManagementPage() {
 
 function VendorManagementContent() {
   const router = useRouter();
-  const { status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const searchParams = useSearchParams();
+  const isSalvageManager = session?.user?.role === 'salvage_manager';
 
   // State
   const [selectedApplication, setSelectedApplication] = useState<VendorApplication | null>(null);
@@ -77,9 +79,9 @@ function VendorManagementContent() {
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [syncReference, setSyncReference] = useState('');
-  const [syncVendorId, setSyncVendorId] = useState('');
-  const [syncingReference, setSyncingReference] = useState(false);
+  const [automaticReviewEnabled, setAutomaticReviewEnabled] = useState(false);
+  const [reviewModeLoading, setReviewModeLoading] = useState(true);
+  const [reviewModeSaving, setReviewModeSaving] = useState(false);
 
   // Tab and filter state with URL persistence
   const [activeTab, setActiveTab] = useState<TierTab>(
@@ -117,129 +119,110 @@ function VendorManagementContent() {
     setStatusFilter('all');
   };
 
-  const handleManualDojahSync = async () => {
-    if (!syncReference.trim()) {
-      setError('Enter the Dojah reference ID from the dashboard.');
-      return;
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadReviewMode() {
+      try {
+        const response = await fetch('/api/kyc/review-mode');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) setAutomaticReviewEnabled(Boolean(data.automaticReviewEnabled));
+      } catch (err) {
+        console.error('Failed to load Tier 2 review mode:', err);
+      } finally {
+        if (!cancelled) setReviewModeLoading(false);
+      }
     }
 
-    setSyncingReference(true);
+    loadReviewMode();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleReviewModeToggle = async () => {
+    const nextValue = !automaticReviewEnabled;
+    setReviewModeSaving(true);
     setError(null);
     try {
-      const response = await fetch('/api/kyc/dojah/sync-reference', {
-        method: 'POST',
+      const response = await fetch('/api/kyc/review-mode', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          reference_id: syncReference.trim(),
-          vendorId: syncVendorId.trim() || undefined,
+          automaticReviewEnabled: nextValue,
+          reason: `Tier 2 review mode changed to ${nextValue ? 'automatic' : 'manual'} from vendor management`,
         }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Dojah reference sync failed');
-
-      setActiveTab('tier2');
-      setStatusFilter('pending');
-      setSyncReference('');
-      setSyncVendorId('');
-      reset();
+      if (!response.ok) throw new Error(result.error || 'Failed to update review mode');
+      setAutomaticReviewEnabled(Boolean(result.automaticReviewEnabled));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Dojah reference sync failed');
+      setError(err instanceof Error ? err.message : 'Failed to update review mode');
     } finally {
-      setSyncingReference(false);
+      setReviewModeSaving(false);
     }
   };
 
-  // Determine tier query parameter based on active tab
-  const getTierParam = (): string => {
-    switch (activeTab) {
-      case 'tier0': return 'tier0';
-      case 'tier1': return 'tier1_bvn';
-      case 'tier2': return 'tier2_full';
-      default: return 'tier0';
-    }
-  };
+  const { vendorsByTier, isInitialLoading, refetchAll } = useVendorTierCache();
 
-  // Virtualized list for vendors
-  const {
-    items: allApplications,
-    isLoading,
-    isFetching,
-    hasMore,
-    loadMore,
-    reset,
-  } = useVirtualizedList<VendorApplication>({
-    queryKey: ['vendors', { tier: getTierParam(), status: statusFilter }],
-    fetchFn: async (page) => {
-      const params = new URLSearchParams({
-        tier: getTierParam(),
-        page: page.toString(),
-        pageSize: '50',
-      });
-      
-      // Only add status filter if not 'all'
-      if (statusFilter !== 'all') {
-        params.set('status', statusFilter);
-      }
-      
-      const response = await fetch(`/api/vendors?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch applications');
-      
-      const data = await response.json();
-      return {
-        data: data.vendors || [],
-        hasMore: data.hasMore || false,
-      };
-    },
-    pageSize: 50,
-  });
+  const tierApplications = vendorsByTier[activeTab];
 
-  // Client-side filtering
-  const applications = allApplications.filter(app => {
-    // Verification filter (only for tier1 and tier2)
-    if (activeTab !== 'tier0' && verificationFilter.length > 0) {
-      const hasAllVerifications = verificationFilter.every(filter => {
-        switch (filter) {
-          case 'bvn': return app.bvnVerified;
-          case 'nin': return app.ninVerified;
-          case 'bank': return app.bankAccountVerified;
-          case 'cac': return app.cacVerified;
-          default: return true;
-        }
-      });
-      if (!hasAllVerifications) return false;
-    }
-
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      const matchesBusinessName = app.businessName?.toLowerCase().includes(query);
-      const matchesFullName = app.user.fullName.toLowerCase().includes(query);
-      const matchesEmail = app.user.email.toLowerCase().includes(query);
-      const matchesCac = app.cacNumber?.toLowerCase().includes(query);
-      
-      if (!matchesBusinessName && !matchesFullName && !matchesEmail && !matchesCac) {
+  const applications = useMemo(() => {
+    return tierApplications.filter((app) => {
+      if (statusFilter !== 'all' && app.kycStatus !== statusFilter) {
         return false;
       }
-    }
 
-    return true;
-  });
+      if (activeTab !== 'tier0' && verificationFilter.length > 0) {
+        const hasAllVerifications = verificationFilter.every((filter) => {
+          switch (filter) {
+            case 'bvn':
+              return app.bvnVerified;
+            case 'nin':
+              return app.ninVerified;
+            case 'bank':
+              return app.bankAccountVerified;
+            case 'cac':
+              return app.cacVerified;
+            default:
+              return true;
+          }
+        });
+        if (!hasAllVerifications) return false;
+      }
+
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesBusinessName = app.businessName?.toLowerCase().includes(query);
+        const matchesFullName = app.user.fullName.toLowerCase().includes(query);
+        const matchesEmail = app.user.email.toLowerCase().includes(query);
+        const matchesCac = app.cacNumber?.toLowerCase().includes(query);
+
+        if (!matchesBusinessName && !matchesFullName && !matchesEmail && !matchesCac) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [tierApplications, statusFilter, activeTab, verificationFilter, searchQuery]);
 
   // Verification filter options (conditional based on tier)
   const getVerificationOptions = (): FilterOption[] => {
     switch (activeTab) {
       case 'tier0':
-        return []; // No verification filters for tier 0
+        return [];
       case 'tier1':
         return [
-          { value: 'bvn', label: 'BVN Verified', count: allApplications.filter(a => a.bvnVerified).length },
+          { value: 'bvn', label: 'BVN Verified', count: tierApplications.filter((a) => a.bvnVerified).length },
         ];
       case 'tier2':
         return [
-          { value: 'bvn', label: 'BVN Verified', count: allApplications.filter(a => a.bvnVerified).length },
-          { value: 'nin', label: 'NIN Verified', count: allApplications.filter(a => a.ninVerified).length },
-          { value: 'bank', label: 'Bank Verified', count: allApplications.filter(a => a.bankAccountVerified).length },
-          { value: 'cac', label: 'CAC Verified', count: allApplications.filter(a => a.cacVerified).length },
+          { value: 'bvn', label: 'BVN Verified', count: tierApplications.filter((a) => a.bvnVerified).length },
+          { value: 'nin', label: 'NIN Verified', count: tierApplications.filter((a) => a.ninVerified).length },
+          { value: 'bank', label: 'Bank Verified', count: tierApplications.filter((a) => a.bankAccountVerified).length },
+          { value: 'cac', label: 'CAC Verified', count: tierApplications.filter((a) => a.cacVerified).length },
         ];
       default:
         return [];
@@ -304,8 +287,7 @@ function VendorManagementContent() {
 
       console.log('✅ Vendor review submitted successfully');
 
-      // Success - refresh list and close modal
-      reset();
+      await refetchAll();
       setSelectedApplication(null);
       setReviewAction(null);
       setComment('');
@@ -318,7 +300,7 @@ function VendorManagementContent() {
   };
 
   // Loading state
-  if (sessionStatus === 'loading' || (isLoading && applications.length === 0)) {
+  if (sessionStatus === 'loading' || isInitialLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-[#800020] animate-spin" />
@@ -354,10 +336,7 @@ function VendorManagementContent() {
           {/* Tier Tabs */}
           <div className="flex gap-2 mb-6 border-b border-gray-200">
             <button
-              onClick={() => {
-                setActiveTab('tier0');
-                reset();
-              }}
+              onClick={() => setActiveTab('tier0')}
               className={`px-6 py-3 font-semibold transition-all border-b-2 ${
                 activeTab === 'tier0'
                   ? 'border-[#800020] text-[#800020]'
@@ -368,10 +347,7 @@ function VendorManagementContent() {
               <span className="ml-2 text-xs text-gray-500">(No BVN)</span>
             </button>
             <button
-              onClick={() => {
-                setActiveTab('tier1');
-                reset();
-              }}
+              onClick={() => setActiveTab('tier1')}
               className={`px-6 py-3 font-semibold transition-all border-b-2 ${
                 activeTab === 'tier1'
                   ? 'border-[#800020] text-[#800020]'
@@ -382,10 +358,7 @@ function VendorManagementContent() {
               <span className="ml-2 text-xs text-gray-500">(BVN Verified)</span>
             </button>
             <button
-              onClick={() => {
-                setActiveTab('tier2');
-                reset();
-              }}
+              onClick={() => setActiveTab('tier2')}
               className={`px-6 py-3 font-semibold transition-all border-b-2 ${
                 activeTab === 'tier2'
                   ? 'border-[#800020] text-[#800020]'
@@ -400,10 +373,7 @@ function VendorManagementContent() {
           {/* Status Filter Buttons */}
           <div className="flex gap-2 mb-4">
             <button
-              onClick={() => {
-                setStatusFilter('all');
-                reset();
-              }}
+              onClick={() => setStatusFilter('all')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 statusFilter === 'all'
                   ? 'bg-[#800020] text-white'
@@ -413,10 +383,7 @@ function VendorManagementContent() {
               All
             </button>
             <button
-              onClick={() => {
-                setStatusFilter('pending');
-                reset();
-              }}
+              onClick={() => setStatusFilter('pending')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 statusFilter === 'pending'
                   ? 'bg-yellow-600 text-white'
@@ -426,10 +393,7 @@ function VendorManagementContent() {
               Pending
             </button>
             <button
-              onClick={() => {
-                setStatusFilter('approved');
-                reset();
-              }}
+              onClick={() => setStatusFilter('approved')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 statusFilter === 'approved'
                   ? 'bg-green-600 text-white'
@@ -439,10 +403,7 @@ function VendorManagementContent() {
               Approved
             </button>
             <button
-              onClick={() => {
-                setStatusFilter('rejected');
-                reset();
-              }}
+              onClick={() => setStatusFilter('rejected')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 statusFilter === 'rejected'
                   ? 'bg-red-600 text-white'
@@ -461,33 +422,36 @@ function VendorManagementContent() {
             className="w-full mb-4"
           />
 
-          {activeTab === 'tier2' && (
-            <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Sync Dojah Reference</h3>
-              <p className="text-xs text-gray-500 mb-3">
-                Use this for one-time reconciliation when a completed Dojah dashboard record was created before NEM stored the reference.
+          {isSalvageManager && activeTab === 'tier2' && (
+            <div className="mb-4 bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">Tier 2 Review Mode</h3>
+                    <p className="text-xs text-gray-500">
+                      {automaticReviewEnabled
+                        ? 'Automatic review is on. Clean submissions are approved immediately; flagged submissions still go to manager review.'
+                        : 'Manual review is on. Every Tier 2 submission waits for manager approval.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleReviewModeToggle}
+                    disabled={reviewModeLoading || reviewModeSaving}
+                    className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      automaticReviewEnabled ? 'bg-[#800020]' : 'bg-gray-300'
+                    }`}
+                    aria-pressed={automaticReviewEnabled}
+                    aria-label="Toggle Tier 2 automatic review"
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                        automaticReviewEnabled ? 'translate-x-8' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              <p className="mt-3 text-xs font-medium text-gray-700">
+                Current mode: {automaticReviewEnabled ? 'Automatic' : 'Manual'}
               </p>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]">
-                <input
-                  value={syncReference}
-                  onChange={(event) => setSyncReference(event.target.value)}
-                  placeholder="Dojah reference ID"
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800020]"
-                />
-                <input
-                  value={syncVendorId}
-                  onChange={(event) => setSyncVendorId(event.target.value)}
-                  placeholder="Vendor ID (optional if unambiguous)"
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800020]"
-                />
-                <button
-                  onClick={handleManualDojahSync}
-                  disabled={syncingReference}
-                  className="px-4 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] disabled:opacity-50"
-                >
-                  {syncingReference ? 'Syncing...' : 'Sync'}
-                </button>
-              </div>
             </div>
           )}
 
@@ -514,10 +478,7 @@ function VendorManagementContent() {
             {statusFilter !== 'all' && (
               <FilterChip
                 label={`Status: ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`}
-                onRemove={() => {
-                  setStatusFilter('all');
-                  reset();
-                }}
+                onRemove={() => setStatusFilter('all')}
               />
             )}
             {verificationFilter.map(filter => {
@@ -561,7 +522,7 @@ function VendorManagementContent() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-gray-900">Filter Options</h3>
                 <span className="text-xs text-gray-500">
-                  {applications.length} of {allApplications.length} vendors
+                  {applications.length} of {tierApplications.length} vendors
                 </span>
               </div>
 
@@ -580,7 +541,7 @@ function VendorManagementContent() {
           {/* Results Count */}
           {hasActiveFilters && (
             <div className="text-sm text-gray-600">
-              Showing <span className="font-semibold text-gray-900">{applications.length}</span> of <span className="font-semibold text-gray-900">{allApplications.length}</span> vendors
+              Showing <span className="font-semibold text-gray-900">{applications.length}</span> of <span className="font-semibold text-gray-900">{tierApplications.length}</span> vendors
             </div>
           )}
         </div>
@@ -599,7 +560,7 @@ function VendorManagementContent() {
         )}
 
         {/* Applications List */}
-        {applications.length === 0 && !isLoading ? (
+        {applications.length === 0 && !isInitialLoading ? (
           <div className="bg-white rounded-lg shadow-sm p-12 text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
               <CheckCircle2 className="w-8 h-8 text-gray-400" />
@@ -635,29 +596,7 @@ function VendorManagementContent() {
               </button>
             )}
           </div>
-        ) : applications.length > 50 ? (
-          // Use virtualization for large lists (> 50 items)
-          <div className="h-[calc(100vh-300px)]">
-            <VirtualizedList
-              items={applications}
-              renderItem={(application) => (
-                <div className="px-4 py-2">
-                  <ApplicationCard
-                    application={application}
-                    tier={activeTab}
-                    onReview={() => activeTab === 'tier2' ? router.push(`/manager/kyc-approvals/${application.id}`) : setSelectedApplication(application)}
-                  />
-                </div>
-              )}
-              estimateSize={280}
-              onLoadMore={loadMore}
-              hasMore={hasMore}
-              isLoading={isFetching}
-              className="pb-4"
-            />
-          </div>
         ) : (
-          // Regular rendering for small lists (<= 50 items)
           <div className="grid grid-cols-1 gap-6">
             {applications.map((application) => (
               <ApplicationCard
@@ -748,7 +687,7 @@ function ApplicationCard({
               <Building2 className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-gray-900">{application.businessName || 'Individual Vendor'}</h3>
+              <h3 className="text-lg font-bold text-gray-900">{vendorDisplayName(application)}</h3>
               <p className="text-sm text-gray-600">{application.user.fullName}</p>
             </div>
           </div>
@@ -788,11 +727,11 @@ function ApplicationCard({
         {tier === 'tier2' && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4 text-sm">
             <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-gray-500">Provider</p>
-              <p className="font-semibold text-gray-900 capitalize">{application.verificationSource === 'dojah' ? 'Dojah' : 'Legacy'}</p>
+              <p className="text-gray-500">Source</p>
+              <p className="font-semibold text-gray-900 capitalize">{application.verificationSource === 'dojah' ? 'Identity verification' : 'Legacy'}</p>
             </div>
             <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-gray-500">Provider Status</p>
+              <p className="text-gray-500">Verification Status</p>
               <p className="font-semibold text-gray-900 capitalize">
                 {providerEvidence?.status?.replace(/_/g, ' ') || 'Not available'}
               </p>
@@ -815,31 +754,6 @@ function ApplicationCard({
                 {flagCount}
                 {normalized.amlStatus === false ? ' (AML flagged)' : ''}
               </p>
-            </div>
-          </div>
-        )}
-
-        {/* Business Details (Tier 2 only) */}
-        {tier === 'tier2' && (
-          <div className="bg-gray-50 rounded-lg p-4 mb-4">
-            <h4 className="font-semibold text-gray-900 mb-3">Business Details</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              <div>
-                <span className="text-gray-600">CAC Number:</span>
-                <span className="ml-2 font-medium text-gray-900">{application.cacNumber || String((normalized.businessData as Record<string, unknown> | null)?.businessNumber ?? (normalized.businessId as Record<string, unknown> | null)?.businessNumber ?? 'Not provided by Dojah')}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">TIN:</span>
-                <span className="ml-2 font-medium text-gray-900">{application.tin || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">Bank:</span>
-                <span className="ml-2 font-medium text-gray-900">{application.bankName || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">Account:</span>
-                <span className="ml-2 font-medium text-gray-900">{application.bankAccountNumber || 'N/A'}</span>
-              </div>
             </div>
           </div>
         )}
@@ -984,7 +898,7 @@ function ReviewModal({
               <Building2 className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">{application.businessName}</h2>
+              <h2 className="text-xl font-bold text-gray-900">{vendorDisplayName(application)}</h2>
               <p className="text-sm text-gray-600">{application.user.fullName}</p>
             </div>
           </div>
@@ -1046,7 +960,7 @@ function ReviewModal({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div>
                   <span className="text-gray-600">Business Name:</span>
-                  <span className="ml-2 font-medium text-gray-900">{application.businessName || 'Individual Vendor'}</span>
+                  <span className="ml-2 font-medium text-gray-900">{vendorDisplayName(application)}</span>
                 </div>
                 {tier === 'tier2' && (
                   <>
@@ -1146,6 +1060,28 @@ function ReviewModal({
           )}
 
           {/* Review Actions */}
+          {tier === 'tier0' || tier === 'tier1' ? (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+              {tier === 'tier1' ? (
+                <p>
+                  Tier 1 is approved automatically when BVN verification matches the vendor&apos;s registered name and details.
+                  No manual approve or reject action is required.
+                </p>
+              ) : (
+                <p>Tier 0 vendors have not completed BVN verification yet. Review their profile information only.</p>
+              )}
+            </div>
+          ) : application.kycStatus !== 'pending' ? (
+            <div className={`rounded-lg border p-4 text-sm ${
+              application.kycStatus === 'approved'
+                ? 'border-green-200 bg-green-50 text-green-900'
+                : 'border-red-200 bg-red-50 text-red-900'
+            }`}>
+              <p className="font-semibold">
+                {application.kycStatus === 'approved' ? 'This application is already approved.' : 'This application was rejected.'}
+              </p>
+            </div>
+          ) : (
           <div>
             <h3 className="text-lg font-bold text-gray-900 mb-4">Review Decision</h3>
             
@@ -1209,6 +1145,8 @@ function ReviewModal({
               </div>
             )}
           </div>
+          )}
+
         </div>
 
         {/* Footer */}
@@ -1218,9 +1156,10 @@ function ReviewModal({
             disabled={submitting}
             className="px-6 py-3 border-2 border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Cancel
+            {tier === 'tier0' || tier === 'tier1' || application.kycStatus !== 'pending' ? 'Close' : 'Cancel'}
           </button>
           
+          {tier !== 'tier0' && tier !== 'tier1' && application.kycStatus === 'pending' && (
           <button
             onClick={onSubmit}
             disabled={!reviewAction || submitting}
@@ -1238,6 +1177,7 @@ function ReviewModal({
               </>
             )}
           </button>
+          )}
         </div>
       </div>
     </div>

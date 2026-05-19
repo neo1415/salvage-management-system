@@ -4,6 +4,7 @@ import { DashboardTopBar } from '@/components/layout/dashboard-top-bar';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { SyncProgressIndicator } from '@/components/ui/sync-progress-indicator';
 import { ToastProvider } from '@/components/ui/toast';
+import { NavigationProgressBar } from '@/components/ui/loading-states';
 
 /**
  * Dashboard Layout
@@ -15,6 +16,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <ToastProvider>
       <div className="min-h-screen bg-gray-50">
+        <NavigationProgressBar />
         <DashboardSidebar />
         
         {/* Desktop Top Bar - Only visible on desktop */}

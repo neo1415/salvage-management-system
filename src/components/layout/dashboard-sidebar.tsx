@@ -2,8 +2,8 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
   LayoutDashboard,
@@ -203,9 +203,9 @@ const navigationItems: NavItem[] = [
     roles: ['system_admin'],
   },
   {
-    label: 'Fraud Alerts',
-    href: '/admin/fraud',
-    icon: AlertTriangle,
+    label: 'Vendors',
+    href: '/manager/vendors',
+    icon: Users,
     roles: ['system_admin'],
   },
   {
@@ -221,6 +221,12 @@ const navigationItems: NavItem[] = [
     roles: ['system_admin'],
   },
   {
+    label: 'Fraud Alerts',
+    href: '/admin/fraud',
+    icon: AlertTriangle,
+    roles: ['system_admin'],
+  },
+  {
     label: 'Reports',
     href: '/reports',
     icon: BarChart3,
@@ -231,6 +237,7 @@ const navigationItems: NavItem[] = [
 export default function DashboardSidebar() {
   const { data: session } = useSession();
   const pathname = usePathname();
+  const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
@@ -240,6 +247,23 @@ export default function DashboardSidebar() {
   const filteredNavItems = navigationItems.filter((item) =>
     item.roles.includes(userRole)
   );
+
+  const prefetchRoutes = useMemo(() => {
+    const routes = new Set<string>();
+    for (const item of filteredNavItems) {
+      routes.add(item.href);
+      item.submenu?.forEach((sub) => routes.add(sub.href));
+    }
+    return Array.from(routes);
+  }, [filteredNavItems]);
+
+  useEffect(() => {
+    for (const href of prefetchRoutes) {
+      if (href !== pathname) {
+        router.prefetch(href);
+      }
+    }
+  }, [prefetchRoutes, pathname, router]);
 
   const toggleSubmenu = (href: string) => {
     setExpandedMenus((prev) => ({
@@ -318,6 +342,7 @@ export default function DashboardSidebar() {
             ) : (
               <Link
                 href={item.href}
+                prefetch={true}
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                   isActive

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { WalletPaymentConfirmation } from '@/components/payments/wallet-payment-confirmation';
 import Script from 'next/script';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 interface PaymentDetails {
   id: string;
@@ -312,14 +313,7 @@ export default function PaymentPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-900 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading payment details...</p>
-        </div>
-      </div>
-    );
+    return <DataLoadingState label="Payment details" variant="page" />;
   }
 
   if (error && !payment) {
