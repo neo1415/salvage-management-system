@@ -9,8 +9,11 @@
 
 import { db } from '@/lib/db/drizzle';
 import { notifications, NotificationType, NotificationData } from '@/lib/db/schema/notifications';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { notificationPreferences } from '@/lib/db/schema/push-subscriptions';
+import { users } from '@/lib/db/schema/users';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { sendNotificationToUser } from '@/lib/socket/server';
+import { sendPushToUser } from './push-subscription.service';
 
 export interface CreateNotificationInput {
   userId: string;
@@ -26,12 +29,95 @@ export interface GetNotificationsOptions {
   unreadOnly?: boolean;
 }
 
+type NotificationRole = 'vendor' | 'claims_adjuster' | 'salvage_manager' | 'finance_officer' | 'system_admin';
+type PreferenceToggle = 'bidAlerts' | 'auctionEnding' | 'paymentReminders' | 'leaderboardUpdates';
+
+const DOCUMENT_SIGNING_TYPES = new Set<string>([
+  'DOCUMENT_GENERATED',
+  'DOCUMENT_SIGNED',
+  'SIGNATURE_REQUIRED',
+]);
+
+function preferenceKeyForType(type: string): PreferenceToggle | null {
+  switch (type) {
+    case 'outbid':
+      return 'bidAlerts';
+    case 'auction_closing_soon':
+      return 'auctionEnding';
+    case 'payment_reminder':
+    case 'PAYMENT_UNLOCKED':
+    case 'PAYMENT_METHOD_SELECTION_REQUIRED':
+    case 'payment_success':
+      return 'paymentReminders';
+    case 'leaderboard_update':
+      return 'leaderboardUpdates';
+    default:
+      return null;
+  }
+}
+
+async function getPreferences(userId: string) {
+  const [preferences] = await db
+    .select()
+    .from(notificationPreferences)
+    .where(eq(notificationPreferences.userId, userId))
+    .limit(1);
+
+  return preferences || null;
+}
+
+async function shouldCreateInAppNotification(userId: string, type: string): Promise<boolean> {
+  const preferences = await getPreferences(userId);
+  const preferenceKey = preferenceKeyForType(type);
+
+  if (!preferences) {
+    return true;
+  }
+
+  if (preferenceKey && preferences[preferenceKey] === false) {
+    return false;
+  }
+
+  return true;
+}
+
+function shouldSendBrowserPush(type: string): boolean {
+  return !DOCUMENT_SIGNING_TYPES.has(type);
+}
+
+function notificationUrl(data?: NotificationData): string | undefined {
+  const explicitUrl = data?.url;
+  if (typeof explicitUrl === 'string' && explicitUrl.startsWith('/')) {
+    return explicitUrl;
+  }
+
+  if (data?.paymentId) {
+    return `/vendor/payments/${data.paymentId}`;
+  }
+
+  if (data?.auctionId) {
+    return `/vendor/auctions/${data.auctionId}`;
+  }
+
+  if (data?.caseId) {
+    return `/adjuster/cases/${data.caseId}`;
+  }
+
+  return undefined;
+}
+
 /**
  * Create a new notification
  * Stores in database and sends real-time via Socket.IO
  */
 export async function createNotification(input: CreateNotificationInput) {
   try {
+    const shouldCreate = await shouldCreateInAppNotification(input.userId, input.type);
+    if (!shouldCreate) {
+      console.log(`Notification skipped by user preferences for ${input.userId}: ${input.type}`);
+      return null;
+    }
+
     // Insert notification into database
     const [notification] = await db
       .insert(notifications)
@@ -48,6 +134,22 @@ export async function createNotification(input: CreateNotificationInput) {
     // Send real-time notification via Socket.IO
     await sendNotificationToUser(input.userId, notification);
 
+    if (shouldSendBrowserPush(input.type)) {
+      void sendPushToUser(input.userId, {
+        title: input.title,
+        body: input.message.length > 140 ? `${input.message.slice(0, 137)}...` : input.message,
+        tag: input.type,
+        data: {
+          ...(input.data || {}),
+          type: input.type,
+          url: notificationUrl(input.data),
+          notificationId: notification.id,
+        },
+      }).catch((pushError) => {
+        console.error('Error sending browser push notification:', pushError);
+      });
+    }
+
     console.log(`✅ Notification created for user ${input.userId}: ${input.type}`);
 
     return notification;
@@ -55,6 +157,33 @@ export async function createNotification(input: CreateNotificationInput) {
     console.error('Error creating notification:', error);
     throw new Error('Failed to create notification');
   }
+}
+
+/**
+ * Create the same notification for all users with the supplied roles.
+ */
+export async function createRoleNotifications(
+  roles: NotificationRole[],
+  notification: Omit<CreateNotificationInput, 'userId'>
+) {
+  const roleUsers = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(inArray(users.role, roles));
+
+  const results = await Promise.allSettled(
+    roleUsers.map((user) =>
+      createNotification({
+        ...notification,
+        userId: user.id,
+      })
+    )
+  );
+
+  const sentCount = results.filter((result) => result.status === 'fulfilled').length;
+  console.log(`Created ${sentCount}/${roleUsers.length} role notifications for ${roles.join(', ')}`);
+
+  return { sentCount, targetCount: roleUsers.length };
 }
 
 /**

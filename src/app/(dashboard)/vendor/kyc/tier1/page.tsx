@@ -30,7 +30,7 @@ import {
  */
 export default function Tier1KYCPage() {
   const router = useRouter();
-  const { status, data: session } = useSession();
+  const { status, data: session, update } = useSession();
 
   const [bvn, setBvn] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -117,10 +117,6 @@ export default function Tier1KYCPage() {
       
       // Refresh session to update bvnVerified flag
       if (result.refreshSession) {
-        // Force a full session refresh by calling update() with force flag
-        // This triggers the JWT callback with trigger='update'
-        const { update } = await import('next-auth/react');
-        
         // Call update to trigger session refresh
         await update();
         
@@ -130,9 +126,7 @@ export default function Tier1KYCPage() {
 
       // Redirect to dashboard after 2 seconds
       setTimeout(() => {
-        router.push('/vendor/dashboard');
-        // Force a hard refresh to ensure middleware picks up new session
-        router.refresh();
+        window.location.href = '/vendor/dashboard';
       }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verification failed. Please try again.');

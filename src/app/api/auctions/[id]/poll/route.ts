@@ -20,6 +20,7 @@ import { payments } from '@/lib/db/schema/payments';
 import { eq, and } from 'drizzle-orm';
 import { redis } from '@/lib/redis/client';
 import { configService } from '@/features/auction-deposit/services/config.service';
+import { getWatchingCount } from '@/features/auctions/services/watching.service';
 
 // Rate limiting: 1 request per 2 seconds per user
 const RATE_LIMIT_WINDOW = 2000; // 2 seconds in milliseconds
@@ -111,12 +112,10 @@ export async function GET(
       hasVerifiedPayment = !!payment;
     }
 
-    // Get watching count from Redis
+    // Get watching count from the same service/key used by watch/unwatch.
     let watchingCount = 0;
     try {
-      const watchingKey = `auction:${auctionId}:watching`;
-      const count = await redis.get(watchingKey);
-      watchingCount = count && typeof count === 'string' ? parseInt(count, 10) : 0;
+      watchingCount = await getWatchingCount(auctionId);
     } catch (error) {
       console.error('Failed to get watching count from Redis:', error);
       // Continue without watching count
@@ -143,7 +142,7 @@ export async function GET(
     };
 
     // Generate ETag based on auction state (include hasVerifiedPayment in hash)
-    const etag = `"${auction.id}-${auction.currentBid}-${auction.status}-${hasVerifiedPayment}-${auction.updatedAt?.getTime()}"`;
+    const etag = `"${auction.id}-${auction.currentBid}-${auction.status}-${watchingCount}-${hasVerifiedPayment}-${auction.updatedAt?.getTime()}"`;
     
     // Check if client has cached version
     const clientEtag = request.headers.get('if-none-match');

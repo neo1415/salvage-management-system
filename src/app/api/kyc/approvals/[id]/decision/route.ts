@@ -7,6 +7,9 @@ import { eq } from 'drizzle-orm';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { getKYCAuditService } from '@/features/kyc/services/audit.service';
 import { getKYCNotificationService } from '@/features/kyc/services/notification.service';
+import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
+import { and, isNull } from 'drizzle-orm';
+import { logAction, createAuditLogData, AuditActionType, AuditEntityType } from '@/lib/utils/audit-logger';
 
 /**
  * POST /api/kyc/approvals/[id]/decision
@@ -68,7 +71,31 @@ export async function POST(
     decidedAt: now,
   });
 
+  await db
+    .update(providerVerificationRecords)
+    .set({
+      reviewedBy: session.user.id,
+      reviewedAt: now,
+      finalDecision: decision,
+      decisionReason: reason ?? null,
+      updatedAt: now,
+    })
+    .where(and(eq(providerVerificationRecords.vendorId, vendorId), isNull(providerVerificationRecords.reviewedAt)));
+
   await audit.logManagerDecision(vendorId, session.user.id, decision, reason);
+  await logAction(
+    createAuditLogData(
+      request,
+      session.user.id,
+      decision === 'approve'
+        ? AuditActionType.VENDOR_APPROVED_AFTER_VERIFICATION
+        : AuditActionType.VENDOR_REJECTED_AFTER_VERIFICATION,
+      AuditEntityType.KYC,
+      vendorId,
+      undefined,
+      { decision, reason }
+    )
+  );
 
   if (vendorUser) {
     const target = {

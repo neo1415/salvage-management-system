@@ -99,6 +99,10 @@ const ASSET_TYPES = [
   { value: 'machinery', label: 'Machinery & Equipment', icon: '⚙️' },
 ] as const;
 
+const LAUNCH_ASSET_TYPES = ASSET_TYPES.filter((type) =>
+  ['vehicle', 'electronics', 'property'].includes(type.value)
+);
+
 /**
  * Validation schema - Updated for universal item types
  */
@@ -1712,7 +1716,7 @@ function NewCasePageContent() {
               control={control}
               render={({ field }) => (
                 <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {ASSET_TYPES.map((type) => (
+                  {LAUNCH_ASSET_TYPES.map((type) => (
                     <button
                       key={type.value}
                       type="button"

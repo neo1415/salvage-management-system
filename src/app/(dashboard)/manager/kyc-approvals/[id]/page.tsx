@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import {
   Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle,
-  Shield, User, FileText, Eye
+  Shield, User, FileText, Eye, Download
 } from 'lucide-react';
 import type { PendingApproval } from '@/features/kyc/types/kyc.types';
 
@@ -23,6 +23,7 @@ export default function KYCApprovalDetailPage() {
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<'approved' | 'rejected' | null>(null);
+  const [exportingEvidence, setExportingEvidence] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -130,6 +131,35 @@ export default function KYCApprovalDetailPage() {
     }
   }
 
+  async function handleEvidenceExport() {
+    setExportingEvidence(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/kyc/approvals/${vendorId}/evidence/export`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to export evidence packet');
+      }
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition') || '';
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] || `vendor-verification-evidence-${vendorId.slice(0, 8)}.csv`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to export evidence packet');
+    } finally {
+      setExportingEvidence(false);
+    }
+  }
+
   if (status === 'loading' || loading) {
     return <div className="flex items-center justify-center min-h-[400px]"><Loader2 className="w-8 h-8 animate-spin text-[#800020]" /></div>;
   }
@@ -164,11 +194,21 @@ export default function KYCApprovalDetailPage() {
         <ArrowLeft className="w-5 h-5" /> Back to Approvals
       </button>
 
-      <div className="flex items-center gap-3 mb-6">
-        <Shield className="w-6 h-6 text-[#800020]" />
-        <h1 className="text-2xl font-bold text-gray-900">KYC Review: {approval.vendorName}</h1>
-        {approval.amlRiskLevel === 'High' && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">High Risk</span>}
-        {approval.amlRiskLevel === 'Medium' && <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">Medium Risk</span>}
+      <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Shield className="w-6 h-6 text-[#800020]" />
+          <h1 className="text-2xl font-bold text-gray-900">KYC Review: {approval.vendorName}</h1>
+          {approval.amlRiskLevel === 'High' && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">High Risk</span>}
+          {approval.amlRiskLevel === 'Medium' && <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">Medium Risk</span>}
+        </div>
+        <button
+          onClick={handleEvidenceExport}
+          disabled={exportingEvidence}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-[#800020] text-[#800020] font-semibold rounded-lg hover:bg-[#800020] hover:text-white transition-colors disabled:opacity-50"
+        >
+          {exportingEvidence ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          Export Evidence CSV
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -234,6 +274,78 @@ export default function KYCApprovalDetailPage() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {approval.providerEvidence && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="w-4 h-4 text-[#800020]" />
+            <h2 className="font-semibold text-gray-900">Dojah Verification Evidence</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-4">
+            <div>
+              <p className="text-gray-500">Provider</p>
+              <p className="font-semibold capitalize">{approval.providerEvidence.provider}</p>
+            </div>
+            <div>
+              <p className="text-gray-500">Status</p>
+              <p className="font-semibold capitalize">{approval.providerEvidence.status.replace(/_/g, ' ')}</p>
+            </div>
+            <div>
+              <p className="text-gray-500">Risk</p>
+              <p className={`font-semibold capitalize ${
+                approval.providerEvidence.riskLevel === 'critical' || approval.providerEvidence.riskLevel === 'high'
+                  ? 'text-red-600'
+                  : approval.providerEvidence.riskLevel === 'medium'
+                    ? 'text-yellow-600'
+                    : 'text-green-600'
+              }`}>
+                {approval.providerEvidence.riskLevel}
+              </p>
+            </div>
+            <div className="md:col-span-2">
+              <p className="text-gray-500">Reference</p>
+              <p className="font-mono text-xs text-gray-800 break-all">
+                {approval.providerEvidence.providerReference || approval.providerEvidence.workflowReference || 'Not available'}
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500">Updated</p>
+              <p className="font-medium">
+                {approval.providerEvidence.updatedAt ? new Date(approval.providerEvidence.updatedAt).toLocaleString() : 'Not available'}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="font-medium text-gray-700 mb-2">Completed Checks</p>
+              <div className="flex flex-wrap gap-2">
+                {approval.providerEvidence.checksCompleted.length ? approval.providerEvidence.checksCompleted.map((check) => (
+                  <span key={check} className="px-2 py-1 rounded-full bg-green-50 text-green-700 text-xs">{check.replace(/_/g, ' ')}</span>
+                )) : <span className="text-gray-400">None yet</span>}
+              </div>
+            </div>
+            <div>
+              <p className="font-medium text-gray-700 mb-2">Pending Checks</p>
+              <div className="flex flex-wrap gap-2">
+                {approval.providerEvidence.pendingChecks.length ? approval.providerEvidence.pendingChecks.map((check) => (
+                  <span key={check} className="px-2 py-1 rounded-full bg-yellow-50 text-yellow-700 text-xs">{check.replace(/_/g, ' ')}</span>
+                )) : <span className="text-gray-400">None</span>}
+              </div>
+            </div>
+            <div>
+              <p className="font-medium text-gray-700 mb-2">Failed Checks</p>
+              <div className="flex flex-wrap gap-2">
+                {approval.providerEvidence.failedChecks.length ? approval.providerEvidence.failedChecks.map((check) => (
+                  <span key={check} className="px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs">{check.replace(/_/g, ' ')}</span>
+                )) : <span className="text-gray-400">None</span>}
+              </div>
+            </div>
+          </div>
+          {approval.providerEvidence.displayMessage && (
+            <p className="mt-4 text-sm text-gray-600">{approval.providerEvidence.displayMessage}</p>
+          )}
         </div>
       )}
 

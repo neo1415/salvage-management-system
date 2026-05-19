@@ -31,7 +31,15 @@ export async function POST(request: NextRequest) {
   try {
     // Verify cron secret for security
     const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET || 'dev-secret-change-in-production';
+    const cronSecret = process.env.CRON_SECRET;
+
+    if (!cronSecret) {
+      console.error('[Security] CRON_SECRET not configured - refusing to run fraud auto-suspend cron');
+      return NextResponse.json(
+        { error: 'Cron authentication is not configured' },
+        { status: 500 }
+      );
+    }
 
     if (authHeader !== `Bearer ${cronSecret}`) {
       console.error('❌ Unauthorized cron job access attempt');

@@ -40,6 +40,30 @@ export interface NotificationPayload {
   }>;
 }
 
+type PreferenceToggle = 'bidAlerts' | 'auctionEnding' | 'paymentReminders' | 'leaderboardUpdates';
+
+function preferenceKeyForType(type?: string): PreferenceToggle | null {
+  switch (type) {
+    case 'outbid':
+      return 'bidAlerts';
+    case 'auction-ending':
+    case 'auction_closing_soon':
+      return 'auctionEnding';
+    case 'payment-reminder':
+    case 'payment_reminder':
+    case 'payment-confirmation':
+    case 'PAYMENT_UNLOCKED':
+    case 'PAYMENT_METHOD_SELECTION_REQUIRED':
+    case 'payment_success':
+      return 'paymentReminders';
+    case 'leaderboard-update':
+    case 'leaderboard_update':
+      return 'leaderboardUpdates';
+    default:
+      return null;
+  }
+}
+
 /**
  * Get all active push subscriptions for a user
  */
@@ -96,6 +120,11 @@ export async function sendPushToUser(
   payload: NotificationPayload
 ): Promise<{ success: boolean; sentCount: number; errors: string[] }> {
   try {
+    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+      console.log('Push notifications skipped because VAPID keys are not configured');
+      return { success: false, sentCount: 0, errors: ['Push not configured'] };
+    }
+
     // Get user's push subscriptions
     const subscriptions = await getUserPushSubscriptions(userId);
 
@@ -111,6 +140,12 @@ export async function sendPushToUser(
     if (preferences && !preferences.pushEnabled) {
       console.log(`Push notifications disabled for user ${userId}`);
       return { success: false, sentCount: 0, errors: ['Push disabled'] };
+    }
+
+    const preferenceKey = preferenceKeyForType(payload.data?.type);
+    if (preferences && preferenceKey && !preferences[preferenceKey]) {
+      console.log(`Push notification ${payload.data?.type} disabled for user ${userId}`);
+      return { success: false, sentCount: 0, errors: ['Notification type disabled'] };
     }
 
     // Send to all subscriptions

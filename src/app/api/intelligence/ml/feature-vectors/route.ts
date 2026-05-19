@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     
-    if (!session?.user || session.user.role !== 'admin') {
+    if (!session?.user || session.user.role !== 'system_admin') {
       return NextResponse.json(
         { error: session?.user ? 'Forbidden: Admin access required' : 'Unauthorized' },
         { status: session?.user ? 403 : 401 }

@@ -118,15 +118,15 @@ export class OperationalDataRepository {
         if (row.payment_id && row.payment_status === 'verified') {
           // Auction has verified payment = SOLD
           displayStatus = 'sold';
-        } else if (row.auction_status === 'closed') {
-          // Auction closed but no payment yet = SOLD (awaiting payment)
-          displayStatus = 'sold';
+        } else if (row.auction_status === 'closed' || row.auction_status === 'awaiting_payment') {
+          // Auction closed but no verified payment yet = AWAITING PAYMENT
+          displayStatus = 'awaiting_payment';
         } else if (row.auction_status === 'active' && new Date(row.auction_end_time) > new Date()) {
           // Auction is active and hasn't ended yet = ACTIVE AUCTION
           displayStatus = 'active_auction';
         } else if (row.auction_status === 'active' && new Date(row.auction_end_time) <= new Date()) {
-          // Auction ended but not closed yet = SOLD (system will close it)
-          displayStatus = 'sold';
+          // Auction ended but not closed yet = AWAITING PAYMENT (system will close it)
+          displayStatus = 'awaiting_payment';
         } else if (row.case_status === 'approved' && !row.payment_id) {
           // Case approved but auction hasn't started or no payment = APPROVED
           displayStatus = 'approved';

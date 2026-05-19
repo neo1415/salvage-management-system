@@ -30,7 +30,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check if user is admin or manager
-    const allowedRoles = ['admin', 'salvage_manager', 'system_admin'];
+    const allowedRoles = ['salvage_manager', 'system_admin'];
     if (!allowedRoles.includes(session.user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }

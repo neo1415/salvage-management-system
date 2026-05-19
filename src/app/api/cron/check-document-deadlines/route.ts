@@ -25,8 +25,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
-import { auctionWinners, auctionDocuments } from '@/lib/db/schema/auction-deposit';
+import { auctionWinners } from '@/lib/db/schema/auction-deposit';
 import { auctions } from '@/lib/db/schema/auctions';
+import { releaseForms } from '@/lib/db/schema/release-forms';
 import { eq, and, lte, isNull } from 'drizzle-orm';
 import * as fallbackService from '@/features/auction-deposit/services/fallback.service';
 import { configService } from '@/features/auction-deposit/services/config.service';
@@ -88,23 +89,23 @@ export async function GET(request: NextRequest) {
       .select({
         auction: auctions,
         winner: auctionWinners,
-        document: auctionDocuments,
+        document: releaseForms,
       })
       .from(auctions)
       .innerJoin(auctionWinners, and(
         eq(auctionWinners.auctionId, auctions.id),
-        eq(auctionWinners.rank, 1), // Current winner
+        eq(auctionWinners.vendorId, auctions.currentBidder),
         eq(auctionWinners.status, 'active')
       ))
-      .leftJoin(auctionDocuments, and(
-        eq(auctionDocuments.auctionId, auctions.id),
-        eq(auctionDocuments.vendorId, auctionWinners.vendorId)
+      .innerJoin(releaseForms, and(
+        eq(releaseForms.auctionId, auctions.id),
+        eq(releaseForms.vendorId, auctionWinners.vendorId)
       ))
       .where(
         and(
-          eq(auctions.status, 'awaiting_documents'),
-          lte(auctionDocuments.validityDeadline, cutoffTime),
-          isNull(auctionDocuments.signedAt) // Not signed
+          eq(auctions.status, 'closed'),
+          lte(releaseForms.validityDeadline, cutoffTime),
+          isNull(releaseForms.signedAt)
         )
       );
 
@@ -112,8 +113,13 @@ export async function GET(request: NextRequest) {
 
     const results = [];
 
+    const processedAuctions = new Set<string>();
+
     for (const { auction, winner, document } of expiredAuctions) {
       try {
+        if (processedAuctions.has(auction.id)) continue;
+        processedAuctions.add(auction.id);
+
         console.log(`[Document Deadline Cron] Processing auction ${auction.id}, winner ${winner.vendorId}`);
         console.log(`  - Document deadline: ${document.validityDeadline?.toISOString()}`);
         console.log(`  - Cutoff time: ${cutoffTime.toISOString()}`);
@@ -123,7 +129,8 @@ export async function GET(request: NextRequest) {
         const fallbackResult = await fallbackService.triggerFallback(
           auction.id,
           winner.vendorId,
-          'failed_to_sign'
+          'failed_to_sign',
+          'system'
         );
 
         if (fallbackResult.success) {

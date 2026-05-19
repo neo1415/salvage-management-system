@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     }
 
     // RBAC: Verify user is Finance Officer
-    const authorizedRoles = ['finance_officer', 'manager', 'admin'];
+    const authorizedRoles = ['finance_officer', 'salvage_manager', 'system_admin'];
     if (!authorizedRoles.includes(session.user.role || '')) {
       return NextResponse.json(
         { 

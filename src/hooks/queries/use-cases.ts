@@ -94,7 +94,7 @@ async function fetchCases(filters: CasesFilters): Promise<Case[]> {
  * Features:
  * - Server-side filtering (fixes tab switching flicker)
  * - Query key includes filters for proper cache separation
- * - 5min staleTime: Data stays fresh for 5 minutes
+ * - Short staleTime: approval queues should refresh quickly during live operations
  * - Automatic background refetching on window focus
  * - Exponential backoff retry (3 attempts)
  * 
@@ -106,8 +106,9 @@ export function useCases(filters: CasesFilters = {}) {
     // Query key includes filters for proper cache separation
     queryKey: ['cases', filters],
     queryFn: () => fetchCases(filters),
-    // Data stays fresh for 5 minutes - instant tab switching
-    staleTime: 5 * 60 * 1000,
+    // Keep approval queues fresh without hammering the API on every tab switch.
+    staleTime: 30 * 1000,
+    refetchOnMount: true,
     // Refetch on window focus to keep data fresh
     refetchOnWindowFocus: true,
     // Retry failed requests 3 times with exponential backoff

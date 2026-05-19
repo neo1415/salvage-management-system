@@ -15,7 +15,7 @@ export async function POST(
   try {
     const session = await auth();
 
-    if (!session || session.user.role !== 'admin') {
+    if (!session || !['system_admin', 'salvage_manager'].includes(session.user.role)) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

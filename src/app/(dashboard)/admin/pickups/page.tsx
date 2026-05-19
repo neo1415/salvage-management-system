@@ -65,7 +65,7 @@ export default function AdminPickupsPage() {
 
   // Redirect if not admin or manager
   useEffect(() => {
-    if (session && !['admin', 'salvage_manager', 'system_admin'].includes(session.user.role)) {
+    if (session && !['salvage_manager', 'system_admin'].includes(session.user.role)) {
       router.push('/dashboard');
     }
   }, [session, router]);

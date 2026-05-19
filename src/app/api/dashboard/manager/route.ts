@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { auctions, salvageCases, bids, payments, vendors } from '@/lib/db/schema';
-import { eq, and, gte, sql, desc } from 'drizzle-orm';
+import { auctions, salvageCases, bids, payments } from '@/lib/db/schema';
+import { eq, and, gte, sql, inArray } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
+import { ACTIVE_AUCTION_STATUSES, PENDING_CASE_STATUSES, VERIFIED_PAYMENT_STATUS } from '@/lib/metrics/dashboard-status';
 
 /**
  * Manager Dashboard API
@@ -107,8 +108,8 @@ export async function GET(request: NextRequest) {
       lastUpdated: new Date().toISOString(),
     };
 
-    // Cache the data for 5 minutes (300 seconds)
-    await cache.set(cacheKey, dashboardData, 300);
+    // Cache briefly so approval and auction counts do not lag behind live demo actions.
+    await cache.set(cacheKey, dashboardData, 30);
 
     return NextResponse.json(dashboardData);
   } catch (error) {
@@ -134,7 +135,7 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
       .where(
         and(
-          eq(auctions.status, 'active'),
+          inArray(auctions.status, [...ACTIVE_AUCTION_STATUSES]),
           eq(salvageCases.assetType, assetType as any)
         )
       );
@@ -142,7 +143,7 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
     activeAuctionsQuery = db
       .select({ count: sql<number>`count(*)::int` })
       .from(auctions)
-      .where(eq(auctions.status, 'active'));
+      .where(inArray(auctions.status, [...ACTIVE_AUCTION_STATUSES]));
   }
 
   const activeAuctionsResult = await activeAuctionsQuery;
@@ -169,14 +170,15 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
     recoveryRateQuery = db
       .select({
         marketValue: salvageCases.marketValue,
-        soldPrice: auctions.currentBid,
+        soldPrice: payments.amount,
       })
       .from(salvageCases)
       .innerJoin(auctions, eq(salvageCases.id, auctions.caseId))
+      .innerJoin(payments, eq(payments.auctionId, auctions.id))
       .where(
         and(
-          eq(auctions.status, 'closed'),
-          gte(auctions.updatedAt, thirtyDaysAgo),
+          eq(payments.status, VERIFIED_PAYMENT_STATUS),
+          gte(payments.verifiedAt, thirtyDaysAgo),
           eq(salvageCases.assetType, assetType as any)
         )
       );
@@ -184,14 +186,15 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
     recoveryRateQuery = db
       .select({
         marketValue: salvageCases.marketValue,
-        soldPrice: auctions.currentBid,
+        soldPrice: payments.amount,
       })
       .from(salvageCases)
       .innerJoin(auctions, eq(salvageCases.id, auctions.caseId))
+      .innerJoin(payments, eq(payments.auctionId, auctions.id))
       .where(
         and(
-          eq(auctions.status, 'closed'),
-          gte(auctions.updatedAt, thirtyDaysAgo)
+          eq(payments.status, VERIFIED_PAYMENT_STATUS),
+          gte(payments.verifiedAt, thirtyDaysAgo)
         )
       );
   }
@@ -220,7 +223,7 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
       .from(salvageCases)
       .where(
         and(
-          eq(salvageCases.status, 'pending_approval'),
+          inArray(salvageCases.status, [...PENDING_CASE_STATUSES]),
           eq(salvageCases.assetType, assetType as any)
         )
       );
@@ -228,7 +231,7 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
     casesPendingQuery = db
       .select({ count: sql<number>`count(*)::int` })
       .from(salvageCases)
-      .where(eq(salvageCases.status, 'pending_approval'));
+      .where(inArray(salvageCases.status, [...PENDING_CASE_STATUSES]));
   }
 
   const casesPendingResult = await casesPendingQuery;
@@ -258,32 +261,34 @@ async function calculateRecoveryRateTrend(
   if (assetType) {
     query = db
       .select({
-        date: sql<string>`DATE(${auctions.updatedAt})`,
+        date: sql<string>`DATE(${payments.verifiedAt})`,
         marketValue: salvageCases.marketValue,
-        soldPrice: auctions.currentBid,
+        soldPrice: payments.amount,
       })
       .from(auctions)
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+      .innerJoin(payments, eq(payments.auctionId, auctions.id))
       .where(
         and(
-          eq(auctions.status, 'closed'),
-          gte(auctions.updatedAt, startDate),
+          eq(payments.status, VERIFIED_PAYMENT_STATUS),
+          gte(payments.verifiedAt, startDate),
           eq(salvageCases.assetType, assetType as any)
         )
       );
   } else {
     query = db
       .select({
-        date: sql<string>`DATE(${auctions.updatedAt})`,
+        date: sql<string>`DATE(${payments.verifiedAt})`,
         marketValue: salvageCases.marketValue,
-        soldPrice: auctions.currentBid,
+        soldPrice: payments.amount,
       })
       .from(auctions)
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+      .innerJoin(payments, eq(payments.auctionId, auctions.id))
       .where(
         and(
-          eq(auctions.status, 'closed'),
-          gte(auctions.updatedAt, startDate)
+          eq(payments.status, VERIFIED_PAYMENT_STATUS),
+          gte(payments.verifiedAt, startDate)
         )
       );
   }
@@ -329,55 +334,52 @@ async function calculateRecoveryRateTrend(
  * Get top 5 vendors by volume
  */
 async function getTopVendors(assetType: string | null): Promise<TopVendor[]> {
-  // Get vendor bid statistics
-  let query;
-  
-  if (assetType) {
-    query = db
-      .select({
-        vendorId: bids.vendorId,
-        vendorName: vendors.businessName,
-        totalBids: sql<number>`count(*)::int`,
-        totalWins: sql<number>`count(CASE WHEN ${auctions.currentBidder} = ${bids.vendorId} AND ${auctions.status} = 'closed' THEN 1 END)::int`,
-        totalSpent: sql<number>`sum(CASE WHEN ${auctions.currentBidder} = ${bids.vendorId} AND ${auctions.status} = 'closed' THEN ${auctions.currentBid}::numeric ELSE 0 END)::numeric`,
-      })
-      .from(bids)
-      .innerJoin(auctions, eq(bids.auctionId, auctions.id))
-      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
-      .innerJoin(vendors, eq(bids.vendorId, vendors.id))
-      .where(eq(salvageCases.assetType, assetType as any))
-      .groupBy(bids.vendorId, vendors.businessName)
-      .orderBy(desc(sql`count(*)`))
-      .limit(5);
-  } else {
-    query = db
-      .select({
-        vendorId: bids.vendorId,
-        vendorName: vendors.businessName,
-        totalBids: sql<number>`count(*)::int`,
-        totalWins: sql<number>`count(CASE WHEN ${auctions.currentBidder} = ${bids.vendorId} AND ${auctions.status} = 'closed' THEN 1 END)::int`,
-        totalSpent: sql<number>`sum(CASE WHEN ${auctions.currentBidder} = ${bids.vendorId} AND ${auctions.status} = 'closed' THEN ${auctions.currentBid}::numeric ELSE 0 END)::numeric`,
-      })
-      .from(bids)
-      .innerJoin(auctions, eq(bids.auctionId, auctions.id))
-      .innerJoin(vendors, eq(bids.vendorId, vendors.id))
-      .groupBy(bids.vendorId, vendors.businessName)
-      .orderBy(desc(sql`count(*)`))
-      .limit(5);
-  }
+  const rows = await db.execute(sql`
+    WITH bid_stats AS (
+      SELECT
+        b.vendor_id,
+        COUNT(*)::int AS total_bids
+      FROM bids b
+      INNER JOIN auctions a ON a.id = b.auction_id
+      INNER JOIN salvage_cases sc ON sc.id = a.case_id
+      WHERE ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
+      GROUP BY b.vendor_id
+    ),
+    payment_stats AS (
+      SELECT
+        p.vendor_id,
+        COUNT(DISTINCT p.auction_id)::int AS total_wins,
+        COALESCE(SUM(p.amount::numeric), 0)::numeric AS total_spent
+      FROM payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      INNER JOIN salvage_cases sc ON sc.id = a.case_id
+      WHERE p.status = ${VERIFIED_PAYMENT_STATUS}
+      AND p.auction_id IS NOT NULL
+      AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
+      GROUP BY p.vendor_id
+    )
+    SELECT
+      v.id AS vendor_id,
+      COALESCE(v.business_name, u.full_name, 'Unknown Vendor') AS vendor_name,
+      COALESCE(bs.total_bids, 0)::int AS total_bids,
+      COALESCE(ps.total_wins, 0)::int AS total_wins,
+      COALESCE(ps.total_spent, 0)::numeric AS total_spent
+    FROM vendors v
+    LEFT JOIN users u ON u.id = v.user_id
+    LEFT JOIN bid_stats bs ON bs.vendor_id = v.id
+    LEFT JOIN payment_stats ps ON ps.vendor_id = v.id
+    WHERE COALESCE(bs.total_bids, 0) > 0 OR COALESCE(ps.total_wins, 0) > 0
+    ORDER BY COALESCE(ps.total_wins, 0) DESC, COALESCE(ps.total_spent, 0) DESC, COALESCE(bs.total_bids, 0) DESC
+    LIMIT 5
+  `);
 
-  const vendorStats = await query;
-
-  // Map to TopVendor interface
-  const topVendors: TopVendor[] = vendorStats.map((stat) => ({
-    vendorId: stat.vendorId,
-    vendorName: stat.vendorName || 'Unknown Vendor',
-    totalBids: stat.totalBids || 0,
-    totalWins: stat.totalWins || 0,
-    totalSpent: parseFloat(stat.totalSpent?.toString() || '0'),
+  return (Array.isArray(rows) ? (rows as any[]) : []).map((stat: any) => ({
+    vendorId: stat.vendor_id,
+    vendorName: stat.vendor_name || 'Unknown Vendor',
+    totalBids: Number(stat.total_bids || 0),
+    totalWins: Number(stat.total_wins || 0),
+    totalSpent: parseFloat(stat.total_spent?.toString() || '0'),
   }));
-
-  return topVendors;
 }
 
 /**

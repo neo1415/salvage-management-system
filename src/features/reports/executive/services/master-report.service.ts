@@ -175,38 +175,88 @@ export class MasterReportService {
     prevStart: string,
     prevEnd: string
   ) {
-    // FIX: Calculate revenue separately to avoid cartesian join issues
-    // Revenue = ALL verified payments (auction payments + registration fees)
+    // Revenue = latest verified auction payment per case + verified REG-* registration fees.
+    // This matches the Revenue Analysis report and avoids counting duplicate/test wallet rows.
     const revenueResult = await db.execute(sql`
-      SELECT 
-        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_revenue
-      FROM payments
-      WHERE status = 'verified'
-        AND created_at >= ${startDate}
-        AND created_at <= ${endDate}
+      WITH latest_auction_payments AS (
+        SELECT DISTINCT ON (sc.id)
+          p.amount,
+          p.created_at
+        FROM payments p
+        INNER JOIN auctions a ON p.auction_id = a.id
+        INNER JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.created_at >= ${startDate}
+          AND p.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+        ORDER BY sc.id, p.created_at DESC
+      ),
+      registration_fees AS (
+        SELECT amount, created_at
+        FROM payments
+        WHERE status = 'verified'
+          AND auction_id IS NULL
+          AND payment_reference LIKE 'REG-%'
+          AND created_at >= ${startDate}
+          AND created_at <= ${endDate}
+      )
+      SELECT COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_revenue
+      FROM (
+        SELECT amount FROM latest_auction_payments
+        UNION ALL
+        SELECT amount FROM registration_fees
+      ) revenue
     `);
 
     const prevRevenueResult = await db.execute(sql`
-      SELECT 
-        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_revenue
-      FROM payments
-      WHERE status = 'verified'
-        AND created_at >= ${prevStart}
-        AND created_at < ${prevEnd}
+      WITH latest_auction_payments AS (
+        SELECT DISTINCT ON (sc.id)
+          p.amount,
+          p.created_at
+        FROM payments p
+        INNER JOIN auctions a ON p.auction_id = a.id
+        INNER JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.created_at >= ${prevStart}
+          AND p.created_at < ${prevEnd}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+        ORDER BY sc.id, p.created_at DESC
+      ),
+      registration_fees AS (
+        SELECT amount, created_at
+        FROM payments
+        WHERE status = 'verified'
+          AND auction_id IS NULL
+          AND payment_reference LIKE 'REG-%'
+          AND created_at >= ${prevStart}
+          AND created_at < ${prevEnd}
+      )
+      SELECT COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_revenue
+      FROM (
+        SELECT amount FROM latest_auction_payments
+        UNION ALL
+        SELECT amount FROM registration_fees
+      ) revenue
     `);
 
     const result = await db.execute(sql`
       WITH current_period AS (
         SELECT 
           COUNT(DISTINCT sc.id) as cases,
-          COUNT(DISTINCT a.id) FILTER (WHERE a.status = 'closed' AND a.current_bidder IS NOT NULL) as successful_auctions,
+          COUNT(DISTINCT a.id) FILTER (WHERE p.id IS NOT NULL) as successful_auctions,
           COUNT(DISTINCT a.id) as total_auctions,
           AVG(EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400) as avg_processing_days
         FROM salvage_cases sc
         LEFT JOIN auctions a ON sc.id = a.case_id
+        LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
         WHERE sc.created_at >= ${startDate} 
           AND sc.created_at <= ${endDate}
           AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
       ),
       previous_period AS (
         SELECT 
@@ -215,6 +265,7 @@ export class MasterReportService {
         WHERE sc.created_at >= ${prevStart} 
           AND sc.created_at < ${prevEnd}
           AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
       )
       SELECT 
         c.cases as current_cases,
@@ -242,16 +293,42 @@ export class MasterReportService {
   }
 
   private static async getFinancialData(startDate: string, endDate: string) {
-    // Revenue total and by month - INCLUDES ALL VERIFIED PAYMENTS (auction + registration fees)
+    // Revenue total and by month: latest verified auction payment per case + REG-* registration fees.
     const revenueByMonth = await db.execute(sql`
+      WITH latest_auction_payments AS (
+        SELECT DISTINCT ON (sc.id)
+          p.amount,
+          p.created_at
+        FROM payments p
+        INNER JOIN auctions a ON p.auction_id = a.id
+        INNER JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.created_at >= ${startDate}
+          AND p.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+        ORDER BY sc.id, p.created_at DESC
+      ),
+      registration_fees AS (
+        SELECT amount, created_at
+        FROM payments
+        WHERE status = 'verified'
+          AND auction_id IS NULL
+          AND payment_reference LIKE 'REG-%'
+          AND created_at >= ${startDate}
+          AND created_at <= ${endDate}
+      ),
+      report_revenue AS (
+        SELECT amount, created_at FROM latest_auction_payments
+        UNION ALL
+        SELECT amount, created_at FROM registration_fees
+      )
       SELECT 
-        TO_CHAR(p.created_at, 'YYYY-MM') as month,
-        COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as amount
-      FROM payments p
-      WHERE p.status = 'verified' 
-        AND p.created_at >= ${startDate}
-        AND p.created_at <= ${endDate}
-      GROUP BY TO_CHAR(p.created_at, 'YYYY-MM')
+        TO_CHAR(created_at, 'YYYY-MM') as month,
+        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as amount
+      FROM report_revenue
+      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
       ORDER BY month DESC
       LIMIT 12
     `);
@@ -268,6 +345,7 @@ export class MasterReportService {
         AND p.created_at >= ${startDate}
         AND p.created_at <= ${endDate}
         AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
       GROUP BY sc.asset_type
       ORDER BY amount DESC
     `);
@@ -285,6 +363,7 @@ export class MasterReportService {
         AND p.created_at >= ${startDate}
         AND p.created_at <= ${endDate}
         AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
       ORDER BY amount DESC
       LIMIT 10
     `);
@@ -309,6 +388,7 @@ export class MasterReportService {
         AND p.created_at >= ${startDate}
         AND p.created_at <= ${endDate}
         AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
       GROUP BY sc.asset_type
     `);
 
@@ -323,6 +403,7 @@ export class MasterReportService {
         AND p.created_at >= ${startDate}
         AND p.created_at <= ${endDate}
         AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
       GROUP BY TO_CHAR(p.created_at, 'YYYY-MM')
       ORDER BY month DESC
       LIMIT 12
@@ -379,6 +460,7 @@ export class MasterReportService {
       WHERE created_at >= ${startDate} 
         AND created_at <= ${endDate}
         AND status != 'draft'
+        AND claim_reference NOT LIKE 'TEST%'
       GROUP BY status
     `);
 
@@ -393,6 +475,7 @@ export class MasterReportService {
       WHERE created_at >= ${startDate} 
         AND created_at <= ${endDate}
         AND status != 'draft'
+        AND claim_reference NOT LIKE 'TEST%'
       GROUP BY asset_type
     `);
 
@@ -402,7 +485,7 @@ export class MasterReportService {
         COUNT(*) as total,
         COUNT(*) FILTER (WHERE status = 'active' AND end_time > NOW()) as active,
         COUNT(*) FILTER (WHERE status = 'closed') as closed,
-        COUNT(*) FILTER (WHERE status = 'closed' AND current_bidder IS NOT NULL) as successful,
+        COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM payments p WHERE p.auction_id = auctions.id AND p.status = 'verified')) as successful,
         AVG((SELECT COUNT(DISTINCT vendor_id) FROM bids WHERE auction_id = auctions.id)) as avg_bidders
       FROM auctions
       WHERE created_at >= ${startDate} AND created_at <= ${endDate}
@@ -668,7 +751,7 @@ export class MasterReportService {
         AVG(EXTRACT(EPOCH FROM (end_time - start_time)) / 3600) as avg_duration,
         COUNT(*) FILTER (WHERE extension_count > 0) as extended_auctions,
         COUNT(*) as total_auctions,
-        COUNT(*) FILTER (WHERE status = 'closed' AND current_bidder IS NOT NULL) as successful_closures
+      COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM payments p WHERE p.auction_id = auctions.id AND p.status = 'verified')) as successful_closures
       FROM auctions
       WHERE created_at >= ${startDate} AND created_at <= ${endDate}
     `);

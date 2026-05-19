@@ -38,6 +38,13 @@ function LoginForm() {
   // Don't set a default callbackUrl - let the middleware handle role-based redirect
   const callbackUrl = searchParams.get('callbackUrl') || null;
   const successMessage = searchParams.get('message') || null;
+  const emailParam = searchParams.get('email') || '';
+
+  const getSafeCallbackUrl = (url: string | null): string | null => {
+    if (!url) return null;
+    if (!url.startsWith('/') || url.startsWith('//')) return null;
+    return url;
+  };
 
   const {
     register,
@@ -46,6 +53,7 @@ function LoginForm() {
   } = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
+      emailOrPhone: emailParam,
       rememberMe: false,
     },
   });
@@ -83,7 +91,11 @@ function LoginForm() {
       const response = await fetch('/api/auth/session');
       const session = await response.json();
       
-      if (session?.user?.role) {
+      const safeCallbackUrl = getSafeCallbackUrl(callbackUrl);
+
+      if (safeCallbackUrl) {
+        router.push(safeCallbackUrl);
+      } else if (session?.user?.role) {
         const role = session.user.role;
         
         // Use router.push instead of window.location.href
@@ -96,14 +108,12 @@ function LoginForm() {
           router.push('/adjuster/dashboard');
         } else if (role === 'finance_officer') {
           router.push('/finance/dashboard');
-        } else if (role === 'system_admin' || role === 'admin') {
+        } else if (role === 'system_admin') {
           router.push('/admin/dashboard');
         } else {
           // Fallback to home if role is unknown
           router.push('/');
         }
-      } else if (callbackUrl) {
-        router.push(callbackUrl);
       } else {
         // Fallback to home
         router.push('/');

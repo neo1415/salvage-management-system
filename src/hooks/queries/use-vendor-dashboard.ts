@@ -16,6 +16,8 @@ interface PerformanceStats {
   avgPaymentTimeHours: number;
   onTimePickupRate: number;
   rating: number;
+  ratingLabel?: string;
+  ratingSource?: 'stored' | 'auto' | 'insufficient';
   leaderboardPosition: number;
   totalVendors: number;
   totalBids: number;

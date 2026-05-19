@@ -78,6 +78,7 @@ export class DepositNotificationService {
         to: user.phone,
         message: `NEM Salvage: Deposit of ₦${formattedAmount} frozen for ${asset}. Good luck!`,
         userId: user.id,
+        category: 'routine',
       }),
     ]).catch(error => {
       console.error('Error sending deposit frozen notifications:', error);
@@ -130,6 +131,7 @@ export class DepositNotificationService {
         to: user.phone,
         message: `NEM Salvage: You were outbid on ${asset}. Deposit of ₦${formattedAmount} unfrozen. Bid again to win!`,
         userId: user.id,
+        category: 'routine',
       }),
     ]).catch(error => {
       console.error('Error sending deposit unfrozen notifications:', error);
@@ -180,6 +182,7 @@ export class DepositNotificationService {
         to: user.phone,
         message: `NEM Salvage: Congratulations! You won ${asset} for ₦${formattedAmount}. Sign documents within ${hours} hours.`,
         userId: user.id,
+        category: 'auction_won',
       }),
     ]).catch(error => {
       console.error('Error sending auction won notifications:', error);
@@ -223,6 +226,7 @@ export class DepositNotificationService {
         to: user.phone,
         message: `NEM Salvage URGENT: Sign documents for ${asset} within ${hours} hours or lose your deposit!`,
         userId: user.id,
+        category: 'routine',
       }),
     ]).catch(error => {
       console.error('Error sending document reminder notifications:', error);
@@ -267,6 +271,31 @@ export class DepositNotificationService {
         to: user.phone,
         message: `NEM Salvage: Extension granted for ${asset}. New deadline: ${newDeadline}`,
         userId: user.id,
+        category: 'grace_period',
+      }),
+
+      // Email notification
+      emailService.sendEmail({
+        to: user.email,
+        subject: `Grace Extension Granted - ${asset}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #800020;">Grace Extension Granted</h2>
+            <p>Dear ${user.fullName},</p>
+            <p>A grace extension has been granted for <strong>${asset}</strong>.</p>
+            <div style="background-color: #f8fafc; border-left: 4px solid #800020; padding: 16px; margin: 20px 0;">
+              <p><strong>New deadline:</strong> ${newDeadline}</p>
+              ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}
+            </div>
+            <p>Please complete the required action before the new deadline to avoid forfeiture.</p>
+            <p style="margin-top: 24px;">
+              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/documents"
+                 style="background-color: #800020; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                View Documents
+              </a>
+            </p>
+          </div>
+        `,
       }),
     ]).catch(error => {
       console.error('Error sending grace extension notifications:', error);
@@ -325,6 +354,7 @@ export class DepositNotificationService {
         to: user.phone,
         message: `NEM Salvage: Deposit of ₦${formattedAmount} forfeited for ${asset} due to payment failure.`,
         userId: user.id,
+        category: 'forfeiture',
       }),
     ]).catch(error => {
       console.error('Error sending deposit forfeiture notifications:', error);
@@ -380,6 +410,7 @@ export class DepositNotificationService {
         await smsService.sendSMS({
           to: user.phone,
           message: `NEM Salvage: Payment of ₦${formattedAmount} confirmed for ${asset}. Pickup authorization ready.`,
+          category: 'routine',
         });
       }
     } catch (error) {

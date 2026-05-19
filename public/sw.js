@@ -298,8 +298,10 @@ self.addEventListener('notificationclick', (event) => {
 
   // Determine URL based on notification type and action
   let url = '/';
-  
-  if (data.type === 'outbid' || data.type === 'auction-ending') {
+
+  if (typeof data.url === 'string' && data.url.startsWith('/')) {
+    url = data.url;
+  } else if (data.type === 'outbid' || data.type === 'auction-ending' || data.type === 'auction_closing_soon') {
     if (action === 'view' || action === 'bid') {
       url = data.auctionId ? `/vendor/auctions/${data.auctionId}` : '/vendor/auctions';
     }

@@ -5,6 +5,7 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { eq } from 'drizzle-orm';
 import { getEncryptionService } from '@/features/kyc/services/encryption.service';
 import { getKYCNotificationService } from '@/features/kyc/services/notification.service';
+import { createRoleNotifications } from '@/features/notifications/services/notification.service';
 import { getDocumentUploadService } from '@/features/kyc/services/document-upload.service';
 
 /**
@@ -271,6 +272,20 @@ export async function POST(request: NextRequest) {
       email: session.user.email ?? '',
       fullName: session.user.name ?? '',
     });
+
+    try {
+      await createRoleNotifications(['salvage_manager', 'system_admin'], {
+        type: 'tier2_pending_review',
+        title: 'Tier 2 KYC Pending Review',
+        message: `${session.user.name || 'A vendor'} submitted Tier 2 verification for approval.`,
+        data: {
+          vendorId: vendor.id,
+          url: '/manager/kyc-approvals',
+        },
+      });
+    } catch (notificationError) {
+      console.error('Failed to notify managers about Tier 2 KYC submission:', notificationError);
+    }
 
     return NextResponse.json({
       success: true,

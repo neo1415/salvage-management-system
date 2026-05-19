@@ -35,7 +35,7 @@ export async function PUT(
     }
     
     // Restrict to admin and manager roles
-    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+    if (session.user.role !== 'system_admin' && session.user.role !== 'salvage_manager') {
       return NextResponse.json(
         { error: 'Forbidden - Admin or Manager role required' },
         { status: 403 }
@@ -134,7 +134,7 @@ export async function DELETE(
     }
     
     // Restrict to admin and manager roles
-    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+    if (session.user.role !== 'system_admin' && session.user.role !== 'salvage_manager') {
       return NextResponse.json(
         { error: 'Forbidden - Admin or Manager role required' },
         { status: 403 }

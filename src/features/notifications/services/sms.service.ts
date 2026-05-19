@@ -29,6 +29,12 @@ if (!process.env.TERMII_SENDER_ID) {
 const TERMII_API_URL = 'https://api.ng.termii.com/api/sms/send';
 const TERMII_API_KEY = process.env.TERMII_API_KEY || '';
 const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || 'NEM Salvage';
+const TERMII_CHANNEL = process.env.TERMII_CHANNEL || 'generic';
+const SMS_TEST_MODE = process.env.SMS_TEST_MODE === 'true';
+const SMS_ENABLED_CATEGORIES = (process.env.SMS_ENABLED_CATEGORIES || 'otp,auction_won,forfeiture,grace_period,pickup_code')
+  .split(',')
+  .map(category => category.trim())
+  .filter(Boolean);
 
 // Africa's Talking API configuration (fallback)
 const AFRICAS_TALKING_API_URL = 'https://api.africastalking.com/version1/messaging';
@@ -50,12 +56,14 @@ export interface SMSOptions {
   to: string;
   message: string;
   userId?: string;
+  category?: 'otp' | 'auction_won' | 'forfeiture' | 'grace_period' | 'pickup_code' | 'routine' | 'manual';
 }
 
 export interface SMSResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  skipped?: boolean;
 }
 
 /**
@@ -130,14 +138,26 @@ export class SMSService {
         };
       }
 
-      // Smart testing mode: Only send to verified numbers
-      if (!this.isVerifiedNumber(normalizedPhone)) {
+      const category = options.category || 'routine';
+      if (!SMS_ENABLED_CATEGORIES.includes(category)) {
+        console.log(`[SMS SKIPPED] Category "${category}" disabled for ${normalizedPhone}`);
+        console.log(`   Enabled categories: ${SMS_ENABLED_CATEGORIES.join(', ')}`);
+        return {
+          success: true,
+          skipped: true,
+          messageId: `category-skipped-${category}`,
+        };
+      }
+
+      // Optional testing mode: Only send to verified numbers when SMS_TEST_MODE=true
+      if (SMS_TEST_MODE && !this.isVerifiedNumber(normalizedPhone)) {
         console.log(`📱 [TEST MODE] SMS blocked to ${normalizedPhone} (not verified)`);
         console.log(`   Message: ${options.message}`);
         console.log(`   To send to this number, add it to VERIFIED_TEST_NUMBERS in sms.service.ts`);
         console.log(`   Verified numbers: ${VERIFIED_TEST_NUMBERS.join(', ')}`);
         return {
           success: true, // Return success to not block functionality
+          skipped: true,
           messageId: 'test-mode-blocked',
         };
       }
@@ -217,7 +237,7 @@ export class SMSService {
             from: TERMII_SENDER_ID,
             sms: message,
             type: 'plain',
-            channel: 'generic', // Best for production, requires approved sender ID
+            channel: TERMII_CHANNEL,
             api_key: TERMII_API_KEY,
           },
           {
@@ -357,7 +377,7 @@ export class SMSService {
    */
   async sendOTP(phone: string, otp: string, userId?: string): Promise<SMSResult> {
     const message = `Your NEM Salvage verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`;
-    return this.sendSMS({ to: phone, message, userId });
+    return this.sendSMS({ to: phone, message, userId, category: 'otp' });
   }
 
   /**
@@ -375,7 +395,7 @@ export class SMSService {
     userId?: string
   ): Promise<SMSResult> {
     const message = `⏰ Auction ending soon! "${auctionTitle}" ends in ${timeRemaining}. Place your bid now at salvage.nem-insurance.com`;
-    return this.sendSMS({ to: phone, message, userId });
+    return this.sendSMS({ to: phone, message, userId, category: 'routine' });
   }
 
   /**
@@ -393,7 +413,7 @@ export class SMSService {
     userId?: string
   ): Promise<SMSResult> {
     const message = `🔔 You've been outbid! "${auctionTitle}" - New bid: ${newBidAmount}. Bid again to stay in the lead!`;
-    return this.sendSMS({ to: phone, message, userId });
+    return this.sendSMS({ to: phone, message, userId, category: 'routine' });
   }
 
   /**
@@ -413,7 +433,7 @@ export class SMSService {
     userId?: string
   ): Promise<SMSResult> {
     const message = `💰 Payment reminder: ${amount} due for "${auctionTitle}" by ${deadline}. Pay now to avoid suspension.`;
-    return this.sendSMS({ to: phone, message, userId });
+    return this.sendSMS({ to: phone, message, userId, category: 'routine' });
   }
 
   /**
@@ -431,7 +451,7 @@ export class SMSService {
     userId?: string
   ): Promise<SMSResult> {
     const message = `✅ Pickup authorized for "${auctionTitle}". Show this code: ${authCode}. Valid for 7 days.`;
-    return this.sendSMS({ to: phone, message, userId });
+    return this.sendSMS({ to: phone, message, userId, category: 'pickup_code' });
   }
 
   /**
@@ -446,6 +466,7 @@ export class SMSService {
     return this.sendSMS({
       to: phone,
       message,
+      category: 'routine',
     });
   }
 

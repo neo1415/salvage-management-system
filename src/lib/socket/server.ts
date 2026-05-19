@@ -256,7 +256,7 @@ async function authenticationMiddleware(
     }
 
     // Verify JWT token
-    const decoded = verify(token, process.env.NEXTAUTH_SECRET!) as {
+    const decoded = verify(token, (process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET)!) as {
       sub: string;
       role: string;
       vendorId?: string;

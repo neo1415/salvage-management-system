@@ -75,7 +75,7 @@ export function getPaymentConfirmationEmailTemplate(data: PaymentConfirmationTem
     </div>
     
     <div style="text-align: center; margin: 30px 0;">
-      <a href="${appUrl}/vendor/payments/${paymentId}" class="button" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 18px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">View Payment Receipt</a>
+      <a href="${appUrl}/receipt/${paymentId}" class="button" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 18px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">View Payment Receipt</a>
     </div>
     
     <div style="height: 1px; background: linear-gradient(to right, transparent, #e0e0e0, transparent); margin: 30px 0;"></div>

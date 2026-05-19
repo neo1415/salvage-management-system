@@ -8,14 +8,18 @@ interface PaymentDetails {
   auctionId: string;
   amount: string;
   status: 'pending' | 'verified' | 'rejected' | 'overdue';
-  paymentDeadline: string;
+  paymentDeadline: string | null;
+  escrowStatus?: 'none' | 'frozen' | 'released';
   paymentMethod: string;
   paymentReference: string | null;
   paymentProofUrl: string | null;
-  createdAt: string;
+  createdAt: string | null;
   vendor?: {
     id: string;
     businessName: string;
+    contactName?: string;
+    email?: string;
+    phone?: string;
     tier: string;
   };
   auction: {
@@ -25,12 +29,19 @@ interface PaymentDetails {
     case: {
       claimReference: string;
       assetType: string;
+      assetName?: string;
       assetDetails: Record<string, unknown>;
       marketValue: string;
       estimatedSalvageValue: string;
       locationName: string;
       photos: string[];
     };
+  } | null;
+  nem?: {
+    name: string;
+    address: string;
+    email: string;
+    phone: string;
   };
 }
 
@@ -52,12 +63,13 @@ export default function PublicReceiptPage() {
         if (response.status === 401) {
           // Not authenticated - redirect to login with return URL
           const returnUrl = encodeURIComponent(window.location.pathname);
-          router.push(`/auth/signin?callbackUrl=${returnUrl}`);
+          router.push(`/login?callbackUrl=${returnUrl}`);
           return;
         }
         
         if (!response.ok) {
-          throw new Error('Failed to fetch payment details');
+          const errorData = await response.json().catch(() => null);
+          throw new Error(errorData?.error || errorData?.message || 'Failed to fetch payment details');
         }
         
         const data = await response.json();
@@ -94,7 +106,7 @@ export default function PublicReceiptPage() {
             <h2 className="text-xl font-bold text-gray-900 mb-2">Error</h2>
             <p className="text-gray-600 mb-4">{error}</p>
             <button
-              onClick={() => router.push('/auth/signin')}
+              onClick={() => router.push('/login')}
               className="px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800"
             >
               Sign In to View Receipt
@@ -139,7 +151,54 @@ export default function PublicReceiptPage() {
     }
   };
 
-  const assetDetails = payment.auction.case.assetDetails as Record<string, string>;
+  if (!payment.auction) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-md p-6">
+          <div className="text-center mb-6">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Receipt</h1>
+            <p className="text-gray-600">NEM Insurance Salvage Management System</p>
+          </div>
+          <div className={`rounded-lg p-4 mb-6 ${getStatusColor(payment.status)}`}>
+            <p className="text-center font-semibold text-lg">{getStatusText(payment.status)}</p>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-gray-600">Payment Purpose</p>
+              <p className="font-semibold text-gray-900">Vendor Registration Fee</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Amount Paid</p>
+              <p className="text-3xl font-bold text-green-700">
+                â‚¦{parseFloat(payment.amount).toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Payment Reference</p>
+              <p className="font-mono text-sm font-semibold text-gray-900">{payment.paymentReference || 'N/A'}</p>
+            </div>
+            {payment.vendor && (
+              <div className="border-t border-gray-200 pt-4">
+                <p className="text-sm text-gray-600">Vendor</p>
+                <p className="font-semibold text-gray-900">
+                  {payment.vendor.businessName || payment.vendor.contactName || 'Vendor'}
+                </p>
+                {payment.vendor.email && <p className="text-sm text-gray-600">{payment.vendor.email}</p>}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const assetDetails = (payment.auction?.case.assetDetails || {}) as Record<string, string>;
+  const auctionCase = payment.auction?.case;
+  const assetName = payment.auction ? payment.auction.case.assetName || [
+    assetDetails.year,
+    assetDetails.make || assetDetails.brand,
+    assetDetails.model,
+  ].filter(Boolean).join(' ') || payment.auction.case.assetType : 'Vendor Registration Fee';
 
   return (
     <>
@@ -182,10 +241,12 @@ export default function PublicReceiptPage() {
 
           {/* Item Details */}
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Item Details</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              {payment.auction ? 'Item Details' : 'Registration Details'}
+            </h2>
             
             {/* Photos */}
-            {payment.auction.case.photos.length > 0 && (
+            {payment.auction && payment.auction.case.photos.length > 0 && (
               <div className="mb-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   {payment.auction.case.photos.slice(0, 3).map((photo, index) => (
@@ -202,18 +263,22 @@ export default function PublicReceiptPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
+                <p className="text-sm text-gray-600">Item</p>
+                <p className="font-semibold text-gray-900">{assetName}</p>
+              </div>
+              <div>
                 <p className="text-sm text-gray-600">Claim Reference</p>
-                <p className="font-semibold text-gray-900">{payment.auction.case.claimReference}</p>
+                <p className="font-semibold text-gray-900">{auctionCase?.claimReference || 'N/A'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Asset Type</p>
                 <p className="font-semibold text-gray-900 capitalize">
-                  {payment.auction.case.assetType}
+                  {auctionCase?.assetType || 'registration'}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Location</p>
-                <p className="font-semibold text-gray-900">{payment.auction.case.locationName}</p>
+                <p className="font-semibold text-gray-900">{auctionCase?.locationName || 'N/A'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Market Value</p>
@@ -223,7 +288,7 @@ export default function PublicReceiptPage() {
               </div>
               
               {/* Asset-specific details */}
-              {payment.auction.case.assetType === 'vehicle' && (
+              {auctionCase?.assetType === 'vehicle' && (
                 <>
                   {assetDetails.make && (
                     <div>
@@ -270,10 +335,10 @@ export default function PublicReceiptPage() {
               <div>
                 <p className="text-sm text-gray-600">Payment Date</p>
                 <p className="font-semibold text-gray-900">
-                  {new Date(payment.createdAt).toLocaleString('en-NG', {
+                  {payment.createdAt ? new Date(payment.createdAt).toLocaleString('en-NG', {
                     dateStyle: 'medium',
                     timeStyle: 'short',
-                  })}
+                  }) : 'N/A'}
                 </p>
               </div>
               <div>
@@ -294,7 +359,7 @@ export default function PublicReceiptPage() {
               </div>
               <div>
                 <p className="text-sm text-gray-600">Auction ID</p>
-                <p className="font-semibold text-gray-900 font-mono text-sm">{payment.auctionId}</p>
+                <p className="font-semibold text-gray-900 font-mono text-sm">{payment.auctionId || 'N/A'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Payment Status</p>
@@ -313,9 +378,51 @@ export default function PublicReceiptPage() {
                     <p className="text-sm text-gray-600">Business Name</p>
                     <p className="font-semibold text-gray-900">{payment.vendor.businessName}</p>
                   </div>
+                  {payment.vendor.contactName && (
+                    <div>
+                      <p className="text-sm text-gray-600">Contact Name</p>
+                      <p className="font-semibold text-gray-900">{payment.vendor.contactName}</p>
+                    </div>
+                  )}
+                  {payment.vendor.email && (
+                    <div>
+                      <p className="text-sm text-gray-600">Email</p>
+                      <p className="font-semibold text-gray-900">{payment.vendor.email}</p>
+                    </div>
+                  )}
+                  {payment.vendor.phone && (
+                    <div>
+                      <p className="text-sm text-gray-600">Phone</p>
+                      <p className="font-semibold text-gray-900">{payment.vendor.phone}</p>
+                    </div>
+                  )}
                   <div>
                     <p className="text-sm text-gray-600">Vendor Tier</p>
                     <p className="font-semibold text-gray-900 capitalize">{payment.vendor.tier}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {payment.nem && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">NEM Details</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Company</p>
+                    <p className="font-semibold text-gray-900">{payment.nem.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Phone</p>
+                    <p className="font-semibold text-gray-900">{payment.nem.phone}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Email</p>
+                    <p className="font-semibold text-gray-900">{payment.nem.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Address</p>
+                    <p className="font-semibold text-gray-900">{payment.nem.address}</p>
                   </div>
                 </div>
               </div>

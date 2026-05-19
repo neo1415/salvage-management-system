@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { signIn } from 'next-auth/react';
 import { AlertCircle, CheckCircle2, Loader2, Phone, ArrowLeft } from 'lucide-react';
 
 /**
@@ -103,40 +102,17 @@ function VerifyOTPForm() {
         return;
       }
 
-      // For regular registration, auto-login the user then redirect to BVN verification
-      // Get user's email from the registration flow (stored in session storage during registration)
-      const registrationEmail = sessionStorage.getItem('registration_email');
-      const registrationPassword = sessionStorage.getItem('registration_password');
+      // After OTP verification the user is not authenticated yet.
+      // Send them through login with an explicit BVN callback instead of storing passwords in browser storage.
+      const loginParams = new URLSearchParams({
+        message: 'Phone verified! Please sign in to complete BVN verification.',
+        callbackUrl: '/vendor/kyc/tier1',
+      });
+      if (email) loginParams.set('email', email);
 
-      if (registrationEmail && registrationPassword) {
-        // Auto-login using credentials
-        const signInResult = await signIn('credentials', {
-          email: registrationEmail,
-          password: registrationPassword,
-          redirect: false,
-        });
-
-        // Clear sensitive data from session storage
-        sessionStorage.removeItem('registration_email');
-        sessionStorage.removeItem('registration_password');
-
-        if (signInResult?.ok) {
-          // Successfully logged in, redirect to BVN verification
-          setTimeout(() => {
-            router.push('/vendor/kyc/tier1');
-          }, 2000);
-        } else {
-          // Login failed, redirect to login page with message
-          setTimeout(() => {
-            router.push('/login?message=Phone verified! Please sign in to continue.');
-          }, 2000);
-        }
-      } else {
-        // No credentials found, redirect to login page
-        setTimeout(() => {
-          router.push('/login?message=Phone verified! Please sign in to continue.');
-        }, 2000);
-      }
+      setTimeout(() => {
+        router.push(`/login?${loginParams.toString()}`);
+      }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verification failed. Please try again.');
       // Clear OTP inputs on error

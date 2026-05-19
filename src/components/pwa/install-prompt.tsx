@@ -16,8 +16,20 @@ interface BeforeInstallPromptEvent extends Event {
 export function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [canShowPrompt, setCanShowPrompt] = useState(false);
 
   useEffect(() => {
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+    const dismissedUntil = Number(localStorage.getItem('pwa-prompt-dismissed-until') || '0');
+
+    if (isStandalone || dismissedUntil > Date.now()) {
+      return;
+    }
+
+    setCanShowPrompt(true);
+
     const handler = (e: Event) => {
       // Prevent the mini-infobar from appearing on mobile
       e.preventDefault();
@@ -56,22 +68,17 @@ export function InstallPrompt() {
 
   const handleDismiss = () => {
     setShowPrompt(false);
-    // Don't show again for this session
-    sessionStorage.setItem('pwa-prompt-dismissed', 'true');
+    // Don't show again for 7 days.
+    localStorage.setItem('pwa-prompt-dismissed-until', String(Date.now() + 7 * 24 * 60 * 60 * 1000));
   };
 
-  // Don't show if already dismissed in this session
-  if (typeof window !== 'undefined' && sessionStorage.getItem('pwa-prompt-dismissed')) {
-    return null;
-  }
-
-  if (!showPrompt || !deferredPrompt) {
+  if (!canShowPrompt || !showPrompt || !deferredPrompt) {
     return null;
   }
 
   return (
-    <div className="fixed bottom-3 left-3 right-3 md:left-auto md:right-3 md:max-w-[280px] z-50 animate-slide-up">
-      <div className="bg-white rounded-md shadow-lg p-2 border border-burgundy-900">
+    <div className="fixed bottom-4 left-4 right-4 z-50 animate-slide-up sm:left-auto sm:right-4 sm:max-w-[300px]">
+      <div className="relative overflow-hidden rounded-lg border border-[#800020]/30 bg-white p-3 shadow-xl">
         <button
           onClick={handleDismiss}
           className="absolute top-1.5 right-1.5 text-gray-400 hover:text-gray-600 transition-colors"
@@ -80,7 +87,7 @@ export function InstallPrompt() {
           <X size={14} />
         </button>
 
-        <div className="flex items-start gap-2">
+        <div className="flex items-start gap-3">
           <div className="flex-shrink-0">
             <Image
               src="/icons/Nem-insurance-Logo.jpg"
@@ -92,11 +99,11 @@ export function InstallPrompt() {
           </div>
 
           <div className="flex-1 min-w-0 pr-3">
-            <h3 className="text-[11px] font-bold text-burgundy-900 mb-0.5">
+            <h3 className="mb-0.5 text-sm font-bold text-[#800020]">
               Install App
             </h3>
-            <p className="text-[10px] text-gray-600 mb-1.5 leading-tight">
-              Faster access & offline!
+            <p className="mb-2 text-xs leading-snug text-gray-600">
+              Faster access and a smoother mobile experience.
             </p>
 
             <div className="flex gap-1.5">

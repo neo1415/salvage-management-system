@@ -46,7 +46,7 @@ function AdminDashboardContentInner() {
     if (status === 'authenticated') {
       const userRole = session?.user?.role;
       
-      if (userRole !== 'system_admin' && userRole !== 'admin') {
+      if (userRole !== 'system_admin') {
         // Redirect to appropriate dashboard based on role
         if (userRole === 'vendor') router.push('/vendor/dashboard');
         else if (userRole === 'salvage_manager') router.push('/manager/dashboard');

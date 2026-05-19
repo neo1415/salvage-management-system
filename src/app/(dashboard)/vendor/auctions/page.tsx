@@ -156,7 +156,7 @@ function AuctionBrowsingContent() {
   const [priceMin, setPriceMin] = useState(searchParams.get('priceMin') || '');
   const [priceMax, setPriceMax] = useState(searchParams.get('priceMax') || '');
   const [sortBy, setSortBy] = useState<Filters['sortBy']>(
-    (searchParams.get('sortBy') as Filters['sortBy']) || 'ending_soon'
+    (searchParams.get('sortBy') as Filters['sortBy']) || 'newest'
   );
   const [locationFilter, setLocationFilter] = useState(searchParams.get('location') || '');
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
@@ -350,7 +350,7 @@ function AuctionBrowsingContent() {
     if (assetTypeFilter.length > 0) params.set('assetType', assetTypeFilter.join(','));
     if (priceMin) params.set('priceMin', priceMin);
     if (priceMax) params.set('priceMax', priceMax);
-    if (sortBy !== 'ending_soon') params.set('sortBy', sortBy);
+    if (sortBy !== 'newest') params.set('sortBy', sortBy);
     if (locationFilter) params.set('location', locationFilter);
     if (searchQuery) params.set('search', searchQuery);
     
@@ -511,8 +511,8 @@ function AuctionBrowsingContent() {
 
   // Sort options
   const sortOptions: FilterOption[] = [
-    { value: 'ending_soon', label: 'Ending Soon' },
     { value: 'newest', label: 'Newest First' },
+    { value: 'ending_soon', label: 'Ending Soon' },
     { value: 'price_low', label: 'Price: Low to High' },
     { value: 'price_high', label: 'Price: High to Low' },
   ];
@@ -849,7 +849,7 @@ function AuctionBrowsingContent() {
                       title="Sort By"
                       options={sortOptions}
                       selected={[sortBy]}
-                      onChange={(selected) => setSortBy((selected[0] as Filters['sortBy']) || 'ending_soon')}
+                      onChange={(selected) => setSortBy((selected[0] as Filters['sortBy']) || 'newest')}
                     />
                   </div>
 
@@ -910,7 +910,7 @@ function AuctionBrowsingContent() {
                     title="Sort By"
                     options={sortOptions}
                     selected={[sortBy]}
-                    onChange={(selected) => setSortBy((selected[0] as Filters['sortBy']) || 'ending_soon')}
+                    onChange={(selected) => setSortBy((selected[0] as Filters['sortBy']) || 'newest')}
                   />
                 </div>
 

@@ -15,13 +15,14 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { ReportLoadingState } from '@/components/reports/common/report-ui';
 
 export default function MasterReportPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<MasterReportData | null>(null);
-  const [startDate, setStartDate] = useState<Date>(new Date(2026, 1, 1)); // Feb 1, 2026
-  const [endDate, setEndDate] = useState<Date>(new Date());
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
 
   useEffect(() => {
     fetchMasterReport();
@@ -30,9 +31,11 @@ export default function MasterReportPage() {
   const fetchMasterReport = async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `/api/reports/executive/master-report?startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`
-      );
+      const params = new URLSearchParams();
+      if (startDate) params.append('startDate', startDate.toISOString());
+      if (endDate) params.append('endDate', endDate.toISOString());
+
+      const response = await fetch(`/api/reports/executive/master-report?${params}`);
       const result = await response.json();
       
       if (result.success) {
@@ -50,9 +53,7 @@ export default function MasterReportPage() {
   if (loading) {
     return (
       <div className="container mx-auto py-6">
-        <div className="flex items-center justify-center py-12">
-          <RefreshCw className="h-12 w-12 animate-spin text-[#800020]" />
-        </div>
+        <ReportLoadingState label="Loading master report" />
       </div>
     );
   }
@@ -187,7 +188,7 @@ export default function MasterReportPage() {
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm">
                   <Calendar className="mr-2 h-4 w-4" />
-                  {format(startDate, 'MMM d')} - {format(endDate, 'MMM d, yyyy')}
+                  {startDate && endDate ? `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}` : 'All time'}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="end">
@@ -218,6 +219,16 @@ export default function MasterReportPage() {
                   </div>
                   <Button onClick={fetchMasterReport} className="w-full bg-[#800020] hover:bg-[#600018]">
                     Apply Dates
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setStartDate(undefined);
+                      setEndDate(undefined);
+                    }}
+                    className="w-full"
+                  >
+                    Reset to All Time
                   </Button>
                 </div>
               </PopoverContent>

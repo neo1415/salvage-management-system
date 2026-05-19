@@ -12,6 +12,7 @@ import {
   BarChart3, PieChart, LineChart
 } from 'lucide-react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import { ChartFrame, MetricGrid, MetricValue, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -54,13 +55,13 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
       {/* EXECUTIVE SUMMARY - Top 7 KPIs */}
       <section>
         <h2 className="text-2xl font-bold mb-4 text-[#800020]">Executive Summary</h2>
-        <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-7">
-          <Card className="border-l-4 border-l-[#800020]">
+        <MetricGrid>
+          <Card className="border-l-4 border-l-[#800020] min-w-0">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Total Revenue</p>
-                  <p className="text-2xl font-bold">{formatCurrency(data.executiveSummary.totalRevenue)}</p>
+                  <MetricValue>{formatCurrency(data.executiveSummary.totalRevenue)}</MetricValue>
                   <div className="flex items-center mt-1">
                     {data.executiveSummary.revenueGrowth >= 0 ? (
                       <TrendingUp className="h-4 w-4 text-green-600 mr-1" />
@@ -72,17 +73,17 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                     </span>
                   </div>
                 </div>
-                <Banknote className="h-8 w-8 text-[#800020] opacity-20" />
+                <Banknote className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Total Cases</p>
-                  <p className="text-2xl font-bold">{data.executiveSummary.totalCases}</p>
+                  <MetricValue>{data.executiveSummary.totalCases}</MetricValue>
                   <div className="flex items-center mt-1">
                     {data.executiveSummary.caseGrowth >= 0 ? (
                       <TrendingUp className="h-4 w-4 text-green-600 mr-1" />
@@ -94,76 +95,76 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                     </span>
                   </div>
                 </div>
-                <FileText className="h-8 w-8 text-[#800020] opacity-20" />
+                <FileText className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Auction Success</p>
-                  <p className="text-2xl font-bold">{formatPercent(data.executiveSummary.auctionSuccessRate)}</p>
-                  <p className="text-xs text-gray-500 mt-1">Closed with winner</p>
+                  <MetricValue>{formatPercent(data.executiveSummary.auctionSuccessRate)}</MetricValue>
+                  <p className="text-xs text-gray-500 mt-1">Verified payment</p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-[#800020] opacity-20" />
+                <CheckCircle className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Avg Processing</p>
-                  <p className="text-2xl font-bold">{data.executiveSummary.avgProcessingTime.toFixed(1)}</p>
+                  <MetricValue>{data.executiveSummary.avgProcessingTime.toFixed(1)}</MetricValue>
                   <p className="text-xs text-gray-500 mt-1">days</p>
                 </div>
-                <Clock className="h-8 w-8 text-[#800020] opacity-20" />
+                <Clock className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">System Health</p>
-                  <p className="text-2xl font-bold">{data.executiveSummary.systemHealth}</p>
+                  <MetricValue>{data.executiveSummary.systemHealth}</MetricValue>
                   <p className="text-xs text-gray-500 mt-1">score</p>
                 </div>
-                <Activity className="h-8 w-8 text-green-600 opacity-20" />
+                <Activity className="h-8 w-8 shrink-0 text-green-600 opacity-20" />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Team Size</p>
-                  <p className="text-2xl font-bold">{data.performance.teamMetrics.totalAdjusters}</p>
+                  <MetricValue>{data.performance.teamMetrics.totalAdjusters}</MetricValue>
                   <p className="text-xs text-gray-500 mt-1">adjusters</p>
                 </div>
-                <Users className="h-8 w-8 text-[#800020] opacity-20" />
+                <Users className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0">
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Quality Score</p>
-                  <p className="text-2xl font-bold">{data.performance.teamMetrics.avgQualityScore.toFixed(1)}</p>
+                  <MetricValue>{data.performance.teamMetrics.avgQualityScore.toFixed(1)}</MetricValue>
                   <p className="text-xs text-gray-500 mt-1">average</p>
                 </div>
-                <Award className="h-8 w-8 text-[#800020] opacity-20" />
+                <Award className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
               </div>
             </CardContent>
           </Card>
-        </div>
+        </MetricGrid>
       </section>
 
       {/* FINANCIAL SECTION */}
@@ -197,8 +198,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
           </Card>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 mb-4">
-          <Card>
+        <div className="grid min-w-0 gap-4 lg:grid-cols-2 mb-4">
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <LineChart className="h-5 w-5" />
@@ -206,15 +207,15 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-64">
+              <ChartFrame>
                 <Line
                   data={{
                     labels: data.financial.revenue.byMonth.map(m => m.month),
                     datasets: [{
                       label: 'Revenue',
                       data: data.financial.revenue.byMonth.map(m => m.amount),
-                      borderColor: '#800020',
-                      backgroundColor: 'rgba(128, 0, 32, 0.1)',
+                      borderColor: REPORT_CHART_COLORS[0],
+                      backgroundColor: 'rgba(128, 0, 32, 0.12)',
                       fill: true,
                       tension: 0.4,
                     }],
@@ -223,7 +224,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                      legend: { display: false },
+                      legend: { display: true, labels: { boxWidth: 12, usePointStyle: true } },
                     },
                     scales: {
                       y: {
@@ -235,11 +236,11 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                     },
                   }}
                 />
-              </div>
+              </ChartFrame>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <PieChart className="h-5 w-5" />
@@ -247,30 +248,24 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-64">
+              <ChartFrame>
                 <Doughnut
                   data={{
                     labels: data.financial.revenue.byAssetType.map(a => a.assetType),
                     datasets: [{
                       data: data.financial.revenue.byAssetType.map(a => a.amount),
-                      backgroundColor: [
-                        '#800020',
-                        '#A00028',
-                        '#C00030',
-                        '#E00038',
-                        '#FF4444',
-                      ],
+                      backgroundColor: REPORT_CHART_COLORS,
                     }],
                   }}
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                      legend: { position: 'right' },
+                      legend: { position: 'bottom', labels: { boxWidth: 12, usePointStyle: true } },
                     },
                   }}
                 />
-              </div>
+              </ChartFrame>
             </CardContent>
           </Card>
         </div>
@@ -313,7 +308,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
               <p className="text-3xl font-bold">{formatPercent(data.financial.recovery.averageRate)}</p>
               <p className="text-xs text-gray-500">of market value</p>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid min-w-0 gap-4 lg:grid-cols-2">
               <div>
                 <h4 className="font-semibold mb-2">By Asset Type</h4>
                 {data.financial.recovery.byAssetType.map((a, i) => (
@@ -323,15 +318,15 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   </div>
                 ))}
               </div>
-              <div className="h-48">
+              <ChartFrame className="h-56 sm:h-64">
                 <Line
                   data={{
                     labels: data.financial.recovery.trend.map(t => t.month),
                     datasets: [{
                       label: 'Recovery Rate %',
                       data: data.financial.recovery.trend.map(t => t.rate),
-                      borderColor: '#800020',
-                      backgroundColor: 'rgba(128, 0, 32, 0.1)',
+                      borderColor: REPORT_CHART_COLORS[1],
+                      backgroundColor: 'rgba(15, 118, 110, 0.12)',
                       fill: true,
                       tension: 0.4,
                     }],
@@ -339,11 +334,11 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
+                    plugins: { legend: { display: true, labels: { boxWidth: 12, usePointStyle: true } } },
                     scales: { y: { beginAtZero: true } },
                   }}
                 />
-              </div>
+              </ChartFrame>
             </div>
           </CardContent>
         </Card>
@@ -353,8 +348,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
       <section>
         <h2 className="text-2xl font-bold mb-4 text-[#800020]">Operational Performance</h2>
         
-        <div className="grid gap-4 md:grid-cols-3 mb-4">
-          <Card>
+        <div className="grid min-w-0 gap-4 md:grid-cols-3 mb-4">
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>Cases Overview</CardTitle>
             </CardHeader>
@@ -374,7 +369,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>Auctions Overview</CardTitle>
             </CardHeader>
@@ -405,7 +400,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>Documents</CardTitle>
             </CardHeader>
@@ -425,12 +420,12 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
           </Card>
         </div>
 
-        <Card className="mb-4">
+        <Card className="mb-4 min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle>Cases by Asset Type</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
+            <ChartFrame>
               <Bar
                 data={{
                   labels: data.operational.cases.byAssetType.map(a => a.assetType),
@@ -438,13 +433,13 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                     {
                       label: 'Case Count',
                       data: data.operational.cases.byAssetType.map(a => a.count),
-                      backgroundColor: '#800020',
+                      backgroundColor: REPORT_CHART_COLORS[0],
                       yAxisID: 'y',
                     },
                     {
                       label: 'Avg Processing Time (days)',
                       data: data.operational.cases.byAssetType.map(a => a.avgTime),
-                      backgroundColor: '#C00030',
+                      backgroundColor: REPORT_CHART_COLORS[2],
                       yAxisID: 'y1',
                     },
                   ],
@@ -469,7 +464,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   },
                 }}
               />
-            </div>
+            </ChartFrame>
           </CardContent>
         </Card>
 
@@ -508,32 +503,32 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
       <section>
         <h2 className="text-2xl font-bold mb-4 text-[#800020]">Team Performance</h2>
         
-        <div className="grid gap-4 md:grid-cols-4 mb-4">
+        <MetricGrid className="mb-4">
           <Card>
             <CardContent className="pt-6">
               <p className="text-sm text-gray-600">Total Adjusters</p>
-              <p className="text-3xl font-bold">{data.performance.teamMetrics.totalAdjusters}</p>
+              <MetricValue>{data.performance.teamMetrics.totalAdjusters}</MetricValue>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
               <p className="text-sm text-gray-600">Avg Quality Score</p>
-              <p className="text-3xl font-bold">{data.performance.teamMetrics.avgQualityScore.toFixed(1)}</p>
+              <MetricValue>{data.performance.teamMetrics.avgQualityScore.toFixed(1)}</MetricValue>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
               <p className="text-sm text-gray-600">Top Performer</p>
-              <p className="text-lg font-bold truncate">{data.performance.teamMetrics.topPerformer}</p>
+              <MetricValue className="text-lg">{data.performance.teamMetrics.topPerformer}</MetricValue>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
               <p className="text-sm text-gray-600">Active Vendors</p>
-              <p className="text-3xl font-bold">{data.performance.teamMetrics.activeVendors}</p>
+              <MetricValue>{data.performance.teamMetrics.activeVendors}</MetricValue>
             </CardContent>
           </Card>
-        </div>
+        </MetricGrid>
 
         <Card className="mb-4">
           <CardHeader>
@@ -633,8 +628,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
       <section>
         <h2 className="text-2xl font-bold mb-4 text-[#800020]">Auction Intelligence</h2>
         
-        <div className="grid gap-4 md:grid-cols-3 mb-4">
-          <Card>
+        <div className="grid min-w-0 gap-4 md:grid-cols-3 mb-4">
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>Bidding Activity</CardTitle>
             </CardHeader>
@@ -642,11 +637,11 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
               <div className="space-y-3">
                 <div>
                   <p className="text-sm text-gray-600">Total Bids</p>
-                  <p className="text-2xl font-bold">{data.auctionIntelligence.bidding.totalBids}</p>
+                  <MetricValue>{data.auctionIntelligence.bidding.totalBids}</MetricValue>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Avg Bids per Auction</p>
-                  <p className="text-2xl font-bold">{data.auctionIntelligence.bidding.avgBidsPerAuction.toFixed(1)}</p>
+                  <MetricValue>{data.auctionIntelligence.bidding.avgBidsPerAuction.toFixed(1)}</MetricValue>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Competition Level</p>
@@ -661,7 +656,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>Pricing Analysis</CardTitle>
             </CardHeader>
@@ -669,21 +664,21 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
               <div className="space-y-3">
                 <div>
                   <p className="text-sm text-gray-600">Avg Starting Bid</p>
-                  <p className="text-xl font-bold">{formatCurrency(data.auctionIntelligence.pricing.avgStartingBid)}</p>
+                  <MetricValue className="text-xl">{formatCurrency(data.auctionIntelligence.pricing.avgStartingBid)}</MetricValue>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Avg Winning Bid</p>
-                  <p className="text-xl font-bold text-green-600">{formatCurrency(data.auctionIntelligence.pricing.avgWinningBid)}</p>
+                  <MetricValue className="text-xl text-green-600">{formatCurrency(data.auctionIntelligence.pricing.avgWinningBid)}</MetricValue>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Avg Price Increase</p>
-                  <p className="text-xl font-bold">{formatCurrency(data.auctionIntelligence.pricing.avgPriceIncrease)}</p>
+                  <MetricValue className="text-xl">{formatCurrency(data.auctionIntelligence.pricing.avgPriceIncrease)}</MetricValue>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>Timing Metrics</CardTitle>
             </CardHeader>
@@ -691,7 +686,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
               <div className="space-y-3">
                 <div>
                   <p className="text-sm text-gray-600">Avg Duration</p>
-                  <p className="text-2xl font-bold">{data.auctionIntelligence.timing.avgAuctionDuration.toFixed(1)}h</p>
+                  <MetricValue>{data.auctionIntelligence.timing.avgAuctionDuration.toFixed(1)}h</MetricValue>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Extension Rate</p>
@@ -707,29 +702,29 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
         </div>
 
         {data.auctionIntelligence.bidding.peakBiddingHours.length > 0 && (
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>Peak Bidding Hours</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-48">
+              <ChartFrame className="h-56 sm:h-64">
                 <Bar
                   data={{
                     labels: data.auctionIntelligence.bidding.peakBiddingHours.map(h => `${h.hour}:00`),
                     datasets: [{
                       label: 'Bid Count',
                       data: data.auctionIntelligence.bidding.peakBiddingHours.map(h => h.count),
-                      backgroundColor: '#800020',
+                      backgroundColor: REPORT_CHART_COLORS[3],
                     }],
                   }}
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
+                    plugins: { legend: { display: true, labels: { boxWidth: 12, usePointStyle: true } } },
                     scales: { y: { beginAtZero: true } },
                   }}
                 />
-              </div>
+              </ChartFrame>
             </CardContent>
           </Card>
         )}

@@ -23,8 +23,11 @@ import {
   type PickupAuthorizationData,
   type SalvageCertificateData,
 } from './pdf-generation.service';
+import { formatAssetName, type AssetNameDetails } from '@/lib/utils/asset-name';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+type AssetDetails = AssetNameDetails;
 
 /**
  * Generate a document and store in database
@@ -86,21 +89,12 @@ export async function generateDocument(
     const verificationUrl = `${APP_URL}/verify-document/${auctionId}`;
 
     // Extract asset details from JSONB
-    const assetDetails = caseData.assetDetails as {
-      make?: string;
-      model?: string;
-      year?: number;
-      vin?: string;
-      propertyType?: string;
-      address?: string;
-      brand?: string;
-      serialNumber?: string;
-    };
+    const assetDetails = caseData.assetDetails as AssetDetails;
 
     // Prepare document data based on type
     let pdfBuffer: Buffer;
     let title: string;
-    const assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || caseData.assetType;
+    const assetDescription = formatAssetName(caseData.assetType, assetDetails, caseData.claimReference);
     
     // Base document data that matches the schema
     const baseDocumentData = {
@@ -344,6 +338,18 @@ export async function signDocument(
       throw new Error('Document signing is disabled. This auction has been forfeited. Please contact support if you wish to proceed.');
     }
 
+    if (existingDoc.validityDeadline && existingDoc.validityDeadline < new Date()) {
+      await db
+        .update(releaseForms)
+        .set({
+          status: 'expired',
+          updatedAt: new Date(),
+        })
+        .where(eq(releaseForms.id, existingDoc.id));
+
+      throw new Error('Document signing deadline has passed. This auction win is no longer available.');
+    }
+
     // NEW: Check if auction is forfeited
     const [auction] = await db
       .select()
@@ -378,13 +384,8 @@ export async function signDocument(
 
         if (auctionData) {
           const { auction, case: caseData, vendor, vendorUser } = auctionData;
-          const assetDetails = caseData.assetDetails as {
-            make?: string;
-            model?: string;
-            year?: number;
-            vin?: string;
-          };
-          const assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || caseData.assetType;
+          const assetDetails = caseData.assetDetails as AssetDetails;
+          const assetDescription = formatAssetName(caseData.assetType, assetDetails, caseData.claimReference);
           
           let pdfBuffer: Buffer;
           let documentName: string;
@@ -538,6 +539,39 @@ export async function signDocument(
         if (currentAuction.status === 'closed') {
           console.log(`   Updating status: closed → awaiting_payment`);
           
+          const { configService } = await import('@/features/auction-deposit/services/config.service');
+          const config = await configService.getConfig();
+          const paymentDeadline = new Date();
+          paymentDeadline.setHours(paymentDeadline.getHours() + config.paymentDeadlineAfterSigning);
+
+          await db
+            .update(releaseForms)
+            .set({
+              paymentDeadline,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(releaseForms.auctionId, signedDoc.auctionId),
+                eq(releaseForms.vendorId, vendorId)
+              )
+            );
+
+          const { payments } = await import('@/lib/db/schema/payments');
+          await db
+            .update(payments)
+            .set({
+              paymentDeadline,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(payments.auctionId, signedDoc.auctionId),
+                eq(payments.vendorId, vendorId),
+                eq(payments.status, 'pending')
+              )
+            );
+
           // Update auction status to awaiting_payment (vendor must choose payment method)
           const [updatedAuction] = await db
             .update(auctions)
@@ -586,7 +620,7 @@ export async function signDocument(
           if (vendor) {
             const [user] = await db.select().from(users).where(eq(users.id, vendor.userId)).limit(1);
             if (user) {
-              const { createNotification } = await import('@/features/notifications/services/notification.service');
+              const { createNotification, createRoleNotifications } = await import('@/features/notifications/services/notification.service');
               await createNotification({
                 userId: user.id,
                 type: 'PAYMENT_METHOD_SELECTION_REQUIRED',
@@ -980,11 +1014,13 @@ async function sendDocumentSigningProgressNotifications(
     // Send SMS and Email after all documents signed (2/2)
     if (progress.allSigned) {
       const { smsService } = await import('@/features/notifications/services/sms.service');
+      const { createRoleNotifications } = await import('@/features/notifications/services/notification.service');
       
       await smsService.sendSMS({
         to: user.phone,
         message: `All required documents signed! Payment is being processed. You will receive your pickup code shortly.`,
         userId: user.id,
+        category: 'routine',
       });
 
       console.log(`✅ SMS sent: All documents signed for auction ${auctionId}`);
@@ -1032,6 +1068,16 @@ async function sendDocumentSigningProgressNotifications(
 
         console.log(`✅ Email sent: All documents signed for auction ${auctionId}`);
       }
+      await createRoleNotifications(['finance_officer', 'system_admin'], {
+        type: 'system_alert',
+        title: 'Auction Documents Signed',
+        message: `${user.fullName} signed all required documents. Payment is now awaiting completion.`,
+        data: {
+          auctionId,
+          vendorId,
+          url: '/finance/payments',
+        },
+      });
     }
   } catch (error) {
     console.error('❌ Error sending document signing progress notifications:', error);
@@ -1101,9 +1147,10 @@ export async function triggerFundReleaseOnDocumentCompletion(
         throw new Error('Auction has no winning bid');
       }
 
-      // Calculate payment deadline (24 hours from now)
+      const { configService } = await import('@/features/auction-deposit/services/config.service');
+      const config = await configService.getConfig();
       const paymentDeadline = new Date();
-      paymentDeadline.setHours(paymentDeadline.getHours() + 24);
+      paymentDeadline.setHours(paymentDeadline.getHours() + config.paymentDeadlineAfterSigning);
 
       // Generate unique payment reference
       const reference = `PAY_${auctionId.substring(0, 8)}_${Date.now()}`;
@@ -1266,16 +1313,21 @@ export async function triggerFundReleaseOnDocumentCompletion(
           to: user.phone,
           message: `✅ Payment complete! Pickup Authorization Code: ${pickupAuthCode}. Location: ${pickupLocation}. Deadline: ${pickupDeadline}. Bring valid ID.`,
           userId: user.id,
+          category: 'pickup_code',
         });
 
         // Send email notification with full pickup details
         const { emailService } = await import('@/features/notifications/services/email.service');
-        const assetDetails = (auction as any).title || 'Salvage Item';
+        const assetName = formatAssetName(
+          caseData?.assetType || 'salvage item',
+          caseData?.assetDetails as AssetDetails | undefined,
+          caseData?.claimReference
+        );
         await emailService.sendPaymentConfirmationEmail(user.email, {
           vendorName: user.fullName,
           auctionId,
           paymentId: payment.id,
-          assetName: assetDetails,
+          assetName,
           paymentAmount: parseFloat(payment.amount),
           paymentMethod: 'Escrow Wallet',
           paymentReference: `ESCROW_${auctionId.substring(0, 8)}`,

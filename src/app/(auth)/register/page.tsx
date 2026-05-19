@@ -39,14 +39,9 @@ export default function RegisterPage() {
       // Show success message
       setSuccess(true);
 
-      // Store credentials temporarily in session storage for auto-login after OTP verification
-      // This allows seamless flow: Register → Verify OTP → Auto-login → BVN Verification
-      sessionStorage.setItem('registration_email', data.email);
-      sessionStorage.setItem('registration_password', data.password);
-
       // Redirect to OTP verification page after 2 seconds
       setTimeout(() => {
-        router.push(`/verify-otp?phone=${encodeURIComponent(data.phone)}`);
+        router.push(`/verify-otp?phone=${encodeURIComponent(data.phone)}&email=${encodeURIComponent(data.email)}`);
       }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');

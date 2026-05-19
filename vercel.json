@@ -5,6 +5,14 @@
       "schedule": "0 0 * * *"
     },
     {
+      "path": "/api/cron/check-document-deadlines",
+      "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/check-payment-deadlines",
+      "schedule": "0 1 * * *"
+    },
+    {
       "path": "/api/cron/check-missing-documents",
       "schedule": "0 2 * * *"
     },

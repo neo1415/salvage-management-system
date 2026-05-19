@@ -19,6 +19,7 @@ import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from 
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { validatePriceOverrides } from '@/lib/validation/price-validation';
+import { createNotification, createRoleNotifications } from '@/features/notifications/services/notification.service';
 
 /**
  * Price override data structure
@@ -455,6 +456,18 @@ export async function POST(
             }),
           } : undefined;
 
+          await createNotification({
+            userId: creator.id,
+            type: 'case_approved',
+            title: 'Case Approved',
+            message: `Case ${caseRecord.claimReference} was approved and ${scheduleData.mode === 'scheduled' ? 'scheduled for auction' : 'auction is live'}.`,
+            data: {
+              caseId,
+              auctionId: auction.id,
+              url: `/adjuster/cases/${caseId}`,
+            },
+          });
+
           await emailService.sendCaseApprovalEmail(creator.email, {
             adjusterName: creator.fullName,
             caseId: caseId,
@@ -469,6 +482,21 @@ export async function POST(
         } catch (error) {
           console.error(`Failed to send email to adjuster ${creator.id}:`, error);
         }
+      }
+
+      try {
+        await createRoleNotifications(['salvage_manager', 'system_admin'], {
+          type: 'auction_approved',
+          title: scheduleData.mode === 'scheduled' ? 'Auction Scheduled' : 'Auction Approved',
+          message: `Case ${caseRecord.claimReference} has been approved for auction.`,
+          data: {
+            caseId,
+            auctionId: auction.id,
+            url: '/manager/approvals',
+          },
+        });
+      } catch (notificationError) {
+        console.error('Failed to create staff auction approval notifications:', notificationError);
       }
 
       return NextResponse.json({
@@ -545,6 +573,17 @@ export async function POST(
 
         // Send email notification using professional template
         try {
+          await createNotification({
+            userId: creator.id,
+            type: 'case_rejected',
+            title: 'Case Returned',
+            message: `Case ${caseRecord.claimReference} was returned for review. Reason: ${body.comment}`,
+            data: {
+              caseId,
+              url: `/adjuster/cases/${caseId}`,
+            },
+          });
+
           await emailService.sendCaseApprovalEmail(creator.email, {
             adjusterName: creator.fullName,
             caseId: caseId,

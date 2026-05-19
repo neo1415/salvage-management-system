@@ -47,6 +47,32 @@ export function RecommendationsFeed({
 
   const observerTarget = useRef<HTMLDivElement>(null);
 
+  const fetchFallbackAuctions = useCallback(async () => {
+    const response = await fetch('/api/auctions?tab=active&sortBy=newest&limit=10');
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch active auctions');
+    }
+
+    const data = await response.json();
+    const auctions = data.auctions || [];
+
+    return auctions.map((auction: any) => ({
+      auctionId: auction.id,
+      matchScore: 50,
+      reasonCodes: ['Available now', 'Recently listed'],
+      auctionDetails: {
+        assetType: auction.case?.assetType || 'asset',
+        assetDetails: auction.case?.assetDetails || {},
+        marketValue: Number(auction.case?.marketValue || 0),
+        reservePrice: Number(auction.case?.reservePrice || 0),
+        currentBid: auction.currentBid ? Number(auction.currentBid) : null,
+        watchingCount: Number(auction.watchingCount || 0),
+        endTime: auction.endTime,
+      },
+    }));
+  }, []);
+
   // Fetch recommendations
   const fetchRecommendations = useCallback(async (pageNum: number) => {
     if (isLoading) return;
@@ -68,6 +94,10 @@ export function RecommendationsFeed({
       const newRecommendations = data.data?.recommendations || [];
 
       if (newRecommendations.length === 0) {
+        const fallbackRecommendations = pageNum === 1 ? await fetchFallbackAuctions() : [];
+        setRecommendations(prev =>
+          pageNum === 1 ? fallbackRecommendations : prev
+        );
         setHasMore(false);
       } else {
         setRecommendations(prev => 
@@ -76,11 +106,29 @@ export function RecommendationsFeed({
       }
     } catch (err) {
       console.error('Error fetching recommendations:', err);
-      setError('Failed to load recommendations. Please try again.');
+      try {
+        const fallbackRecommendations = pageNum === 1 ? await fetchFallbackAuctions() : [];
+        setRecommendations(prev =>
+          pageNum === 1 ? fallbackRecommendations : prev
+        );
+        setHasMore(false);
+        setError(null);
+      } catch (fallbackError) {
+        console.error('Error fetching fallback auctions:', fallbackError);
+        setError('Failed to load recommendations. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [vendorId, isLoading]);
+  }, [vendorId, isLoading, fetchFallbackAuctions]);
+
+  useEffect(() => {
+    if (recommendations.length === 0) {
+      fetchRecommendations(1);
+    }
+  // Run once on mount; fetchRecommendations is intentionally omitted because it depends on loading state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Task 10.2.4: Infinite scroll with Intersection Observer
   useEffect(() => {
@@ -177,11 +225,10 @@ export function RecommendationsFeed({
         <div className="text-center py-12">
           <Sparkles className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No recommendations yet
+            No active auctions available
           </h3>
           <p className="text-sm text-gray-600 max-w-md mx-auto">
-            Start bidding on auctions to help us understand your preferences and 
-            provide personalized recommendations.
+            Check back when new auctions are approved and opened for bidding.
           </p>
         </div>
       ) : null}

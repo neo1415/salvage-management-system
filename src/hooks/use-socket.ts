@@ -534,8 +534,27 @@ export function useAuctionUpdates(auctionId: string | null) {
 
     return () => {
       console.log(`🧹 Cleaning up event listeners for auction ${auctionId}`);
-      // Don't remove listeners on cleanup - they persist across HMR
-      // Only remove when socket/auctionId actually changes
+      if (wrappersRef.current.auctionUpdate) {
+        socket.off('auction:updated', wrappersRef.current.auctionUpdate);
+      }
+      if (wrappersRef.current.newBid) {
+        socket.off('auction:new-bid', wrappersRef.current.newBid);
+      }
+      if (wrappersRef.current.extension) {
+        socket.off('auction:extended', wrappersRef.current.extension);
+      }
+      if (wrappersRef.current.closure) {
+        socket.off('auction:closed', wrappersRef.current.closure);
+      }
+      if (wrappersRef.current.closing) {
+        socket.off('auction:closing', wrappersRef.current.closing);
+      }
+      if (wrappersRef.current.documentGenerated) {
+        socket.off('auction:document-generated', wrappersRef.current.documentGenerated);
+      }
+      if (wrappersRef.current.generationComplete) {
+        socket.off('auction:document-generation-complete', wrappersRef.current.generationComplete);
+      }
     };
   }, [socket, isConnected, auctionId]);
 

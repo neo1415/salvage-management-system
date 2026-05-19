@@ -52,6 +52,9 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
   const [totalPages, setTotalPages] = useState(1);
   const limit = 10;
 
+  const toAmount = (value: number | string | null | undefined) => Number(value || 0);
+  const formatAmount = (value: number | string | null | undefined) => toAmount(value).toLocaleString();
+
   useEffect(() => {
     fetchWalletBalance();
     fetchDepositHistory();
@@ -62,8 +65,17 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
       const response = await fetch(`/api/vendors/${vendorId}/wallet`);
       if (response.ok) {
         const data = await response.json();
-        setWalletBalance(data.wallet);
-        setActiveDeposits(data.activeDeposits || []);
+        const wallet = data.wallet || {};
+        setWalletBalance({
+          balance: toAmount(wallet.balance),
+          availableBalance: toAmount(wallet.availableBalance),
+          frozenAmount: toAmount(wallet.frozenAmount),
+          forfeitedAmount: toAmount(wallet.forfeitedAmount),
+        });
+        setActiveDeposits((data.activeDeposits || []).map((deposit: ActiveDeposit) => ({
+          ...deposit,
+          depositAmount: toAmount(deposit.depositAmount),
+        })));
       }
     } catch (error) {
       console.error('Failed to fetch wallet balance:', error);
@@ -78,8 +90,17 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
       );
       if (response.ok) {
         const data = await response.json();
-        setDepositEvents(data.events);
-        setTotalPages(Math.ceil(data.total / limit));
+        setDepositEvents((data.events || []).map((event: DepositEvent) => ({
+          ...event,
+          amount: toAmount(event.amount),
+          balanceBefore: toAmount(event.balanceBefore),
+          balanceAfter: toAmount(event.balanceAfter),
+          availableBefore: toAmount(event.availableBefore),
+          availableAfter: toAmount(event.availableAfter),
+          frozenBefore: toAmount(event.frozenBefore),
+          frozenAfter: toAmount(event.frozenAfter),
+        })));
+        setTotalPages(Math.ceil((data.total || 0) / limit));
       }
     } catch (error) {
       console.error('Failed to fetch deposit history:', error);
@@ -159,26 +180,26 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-xs text-gray-500 mb-1">Total Balance</p>
               <p className="text-2xl font-bold text-gray-900">
-                ₦{walletBalance.balance.toLocaleString()}
+                ₦{formatAmount(walletBalance.balance)}
               </p>
             </div>
             <div className="bg-green-50 p-4 rounded-lg">
               <p className="text-xs text-green-700 mb-1">Available</p>
               <p className="text-2xl font-bold text-green-600">
-                ₦{walletBalance.availableBalance.toLocaleString()}
+                ₦{formatAmount(walletBalance.availableBalance)}
               </p>
             </div>
             <div className="bg-orange-50 p-4 rounded-lg">
               <p className="text-xs text-orange-700 mb-1">Frozen (Deposits)</p>
               <p className="text-2xl font-bold text-orange-600">
-                ₦{walletBalance.frozenAmount.toLocaleString()}
+                ₦{formatAmount(walletBalance.frozenAmount)}
               </p>
             </div>
-            {walletBalance.forfeitedAmount > 0 && (
+            {toAmount(walletBalance.forfeitedAmount) > 0 && (
               <div className="bg-red-50 p-4 rounded-lg">
                 <p className="text-xs text-red-700 mb-1">Forfeited</p>
                 <p className="text-2xl font-bold text-red-600">
-                  ₦{walletBalance.forfeitedAmount.toLocaleString()}
+                  ₦{formatAmount(walletBalance.forfeitedAmount)}
                 </p>
               </div>
             )}
@@ -207,7 +228,7 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-orange-600">
-                    ₦{deposit.depositAmount.toLocaleString()}
+                    ₦{formatAmount(deposit.depositAmount)}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {new Date(deposit.createdAt).toLocaleDateString()}
@@ -283,28 +304,28 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
                       </td>
                       <td className="py-4 px-4 text-right">
                         <span className="text-sm font-semibold text-gray-900">
-                          ₦{event.amount.toLocaleString()}
+                          ₦{formatAmount(event.amount)}
                         </span>
                       </td>
                       <td className="py-4 px-4 text-right">
                         <div className="text-sm">
                           <span className="text-gray-400">
-                            ₦{event.availableBefore.toLocaleString()}
+                            ₦{formatAmount(event.availableBefore)}
                           </span>
                           <span className="mx-1 text-gray-300">→</span>
                           <span className="font-medium text-gray-900">
-                            ₦{event.availableAfter.toLocaleString()}
+                            ₦{formatAmount(event.availableAfter)}
                           </span>
                         </div>
                       </td>
                       <td className="py-4 px-4 text-right">
                         <div className="text-sm">
                           <span className="text-gray-400">
-                            ₦{event.frozenBefore.toLocaleString()}
+                            ₦{formatAmount(event.frozenBefore)}
                           </span>
                           <span className="mx-1 text-gray-300">→</span>
                           <span className="font-medium text-gray-900">
-                            ₦{event.frozenAfter.toLocaleString()}
+                            ₦{formatAmount(event.frozenAfter)}
                           </span>
                         </div>
                       </td>

@@ -58,9 +58,12 @@ interface WalletVsLedgerComparison {
   matched: number;
   discrepancies: Array<{
     vendorId: string;
+    vendorName?: string;
+    vendorEmail?: string | null;
     walletBalance: number;
     ledgerBalance: number;
     discrepancy: number;
+    explanation?: string;
   }>;
 }
 
@@ -507,8 +510,11 @@ export function ReconciliationDashboard() {
                 <div key={index} className="border rounded-lg p-4">
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <p className="font-mono text-sm font-semibold">{disc.vendorId}</p>
-                      <p className="text-xs text-muted-foreground">Vendor ID</p>
+                      <p className="text-sm font-semibold">{disc.vendorName || 'Unknown vendor'}</p>
+                      {disc.vendorEmail && (
+                        <p className="text-xs text-muted-foreground">{disc.vendorEmail}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground font-mono mt-1">{disc.vendorId}</p>
                     </div>
                     <Badge variant="destructive">
                       ₦{disc.discrepancy.toLocaleString()} discrepancy
@@ -524,6 +530,11 @@ export function ReconciliationDashboard() {
                       <p className="font-semibold">₦{disc.ledgerBalance.toLocaleString()}</p>
                     </div>
                   </div>
+                  {disc.explanation && (
+                    <p className="text-xs text-muted-foreground mt-3">
+                      {disc.explanation}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

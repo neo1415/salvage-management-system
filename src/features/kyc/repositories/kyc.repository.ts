@@ -1,8 +1,9 @@
-import { eq, lte, and, isNotNull, sql } from 'drizzle-orm';
+import { eq, lte, and, isNotNull, sql, inArray, desc } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { verificationCosts } from '@/lib/db/schema/verification-costs';
+import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import type {
   KYCStatus,
   KYCVerificationData,
@@ -174,11 +175,21 @@ export class KYCRepository {
       )
       .orderBy(vendors.tier2SubmittedAt);
 
+    const vendorIds = rows.map((r) => r.id);
+    const evidenceRows = vendorIds.length
+      ? await db
+          .select()
+          .from(providerVerificationRecords)
+          .where(inArray(providerVerificationRecords.vendorId, vendorIds))
+          .orderBy(desc(providerVerificationRecords.updatedAt))
+      : [];
+
     return rows.map((r) => {
       const flags = (r.fraudFlags as Array<{ description: string }> | null) ?? [];
       const flaggedReasons = flags.map((f) => f.description);
       if (r.amlRiskLevel === 'High') flaggedReasons.unshift('High AML risk');
       if (r.amlRiskLevel === 'Medium') flaggedReasons.unshift('Medium AML risk');
+      const providerEvidence = evidenceRows.find((record) => record.vendorId === r.id);
 
       return {
         vendorId: r.id,
@@ -196,6 +207,22 @@ export class KYCRepository {
         livenessScore: r.livenessScore ? Number(r.livenessScore) : undefined,
         biometricMatchScore: r.biometricMatchScore ? Number(r.biometricMatchScore) : undefined,
         amlScreeningData: (r.amlScreeningData as Record<string, unknown>) ?? undefined,
+        providerEvidence: providerEvidence
+          ? {
+              provider: providerEvidence.provider,
+              providerReference: providerEvidence.providerReference,
+              workflowReference: providerEvidence.workflowReference,
+              status: providerEvidence.status,
+              riskLevel: providerEvidence.riskLevel,
+              checksCompleted: providerEvidence.checksCompleted,
+              pendingChecks: providerEvidence.pendingChecks,
+              failedChecks: providerEvidence.failedChecks,
+              reasonCodes: providerEvidence.reasonCodes,
+              displayMessage: providerEvidence.displayMessage,
+              normalizedResult: providerEvidence.normalizedResult,
+              updatedAt: providerEvidence.updatedAt,
+            }
+          : undefined,
       };
     });
   }

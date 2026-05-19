@@ -90,6 +90,7 @@ export default function FinancePaymentsPage() {
   const [loading, setLoading] = useState(true);
   const [isFiltering, setIsFiltering] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [gracePayment, setGracePayment] = useState<Payment | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [action, setAction] = useState<'approve' | 'reject' | null>(null);
@@ -417,8 +418,9 @@ export default function FinancePaymentsPage() {
       }
 
       // Show success modal
-      setSuccessMessage('Grace period granted successfully! Vendor has been notified of the 3-day extension.');
+      setSuccessMessage('Grace period granted successfully. Vendor has been notified by email, SMS, and in-app notification.');
       setShowSuccessModal(true);
+      setGracePayment(null);
       
       // Close details modal
       closeModal();
@@ -538,8 +540,8 @@ export default function FinancePaymentsPage() {
       // Prepare data for export with comprehensive columns
       const exportData = payments.map(payment => ({
         paymentId: payment.id,
-        auctionId: payment.auctionId,
-        claimReference: payment.case.claimReference,
+        auctionId: payment.auctionId || 'N/A',
+        claimReference: payment.case?.claimReference || 'Registration Fee',
         vendorName: payment.vendor.businessName || payment.vendor.contactPersonName || 'N/A',
         amount: `₦${parseFloat(payment.amount).toLocaleString()}`,
         status: payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
@@ -622,8 +624,8 @@ export default function FinancePaymentsPage() {
       // Prepare data for export with more comprehensive columns
       const exportData = payments.map(payment => ({
         paymentId: payment.id.substring(0, 8),
-        auctionId: payment.auctionId.substring(0, 8),
-        claimRef: payment.case.claimReference,
+        auctionId: payment.auctionId ? payment.auctionId.substring(0, 8) : 'N/A',
+        claimRef: payment.case?.claimReference || 'Registration Fee',
         vendorName: payment.vendor.businessName || payment.vendor.contactPersonName || 'N/A',
         amount: `₦${parseFloat(payment.amount).toLocaleString()}`,
         status: payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
@@ -1453,7 +1455,7 @@ export default function FinancePaymentsPage() {
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
-                          handleGrantGracePeriod(payment.id);
+                          setGracePayment(payment);
                         }}
                         disabled={processing}
                         requiresOnline={true}
@@ -1484,8 +1486,10 @@ export default function FinancePaymentsPage() {
 
               <div className="space-y-3 mb-6">
                 <div>
-                  <p className="text-sm text-gray-500">Claim Reference</p>
-                  <p className="font-medium text-gray-900">{selectedPayment.case.claimReference}</p>
+                  <p className="text-sm text-gray-500">Payment Type</p>
+                  <p className="font-medium text-gray-900">
+                    {selectedPayment.case?.claimReference || 'Registration Fee'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Amount</p>
@@ -1775,23 +1779,30 @@ export default function FinancePaymentsPage() {
                   <svg className="w-5 h-5 mr-2 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  Case Information
+                  {selectedPayment.case ? 'Case Information' : 'Registration Information'}
                 </h4>
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Claim Reference</p>
-                      <p className="font-medium text-gray-900">
-                        {selectedPayment.case.claimReference}
-                      </p>
+                  {selectedPayment.case ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Claim Reference</p>
+                        <p className="font-medium text-gray-900">
+                          {selectedPayment.case.claimReference}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Asset Type</p>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 capitalize">
+                          {selectedPayment.case.assetType}
+                        </span>
+                      </div>
                     </div>
+                  ) : (
                     <div>
-                      <p className="text-xs text-gray-500 mb-1">Asset Type</p>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 capitalize">
-                        {selectedPayment.case.assetType}
-                      </span>
+                      <p className="text-xs text-gray-500 mb-1">Payment Purpose</p>
+                      <p className="font-medium text-gray-900">Vendor registration fee</p>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -1925,6 +1936,67 @@ export default function FinancePaymentsPage() {
           </div>
         </div>
       </div>,
+        document.body
+      ) : null}
+
+      {/* Grant Grace Period Confirmation Modal */}
+      {gracePayment && typeof document !== 'undefined' ? createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div className="fixed inset-0 bg-black/50" onClick={() => setGracePayment(null)} />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Grant Grace Period</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                This will extend the vendor's payment deadline using the grace duration configured in Business Configuration, reset the payment to pending, and notify the vendor.
+              </p>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 mb-5">
+                <div className="flex justify-between gap-4 text-sm">
+                  <span className="text-blue-700">Vendor</span>
+                  <span className="font-medium text-blue-950 text-right">
+                    {gracePayment.vendor.businessName || gracePayment.vendor.contactPersonName || gracePayment.vendor.email || 'Vendor'}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 text-sm">
+                  <span className="text-blue-700">Amount</span>
+                  <span className="font-medium text-blue-950">
+                    NGN {parseFloat(gracePayment.amount).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 text-sm">
+                  <span className="text-blue-700">Current deadline</span>
+                  <span className="font-medium text-blue-950 text-right">
+                    {new Date(gracePayment.paymentDeadline).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-6">
+                <p className="text-sm text-amber-800">
+                  Confirm only if finance has approved giving this vendor extra time. This action is audited.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setGracePayment(null)}
+                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGrantGracePeriod(gracePayment.id)}
+                  disabled={processing}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {processing ? 'Granting...' : 'Confirm Grace'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
         document.body
       ) : null}
 

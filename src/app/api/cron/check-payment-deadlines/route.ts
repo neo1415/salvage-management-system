@@ -25,10 +25,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
-import { auctionWinners, auctionDocuments } from '@/lib/db/schema/auction-deposit';
+import { auctionWinners } from '@/lib/db/schema/auction-deposit';
 import { auctions } from '@/lib/db/schema/auctions';
+import { releaseForms } from '@/lib/db/schema/release-forms';
+import { payments } from '@/lib/db/schema/payments';
 import { eq, and, lte, isNotNull } from 'drizzle-orm';
 import { forfeitureService } from '@/features/auction-deposit/services/forfeiture.service';
+import { transferService } from '@/features/auction-deposit/services/transfer.service';
 import * as fallbackService from '@/features/auction-deposit/services/fallback.service';
 import { configService } from '@/features/auction-deposit/services/config.service';
 
@@ -83,29 +86,29 @@ export async function GET(request: NextRequest) {
     // Calculate cutoff time (now - buffer period)
     const cutoffTime = new Date(now.getTime() - (effectiveBufferHours * 60 * 60 * 1000));
 
-    // Find auctions with expired payment deadlines (past cutoff)
-    // Status should be 'awaiting_payment' and paymentDeadline < cutoffTime
+    // Find auctions with expired payment deadlines (past cutoff).
+    // Release forms carry the configured payment deadline after signing.
     const expiredAuctions = await db
       .select({
         auction: auctions,
         winner: auctionWinners,
-        document: auctionDocuments,
+        document: releaseForms,
       })
       .from(auctions)
       .innerJoin(auctionWinners, and(
         eq(auctionWinners.auctionId, auctions.id),
-        eq(auctionWinners.rank, 1), // Current winner
+        eq(auctionWinners.vendorId, auctions.currentBidder),
         eq(auctionWinners.status, 'active')
       ))
-      .innerJoin(auctionDocuments, and(
-        eq(auctionDocuments.auctionId, auctions.id),
-        eq(auctionDocuments.vendorId, auctionWinners.vendorId)
+      .innerJoin(releaseForms, and(
+        eq(releaseForms.auctionId, auctions.id),
+        eq(releaseForms.vendorId, auctionWinners.vendorId)
       ))
       .where(
         and(
           eq(auctions.status, 'awaiting_payment'),
-          lte(auctionDocuments.paymentDeadline, cutoffTime),
-          isNotNull(auctionDocuments.signedAt) // Signed but not paid
+          lte(releaseForms.paymentDeadline, cutoffTime),
+          isNotNull(releaseForms.signedAt)
         )
       );
 
@@ -113,8 +116,30 @@ export async function GET(request: NextRequest) {
 
     const results = [];
 
+    const processedAuctions = new Set<string>();
+
     for (const { auction, winner, document } of expiredAuctions) {
       try {
+        if (processedAuctions.has(auction.id)) continue;
+        processedAuctions.add(auction.id);
+
+        const [verifiedPayment] = await db
+          .select()
+          .from(payments)
+          .where(
+            and(
+              eq(payments.auctionId, auction.id),
+              eq(payments.vendorId, winner.vendorId),
+              eq(payments.status, 'verified')
+            )
+          )
+          .limit(1);
+
+        if (verifiedPayment) {
+          console.log(`[Payment Deadline Cron] Auction ${auction.id} already has verified payment. Skipping.`);
+          continue;
+        }
+
         console.log(`[Payment Deadline Cron] Processing auction ${auction.id}, winner ${winner.vendorId}`);
         console.log(`  - Payment deadline: ${document.paymentDeadline?.toISOString()}`);
         console.log(`  - Cutoff time: ${cutoffTime.toISOString()}`);
@@ -122,32 +147,31 @@ export async function GET(request: NextRequest) {
 
         // Step 1: Forfeit deposit
         console.log(`[Payment Deadline Cron] Forfeiting deposit for auction ${auction.id}`);
-        const forfeitureResult = await forfeitureService.forfeitDeposit(
-          auction.id,
-          winner.vendorId,
-          'payment_deadline_expired'
-        );
-
-        if (!forfeitureResult.success) {
-          results.push({
-            auctionId: auction.id,
-            winner: winner.vendorId,
-            status: 'forfeiture_error',
-            error: forfeitureResult.error,
-          });
-
-          console.error(`[Payment Deadline Cron] ❌ Failed to forfeit deposit for auction ${auction.id}:`, forfeitureResult.error);
-          continue;
-        }
+        const forfeitureResult = await forfeitureService.forfeitDeposit({
+          auctionId: auction.id,
+          vendorId: winner.vendorId,
+          depositAmount: parseFloat(winner.depositAmount),
+          reason: 'payment_deadline_expired',
+          forfeiturePercentage: config.forfeiturePercentage,
+        });
 
         console.log(`[Payment Deadline Cron] ✅ Deposit forfeited: ₦${forfeitureResult.forfeitedAmount?.toLocaleString()}`);
 
-        // Step 2: Trigger fallback chain
+        // Step 2: Transfer forfeited deposit before fallback changes auction status.
+        console.log(`[Payment Deadline Cron] Transferring forfeited deposit for auction ${auction.id}`);
+        const transferResult = await transferService.transferForfeitedFunds({
+          auctionId: auction.id,
+        });
+
+        console.log(`[Payment Deadline Cron] Forfeited deposit transferred: ${transferResult.amount.toLocaleString()}`);
+
+        // Step 3: Trigger fallback chain
         console.log(`[Payment Deadline Cron] Triggering fallback for auction ${auction.id}`);
         const fallbackResult = await fallbackService.triggerFallback(
           auction.id,
           winner.vendorId,
-          'failed_to_pay'
+          'failed_to_pay',
+          'system'
         );
 
         if (fallbackResult.success) {
@@ -156,6 +180,7 @@ export async function GET(request: NextRequest) {
             previousWinner: winner.vendorId,
             status: 'completed',
             forfeitedAmount: forfeitureResult.forfeitedAmount,
+            transferTransactionId: transferResult.transactionId,
             newWinner: fallbackResult.newWinnerId,
             allFallbacksFailed: fallbackResult.allFallbacksFailed,
           });
@@ -172,6 +197,7 @@ export async function GET(request: NextRequest) {
             previousWinner: winner.vendorId,
             status: 'fallback_error',
             forfeitedAmount: forfeitureResult.forfeitedAmount,
+            transferTransactionId: transferResult.transactionId,
             error: fallbackResult.error,
           });
 

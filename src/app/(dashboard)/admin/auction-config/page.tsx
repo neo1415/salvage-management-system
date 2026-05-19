@@ -11,7 +11,7 @@ export const metadata = {
 export default async function AuctionConfigPage() {
   const session = await auth();
 
-  if (!session || (session.user.role !== 'admin' && session.user.role !== 'system_admin' && session.user.role !== 'manager')) {
+  if (!session || (session.user.role !== 'system_admin' && session.user.role !== 'salvage_manager')) {
     redirect('/unauthorized');
   }
 

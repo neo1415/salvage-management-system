@@ -22,6 +22,7 @@ export interface CaseProcessingReport {
     pendingCases: number;
     approvedCases: number;
     soldCases: number;
+    awaitingPaymentCases: number;
     activeAuctionCases: number;
     cancelledCases: number;
     totalMarketValue: number;
@@ -89,6 +90,7 @@ export class CaseProcessingService {
     // FIX: Match Master Report status categories
     const approved = data.filter(c => c.status === 'approved').length;
     const sold = data.filter(c => c.status === 'sold').length;
+    const awaitingPayment = data.filter(c => c.status === 'awaiting_payment').length;
     const activeAuction = data.filter(c => c.status === 'active_auction').length;
     const pending = data.filter(c => c.status === 'pending_approval').length;
     const cancelled = data.filter(c => c.status === 'cancelled').length;
@@ -101,7 +103,7 @@ export class CaseProcessingService {
     const avgProcessingDays = avgProcessingHours / 24;
 
     // FIX: Approval rate = (approved + sold + active_auction) / total (Master Report logic)
-    const approvedTotal = approved + sold + activeAuction;
+    const approvedTotal = approved + sold + awaitingPayment + activeAuction;
     const approvalRate = data.length > 0 ? (approvedTotal / data.length) * 100 : 0;
 
     // Calculate value metrics
@@ -117,6 +119,7 @@ export class CaseProcessingService {
       pendingCases: pending,
       approvedCases: approved,
       soldCases: sold,
+      awaitingPaymentCases: awaitingPayment,
       activeAuctionCases: activeAuction,
       cancelledCases: cancelled,
       totalMarketValue: Math.round(totalMarketValue),
@@ -136,7 +139,7 @@ export class CaseProcessingService {
     
     return Object.entries(grouped).map(([assetType, items]) => {
       // FIX: Match Master Report approval logic
-      const approved = items.filter(c => ['approved', 'active_auction', 'sold'].includes(c.status)).length;
+      const approved = items.filter(c => ['approved', 'active_auction', 'awaiting_payment', 'sold'].includes(c.status)).length;
       const approvalRate = items.length > 0 ? (approved / items.length) * 100 : 0;
       
       // FIX: Convert hours to days
@@ -199,7 +202,7 @@ export class CaseProcessingService {
     
     return Object.entries(grouped).map(([adjusterId, items]) => {
       // FIX: Match Master Report approval logic
-      const approved = items.filter(c => ['approved', 'active_auction', 'sold'].includes(c.status)).length;
+      const approved = items.filter(c => ['approved', 'active_auction', 'awaiting_payment', 'sold'].includes(c.status)).length;
       const approvalRate = items.length > 0 ? (approved / items.length) * 100 : 0;
       
       // FIX: Convert hours to days
@@ -377,6 +380,10 @@ export interface AuctionPerformanceReport {
 }
 
 export class AuctionPerformanceService {
+  private static isSoldAuction(auction: any) {
+    return auction.status === 'sold' && !!auction.winningBid;
+  }
+
   static async generateReport(filters: ReportFilters): Promise<AuctionPerformanceReport> {
     const data = await OperationalDataRepository.getAuctionPerformanceData(filters) || [];
 
@@ -396,7 +403,7 @@ export class AuctionPerformanceService {
   }
 
   private static calculateSummary(data: any[]) {
-    const successful = data.filter(a => a.status === 'closed' && a.winnerId).length;
+    const successful = data.filter(a => this.isSoldAuction(a)).length;
     const successRate = data.length > 0 ? (successful / data.length) * 100 : 0;
     
     const totalBids = data.reduce((sum, a) => sum + a.bidCount, 0);
@@ -412,13 +419,11 @@ export class AuctionPerformanceService {
       ? data.reduce((sum, a) => sum + a.durationHours, 0) / data.length
       : 0;
 
-    // Financial metrics
-    // FIX: Use currentBid for all auctions (sold or awaiting_payment), not just winningBid
-    // winningBid is only populated for "sold" status (payment verified)
-    // currentBid contains the highest bid for all closed auctions
-    const auctionsWithBids = data.filter(a => (a.status === 'sold' || a.status === 'awaiting_payment') && a.currentBid);
-    const totalRevenue = auctionsWithBids.reduce((sum, a) => sum + parseFloat(a.currentBid || '0'), 0);
-    const avgWinningBid = auctionsWithBids.length > 0 ? totalRevenue / auctionsWithBids.length : 0;
+    // Revenue only counts verified payments. Awaiting-payment auctions are pipeline,
+    // not money made yet.
+    const soldAuctions = data.filter(a => this.isSoldAuction(a));
+    const totalRevenue = soldAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
+    const avgWinningBid = soldAuctions.length > 0 ? totalRevenue / soldAuctions.length : 0;
     
     const auctionsWithReserve = data.filter(a => a.reservePrice && a.currentBid);
     const priceRealization = auctionsWithReserve.length > 0
@@ -451,7 +456,7 @@ export class AuctionPerformanceService {
     if (!grouped || Object.keys(grouped).length === 0) return [];
     
     return Object.entries(grouped).map(([assetType, items]) => {
-      const successful = items.filter(a => a.status === 'closed' && a.winnerId).length;
+      const successful = items.filter(a => this.isSoldAuction(a)).length;
       const successRate = items.length > 0 ? (successful / items.length) * 100 : 0;
       
       const totalBids = items.reduce((sum, a) => sum + a.bidCount, 0);
@@ -460,10 +465,9 @@ export class AuctionPerformanceService {
       const reserveMet = items.filter(a => a.reserveMet).length;
       const reserveMetRate = items.length > 0 ? (reserveMet / items.length) * 100 : 0;
       
-      // FIX: Use currentBid for all auctions (sold or awaiting_payment), not just winningBid
-      const auctionsWithBids = items.filter(a => (a.status === 'sold' || a.status === 'awaiting_payment') && a.currentBid);
-      const totalRevenue = auctionsWithBids.reduce((sum, a) => sum + parseFloat(a.currentBid || '0'), 0);
-      const avgWinningBid = auctionsWithBids.length > 0 ? totalRevenue / auctionsWithBids.length : 0;
+      const soldAuctions = items.filter(a => this.isSoldAuction(a));
+      const totalRevenue = soldAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
+      const avgWinningBid = soldAuctions.length > 0 ? totalRevenue / soldAuctions.length : 0;
       
       const competitive = items.filter(a => a.uniqueBidders >= 2).length;
 
@@ -590,10 +594,9 @@ export class AuctionPerformanceService {
   }
 
   private static calculateFinancialMetrics(data: any[]) {
-    // FIX: Use currentBid for all auctions (sold or awaiting_payment), not just winningBid
-    const auctionsWithBids = data.filter(a => (a.status === 'sold' || a.status === 'awaiting_payment') && a.currentBid);
-    const totalRevenue = auctionsWithBids.reduce((sum, a) => sum + parseFloat(a.currentBid || '0'), 0);
-    const avgWinningBid = auctionsWithBids.length > 0 ? totalRevenue / auctionsWithBids.length : 0;
+    const soldAuctions = data.filter(a => this.isSoldAuction(a));
+    const totalRevenue = soldAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
+    const avgWinningBid = soldAuctions.length > 0 ? totalRevenue / soldAuctions.length : 0;
     
     const auctionsWithReserve = data.filter(a => a.reservePrice);
     const avgReservePrice = auctionsWithReserve.length > 0
@@ -606,10 +609,10 @@ export class AuctionPerformanceService {
       : 0;
     
     // Revenue by asset type
-    const grouped = DataAggregationService.groupBy(auctionsWithBids, 'assetType');
+    const grouped = DataAggregationService.groupBy(soldAuctions, 'assetType');
     const revenueByAssetType = grouped && Object.keys(grouped).length > 0
       ? Object.entries(grouped).map(([assetType, items]) => {
-          const revenue = items.reduce((sum, a) => sum + parseFloat(a.currentBid || '0'), 0);
+          const revenue = items.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
           return {
             assetType,
             revenue: Math.round(revenue),
@@ -644,10 +647,9 @@ export class AuctionPerformanceService {
         grouped[date] = { count: 0, successful: 0, totalBids: 0, uniqueBidders: new Set(), revenue: 0 };
       }
       grouped[date].count++;
-      // FIX: Count sold and awaiting_payment as successful, use currentBid for revenue
-      if ((item.status === 'sold' || item.status === 'awaiting_payment') && item.currentBid) {
+      if (this.isSoldAuction(item)) {
         grouped[date].successful++;
-        grouped[date].revenue += parseFloat(item.currentBid || '0');
+        grouped[date].revenue += parseFloat(item.winningBid || '0');
       }
       grouped[date].totalBids += item.bidCount;
       (item.bidderIds || []).forEach((id: string) => grouped[date].uniqueBidders.add(id));
@@ -680,7 +682,7 @@ export class AuctionPerformanceService {
       winningBid: a.winningBid ? Math.round(parseFloat(a.winningBid)) : null,
       reservePrice: Math.round(parseFloat(a.reservePrice || '0')),
       status: a.status,
-      isSuccessful: a.status === 'closed' && !!a.winnerId,
+      isSuccessful: this.isSoldAuction(a),
     })).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
   }
 
@@ -698,7 +700,7 @@ export class AuctionPerformanceService {
     if (grouped && Object.keys(grouped).length > 0) {
       const assetTypeStats = Object.entries(grouped).map(([assetType, items]) => ({
         assetType,
-        successRate: items.filter(a => a.status === 'closed' && a.winnerId).length / items.length * 100,
+        successRate: items.filter(a => this.isSoldAuction(a)).length / items.length * 100,
         avgBids: items.reduce((sum, a) => sum + a.bidCount, 0) / items.length,
       }));
 
@@ -752,7 +754,7 @@ export class AuctionPerformanceService {
 
     // Duration analysis
     const avgDuration = data.reduce((sum, a) => sum + a.durationHours, 0) / data.length;
-    const successful = data.filter(a => a.status === 'closed' && a.winnerId);
+    const successful = data.filter(a => this.isSoldAuction(a));
     const avgSuccessfulDuration = successful.length > 0
       ? successful.reduce((sum, a) => sum + a.durationHours, 0) / successful.length
       : 0;

@@ -48,7 +48,7 @@ export async function GET(
 
     // IDOR Protection: Verify user owns this vendor or is authorized
     const isOwner = vendor.userId === session.user.id;
-    const isAuthorized = ['admin', 'manager', 'finance_officer'].includes(session.user.role || '');
+    const isAuthorized = ['system_admin', 'salvage_manager', 'finance_officer'].includes(session.user.role || '');
 
     if (!isOwner && !isAuthorized) {
       return NextResponse.json(

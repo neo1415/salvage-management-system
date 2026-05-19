@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (vendorData[0].userId !== session.user.id && session.user.role !== 'admin') {
+    if (vendorData[0].userId !== session.user.id && session.user.role !== 'system_admin') {
       return NextResponse.json(
         { error: 'Forbidden: You can only manage your own vendor preferences' },
         { status: 403 }

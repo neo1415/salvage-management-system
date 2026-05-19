@@ -165,15 +165,9 @@ const navigationItems: NavItem[] = [
     roles: ['finance_officer'],
   },
   {
-    label: 'Payment Transactions',
-    href: '/finance/payment-transactions',
-    icon: Wallet,
-    roles: ['finance_officer'],
-  },
-  {
-    label: 'Auction Management',
-    href: '/admin/auctions',
-    icon: Gavel,
+    label: 'Reconciliation',
+    href: '/finance/reconciliation',
+    icon: Database,
     roles: ['finance_officer'],
   },
 
@@ -182,13 +176,13 @@ const navigationItems: NavItem[] = [
     label: 'Dashboard',
     href: '/admin/dashboard',
     icon: LayoutDashboard,
-    roles: ['system_admin', 'admin'],
+    roles: ['system_admin'],
   },
   // {
   //   label: 'Intelligence',
   //   href: '/admin/intelligence',
   //   icon: Brain,
-  //   roles: ['system_admin', 'admin'],
+  //   roles: ['system_admin'],
   //   submenu: [
   //     { name: 'Overview', href: '/admin/intelligence' },
   //     { name: 'Analytics', href: '/admin/intelligence/analytics' },
@@ -200,37 +194,37 @@ const navigationItems: NavItem[] = [
     label: 'Users',
     href: '/admin/users',
     icon: Users,
-    roles: ['system_admin', 'admin'],
+    roles: ['system_admin'],
   },
   {
     label: 'Bid History',
     href: '/bid-history',
     icon: History,
-    roles: ['system_admin', 'admin'],
+    roles: ['system_admin'],
   },
   {
     label: 'Fraud Alerts',
     href: '/admin/fraud',
     icon: AlertTriangle,
-    roles: ['system_admin', 'admin'],
+    roles: ['system_admin'],
   },
   {
     label: 'Auction Config',
     href: '/admin/auction-config',
     icon: Settings,
-    roles: ['system_admin', 'admin'],
+    roles: ['system_admin'],
   },
   {
     label: 'Audit Logs',
     href: '/admin/audit-logs',
     icon: ClipboardList,
-    roles: ['system_admin', 'admin'],
+    roles: ['system_admin'],
   },
   {
     label: 'Reports',
     href: '/reports',
     icon: BarChart3,
-    roles: ['salvage_manager', 'system_admin', 'admin', 'finance_officer', 'claims_adjuster'],
+    roles: ['salvage_manager', 'system_admin', 'finance_officer', 'claims_adjuster'],
   },
 ];
 

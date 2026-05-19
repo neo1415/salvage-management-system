@@ -12,6 +12,9 @@ import { getKYCAuditService } from '@/features/kyc/services/audit.service';
 import { getKYCNotificationService } from '@/features/kyc/services/notification.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
 import type { KYCVerificationData } from '@/features/kyc/types/kyc.types';
+import { normalizeDojahWorkflowResult } from '@/features/kyc/services/dojah-normalizer.service';
+import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
+import { createRoleNotifications } from '@/features/notifications/services/notification.service';
 
 const LOCK_TTL_SECONDS = 300; // 5 minutes
 
@@ -125,6 +128,30 @@ export async function POST(request: NextRequest) {
     };
     const fraudRiskScore = fraud.calculateFraudScore(fraudSignals);
     const fraudFlags = fraud.detectFraudFlags(fraudSignals);
+    const normalizedResult = normalizeDojahWorkflowResult(verificationResult, amlResult ?? null);
+    await getProviderVerificationService().persistVerification({
+      userId,
+      vendorId,
+      actorId: userId,
+      result: normalizedResult,
+      rawPayload: { verificationResult, amlResult },
+      ipAddress,
+      userAgent: request.headers.get('user-agent') ?? 'unknown',
+    });
+    void dojah.sendEasyDetectOnboardingEvent({
+      userId,
+      email: session.user.email ?? undefined,
+      name: session.user.name ?? undefined,
+      mobile: session.user.phone ?? undefined,
+      registrationTime: new Date().toISOString(),
+      tier: 'tier1_bvn',
+      ipAddress,
+      deviceType: request.headers.get('user-agent')?.includes('Mobile') ? 'mobile' : 'desktop',
+    }).catch((error) => {
+      console.error('[KYC Complete] EasyDetect onboarding event failed', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
 
     // Build verification data
     const verificationData: KYCVerificationData = {
@@ -165,11 +192,8 @@ export async function POST(request: NextRequest) {
       amlRiskLevel,
     });
 
-    // Determine auto-approve vs pending review
+    // Dojah is evidence. NEM Salvage remains the final manual review layer.
     const sanctionsMatch = (amlResult?.entity?.sanctions?.length ?? 0) > 0;
-    const livenessPass = livenessScore === undefined || livenessScore >= 50;
-    const biometricPass = biometricMatchScore === undefined || biometricMatchScore >= 80;
-    const autoApprove = amlRiskLevel === 'Low' && livenessPass && biometricPass && !sanctionsMatch;
 
     const vendorTarget = {
       vendorId,
@@ -186,21 +210,26 @@ export async function POST(request: NextRequest) {
         // Keep as pending — manager must confirm rejection
       });
       await notify.sendKYCUnderReviewNotification(vendorTarget);
+      await createRoleNotifications(['salvage_manager', 'system_admin'], {
+        type: 'tier2_pending_review',
+        title: 'High-risk KYC review required',
+        message: `${session.user.name || 'A vendor'} submitted KYC with a Dojah AML/sanctions signal.`,
+        data: { vendorId, providerReference: referenceId, url: `/manager/kyc-approvals/${vendorId}` },
+      }).catch((error) => console.error('[KYC Complete] manager notification failed', error));
       return NextResponse.json({
         status: 'pending_review',
         message: 'Your application requires manual review.',
       });
     }
 
-    if (autoApprove) {
-      await repo.autoApprove(vendorId);
-      await audit.logTierChange(vendorId, userId, 'tier1_bvn', 'tier2_full', 'auto_approved');
-      await notify.sendKYCApprovalNotification(vendorTarget);
-      return NextResponse.json({ status: 'approved', message: 'Tier 2 verification approved.' });
-    }
-
-    // Flagged for manual review
     await notify.sendKYCUnderReviewNotification(vendorTarget);
+    await createRoleNotifications(['salvage_manager', 'system_admin'], {
+      type: 'tier2_pending_review',
+      title: 'Tier 2 KYC Ready for Review',
+      message: `${session.user.name || 'A vendor'} completed Dojah verification and is ready for review.`,
+      data: { vendorId, providerReference: referenceId, url: `/manager/kyc-approvals/${vendorId}` },
+    }).catch((error) => console.error('[KYC Complete] manager notification failed', error));
+
     return NextResponse.json({
       status: 'pending_review',
       message: 'Your application is under review. You will be notified within 24-48 hours.',

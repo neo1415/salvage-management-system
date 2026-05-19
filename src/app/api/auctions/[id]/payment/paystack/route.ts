@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { paymentService } from '@/features/auction-deposit/services/payment.service';
 import { db } from '@/lib/db/drizzle';
-import { vendors, auctionWinners } from '@/lib/db/schema';
+import { vendors, auctionWinners, auctions, releaseForms } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
 /**
@@ -67,6 +67,47 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: 'Forbidden - You are not the winner of this auction' },
         { status: 403 }
+      );
+    }
+
+    const auction = await db.query.auctions.findFirst({
+      where: eq(auctions.id, auctionId),
+    });
+
+    if (!auction) {
+      return NextResponse.json(
+        { success: false, error: 'Auction not found' },
+        { status: 404 }
+      );
+    }
+
+    const validStatuses = ['awaiting_payment', 'documents_signed'];
+    if (!validStatuses.includes(auction.status)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Payment not available for auction status: ${auction.status}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const [signedDocument] = await db
+      .select()
+      .from(releaseForms)
+      .where(
+        and(
+          eq(releaseForms.auctionId, auctionId),
+          eq(releaseForms.vendorId, vendor.id),
+          eq(releaseForms.status, 'signed')
+        )
+      )
+      .limit(1);
+
+    if (signedDocument?.paymentDeadline && signedDocument.paymentDeadline < new Date()) {
+      return NextResponse.json(
+        { success: false, error: 'Payment deadline has passed' },
+        { status: 400 }
       );
     }
 

@@ -16,8 +16,8 @@ export default function MyPerformancePage() {
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
   const [filters, setFilters] = useState<ReportFilters>({
-    startDate: new Date('2026-02-01'), // Project start date
-    endDate: new Date(),
+    startDate: undefined,
+    endDate: undefined,
   });
 
   useEffect(() => {
@@ -173,7 +173,7 @@ export default function MyPerformancePage() {
               filters={filters}
               onFiltersChange={setFilters}
               onApply={fetchReport}
-              onReset={() => setFilters({ startDate: new Date('2026-02-01'), endDate: new Date() })}
+              onReset={() => setFilters({ startDate: undefined, endDate: undefined })}
               showAssetTypes={false}
               showRegions={false}
               showGroupBy={true}

@@ -109,9 +109,9 @@ export default function AdminAuctionsPage() {
     }
   };
 
-  // Redirect if not admin or finance
+  // Redirect if not system admin or finance
   useEffect(() => {
-    if (session && session.user.role !== 'admin' && session.user.role !== 'finance_officer') {
+    if (session && session.user.role !== 'system_admin' && session.user.role !== 'finance_officer') {
       router.push('/dashboard');
     }
   }, [session, router]);

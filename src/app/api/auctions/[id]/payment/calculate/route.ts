@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { auctions, vendors, escrowWallets, auctionWinners } from '@/lib/db/schema';
+import { auctions, vendors, escrowWallets, auctionWinners, releaseForms } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
 /**
@@ -89,6 +89,25 @@ export async function GET(
           success: false,
           error: `Payment not available for auction status: ${auction.status}`,
         },
+        { status: 400 }
+      );
+    }
+
+    const [expiredPaymentWindow] = await db
+      .select()
+      .from(releaseForms)
+      .where(
+        and(
+          eq(releaseForms.auctionId, auctionId),
+          eq(releaseForms.vendorId, vendor.id),
+          eq(releaseForms.status, 'signed')
+        )
+      )
+      .limit(1);
+
+    if (expiredPaymentWindow?.paymentDeadline && expiredPaymentWindow.paymentDeadline < new Date()) {
+      return NextResponse.json(
+        { success: false, error: 'Payment deadline has passed' },
         { status: 400 }
       );
     }

@@ -16,6 +16,7 @@ export * from './notifications';
 export * from './push-subscriptions';
 export * from './release-forms';
 export * from './verification-costs';
+export * from './provider-verifications';
 export * from './auction-deposit';
 
 // AI-Powered Marketplace Intelligence schemas

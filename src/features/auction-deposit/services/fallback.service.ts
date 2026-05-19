@@ -17,8 +17,12 @@ import { bids } from '@/lib/db/schema/bids';
 import { auctions } from '@/lib/db/schema/auctions';
 import { escrowWallets } from '@/lib/db/schema/escrow';
 import { releaseForms } from '@/lib/db/schema/release-forms';
+import { payments } from '@/lib/db/schema/payments';
+import { vendors } from '@/lib/db/schema/vendors';
+import { users } from '@/lib/db/schema/users';
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { regenerateDocumentsForFallback } from './document-integration.service';
+import { emailService } from '@/features/notifications/services/email.service';
 
 /**
  * Get configuration value from system_config table
@@ -169,8 +173,9 @@ async function unfreezeDeposit(
  */
 export async function triggerFallback(
   auctionId: string,
+  currentWinnerId: string,
   failureReason: 'failed_to_sign' | 'failed_to_pay',
-  triggeredBy: string
+  triggeredBy: string = 'system'
 ): Promise<{
   success: boolean;
   newWinnerId?: string;
@@ -188,6 +193,7 @@ export async function triggerFallback(
       .where(
         and(
           eq(auctionWinners.auctionId, auctionId),
+          eq(auctionWinners.vendorId, currentWinnerId),
           eq(auctionWinners.status, 'active')
         )
       )
@@ -212,6 +218,7 @@ export async function triggerFallback(
     console.log(`❌ Marked winner as ${failureReason}: ${currentWinner.vendorId}`);
 
     // 3. Unfreeze failed winner's deposit (Requirement 9.3)
+    if (failureReason === 'failed_to_sign') {
     const unfreezeResult = await unfreezeDeposit(
       currentWinner.vendorId,
       auctionId,
@@ -221,6 +228,7 @@ export async function triggerFallback(
 
     if (!unfreezeResult.success) {
       console.warn(`⚠️ Failed to unfreeze deposit for ${currentWinner.vendorId}`);
+    }
     }
 
     // 4. Get top N bidders (Requirement 9.4)
@@ -289,7 +297,7 @@ export async function triggerFallback(
       await db
         .update(auctions)
         .set({
-          status: 'closed',
+          status: 'failed_all_fallbacks' as any,
           updatedAt: new Date()
         })
         .where(eq(auctions.id, auctionId));
@@ -316,6 +324,30 @@ export async function triggerFallback(
 
     console.log(`🎉 Promoted new winner: ${nextWinner.vendorId}`);
 
+    await db
+      .update(auctions)
+      .set({
+        currentBidder: nextWinner.vendorId,
+        currentBid: nextWinner.bidAmount,
+        status: 'closed',
+        updatedAt: new Date(),
+      })
+      .where(eq(auctions.id, auctionId));
+
+    await db
+      .update(payments)
+      .set({
+        status: 'rejected',
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(payments.auctionId, auctionId),
+          eq(payments.vendorId, currentWinner.vendorId),
+          eq(payments.status, 'pending')
+        )
+      );
+
     // 8. Generate new documents with fresh validity period (Requirement 9.6)
     const docResult = await regenerateDocumentsForFallback(
       auctionId,
@@ -328,6 +360,8 @@ export async function triggerFallback(
       console.warn(`⚠️ Failed to generate documents for new winner: ${docResult.error}`);
     }
 
+    await notifyFallbackWinner(auctionId, nextWinner.vendorId, parseFloat(nextWinner.bidAmount));
+
     return {
       success: true,
       newWinnerId: nextWinner.vendorId
@@ -338,6 +372,50 @@ export async function triggerFallback(
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     };
+  }
+}
+
+async function notifyFallbackWinner(
+  auctionId: string,
+  vendorId: string,
+  bidAmount: number
+): Promise<void> {
+  try {
+    const [vendorUser] = await db
+      .select({
+        user: users,
+        vendor: vendors,
+      })
+      .from(vendors)
+      .innerJoin(users, eq(vendors.userId, users.id))
+      .where(eq(vendors.id, vendorId))
+      .limit(1);
+
+    if (!vendorUser) return;
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+    const auctionUrl = `${appUrl}/vendor/auctions/${auctionId}`;
+
+    await emailService.sendEmail({
+      to: vendorUser.user.email,
+      subject: 'You Are Now Eligible to Complete This Auction',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #800020;">Auction Opportunity Available</h2>
+          <p>Dear ${vendorUser.user.fullName},</p>
+          <p>The previous winner did not complete the required auction steps, so you are now eligible to complete this purchase.</p>
+          <p><strong>Your bid:</strong> ₦${bidAmount.toLocaleString()}</p>
+          <p>Please open the auction, sign the required documents, and complete payment before the deadline.</p>
+          <p>
+            <a href="${auctionUrl}" style="background-color: #800020; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">
+              Open Auction
+            </a>
+          </p>
+        </div>
+      `,
+    });
+  } catch (error) {
+    console.error('Failed to notify fallback winner:', error);
   }
 }
 

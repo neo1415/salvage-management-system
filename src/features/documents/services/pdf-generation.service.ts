@@ -20,6 +20,22 @@ import { PDFTemplateService } from './pdf-template.service';
 // NEM Insurance Brand Colors
 const NEM_BURGUNDY = '#800020';
 const NEM_GOLD = '#FFD700';
+const CONTENT_MARGIN_X = 20;
+const SIGNATURE_WIDTH = 65;
+const SIGNATURE_HEIGHT = 28;
+
+function addWrappedText(doc: jsPDF, text: string, x: number, y: number, maxWidth: number, lineHeight = 5): number {
+  const lines = doc.splitTextToSize(text, maxWidth);
+  doc.text(lines, x, y);
+  return y + lines.length * lineHeight;
+}
+
+async function moveToNewDocumentPage(doc: jsPDF, title: string): Promise<number> {
+  PDFTemplateService.addFooter(doc);
+  doc.addPage();
+  await PDFTemplateService.addLetterhead(doc, title);
+  return 60;
+}
 
 export interface BillOfSaleData {
   // Transaction details
@@ -258,35 +274,27 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
   // Get max content Y to avoid footer overlap using PDFTemplateService
   const maxContentY = PDFTemplateService.getMaxContentY(doc);
   
-  // Signature and QR code section - use structured layout with fixed containers
+  // Signature section
   yPos += 20;
-  
-  // Calculate remaining space and ensure we have enough room
-  const requiredSpace = 70; // Space needed for signature + QR + spacing
+
+  const requiredSpace = data.signatureData ? 55 : 45;
   if (yPos + requiredSpace > maxContentY) {
-    yPos = maxContentY - requiredSpace;
+    yPos = await moveToNewDocumentPage(doc, 'BILL OF SALE');
   }
-  
-  const sectionStartY = yPos;
-  
-  // LEFT COLUMN: Signature section (if signature data provided)
+
   if (data.signatureData) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.text('Buyer Signature:', 20, yPos);
-    yPos += 5;
+    yPos += 6;
     
     try {
-      // Add signature image with constrained dimensions (max 120px width, 50px height)
-      const signatureWidth = 80;
-      const signatureHeight = 40;
-      doc.addImage(data.signatureData, 'PNG', 20, yPos, signatureWidth, signatureHeight);
-      yPos += signatureHeight + 5;
+      doc.addImage(data.signatureData, 'PNG', 20, yPos, SIGNATURE_WIDTH, SIGNATURE_HEIGHT);
+      yPos += SIGNATURE_HEIGHT + 4;
     } catch (error) {
       console.error('Error adding signature to PDF:', error);
       // Fallback to signature line if image fails
-      doc.line(20, yPos + 40, 100, yPos + 40);
-      yPos += 45;
+      yPos += SIGNATURE_HEIGHT + 4;
     }
     
     // Signature line and label
@@ -302,25 +310,6 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
     }
   }
   
-  // RIGHT COLUMN: QR Code section (separate column, no overlap)
-  const qrCodeDataUrl = await QRCode.toDataURL(data.verificationUrl, {
-    width: 80,
-    margin: 1,
-  });
-  
-  // Position QR code in right column with fixed coordinates
-  const qrX = pageWidth - 50;
-  const qrY = sectionStartY;
-  
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Scan to verify', qrX + 15, qrY, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.text('document online', qrX + 15, qrY + 4, { align: 'center' });
-  
-  // Add QR code with fixed size (30x30px)
-  doc.addImage(qrCodeDataUrl, 'PNG', qrX, qrY + 8, 30, 30);
-  
   // Add professional footer using PDFTemplateService (anchored at bottom)
   PDFTemplateService.addFooter(doc);
   
@@ -335,6 +324,7 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
 export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Promise<Buffer> {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
+  const textWidth = pageWidth - CONTENT_MARGIN_X * 2;
   
   // Add professional letterhead with logo using PDFTemplateService
   await PDFTemplateService.addLetterhead(doc, 'RELEASE & WAIVER OF LIABILITY');
@@ -344,114 +334,113 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(0, 0, 0);
-  doc.text(`I, ${data.vendorName}, hereby acknowledge and agree:`, 20, yPos);
+  doc.text(`I, ${data.vendorName}, hereby acknowledge and agree:`, CONTENT_MARGIN_X, yPos);
   
   // Waiver clauses
   yPos += 15;
   doc.setFont('helvetica', 'bold');
-  doc.text('1. AS-IS CONDITION', 20, yPos);
+  doc.text('1. AS-IS CONDITION', CONTENT_MARGIN_X, yPos);
   yPos += 6;
   doc.setFont('helvetica', 'normal');
-  const asIsText = doc.splitTextToSize(
+  yPos = addWrappedText(
+    doc,
     'I am purchasing the salvage item(s) in "AS-IS, WHERE-IS" condition with ALL FAULTS and NO WARRANTIES, express or implied.',
-    pageWidth - 40
+    CONTENT_MARGIN_X,
+    yPos,
+    textWidth
   );
-  doc.text(asIsText, 20, yPos);
   
-  yPos += 15;
+  yPos += 10;
   doc.setFont('helvetica', 'bold');
-  doc.text('2. INSPECTION OPPORTUNITY', 20, yPos);
+  doc.text('2. INSPECTION OPPORTUNITY', CONTENT_MARGIN_X, yPos);
   yPos += 6;
   doc.setFont('helvetica', 'normal');
-  const inspectionText = doc.splitTextToSize(
+  yPos = addWrappedText(
+    doc,
     'I have had the opportunity to inspect the item(s) through photos, descriptions, and damage assessment provided by NEM Insurance.',
-    pageWidth - 40
+    CONTENT_MARGIN_X,
+    yPos,
+    textWidth
   );
-  doc.text(inspectionText, 20, yPos);
   
-  yPos += 15;
+  yPos += 10;
   doc.setFont('helvetica', 'bold');
-  doc.text('3. RELEASE OF LIABILITY', 20, yPos);
+  doc.text('3. RELEASE OF LIABILITY', CONTENT_MARGIN_X, yPos);
   yPos += 6;
   doc.setFont('helvetica', 'normal');
-  const releaseText = doc.splitTextToSize(
+  yPos = addWrappedText(
+    doc,
     'I hereby release, waive, and forever discharge NEM Insurance Plc, its officers, employees, and agents from any and all liability, claims, demands, or causes of action arising from: (a) Injuries or death resulting from use of the salvage item(s); (b) Property damage caused by the salvage item(s); (c) Defects, malfunctions, or failures of the salvage item(s); (d) Any misrepresentation or omission regarding the item\'s condition.',
-    pageWidth - 40
+    CONTENT_MARGIN_X,
+    yPos,
+    textWidth
   );
-  doc.text(releaseText, 20, yPos);
   
-  yPos += 30;
+  yPos += 10;
   doc.setFont('helvetica', 'bold');
-  doc.text('4. ASSUMPTION OF RISK', 20, yPos);
+  doc.text('4. ASSUMPTION OF RISK', CONTENT_MARGIN_X, yPos);
   yPos += 6;
   doc.setFont('helvetica', 'normal');
-  const riskText = doc.splitTextToSize(
+  yPos = addWrappedText(
+    doc,
     'I understand and accept all risks associated with purchasing and using salvage property, including but not limited to: structural damage not visible in photos, mechanical failures, safety hazards, and environmental contamination.',
-    pageWidth - 40
+    CONTENT_MARGIN_X,
+    yPos,
+    textWidth
   );
-  doc.text(riskText, 20, yPos);
   
-  yPos += 25;
+  yPos += 10;
   doc.setFont('helvetica', 'bold');
-  doc.text('5. INDEMNIFICATION', 20, yPos);
+  doc.text('5. INDEMNIFICATION', CONTENT_MARGIN_X, yPos);
   yPos += 6;
   doc.setFont('helvetica', 'normal');
-  const indemnityText = doc.splitTextToSize(
+  yPos = addWrappedText(
+    doc,
     'I agree to indemnify and hold harmless NEM Insurance Plc from any claims by third parties arising from my ownership or use of the salvage item(s).',
-    pageWidth - 40
+    CONTENT_MARGIN_X,
+    yPos,
+    textWidth
   );
-  doc.text(indemnityText, 20, yPos);
   
-  yPos += 20;
+  yPos += 10;
   doc.setFont('helvetica', 'bold');
-  doc.text('6. FINAL SALE', 20, yPos);
+  doc.text('6. FINAL SALE', CONTENT_MARGIN_X, yPos);
   yPos += 6;
   doc.setFont('helvetica', 'normal');
-  doc.text('I understand this sale is FINAL and NON-REFUNDABLE.', 20, yPos);
+  doc.text('I understand this sale is FINAL and NON-REFUNDABLE.', CONTENT_MARGIN_X, yPos);
   
   yPos += 15;
   doc.setFont('helvetica', 'bold');
-  doc.text('7. GOVERNING LAW', 20, yPos);
+  doc.text('7. GOVERNING LAW', CONTENT_MARGIN_X, yPos);
   yPos += 6;
   doc.setFont('helvetica', 'normal');
-  doc.text('This agreement is governed by the laws of Nigeria.', 20, yPos);
+  doc.text('This agreement is governed by the laws of Nigeria.', CONTENT_MARGIN_X, yPos);
   
   // Get max content Y to avoid footer overlap using PDFTemplateService
   const maxContentY = PDFTemplateService.getMaxContentY(doc);
   
-  // Signature and QR code section - use structured layout with fixed containers
+  // Signature section. Move to a fresh page when the legal text reaches the footer.
   yPos += 20;
-  
-  // Calculate remaining space and ensure we have enough room
-  const requiredSpace = 70; // Space needed for signature + QR + vendor details + spacing
+
+  const requiredSpace = data.signatureData ? 70 : 75;
   if (yPos + requiredSpace > maxContentY) {
-    yPos = maxContentY - requiredSpace;
+    yPos = await moveToNewDocumentPage(doc, 'RELEASE & WAIVER OF LIABILITY');
   }
-  
-  const sectionStartY = yPos;
-  
-  // LEFT COLUMN: Signature section (fixed width container)
-  const leftColumnWidth = 100;
-  const rightColumnX = pageWidth - 50;
   
   // If signature data is provided, add the signature image
   if (data.signatureData) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.text('Vendor Signature:', 20, yPos);
-    yPos += 5;
+    yPos += 6;
     
     try {
-      // Add signature image with constrained dimensions (max 120px width, 50px height)
-      const signatureWidth = 80;
-      const signatureHeight = 40;
-      doc.addImage(data.signatureData, 'PNG', 20, yPos, signatureWidth, signatureHeight);
-      yPos += signatureHeight + 5;
+      doc.addImage(data.signatureData, 'PNG', 20, yPos, SIGNATURE_WIDTH, SIGNATURE_HEIGHT);
+      yPos += SIGNATURE_HEIGHT + 4;
     } catch (error) {
       console.error('Error adding signature to PDF:', error);
       // Fallback to signature line if image fails
-      doc.line(20, yPos + 40, 100, yPos + 40);
-      yPos += 45;
+      yPos += SIGNATURE_HEIGHT + 4;
     }
     
     // Signature line and label
@@ -492,25 +481,6 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
     yPos += 4;
     doc.text(`BVN: ****${data.vendorBvn}`, 20, yPos);
   }
-  
-  // RIGHT COLUMN: QR Code section (separate column, no overlap)
-  const qrCodeDataUrl = await QRCode.toDataURL(data.verificationUrl, {
-    width: 80,
-    margin: 1,
-  });
-  
-  // Position QR code in right column with fixed coordinates
-  const qrX = rightColumnX;
-  const qrY = sectionStartY;
-  
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Scan to verify', qrX + 15, qrY, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.text('document online', qrX + 15, qrY + 4, { align: 'center' });
-  
-  // Add QR code with fixed size (30x30px)
-  doc.addImage(qrCodeDataUrl, 'PNG', qrX, qrY + 8, 30, 30);
   
   // Add professional footer using PDFTemplateService (anchored at bottom)
   PDFTemplateService.addFooter(doc);

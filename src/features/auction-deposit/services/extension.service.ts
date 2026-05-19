@@ -14,6 +14,7 @@ import { releaseForms } from '@/lib/db/schema/release-forms';
 import { auctions } from '@/lib/db/schema/auctions';
 import { eq, and, desc } from 'drizzle-orm';
 import { extendDocumentDeadline } from './document-integration.service';
+import { depositNotificationService } from './deposit-notification.service';
 
 /**
  * Get configuration value from system_config table with testing mode support
@@ -68,6 +69,7 @@ export async function grantExtension(
   success: boolean; 
   newDeadline?: Date; 
   extensionCount?: number;
+  maxExtensions?: number;
   error?: string 
 }> {
   try {
@@ -142,10 +144,19 @@ export async function grantExtension(
     console.log(`   - Granted by: ${grantedBy}`);
     console.log(`   - Reason: ${reason}`);
 
+    await depositNotificationService.sendGraceExtensionNotification({
+      vendorId,
+      auctionId,
+      amount: 0,
+      deadline: extendResult.newDeadline,
+      reason,
+    });
+
     return {
       success: true,
       newDeadline: extendResult.newDeadline,
-      extensionCount: currentExtensionCount + 1
+      extensionCount: currentExtensionCount + 1,
+      maxExtensions,
     };
   } catch (error) {
     console.error('❌ Error granting extension:', error);

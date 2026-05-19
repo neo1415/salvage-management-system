@@ -318,8 +318,8 @@ function VendorDashboardContentInner() {
                 </svg>
               </div>
             </div>
-            <p className="text-3xl font-bold text-gray-900">
-              {performanceStats.rating > 0 ? performanceStats.rating.toFixed(1) : 'N/A'}
+            <p className="text-3xl font-bold text-gray-900 leading-tight break-words">
+              {performanceStats.ratingLabel || (performanceStats.rating > 0 ? performanceStats.rating.toFixed(1) : 'Not enough data')}
             </p>
             <p className="text-sm text-gray-600 mt-1 break-words">
               {performanceStats.rating >= 4.5 ? (
@@ -327,7 +327,7 @@ function VendorDashboardContentInner() {
                   <Star className="w-4 h-4 inline fill-current" aria-label="Top rated badge" />
                   <span>Top rated!</span>
                 </span>
-              ) : 'Out of 5 stars'}
+              ) : performanceStats.rating > 0 ? 'Out of 5 stars' : 'Builds after more bids and payments'}
             </p>
           </div>
         </div>

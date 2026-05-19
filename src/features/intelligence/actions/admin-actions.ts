@@ -19,7 +19,7 @@ export async function exportMLDataset(datasetId: string) {
   try {
     // Verify admin authentication
     const session = await auth();
-    if (!session || session.user.role !== 'admin') {
+    if (!session || session.user.role !== 'system_admin') {
       throw new Error('Unauthorized: Admin access required');
     }
 
@@ -106,7 +106,7 @@ export async function tuneAlgorithm(params?: {
   try {
     // Verify admin authentication
     const session = await auth();
-    if (!session || session.user.role !== 'admin') {
+    if (!session || session.user.role !== 'system_admin') {
       throw new Error('Unauthorized: Admin access required');
     }
 
@@ -264,7 +264,7 @@ export async function tuneAlgorithm(params?: {
 export async function getTuningHistory(limit: number = 20) {
   try {
     const session = await auth();
-    if (!session || session.user.role !== 'admin') {
+    if (!session || session.user.role !== 'system_admin') {
       throw new Error('Unauthorized: Admin access required');
     }
 

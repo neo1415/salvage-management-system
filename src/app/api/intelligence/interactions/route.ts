@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
     // Authorization: Ensure user can only track their own vendor's interactions
     // (unless they're an admin)
-    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+    if (session.user.role !== 'system_admin' && session.user.role !== 'salvage_manager') {
       // TODO: Verify vendorId belongs to session.user.id
       // For now, we'll allow it but log it
     }

@@ -11,15 +11,18 @@ interface PaymentDetails {
   auctionId: string;
   amount: string;
   status: 'pending' | 'verified' | 'rejected' | 'overdue';
-  paymentDeadline: string;
+  paymentDeadline: string | null;
   paymentMethod: string;
   paymentReference: string | null;
   paymentProofUrl: string | null;
   escrowStatus?: 'none' | 'frozen' | 'released';
-  createdAt: string;
+  createdAt: string | null;
   vendor?: {
     id: string;
     businessName: string;
+    contactName?: string;
+    email?: string;
+    phone?: string;
     tier: string;
     status: string;
     bankAccountNumber: string | null;
@@ -33,12 +36,19 @@ interface PaymentDetails {
     case: {
       claimReference: string;
       assetType: string;
+      assetName?: string;
       assetDetails: Record<string, unknown>;
       marketValue: string;
       estimatedSalvageValue: string;
       locationName: string;
       photos: string[];
     };
+  };
+  nem?: {
+    name: string;
+    address: string;
+    email: string;
+    phone: string;
   };
 }
 
@@ -77,7 +87,8 @@ export default function PaymentPage() {
       try {
         const response = await fetch(`/api/payments/${paymentId}`);
         if (!response.ok) {
-          throw new Error('Failed to fetch payment details');
+          const errorData = await response.json().catch(() => null);
+          throw new Error(errorData?.error || errorData?.message || 'Failed to fetch payment details');
         }
         const data = await response.json();
         setPayment(data);
@@ -114,6 +125,11 @@ export default function PaymentPage() {
     if (!payment) return;
 
     const updateCountdown = () => {
+      if (!payment.paymentDeadline) {
+        setTimeRemaining('No deadline');
+        return;
+      }
+
       const deadline = new Date(payment.paymentDeadline);
       const now = new Date();
       const diff = deadline.getTime() - now.getTime();
@@ -362,6 +378,7 @@ export default function PaymentPage() {
 
   const getCountdownColor = () => {
     if (timeRemaining === 'Expired') return 'text-red-600';
+    if (!payment.paymentDeadline) return 'text-gray-600';
     
     const deadline = new Date(payment.paymentDeadline);
     const now = new Date();
@@ -373,6 +390,11 @@ export default function PaymentPage() {
   };
 
   const assetDetails = payment.auction.case.assetDetails as Record<string, string>;
+  const assetName = payment.auction.case.assetName || [
+    assetDetails.year,
+    assetDetails.make || assetDetails.brand,
+    assetDetails.model,
+  ].filter(Boolean).join(' ') || payment.auction.case.assetType;
 
   return (
     <>
@@ -482,10 +504,10 @@ export default function PaymentPage() {
                 {timeRemaining}
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                Deadline: {new Date(payment.paymentDeadline).toLocaleString('en-NG', {
+                Deadline: {payment.paymentDeadline ? new Date(payment.paymentDeadline).toLocaleString('en-NG', {
                   dateStyle: 'medium',
                   timeStyle: 'short',
-                })}
+                }) : 'N/A'}
               </p>
             </div>
           </div>
@@ -512,6 +534,10 @@ export default function PaymentPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-gray-600">Item</p>
+              <p className="font-semibold text-gray-900">{assetName}</p>
+            </div>
             <div>
               <p className="text-sm text-gray-600">Claim Reference</p>
               <p className="font-semibold text-gray-900">{payment.auction.case.claimReference}</p>
@@ -581,10 +607,10 @@ export default function PaymentPage() {
             <div>
               <p className="text-sm text-gray-600">Payment Date</p>
               <p className="font-semibold text-gray-900">
-                {new Date(payment.createdAt).toLocaleString('en-NG', {
+                {payment.createdAt ? new Date(payment.createdAt).toLocaleString('en-NG', {
                   dateStyle: 'medium',
                   timeStyle: 'short',
-                })}
+                }) : 'N/A'}
               </p>
             </div>
             <div>
@@ -646,6 +672,24 @@ export default function PaymentPage() {
                   <p className="text-sm text-gray-600">Business Name</p>
                   <p className="font-semibold text-gray-900">{payment.vendor.businessName}</p>
                 </div>
+                {payment.vendor.contactName && (
+                  <div>
+                    <p className="text-sm text-gray-600">Contact Name</p>
+                    <p className="font-semibold text-gray-900">{payment.vendor.contactName}</p>
+                  </div>
+                )}
+                {payment.vendor.email && (
+                  <div>
+                    <p className="text-sm text-gray-600">Email</p>
+                    <p className="font-semibold text-gray-900">{payment.vendor.email}</p>
+                  </div>
+                )}
+                {payment.vendor.phone && (
+                  <div>
+                    <p className="text-sm text-gray-600">Phone</p>
+                    <p className="font-semibold text-gray-900">{payment.vendor.phone}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-sm text-gray-600">Vendor Tier</p>
                   <p className="font-semibold text-gray-900 capitalize">{payment.vendor.tier}</p>
@@ -662,6 +706,30 @@ export default function PaymentPage() {
                     </div>
                   </>
                 )}
+              </div>
+            </div>
+          )}
+
+          {payment.nem && (
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">NEM Details</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Company</p>
+                  <p className="font-semibold text-gray-900">{payment.nem.name}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Phone</p>
+                  <p className="font-semibold text-gray-900">{payment.nem.phone}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Email</p>
+                  <p className="font-semibold text-gray-900">{payment.nem.email}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Address</p>
+                  <p className="font-semibold text-gray-900">{payment.nem.address}</p>
+                </div>
               </div>
             </div>
           )}

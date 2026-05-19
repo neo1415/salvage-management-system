@@ -65,8 +65,8 @@ export async function GET(
     }
 
     // Authorization: Ensure user can only access their own recommendations
-    // (unless they're an admin)
-    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+    // (unless they're an authorized internal user)
+    if (session.user.role !== 'system_admin' && session.user.role !== 'salvage_manager') {
       // Get vendor's user ID
       const vendorData = await db
         .select({ userId: vendors.userId })

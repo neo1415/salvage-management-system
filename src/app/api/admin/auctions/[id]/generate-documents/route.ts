@@ -26,7 +26,7 @@ export async function POST(
     }
 
     // Check if user is admin or finance
-    if (session.user.role !== 'admin' && session.user.role !== 'finance_officer') {
+    if (session.user.role !== 'system_admin' && session.user.role !== 'finance_officer') {
       return NextResponse.json(
         { error: 'Forbidden - Admin or Finance access required' },
         { status: 403 }

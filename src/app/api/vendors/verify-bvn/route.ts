@@ -7,6 +7,8 @@ import { emailService } from '@/features/notifications/services/email.service';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { logAction, createAuditLogData, AuditActionType, AuditEntityType } from '@/lib/utils/audit-logger';
 import { auth } from '@/lib/auth/next-auth.config';
+import { normalizeDojahBVNResult } from '@/features/kyc/services/dojah-normalizer.service';
+import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
 
 /**
  * POST /api/vendors/verify-bvn
@@ -144,6 +146,17 @@ export async function POST(request: NextRequest) {
         { bvn: `***${bvn.slice(-4)}` }
       )
     );
+    await logAction(
+      createAuditLogData(
+        request,
+        userId,
+        AuditActionType.DOJAH_BVN_VERIFICATION_STARTED,
+        AuditEntityType.KYC,
+        vendor.id,
+        undefined,
+        { provider: 'dojah', bvn: `***${bvn.slice(-4)}` }
+      )
+    );
 
     // 6. Call BVN verification service
     const [firstName, ...lastNameParts] = user.fullName.split(' ');
@@ -172,8 +185,33 @@ export async function POST(request: NextRequest) {
       error: verificationResult.error,
     });
 
+    if (verificationResult.provider === 'dojah' && verificationResult.providerReference) {
+      const raw = verificationResult.providerRawResponse as Parameters<typeof normalizeDojahBVNResult>[0];
+      const normalized = normalizeDojahBVNResult(raw, verificationResult.providerReference);
+      await getProviderVerificationService().persistVerification({
+        userId,
+        vendorId: vendor.id,
+        actorId: userId,
+        result: normalized,
+        rawPayload: verificationResult.providerRawResponse,
+        ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown',
+        userAgent: request.headers.get('user-agent') ?? 'unknown',
+      });
+    }
+
     // 7. Handle verification failure
     if (!verificationResult.success) {
+      await logAction(
+        createAuditLogData(
+          request,
+          userId,
+          AuditActionType.DOJAH_BVN_VERIFICATION_FAILED,
+          AuditEntityType.KYC,
+          vendor.id,
+          undefined,
+          { error: verificationResult.error, provider: 'dojah' }
+        )
+      );
       await logAction(
         createAuditLogData(
           request,
@@ -200,6 +238,21 @@ export async function POST(request: NextRequest) {
 
     // 8. Handle verification mismatch
     if (!verificationResult.verified) {
+      await logAction(
+        createAuditLogData(
+          request,
+          userId,
+          AuditActionType.DOJAH_BVN_VERIFICATION_FAILED,
+          AuditEntityType.KYC,
+          vendor.id,
+          undefined,
+          {
+            matchScore: verificationResult.matchScore,
+            mismatches: verificationResult.mismatches,
+            provider: 'dojah',
+          }
+        )
+      );
       await logAction(
         createAuditLogData(
           request,
@@ -266,6 +319,22 @@ export async function POST(request: NextRequest) {
     }
 
     // 13. Log successful verification
+    await logAction(
+      createAuditLogData(
+        request,
+        userId,
+        AuditActionType.DOJAH_BVN_VERIFICATION_PASSED,
+        AuditEntityType.KYC,
+        vendor.id,
+        undefined,
+        {
+          provider: 'dojah',
+          providerReference: verificationResult.providerReference,
+          matchScore: verificationResult.matchScore,
+        }
+      )
+    );
+
     await logAction(
       createAuditLogData(
         request,

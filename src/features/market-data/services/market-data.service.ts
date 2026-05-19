@@ -149,6 +149,8 @@ export async function getMarketPrice(
             yearMatched: false,
           }));
 
+          // Internet search results don't require minimum count validation
+          // The search service already handles quality filtering
           return {
             median,
             min,

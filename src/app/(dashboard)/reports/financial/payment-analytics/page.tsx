@@ -7,15 +7,14 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { ExportButton } from '@/components/reports/common/export-button';
-import { subDays } from 'date-fns';
 
 export default function PaymentAnalyticsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
   const [filters, setFilters] = useState<ReportFilters>({
-    startDate: subDays(new Date(), 30),
-    endDate: new Date(),
+    startDate: undefined,
+    endDate: undefined,
   });
 
   useEffect(() => {
@@ -175,7 +174,7 @@ export default function PaymentAnalyticsPage() {
               filters={filters}
               onFiltersChange={setFilters}
               onApply={fetchReport}
-              onReset={() => setFilters({ startDate: subDays(new Date(), 30), endDate: new Date() })}
+              onReset={() => setFilters({ startDate: undefined, endDate: undefined })}
               showAssetTypes={false}
               showRegions={false}
             />

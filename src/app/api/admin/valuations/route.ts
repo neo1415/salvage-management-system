@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Restrict to admin and manager roles (Requirement 7.5)
-    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+    if (session.user.role !== 'system_admin' && session.user.role !== 'salvage_manager') {
       return NextResponse.json(
         { error: 'Forbidden - Admin or Manager role required' },
         { status: 403 }
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Restrict to admin and manager roles
-    if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+    if (session.user.role !== 'system_admin' && session.user.role !== 'salvage_manager') {
       return NextResponse.json(
         { error: 'Forbidden - Admin or Manager role required' },
         { status: 403 }

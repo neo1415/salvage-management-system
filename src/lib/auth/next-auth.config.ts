@@ -123,6 +123,8 @@ async function createAuditLog(
 }
 
 export const authConfig: NextAuthConfig = {
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+
   // SECURITY: Skip CSRF check only in non-production environments with E2E testing enabled
   // Production validation above ensures this can never be true in production
   skipCSRFCheck: process.env.NODE_ENV !== 'production' && process.env.E2E_TESTING === 'true',
@@ -371,7 +373,7 @@ export const authConfig: NextAuthConfig = {
         
         // Return false to deny sign in, which will redirect to error page
         // The error page will detect this and redirect to complete-oauth
-        return `/auth/complete-oauth?email=${encodeURIComponent(email)}`;
+        return `/complete-oauth?email=${encodeURIComponent(email)}`;
       }
 
       return true;
@@ -428,7 +430,7 @@ export const authConfig: NextAuthConfig = {
             vendorId: user.vendorId,
             email: user.email,
           },
-          process.env.NEXTAUTH_SECRET!,
+          (process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET)!,
           {
             expiresIn: '24h',
           }

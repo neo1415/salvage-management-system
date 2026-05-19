@@ -36,7 +36,7 @@ export async function POST(
     }
 
     // RBAC: Verify user is Finance Officer
-    const authorizedRoles = ['finance_officer', 'manager', 'admin'];
+    const authorizedRoles = ['finance_officer', 'salvage_manager', 'system_admin'];
     if (!authorizedRoles.includes(session.user.role || '')) {
       return NextResponse.json(
         { 
@@ -77,9 +77,17 @@ export async function POST(
       );
     }
 
-    // Grant extension
+    if (!auction.currentBidder) {
+      return NextResponse.json(
+        { success: false, error: 'Auction has no winning vendor to extend' },
+        { status: 400 }
+      );
+    }
+
+    // Grant extension for the winning vendor, granted by the finance officer/admin.
     const result = await extensionService.grantExtension(
       auctionId,
+      auction.currentBidder,
       session.user.id,
       reason.trim()
     );
@@ -96,7 +104,6 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      extension: result.extension,
       newDeadline: result.newDeadline,
       extensionCount: result.extensionCount,
       maxExtensions: result.maxExtensions,
@@ -136,7 +143,7 @@ export async function GET(
     }
 
     // RBAC: Verify user is authorized
-    const authorizedRoles = ['finance_officer', 'manager', 'admin', 'vendor'];
+    const authorizedRoles = ['finance_officer', 'salvage_manager', 'system_admin', 'vendor'];
     if (!authorizedRoles.includes(session.user.role || '')) {
       return NextResponse.json(
         { 

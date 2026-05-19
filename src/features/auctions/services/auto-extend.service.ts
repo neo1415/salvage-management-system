@@ -343,6 +343,7 @@ export class AutoExtendService {
       await smsService.sendSMS({
         to: bidder.phone,
         message: smsMessage,
+        category: 'routine',
       });
 
       console.log(`📱 Sent extension SMS to ${bidder.phone}`);

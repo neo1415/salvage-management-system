@@ -103,7 +103,7 @@ export function usePaymentUnlockedModal() {
       }
 
       // Fetch payment details
-      const paymentResponse = await fetch(`/api/finance/payment-transactions/${paymentId}`);
+      const paymentResponse = await fetch(`/api/payments/${paymentId}`);
       
       if (!paymentResponse.ok) {
         console.error('Failed to fetch payment details');

@@ -12,6 +12,7 @@ import { smsService } from '@/features/notifications/services/sms.service';
 import { Ratelimit } from '@upstash/ratelimit';
 import { redis } from '@/lib/redis/client';
 import DOMPurify from 'isomorphic-dompurify';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 // SECURITY: Rate limiting for payment verification endpoint
 // Prevents notification spam and abuse
@@ -228,6 +229,12 @@ export async function POST(
       );
     }
 
+    const assetName = formatAssetName(
+      caseDetails.assetType,
+      caseDetails.assetDetails as Record<string, unknown>,
+      caseDetails.claimReference
+    );
+
     // Verify amount matches invoice (auction current bid)
     const paymentAmount = parseFloat(payment.amount);
     const auctionAmount = auction.currentBid ? parseFloat(auction.currentBid) : 0;
@@ -298,7 +305,7 @@ export async function POST(
             documentType: 'Pickup Authorization',
             documentTitle: 'Vehicle Pickup Authorization',
             auctionId: payment.auctionId,
-            assetDescription: `${caseDetails.assetType.toUpperCase()} - ${caseDetails.claimReference}`,
+            assetDescription: assetName,
             downloadUrl: `${process.env.NEXTAUTH_URL}/vendor/documents`,
           }),
         });
@@ -360,7 +367,7 @@ export async function POST(
       }
 
       // Send SMS notification
-      const smsMessage = `Payment verified! Your pickup authorization code is: ${pickupAuthCode}. Item: ${caseDetails.assetType}. Amount: ₦${parseFloat(payment.amount).toLocaleString()}. Present this code at pickup location.`;
+      const smsMessage = `Payment verified! Your pickup authorization code is: ${pickupAuthCode}. Item: ${assetName}. Amount: ₦${parseFloat(payment.amount).toLocaleString()}. Present this code at pickup location.`;
       
       await smsService.sendSMS({
         to: vendorUser.phone,
@@ -372,7 +379,7 @@ export async function POST(
         vendorName: vendorUser.fullName,
         auctionId: payment.auctionId,
         paymentId: payment.id,
-        assetName: `${caseDetails.assetType.toUpperCase()} - ${caseDetails.claimReference}`,
+        assetName,
         paymentAmount: parseFloat(payment.amount),
         paymentMethod: payment.paymentMethod === 'paystack' ? 'Paystack' : 
                        payment.paymentMethod === 'flutterwave' ? 'Flutterwave' : 'Bank Transfer',
@@ -530,6 +537,12 @@ async function sendRejectionEmail(
       ALLOWED_TAGS: [], // Strip all HTML
       ALLOWED_ATTR: []
     });
+
+    const assetName = formatAssetName(
+      caseDetails.assetType,
+      caseDetails.assetDetails as Record<string, unknown>,
+      caseDetails.claimReference
+    );
     
     const emailSubject = 'Payment Verification Failed - Action Required';
     const emailHtml = `
@@ -656,7 +669,7 @@ async function sendRejectionEmail(
                 <ul>
                   <li><strong>Payment ID:</strong> ${payment.id}</li>
                   <li><strong>Amount:</strong> ₦${parseFloat(payment.amount).toLocaleString()}</li>
-                  <li><strong>Item:</strong> ${caseDetails.assetType}</li>
+                  <li><strong>Item:</strong> ${assetName}</li>
                   <li><strong>Claim Reference:</strong> ${caseDetails.claimReference}</li>
                   <li><strong>Reviewed By:</strong> ${sanitizedFinanceOfficerName}</li>
                   <li><strong>Reviewed At:</strong> ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}</li>

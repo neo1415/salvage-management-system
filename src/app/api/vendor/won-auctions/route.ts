@@ -10,7 +10,9 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { eq, and, desc, or, inArray } from 'drizzle-orm';
+import { payments } from '@/lib/db/schema/payments';
+import { eq, and, desc, or } from 'drizzle-orm';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 export async function GET(request: NextRequest) {
   try {
@@ -43,9 +45,15 @@ export async function GET(request: NextRequest) {
         endTime: auctions.endTime,
         assetType: salvageCases.assetType,
         assetDetails: salvageCases.assetDetails,
+        claimReference: salvageCases.claimReference,
+        paymentId: payments.id,
+        paymentStatus: payments.status,
+        paymentMethod: payments.paymentMethod,
+        paymentCreatedAt: payments.createdAt,
       })
       .from(auctions)
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+      .leftJoin(payments, eq(payments.auctionId, auctions.id))
       .where(
         and(
           eq(auctions.currentBidder, vendorId),
@@ -59,26 +67,11 @@ export async function GET(request: NextRequest) {
 
     // Format asset names
     const formattedAuctions = wonAuctions.map((auction) => {
-      const details = auction.assetDetails as Record<string, unknown>;
-      let assetName = 'Salvage Item';
-
-      switch (auction.assetType) {
-        case 'vehicle':
-          assetName = `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim() || 'Vehicle';
-          break;
-        case 'property':
-          assetName = `${details.propertyType || 'Property'}`;
-          break;
-        case 'electronics':
-          assetName = `${details.brand || ''} Electronics`.trim();
-          break;
-        case 'machinery':
-          assetName = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
-          if (!assetName) {
-            assetName = details.machineryType ? String(details.machineryType) : 'Machinery';
-          }
-          break;
-      }
+      const assetName = formatAssetName(
+        auction.assetType,
+        auction.assetDetails as Record<string, unknown>,
+        auction.claimReference
+      );
 
       return {
         id: auction.id,
@@ -88,6 +81,12 @@ export async function GET(request: NextRequest) {
         closedAt: auction.endTime,
         assetName,
         assetType: auction.assetType,
+        payment: auction.paymentId ? {
+          id: auction.paymentId,
+          status: auction.paymentStatus,
+          method: auction.paymentMethod,
+          createdAt: auction.paymentCreatedAt,
+        } : null,
       };
     });
 

@@ -10,6 +10,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, TrendingDown, Banknote, BarChart3 } from 'lucide-react';
 import { Line, Bar } from 'react-chartjs-2';
+import { ChartFrame, MetricGrid, MetricValue, ReportLoadingState, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -93,7 +94,7 @@ interface RevenueAnalysisReportProps {
 
 export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportProps) {
   if (loading || !data) {
-    return <RevenueAnalysisSkeleton />;
+    return <ReportLoadingState label="Loading revenue analysis" />;
   }
 
   // Ensure data has required properties with defaults
@@ -128,8 +129,8 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
       {
         label: 'Salvage Recovered (₦)',
         data: safeData.trend.map(t => t?.salvageRecovered || 0),
-        borderColor: '#800020',
-        backgroundColor: 'rgba(128, 0, 32, 0.1)',
+        borderColor: REPORT_CHART_COLORS[1],
+        backgroundColor: 'rgba(15, 118, 110, 0.12)',
         fill: true,
         tension: 0.4,
       },
@@ -143,7 +144,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
       {
         label: 'Salvage Recovered by Asset Type (₦)',
         data: safeData.byAssetType.map(a => a?.salvageRecovered || 0),
-        backgroundColor: ['#800020', '#A00028', '#C00030', '#E00038'],
+        backgroundColor: REPORT_CHART_COLORS,
       },
     ],
   };
@@ -170,8 +171,8 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+      <MetricGrid>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
               Total Revenue
@@ -195,7 +196,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
               Salvage Recovered
@@ -212,7 +213,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
               Registration Fees
@@ -229,7 +230,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
               Recovery Rate
@@ -245,34 +246,34 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             </p>
           </CardContent>
         </Card>
-      </div>
+      </MetricGrid>
 
       {/* Salvage Recovery Trend Chart */}
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader>
           <CardTitle>Salvage Recovery Trend</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-64">
+          <ChartFrame>
             <Line data={trendChartData} options={chartOptions} />
-          </div>
+          </ChartFrame>
         </CardContent>
       </Card>
 
       {/* Asset Type Breakdown */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle>Salvage Recovery by Asset Type</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
+            <ChartFrame>
               <Bar data={assetTypeChartData} options={chartOptions} />
-            </div>
+            </ChartFrame>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle>Asset Type Details</CardTitle>
           </CardHeader>

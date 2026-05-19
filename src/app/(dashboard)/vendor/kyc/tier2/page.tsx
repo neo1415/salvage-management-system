@@ -33,7 +33,10 @@ interface DojahWidgetOptions {
   app_id: string;
   p_key: string;
   type: string;
-  widget_id?: string;
+  reference_id?: string;
+  config?: {
+    widget_id?: string;
+  };
   user_data?: {
     first_name?: string;
     last_name?: string;
@@ -58,6 +61,40 @@ interface DojahConnect {
 
 type PageState = 'idle' | 'loading_config' | 'ready' | 'verifying' | 'pending_review' | 'approved' | 'rejected' | 'expired' | 'error';
 
+const DOJAH_IFRAME_ALLOW = 'camera; microphone; fullscreen; autoplay';
+const TIER2_KYC_PROVIDER = process.env.NEXT_PUBLIC_TIER2_KYC_PROVIDER === 'manual' ? 'manual' : 'dojah';
+
+function formatEmbeddedCameraHelp(prefix: string) {
+  return [
+    prefix,
+    'Camera access is requested inside the Dojah verification window, so allowing camera for this app may not be enough.',
+    'Please allow camera access when the verification window asks.',
+    'If it still fails, check browser site settings for this app URL and for identity.dojah.io if Chrome shows it.',
+    'For local testing, use an HTTPS ngrok or cloudflared URL if localhost blocks embedded camera access.',
+  ].join(' ');
+}
+
+function applyDojahIframePermissions() {
+  if (typeof document === 'undefined') return;
+
+  const iframes = document.querySelectorAll<HTMLIFrameElement>(
+    'iframe[src*="dojah.io"], iframe[src*="identity.dojah.io"], iframe[src*="widget.dojah.io"]'
+  );
+
+  iframes.forEach((iframe) => {
+    const existingAllow = iframe.getAttribute('allow') ?? '';
+    const allowParts = new Set(
+      `${existingAllow}; ${DOJAH_IFRAME_ALLOW}`
+        .split(';')
+        .map((part) => part.trim())
+        .filter(Boolean)
+    );
+
+    iframe.setAttribute('allow', Array.from(allowParts).join('; '));
+    iframe.setAttribute('allowfullscreen', 'true');
+  });
+}
+
 /**
  * Tier 2 KYC Verification Page — Dojah Widget Integration
  *
@@ -74,8 +111,9 @@ export default function Tier2KYCPage() {
     publicKey: string; 
     widgetId?: string;
     phone?: string;
-    bvn?: string;
     dob?: string;
+    vendorId?: string;
+    workflowSlug?: string;
   } | null>(null);
   const [widgetReady, setWidgetReady] = useState(false);
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
@@ -95,14 +133,14 @@ export default function Tier2KYCPage() {
         .then(data => {
           if (!data?.data?.paid) {
             router.push('/vendor/registration-fee');
-          } else {
-            // Redirect to manual KYC page
+          } else if (TIER2_KYC_PROVIDER === 'manual') {
             router.push('/vendor/kyc/tier2-manual');
+          } else {
+            setRegistrationFeePaid(true);
           }
         })
         .catch(() => {
-          // If check fails, redirect to manual KYC anyway
-          router.push('/vendor/kyc/tier2-manual');
+          setRegistrationFeePaid(false);
         });
     }
   }, [authStatus, router]);
@@ -110,6 +148,7 @@ export default function Tier2KYCPage() {
   // Load widget config and current KYC status
   useEffect(() => {
     if (authStatus !== 'authenticated') return;
+    if (TIER2_KYC_PROVIDER === 'manual') return;
 
     async function init() {
       try {
@@ -194,20 +233,41 @@ export default function Tier2KYCPage() {
       govData.mobile = widgetConfig.phone;
     }
     
-    // Add BVN if available (from Tier 1 verification)
-    if (widgetConfig.bvn) {
-      govData.bvn = widgetConfig.bvn;
-    }
+    const publicKeyMode = widgetConfig.publicKey?.startsWith('prod_')
+      ? 'production'
+      : widgetConfig.publicKey?.startsWith('test_')
+        ? 'test'
+        : 'unknown';
+    const widgetType = widgetConfig.widgetId ? 'custom' : 'verification';
+    const verificationReference = [
+      'nem',
+      widgetConfig.vendorId ?? user?.id ?? 'vendor',
+      Date.now().toString(36),
+    ].join('-');
+
+    console.info('[Dojah Widget] Initializing', {
+      publicKeyMode,
+      hasAppId: Boolean(widgetConfig.appId),
+      hasWidgetId: Boolean(widgetConfig.widgetId),
+      hasVendorId: Boolean(widgetConfig.vendorId),
+      hasPhone: Boolean(widgetConfig.phone),
+      hasDob: Boolean(widgetConfig.dob),
+      type: widgetType,
+      origin: window.location.origin,
+    });
 
     const options: DojahWidgetOptions = {
       app_id: widgetConfig.appId,
       p_key: widgetConfig.publicKey,
-      type: widgetConfig.widgetId ? 'custom' : 'verification',
-      ...(widgetConfig.widgetId && { widget_id: widgetConfig.widgetId }),
+      type: widgetType,
+      reference_id: verificationReference,
+      ...(widgetConfig.widgetId && { config: { widget_id: widgetConfig.widgetId } }),
       user_data: userData,
       gov_data: Object.keys(govData).length > 0 ? govData : undefined,
       metadata: { 
         user_id: user?.id ?? '',
+        vendor_id: widgetConfig.vendorId ?? '',
+        workflow_slug: widgetConfig.workflowSlug ?? 'salvage',
       },
       onSuccess: async (response) => {
         const referenceId = response?.reference_id;
@@ -232,15 +292,31 @@ export default function Tier2KYCPage() {
         await handleVerificationComplete(referenceId);
       },
       onError: (err) => {
-        console.error('[Dojah Widget] Error', err);
-        
-        // Check if this is a test credential limitation
         const errorObj = err as { message?: string; referenceId?: string };
-        if (errorObj.message === 'Verification Failed' && !errorObj.referenceId) {
+        console.error('[Dojah Widget] Error', {
+          message: errorObj?.message ?? 'Unknown Dojah widget error',
+          hasReferenceId: Boolean(errorObj?.referenceId),
+          publicKeyMode,
+          hasWidgetId: Boolean(widgetConfig.widgetId),
+          type: widgetType,
+          origin: window.location.origin,
+        });
+
+        const normalizedMessage = (errorObj.message ?? '').toLowerCase();
+        const isCameraPermissionError =
+          normalizedMessage.includes('camera') ||
+          normalizedMessage.includes('permission') ||
+          normalizedMessage.includes('denied') ||
+          normalizedMessage.includes('unavailable');
+
+        if (isCameraPermissionError) {
           setErrorMessage(
-            'Verification failed. This may be due to test credential limitations. ' +
-            'Test credentials have limited functionality and may not support full verification. ' +
-            'Please contact support to upgrade to production credentials for real verification.'
+            formatEmbeddedCameraHelp('Camera permission was denied or unavailable in the Dojah verification window.')
+          );
+        } else if (errorObj.message === 'Verification Failed' && !errorObj.referenceId) {
+          setErrorMessage(
+            'Verification failed before Dojah returned a reference. Please try again. ' +
+            'If this continues locally, confirm the Dojah widget ID, app ID, public key, and allowed local origin in the Dojah dashboard.'
           );
         } else {
           const errorMsg = typeof err === 'object' && err !== null && 'message' in err 
@@ -273,6 +349,18 @@ export default function Tier2KYCPage() {
       initWidget();
     }
   }, [widgetConfig, initWidget]);
+
+  useEffect(() => {
+    applyDojahIframePermissions();
+
+    const observer = new MutationObserver(() => {
+      applyDojahIframePermissions();
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => observer.disconnect();
+  }, []);
 
   async function handleVerificationComplete(referenceId: string) {
     setPageState('verifying');
@@ -331,7 +419,7 @@ export default function Tier2KYCPage() {
 
       if (checkResult.error && !checkResult.needsPrompt) {
         // Permission is denied or there's a hard error
-        setErrorMessage(checkResult.error + ' ' + getCameraPermissionInstructions());
+        setErrorMessage(formatEmbeddedCameraHelp(`${checkResult.error} ${getCameraPermissionInstructions()}`));
         setCheckingPermissions(false);
         return;
       }
@@ -364,7 +452,10 @@ export default function Tier2KYCPage() {
       return;
     }
     setPageState('verifying');
+    applyDojahIframePermissions();
     connect.open();
+    window.setTimeout(applyDojahIframePermissions, 250);
+    window.setTimeout(applyDojahIframePermissions, 1000);
   }
 
   if (authStatus === 'loading' || pageState === 'loading_config') {
@@ -593,7 +684,7 @@ export default function Tier2KYCPage() {
                 <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
                   <Camera className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-blue-800">
-                    This verification requires camera access for selfie and liveness checks. You'll be prompted to allow camera access when you start.
+                    This verification requires camera access for selfie and liveness checks. Camera access is requested inside Dojah's verification window, so your browser may ask for permission again.
                   </p>
                 </div>
 

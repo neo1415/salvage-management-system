@@ -9,7 +9,7 @@
  * Requirements: Phase 3 - Global Notification System
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import NotificationItem from '@/components/notifications/notification-item';
 
@@ -24,39 +24,24 @@ interface Notification {
 }
 
 interface NotificationDropdownProps {
+  notifications: Notification[];
+  isLoading: boolean;
   onClose: () => void;
   onNotificationRead: () => void;
   onMarkAllRead: () => void;
+  onNotificationUpdated: (notificationId: string) => void;
 }
 
 export default function NotificationDropdown({
+  notifications,
+  isLoading,
   onClose,
   onNotificationRead,
   onMarkAllRead,
+  onNotificationUpdated,
 }: NotificationDropdownProps) {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-
-  // Fetch latest notifications
-  useEffect(() => {
-    fetchNotifications();
-  }, []);
-
-  // Adjust dropdown position to prevent overflow on mobile
-  useEffect(() => {
-    if (dropdownRef.current) {
-      const rect = dropdownRef.current.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      
-      // If dropdown goes off-screen on the right, adjust position
-      if (rect.right > viewportWidth) {
-        dropdownRef.current.style.right = '0';
-        dropdownRef.current.style.left = 'auto';
-      }
-    }
-  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -70,20 +55,6 @@ export default function NotificationDropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  const fetchNotifications = async () => {
-    try {
-      const response = await fetch('/api/notifications?limit=4');
-      if (response.ok) {
-        const data = await response.json();
-        setNotifications(data.data.notifications);
-      }
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleNotificationClick = async (notification: Notification) => {
     // Mark as read if unread
     if (!notification.read) {
@@ -92,9 +63,16 @@ export default function NotificationDropdown({
           method: 'PATCH',
         });
         onNotificationRead();
+        onNotificationUpdated(notification.id);
       } catch (error) {
         console.error('Error marking notification as read:', error);
       }
+    }
+
+    if (typeof notification.data?.url === 'string' && notification.data.url.startsWith('/')) {
+      router.push(notification.data.url);
+      onClose();
+      return;
     }
 
     // FIXED: Handle auction_won notifications - route to auction details page
@@ -172,11 +150,6 @@ export default function NotificationDropdown({
         method: 'POST',
       });
       
-      // Update local state
-      setNotifications((prev) =>
-        prev.map((n) => ({ ...n, read: true }))
-      );
-      
       onMarkAllRead();
     } catch (error) {
       console.error('Error marking all as read:', error);
@@ -191,7 +164,7 @@ export default function NotificationDropdown({
   return (
     <div
       ref={dropdownRef}
-      className="absolute top-full right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:mt-0 max-sm:rounded-b-none max-sm:w-full"
+      className="absolute top-full right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] max-sm:fixed max-sm:left-3 max-sm:right-3 max-sm:top-16 max-sm:bottom-auto max-sm:mt-0 max-sm:w-auto"
       style={{ maxHeight: 'calc(100vh - 5rem)' }}
     >
       {/* Header */}
@@ -220,7 +193,7 @@ export default function NotificationDropdown({
       </div>
 
       {/* Notification List */}
-      <div className="max-h-96 max-sm:max-h-[60vh] overflow-y-auto">
+      <div className="max-h-96 max-sm:max-h-[70vh] overflow-y-auto">
         {isLoading ? (
           <div className="px-4 py-8 text-center text-sm text-gray-500">
             Loading notifications...

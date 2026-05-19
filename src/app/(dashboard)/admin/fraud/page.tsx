@@ -30,11 +30,60 @@ interface BidHistoryItem {
 
 interface FraudAlert {
   id: string;
+  status?: string;
+  severity?: 'low' | 'medium' | 'high' | 'critical';
+  riskScore?: number;
+  entityType?: string;
+  entityId?: string;
   auctionId: string;
   vendorId: string;
   bidAmount: string;
   patterns: string[];
+  reasonCodes?: string[];
   details: FraudPattern[];
+  evidenceSummary?: {
+    source?: string;
+    providerReference?: string;
+    workflowReference?: string;
+    verificationType?: string;
+    riskLevel?: string;
+    checksCompleted?: string[];
+    failedChecks?: string[];
+    ipAddress?: string;
+  };
+  providerVerification?: {
+    id: string;
+    provider: string;
+    providerReference: string | null;
+    workflowReference: string | null;
+    verificationType: string;
+    status: string;
+    riskLevel: string;
+    checksCompleted: string[];
+    pendingChecks: string[];
+    failedChecks: string[];
+    reasonCodes: string[];
+    displayMessage: string | null;
+    updatedAt: string;
+  } | null;
+  relatedLinks?: {
+    kycReview?: string | null;
+    vendor?: string | null;
+  };
+  timeline?: Array<{
+    id: string;
+    actionType: string;
+    entityType: string;
+    entityId: string;
+    createdAt: string;
+    afterState?: Record<string, unknown> | null;
+  }>;
+  reviewHistory?: Array<{
+    action: string;
+    reason?: string;
+    actorName?: string;
+    createdAt: string;
+  }>;
   flaggedAt: string;
   auction: {
     id: string;
@@ -59,7 +108,7 @@ interface FraudAlert {
       winRate: number;
       fraudFlags: number;
     };
-    rating: number;
+    rating: number | string;
     user: {
       id: string;
       fullName: string;
@@ -68,6 +117,7 @@ interface FraudAlert {
     } | null;
   } | null;
   bidHistory: BidHistoryItem[];
+  alertSource?: 'audit' | 'intelligence';
 }
 
 export default function FraudAlertDashboard() {
@@ -78,17 +128,61 @@ export default function FraudAlertDashboard() {
   const [selectedAlert, setSelectedAlert] = useState<FraudAlert | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [ipFraudEnabled, setIpFraudEnabled] = useState(true);
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
   // Modal states
   const [showDismissModal, setShowDismissModal] = useState(false);
   const [showSuspendModal, setShowSuspendModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showActionModal, setShowActionModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'mark_under_review' | 'resolve' | null>(null);
+  const [actionReason, setActionReason] = useState('');
   const [dismissComment, setDismissComment] = useState('');
   const [suspendDuration, setSuspendDuration] = useState<'7' | '30' | '90' | 'permanent'>('7');
   const [suspendReason, setSuspendReason] = useState('');
 
   useEffect(() => {
     fetchFraudAlerts();
+    fetchFraudSettings();
   }, []);
+
+  const fetchFraudSettings = async () => {
+    try {
+      const response = await fetch('/api/admin/fraud-settings');
+      if (!response.ok) return;
+      const data = await response.json();
+      setIpFraudEnabled(Boolean(data.ipFraudDetectionEnabled));
+    } catch (err) {
+      console.error('Failed to fetch fraud settings:', err);
+    }
+  };
+
+  const toggleIPFraudDetection = async () => {
+    const nextValue = !ipFraudEnabled;
+    setIpFraudEnabled(nextValue);
+    setSettingsLoading(true);
+
+    try {
+      const response = await fetch('/api/admin/fraud-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ipFraudDetectionEnabled: nextValue }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update fraud setting');
+      }
+
+      const data = await response.json();
+      setIpFraudEnabled(Boolean(data.ipFraudDetectionEnabled));
+    } catch (err) {
+      setIpFraudEnabled(!nextValue);
+      setError(err instanceof Error ? err.message : 'Failed to update fraud setting');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
 
   const fetchFraudAlerts = async () => {
     try {
@@ -121,15 +215,22 @@ export default function FraudAlertDashboard() {
       setActionLoading(true);
       setActionError(null);
 
-      const response = await fetch(`/api/admin/fraud-alerts/${selectedAlert.auctionId}/dismiss`, {
+      const response = await fetch(
+        selectedAlert.alertSource === 'intelligence'
+          ? `/api/admin/fraud-alerts/${selectedAlert.id}/action`
+          : `/api/admin/fraud-alerts/${selectedAlert.auctionId}/dismiss`,
+        {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          comment: dismissComment.trim(),
-        }),
-      });
+          body: JSON.stringify(
+            selectedAlert.alertSource === 'intelligence'
+              ? { action: 'dismiss_false_positive', reason: dismissComment.trim() }
+              : { comment: dismissComment.trim() }
+          ),
+        }
+      );
 
       if (!response.ok) {
         const data = await response.json();
@@ -160,17 +261,26 @@ export default function FraudAlertDashboard() {
       setActionLoading(true);
       setActionError(null);
 
-      const response = await fetch(`/api/admin/fraud-alerts/${selectedAlert.auctionId}/suspend-vendor`, {
+      const response = await fetch(
+        selectedAlert.alertSource === 'intelligence'
+          ? `/api/admin/fraud-alerts/${selectedAlert.id}/action`
+          : `/api/admin/fraud-alerts/${selectedAlert.auctionId}/suspend-vendor`,
+        {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          vendorId: selectedAlert.vendorId,
-          duration: suspendDuration,
-          reason: suspendReason.trim(),
-        }),
-      });
+          body: JSON.stringify(
+            selectedAlert.alertSource === 'intelligence'
+              ? { action: 'suspend_vendor', reason: suspendReason.trim() }
+              : {
+                  vendorId: selectedAlert.vendorId,
+                  duration: suspendDuration,
+                  reason: suspendReason.trim(),
+                }
+          ),
+        }
+      );
 
       if (!response.ok) {
         const data = await response.json();
@@ -204,6 +314,20 @@ export default function FraudAlertDashboard() {
     setActionError(null);
   };
 
+  const openDetailModal = (alert: FraudAlert) => {
+    setSelectedAlert(alert);
+    setShowDetailModal(true);
+    setActionError(null);
+  };
+
+  const openActionModal = (alert: FraudAlert, action: 'mark_under_review' | 'resolve') => {
+    setSelectedAlert(alert);
+    setPendingAction(action);
+    setActionReason('');
+    setShowActionModal(true);
+    setActionError(null);
+  };
+
   const closeDismissModal = () => {
     setShowDismissModal(false);
     setDismissComment('');
@@ -217,6 +341,54 @@ export default function FraudAlertDashboard() {
     setSuspendDuration('7');
     setSelectedAlert(null);
     setActionError(null);
+  };
+
+  const closeDetailModal = () => {
+    setShowDetailModal(false);
+    setSelectedAlert(null);
+    setActionError(null);
+  };
+
+  const closeActionModal = () => {
+    setShowActionModal(false);
+    setPendingAction(null);
+    setActionReason('');
+    setActionError(null);
+  };
+
+  const handleIntelligenceAction = async () => {
+    if (!selectedAlert || !pendingAction) return;
+    if (pendingAction === 'resolve' && actionReason.trim().length < 10) {
+      setActionError('Reason is required (minimum 10 characters)');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setActionError(null);
+
+      const response = await fetch(`/api/admin/fraud-alerts/${selectedAlert.id}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: pendingAction,
+          reason: actionReason.trim() || undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update fraud alert');
+      }
+
+      await fetchFraudAlerts();
+      closeActionModal();
+      closeDetailModal();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const formatCurrency = (amount: string | number) => {
@@ -244,6 +416,13 @@ export default function FraudAlertDashboard() {
     if (pattern.includes('Unusual bid')) return 'bg-orange-100 text-orange-800';
     if (pattern.includes('Duplicate identity')) return 'bg-purple-100 text-purple-800';
     return 'bg-gray-100 text-gray-800';
+  };
+
+  const getSeverityBadgeColor = (severity?: FraudAlert['severity']) => {
+    if (severity === 'critical') return 'bg-red-900 text-white';
+    if (severity === 'high') return 'bg-red-100 text-red-800';
+    if (severity === 'medium') return 'bg-orange-100 text-orange-800';
+    return 'bg-blue-100 text-blue-800';
   };
 
   if (loading) {
@@ -289,6 +468,30 @@ export default function FraudAlertDashboard() {
           </p>
         </div>
 
+        <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-900">IP-based fraud detection</h2>
+            <p className="text-sm text-gray-600">
+              Turn this off for one-device demos. Bidding still works; only same-IP fraud alerts pause.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleIPFraudDetection}
+            disabled={settingsLoading}
+            className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-60 ${
+              ipFraudEnabled ? 'bg-burgundy-900' : 'bg-gray-300'
+            }`}
+            aria-pressed={ipFraudEnabled}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                ipFraudEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
@@ -328,10 +531,20 @@ export default function FraudAlertDashboard() {
                         🚨 Fraud Alert - Auction #{alert.auctionId.slice(0, 8)}
                       </h3>
                       <p className="text-sm text-red-700">
-                        Flagged on {formatDate(alert.flaggedAt)}
+                        {alert.evidenceSummary?.source === 'dojah' ? 'Dojah vendor verification alert' : 'Flagged activity'} - {formatDate(alert.flaggedAt)}
                       </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2 justify-end">
+                      {alert.status && (
+                        <span className="px-3 py-1 rounded-full text-xs font-medium bg-white text-gray-700 border border-red-200">
+                          {alert.status.replace(/_/g, ' ').toUpperCase()}
+                        </span>
+                      )}
+                      {alert.severity && (
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityBadgeColor(alert.severity)}`}>
+                          {alert.severity.toUpperCase()}
+                        </span>
+                      )}
                       {alert.patterns.map((pattern, idx) => (
                         <span
                           key={idx}
@@ -427,7 +640,7 @@ export default function FraudAlertDashboard() {
                             <div className="flex justify-between">
                               <span className="text-sm text-gray-600">Rating:</span>
                               <span className="text-sm font-medium text-gray-900">
-                                ⭐ {alert.vendor.rating.toFixed(1)} / 5.0
+                                {Number(alert.vendor.rating || 0).toFixed(1)} / 5.0
                               </span>
                             </div>
                             <div className="flex justify-between">
@@ -509,6 +722,28 @@ export default function FraudAlertDashboard() {
                   <div className="mt-6 pt-6 border-t border-gray-200">
                     <div className="flex flex-wrap gap-3">
                       <button
+                        onClick={() => openDetailModal(alert)}
+                        className="px-6 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800 transition-colors"
+                      >
+                        View Details
+                      </button>
+                      {alert.alertSource === 'intelligence' && alert.status === 'pending' && (
+                        <button
+                          onClick={() => openActionModal(alert, 'mark_under_review')}
+                          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Mark Under Review
+                        </button>
+                      )}
+                      {alert.alertSource === 'intelligence' && alert.status !== 'confirmed' && (
+                        <button
+                          onClick={() => openActionModal(alert, 'resolve')}
+                          className="px-6 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 transition-colors"
+                        >
+                          Resolve
+                        </button>
+                      )}
+                      <button
                         onClick={() => openDismissModal(alert)}
                         className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                       >
@@ -528,6 +763,205 @@ export default function FraudAlertDashboard() {
           </div>
         )}
       </div>
+
+      {/* Detail Modal */}
+      {showDetailModal && selectedAlert && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
+          <div className="fixed inset-0 bg-black/50" onClick={closeDetailModal} />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">Fraud Alert Detail</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {selectedAlert.evidenceSummary?.source || selectedAlert.alertSource || 'system'} alert for {selectedAlert.entityType || 'entity'} {selectedAlert.entityId?.slice(0, 8) || selectedAlert.id.slice(0, 8)}
+                  </p>
+                </div>
+                <button onClick={closeDetailModal} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                  Close
+                </button>
+              </div>
+
+              <div className="p-5 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="text-xs uppercase text-gray-500 mb-1">Source</div>
+                    <div className="font-semibold text-gray-900">{selectedAlert.evidenceSummary?.source || selectedAlert.alertSource || 'system'}</div>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="text-xs uppercase text-gray-500 mb-1">Severity</div>
+                    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${getSeverityBadgeColor(selectedAlert.severity)}`}>
+                      {(selectedAlert.severity || 'low').toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="text-xs uppercase text-gray-500 mb-1">Status</div>
+                    <div className="font-semibold text-gray-900">{(selectedAlert.status || 'pending').replace(/_/g, ' ')}</div>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="text-xs uppercase text-gray-500 mb-1">Risk Score</div>
+                    <div className="font-semibold text-gray-900">{selectedAlert.riskScore ?? 'N/A'}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <section className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="font-semibold text-gray-900 mb-4">Vendor / User</h4>
+                    <dl className="space-y-2 text-sm">
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Name</dt><dd className="font-medium text-right">{selectedAlert.vendor?.user?.fullName || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Business</dt><dd className="font-medium text-right">{selectedAlert.vendor?.businessName || 'Individual'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Email</dt><dd className="font-medium text-right break-all">{selectedAlert.vendor?.user?.email || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Vendor status</dt><dd className="font-medium text-right">{selectedAlert.vendor?.status || 'N/A'}</dd></div>
+                    </dl>
+                    {selectedAlert.relatedLinks?.kycReview && (
+                      <button
+                        onClick={() => router.push(selectedAlert.relatedLinks?.kycReview || '/manager/kyc-approvals')}
+                        className="mt-4 w-full px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800"
+                      >
+                        Open KYC Review
+                      </button>
+                    )}
+                  </section>
+
+                  <section className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="font-semibold text-gray-900 mb-4">Dojah / Provider Evidence</h4>
+                    <dl className="space-y-2 text-sm">
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Provider ref</dt><dd className="font-medium text-right break-all">{selectedAlert.evidenceSummary?.providerReference || selectedAlert.providerVerification?.providerReference || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Workflow ref</dt><dd className="font-medium text-right break-all">{selectedAlert.evidenceSummary?.workflowReference || selectedAlert.providerVerification?.workflowReference || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Verification type</dt><dd className="font-medium text-right">{selectedAlert.evidenceSummary?.verificationType || selectedAlert.providerVerification?.verificationType || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Provider status</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.status || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Provider risk</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.riskLevel || selectedAlert.evidenceSummary?.riskLevel || 'N/A'}</dd></div>
+                    </dl>
+                  </section>
+                </div>
+
+                <section className="border border-gray-200 rounded-lg p-5">
+                  <h4 className="font-semibold text-gray-900 mb-4">Reason Codes & Evidence</h4>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {(selectedAlert.reasonCodes?.length ? selectedAlert.reasonCodes : selectedAlert.patterns).map((reason) => (
+                      <span key={reason} className="px-3 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+                        {reason}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-gray-700 mb-2">Completed checks</div>
+                      <div className="text-sm text-gray-600">{(selectedAlert.providerVerification?.checksCompleted || selectedAlert.evidenceSummary?.checksCompleted || []).join(', ') || 'N/A'}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-700 mb-2">Failed checks</div>
+                      <div className="text-sm text-gray-600">{(selectedAlert.providerVerification?.failedChecks || selectedAlert.evidenceSummary?.failedChecks || []).join(', ') || 'None recorded'}</div>
+                    </div>
+                  </div>
+                </section>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <section className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="font-semibold text-gray-900 mb-4">Review Notes</h4>
+                    {selectedAlert.reviewHistory?.length ? (
+                      <div className="space-y-3">
+                        {selectedAlert.reviewHistory.map((item, idx) => (
+                          <div key={`${item.createdAt}-${idx}`} className="border-l-2 border-burgundy-900 pl-3">
+                            <div className="text-sm font-medium text-gray-900">{item.action.replace(/_/g, ' ')}</div>
+                            <div className="text-xs text-gray-500">{item.actorName || 'System'} - {formatDate(item.createdAt)}</div>
+                            {item.reason && <div className="text-sm text-gray-700 mt-1">{item.reason}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No review notes yet.</p>
+                    )}
+                  </section>
+
+                  <section className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="font-semibold text-gray-900 mb-4">Audit Timeline</h4>
+                    {selectedAlert.timeline?.length ? (
+                      <div className="space-y-3">
+                        {selectedAlert.timeline.map((item) => (
+                          <div key={item.id} className="border-l-2 border-gray-300 pl-3">
+                            <div className="text-sm font-medium text-gray-900">{item.actionType.replace(/_/g, ' ')}</div>
+                            <div className="text-xs text-gray-500">{formatDate(item.createdAt)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No audit entries linked yet.</p>
+                    )}
+                  </section>
+                </div>
+
+                {selectedAlert.alertSource === 'intelligence' && (
+                  <div className="border-t border-gray-200 pt-5 flex flex-wrap gap-3">
+                    {selectedAlert.status === 'pending' && (
+                      <button onClick={() => openActionModal(selectedAlert, 'mark_under_review')} className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        Mark Under Review
+                      </button>
+                    )}
+                    {selectedAlert.status !== 'confirmed' && (
+                      <button onClick={() => openActionModal(selectedAlert, 'resolve')} className="px-5 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800">
+                        Resolve
+                      </button>
+                    )}
+                    <button onClick={() => { setShowDetailModal(false); openDismissModal(selectedAlert); }} className="px-5 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+                      Dismiss False Positive
+                    </button>
+                    {selectedAlert.vendorId && (
+                      <button onClick={() => { setShowDetailModal(false); openSuspendModal(selectedAlert); }} className="px-5 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                        Suspend Vendor
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Alert Action Modal */}
+      {showActionModal && selectedAlert && pendingAction && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 1000000 }}>
+          <div className="fixed inset-0 bg-black/50" onClick={closeActionModal} />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                {pendingAction === 'resolve' ? 'Resolve Fraud Alert' : 'Mark Under Review'}
+              </h3>
+              <p className="text-gray-600 mb-4">
+                {pendingAction === 'resolve'
+                  ? 'Record the final review decision for this alert.'
+                  : 'Move this alert into review while the team investigates.'}
+              </p>
+              {actionError && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">{actionError}</div>}
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {pendingAction === 'resolve' ? 'Resolution reason (minimum 10 characters)' : 'Review note (optional)'}
+              </label>
+              <textarea
+                value={actionReason}
+                onChange={(e) => setActionReason(e.target.value)}
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                placeholder={pendingAction === 'resolve' ? 'Explain why this alert is resolved...' : 'Add a note for the investigation...'}
+              />
+              <div className="flex gap-3 mt-5">
+                <button onClick={closeActionModal} disabled={actionLoading} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                  Cancel
+                </button>
+                <button
+                  onClick={handleIntelligenceAction}
+                  disabled={actionLoading || (pendingAction === 'resolve' && actionReason.trim().length < 10)}
+                  className="flex-1 px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Dismiss Modal */}
       {showDismissModal && selectedAlert && typeof document !== 'undefined' && createPortal(

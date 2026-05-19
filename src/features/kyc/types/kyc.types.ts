@@ -87,6 +87,20 @@ export interface PendingApproval {
   livenessScore?: number;
   biometricMatchScore?: number;
   amlScreeningData?: Record<string, unknown>;
+  providerEvidence?: {
+    provider: string;
+    providerReference?: string | null;
+    workflowReference?: string | null;
+    status: string;
+    riskLevel: string;
+    checksCompleted: string[];
+    pendingChecks: string[];
+    failedChecks: string[];
+    reasonCodes: string[];
+    displayMessage?: string | null;
+    normalizedResult?: Record<string, unknown> | null;
+    updatedAt?: Date;
+  };
 }
 
 export interface FraudFlag {

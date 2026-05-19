@@ -17,10 +17,10 @@ function AuthErrorHandler() {
     // Check if this is an OAuth registration error with email
     if (error && error.startsWith('OAuthRegistration:')) {
       const email = error.replace('OAuthRegistration:', '');
-      router.push(`/auth/complete-oauth?email=${encodeURIComponent(email)}`);
+      router.push(`/complete-oauth?email=${encodeURIComponent(email)}`);
     } else if (error === 'AccessDenied') {
       // Generic access denied - redirect to complete-oauth
-      router.push('/auth/complete-oauth');
+      router.push('/complete-oauth');
     } else {
       // For other errors, redirect to login with error message
       router.push(`/login?error=${error || 'unknown'}`);

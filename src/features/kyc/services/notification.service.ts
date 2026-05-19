@@ -203,12 +203,12 @@ export class KYCNotificationService {
   /** Send SMS with one retry after 5 minutes on failure */
   private async sendSMSWithRetry(phone: string, message: string): Promise<void> {
     try {
-      const result = await this.sms.sendSMS({ to: phone, message });
+      const result = await this.sms.sendSMS({ to: phone, message, category: 'routine' });
       if (!result.success) {
         console.warn('[KYCNotification] SMS failed, scheduling retry', { phone });
         setTimeout(async () => {
           try {
-            await this.sms.sendSMS({ to: phone, message });
+            await this.sms.sendSMS({ to: phone, message, category: 'routine' });
           } catch (e) {
             console.error('[KYCNotification] SMS retry failed', { phone, error: e });
           }

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { createCase, ValidationError, type CreateCaseInput } from '@/features/cases/services/case.service';
 import { getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
+import { createRoleNotifications } from '@/features/notifications/services/notification.service';
 
 /**
  * POST /api/cases
@@ -220,6 +221,22 @@ export async function POST(request: NextRequest) {
     // Create case
     const result = await createCase(input, ipAddress, deviceType, userAgent);
 
+    if (input.status === 'pending_approval') {
+      try {
+        await createRoleNotifications(['salvage_manager', 'system_admin'], {
+          type: 'case_submitted',
+          title: 'New Case Submitted',
+          message: `${session.user.name || 'A claims adjuster'} submitted case ${input.claimReference} for approval.`,
+          data: {
+            caseId: result.id,
+            url: '/manager/approvals',
+          },
+        });
+      } catch (notificationError) {
+        console.error('Failed to notify managers about submitted case:', notificationError);
+      }
+    }
+
     return NextResponse.json(
       {
         success: true,
@@ -294,7 +311,9 @@ export async function GET(request: NextRequest) {
     // SCALABILITY: Cache key for this specific query
     // Only cache non-user-specific queries (no createdByMe filter)
     // Cache for 10 minutes to balance freshness with performance
-    const shouldCache = !createdByMe;
+    // Demo/live workflow freshness matters more than this small list cache:
+    // manager approvals must show newly submitted cases immediately.
+    const shouldCache = false;
     const cacheKey = shouldCache 
       ? `cases:list:${status}:${search}:${limit}:${offset}`
       : null;

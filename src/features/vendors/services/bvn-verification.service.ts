@@ -11,25 +11,15 @@ import crypto from 'crypto';
 
 // Encryption configuration
 const ENCRYPTION_ALGORITHM = 'aes-256-cbc';
-// Generate a proper 32-byte key from the environment variable
-const ENCRYPTION_KEY_STRING = process.env.BVN_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+// Generate a proper 32-byte key from an explicit environment variable.
+// Never fall back to a random key, because encrypted BVNs would become unreadable after restart.
+const ENCRYPTION_KEY_STRING = process.env.BVN_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
+if (!ENCRYPTION_KEY_STRING) {
+  throw new Error('BVN_ENCRYPTION_KEY or ENCRYPTION_KEY environment variable is required');
+}
 // Ensure we have exactly 32 bytes for AES-256
 const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENCRYPTION_KEY_STRING).digest();
 const IV_LENGTH = 16;
-
-// Paystack configuration
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-const PAYSTACK_BASE_URL = 'https://api.paystack.co';
-
-// Test mode BVN
-const TEST_BVN = '12345678901';
-
-/**
- * Check if we're in test mode (runtime check)
- */
-function isTestMode(): boolean {
-  return process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test_') || false;
-}
 
 export interface BVNVerificationRequest {
   bvn: string;
@@ -51,19 +41,9 @@ export interface BVNVerificationResponse {
   };
   mismatches?: string[];
   error?: string;
-}
-
-export interface PaystackBVNResponse {
-  status: boolean;
-  message: string;
-  data: {
-    first_name: string;
-    last_name: string;
-    dob: string;
-    formatted_dob: string;
-    mobile: string;
-    bvn: string;
-  };
+  provider?: 'dojah';
+  providerReference?: string;
+  providerRawResponse?: unknown;
 }
 
 /**
@@ -82,127 +62,44 @@ export async function verifyBVN(request: BVNVerificationRequest): Promise<BVNVer
       };
     }
 
-    // Test mode support - only accept test BVN in test mode
-    if (isTestMode()) {
-      if (request.bvn === TEST_BVN) {
-        console.log('[TEST MODE] BVN Verification:', {
-          bvn: maskBVN(request.bvn),
-          firstName: request.firstName,
-          lastName: request.lastName,
-          dateOfBirth: request.dateOfBirth,
-          phone: request.phone,
-        });
-
-        return {
-          success: true,
-          verified: true,
-          matchScore: 100,
-          details: {
-            firstName: request.firstName,
-            lastName: request.lastName,
-            dateOfBirth: request.dateOfBirth,
-            phone: request.phone,
-          },
-        };
-      } else {
-        // In test mode, real BVNs cannot be verified
-        console.warn('[TEST MODE] Real BVN provided in test mode:', {
-          bvn: maskBVN(request.bvn),
-          testBvn: TEST_BVN,
-        });
-        
-        return {
-          success: false,
-          verified: false,
-          matchScore: 0,
-          error: `Test mode: Please use test BVN ${TEST_BVN} for testing. Real BVN verification requires production Paystack keys.`,
-        };
-      }
-    }
-
-    // Check if Paystack secret key is configured
-    if (!PAYSTACK_SECRET_KEY) {
-      console.error('[BVN Verification] PAYSTACK_SECRET_KEY not configured');
-      return {
-        success: false,
-        verified: false,
-        matchScore: 0,
-        error: 'BVN Service Unavailable - Configuration Error',
-      };
-    }
-
-    console.log('[BVN Verification] Calling Paystack API:', {
-      url: `${PAYSTACK_BASE_URL}/bank/resolve_bvn/${maskBVN(request.bvn)}`,
-      hasKey: !!PAYSTACK_SECRET_KEY,
-      keyPrefix: PAYSTACK_SECRET_KEY.substring(0, 10) + '...',
+    const { getDojahService } = await import('@/features/kyc/services/dojah.service');
+    const providerReference = `tier1-bvn-${crypto.randomUUID()}`;
+    const dojahData = await getDojahService().validateBVN({
+      bvn: request.bvn,
+      firstName: request.firstName,
+      lastName: request.lastName,
+      dateOfBirth: request.dateOfBirth,
+      customerReference: providerReference,
     });
 
-    // Call Paystack BVN verification API
-    const response = await fetch(`${PAYSTACK_BASE_URL}/bank/resolve_bvn/${request.bvn}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
+    const entity = dojahData.entity;
+    const matchResult = matchDojahBVNDetails({
+      bvnValid: entity?.bvn?.status === true,
+      firstNameValid: entity?.first_name?.status !== false,
+      lastNameValid: entity?.last_name?.status !== false,
+      dobValid: entity?.dob?.status !== false,
+      firstNameConfidence: entity?.first_name?.confidence_value,
+      lastNameConfidence: entity?.last_name?.confidence_value,
     });
-
-    console.log('[BVN Verification] Paystack API response:', {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('[BVN Verification] Paystack API error:', {
-        status: response.status,
-        statusText: response.statusText,
-        errorData,
-      });
-      return {
-        success: false,
-        verified: false,
-        matchScore: 0,
-        error: errorData.message || `Paystack API error: ${response.status} ${response.statusText}`,
-      };
-    }
-
-    const paystackData: PaystackBVNResponse = await response.json();
-    console.log('[BVN Verification] Paystack API success:', {
-      status: paystackData.status,
-      message: paystackData.message,
-      hasData: !!paystackData.data,
-    });
-
-    if (!paystackData.status || !paystackData.data) {
-      return {
-        success: false,
-        verified: false,
-        matchScore: 0,
-        error: paystackData.message || 'BVN verification failed',
-      };
-    }
-
-    // Perform matching with fuzzy logic for Nigerian names
-    const matchResult = matchBVNDetails(request, paystackData.data);
 
     return {
       success: true,
       verified: matchResult.verified,
       matchScore: matchResult.matchScore,
       details: {
-        firstName: paystackData.data.first_name,
-        lastName: paystackData.data.last_name,
-        dateOfBirth: paystackData.data.formatted_dob || paystackData.data.dob,
-        phone: paystackData.data.mobile,
+        firstName: request.firstName,
+        lastName: request.lastName,
+        dateOfBirth: request.dateOfBirth,
+        phone: request.phone,
       },
       mismatches: matchResult.mismatches,
+      provider: 'dojah',
+      providerReference,
+      providerRawResponse: dojahData,
     };
   } catch (error) {
     console.error('[BVN Verification] Exception caught:', {
-      error,
       message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
       name: error instanceof Error ? error.name : undefined,
     });
     return {
@@ -214,168 +111,40 @@ export async function verifyBVN(request: BVNVerificationRequest): Promise<BVNVer
   }
 }
 
-/**
- * Match BVN details with fuzzy matching for Nigerian names
- * Handles common variations in Nigerian names
- */
-function matchBVNDetails(
-  request: BVNVerificationRequest,
-  bvnData: PaystackBVNResponse['data']
-): { verified: boolean; matchScore: number; mismatches: string[] } {
+function matchDojahBVNDetails(input: {
+  bvnValid: boolean;
+  firstNameConfidence?: number | null;
+  lastNameConfidence?: number | null;
+  firstNameValid: boolean;
+  lastNameValid: boolean;
+  dobValid: boolean;
+}): { verified: boolean; matchScore: number; mismatches: string[] } {
   const mismatches: string[] = [];
   let totalScore = 0;
-  const weights = {
-    firstName: 30,
-    lastName: 30,
-    dateOfBirth: 25,
-    phone: 15,
-  };
 
-  // First name matching with fuzzy logic
-  const firstNameScore = fuzzyMatchNigerianName(
-    request.firstName,
-    bvnData.first_name
-  );
-  totalScore += firstNameScore * weights.firstName / 100;
-  if (firstNameScore < 70) {
-    mismatches.push(`First name mismatch: "${request.firstName}" vs "${bvnData.first_name}"`);
+  if (input.bvnValid) totalScore += 40;
+  else mismatches.push('BVN could not be validated');
+
+  const firstNameScore = input.firstNameValid ? input.firstNameConfidence ?? 100 : input.firstNameConfidence ?? 0;
+  const lastNameScore = input.lastNameValid ? input.lastNameConfidence ?? 100 : input.lastNameConfidence ?? 0;
+  totalScore += Math.min(100, Math.max(0, firstNameScore)) * 0.25;
+  totalScore += Math.min(100, Math.max(0, lastNameScore)) * 0.25;
+
+  if (!input.firstNameValid || firstNameScore < 70) {
+    mismatches.push('First name did not match BVN records');
+  }
+  if (!input.lastNameValid || lastNameScore < 70) {
+    mismatches.push('Last name did not match BVN records');
   }
 
-  // Last name matching with fuzzy logic
-  const lastNameScore = fuzzyMatchNigerianName(
-    request.lastName,
-    bvnData.last_name
-  );
-  totalScore += lastNameScore * weights.lastName / 100;
-  if (lastNameScore < 70) {
-    mismatches.push(`Last name mismatch: "${request.lastName}" vs "${bvnData.last_name}"`);
-  }
-
-  // Date of birth matching (exact match required)
-  const dobMatch = normalizeDateOfBirth(request.dateOfBirth) === normalizeDateOfBirth(bvnData.dob);
-  if (dobMatch) {
-    totalScore += weights.dateOfBirth;
-  } else {
-    mismatches.push(`Date of birth mismatch: "${request.dateOfBirth}" vs "${bvnData.dob}"`);
-  }
-
-  // Phone matching (last 10 digits)
-  const phoneScore = matchPhoneNumbers(request.phone, bvnData.mobile);
-  totalScore += phoneScore * weights.phone / 100;
-  if (phoneScore < 80) {
-    mismatches.push(`Phone mismatch: "${request.phone}" vs "${bvnData.mobile}"`);
-  }
-
-  // Verification threshold: 75% match score
-  const verified = totalScore >= 75;
+  if (input.dobValid) totalScore += 10;
+  else mismatches.push('Date of birth did not match BVN records');
 
   return {
-    verified,
+    verified: input.bvnValid && totalScore >= 75 && mismatches.length === 0,
     matchScore: Math.round(totalScore),
-    mismatches: verified ? [] : mismatches,
+    mismatches,
   };
-}
-
-/**
- * Fuzzy match Nigerian names
- * Handles common variations: spaces, hyphens, apostrophes, case
- */
-function fuzzyMatchNigerianName(name1: string, name2: string): number {
-  // Normalize names
-  const normalize = (name: string) =>
-    name
-      .toLowerCase()
-      .trim()
-      .replace(/['\-\s]/g, '');
-
-  const n1 = normalize(name1);
-  const n2 = normalize(name2);
-
-  // Exact match
-  if (n1 === n2) return 100;
-
-  // Check if one contains the other (common in Nigerian names)
-  if (n1.includes(n2) || n2.includes(n1)) {
-    const longer = Math.max(n1.length, n2.length);
-    const shorter = Math.min(n1.length, n2.length);
-    return Math.round((shorter / longer) * 100);
-  }
-
-  // Levenshtein distance for similarity
-  const distance = levenshteinDistance(n1, n2);
-  const maxLength = Math.max(n1.length, n2.length);
-  const similarity = ((maxLength - distance) / maxLength) * 100;
-
-  return Math.round(similarity);
-}
-
-/**
- * Calculate Levenshtein distance between two strings
- */
-function levenshteinDistance(str1: string, str2: string): number {
-  const matrix: number[][] = [];
-
-  for (let i = 0; i <= str2.length; i++) {
-    matrix[i] = [i];
-  }
-
-  for (let j = 0; j <= str1.length; j++) {
-    matrix[0][j] = j;
-  }
-
-  for (let i = 1; i <= str2.length; i++) {
-    for (let j = 1; j <= str1.length; j++) {
-      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-
-  return matrix[str2.length][str1.length];
-}
-
-/**
- * Normalize date of birth to YYYY-MM-DD format
- */
-function normalizeDateOfBirth(dob: string): string {
-  // Handle various date formats
-  const date = new Date(dob);
-  if (isNaN(date.getTime())) return dob;
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
-/**
- * Match phone numbers (last 10 digits)
- */
-function matchPhoneNumbers(phone1: string, phone2: string): number {
-  // Extract digits only
-  const digits1 = phone1.replace(/\D/g, '');
-  const digits2 = phone2.replace(/\D/g, '');
-
-  // Compare last 10 digits (Nigerian phone numbers)
-  const last10_1 = digits1.slice(-10);
-  const last10_2 = digits2.slice(-10);
-
-  if (last10_1 === last10_2) return 100;
-
-  // Partial match
-  let matches = 0;
-  for (let i = 0; i < 10; i++) {
-    if (last10_1[i] === last10_2[i]) matches++;
-  }
-
-  return Math.round((matches / 10) * 100);
 }
 
 /**

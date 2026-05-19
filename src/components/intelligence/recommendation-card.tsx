@@ -50,9 +50,10 @@ export function RecommendationCard({
     }).format(amount);
   };
 
-  const formatTimeRemaining = (endTime: Date) => {
+  const formatTimeRemaining = (endTime: Date | string) => {
     const now = new Date();
-    const diff = endTime.getTime() - now.getTime();
+    const end = endTime instanceof Date ? endTime : new Date(endTime);
+    const diff = end.getTime() - now.getTime();
     
     if (diff < 0) return 'Ended';
     

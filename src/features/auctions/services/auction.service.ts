@@ -270,6 +270,7 @@ export class AuctionService {
       await smsService.sendSMS({
         to: vendor.phone,
         message: smsMessage,
+        category: 'routine',
       });
 
       // Send Email notification

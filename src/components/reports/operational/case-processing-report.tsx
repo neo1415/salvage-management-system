@@ -8,6 +8,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileText, Clock, CheckCircle } from 'lucide-react';
 import { Bar, Line } from 'react-chartjs-2';
+import { ChartFrame, MetricGrid, MetricValue, ReportLoadingState, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -78,7 +79,7 @@ interface CaseProcessingReportProps {
 
 export function CaseProcessingReport({ data, loading }: CaseProcessingReportProps) {
   if (loading) {
-    return <div>Loading...</div>;
+    return <ReportLoadingState label="Loading case processing report" />;
   }
 
   if (!data || !data.byStatus || !data.byAssetType || !data.trend) {
@@ -90,7 +91,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
     datasets: [{
       label: 'Cases by Status',
       data: data.byStatus.map(s => s.count),
-      backgroundColor: ['#800020', '#A00028', '#C00030', '#E00038'],
+      backgroundColor: REPORT_CHART_COLORS,
     }],
   };
 
@@ -99,50 +100,50 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
     datasets: [{
       label: 'Cases Processed',
       data: data.trend.map(t => t.count),
-      borderColor: '#800020',
-      backgroundColor: 'rgba(128, 0, 32, 0.1)',
+      borderColor: REPORT_CHART_COLORS[1],
+      backgroundColor: 'rgba(15, 118, 110, 0.12)',
       fill: true,
     }],
   };
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
+      <MetricGrid>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Cases</CardTitle>
             <FileText className="h-4 w-4 text-[#800020]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.summary.totalCases}</div>
+            <MetricValue>{data.summary.totalCases}</MetricValue>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Avg Processing Time</CardTitle>
             <Clock className="h-4 w-4 text-[#800020]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <MetricValue>
               {(data.summary.averageProcessingTimeDays ?? 0).toFixed(1)} days
-            </div>
+            </MetricValue>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Approval Rate</CardTitle>
             <CheckCircle className="h-4 w-4 text-[#800020]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <MetricValue>
               {(data.summary.approvalRate ?? 0).toFixed(1)}%
-            </div>
+            </MetricValue>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Market Value</CardTitle>
             <FileText className="h-4 w-4 text-[#800020]" />
@@ -153,10 +154,10 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
             </div>
           </CardContent>
         </Card>
-      </div>
+      </MetricGrid>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+      <MetricGrid>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-sm">Total Salvage Value</CardTitle>
           </CardHeader>
@@ -165,7 +166,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-sm">Avg Market Value</CardTitle>
           </CardHeader>
@@ -174,7 +175,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-sm">Avg Salvage Value</CardTitle>
           </CardHeader>
@@ -182,37 +183,37 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
             <div className="text-xl font-bold">₦{(data.summary.averageSalvageValue ?? 0).toLocaleString()}</div>
           </CardContent>
         </Card>
-      </div>
+      </MetricGrid>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle>Cases by Status</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
-              <Bar data={statusChartData} options={{ responsive: true, maintainAspectRatio: false }} />
-            </div>
+            <ChartFrame>
+              <Bar data={statusChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, labels: { boxWidth: 12, usePointStyle: true } } } }} />
+            </ChartFrame>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle>Processing Trend</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
-              <Line data={trendChartData} options={{ responsive: true, maintainAspectRatio: false }} />
-            </div>
+            <ChartFrame>
+              <Line data={trendChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, labels: { boxWidth: 12, usePointStyle: true } } } }} />
+            </ChartFrame>
           </CardContent>
         </Card>
       </div>
 
       {data.byAssetType.map((asset) => (
-        <Card key={asset.assetType}>
+        <Card key={asset.assetType} className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="capitalize">{asset.assetType} Cases ({asset.count})</CardTitle>
-            <div className="grid grid-cols-4 gap-4 mt-4 text-sm">
+            <div className="grid gap-4 mt-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <p className="text-gray-600">Total Market Value</p>
                 <p className="font-bold text-lg">₦{asset.totalMarketValue.toLocaleString()}</p>
@@ -245,8 +246,8 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
                   </tr>
                 </thead>
                 <tbody>
-                  {asset.cases.map((caseItem) => (
-                    <tr key={caseItem.claimReference} className="border-b hover:bg-gray-50">
+                  {asset.cases.map((caseItem, index) => (
+                    <tr key={`${asset.assetType}-${caseItem.claimReference}-${caseItem.createdAt}-${index}`} className="border-b hover:bg-gray-50">
                       <td className="py-2 px-3 font-medium">{caseItem.claimReference}</td>
                       <td className="py-2 px-3">
                         <span className={`px-2 py-1 rounded text-xs ${

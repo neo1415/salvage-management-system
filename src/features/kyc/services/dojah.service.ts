@@ -3,10 +3,12 @@ import {
   DojahAMLResultSchema,
   DojahCACResultSchema,
   DojahNINAdvancedResultSchema,
+  DojahBVNValidationResultSchema,
   type DojahVerificationResult,
   type DojahAMLResult,
   type DojahCACResult,
   type DojahNINAdvancedResult,
+  type DojahBVNValidationResult,
 } from '../schemas/dojah.schemas';
 
 interface DojahConfig {
@@ -14,6 +16,7 @@ interface DojahConfig {
   appId: string;
   publicKey: string;
   baseUrl: string;
+  easyDetectIngestKey?: string;
 }
 
 /**
@@ -34,12 +37,13 @@ export class DojahService {
     const appId = config?.appId ?? process.env.DOJAH_APP_ID;
     const publicKey = config?.publicKey ?? process.env.DOJAH_PUBLIC_KEY;
     const baseUrl = config?.baseUrl ?? process.env.DOJAH_BASE_URL ?? 'https://api.dojah.io';
+    const easyDetectIngestKey = config?.easyDetectIngestKey ?? process.env.DOJAH_EASYDETECT_INGEST_KEY;
 
     if (!apiKey) throw new Error('DOJAH_API_KEY is not set');
     if (!appId) throw new Error('DOJAH_APP_ID is not set');
     if (!publicKey) throw new Error('DOJAH_PUBLIC_KEY is not set');
 
-    this.config = { apiKey, appId, publicKey, baseUrl };
+    this.config = { apiKey, appId, publicKey, baseUrl, easyDetectIngestKey };
   }
 
   /** Common headers for all Dojah API requests */
@@ -90,11 +94,42 @@ export class DojahService {
   }
 
   /**
+   * BVN match validation through Dojah.
+   * Dojah expects plain header Authorization (secret key), not Bearer auth.
+   */
+  async validateBVN(input: {
+    bvn: string;
+    firstName?: string;
+    lastName?: string;
+    dateOfBirth?: string;
+    customerReference?: string;
+  }): Promise<DojahBVNValidationResult> {
+    const params = new URLSearchParams({ bvn: input.bvn });
+    if (input.firstName) params.set('first_name', input.firstName);
+    if (input.lastName) params.set('last_name', input.lastName);
+    if (input.dateOfBirth) params.set('dob', input.dateOfBirth);
+    if (input.customerReference) params.set('customer_reference', input.customerReference);
+
+    const url = `${this.config.baseUrl}/api/v1/kyc/bvn?${params.toString()}`;
+    console.log('[DojahService] validateBVN called', { customerReference: input.customerReference });
+
+    const res = await this.fetchWithRetry(url, { method: 'GET', headers: this.headers });
+    const json = await res.json();
+
+    const parsed = DojahBVNValidationResultSchema.safeParse(json);
+    if (!parsed.success) {
+      console.error('[DojahService] validateBVN parse error', parsed.error.flatten());
+      throw new Error('Dojah BVN result failed schema validation');
+    }
+    return parsed.data;
+  }
+
+  /**
    * AML Screening v2 — screens vendor against PEP, sanctions, adverse media lists.
    */
   async screenAML(fullName: string, dateOfBirth: string): Promise<DojahAMLResult> {
     const url = `${this.config.baseUrl}/api/v1/aml/screening`;
-    console.log('[DojahService] screenAML', { fullName, dateOfBirth });
+    console.log('[DojahService] screenAML called');
 
     const res = await this.fetchWithRetry(url, {
       method: 'POST',
@@ -116,7 +151,7 @@ export class DojahService {
    */
   async verifyCAC(rcNumber: string): Promise<DojahCACResult> {
     const url = `${this.config.baseUrl}/api/v1/kyc/cac?rc_number=${encodeURIComponent(rcNumber)}`;
-    console.log('[DojahService] verifyCAC', { rcNumber });
+    console.log('[DojahService] verifyCAC called', { rcNumber: maskIdentifier(rcNumber) });
 
     const res = await this.fetchWithRetry(url, { method: 'GET', headers: this.headers });
     const json = await res.json();
@@ -127,6 +162,52 @@ export class DojahService {
       throw new Error('Dojah CAC result failed schema validation');
     }
     return parsed.data;
+  }
+
+  /**
+   * Optional EasyDetect onboarding event.
+   * Non-blocking callers should catch errors so KYC flow is not dependent on fraud telemetry.
+   */
+  async sendEasyDetectOnboardingEvent(event: {
+    userId: string;
+    email?: string;
+    name?: string;
+    mobile?: string;
+    registrationTime: string;
+    tier?: string;
+    ipAddress?: string;
+    deviceType?: string;
+  }): Promise<unknown | null> {
+    if (!this.config.easyDetectIngestKey) {
+      console.warn('[DojahService] EasyDetect ingest key not configured; skipping onboarding event');
+      return null;
+    }
+
+    const res = await this.fetchWithRetry('https://ingest.dojah.io/api/ingest', {
+      method: 'POST',
+      headers: this.headers,
+      body: JSON.stringify({
+        key: this.config.easyDetectIngestKey,
+        type: 'onboarding',
+        event: {
+          user: {
+            user_id: event.userId,
+            user_type: 'business',
+            registration_time: event.registrationTime,
+            email: event.email,
+            name: event.name,
+            mobile: event.mobile,
+            tier: event.tier,
+          },
+          device: {
+            type: event.deviceType,
+            ip_address: event.ipAddress,
+          },
+        },
+      }),
+    }, 1);
+
+    return res.json().catch(() => null);
   }
 
   /**
@@ -175,7 +256,7 @@ export class DojahService {
 
         if (res.status >= 500) {
           const body = await res.text().catch(() => '');
-          console.error(`[DojahService] Server error ${res.status}`, { url, body });
+          console.error(`[DojahService] Server error ${res.status}`, { url: redactDojahUrl(url), body });
           lastError = new Error(`Dojah API server error: ${res.status}`);
           if (attempt < retries - 1) {
             await sleep(BACKOFF_MS[attempt] ?? 4000);
@@ -187,7 +268,7 @@ export class DojahService {
       } catch (err) {
         clearTimeout(timer);
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[DojahService] Network error (attempt ${attempt + 1})`, { url, msg });
+        console.error(`[DojahService] Network error (attempt ${attempt + 1})`, { url: redactDojahUrl(url), msg });
         lastError = new Error(`Dojah API network error: ${msg}`);
         if (attempt < retries - 1) {
           await sleep(BACKOFF_MS[attempt] ?? 4000);
@@ -201,6 +282,25 @@ export class DojahService {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function maskIdentifier(value: string): string {
+  if (!value) return '';
+  return value.length <= 4 ? '****' : `${'*'.repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
+}
+
+function redactDojahUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    for (const key of ['bvn', 'nin', 'rc_number', 'first_name', 'last_name', 'dob', 'customer_reference']) {
+      if (parsed.searchParams.has(key)) {
+        parsed.searchParams.set(key, '[REDACTED]');
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return '[REDACTED_DOJAH_URL]';
+  }
 }
 
 /** Singleton — lazily created */

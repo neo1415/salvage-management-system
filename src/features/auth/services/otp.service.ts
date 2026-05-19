@@ -52,6 +52,14 @@ export class OTPService {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
+  private normalizePhoneNumber(phone: string): string {
+    const cleaned = phone.replace(/\D/g, '');
+    if (cleaned.startsWith('234')) return cleaned;
+    if (cleaned.startsWith('0')) return `234${cleaned.substring(1)}`;
+    if (cleaned.length === 10) return `234${cleaned}`;
+    return cleaned;
+  }
+
   /**
    * Send OTP via SMS using Termii API and Email as backup
    * @param phone - Phone number in international format (e.g., +2348012345678)
@@ -73,9 +81,11 @@ export class OTPService {
     auctionId?: string
   ): Promise<{ success: boolean; message: string }> {
     try {
+      const normalizedPhone = this.normalizePhoneNumber(phone);
+
       // Context-aware rate limiting
       const limits = RATE_LIMITS[context];
-      const rateLimitKey = `otp:ratelimit:${context}:${phone}`;
+      const rateLimitKey = `otp:ratelimit:${context}:${normalizedPhone}`;
       
       const isLimited = await rateLimiter.isLimited(
         rateLimitKey,
@@ -94,7 +104,7 @@ export class OTPService {
       // For bidding context, check per-auction rate limit
       if (context === 'bidding' && auctionId) {
         const biddingLimits = RATE_LIMITS.bidding;
-        const auctionRateLimitKey = `otp:auction:${auctionId}:${phone}`;
+        const auctionRateLimitKey = `otp:auction:${auctionId}:${normalizedPhone}`;
         const isAuctionLimited = await rateLimiter.isLimited(
           auctionRateLimitKey,
           biddingLimits.perAuctionMax,
@@ -110,14 +120,14 @@ export class OTPService {
       }
 
       // Fraud detection monitoring (log but don't block)
-      await this.monitorFraudPatterns(phone, ipAddress, context, auctionId);
+      await this.monitorFraudPatterns(normalizedPhone, ipAddress, context, auctionId);
 
       // Generate OTP
       const otp = this.generateOTP();
 
       // Store OTP in Redis with 5-minute expiry BEFORE sending SMS
       // This ensures OTP is available even if SMS sending fails
-      await otpCache.set(phone, otp);
+      await otpCache.set(normalizedPhone, otp);
 
       // Send SMS via Termii REST API
       const senderId = process.env.TERMII_SENDER_ID || 'NEMSAL';
@@ -132,11 +142,11 @@ export class OTPService {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              to: phone,
+              to: normalizedPhone,
               from: senderId,
               sms: message,
               type: 'plain',
-              channel: 'generic',
+              channel: process.env.TERMII_CHANNEL || 'generic',
               api_key: this.termiiApiKey,
             }),
           });
@@ -175,7 +185,7 @@ export class OTPService {
         }
         
         // In production, if SMS fails, delete the OTP and return error
-        await otpCache.del(phone);
+        await otpCache.del(normalizedPhone);
         return {
           success: false,
           message: 'Failed to send OTP. Please try again.',
@@ -254,8 +264,10 @@ export class OTPService {
     deviceType: 'mobile' | 'desktop' | 'tablet'
   ): Promise<{ success: boolean; message: string; userId?: string }> {
     try {
+      const normalizedPhone = this.normalizePhoneNumber(phone);
+
       // Get OTP data from cache
-      const otpData = await otpCache.get(phone);
+      const otpData = await otpCache.get(normalizedPhone);
 
       if (!otpData) {
         return {
@@ -267,7 +279,7 @@ export class OTPService {
       // Check if max attempts exceeded
       if (otpData.attempts >= this.MAX_ATTEMPTS) {
         // Delete OTP to force resend
-        await otpCache.del(phone);
+        await otpCache.del(normalizedPhone);
         
         return {
           success: false,
@@ -278,7 +290,7 @@ export class OTPService {
       // Verify OTP
       if (otpData.otp !== otp) {
         // Increment attempts and get the new count
-        const newAttempts = await otpCache.incrementAttempts(phone);
+        const newAttempts = await otpCache.incrementAttempts(normalizedPhone);
         
         // Calculate remaining attempts using the NEW attempts value
         const remainingAttempts = this.MAX_ATTEMPTS - newAttempts;
@@ -313,7 +325,7 @@ export class OTPService {
         .where(eq(users.id, user[0].id));
 
       // Delete OTP from cache
-      await otpCache.del(phone);
+      await otpCache.del(normalizedPhone);
 
       // Create audit log entry (optional)
       try {

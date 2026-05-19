@@ -106,8 +106,9 @@ export class PaymentAnalyticsService {
    * Calculate summary statistics
    */
   private static calculateSummary(data: any[]) {
-    const totalAmount = data.reduce((sum, p) => sum + parseFloat(p.amount), 0);
-    const completedPayments = data.filter(p => p.status === 'completed' || p.status === 'verified').length;
+    const verifiedPaymentData = data.filter(p => p.status === 'verified');
+    const totalAmount = verifiedPaymentData.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    const completedPayments = verifiedPaymentData.length;
     const pendingPayments = data.filter(p => p.status === 'pending').length;
     
     const verifiedPayments = data.filter(p => p.processingTimeHours !== null);
@@ -115,8 +116,8 @@ export class PaymentAnalyticsService {
       ? verifiedPayments.reduce((sum, p) => sum + (p.processingTimeHours || 0), 0) / verifiedPayments.length
       : 0;
 
-    const autoVerified = data.filter(p => p.processingTimeHours !== null && p.processingTimeHours < 1).length;
-    const autoVerificationRate = data.length > 0 ? (autoVerified / data.length) * 100 : 0;
+    const autoVerified = verifiedPaymentData.filter(p => p.processingTimeHours !== null && p.processingTimeHours < 1).length;
+    const autoVerificationRate = completedPayments > 0 ? (autoVerified / completedPayments) * 100 : 0;
 
     const successRate = data.length > 0 ? (completedPayments / data.length) * 100 : 0;
     

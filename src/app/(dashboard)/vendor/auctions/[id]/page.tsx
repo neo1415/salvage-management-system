@@ -42,7 +42,24 @@ const PaymentUnlockedModal = dynamic(
 
 const PaymentOptions = dynamic(
   () => import('@/components/vendor/payment-options').then(mod => ({ default: mod.PaymentOptions })),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-xl rounded-xl bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-gray-200 p-4">
+            <div className="h-6 w-44 animate-pulse rounded bg-gray-200" />
+            <div className="h-5 w-5 rounded-full bg-gray-200" />
+          </div>
+          <div className="space-y-4 p-4">
+            <div className="h-28 animate-pulse rounded-lg bg-gray-100" />
+            <div className="h-20 animate-pulse rounded-lg bg-gray-100" />
+            <div className="h-12 animate-pulse rounded-lg bg-gray-200" />
+          </div>
+        </div>
+      </div>
+    ),
+  }
 );
 
 const DocumentSigning = dynamic(
@@ -173,6 +190,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Verify payment button state (show after 2 minutes if payment still pending)
   const [showVerifyButton, setShowVerifyButton] = useState(false);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+  const [paystackReturnStatus, setPaystackReturnStatus] = useState<'idle' | 'verifying' | 'verified' | 'pending' | 'error'>('idle');
+  const [paystackReturnMessage, setPaystackReturnMessage] = useState('');
+  const paystackReturnHandledRef = useRef(false);
 
   // Prediction state
   const [prediction, setPrediction] = useState<any>(null);
@@ -279,6 +299,76 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       setIsVerifyingPayment(false);
     }
   };
+
+  // Paystack redirects back to this page after checkout. The payment modal is not mounted
+  // at that point, so the page itself must perform the idempotent server-side verification.
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      paystackReturnHandledRef.current ||
+      !auction ||
+      !session?.user?.vendorId
+    ) {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('payment') !== 'success') {
+      return;
+    }
+
+    paystackReturnHandledRef.current = true;
+    searchParams.delete('payment');
+    const nextSearch = searchParams.toString();
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`
+    );
+
+    setShowPaymentModal(false);
+    setPaystackReturnStatus('verifying');
+    setPaystackReturnMessage('Confirming your Paystack payment. This usually takes a few seconds.');
+
+    const verifyReturnedPayment = async () => {
+      try {
+        const response = await fetch(`/api/auctions/${auction.id}/payment/verify`, {
+          method: 'POST',
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok && data.success) {
+          setHasVerifiedPayment(true);
+          setShowVerifyButton(false);
+          setAuction(prev => prev ? { ...prev, hasVerifiedPayment: true } as AuctionDetails : prev);
+          setPaystackReturnStatus('verified');
+          setPaystackReturnMessage(data.message || 'Your payment has been verified and the auction record has been updated.');
+          toast.success(
+            'Payment Verified',
+            'Your Paystack payment has been confirmed.'
+          );
+          return;
+        }
+
+        const message = data.message || data.error || 'Payment confirmation is still pending. You can retry verification in a moment.';
+        setPaystackReturnStatus(response.ok ? 'pending' : 'error');
+        setPaystackReturnMessage(message);
+        setShowVerifyButton(true);
+        toast.warning('Payment Not Confirmed Yet', message);
+      } catch (error) {
+        console.error('Error confirming returned Paystack payment:', error);
+        setPaystackReturnStatus('error');
+        setPaystackReturnMessage('We could not confirm the payment automatically. Please retry verification or contact support.');
+        setShowVerifyButton(true);
+        toast.error(
+          'Verification Error',
+          'We could not confirm the payment automatically.'
+        );
+      }
+    };
+
+    verifyReturnedPayment();
+  }, [auction?.id, session?.user?.vendorId, toast]);
   
   // Real-time notification listener for PAYMENT_UNLOCKED
   const { newNotification } = useRealtimeNotifications();
@@ -2015,6 +2105,78 @@ export default function AuctionDetailsPage({ params }: PageProps) {
             );
           }}
         />
+      )}
+
+      {/* Paystack Return Confirmation Modal */}
+      {paystackReturnStatus !== 'idle' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="bg-gradient-to-r from-[#800020] to-[#600018] px-6 py-5 text-white">
+              <div className="flex items-center gap-3">
+              {paystackReturnStatus === 'verifying' ? (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
+                  <svg className="h-6 w-6 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                </div>
+              ) : paystackReturnStatus === 'verified' ? (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white">
+                  <svg className="h-7 w-7 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white">
+                  <svg className="h-7 w-7 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                </div>
+              )}
+              <div>
+                <h3 className="text-xl font-bold">
+                  {paystackReturnStatus === 'verifying'
+                    ? 'Confirming Payment'
+                    : paystackReturnStatus === 'verified'
+                      ? 'Payment Successful'
+                      : 'Payment Confirmation Pending'}
+                </h3>
+                <p className="text-sm text-white/80">{getAssetName()}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="m-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm text-gray-600">Winning bid</span>
+                <span className="font-semibold text-gray-900">
+                  NGN {Number(auction.currentBid || 0).toLocaleString()}
+                </span>
+              </div>
+              <p className="text-sm leading-6 text-gray-700">{paystackReturnMessage}</p>
+            </div>
+
+            <div className="flex gap-3 px-6 pb-6">
+              {paystackReturnStatus !== 'verifying' && (
+                <button
+                  onClick={() => setPaystackReturnStatus('idle')}
+                  className="flex-1 rounded-lg bg-[#800020] px-4 py-3 font-semibold text-white transition-colors hover:bg-[#600018]"
+                >
+                  Continue
+                </button>
+              )}
+              {(paystackReturnStatus === 'pending' || paystackReturnStatus === 'error') && (
+                <button
+                  onClick={handleVerifyPayment}
+                  disabled={isVerifyingPayment}
+                  className="flex-1 rounded-lg border-2 border-[#800020] px-4 py-3 font-semibold text-[#800020] transition-colors hover:bg-[#800020] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isVerifyingPayment ? 'Checking...' : 'Retry Check'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Payment Unlocked Modal */}

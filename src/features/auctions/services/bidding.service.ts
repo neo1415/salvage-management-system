@@ -775,6 +775,7 @@ export class BiddingService {
           await smsService.sendSMS({
             to: previousUser.phone,
             message: smsMessage,
+            category: 'routine',
           });
 
           // Send email notification using professional template

@@ -25,6 +25,16 @@ const SENSITIVE_FIELDS = [
   'verificationCode',
   'resetToken',
   'authToken',
+  'bvn',
+  'nin',
+  'documentNumber',
+  'document_number',
+  'rawPayload',
+  'raw_payload',
+  'rawResponse',
+  'raw_response',
+  'rawProviderPayload',
+  'raw_payload_encrypted',
 ] as const;
 
 /**

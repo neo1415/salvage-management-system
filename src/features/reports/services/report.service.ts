@@ -184,12 +184,8 @@ export class ReportService {
    * Validate date range
    */
   static validateDateRange(startDate?: string, endDate?: string): { start: Date; end: Date } {
-    if (!startDate || !endDate) {
-      throw new Error('startDate and endDate are required');
-    }
-
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const start = startDate ? new Date(startDate) : new Date('2000-01-01T00:00:00.000Z');
+    const end = endDate ? new Date(endDate) : new Date('2099-12-31T23:59:59.999Z');
 
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
       throw new Error('Invalid date format. Use ISO date strings');

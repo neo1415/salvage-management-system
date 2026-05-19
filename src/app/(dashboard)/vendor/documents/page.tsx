@@ -17,12 +17,14 @@ import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 interface Document {
   id: string;
   auctionId: string;
-  documentType: 'bill_of_sale' | 'liability_waiver' | 'pickup_authorization' | 'salvage_certificate';
+  documentType: 'bill_of_sale' | 'liability_waiver' | 'pickup_authorization' | 'salvage_certificate' | 'payment_receipt';
   title: string;
   status: 'pending' | 'signed' | 'voided';
   signedAt: Date | null;
   createdAt: Date;
   pdfUrl: string;
+  isReceipt?: boolean;
+  receiptUrl?: string;
 }
 
 interface AuctionDocuments {
@@ -32,6 +34,44 @@ interface AuctionDocuments {
   closedAt: Date;
   status: 'scheduled' | 'active' | 'extended' | 'closed' | 'cancelled';
   documents: Document[];
+}
+
+function isVisibleDocument(doc: Document) {
+  return !(doc.documentType === 'pickup_authorization' && doc.status === 'pending');
+}
+
+function createReceiptDocument(auction: any, payment: any): Document | null {
+  if (!payment?.id) return null;
+
+  return {
+    id: payment.id,
+    auctionId: auction.id,
+    documentType: 'payment_receipt',
+    title: 'Payment Receipt',
+    status: 'signed',
+    signedAt: payment.createdAt ? new Date(payment.createdAt) : null,
+    createdAt: payment.createdAt ? new Date(payment.createdAt) : new Date(auction.closedAt),
+    pdfUrl: '',
+    isReceipt: true,
+    receiptUrl: `/receipt/${payment.id}`,
+  };
+}
+
+async function fetchReceiptDocument(auction: any): Promise<Document | null> {
+  if (auction.payment?.id) {
+    return createReceiptDocument(auction, auction.payment);
+  }
+
+  try {
+    const response = await fetch(`/api/payments?auctionId=${auction.id}`);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    return createReceiptDocument(auction, data.data?.payment);
+  } catch (error) {
+    console.warn(`Unable to load receipt for auction ${auction.id}:`, error);
+    return null;
+  }
 }
 
 export default function VendorDocumentsPage() {
@@ -80,8 +120,10 @@ export default function VendorDocumentsPage() {
       // This reduces load time from N seconds to ~1 second
       console.log('📄 [DOCUMENTS PAGE] Fetching documents for', data.data.auctions.length, 'auctions in parallel...');
       
-      const documentPromises = data.data.auctions.map((auction: any) =>
-        fetch(`/api/auctions/${auction.id}/documents`)
+      const documentPromises = data.data.auctions.map(async (auction: any) => {
+        const receiptDocument = await fetchReceiptDocument(auction);
+
+        return fetch(`/api/auctions/${auction.id}/documents`)
           .then(res => {
             console.log(`   📄 Auction ${auction.id}: Response status ${res.status}`);
             return res.json();
@@ -95,7 +137,10 @@ export default function VendorDocumentsPage() {
               winningBid: parseFloat(auction.currentBid || '0'),
               closedAt: new Date(auction.closedAt),
               status: auction.status,
-              documents: docsData.status === 'success' ? docsData.data.documents : [],
+              documents: [
+                ...(docsData.status === 'success' ? docsData.data.documents : []),
+                ...(receiptDocument ? [receiptDocument] : []),
+              ],
             };
           })
           .catch(err => {
@@ -106,10 +151,10 @@ export default function VendorDocumentsPage() {
               winningBid: parseFloat(auction.currentBid || '0'),
               closedAt: new Date(auction.closedAt),
               status: auction.status,
-              documents: [],
+              documents: receiptDocument ? [receiptDocument] : [],
             };
           })
-      );
+      });
 
       const auctionsWithDocs = await Promise.all(documentPromises);
       
@@ -230,6 +275,10 @@ export default function VendorDocumentsPage() {
     }
   };
 
+  const handleViewReceipt = (receiptUrl: string) => {
+    router.push(receiptUrl);
+  };
+
   if (isLoading) {
     console.log('⏳ [DOCUMENTS PAGE] Showing loading state');
     return (
@@ -348,7 +397,7 @@ export default function VendorDocumentsPage() {
                 </div>
                 <div className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100">
                   <div className="text-2xl font-bold text-[#800020]">
-                    {auctionDocuments.reduce((sum, a) => sum + a.documents.length, 0)}
+                    {auctionDocuments.reduce((sum, a) => sum + a.documents.filter(isVisibleDocument).length, 0)}
                   </div>
                   <div className="text-xs text-gray-600 mt-0.5">Documents</div>
                 </div>
@@ -400,6 +449,7 @@ export default function VendorDocumentsPage() {
                     auction={auction}
                     onViewAuction={() => router.push(`/vendor/auctions/${auction.auctionId}`)}
                     onDownload={handleDownload}
+                    onViewReceipt={handleViewReceipt}
                     isOffline={isOffline}
                   />
                 </div>
@@ -416,6 +466,7 @@ export default function VendorDocumentsPage() {
                 auction={auction}
                 onViewAuction={() => router.push(`/vendor/auctions/${auction.auctionId}`)}
                 onDownload={handleDownload}
+                onViewReceipt={handleViewReceipt}
                 isOffline={isOffline}
               />
             ))}
@@ -432,15 +483,17 @@ interface AuctionDocumentCardProps {
   auction: AuctionDocuments;
   onViewAuction: () => void;
   onDownload: (docId: string, title: string) => void;
+  onViewReceipt: (receiptUrl: string) => void;
   isOffline: boolean;
 }
 
-function AuctionDocumentCard({ auction, onViewAuction, onDownload, isOffline }: AuctionDocumentCardProps) {
+function AuctionDocumentCard({ auction, onViewAuction, onDownload, onViewReceipt, isOffline }: AuctionDocumentCardProps) {
   const router = useRouter();
 
-  const signedCount = auction.documents.filter(d => d.status === 'signed').length;
-  const pendingCount = auction.documents.filter(d => d.status === 'pending' && !(d.documentType === 'pickup_authorization')).length;
-  const totalCount = auction.documents.filter(d => !(d.documentType === 'pickup_authorization' && d.status === 'pending')).length;
+  const visibleDocuments = auction.documents.filter(isVisibleDocument);
+  const signedCount = visibleDocuments.filter(d => d.status === 'signed').length;
+  const pendingCount = visibleDocuments.filter(d => d.status === 'pending').length;
+  const totalCount = visibleDocuments.length;
 
   return (
     <div 
@@ -516,9 +569,7 @@ function AuctionDocumentCard({ auction, onViewAuction, onDownload, isOffline }: 
       {/* Documents Grid - Modern Card Design */}
       <div className="p-6 sm:p-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {auction.documents
-            .filter(doc => !(doc.documentType === 'pickup_authorization' && doc.status === 'pending'))
-            .map((doc) => (
+          {visibleDocuments.map((doc) => (
             <div
               key={doc.id}
               className={`group relative rounded-xl p-5 transition-all duration-300 border-2 ${
@@ -587,7 +638,21 @@ function AuctionDocumentCard({ auction, onViewAuction, onDownload, isOffline }: 
               )}
 
               {/* Action Buttons */}
-              {doc.status === 'signed' && (
+              {doc.status === 'signed' && doc.isReceipt && doc.receiptUrl && (
+                <OfflineAwareButton
+                  onClick={() => onViewReceipt(doc.receiptUrl!)}
+                  className="w-full px-4 py-3 bg-[#800020] hover:bg-[#600018] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[#800020]/20 hover:shadow-lg hover:shadow-[#800020]/30 hover:-translate-y-0.5"
+                  requiresOnline={true}
+                  offlineTooltip="Receipt viewing requires an internet connection"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14h6m-6-4h6m-7 10h8a2 2 0 002-2V7.414a2 2 0 00-.586-1.414l-3.414-3.414A2 2 0 0012.586 2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  View Receipt
+                </OfflineAwareButton>
+              )}
+
+              {doc.status === 'signed' && !doc.isReceipt && (
                 <OfflineAwareButton
                   onClick={() => onDownload(doc.id, doc.title)}
                   className="w-full px-4 py-3 bg-[#800020] hover:bg-[#600018] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[#800020]/20 hover:shadow-lg hover:shadow-[#800020]/30 hover:-translate-y-0.5"

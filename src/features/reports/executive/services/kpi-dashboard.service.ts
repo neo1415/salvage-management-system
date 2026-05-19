@@ -96,8 +96,39 @@ export class KPIDashboardService {
 
     const result = await db.execute(sql`
       WITH revenue_data AS (
-        SELECT 
-          COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as total_revenue,
+        WITH latest_auction_payments AS (
+          SELECT DISTINCT ON (sc.id)
+            p.amount,
+            p.created_at
+          FROM payments p
+          INNER JOIN auctions a ON p.auction_id = a.id
+          INNER JOIN salvage_cases sc ON a.case_id = sc.id
+          WHERE p.status = 'verified'
+            AND p.auction_id IS NOT NULL
+            AND p.created_at >= ${startDate}
+            AND p.created_at <= ${endDate}
+            AND sc.status != 'draft'
+            AND sc.claim_reference NOT LIKE 'TEST%'
+          ORDER BY sc.id, p.created_at DESC
+        ),
+        registration_fees AS (
+          SELECT amount, created_at
+          FROM payments
+          WHERE status = 'verified'
+            AND auction_id IS NULL
+            AND payment_reference LIKE 'REG-%'
+            AND created_at >= ${startDate}
+            AND created_at <= ${endDate}
+        )
+        SELECT COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_revenue
+        FROM (
+          SELECT amount FROM latest_auction_payments
+          UNION ALL
+          SELECT amount FROM registration_fees
+        ) revenue
+      ),
+      recovery_data AS (
+        SELECT
           COALESCE(AVG(CAST(p.amount AS NUMERIC) / NULLIF(CAST(sc.market_value AS NUMERIC), 0) * 100), 0) as avg_recovery_rate,
           COUNT(DISTINCT p.id) as payment_count
         FROM payments p
@@ -106,17 +137,44 @@ export class KPIDashboardService {
         WHERE p.status = 'verified' 
           AND p.created_at >= ${startDate}
           AND p.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
       ),
       previous_revenue AS (
+        WITH latest_auction_payments AS (
+          SELECT DISTINCT ON (sc.id)
+            p.amount,
+            p.created_at
+          FROM payments p
+          INNER JOIN auctions a ON p.auction_id = a.id
+          INNER JOIN salvage_cases sc ON a.case_id = sc.id
+          WHERE p.status = 'verified'
+            AND p.auction_id IS NOT NULL
+            AND p.created_at >= ${startDate}::timestamp - INTERVAL '30 days'
+            AND p.created_at < ${startDate}
+            AND sc.status != 'draft'
+            AND sc.claim_reference NOT LIKE 'TEST%'
+          ORDER BY sc.id, p.created_at DESC
+        ),
+        registration_fees AS (
+          SELECT amount, created_at
+          FROM payments
+          WHERE status = 'verified'
+            AND auction_id IS NULL
+            AND payment_reference LIKE 'REG-%'
+            AND created_at >= ${startDate}::timestamp - INTERVAL '30 days'
+            AND created_at < ${startDate}
+        )
         SELECT COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as prev_revenue
-        FROM payments
-        WHERE status = 'verified'
-          AND created_at >= ${startDate}::timestamp - INTERVAL '30 days'
-          AND created_at < ${startDate}
+        FROM (
+          SELECT amount FROM latest_auction_payments
+          UNION ALL
+          SELECT amount FROM registration_fees
+        ) revenue
       )
       SELECT 
         r.total_revenue,
-        r.avg_recovery_rate,
+        rd.avg_recovery_rate,
         CASE 
           WHEN r.total_revenue > 0 THEN ((r.total_revenue - (r.total_revenue * 0.15)) / r.total_revenue * 100)
           ELSE 0 
@@ -125,7 +183,7 @@ export class KPIDashboardService {
           WHEN p.prev_revenue > 0 THEN ((r.total_revenue - p.prev_revenue) / p.prev_revenue * 100)
           ELSE 0 
         END as revenue_growth
-      FROM revenue_data r, previous_revenue p
+      FROM revenue_data r, recovery_data rd, previous_revenue p
     `);
 
     const row = result[0] as any;
@@ -153,11 +211,12 @@ export class KPIDashboardService {
       ),
       auction_data AS (
         SELECT 
-          COUNT(*) as total_auctions,
-          COUNT(*) FILTER (WHERE status = 'closed' AND current_bidder IS NOT NULL) as successful_auctions
-        FROM auctions
-        WHERE created_at >= ${startDate}
-          AND created_at <= ${endDate}
+          COUNT(DISTINCT a.id) as total_auctions,
+          COUNT(DISTINCT a.id) FILTER (WHERE p.id IS NOT NULL) as successful_auctions
+        FROM auctions a
+        LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
+        WHERE a.created_at >= ${startDate}
+          AND a.created_at <= ${endDate}
       ),
       vendor_data AS (
         SELECT 
@@ -246,14 +305,40 @@ export class KPIDashboardService {
     const endDate = filters.endDate ? new Date(filters.endDate).toISOString() : new Date('2099-12-31').toISOString();
 
     const revenueByMonth = await db.execute(sql`
+      WITH latest_auction_payments AS (
+        SELECT DISTINCT ON (sc.id)
+          p.amount,
+          p.created_at
+        FROM payments p
+        INNER JOIN auctions a ON p.auction_id = a.id
+        INNER JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.created_at >= ${startDate}
+          AND p.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+        ORDER BY sc.id, p.created_at DESC
+      ),
+      registration_fees AS (
+        SELECT amount, created_at
+        FROM payments
+        WHERE status = 'verified'
+          AND auction_id IS NULL
+          AND payment_reference LIKE 'REG-%'
+          AND created_at >= ${startDate}
+          AND created_at <= ${endDate}
+      ),
+      report_revenue AS (
+        SELECT amount, created_at FROM latest_auction_payments
+        UNION ALL
+        SELECT amount, created_at FROM registration_fees
+      )
       SELECT 
-        TO_CHAR(p.created_at, 'YYYY-MM') as month,
-        COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as revenue
-      FROM payments p
-      WHERE p.status = 'verified' 
-        AND p.created_at >= ${startDate}
-        AND p.created_at <= ${endDate}
-      GROUP BY TO_CHAR(p.created_at, 'YYYY-MM')
+        TO_CHAR(created_at, 'YYYY-MM') as month,
+        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as revenue
+      FROM report_revenue
+      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
       ORDER BY month DESC
       LIMIT 12
     `);
@@ -275,10 +360,11 @@ export class KPIDashboardService {
       SELECT 
         TO_CHAR(a.created_at, 'YYYY-MM') as month,
         CASE 
-          WHEN COUNT(*) > 0 THEN (COUNT(*) FILTER (WHERE a.status = 'closed' AND a.current_bidder IS NOT NULL)::NUMERIC / COUNT(*) * 100)
+          WHEN COUNT(DISTINCT a.id) > 0 THEN (COUNT(DISTINCT a.id) FILTER (WHERE p.id IS NOT NULL)::NUMERIC / COUNT(DISTINCT a.id) * 100)
           ELSE 0 
         END as rate
       FROM auctions a
+      LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
       WHERE a.created_at >= ${startDate}
         AND a.created_at <= ${endDate}
       GROUP BY TO_CHAR(a.created_at, 'YYYY-MM')
@@ -341,16 +427,18 @@ export class KPIDashboardService {
         COUNT(DISTINCT b.vendor_id) as unique_bidders,
         COUNT(b.id) as total_bids,
         sc.market_value as starting_bid,
-        a.current_bid as winning_bid,
-        v.business_name as winner_name,
-        a.status
+        COALESCE(p.amount, '0') as winning_bid,
+        COALESCE(v.business_name, winner.full_name) as winner_name,
+        CASE WHEN p.id IS NOT NULL THEN 'sold' ELSE a.status END as status
       FROM auctions a
       JOIN salvage_cases sc ON a.case_id = sc.id
       LEFT JOIN bids b ON a.id = b.auction_id
       LEFT JOIN vendors v ON a.current_bidder = v.id
+      LEFT JOIN users winner ON v.user_id = winner.id
+      LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
       WHERE a.created_at >= ${startDate}
         AND a.created_at <= ${endDate}
-      GROUP BY a.id, sc.claim_reference, sc.market_value, a.current_bid, v.business_name, a.status
+      GROUP BY a.id, sc.claim_reference, sc.market_value, p.id, p.amount, v.business_name, winner.full_name, a.status
       ORDER BY a.created_at DESC
       LIMIT 100
     `);
@@ -388,7 +476,7 @@ export class KPIDashboardService {
     const vendorsResult = await db.execute(sql`
       SELECT 
         v.id,
-        v.business_name,
+        COALESCE(v.business_name, u.full_name, 'Unknown') as business_name,
         v.tier,
         COUNT(DISTINCT b.auction_id) as auctions_participated,
         COUNT(DISTINCT a.id) FILTER (WHERE a.current_bidder = v.id) as auctions_won,
@@ -409,12 +497,13 @@ export class KPIDashboardService {
           ELSE 0
         END as payment_rate
       FROM vendors v
+      LEFT JOIN users u ON v.user_id = u.id
       LEFT JOIN bids b ON v.id = b.vendor_id 
         AND b.created_at >= ${startDate}
         AND b.created_at <= ${endDate}
       LEFT JOIN auctions a ON b.auction_id = a.id AND a.current_bidder = v.id
       LEFT JOIN payments p ON a.id = p.auction_id AND p.vendor_id = v.id
-      GROUP BY v.id, v.business_name, v.tier
+      GROUP BY v.id, v.business_name, u.full_name, v.tier
       HAVING COUNT(DISTINCT b.auction_id) > 0
       ORDER BY total_spent DESC
       LIMIT 50

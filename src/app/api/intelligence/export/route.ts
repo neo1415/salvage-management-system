@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Authorization: Admin only
-    if (session.user.role !== 'admin') {
+    if (session.user.role !== 'system_admin') {
       return NextResponse.json(
         { error: 'Forbidden: Admin access required' },
         { status: 403 }

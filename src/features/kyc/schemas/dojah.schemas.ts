@@ -80,6 +80,52 @@ export const DojahBVNEntitySchema = z.object({
 
 export type DojahBVNEntity = z.infer<typeof DojahBVNEntitySchema>;
 
+export const DojahBVNValidationResultSchema = z.object({
+  status: z.boolean().optional().nullable(),
+  message: z.string().optional().nullable(),
+  entity: z
+    .object({
+      bvn: z
+        .object({
+          value: z.string().optional().nullable(),
+          status: z.boolean().optional().nullable(),
+        })
+        .optional()
+        .nullable(),
+      first_name: z
+        .object({
+          confidence_value: z.number().optional().nullable(),
+          status: z.boolean().optional().nullable(),
+        })
+        .optional()
+        .nullable(),
+      last_name: z
+        .object({
+          confidence_value: z.number().optional().nullable(),
+          status: z.boolean().optional().nullable(),
+        })
+        .optional()
+        .nullable(),
+      middle_name: z
+        .object({
+          confidence_value: z.number().optional().nullable(),
+          status: z.boolean().optional().nullable(),
+        })
+        .optional()
+        .nullable(),
+      dob: z
+        .object({
+          status: z.boolean().optional().nullable(),
+        })
+        .optional()
+        .nullable(),
+    })
+    .optional()
+    .nullable(),
+});
+
+export type DojahBVNValidationResult = z.infer<typeof DojahBVNValidationResultSchema>;
+
 // ---------------------------------------------------------------------------
 // ID document data
 // ---------------------------------------------------------------------------
@@ -111,6 +157,25 @@ export const DojahIDDataSchema = z.object({
 });
 
 export type DojahIDData = z.infer<typeof DojahIDDataSchema>;
+
+const DojahBusinessDataSchema = z.object({
+  business_name: z.string().optional().nullable(),
+  business_type: z.string().optional().nullable(),
+  business_number: z.string().optional().nullable(),
+  business_address: z.string().optional().nullable(),
+  registration_date: z
+    .string()
+    .optional()
+    .nullable()
+    .transform((v) => (v ? toISODate(v) : v)),
+  image_url: z.string().optional().nullable(),
+}).passthrough();
+
+const DojahAddressDataSchema = z.object({
+  status: z.string().optional().nullable(),
+  reference_id: z.string().optional().nullable(),
+  data: z.record(z.unknown()).optional().nullable(),
+}).passthrough();
 
 // ---------------------------------------------------------------------------
 // Full verification result (widget onSuccess / GET /api/v1/kyc/verification)
@@ -189,6 +254,9 @@ export const DojahVerificationResultSchema = z.object({
         })
         .optional()
         .nullable(),
+      business_id: DojahBusinessDataSchema.optional().nullable(),
+      business_data: DojahBusinessDataSchema.optional().nullable(),
+      address: DojahAddressDataSchema.optional().nullable(),
       user_data: z
         .object({
           status: z.boolean().optional().nullable(),

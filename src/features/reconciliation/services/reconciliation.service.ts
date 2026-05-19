@@ -1,6 +1,8 @@
 import { db } from '@/lib/db';
 import { escrowWallets, walletTransactions, reconciliationLogs, unmatchedTransactions, reconciliationAlerts } from '@/lib/db/schema';
 import { sql, eq, and, gte, lte, desc } from 'drizzle-orm';
+import { vendors } from '@/lib/db/schema/vendors';
+import { users } from '@/lib/db/schema/users';
 
 /**
  * Reconciliation Service
@@ -482,27 +484,43 @@ export async function compareWalletVsLedgerBalances(): Promise<{
   matched: number;
   discrepancies: Array<{
     vendorId: string;
+    vendorName: string;
+    vendorEmail: string | null;
     walletBalance: number;
     ledgerBalance: number;
     discrepancy: number;
+    explanation: string;
   }>;
 }> {
   // Get wallet balances from database
-  const wallets = await db.select().from(escrowWallets);
+  const wallets = await db
+    .select({
+      wallet: escrowWallets,
+      vendorBusinessName: vendors.businessName,
+      userFullName: users.fullName,
+      userEmail: users.email,
+    })
+    .from(escrowWallets)
+    .leftJoin(vendors, eq(escrowWallets.vendorId, vendors.id))
+    .leftJoin(users, eq(vendors.userId, users.id));
 
   // Get ledger balances
   const ledgerBalances = await getLedgerVendorBalances();
 
   const discrepancies: Array<{
     vendorId: string;
+    vendorName: string;
+    vendorEmail: string | null;
     walletBalance: number;
     ledgerBalance: number;
     discrepancy: number;
+    explanation: string;
   }> = [];
 
   let matched = 0;
 
-  for (const wallet of wallets) {
+  for (const row of wallets) {
+    const wallet = row.wallet;
     const ledgerBalance = ledgerBalances.byVendor.find(
       v => v.vendorId === wallet.vendorId
     )?.balance || 0;
@@ -514,9 +532,14 @@ export async function compareWalletVsLedgerBalances(): Promise<{
     if (discrepancy > 1.0) {
       discrepancies.push({
         vendorId: wallet.vendorId,
+        vendorName: row.vendorBusinessName || row.userFullName || 'Unknown vendor',
+        vendorEmail: row.userEmail || null,
         walletBalance,
         ledgerBalance,
         discrepancy,
+        explanation: walletBalance > ledgerBalance
+          ? 'Wallet balance is higher than the double-entry ledger. This usually means a wallet update was recorded without a matching ledger entry.'
+          : 'Ledger balance is higher than the wallet balance. This usually means a ledger entry exists without the wallet balance reflecting it.',
       });
     } else {
       matched++;

@@ -137,10 +137,10 @@ export function PaymentDetailsContent({ auctionId }: PaymentDetailsContentProps)
         <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-3" />
         <p className="text-gray-600 text-lg">Auction not found</p>
         <Link
-          href="/finance/payment-transactions"
+          href="/finance/payments"
           className="inline-block mt-4 text-[#800020] hover:underline"
         >
-          Back to Payment Transactions
+          Back to Payments
         </Link>
       </div>
     );

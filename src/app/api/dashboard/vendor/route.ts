@@ -4,6 +4,8 @@ import { db } from '@/lib/db/drizzle';
 import { auctions, bids, payments, vendors, salvageCases, auctionWinners } from '@/lib/db/schema';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
+import { calculateAutoRating } from '@/features/vendors/services/auto-rating.service';
+import { formatRatingLabel } from '@/lib/metrics/dashboard-status';
 
 /**
  * Vendor Dashboard API
@@ -23,6 +25,8 @@ interface PerformanceStats {
   avgPaymentTimeHours: number;
   onTimePickupRate: number;
   rating: number;
+  ratingLabel: string;
+  ratingSource: 'stored' | 'auto' | 'insufficient';
   leaderboardPosition: number;
   totalVendors: number;
   totalBids: number;
@@ -309,7 +313,9 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
     .where(eq(vendors.id, vendorId))
     .limit(1);
 
-  const rating = parseFloat(vendorRecord[0]?.rating || '0');
+  const storedRating = vendorRecord[0]?.rating || '0';
+  const autoRating = await calculateAutoRating(vendorId);
+  const rating = formatRatingLabel(storedRating, autoRating, totalBids + totalVerifiedPayments);
 
   // Calculate leaderboard position
   // Get all vendors ordered by total wins (legacy + deposit system)
@@ -339,7 +345,9 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
     winRate: Math.round(winRate * 100) / 100,
     avgPaymentTimeHours: Math.round(avgPaymentTimeHours * 100) / 100,
     onTimePickupRate: Math.round(onTimePickupRate * 100) / 100,
-    rating: Math.round(rating * 100) / 100,
+    rating: rating.value,
+    ratingLabel: rating.label,
+    ratingSource: rating.source,
     leaderboardPosition: leaderboardPosition > 0 ? leaderboardPosition : totalVendors,
     totalVendors,
     totalBids,

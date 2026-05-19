@@ -80,7 +80,7 @@ async function fetchManagerDashboard(
  * Hook to fetch manager dashboard data with caching
  * 
  * Features:
- * - 5min staleTime: Data stays fresh for 5 minutes (instant navigation)
+ * - Short staleTime: dashboard counts stay close to current operational data
  * - Automatic background refetching on window focus
  * - Exponential backoff retry (3 attempts)
  * - Loading and error states
@@ -94,8 +94,9 @@ export function useManagerDashboard(dateRange = '30', assetType?: string) {
   return useQuery({
     queryKey: ['manager-dashboard', dateRange, assetType],
     queryFn: () => fetchManagerDashboard(dateRange, assetType),
-    // Data stays fresh for 5 minutes - instant navigation from cache
-    staleTime: 5 * 60 * 1000,
+    // Keep dashboard counts fresh enough for demos and live operations.
+    staleTime: 30 * 1000,
+    refetchOnMount: true,
     // Refetch on window focus to keep data fresh
     refetchOnWindowFocus: true,
     // Retry failed requests 3 times with exponential backoff

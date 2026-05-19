@@ -27,6 +27,7 @@ import {
 } from '@/features/notifications/services/notification.service';
 import { generateDocument } from '@/features/documents/services/document.service';
 import { broadcastAuctionClosure, broadcastAuctionUpdate, broadcastAuctionClosing, broadcastDocumentGenerated, broadcastDocumentGenerationComplete } from '@/lib/socket/server';
+import { configService } from '@/features/auction-deposit/services/config.service';
 
 /**
  * Auction closure result
@@ -246,9 +247,12 @@ export class AuctionClosureService {
         };
       }
 
-      // Calculate payment deadline (24 hours from now)
-      const paymentDeadline = new Date();
-      paymentDeadline.setHours(paymentDeadline.getHours() + 24);
+      const config = await configService.getConfig();
+
+      // Initial deadline is for document signing. Payment deadline is reset from
+      // paymentDeadlineAfterSigning when all required documents are signed.
+      const documentDeadline = new Date();
+      documentDeadline.setHours(documentDeadline.getHours() + config.documentValidityPeriod);
 
       // IDEMPOTENCY CHECK: Check if payment already exists for this auction
       const [existingPayment] = await db
@@ -285,7 +289,7 @@ export class AuctionClosureService {
             escrowStatus,
             paymentReference: reference,
             status: 'pending',
-            paymentDeadline,
+            paymentDeadline: documentDeadline,
             autoVerified: false,
           })
           .returning();
@@ -479,7 +483,7 @@ export class AuctionClosureService {
       });
 
       // STEP 7: Send notifications to winner (async, don't wait)
-      this.notifyWinner(user, vendor, auction, salvageCase, payment, paymentDeadline).catch(
+      this.notifyWinner(user, vendor, auction, salvageCase, payment, documentDeadline).catch(
         async (error) => {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           const stackTrace = error instanceof Error ? error.stack : undefined;
@@ -762,6 +766,26 @@ export class AuctionClosureService {
       
       // Broadcast document generation complete
       if (successCount === totalCount) {
+        const config = await configService.getConfig();
+        const validityDeadline = new Date();
+        validityDeadline.setHours(validityDeadline.getHours() + config.documentValidityPeriod);
+
+        const { releaseForms } = await import('@/lib/db/schema/release-forms');
+        await db
+          .update(releaseForms)
+          .set({
+            validityDeadline,
+            originalDeadline: validityDeadline,
+            extensionCount: 0,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(releaseForms.auctionId, auctionId),
+              eq(releaseForms.vendorId, vendorId)
+            )
+          );
+
         try {
           await broadcastDocumentGenerationComplete(auctionId, totalCount);
         } catch (broadcastError) {
@@ -824,7 +848,7 @@ export class AuctionClosureService {
    * @param auction - Auction details
    * @param salvageCase - Salvage case details
    * @param payment - Payment details
-   * @param paymentDeadline - Payment deadline
+   * @param paymentDeadline - Document signing deadline
    */
   private async notifyWinner(
     user: typeof users.$inferSelect,
@@ -851,6 +875,7 @@ export class AuctionClosureService {
       await smsService.sendSMS({
         to: user.phone,
         message: smsMessage,
+        category: 'auction_won',
       });
 
       // Send Email notification with link to sign documents
@@ -952,6 +977,10 @@ export class AuctionClosureService {
     auctionDetailsUrl: string
   ): string {
     const formattedAmount = winningBid.toLocaleString();
+    const deadlineHours = Math.max(
+      1,
+      Math.round((paymentDeadline.getTime() - Date.now()) / (1000 * 60 * 60))
+    );
     const deadlineFormatted = paymentDeadline.toLocaleString('en-NG', {
       weekday: 'long',
       year: 'numeric',
@@ -1157,7 +1186,7 @@ export class AuctionClosureService {
                   <li><strong>Release & Waiver of Liability</strong></li>
                 </ul>
                 <p style="margin: 10px 0 0 0; font-weight: 600; color: #856404;">
-                  All documents must be signed within 24 hours!
+                  All documents must be signed within ${deadlineHours} hours!
                 </p>
               </div>
               
@@ -1166,7 +1195,7 @@ export class AuctionClosureService {
               </div>
               
               <div class="important-note">
-                <strong>⚠️ Important:</strong> Failure to sign all documents within 24 hours will result in:
+                <strong>⚠️ Important:</strong> Failure to sign all documents within ${deadlineHours} hours will result in:
                 <ul style="margin: 10px 0 0 0; padding-left: 20px;">
                   <li>Forfeiture of your winning bid</li>
                   <li>Item will be re-listed for auction</li>

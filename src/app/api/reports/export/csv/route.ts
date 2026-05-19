@@ -91,14 +91,24 @@ function generateCSV(reportType: string, data: any, filters: any): string {
   }
 }
 
+function csvValue(value: any): string {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function csvRow(values: any[]): string {
+  return `${values.map(csvValue).join(',')}\n`;
+}
+
 function generatePaymentAnalyticsCSV(csv: string, data: any): string {
   // Summary metrics
   csv += 'SUMMARY METRICS\n';
   csv += 'Metric,Value\n';
-  csv += `Total Payments,${data.summary?.totalPayments || 0}\n`;
-  csv += `Total Amount,${data.summary?.totalAmount || 0}\n`;
-  csv += `Success Rate,${data.summary?.successRate || 0}%\n`;
-  csv += `Average Payment Time,${data.summary?.averagePaymentTime || 0} hours\n`;
+  csv += csvRow(['Total Payments', data.summary?.totalPayments || 0]);
+  csv += csvRow(['Verified Payment Amount', data.summary?.totalAmount || 0]);
+  csv += csvRow(['Success Rate', `${data.summary?.successRate || 0}%`]);
+  csv += csvRow(['Average Payment Time', `${data.summary?.averagePaymentTime || 0} hours`]);
   csv += '\n';
 
   // Payment method breakdown
@@ -106,8 +116,9 @@ function generatePaymentAnalyticsCSV(csv: string, data: any): string {
     csv += 'PAYMENT METHOD BREAKDOWN\n';
     csv += 'Method,Count,Total Amount,Percentage,Success Rate\n';
     data.byMethod.forEach((method: any) => {
-      csv += `${method.method || 'Unknown'},${method.count || 0},${method.totalAmount || 0},${method.percentage || 0}%,${method.successRate || 0}%\n`;
+      csv += csvRow([method.method || 'Unknown', method.count || 0, method.totalAmount || 0, `${method.percentage || 0}%`, `${method.successRate || 0}%`]);
     });
+    csv += csvRow(['TOTAL', data.byMethod.reduce((sum: number, m: any) => sum + (m.count || 0), 0), data.byMethod.reduce((sum: number, m: any) => sum + (m.totalAmount || 0), 0), '100%', '']);
     csv += '\n';
   }
 
@@ -116,8 +127,9 @@ function generatePaymentAnalyticsCSV(csv: string, data: any): string {
     csv += 'PAYMENT STATUS BREAKDOWN\n';
     csv += 'Status,Count,Total Amount,Percentage\n';
     data.byStatus.forEach((status: any) => {
-      csv += `${status.status || 'Unknown'},${status.count || 0},${status.totalAmount || 0},${status.percentage || 0}%\n`;
+      csv += csvRow([status.status || 'Unknown', status.count || 0, status.totalAmount || 0, `${status.percentage || 0}%`]);
     });
+    csv += csvRow(['TOTAL', data.byStatus.reduce((sum: number, s: any) => sum + (s.count || 0), 0), data.byStatus.reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0), '100%']);
     csv += '\n';
   }
 
@@ -302,17 +314,35 @@ function generateCaseProcessingCSV(csv: string, data: any): string {
   csv += 'CASE PROCESSING METRICS\n';
   csv += 'Metric,Value\n';
   if (data.summary) {
-    csv += `Total Cases,${data.summary.totalCases || 0}\n`;
-    csv += `Average Processing Time,${data.summary.avgProcessingTime || 0} hours\n`;
-    csv += `Approval Rate,${data.summary.approvalRate || 0}%\n`;
+    csv += csvRow(['Total Cases', data.summary.totalCases || 0]);
+    csv += csvRow(['Average Processing Time', `${data.summary.averageProcessingTimeDays || 0} days`]);
+    csv += csvRow(['Approval Rate', `${data.summary.approvalRate || 0}%`]);
+    csv += csvRow(['Pending Cases', data.summary.pendingCases || 0]);
+    csv += csvRow(['Approved Cases', data.summary.approvedCases || 0]);
+    csv += csvRow(['Active Auction Cases', data.summary.activeAuctionCases || 0]);
+    csv += csvRow(['Awaiting Payment Cases', data.summary.awaitingPaymentCases || 0]);
+    csv += csvRow(['Sold Cases', data.summary.soldCases || 0]);
+    csv += csvRow(['Total Market Value', data.summary.totalMarketValue || 0]);
+    csv += csvRow(['Total Salvage Value', data.summary.totalSalvageValue || 0]);
   }
   csv += '\n';
 
-  if (data.cases && data.cases.length > 0) {
-    csv += 'CASE DETAILS\n';
-    csv += 'Claim Reference,Adjuster,Asset Type,Status,Processing Time,Created Date\n';
-    data.cases.forEach((c: any) => {
-      csv += `${c.claimReference || ''},"${c.adjusterName || ''}",${c.assetType || ''},${c.status || ''},${c.processingTime || 0},${c.createdAt || ''}\n`;
+  if (data.byStatus && data.byStatus.length > 0) {
+    csv += 'STATUS BREAKDOWN\n';
+    csv += 'Status,Count,Percentage\n';
+    data.byStatus.forEach((s: any) => {
+      csv += csvRow([s.status || 'Unknown', s.count || 0, `${s.percentage || 0}%`]);
+    });
+    csv += '\n';
+  }
+
+  if (data.byAssetType && data.byAssetType.length > 0) {
+    csv += 'CASE DETAILS BY ASSET TYPE\n';
+    csv += 'Asset Type,Claim Reference,Status,Market Value,Salvage Value,Processing Days,Created Date\n';
+    data.byAssetType.forEach((asset: any) => {
+      (asset.cases || []).forEach((c: any) => {
+        csv += csvRow([asset.assetType || 'Unknown', c.claimReference || '', c.status || '', c.marketValue || 0, c.salvageValue || 0, c.processingDays || 0, c.createdAt || '']);
+      });
     });
   }
 
@@ -344,18 +374,32 @@ function generateAuctionPerformanceCSV(csv: string, data: any): string {
   csv += 'AUCTION PERFORMANCE METRICS\n';
   csv += 'Metric,Value\n';
   if (data.summary) {
-    csv += `Total Auctions,${data.summary.totalAuctions || 0}\n`;
-    csv += `Success Rate,${data.summary.successRate || 0}%\n`;
-    csv += `Average Bids per Auction,${data.summary.avgBidsPerAuction || 0}\n`;
+    csv += csvRow(['Total Auctions', data.summary.totalAuctions || 0]);
+    csv += csvRow(['Success Rate', `${data.summary.successRate || 0}%`]);
+    csv += csvRow(['Average Bids per Auction', data.summary.averageBidsPerAuction || 0]);
+    csv += csvRow(['Average Unique Bidders', data.summary.averageUniqueBidders || 0]);
+    csv += csvRow(['Reserve Met Rate', `${data.summary.reserveMetRate || 0}%`]);
+    csv += csvRow(['Verified Auction Revenue', data.summary.totalRevenue || 0]);
+    csv += csvRow(['Average Winning Bid', data.summary.averageWinningBid || 0]);
   }
   csv += '\n';
 
-  if (data.auctions && data.auctions.length > 0) {
-    csv += 'AUCTION DETAILS\n';
-    csv += 'Case Reference,Starting Bid,Winning Bid,Bidders,Total Bids,Status\n';
-    data.auctions.forEach((a: any) => {
-      csv += `${a.caseReference || ''},${a.startingBid || 0},${a.winningBid || 0},${a.uniqueBidders || 0},${a.totalBids || 0},${a.status || ''}\n`;
+  if (data.byStatus && data.byStatus.length > 0) {
+    csv += 'STATUS BREAKDOWN\n';
+    csv += 'Status,Count,Percentage\n';
+    data.byStatus.forEach((s: any) => {
+      csv += csvRow([s.status || 'Unknown', s.count || 0, `${s.percentage || 0}%`]);
     });
+    csv += '\n';
+  }
+
+  if (data.auctionList && data.auctionList.length > 0) {
+    csv += 'AUCTION DETAILS\n';
+    csv += 'Auction ID,Claim Reference,Asset Type,Start Time,End Time,Duration Hours,Reserve Price,Winning Bid,Unique Bidders,Total Bids,Status,Successful\n';
+    data.auctionList.forEach((a: any) => {
+      csv += csvRow([a.auctionId || '', a.claimReference || '', a.assetType || '', a.startTime || '', a.endTime || '', a.durationHours || 0, a.reservePrice || 0, a.winningBid || 0, a.uniqueBidders || 0, a.bidCount || 0, a.status || '', a.isSuccessful ? 'Yes' : 'No']);
+    });
+    csv += csvRow(['TOTAL', '', '', '', '', '', '', data.auctionList.reduce((sum: number, a: any) => sum + (a.winningBid || 0), 0), '', data.auctionList.reduce((sum: number, a: any) => sum + (a.bidCount || 0), 0), '', '']);
   }
 
   return csv;

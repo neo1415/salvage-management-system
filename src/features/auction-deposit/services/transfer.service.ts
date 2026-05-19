@@ -20,7 +20,7 @@ import { eq, and, isNull } from 'drizzle-orm';
 
 export interface TransferForfeitedFundsParams {
   auctionId: string;
-  transferredBy: string; // Finance Officer user ID
+  transferredBy?: string; // Finance Officer user ID; omitted for automated cron transfers
 }
 
 export interface TransferForfeitedFundsResult {
@@ -35,8 +35,7 @@ export interface TransferForfeitedFundsResult {
  * Handles transfer of forfeited deposits to platform account
  */
 export class TransferService {
-  // Platform account ID - this should be configurable in production
-  private readonly PLATFORM_ACCOUNT_ID = 'platform-account-id';
+  private readonly PLATFORM_ACCOUNT_ID = 'nem-company-pool';
 
   /**
    * Transfer forfeited funds from vendor to platform account
@@ -138,47 +137,6 @@ export class TransferService {
         })
         .where(eq(escrowWallets.vendorId, vendorId));
 
-      // Get or create platform account wallet
-      let [platformWallet] = await tx
-        .select()
-        .from(escrowWallets)
-        .where(eq(escrowWallets.id, this.PLATFORM_ACCOUNT_ID))
-        .for('update')
-        .limit(1);
-
-      if (!platformWallet) {
-        // Create platform wallet if it doesn't exist
-        [platformWallet] = await tx
-          .insert(escrowWallets)
-          .values({
-            id: this.PLATFORM_ACCOUNT_ID,
-            vendorId: this.PLATFORM_ACCOUNT_ID, // Special case for platform account
-            balance: '0.00',
-            availableBalance: '0.00',
-            frozenAmount: '0.00',
-            forfeitedAmount: '0.00',
-          })
-          .returning();
-      }
-
-      // Parse platform wallet values
-      const platformBalance = parseFloat(platformWallet.balance);
-      const platformAvailable = parseFloat(platformWallet.availableBalance);
-
-      // Calculate new platform wallet values (increase balance and available)
-      const newPlatformBalance = platformBalance + forfeitedAmount;
-      const newPlatformAvailable = platformAvailable + forfeitedAmount;
-
-      // Update platform wallet (increase balance and available)
-      await tx
-        .update(escrowWallets)
-        .set({
-          balance: newPlatformBalance.toFixed(2),
-          availableBalance: newPlatformAvailable.toFixed(2),
-          updatedAt: new Date(),
-        })
-        .where(eq(escrowWallets.id, this.PLATFORM_ACCOUNT_ID));
-
       // Record transaction in wallet_transactions
       const [transaction] = await tx
         .insert(walletTransactions)
@@ -192,22 +150,12 @@ export class TransferService {
         })
         .returning();
 
-      // Record platform account credit transaction
-      await tx.insert(walletTransactions).values({
-        walletId: platformWallet.id,
-        type: 'credit',
-        amount: forfeitedAmount.toFixed(2),
-        balanceAfter: newPlatformBalance.toFixed(2),
-        reference: `forfeiture_transfer_${auctionId}`,
-        description: `Forfeited deposit received from vendor ${vendorId} for auction ${auctionId}`,
-      });
-
       // Update forfeiture record with transfer details
       await tx
         .update(depositForfeitures)
         .set({
           transferredAt: new Date(),
-          transferredBy,
+          transferredBy: transferredBy || null,
         })
         .where(eq(depositForfeitures.id, forfeitureRecord.id));
 

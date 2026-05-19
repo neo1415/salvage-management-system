@@ -73,6 +73,10 @@ export async function GET(request: NextRequest) {
           count: notifications.length,
         },
       },
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      },
     });
   } catch (error) {
     console.error('Error fetching notifications:', error);
@@ -106,7 +110,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is admin/system
-    const isAdmin = session.user.role === 'system_admin' || session.user.role === 'admin';
+    const isAdmin = session.user.role === 'system_admin';
     if (!isAdmin) {
       return NextResponse.json(
         { status: 'error', error: { code: 'FORBIDDEN', message: 'Admin access required' } },

@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getWatchingCount } from '@/features/auctions/services/watching.service';
+import { cleanupExpiredViewers, getWatchingCount } from '@/features/auctions/services/watching.service';
 
 export async function GET(
   _request: NextRequest,
@@ -14,6 +14,10 @@ export async function GET(
 ) {
   try {
     const { id: auctionId } = await context.params;
+
+    // Remove expired viewers before returning the count so stale browser sessions
+    // do not inflate the number shown in the auction UI.
+    await cleanupExpiredViewers(auctionId);
 
     // Get watching count from Redis
     const count = await getWatchingCount(auctionId);

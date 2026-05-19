@@ -87,6 +87,8 @@ export class FinancialDataRepository {
         AND p.created_at <= ${endDate}::timestamp
         AND p.status = 'verified'
         AND p.auction_id IS NOT NULL
+        AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
       ORDER BY sc.id, p.created_at DESC
     `) as any[];
 
@@ -136,10 +138,6 @@ export class FinancialDataRepository {
     );
     if (dateCondition) conditions.push(dateCondition);
 
-    // Only auction payments (exclude wallet deposits, etc.)
-    // This ensures consistency with vendor spending and salvage recovery
-    conditions.push(sql`${payments.auctionId} IS NOT NULL`);
-
     // Status filter
     if (filters.status && filters.status.length > 0) {
       const validStatuses = filters.status.filter((status): status is 'pending' | 'verified' | 'rejected' | 'overdue' =>
@@ -166,11 +164,13 @@ export class FinancialDataRepository {
         createdAt: payments.createdAt,
         verifiedAt: payments.verifiedAt,
         vendorId: payments.vendorId,
-        vendorName: vendors.businessName,
+        vendorBusinessName: vendors.businessName,
+        userFullName: sql<string>`u.full_name`,
         auctionId: payments.auctionId,
       })
       .from(payments)
       .leftJoin(vendors, eq(payments.vendorId, vendors.id))
+      .leftJoin(sql`users u`, sql`${vendors.userId} = u.id`)
       .where(whereClause)
       .orderBy(desc(payments.createdAt));
 
@@ -190,7 +190,7 @@ export class FinancialDataRepository {
         verifiedAt: row.verifiedAt,
         processingTimeHours,
         vendorId: row.vendorId,
-        vendorName: row.vendorName || 'Unknown',
+        vendorName: row.vendorBusinessName || row.userFullName || 'Unknown',
         auctionId: row.auctionId,
       };
     });
@@ -210,8 +210,10 @@ export class FinancialDataRepository {
     );
     if (dateCondition) conditions.push(dateCondition);
 
-    // Only registration fee payments (no auction ID)
+    // Only registration fee payments (no auction ID and registration reference).
+    // Other no-auction payments can be wallet/deposit noise and must not inflate revenue.
     conditions.push(sql`${payments.auctionId} IS NULL`);
+    conditions.push(sql`${payments.paymentReference} LIKE 'REG-%'`);
 
     // Status filter
     if (filters.status && filters.status.length > 0) {

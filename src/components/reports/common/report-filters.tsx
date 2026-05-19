@@ -89,7 +89,7 @@ export function ReportFiltersComponent({
                 className="w-full justify-start text-left font-normal min-w-[240px]"
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {filters.startDate ? format(filters.startDate, 'PPP') : 'Pick a date'}
+                {filters.startDate ? format(filters.startDate, 'PPP') : 'All time'}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0 bg-white min-w-[280px]" align="start">
@@ -114,7 +114,7 @@ export function ReportFiltersComponent({
                 className="w-full justify-start text-left font-normal min-w-[240px]"
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {filters.endDate ? format(filters.endDate, 'PPP') : 'Pick a date'}
+                {filters.endDate ? format(filters.endDate, 'PPP') : 'All time'}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0 bg-white min-w-[280px]" align="start">

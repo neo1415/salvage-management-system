@@ -17,7 +17,6 @@ import { ReportFiltersComponent, ReportFilters } from '@/components/reports/comm
 import { ExportButton } from '@/components/reports/common/export-button';
 import { RevenueAnalysisReport } from '@/components/reports/financial/revenue-analysis-report';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { subDays } from 'date-fns';
 
 export default function RevenueAnalysisPage() {
   const { data: session } = useSession();
@@ -27,8 +26,8 @@ export default function RevenueAnalysisPage() {
   const [reportData, setReportData] = useState<any>(null);
   
   const [filters, setFilters] = useState<ReportFilters>({
-    startDate: subDays(new Date(), 30),
-    endDate: new Date(),
+    startDate: undefined,
+    endDate: undefined,
     groupBy: 'month',
   });
 
@@ -71,8 +70,8 @@ export default function RevenueAnalysisPage() {
 
   const handleResetFilters = () => {
     setFilters({
-      startDate: subDays(new Date(), 30),
-      endDate: new Date(),
+      startDate: undefined,
+    endDate: undefined,
       groupBy: 'month',
     });
     setTimeout(() => fetchReport(), 100);

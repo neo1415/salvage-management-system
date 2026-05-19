@@ -80,9 +80,11 @@ export async function incrementWatchingCount(
 ): Promise<number> {
   try {
     const watchingKey = `${WATCHING_KEY_PREFIX}${auctionId}`;
+    const viewerKey = `${VIEWER_KEY_PREFIX}${auctionId}:${vendorId}`;
 
     // Add vendor to watching set (Redis SET automatically handles duplicates)
     await kv.sadd(watchingKey, vendorId);
+    await kv.set(viewerKey, Date.now(), { ex: 300 });
 
     // Set expiry on watching set (24 hours for persistence across page refreshes)
     await kv.expire(watchingKey, 86400);

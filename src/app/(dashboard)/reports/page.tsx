@@ -105,13 +105,6 @@ const REPORT_CATEGORIES: ReportCategory[] = [
         icon: BarChart3,
       },
       {
-        id: 'document-management',
-        name: 'Document Management',
-        description: 'Document completion and signing rates',
-        path: '/reports/operational/document-management',
-        icon: FileText,
-      },
-      {
         id: 'vendor-performance',
         name: 'Vendor Performance',
         description: 'Rankings, win rates, and compliance',

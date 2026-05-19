@@ -15,22 +15,6 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   
-  // API configuration - increase body size limit for file uploads
-  // KYC documents can be up to 5MB each, with 5 files = 25MB max
-  // Adding buffer for form data overhead = 30MB
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '30mb',
-    },
-  },
-  
-  // Increase API route body size limit
-  api: {
-    bodyParser: {
-      sizeLimit: '30mb',
-    },
-  },
-  
   // Performance optimizations
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
@@ -96,7 +80,7 @@ const nextConfig: NextConfig = {
               "font-src 'self' data: https://checkout.paystack.com https://*.paystack.com",
               "connect-src 'self' https://api.paystack.co https://checkout.paystack.com https://*.paystack.com https://api.flutterwave.com https://api.cloudinary.com https://res.cloudinary.com https://*.cloudinary.com https://nominatim.openstreetmap.org https://widget.dojah.io https://identity.dojah.io https://api.dojah.io https://*.dojah.io https://www.googleapis.com",
               "frame-src 'self' https://js.paystack.co https://checkout.paystack.com https://*.paystack.com https://checkout.flutterwave.com https://widget.dojah.io https://identity.dojah.io https://*.dojah.io https://res.cloudinary.com https://*.cloudinary.com https://www.google.com https://maps.google.com",
-              "media-src 'self' https://res.cloudinary.com",
+              "media-src 'self' blob: https://res.cloudinary.com https://widget.dojah.io https://identity.dojah.io https://*.dojah.io",
               "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self' https://api.paystack.co https://api.flutterwave.com",
@@ -123,7 +107,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=*, microphone=*, geolocation=(self), payment=(self)',
+            value: 'camera=(self "https://identity.dojah.io" "https://widget.dojah.io"), microphone=(self "https://identity.dojah.io" "https://widget.dojah.io"), fullscreen=(self "https://identity.dojah.io" "https://widget.dojah.io"), geolocation=(self), payment=(self)',
           },
           {
             key: 'X-DNS-Prefetch-Control',

@@ -25,7 +25,8 @@ import { depositNotificationService } from './deposit-notification.service';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { pushNotificationService } from '@/features/notifications/services/push.service';
-import { createNotification } from '@/features/notifications/services/notification.service';
+import { createNotification, createRoleNotifications } from '@/features/notifications/services/notification.service';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 export interface PaymentBreakdown {
   finalBid: number;
@@ -705,6 +706,21 @@ export class PaymentService {
       console.log(`✅ Auction cache invalidated`);
       
       console.log(`✅ Payment processing complete for auction ${auctionId}`);
+      try {
+        await createRoleNotifications(['finance_officer', 'system_admin'], {
+          type: 'payment_success',
+          title: 'Auction Payment Confirmed',
+          message: `${vendor.businessName || user.fullName} paid ₦${paymentInfo.amount.toLocaleString()} for ${assetName}.`,
+          data: {
+            auctionId: paymentInfo.auctionId,
+            vendorId: vendor.id,
+            amount: paymentInfo.amount,
+            url: '/finance/payments',
+          },
+        });
+      } catch (staffNotifError) {
+        console.error('Staff payment notification error (non-blocking):', staffNotifError);
+      }
     } catch (error) {
       // CRITICAL: Fund release failed - rollback payment verification
       console.error(`❌ CRITICAL: Fund release failed, rolling back payment verification`);
@@ -788,7 +804,9 @@ export class PaymentService {
         .select({
           id: auctions.id,
           caseId: auctions.caseId,
-          assetName: salvageCases.assetType,
+          assetType: salvageCases.assetType,
+          assetDetails: salvageCases.assetDetails,
+          claimReference: salvageCases.claimReference,
           locationName: salvageCases.locationName,
         })
         .from(auctions)
@@ -796,7 +814,13 @@ export class PaymentService {
         .where(eq(auctions.id, paymentInfo.auctionId))
         .limit(1);
       
-      const assetName = auction?.assetName || 'auction item';
+      const assetName = auction
+        ? formatAssetName(
+            auction.assetType || 'salvage item',
+            auction.assetDetails as Record<string, unknown>,
+            auction.claimReference
+          )
+        : 'auction item';
       const locationName = auction?.locationName || 'TBD';
       
       // Send SMS with pickup code (wrapped in try-catch to prevent blocking)
@@ -805,6 +829,7 @@ export class PaymentService {
           await smsService.sendSMS({
             to: user.phone,
             message: `NEM Salvage: Payment confirmed! Pickup code: ${pickupAuthCode}. Location: ${locationName}. Deadline: 48 hours. Bring valid ID.`,
+            category: 'pickup_code',
           });
           console.log(`✅ Pickup authorization SMS sent to ${user.phone}`);
         }

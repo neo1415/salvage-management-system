@@ -43,7 +43,7 @@ export async function GET(
     }
 
     // Authorization: Allow both system_admin and admin roles
-    if (session.user.role !== 'system_admin' && session.user.role !== 'admin') {
+    if (session.user.role !== 'system_admin') {
       return NextResponse.json(
         { error: 'Forbidden: Admin access required' },
         { status: 403 }

@@ -22,7 +22,7 @@ import {
   releaseFormDocuments,
   vendors
 } from '@/lib/db/schema';
-import { eq, desc, or } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 
 interface TimelineEvent {
   id: string;
@@ -53,7 +53,7 @@ export async function GET(
     }
 
     // RBAC: Verify user is authorized
-    const authorizedRoles = ['finance_officer', 'manager', 'admin'];
+    const authorizedRoles = ['finance_officer', 'salvage_manager', 'system_admin'];
     const isAuthorized = authorizedRoles.includes(session.user.role || '');
 
     // If vendor, verify they participated in auction
@@ -71,7 +71,10 @@ export async function GET(
 
       // Check if vendor has bids in this auction
       const vendorBid = await db.query.bids.findFirst({
-        where: eq(bids.auctionId, auctionId),
+        where: and(
+          eq(bids.auctionId, auctionId),
+          eq(bids.vendorId, vendor.id)
+        ),
       });
 
       if (!vendorBid) {

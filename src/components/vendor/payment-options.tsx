@@ -46,6 +46,9 @@ export function PaymentOptions({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const formatAmount = (value: number | null | undefined) =>
+    Number(value || 0).toLocaleString();
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -506,7 +509,7 @@ export function PaymentOptions({
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Total Paid:</span>
                   <span className="text-2xl font-bold text-green-600">
-                    ₦{successData.totalPaid.toLocaleString()}
+                    ₦{formatAmount(successData.totalPaid)}
                   </span>
                 </div>
                 <div className="border-t border-gray-300 pt-3 space-y-2">
@@ -514,14 +517,14 @@ export function PaymentOptions({
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-gray-600">Via Paystack:</span>
                       <span className="font-semibold text-gray-900">
-                        ₦{successData.paystackAmount.toLocaleString()}
+                        ₦{formatAmount(successData.paystackAmount)}
                       </span>
                     </div>
                   )}
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-600">From Deposit:</span>
                     <span className="font-semibold text-gray-900">
-                      ₦{successData.depositAmount.toLocaleString()}
+                      ₦{formatAmount(successData.depositAmount)}
                     </span>
                   </div>
                 </div>

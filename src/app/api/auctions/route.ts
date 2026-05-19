@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const assetType = searchParams.get('assetType') || '';
     const priceMin = searchParams.get('priceMin') || '';
     const priceMax = searchParams.get('priceMax') || '';
-    const sortBy = searchParams.get('sortBy') || 'ending_soon';
+    const sortBy = searchParams.get('sortBy') || 'newest';
     const location = searchParams.get('location') || '';
     const search = searchParams.get('search') || '';
     const tab = searchParams.get('tab') || 'active';

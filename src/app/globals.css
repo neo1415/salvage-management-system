@@ -101,6 +101,38 @@ img {
   animation: ripple 600ms ease-out;
 }
 
+/* Report pages are dense and chart-heavy; keep them mobile-safe by default. */
+[data-report-content],
+[data-report-content] * {
+  min-width: 0;
+}
+
+[data-report-content] canvas {
+  max-width: 100% !important;
+}
+
+[data-report-content] .recharts-wrapper,
+[data-report-content] .chartjs-render-monitor {
+  max-width: 100% !important;
+}
+
+@media (max-width: 640px) {
+  [data-report-content] .grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  [data-report-content] table {
+    min-width: 720px;
+  }
+
+  [data-report-content] .text-2xl,
+  [data-report-content] .text-3xl {
+    font-size: clamp(1.125rem, 7vw, 1.5rem) !important;
+    line-height: 1.15 !important;
+    overflow-wrap: anywhere;
+  }
+}
+
 
 /* Print Styles for PDF Export */
 @media print {

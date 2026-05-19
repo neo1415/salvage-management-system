@@ -3,12 +3,12 @@
 /**
  * Export Button Component
  * 
- * Reusable export button with dropdown for PDF, Excel, CSV formats
+ * Reusable export button with dropdown for PDF and CSV formats
  */
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Download, FileText, FileSpreadsheet, FileCode } from 'lucide-react';
+import { Download, FileText, FileCode } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -25,13 +25,7 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
   const [showMenu, setShowMenu] = useState(false);
   const { error: showError, success: showSuccess } = useToast();
 
-  const handleExport = async (format: 'pdf' | 'excel' | 'csv' | 'print') => {
-    // Handle browser print separately
-    if (format === 'print') {
-      window.print();
-      return;
-    }
-
+  const handleExport = async (format: 'pdf' | 'csv') => {
     setIsExporting(true);
     setShowMenu(false);
 
@@ -43,7 +37,7 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
         return;
       }
 
-      // For Excel and CSV
+      // CSV export is generated server-side so downloaded files contain full report data.
       const response = await fetch(`/api/reports/export/${format}`, {
         method: 'POST',
         headers: {
@@ -65,7 +59,7 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${reportType}-${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : format}`;
+      a.download = `${reportType}-${new Date().toISOString().split('T')[0]}.${format}`;
       a.click();
       window.URL.revokeObjectURL(url);
       showSuccess('Success', `Report exported as ${format.toUpperCase()}`);
@@ -111,6 +105,7 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
 
       // Create PDF
       const imgData = canvas.toDataURL('image/png');
+      const logoData = await loadImageAsDataUrl('/icons/Nem-insurance-Logo.jpg');
       
       // A4 dimensions in mm
       const pdfWidth = 210;
@@ -222,6 +217,46 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
         
         // Move position for next page
         position += contentHeight;
+
+        // Mask page chrome areas and redraw them after the report image so long
+        // content never overlaps the letterhead or footer on later pages.
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, 0, pdfWidth, contentTop, 'F');
+        pdf.rect(0, pdfHeight - footerHeight, pdfWidth, footerHeight, 'F');
+
+        pdf.setFillColor(128, 0, 32);
+        pdf.rect(0, 0, pdfWidth, letterheadHeight, 'F');
+
+        if (logoData) {
+          pdf.addImage(logoData, 'JPEG', marginLeft, 6, 18, 18);
+        }
+
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(20);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('NEM Insurance Plc', pdfWidth / 2, 12, { align: 'center' });
+
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text('199, Ikorodu Road, Obanikoro Lagos', pdfWidth / 2, 20, { align: 'center' });
+
+        pdf.setFontSize(8);
+        pdf.text('Call Us: 234-02-014489560 | E-mail: nemsupport@nem-insurance.com', pdfWidth / 2, 27, { align: 'center' });
+
+        if (pageNum === 1) {
+          pdf.setTextColor(0, 0, 0);
+          pdf.setFontSize(14);
+          pdf.setFont('helvetica', 'bold');
+          const reportTitle = reportType.split('-').map(word =>
+            word.charAt(0).toUpperCase() + word.slice(1)
+          ).join(' ');
+          pdf.text(reportTitle, pdfWidth / 2, 42, { align: 'center' });
+
+          pdf.setFontSize(10);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(100, 100, 100);
+          pdf.text(`Generated on: ${currentDate}`, pdfWidth / 2, 48, { align: 'center' });
+        }
         
         // Add footer with page numbers
         pdf.setFontSize(9);
@@ -250,6 +285,22 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
     }
   };
 
+  const loadImageAsDataUrl = async (url: string): Promise<string | null> => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  };
+
   return (
     <div className="relative">
       <Button
@@ -275,24 +326,6 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
                 <div className="font-medium">Export as PDF</div>
                 <div className="text-xs text-gray-500">Professional format with letterhead</div>
               </div>
-            </button>
-            <button
-              onClick={() => handleExport('print')}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-            >
-              <FileText className="h-4 w-4 text-blue-600" />
-              <div>
-                <div className="font-medium">Print to PDF</div>
-                <div className="text-xs text-gray-500">Use browser print dialog</div>
-              </div>
-            </button>
-            <div className="border-t border-gray-200 my-1"></div>
-            <button
-              onClick={() => handleExport('excel')}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-            >
-              <FileSpreadsheet className="h-4 w-4 text-green-600" />
-              Export as Excel
             </button>
             <button
               onClick={() => handleExport('csv')}

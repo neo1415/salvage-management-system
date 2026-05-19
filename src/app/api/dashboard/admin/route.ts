@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { users, vendors, auditLogs, auctions } from '@/lib/db/schema';
+import { users, auditLogs, auctions } from '@/lib/db/schema';
+import { fraudAlerts } from '@/lib/db/schema/intelligence';
 import { eq, and, gte, lt, sql, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user is Admin
-    if (session.user.role !== 'system_admin' && session.user.role !== 'admin') {
+    if (session.user.role !== 'system_admin') {
       return NextResponse.json(
         { error: 'Forbidden - Admin access required' },
         { status: 403 }
@@ -125,7 +126,14 @@ async function calculateAdminStats(): Promise<DashboardStats> {
   }
   
   // Count pending fraud alerts (flagged but not dismissed)
-  const pendingFraudAlerts = flaggedAuctionIds.filter(id => !dismissedAuctionIds.has(id)).length;
+  const pendingAuditFraudAlerts = flaggedAuctionIds.filter(id => !dismissedAuctionIds.has(id)).length;
+
+  const intelligenceFraudAlertsResult = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(fraudAlerts)
+    .where(eq(fraudAlerts.status, 'pending'));
+
+  const pendingFraudAlerts = pendingAuditFraudAlerts + (intelligenceFraudAlertsResult[0]?.count || 0);
 
   // Today's audit logs count
   const today = new Date();

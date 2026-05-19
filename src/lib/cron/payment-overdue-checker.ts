@@ -22,6 +22,7 @@ import { eq, and, lt } from 'drizzle-orm';
 import { emailService } from '@/features/notifications/services/email.service';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { createNotification } from '@/features/notifications/services/notification.service';
+import { configService } from '@/features/auction-deposit/services/config.service';
 
 /**
  * Check for overdue payments and update their status
@@ -236,6 +237,7 @@ async function sendOverdueReminderToVendor(
       to: user.phone,
       message: `URGENT: Your payment of ₦${parseFloat(payment.amount).toLocaleString()} for ${assetDescription} is ${daysOverdue} day(s) overdue. Complete payment immediately to avoid auction cancellation. Contact: ${process.env.SUPPORT_PHONE || '234-02-014489560'}`,
       userId: user.id,
+      category: 'routine',
     });
 
     // Send email reminder
@@ -336,9 +338,12 @@ export async function grantGracePeriod(
 
     const { payment, vendor, user, auction, case: caseData } = paymentData;
 
-    // Calculate new deadline (current deadline + 3 days)
-    const newDeadline = new Date(payment.paymentDeadline);
-    newDeadline.setDate(newDeadline.getDate() + 3);
+    const config = await configService.getConfig();
+    const extensionHours = config.graceExtensionDuration;
+
+    // Extend from the later of the current deadline or now, so overdue payments get a real grace window.
+    const baseDeadline = payment.paymentDeadline > new Date() ? payment.paymentDeadline : new Date();
+    const newDeadline = new Date(baseDeadline.getTime() + extensionHours * 60 * 60 * 1000);
 
     // Update payment deadline and status
     await db
@@ -385,7 +390,7 @@ export async function grantGracePeriod(
       userId: user.id,
       type: 'payment_reminder',
       title: '✅ Grace Period Granted',
-      message: `You have been granted a 3-day grace period. New deadline: ${newDeadline.toLocaleDateString('en-NG', { year: 'numeric', month: 'long', day: 'numeric' })}. You can now sign documents to complete payment.`,
+      message: `You have been granted a ${extensionHours}-hour grace period. New deadline: ${newDeadline.toLocaleString('en-NG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}. Please complete payment before this deadline.`,
       data: {
         paymentId: payment.id,
         auctionId: payment.auctionId,
@@ -397,8 +402,9 @@ export async function grantGracePeriod(
     // Send SMS notification
     await smsService.sendSMS({
       to: user.phone,
-      message: `Grace period granted! New deadline: ${newDeadline.toLocaleDateString('en-NG', { year: 'numeric', month: 'long', day: 'numeric' })}. You can now sign documents to complete payment. Visit: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/documents`,
+      message: `Grace period granted! You have ${extensionHours} hours. New deadline: ${newDeadline.toLocaleString('en-NG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}. Pay now: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/auctions/${auction.id}`,
       userId: user.id,
+      category: 'grace_period',
     });
 
     // Send email notification
@@ -410,31 +416,31 @@ export async function grantGracePeriod(
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #10b981;">Grace Period Granted</h2>
           <p>Dear ${user.fullName},</p>
-          <p>Good news! You have been granted a <strong>3-day grace period</strong> for your payment.</p>
+          <p>Good news! You have been granted a <strong>${extensionHours}-hour grace period</strong> for your payment.</p>
           
           <div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 16px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #065f46;">Updated Payment Details</h3>
             <p><strong>Amount Due:</strong> ₦${parseFloat(payment.amount).toLocaleString()}</p>
             <p><strong>Asset:</strong> ${assetDescription}</p>
             <p><strong>Original Deadline:</strong> ${payment.paymentDeadline.toLocaleDateString('en-NG')}</p>
-            <p><strong>New Deadline:</strong> <span style="color: #10b981; font-weight: bold;">${newDeadline.toLocaleDateString('en-NG', { year: 'numeric', month: 'long', day: 'numeric' })}</span></p>
+            <p><strong>New Deadline:</strong> <span style="color: #10b981; font-weight: bold;">${newDeadline.toLocaleString('en-NG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span></p>
             ${auction.status === 'forfeited' ? '<p><strong>Documents:</strong> <span style="color: #10b981;">✅ Re-enabled</span></p>' : ''}
           </div>
 
           <h3>✅ Documents Available for Signing</h3>
-          <p>You can now sign the required documents to complete your payment:</p>
+          <p>Please complete payment before the new deadline:</p>
           <ul>
             <li>Bill of Sale</li>
             <li>Release & Waiver of Liability</li>
           </ul>
 
           <h3>⚠️ Important Notice</h3>
-          <p>This is a one-time extension. If all documents are not signed by the new deadline, your auction win will be permanently forfeited.</p>
+          <p>If payment is not completed by the new deadline, your auction win may be forfeited and your frozen deposit may be transferred according to the auction terms.</p>
 
           <p style="margin-top: 30px;">
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/documents" 
+            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/auctions/${auction.id}" 
                style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-              Sign Documents Now
+              Complete Payment Now
             </a>
           </p>
 
@@ -475,6 +481,7 @@ export async function grantGracePeriod(
         status: 'pending',
         auctionStatus: auction.status === 'forfeited' ? 'closed' : auction.status,
         gracePeriodGranted: true,
+        extensionHours,
         grantedBy: financeOfficerId,
         documentsReEnabled: auction.status === 'forfeited',
       },

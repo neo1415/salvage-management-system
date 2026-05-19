@@ -57,6 +57,13 @@ export async function POST(
       );
     }
 
+    if (payment.paymentDeadline && payment.paymentDeadline < new Date()) {
+      return NextResponse.json(
+        { error: 'Payment deadline has passed' },
+        { status: 400 }
+      );
+    }
+
     // Initiate payment with Paystack
     const paymentInitiation = await initiatePayment(
       payment.auctionId,
