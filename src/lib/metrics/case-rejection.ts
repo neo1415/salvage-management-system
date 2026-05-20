@@ -13,9 +13,13 @@ export function isManagerRejectedCase(caseRow: {
   return Boolean(caseRow.rejectionReason?.trim());
 }
 
-/** My Cases → Rejected tab: manager returns (with reason) only */
+/**
+ * My Cases → Rejected tab: manager returns and adjuster-cancelled cases.
+ * (Adjusters often refer to both as "rejected"; Cancelled tab still lists cancelled only.)
+ */
 export function isRejectedTabCase(
-  caseRow: Parameters<typeof isManagerRejectedCase>[0]
+  caseRow: Parameters<typeof isManagerRejectedCase>[0] & { status?: string }
 ): boolean {
+  if (caseRow.status === 'cancelled') return true;
   return isManagerRejectedCase(caseRow);
 }

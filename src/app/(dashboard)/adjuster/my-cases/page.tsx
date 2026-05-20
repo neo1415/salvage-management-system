@@ -636,7 +636,7 @@ export default function AdjusterMyCasesPage() {
               { key: 'all', label: 'All Cases', count: statusCounts.all },
               { key: 'draft', label: 'Draft', count: statusCounts.draft },
               { key: 'pending_approval', label: 'Pending', count: statusCounts.pending_approval },
-              { key: 'rejected', label: 'Returned', count: statusCounts.rejected },
+              { key: 'rejected', label: 'Rejected', count: statusCounts.rejected },
               { key: 'approved', label: 'Approved', count: statusCounts.approved },
               { key: 'cancelled', label: 'Cancelled', count: statusCounts.cancelled },
               { key: 'active_auction', label: 'Active Auction', count: statusCounts.active_auction },
@@ -700,7 +700,7 @@ export default function AdjusterMyCasesPage() {
                 {searchQuery
                   ? 'Try adjusting your search query or filters.'
                   : statusFilter === 'rejected'
-                    ? 'No cases returned by a salvage manager yet. If you cancelled cases yourself, open the Cancelled tab — those are separate from manager rejections.'
+                    ? 'No cancelled or manager-returned cases yet.'
                     : statusFilter === 'all'
                       ? "You haven't created any cases yet."
                       : `No cases with status "${statusFilter.replace('_', ' ')}".`}
@@ -985,6 +985,18 @@ function CaseCard({
             )}
           </div>
         )}
+        {showRejectionReason &&
+          !caseItem.rejectionReason &&
+          caseItem.status === 'cancelled' && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-red-800">
+                Cancelled
+              </p>
+              <p className="mt-1 text-sm text-red-900">
+                You cancelled this case before it was approved or auctioned.
+              </p>
+            </div>
+          )}
 
         {/* Expandable Section for Optional Details */}
         {(caseItem.approvedAt || caseItem.status === 'draft') && (

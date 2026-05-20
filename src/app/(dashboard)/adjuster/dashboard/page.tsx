@@ -12,6 +12,7 @@ interface DashboardStats {
   pendingApproval: number;
   approved: number;
   rejected: number;
+  cancelled?: number;
   activeAuction: number;
   sold: number;
 }
@@ -57,6 +58,8 @@ export default function AdjusterDashboardPage() {
       const response = await fetch('/api/dashboard/adjuster');
       
       if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        console.error('Dashboard stats HTTP error:', response.status, errBody);
         throw new Error('Failed to fetch dashboard stats');
       }
 
@@ -65,7 +68,7 @@ export default function AdjusterDashboardPage() {
       if (result.success) {
         setStats(result.data);
       } else {
-        console.error('API returned error:', result.error);
+        console.error('API returned error:', result.error, result);
         setStats({
           totalCases: 0,
           pendingApproval: 0,
@@ -147,10 +150,18 @@ export default function AdjusterDashboardPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Returned by manager</p>
+              <p className="text-sm text-gray-600">Cancelled / Returned</p>
               <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.rejected || 0}
+                {(stats?.cancelled ?? 0) + (stats?.rejected || 0)}
               </p>
+              {(stats?.cancelled ?? 0) > 0 || (stats?.rejected || 0) > 0 ? (
+                <p className="text-xs text-gray-500 mt-1">
+                  {stats?.cancelled ?? 0} cancelled
+                  {(stats?.rejected || 0) > 0
+                    ? ` · ${stats?.rejected} returned by manager`
+                    : ''}
+                </p>
+              ) : null}
             </div>
             <div className="p-3 bg-red-100 rounded-lg">
               <AlertCircle className="w-8 h-8 text-red-600" />

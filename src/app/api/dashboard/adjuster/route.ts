@@ -95,7 +95,10 @@ export async function GET(request: NextRequest) {
     const managerRejectedResult = await db
       .select({ count: sql<number>`count(distinct ${auditLogs.entityId})::int` })
       .from(auditLogs)
-      .innerJoin(salvageCases, eq(auditLogs.entityId, salvageCases.id))
+      .innerJoin(
+        salvageCases,
+        sql`${auditLogs.entityId} = ${salvageCases.id}::text`
+      )
       .where(
         and(
           eq(auditLogs.actionType, 'case_rejected'),
