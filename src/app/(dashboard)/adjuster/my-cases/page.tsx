@@ -36,7 +36,6 @@ const CASE_STATUS_SWIPE_ORDER: StatusFilter[] = [
   'pending_approval',
   'rejected',
   'approved',
-  'cancelled',
   'active_auction',
   'sold',
 ];
@@ -71,7 +70,6 @@ type StatusFilter =
   | 'pending_approval'
   | 'rejected'
   | 'approved'
-  | 'cancelled'
   | 'active_auction'
   | 'sold';
 
@@ -155,7 +153,9 @@ export default function AdjusterMyCasesPage() {
       if (!isOffline) {
         // Add timestamp to bust cache
         const timestamp = Date.now();
-        const response = await fetch(`/api/cases?createdByMe=true&_t=${timestamp}`);
+        const response = await fetch(
+          `/api/cases?createdByMe=true&limit=500&_t=${timestamp}`
+        );
         
         if (!response.ok) {
           throw new Error('Failed to fetch cases');
@@ -255,9 +255,6 @@ export default function AdjusterMyCasesPage() {
           // If no payment data but status is sold, include it (legacy data)
           return true;
         });
-      } else if (statusFilter === 'cancelled') {
-        // Cancelled filter shows only cancelled cases
-        filtered = filtered.filter(c => c.status === 'cancelled');
       } else {
         // Fallback: exact status match
         filtered = filtered.filter(c => c.status === statusFilter);
@@ -361,7 +358,6 @@ export default function AdjusterMyCasesPage() {
       pending_approval: cases.filter(c => c.status === 'pending_approval' && !c.approvedBy).length + offlineCases.filter(c => c.status === 'pending_approval').length,
       rejected: cases.filter((c) => isRejectedTabCase(c)).length,
       approved: cases.filter(c => c.approvedBy !== null && c.approvedBy !== undefined).length,
-      cancelled: cases.filter(c => c.status === 'cancelled').length,
       // Only count auctions that are truly active (not closed)
       active_auction: cases.filter((c) => isCaseInLiveAuction(c)).length,
       // Sold includes only cases with verified payments
@@ -638,7 +634,6 @@ export default function AdjusterMyCasesPage() {
               { key: 'pending_approval', label: 'Pending', count: statusCounts.pending_approval },
               { key: 'rejected', label: 'Rejected', count: statusCounts.rejected },
               { key: 'approved', label: 'Approved', count: statusCounts.approved },
-              { key: 'cancelled', label: 'Cancelled', count: statusCounts.cancelled },
               { key: 'active_auction', label: 'Active Auction', count: statusCounts.active_auction },
               { key: 'sold', label: 'Sold', count: statusCounts.sold },
             ].map((tab) => (
@@ -700,7 +695,7 @@ export default function AdjusterMyCasesPage() {
                 {searchQuery
                   ? 'Try adjusting your search query or filters.'
                   : statusFilter === 'rejected'
-                    ? 'No cancelled or manager-returned cases yet.'
+                    ? 'No rejected cases yet. Cases returned by a salvage manager will show the rejection reason here.'
                     : statusFilter === 'all'
                       ? "You haven't created any cases yet."
                       : `No cases with status "${statusFilter.replace('_', ' ')}".`}

@@ -150,15 +150,20 @@ export default function AdjusterDashboardPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Cancelled / Returned</p>
+              <p className="text-sm text-gray-600">Rejected</p>
               <p className="text-3xl font-bold text-gray-900 mt-2">
                 {(stats?.cancelled ?? 0) + (stats?.rejected || 0)}
               </p>
               {(stats?.cancelled ?? 0) > 0 || (stats?.rejected || 0) > 0 ? (
                 <p className="text-xs text-gray-500 mt-1">
-                  {stats?.cancelled ?? 0} cancelled
                   {(stats?.rejected || 0) > 0
-                    ? ` · ${stats?.rejected} returned by manager`
+                    ? `${stats?.rejected} by manager`
+                    : ''}
+                  {(stats?.cancelled ?? 0) > 0 && (stats?.rejected || 0) > 0
+                    ? ' · '
+                    : ''}
+                  {(stats?.cancelled ?? 0) > 0
+                    ? `${stats?.cancelled} cancelled by you`
                     : ''}
                 </p>
               ) : null}

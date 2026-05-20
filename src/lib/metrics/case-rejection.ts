@@ -14,8 +14,8 @@ export function isManagerRejectedCase(caseRow: {
 }
 
 /**
- * My Cases → Rejected tab: manager returns and adjuster-cancelled cases.
- * (Adjusters often refer to both as "rejected"; Cancelled tab still lists cancelled only.)
+ * My Cases → Rejected tab: manager returns (with audit reason) and adjuster-cancelled cases.
+ * Matches the adjuster dashboard "Rejected" widget (cancelled + manager-returned).
  */
 export function isRejectedTabCase(
   caseRow: Parameters<typeof isManagerRejectedCase>[0] & { status?: string }

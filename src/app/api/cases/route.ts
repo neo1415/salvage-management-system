@@ -305,7 +305,10 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const createdByMe = searchParams.get('createdByMe') === 'true';
     const search = searchParams.get('search') || '';
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limit = parseInt(
+      searchParams.get('limit') ||
+        (createdByMe ? '500' : '50')
+    );
     const offset = parseInt(searchParams.get('offset') || '0');
 
     // SCALABILITY: Cache key for this specific query
@@ -434,14 +437,65 @@ export async function GET(request: NextRequest) {
       cases = Array.from(byId.values());
     }
 
-    if (createdByMe && cases.length > 0) {
+    if (createdByMe) {
       const { auditLogs } = await import('@/lib/db/schema/audit-logs');
-      const { inArray, desc, and: andOp, eq: eqOp } = await import('drizzle-orm');
+      const { desc, and: andOp, eq: eqOp } = await import('drizzle-orm');
       const { alias } = await import('drizzle-orm/pg-core');
 
-      const caseIds = [...new Set(cases.map((c) => c.id))];
+      const normalizeCaseId = (id: string) => String(id).toLowerCase();
+
+      // Include cancelled cases even when they fall outside the paginated list
+      const cancelledOnly = await db
+        .select({
+          id: salvageCases.id,
+          claimReference: salvageCases.claimReference,
+          assetType: salvageCases.assetType,
+          assetDetails: salvageCases.assetDetails,
+          marketValue: salvageCases.marketValue,
+          estimatedSalvageValue: salvageCases.estimatedSalvageValue,
+          estimatedValue: salvageCases.estimatedSalvageValue,
+          reservePrice: salvageCases.reservePrice,
+          damageSeverity: salvageCases.damageSeverity,
+          aiAssessment: salvageCases.aiAssessment,
+          gpsLocation: salvageCases.gpsLocation,
+          locationName: salvageCases.locationName,
+          photos: salvageCases.photos,
+          voiceNotes: salvageCases.voiceNotes,
+          status: salvageCases.status,
+          createdBy: salvageCases.createdBy,
+          createdAt: salvageCases.createdAt,
+          approvedBy: salvageCases.approvedBy,
+          approvedAt: salvageCases.approvedAt,
+          adjusterName: adjusterUsers.fullName,
+          approverName: approverUsers.fullName,
+          auctionId: sql<string | null>`null`,
+          auctionStatus: sql<string | null>`null`,
+          auctionEndTime: sql<Date | null>`null`,
+          paymentId: sql<string | null>`null`,
+          paymentStatus: sql<string | null>`null`,
+        })
+        .from(salvageCases)
+        .leftJoin(adjusterUsers, eq(salvageCases.createdBy, adjusterUsers.id))
+        .leftJoin(approverUsers, eq(salvageCases.approvedBy, approverUsers.id))
+        .where(
+          andOp(
+            eqOp(salvageCases.createdBy, session.user.id),
+            eqOp(salvageCases.status, 'cancelled')
+          )
+        );
+
+      const casesById = new Map(cases.map((c) => [normalizeCaseId(c.id), c]));
+      for (const row of cancelledOnly) {
+        const key = normalizeCaseId(row.id);
+        if (!casesById.has(key)) {
+          casesById.set(key, row as (typeof cases)[number]);
+        }
+      }
+      cases = Array.from(casesById.values());
+
       const rejectorUsers = alias(users, 'rejector_users');
 
+      // All manager rejections for this adjuster (not only the current page of cases)
       const rejectionRows = await db
         .select({
           entityId: auditLogs.entityId,
@@ -450,6 +504,10 @@ export async function GET(request: NextRequest) {
           rejectedByName: rejectorUsers.fullName,
         })
         .from(auditLogs)
+        .innerJoin(
+          salvageCases,
+          sql`${auditLogs.entityId} = ${salvageCases.id}::text`
+        )
         .leftJoin(
           rejectorUsers,
           sql`${rejectorUsers.id} = (${auditLogs.afterState}->>'rejectedBy')::uuid`
@@ -458,7 +516,7 @@ export async function GET(request: NextRequest) {
           andOp(
             eqOp(auditLogs.actionType, 'case_rejected'),
             eqOp(auditLogs.entityType, 'case'),
-            inArray(auditLogs.entityId, caseIds)
+            eqOp(salvageCases.createdBy, session.user.id)
           )
         )
         .orderBy(desc(auditLogs.createdAt));
@@ -473,9 +531,10 @@ export async function GET(request: NextRequest) {
       >();
 
       for (const row of rejectionRows) {
-        if (latestRejectionByCase.has(row.entityId)) continue;
+        const key = normalizeCaseId(row.entityId);
+        if (latestRejectionByCase.has(key)) continue;
         const after = row.rejectionReason as Record<string, unknown> | null;
-        latestRejectionByCase.set(row.entityId, {
+        latestRejectionByCase.set(key, {
           rejectionReason:
             typeof after?.rejectionReason === 'string'
               ? after.rejectionReason
@@ -486,7 +545,7 @@ export async function GET(request: NextRequest) {
       }
 
       cases = cases.map((caseRow) => {
-        const rejection = latestRejectionByCase.get(caseRow.id);
+        const rejection = latestRejectionByCase.get(normalizeCaseId(caseRow.id));
         return {
           ...caseRow,
           rejectionReason: rejection?.rejectionReason ?? null,
