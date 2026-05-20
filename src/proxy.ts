@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { getAuthJwtParams } from '@/lib/auth/jwt-token';
 import {
   isVendorPreBvnApi,
   isVendorPreBvnPage,
@@ -31,10 +32,7 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set('x-user-ip', ipAddress);
 
   const pathname = request.nextUrl.pathname;
-  const token = await getToken({
-    req: request,
-    secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
-  });
+  const token = await getToken(getAuthJwtParams(request));
 
   const role = token?.role as string | undefined;
 

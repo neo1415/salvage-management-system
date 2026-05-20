@@ -2,8 +2,7 @@
 
 import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getSession, signIn } from 'next-auth/react';
-import { getDashboardPathForRole } from '@/lib/auth/rbac';
+import { signIn } from 'next-auth/react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -40,10 +39,22 @@ function LoginForm() {
   const successMessage = searchParams.get('message') || null;
   const emailParam = searchParams.get('email') || '';
 
+  const BLOCKED_CALLBACK_PATHS = new Set(['/', '/login', '/launch', '/register']);
+
   const getSafeCallbackUrl = (url: string | null): string | null => {
     if (!url) return null;
     if (!url.startsWith('/') || url.startsWith('//')) return null;
+    const base = url.split('?')[0];
+    if (BLOCKED_CALLBACK_PATHS.has(base)) return null;
     return url;
+  };
+
+  const buildPostLoginRedirect = (): string => {
+    const safe = getSafeCallbackUrl(callbackUrl);
+    if (safe) {
+      return `/api/auth/after-login?callbackUrl=${encodeURIComponent(safe)}`;
+    }
+    return '/api/auth/after-login';
   };
 
   const {
@@ -58,23 +69,6 @@ function LoginForm() {
     },
   });
 
-  const resolvePostLoginUrl = async (): Promise<string> => {
-    const safeCallbackUrl = getSafeCallbackUrl(callbackUrl);
-    if (safeCallbackUrl) return safeCallbackUrl;
-
-    // Cookie + session can lag behind signIn() on production (Vercel edge). Retry briefly.
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const session = await getSession();
-      const role = session?.user?.role;
-      if (role) {
-        return getDashboardPathForRole(role);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-
-    return getDashboardPathForRole(undefined);
-  };
-
   const handleLogin = async (data: LoginInput) => {
     setError(null);
     setIsSubmitting(true);
@@ -82,36 +76,22 @@ function LoginForm() {
     try {
       const userAgent = navigator.userAgent;
 
+      // Let Auth.js set the session cookie, then server redirect via /api/auth/after-login
       const result = await signIn('credentials', {
         emailOrPhone: data.emailOrPhone,
         password: data.password,
         userAgent,
-        redirect: false,
+        callbackUrl: buildPostLoginRedirect(),
+        redirect: true,
       });
 
-      if (result?.error) {
+      // redirect: true navigates away; if we still run, surface the error
+      if (result && 'error' in result && result.error) {
         setError(result.error);
-        return;
+        setIsSubmitting(false);
       }
-
-      if (!result?.ok) {
-        setError('Login failed. Please try again.');
-        return;
-      }
-
-      const destination = await resolvePostLoginUrl();
-      if (destination === '/login') {
-        setError(
-          'Signed in but the session could not be loaded. Check AUTH_SECRET and NEXTAUTH_URL on production, then try again.'
-        );
-        return;
-      }
-
-      // Full page load so httpOnly session cookie is visible to server components & proxy
-      window.location.assign(destination);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -119,7 +99,7 @@ function LoginForm() {
   const handleOAuthLogin = async (provider: 'google' | 'facebook') => {
     try {
       await signIn(provider, {
-        callbackUrl: callbackUrl || '/',
+        callbackUrl: getSafeCallbackUrl(callbackUrl) || '/api/auth/after-login',
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign in. Please try again.');
