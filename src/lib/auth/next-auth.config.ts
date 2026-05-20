@@ -129,6 +129,8 @@ async function createAuditLog(
 
 export const authConfig: NextAuthConfig = {
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+  // Required on Vercel / reverse proxies so Auth.js trusts the production host for callbacks & cookies
+  trustHost: true,
 
   // SECURITY: Skip CSRF check only in non-production environments with E2E testing enabled
   // Production validation above ensures this can never be true in production

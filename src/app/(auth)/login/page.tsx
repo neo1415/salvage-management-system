@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
+import { getSession, signIn } from 'next-auth/react';
+import { getDashboardPathForRole } from '@/lib/auth/rbac';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -29,7 +30,6 @@ type LoginInput = z.infer<typeof loginSchema>;
  * Separated to use useSearchParams with Suspense boundary
  */
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -58,15 +58,30 @@ function LoginForm() {
     },
   });
 
+  const resolvePostLoginUrl = async (): Promise<string> => {
+    const safeCallbackUrl = getSafeCallbackUrl(callbackUrl);
+    if (safeCallbackUrl) return safeCallbackUrl;
+
+    // Cookie + session can lag behind signIn() on production (Vercel edge). Retry briefly.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const session = await getSession();
+      const role = session?.user?.role;
+      if (role) {
+        return getDashboardPathForRole(role);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    return getDashboardPathForRole(undefined);
+  };
+
   const handleLogin = async (data: LoginInput) => {
     setError(null);
     setIsSubmitting(true);
 
     try {
-      // Get user agent and IP for audit logging
       const userAgent = navigator.userAgent;
-      
-      // Call NextAuth signIn with credentials
+
       const result = await signIn('credentials', {
         emailOrPhone: data.emailOrPhone,
         password: data.password,
@@ -76,50 +91,27 @@ function LoginForm() {
 
       if (result?.error) {
         setError(result.error);
-        setIsSubmitting(false);
         return;
       }
 
       if (!result?.ok) {
         setError('Login failed. Please try again.');
-        setIsSubmitting(false);
         return;
       }
 
-      // Successful login - redirect based on role
-      // Fetch the session to get the user's role
-      const response = await fetch('/api/auth/session');
-      const session = await response.json();
-      
-      const safeCallbackUrl = getSafeCallbackUrl(callbackUrl);
-
-      if (safeCallbackUrl) {
-        router.push(safeCallbackUrl);
-      } else if (session?.user?.role) {
-        const role = session.user.role;
-        
-        // Use router.push instead of window.location.href
-        // This ensures Next.js middleware runs and can intercept the navigation
-        if (role === 'vendor') {
-          router.push('/vendor/dashboard');
-        } else if (role === 'salvage_manager') {
-          router.push('/manager/dashboard');
-        } else if (role === 'claims_adjuster') {
-          router.push('/adjuster/dashboard');
-        } else if (role === 'finance_officer') {
-          router.push('/finance/dashboard');
-        } else if (role === 'system_admin') {
-          router.push('/admin/dashboard');
-        } else {
-          // Fallback to home if role is unknown
-          router.push('/');
-        }
-      } else {
-        // Fallback to home
-        router.push('/');
+      const destination = await resolvePostLoginUrl();
+      if (destination === '/login') {
+        setError(
+          'Signed in but the session could not be loaded. Check AUTH_SECRET and NEXTAUTH_URL on production, then try again.'
+        );
+        return;
       }
+
+      // Full page load so httpOnly session cookie is visible to server components & proxy
+      window.location.assign(destination);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+    } finally {
       setIsSubmitting(false);
     }
   };

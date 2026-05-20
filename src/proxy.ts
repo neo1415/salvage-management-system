@@ -86,7 +86,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/api/:path*',
+    // Auth routes must not pass through proxy (avoids edge JWT work during sign-in/session)
+    '/api/((?!auth).*)',
     '/vendor/:path*',
     '/admin/:path*',
     '/manager/:path*',
