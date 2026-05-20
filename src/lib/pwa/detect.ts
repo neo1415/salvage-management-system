@@ -33,3 +33,5 @@ export function getPwaSplashDurationMs(): number {
 export const PWA_SPLASH_COMPLETE_EVENT = 'salvage-splash-complete';
 export const PWA_LAST_PATH_KEY = 'salvage-last-path';
 export const PWA_SPLASH_DONE_KEY = 'salvage-splash-complete';
+/** Set after first splash this browser session — prevents splash on login/logout navigation */
+export const PWA_SPLASH_SESSION_KEY = 'salvage-splash-session-v1';

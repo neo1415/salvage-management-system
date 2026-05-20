@@ -101,7 +101,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var s=window.matchMedia('(display-mode: standalone)').matches||window.matchMedia('(display-mode: fullscreen)').matches||window.navigator.standalone;if(!s)return;document.documentElement.classList.add('pwa-boot-lock');var el=document.getElementById('pwa-instant-splash');if(el)el.classList.add('pwa-instant-splash--visible');window.setTimeout(function(){document.documentElement.classList.remove('pwa-boot-lock');if(el)el.classList.add('pwa-instant-splash--hide');},8000);}catch(e){document.documentElement.classList.remove('pwa-boot-lock');}})();`,
+            __html: `(function(){try{var s=window.matchMedia('(display-mode: standalone)').matches||window.matchMedia('(display-mode: fullscreen)').matches||window.navigator.standalone;if(!s)return;if(sessionStorage.getItem('salvage-splash-session-v1')==='1')return;document.documentElement.classList.add('pwa-boot-lock');var el=document.getElementById('pwa-instant-splash');if(el)el.classList.add('pwa-instant-splash--visible');window.setTimeout(function(){document.documentElement.classList.remove('pwa-boot-lock');if(el)el.classList.add('pwa-instant-splash--hide');},8000);}catch(e){document.documentElement.classList.remove('pwa-boot-lock');}})();`,
           }}
         />
         <script

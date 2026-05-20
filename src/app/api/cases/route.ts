@@ -418,6 +418,22 @@ export async function GET(request: NextRequest) {
     // Execute query
     let cases = await query;
 
+    // Auction/payment joins can duplicate rows — keep one row per case
+    if (cases.length > 0) {
+      const byId = new Map<string, (typeof cases)[number]>();
+      for (const row of cases) {
+        const existing = byId.get(row.id);
+        if (!existing) {
+          byId.set(row.id, row);
+          continue;
+        }
+        if (!existing.paymentId && row.paymentId) {
+          byId.set(row.id, row);
+        }
+      }
+      cases = Array.from(byId.values());
+    }
+
     if (createdByMe && cases.length > 0) {
       const { auditLogs } = await import('@/lib/db/schema/audit-logs');
       const { inArray, desc, and: andOp, eq: eqOp } = await import('drizzle-orm');
@@ -436,7 +452,7 @@ export async function GET(request: NextRequest) {
         .from(auditLogs)
         .leftJoin(
           rejectorUsers,
-          sql`${rejectorUsers.id}::text = ${auditLogs.afterState}->>'rejectedBy'`
+          sql`${rejectorUsers.id} = (${auditLogs.afterState}->>'rejectedBy')::uuid`
         )
         .where(
           andOp(
@@ -477,9 +493,7 @@ export async function GET(request: NextRequest) {
           rejectedAt: rejection?.rejectedAt ?? null,
           rejectedByName: rejection?.rejectedByName ?? null,
           wasRejected: Boolean(
-            rejection?.rejectionReason &&
-              !caseRow.approvedBy &&
-              caseRow.status === 'draft'
+            rejection?.rejectionReason && !caseRow.approvedBy
           ),
         };
       });

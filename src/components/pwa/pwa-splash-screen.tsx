@@ -7,12 +7,17 @@ import {
   isStandalonePwa,
   PWA_SPLASH_COMPLETE_EVENT,
   PWA_SPLASH_DONE_KEY,
+  PWA_SPLASH_SESSION_KEY,
 } from '@/lib/pwa/detect';
 
 const EXIT_MS = 650;
 
 function shouldShowPwaSplash(): boolean {
   if (typeof window === 'undefined') return false;
+  // Once per browser session (login/logout must not replay splash)
+  if (sessionStorage.getItem(PWA_SPLASH_SESSION_KEY) === '1') {
+    return false;
+  }
   if (isStandalonePwa()) return true;
   return sessionStorage.getItem('salvage-show-splash') === '1';
 }
@@ -28,6 +33,7 @@ function removeInstantBootSplash(): void {
 
 function markSplashComplete(): void {
   sessionStorage.setItem(PWA_SPLASH_DONE_KEY, '1');
+  sessionStorage.setItem(PWA_SPLASH_SESSION_KEY, '1');
   window.dispatchEvent(new Event(PWA_SPLASH_COMPLETE_EVENT));
 }
 

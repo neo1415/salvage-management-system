@@ -9,6 +9,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { auctions } from '@/lib/db/schema/auctions';
+import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq, and, sql, inArray, gt } from 'drizzle-orm';
 
 /**
@@ -90,7 +91,21 @@ export async function GET(request: NextRequest) {
       approvedQuery: 'Cases with approvedBy IS NOT NULL',
     });
 
-    // Get cancelled cases (treating as "rejected")
+    // Manager returned cases (audit: case_rejected) — matches My Cases → Rejected tab
+    const managerRejectedResult = await db
+      .select({ count: sql<number>`count(distinct ${auditLogs.entityId})::int` })
+      .from(auditLogs)
+      .innerJoin(salvageCases, eq(auditLogs.entityId, salvageCases.id))
+      .where(
+        and(
+          eq(auditLogs.actionType, 'case_rejected'),
+          eq(auditLogs.entityType, 'case'),
+          eq(salvageCases.createdBy, userId)
+        )
+      );
+
+    const rejected = managerRejectedResult[0]?.count || 0;
+
     const cancelledResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(salvageCases)
@@ -101,7 +116,7 @@ export async function GET(request: NextRequest) {
         )
       );
 
-    const rejected = cancelledResult[0]?.count || 0;
+    const cancelled = cancelledResult[0]?.count || 0;
 
     // Get active auction cases
     // IMPORTANT: Do NOT use case status as a proxy for auction activity.
@@ -143,6 +158,7 @@ export async function GET(request: NextRequest) {
           pendingApproval,
           approved,
           rejected,
+          cancelled,
           activeAuction,
           sold,
         },
