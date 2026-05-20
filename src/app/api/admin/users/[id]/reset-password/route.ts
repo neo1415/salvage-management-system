@@ -6,6 +6,7 @@ import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq } from 'drizzle-orm';
 import { hash } from 'bcryptjs';
 import { emailService } from '@/features/notifications/services/email.service';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 /**
  * Generate a secure temporary password
@@ -104,7 +105,7 @@ export async function POST(
                 </p>
               </div>
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/login" 
+                <a href="${appPath('/login')}" 
                    style="display: inline-block; padding: 14px 32px; background-color: #800020; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
                   Log In Now
                 </a>

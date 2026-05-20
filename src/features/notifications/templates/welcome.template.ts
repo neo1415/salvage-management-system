@@ -4,6 +4,7 @@
  */
 
 import { getBaseEmailTemplate } from './base.template';
+import { appPath } from './email-urls';
 
 export interface WelcomeTemplateData {
   fullName: string;
@@ -11,7 +12,7 @@ export interface WelcomeTemplateData {
 
 export function getWelcomeEmailTemplate(data: WelcomeTemplateData): string {
   const { fullName } = data;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const loginUrl = appPath('/login');
   
   const content = `
     <p style="font-size: 18px; color: #800020; font-weight: 600; margin-bottom: 20px;">
@@ -36,8 +37,8 @@ export function getWelcomeEmailTemplate(data: WelcomeTemplateData): string {
     </div>
     
     <div style="text-align: center; margin: 35px 0;">
-      <a href="${appUrl}/login" class="button" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-        Login to Your Account →
+      <a href="${loginUrl}" class="button" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+        Login to Your Account
       </a>
     </div>
     

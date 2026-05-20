@@ -126,7 +126,7 @@ export async function POST(
               documentTitle: signedDocument.title,
               auctionId,
               assetDescription: 'Salvage Item',
-              downloadUrl: `${process.env.NEXTAUTH_URL}/vendor/documents`,
+              downloadUrl: `${process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL}/vendor/documents#auction-${auctionId}`,
             }),
           });
         } catch (notifyError) {

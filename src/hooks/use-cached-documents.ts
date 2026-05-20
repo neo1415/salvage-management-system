@@ -60,7 +60,7 @@ export function useCachedDocuments(
     // CRITICAL FIX: Allow fetching even without auctionId when fetchFn is provided
     // This enables pages to fetch multiple auctions/documents
     if (!fetchFn) {
-      setIsLoading(false);
+      setIsLoading(true);
       return;
     }
 

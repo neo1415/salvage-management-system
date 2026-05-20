@@ -9,6 +9,7 @@ import { QueryProvider } from '@/lib/query-provider';
 import { ToastProvider } from '@/components/ui/toast';
 import { CookieConsentBanner } from '@/components/legal/cookie-consent-banner';
 import { PwaSplashScreen } from '@/components/pwa/pwa-splash-screen';
+import { PwaRouteTracker } from '@/components/pwa/pwa-route-tracker';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 const sora = Sora({
@@ -31,37 +32,13 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'NEM Salvage',
-    startupImage: [
-      {
-        url: '/icons/icon-2048.png',
-        media: '(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)',
-      },
-      {
-        url: '/icons/icon-2048.png',
-        media: '(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)',
-      },
-      {
-        url: '/icons/icon-2048.png',
-        media: '(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)',
-      },
-      {
-        url: '/icons/icon-2048.png',
-        media: '(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)',
-      },
-      {
-        url: '/icons/icon-2048.png',
-        media: '(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)',
-      },
-    ],
   },
   icons: {
     icon: [
       { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
       { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
-    apple: [
-      { url: '/icons/icon-180.png', sizes: '180x180', type: 'image/png' },
-    ],
+    apple: [{ url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
   },
   openGraph: {
     type: 'website',
@@ -118,7 +95,15 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="canonical" href="https://salvage.nem-insurance.com" />
-        <link rel="icon" href="/icons/Nem-insurance-Logo.jpg" />
+        <link rel="icon" href="/icons/icon-192.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var s=window.matchMedia('(display-mode: standalone)').matches||window.matchMedia('(display-mode: fullscreen)').matches||window.navigator.standalone;if(!s)return;document.documentElement.classList.add('pwa-boot-lock');var el=document.getElementById('pwa-instant-splash');if(el)el.classList.add('pwa-instant-splash--visible');window.setTimeout(function(){document.documentElement.classList.remove('pwa-boot-lock');if(el)el.classList.add('pwa-instant-splash--hide');},8000);}catch(e){document.documentElement.classList.remove('pwa-boot-lock');}})();`,
+          }}
+        />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -151,6 +136,13 @@ export default function RootLayout({
         />
       </head>
       <body className={`${inter.className} ${sora.variable}`} suppressHydrationWarning>
+        <div
+          id="pwa-instant-splash"
+          aria-hidden="true"
+        >
+          <p className="pwa-instant-title">NEM Salvage</p>
+          <p className="pwa-instant-sub">Salvage auctions</p>
+        </div>
         <AuthProvider>
           <QueryProvider>
             <ToastProvider>
@@ -159,7 +151,9 @@ export default function RootLayout({
               <OfflineIndicator />
               <InstallPrompt />
               <CookieConsentBanner />
-              {children}
+              <div id="app-root">
+                {children}
+              </div>
             </ToastProvider>
           </QueryProvider>
         </AuthProvider>

@@ -7,9 +7,14 @@ import {
   vendorNeedsBvnVerification,
   VENDOR_TIER1_PATH,
 } from '@/lib/auth/vendor-bvn-access';
+import {
+  isApiAllowedForRole,
+  isPathAllowedForRole,
+  isProtectedPage,
+} from '@/lib/auth/rbac';
 
 /**
- * Proxy: IP forwarding + mandatory BVN onboarding for vendors.
+ * Proxy: IP forwarding, BVN onboarding, and server-side RBAC (JWT from httpOnly cookie).
  */
 export async function proxy(request: NextRequest) {
   const forwarded = request.headers.get('x-forwarded-for');
@@ -31,10 +36,32 @@ export async function proxy(request: NextRequest) {
     secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
   });
 
-  const needsBvn = vendorNeedsBvnVerification(
-    token?.role as string | undefined,
-    token?.bvnVerified as boolean | undefined
-  );
+  const role = token?.role as string | undefined;
+
+  // --- Page RBAC (cannot be bypassed by tampering with client state) ---
+  if (isProtectedPage(pathname)) {
+    if (!token) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('callbackUrl', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    if (!isPathAllowedForRole(pathname, role)) {
+      const denied = new URL('/unauthorized', request.url);
+      denied.searchParams.set('from', pathname);
+      return NextResponse.redirect(denied);
+    }
+  }
+
+  // --- API RBAC for role-scoped dashboard/admin namespaces ---
+  if (pathname.startsWith('/api/') && token && !isApiAllowedForRole(pathname, role)) {
+    return NextResponse.json(
+      { error: 'Forbidden: insufficient permissions for this API' },
+      { status: 403 }
+    );
+  }
+
+  const needsBvn = vendorNeedsBvnVerification(role, token?.bvnVerified as boolean | undefined);
 
   if (needsBvn) {
     if (pathname.startsWith('/vendor/') && !isVendorPreBvnPage(pathname)) {
@@ -65,5 +92,11 @@ export const config = {
     '/manager/:path*',
     '/adjuster/:path*',
     '/finance/:path*',
+    '/bid-history/:path*',
+    '/reports/:path*',
+    '/notifications/:path*',
+    '/dashboard',
+    '/dashboard/:path*',
+    '/receipt/:path*',
   ],
 };

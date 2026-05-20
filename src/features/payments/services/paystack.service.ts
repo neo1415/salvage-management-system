@@ -9,11 +9,11 @@ import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY!;
 // Paystack uses the SECRET KEY for webhook signature verification
 const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export interface PaymentInitiation {
   paymentId: string;
@@ -123,7 +123,7 @@ export async function initiatePayment(
         email: user.email,
         amount: amountInKobo,
         reference,
-        callback_url: `${APP_URL}/vendor/payments/${payment.id}/verify`,
+        callback_url: appPath(`/vendor/payments/${payment.id}/verify`),
         metadata: {
           paymentId: payment.id,
           auctionId,

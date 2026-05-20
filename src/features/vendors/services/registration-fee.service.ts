@@ -16,6 +16,7 @@ import { payments } from '@/lib/db/schema/payments';
 import { users } from '@/lib/db/schema/users';
 import { eq, and, isNull } from 'drizzle-orm';
 import crypto from 'crypto';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 export interface InitializeRegistrationFeePaymentParams {
   vendorId: string;
@@ -130,7 +131,6 @@ export class RegistrationFeeService {
 
     // 5. Initialize Paystack transaction
     const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
     if (!PAYSTACK_SECRET_KEY) {
       throw new Error('PAYSTACK_SECRET_KEY not configured');
@@ -142,7 +142,7 @@ export class RegistrationFeeService {
       email: userEmail,
       amount: amountInKobo,
       reference,
-      callback_url: `${APP_URL}/vendor/registration-fee?payment=success`,
+      callback_url: appPath('/vendor/registration-fee?payment=success'),
       metadata: {
         paymentId: payment.id,
         vendorId,
@@ -415,8 +415,6 @@ export class RegistrationFeeService {
    * @returns HTML email template
    */
   private getPaymentConfirmationEmailTemplate(fullName: string, amount: number): string {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    
     return `
       <!DOCTYPE html>
       <html lang="en">
@@ -541,7 +539,7 @@ export class RegistrationFeeService {
               </div>
               
               <div class="button-container">
-                <a href="${appUrl}/vendor/kyc/tier2" class="button">Complete Tier 2 KYC Now</a>
+                <a href="${appPath('/vendor/kyc/tier2')}" class="button">Complete Tier 2 KYC Now</a>
               </div>
               
               <p>Thank you for choosing NEM Salvage Marketplace!</p>

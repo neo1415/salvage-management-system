@@ -74,9 +74,12 @@ export function RecommendationsFeed({
   }, []);
 
   // Fetch recommendations
-  const fetchRecommendations = useCallback(async (pageNum: number) => {
-    if (isLoading) return;
+  const loadingRef = useRef(false);
 
+  const fetchRecommendations = useCallback(async (pageNum: number) => {
+    if (!vendorId || loadingRef.current) return;
+
+    loadingRef.current = true;
     setIsLoading(true);
     setError(null);
 
@@ -85,50 +88,60 @@ export function RecommendationsFeed({
         `/api/vendors/${vendorId}/recommendations?limit=10`
       );
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        throw new Error('Failed to fetch recommendations');
+        const message =
+          data.message || data.error || `Recommendations API returned ${response.status}`;
+        throw new Error(message);
       }
 
-      const data = await response.json();
-      // API returns data.data.recommendations
       const newRecommendations = data.data?.recommendations || [];
 
       if (newRecommendations.length === 0) {
-        const fallbackRecommendations = pageNum === 1 ? await fetchFallbackAuctions() : [];
-        setRecommendations(prev =>
+        const fallbackRecommendations =
+          pageNum === 1 ? await fetchFallbackAuctions() : [];
+        setRecommendations((prev) =>
           pageNum === 1 ? fallbackRecommendations : prev
         );
         setHasMore(false);
       } else {
-        setRecommendations(prev => 
+        setRecommendations((prev) =>
           pageNum === 1 ? newRecommendations : [...prev, ...newRecommendations]
         );
+        setHasMore(newRecommendations.length >= 10);
       }
     } catch (err) {
-      console.error('Error fetching recommendations:', err);
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Recommendations API unavailable, using fallback:', err);
+      }
       try {
-        const fallbackRecommendations = pageNum === 1 ? await fetchFallbackAuctions() : [];
-        setRecommendations(prev =>
+        const fallbackRecommendations =
+          pageNum === 1 ? await fetchFallbackAuctions() : [];
+        setRecommendations((prev) =>
           pageNum === 1 ? fallbackRecommendations : prev
         );
         setHasMore(false);
-        setError(null);
+        setError(
+          fallbackRecommendations.length === 0
+            ? 'Failed to load recommendations. Please try again.'
+            : null
+        );
       } catch (fallbackError) {
         console.error('Error fetching fallback auctions:', fallbackError);
         setError('Failed to load recommendations. Please try again.');
       }
     } finally {
+      loadingRef.current = false;
       setIsLoading(false);
     }
-  }, [vendorId, isLoading, fetchFallbackAuctions]);
+  }, [vendorId, fetchFallbackAuctions]);
 
   useEffect(() => {
-    if (recommendations.length === 0) {
+    if (vendorId && recommendations.length === 0) {
       fetchRecommendations(1);
     }
-  // Run once on mount; fetchRecommendations is intentionally omitted because it depends on loading state.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [vendorId, recommendations.length, fetchRecommendations]);
 
   // Task 10.2.4: Infinite scroll with Intersection Observer
   useEffect(() => {

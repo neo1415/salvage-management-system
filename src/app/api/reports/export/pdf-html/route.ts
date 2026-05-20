@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Build the URL to the actual report page
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const { getAppUrl } = await import('@/features/notifications/templates/email-urls');
+    const baseUrl = getAppUrl();
     const reportPath = getReportPath(reportType);
     
     // Build query parameters from filters

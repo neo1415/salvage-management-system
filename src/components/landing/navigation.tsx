@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Menu, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 export function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -108,43 +108,38 @@ export function Navigation() {
           </button>
         </div>
 
-        {/* Mobile Menu */}
-        <AnimatePresence>
-          {isMobileMenuOpen && (
-            <motion.div
-              className="md:hidden mt-4 py-4 bg-white rounded-lg shadow-xl"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className="flex flex-col space-y-4 px-4">
-                {navLinks.map((link) => (
-                  <a
-                    key={link.name}
-                    href={link.href}
-                    onClick={(e) => scrollToSection(e, link.href)}
-                    className="text-gray-700 font-medium hover:text-gold-500 transition-colors py-2"
-                  >
-                    {link.name}
-                  </a>
-                ))}
-                <Link
-                  href="/login"
-                  className="px-4 py-2 text-center border-2 border-burgundy-800 text-burgundy-800 rounded-lg hover:bg-burgundy-800 hover:text-white transition-all"
+        {/* Mobile Menu — CSS only (no exit animations) to avoid DOM errors on route change */}
+        {isMobileMenuOpen && (
+          <div className="md:hidden mt-4 py-4 bg-white rounded-lg shadow-xl animate-in fade-in duration-200">
+            <div className="flex flex-col space-y-4 px-4">
+              {navLinks.map((link) => (
+                <a
+                  key={link.name}
+                  href={link.href}
+                  onClick={(e) => scrollToSection(e, link.href)}
+                  className="text-gray-700 font-medium hover:text-gold-500 transition-colors py-2"
                 >
-                  Login
-                </Link>
-                <Link
-                  href="/register"
-                  className="px-6 py-2 text-center bg-gold-500 text-burgundy-900 font-bold rounded-lg hover:bg-gold-400 transition-all"
-                >
-                  Sign Up
-                </Link>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                  {link.name}
+                </a>
+              ))}
+              <Link
+                href="/login"
+                prefetch
+                className="px-4 py-2 text-center border-2 border-burgundy-800 text-burgundy-800 rounded-lg hover:bg-burgundy-800 hover:text-white transition-all"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                Login
+              </Link>
+              <Link
+                href="/register"
+                className="px-6 py-2 text-center bg-gold-500 text-burgundy-900 font-bold rounded-lg hover:bg-gold-400 transition-all"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                Sign Up
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     </motion.nav>
   );

@@ -45,10 +45,10 @@ import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { appPath, getAppUrl } from '@/features/notifications/templates/email-urls';
 
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY!;
 const FLUTTERWAVE_WEBHOOK_SECRET = process.env.FLUTTERWAVE_WEBHOOK_SECRET!;
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 /**
  * Payment initiation result interface
@@ -219,7 +219,7 @@ export async function initiatePayment(
       tx_ref: reference,
       amount: parseFloat(auction.currentBid.toString()),
       currency: 'NGN',
-      redirect_url: `${APP_URL}/vendor/payments/${payment.id}/verify`,
+      redirect_url: appPath(`/vendor/payments/${payment.id}/verify`),
       customer: {
         email: user.email,
         phonenumber: user.phone,
@@ -228,7 +228,7 @@ export async function initiatePayment(
       customizations: {
         title: 'NEM Salvage Payment',
         description: `Payment for auction ${auctionId}`,
-        logo: `${APP_URL}/icons/Nem-insurance-Logo.jpg`,
+        logo: `${getAppUrl()}/icons/Nem-insurance-Logo.jpg`,
       },
       meta: {
         paymentId: payment.id,

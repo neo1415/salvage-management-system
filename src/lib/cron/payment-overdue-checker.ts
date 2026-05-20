@@ -20,6 +20,8 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { eq, and, lt } from 'drizzle-orm';
 import { emailService } from '@/features/notifications/services/email.service';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
+import { appPath } from '@/features/notifications/templates/email-urls';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { createNotification } from '@/features/notifications/services/notification.service';
 import { configService } from '@/features/auction-deposit/services/config.service';
@@ -157,13 +159,12 @@ async function sendOverdueEscalationToFinanceOfficers(
     for (const officer of financeOfficers) {
       await emailService.sendEmail({
         to: officer.email,
-        subject: `🚨 Payment Overdue - ${daysOverdue} Day(s) - Action Required`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #dc2626;">Payment Overdue - Action Required</h2>
-            <p>Dear ${officer.fullName},</p>
+        subject: `Payment Overdue - ${daysOverdue} Day(s) - Action Required`,
+        html: wrapProfessionalEmail(
+          'Payment Overdue - Action Required',
+          `
+            <p style="font-size: 18px; color: #800020; font-weight: 600;">Dear ${officer.fullName},</p>
             <p>A payment has exceeded its deadline and requires your attention.</p>
-            
             <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #991b1b;">Overdue Payment Details</h3>
               <p><strong>Payment ID:</strong> ${payment.id}</p>
@@ -175,27 +176,19 @@ async function sendOverdueEscalationToFinanceOfficers(
               <p><strong>Deadline:</strong> ${payment.paymentDeadline.toLocaleDateString('en-NG')}</p>
               <p><strong>Days Overdue:</strong> <span style="color: #dc2626; font-weight: bold;">${daysOverdue} day(s)</span></p>
             </div>
-
-            <h3>Recommended Actions</h3>
-            <ol>
+            <h3 style="color: #800020;">Recommended Actions</h3>
+            <ol style="line-height: 1.8;">
               <li>Contact vendor to follow up on payment status</li>
               <li>Review payment proof if submitted</li>
               <li>Consider grace period extension (if applicable)</li>
               <li>If no response after ${daysOverdue + 2} days, consider auction cancellation</li>
             </ol>
-
-            <p style="margin-top: 30px;">
-              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com'}/finance/payments?view=overdue" 
-                 style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                View Overdue Payments
-              </a>
-            </p>
-
-            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-              This is an automated escalation from the NEM Salvage Management System.
-            </p>
-          </div>
-        `,
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${appPath('/finance/payments?view=overdue')}" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">View Overdue Payments</a>
+            </div>
+          `,
+          `Payment overdue ${daysOverdue} day(s) — finance review required`
+        ),
       });
 
       // Send push notification
@@ -243,13 +236,12 @@ async function sendOverdueReminderToVendor(
     // Send email reminder
     await emailService.sendEmail({
       to: user.email,
-      subject: `🚨 URGENT: Payment Overdue - ${daysOverdue} Day(s)`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #dc2626;">Payment Overdue - Immediate Action Required</h2>
-          <p>Dear ${user.fullName},</p>
+      subject: `URGENT: Payment Overdue - ${daysOverdue} Day(s)`,
+      html: wrapProfessionalEmail(
+        'Payment Overdue - Immediate Action Required',
+        `
+          <p style="font-size: 18px; color: #800020; font-weight: 600;">Dear ${user.fullName},</p>
           <p>Your payment for the auction you won is now <strong style="color: #dc2626;">${daysOverdue} day(s) overdue</strong>.</p>
-          
           <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #991b1b;">Payment Details</h3>
             <p><strong>Amount Due:</strong> ₦${parseFloat(payment.amount).toLocaleString()}</p>
@@ -257,38 +249,15 @@ async function sendOverdueReminderToVendor(
             <p><strong>Original Deadline:</strong> ${payment.paymentDeadline.toLocaleDateString('en-NG')}</p>
             <p><strong>Days Overdue:</strong> ${daysOverdue}</p>
           </div>
-
-          <h3 style="color: #dc2626;">⚠️ Important Notice</h3>
-          <p>If payment is not received within the next 2 days, your auction win may be cancelled and the item will be re-auctioned. You may also be subject to penalties as per our terms and conditions.</p>
-
-          <h3>How to Complete Payment</h3>
-          <ol>
-            <li>Log in to your vendor dashboard</li>
-            <li>Navigate to "My Payments"</li>
-            <li>Complete payment using one of the available methods</li>
-            <li>Upload payment proof if using bank transfer</li>
-          </ol>
-
-          <p style="margin-top: 30px;">
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/payments/${payment.id}" 
-               style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-              Complete Payment Now
-            </a>
-          </p>
-
-          <p style="margin-top: 30px;">If you're experiencing difficulties, please contact our support team immediately:</p>
-          <ul>
-            <li>Phone: ${process.env.SUPPORT_PHONE || '234-02-014489560'}</li>
-            <li>Email: ${process.env.SUPPORT_EMAIL || 'nemsupport@nem-insurance.com'}</li>
-          </ul>
-
-          <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Finance Team</strong></p>
-
-          <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-            This is an automated reminder from the NEM Salvage Management System.
-          </p>
-        </div>
-      `,
+          <h3 style="color: #800020;">Important Notice</h3>
+          <p>If payment is not received within the next 2 days, your auction win may be cancelled and the item may be re-auctioned.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${appPath(`/vendor/payments/${payment.id}`)}" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">Complete Payment Now</a>
+          </div>
+          <p>Support: ${process.env.SUPPORT_PHONE || '234-02-014489560'} | ${process.env.SUPPORT_EMAIL || 'nemsupport@nem-insurance.com'}</p>
+        `,
+        `Your payment is ${daysOverdue} day(s) overdue`
+      ),
     });
 
     console.log(`✅ Sent overdue reminder to vendor ${user.email}`);
@@ -402,7 +371,7 @@ export async function grantGracePeriod(
     // Send SMS notification
     await smsService.sendSMS({
       to: user.phone,
-      message: `Grace period granted! You have ${extensionHours} hours. New deadline: ${newDeadline.toLocaleString('en-NG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}. Pay now: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/auctions/${auction.id}`,
+      message: `Grace period granted! You have ${extensionHours} hours. New deadline: ${newDeadline.toLocaleString('en-NG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}. Pay now: ${appPath(`/vendor/auctions/${auction.id}`)}`,
       userId: user.id,
       category: 'grace_period',
     });
@@ -411,52 +380,28 @@ export async function grantGracePeriod(
     const assetDescription = `${caseData.assetType} - ${caseData.claimReference}`;
     await emailService.sendEmail({
       to: user.email,
-      subject: '✅ Grace Period Granted - Documents Re-enabled',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #10b981;">Grace Period Granted</h2>
-          <p>Dear ${user.fullName},</p>
-          <p>Good news! You have been granted a <strong>${extensionHours}-hour grace period</strong> for your payment.</p>
-          
+      subject: 'Grace Period Granted - Documents Re-enabled',
+      html: wrapProfessionalEmail(
+        'Grace Period Granted',
+        `
+          <p style="font-size: 18px; color: #800020; font-weight: 600;">Dear ${user.fullName},</p>
+          <p>You have been granted a <strong>${extensionHours}-hour grace period</strong> for your payment.</p>
           <div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 16px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #065f46;">Updated Payment Details</h3>
             <p><strong>Amount Due:</strong> ₦${parseFloat(payment.amount).toLocaleString()}</p>
             <p><strong>Asset:</strong> ${assetDescription}</p>
             <p><strong>Original Deadline:</strong> ${payment.paymentDeadline.toLocaleDateString('en-NG')}</p>
             <p><strong>New Deadline:</strong> <span style="color: #10b981; font-weight: bold;">${newDeadline.toLocaleString('en-NG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span></p>
-            ${auction.status === 'forfeited' ? '<p><strong>Documents:</strong> <span style="color: #10b981;">✅ Re-enabled</span></p>' : ''}
+            ${auction.status === 'forfeited' ? '<p><strong>Documents:</strong> Re-enabled</p>' : ''}
           </div>
-
-          <h3>✅ Documents Available for Signing</h3>
-          <p>Please complete payment before the new deadline:</p>
-          <ul>
-            <li>Bill of Sale</li>
-            <li>Release & Waiver of Liability</li>
-          </ul>
-
-          <h3>⚠️ Important Notice</h3>
-          <p>If payment is not completed by the new deadline, your auction win may be forfeited and your frozen deposit may be transferred according to the auction terms.</p>
-
-          <p style="margin-top: 30px;">
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/auctions/${auction.id}" 
-               style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-              Complete Payment Now
-            </a>
-          </p>
-
-          <p style="margin-top: 30px;">If you're experiencing difficulties, please contact our support team:</p>
-          <ul>
-            <li>Phone: ${process.env.SUPPORT_PHONE || '234-02-014489560'}</li>
-            <li>Email: ${process.env.SUPPORT_EMAIL || 'nemsupport@nem-insurance.com'}</li>
-          </ul>
-
-          <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Finance Team</strong></p>
-
-          <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-            This grace period was granted by Finance Officer on ${new Date().toLocaleDateString('en-NG')}.
-          </p>
-        </div>
-      `,
+          <p>Please complete payment before the new deadline. Required documents include Bill of Sale and Release and Waiver of Liability.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${appPath(`/vendor/auctions/${auction.id}`)}" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">Complete Payment Now</a>
+          </div>
+          <p style="font-size: 14px; color: #666;">Grace period granted on ${new Date().toLocaleDateString('en-NG')}.</p>
+        `,
+        `New payment deadline: ${newDeadline.toLocaleDateString('en-NG')}`
+      ),
     });
 
     console.log(`✅ Grace period notifications sent to vendor ${user.email}`);

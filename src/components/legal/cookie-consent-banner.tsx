@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { X, Cookie, Settings } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 interface CookiePreferences {
   essential: boolean;
@@ -86,14 +85,7 @@ export function CookieConsentBanner() {
   if (!isVisible) return null;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ y: 100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 100, opacity: 0 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="fixed bottom-3 left-3 right-3 md:left-auto md:right-3 md:max-w-xs z-50"
-      >
+    <div className="fixed bottom-3 left-3 right-3 md:left-auto md:right-3 md:max-w-xs z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
         <div className="bg-white rounded-md shadow-lg border border-gray-200 overflow-hidden">
           {/* Main Banner */}
           {!showSettings ? (
@@ -257,7 +249,6 @@ export function CookieConsentBanner() {
               </div>
             )}
         </div>
-      </motion.div>
-    </AnimatePresence>
+    </div>
   );
 }

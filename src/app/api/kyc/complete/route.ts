@@ -22,6 +22,7 @@ import {
   getTier2AutoReviewEnabled,
   isCleanTier2Verification,
 } from '@/features/kyc/services/tier2-review-settings.service';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 const LOCK_TTL_SECONDS = 300; // 5 minutes
 
@@ -168,7 +169,7 @@ export async function POST(request: NextRequest) {
         vendorName: session.user.name ?? 'Vendor',
         businessName: vendor.businessName,
         riskLevel: 'Medium',
-        reviewUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/manager/kyc-approvals/${vendorId}`,
+        reviewUrl: appPath(`/manager/kyc-approvals/${vendorId}`),
         outcome: 'pending_review',
         reason: 'Verification result needs review',
       });
@@ -363,7 +364,7 @@ export async function POST(request: NextRequest) {
         vendorName: session.user.name ?? 'Vendor',
         businessName: vendor.businessName,
         riskLevel: 'High',
-        reviewUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/manager/kyc-approvals/${vendorId}`,
+        reviewUrl: appPath(`/manager/kyc-approvals/${vendorId}`),
         outcome: 'pending_review',
         reason: 'AML/sanctions signal',
       });
@@ -397,7 +398,7 @@ export async function POST(request: NextRequest) {
         vendorName: session.user.name ?? 'Vendor',
         businessName: vendor.businessName,
         riskLevel: amlRiskLevel,
-        reviewUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/manager/kyc-approvals/${vendorId}`,
+        reviewUrl: appPath(`/manager/kyc-approvals/${vendorId}`),
         outcome: 'auto_approved',
       });
       await audit.log({
@@ -432,7 +433,7 @@ export async function POST(request: NextRequest) {
       vendorName: session.user.name ?? 'Vendor',
       businessName: vendor.businessName,
       riskLevel: amlRiskLevel,
-      reviewUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/manager/kyc-approvals/${vendorId}`,
+      reviewUrl: appPath(`/manager/kyc-approvals/${vendorId}`),
       outcome: 'pending_review',
     });
 

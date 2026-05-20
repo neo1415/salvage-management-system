@@ -7,7 +7,6 @@ import DashboardSidebar from '@/components/layout/dashboard-sidebar';
 import { DashboardTopBar } from '@/components/layout/dashboard-top-bar';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { SyncProgressIndicator } from '@/components/ui/sync-progress-indicator';
-import { ToastProvider } from '@/components/ui/toast';
 import { NavigationProgressBar } from '@/components/ui/loading-states';
 import {
   isVendorPreBvnPage,
@@ -15,7 +14,8 @@ import {
   VENDOR_TIER1_PATH,
 } from '@/lib/auth/vendor-bvn-access';
 import { Loader2 } from 'lucide-react';
-import { VendorMobileNav } from '@/components/vendor/vendor-mobile-nav';
+import { RoleMobileNav } from '@/components/layout/role-mobile-nav';
+import { DashboardRouteGuard } from '@/components/layout/dashboard-route-guard';
 
 export function VendorBvnShell({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession();
@@ -56,28 +56,27 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
     }
 
     return (
-      <ToastProvider>
+      <>
         <NavigationProgressBar />
         <div className="min-h-screen">{children}</div>
-      </ToastProvider>
+      </>
     );
   }
 
   return (
-    <ToastProvider>
-      <div className="min-h-screen bg-gray-50">
-        <NavigationProgressBar />
-        <DashboardSidebar />
-        <div className="hidden lg:block">
-          <DashboardTopBar />
-        </div>
-        <OfflineIndicator />
-        <main className="fixed inset-0 lg:left-64 top-16 lg:top-16 overflow-y-auto pb-16 lg:pb-0">
-          <div className="p-4 lg:p-8 pb-6">{children}</div>
-        </main>
-        <VendorMobileNav />
-        <SyncProgressIndicator />
+    <div className="min-h-screen bg-gray-50">
+      <DashboardRouteGuard />
+      <NavigationProgressBar />
+      <DashboardSidebar />
+      <div className="hidden lg:block">
+        <DashboardTopBar />
       </div>
-    </ToastProvider>
+      <OfflineIndicator />
+      <main className="fixed inset-0 lg:left-64 top-16 lg:top-16 overflow-y-auto pb-16 lg:pb-0">
+        <div className="p-4 lg:p-8 pb-6">{children}</div>
+      </main>
+      <RoleMobileNav />
+      <SyncProgressIndicator />
+    </div>
   );
 }

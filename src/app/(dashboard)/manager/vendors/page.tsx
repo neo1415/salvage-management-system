@@ -30,7 +30,7 @@ import { FilterChip } from '@/components/ui/filters/filter-chip';
 import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
 import { SearchInput } from '@/components/ui/filters/search-input';
 import { Filter as FilterIcon, X } from 'lucide-react';
-import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
 
 const VENDOR_TIER_TABS = ['tier0', 'tier1', 'tier2'] as const;
 
@@ -91,11 +91,6 @@ function VendorManagementContent() {
     (searchParams.get('tier') as TierTab) || 'tier0'
   );
 
-  const { swipeTabProps } = useSwipeTabs({
-    tabs: VENDOR_TIER_TABS,
-    activeTab,
-    onTabChange: setActiveTab,
-  });
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(
     (searchParams.get('status') as StatusFilter) || 'all'
   );
@@ -569,7 +564,11 @@ function VendorManagementContent() {
         )}
 
         {/* Applications List — swipe left/right on touch to change tier tab */}
-        <div className="touch-pan-y" {...swipeTabProps}>
+        <SwipeTabsBody
+          tabs={VENDOR_TIER_TABS}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        >
         {applications.length === 0 && !isInitialLoading ? (
           <div className="bg-white rounded-lg shadow-sm p-12 text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
@@ -618,7 +617,7 @@ function VendorManagementContent() {
             ))}
           </div>
         )}
-        </div>
+        </SwipeTabsBody>
 
         {/* Review Modal */}
         {selectedApplication && (

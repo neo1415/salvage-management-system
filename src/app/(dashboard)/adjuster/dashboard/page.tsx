@@ -90,7 +90,7 @@ export default function AdjusterDashboardPage() {
     }
   };
 
-  if (status === 'loading' || loading) {
+  if (status === 'loading' || loading || !stats) {
     return <DataLoadingState label="Dashboard" variant="page" />;
   }
 

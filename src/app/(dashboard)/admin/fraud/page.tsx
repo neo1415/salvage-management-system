@@ -11,10 +11,11 @@
 'use client';
 
 import { useEffect, useState, useRef, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
+import { BodyPortal } from '@/components/ui/body-portal';
 import { ChevronRight } from 'lucide-react';
 
 interface FraudPattern {
@@ -154,6 +155,7 @@ function alertWorkflowBucket(alert: FraudAlert): FraudListTab {
 
 export default function FraudAlertDashboard() {
   const router = useRouter();
+  const { data: session, status: sessionStatus } = useSession();
   const [fraudAlerts, setFraudAlerts] = useState<FraudAlert[]>([]);
   const fraudAlertsRef = useRef<FraudAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,11 +179,6 @@ export default function FraudAlertDashboard() {
   const [suspendReason, setSuspendReason] = useState('');
   const [fraudListTab, setFraudListTab] = useState<FraudListTab>('open');
 
-  const { swipeTabProps } = useSwipeTabs({
-    tabs: FRAUD_LIST_TAB_ORDER,
-    activeTab: fraudListTab,
-    onTabChange: setFraudListTab,
-  });
 
   const fraudTabCounts = useMemo(() => {
     const counts: Record<FraudListTab, number> = {
@@ -203,9 +200,23 @@ export default function FraudAlertDashboard() {
   }, [fraudAlerts, fraudListTab]);
 
   useEffect(() => {
+    if (sessionStatus === 'loading') return;
+    if (sessionStatus === 'unauthenticated') {
+      router.replace('/login');
+      return;
+    }
+    const role = session?.user?.role;
+    if (role !== 'system_admin') {
+      if (role === 'salvage_manager') router.replace('/manager/dashboard');
+      else if (role === 'finance_officer') router.replace('/finance/dashboard');
+      else if (role === 'claims_adjuster') router.replace('/adjuster/dashboard');
+      else if (role === 'vendor') router.replace('/vendor/dashboard');
+      else router.replace('/unauthorized');
+      return;
+    }
     fetchFraudAlerts();
     fetchFraudSettings();
-  }, []);
+  }, [sessionStatus, session?.user?.role, router]);
 
   const fetchFraudSettings = async () => {
     try {
@@ -262,7 +273,9 @@ export default function FraudAlertDashboard() {
       }
 
       const data = await response.json();
-      const nextAlerts = data.fraudAlerts || [];
+      const nextAlerts = (data.fraudAlerts || []).filter(
+        (a: FraudAlert | null | undefined): a is FraudAlert => Boolean(a?.id)
+      );
       fraudAlertsRef.current = nextAlerts;
       setFraudAlerts(nextAlerts);
     } catch (err) {
@@ -500,6 +513,16 @@ export default function FraudAlertDashboard() {
     return 'bg-blue-100 text-blue-800';
   };
 
+  if (sessionStatus === 'loading' || (session?.user?.role && session.user.role !== 'system_admin')) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+        <div className="max-w-7xl mx-auto">
+          <DataLoadingState label="Fraud alerts" variant="page" />
+        </div>
+      </div>
+    );
+  }
+
   if (loading && fraudAlerts.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-8">
@@ -640,15 +663,21 @@ export default function FraudAlertDashboard() {
             No alerts in <strong>{FRAUD_TAB_LABELS[fraudListTab]}</strong>. Try another tab or refresh.
           </div>
         ) : (
-          <div className="space-y-2 touch-pan-y" {...swipeTabProps}>
+          <SwipeTabsBody
+            tabs={FRAUD_LIST_TAB_ORDER}
+            activeTab={fraudListTab}
+            onTabChange={setFraudListTab}
+            className="space-y-2"
+          >
             {filteredFraudAlerts.map((alert) => {
+              if (!alert) return null;
               const bucket = alertWorkflowBucket(alert);
               const headline =
                 alert.auction?.case?.claimReference ||
                 (alert.entityType ? `${alert.entityType}` : 'Fraud alert');
               const sub =
-                (alert.patterns[0] && formatReasonCode(alert.patterns[0])) ||
-                alert.evidenceSummary?.source ||
+                (alert.patterns?.[0] && formatReasonCode(alert.patterns[0])) ||
+                alert?.evidenceSummary?.source ||
                 'Suspicious activity';
               const who =
                 alert.vendor?.businessName ||
@@ -688,12 +717,13 @@ export default function FraudAlertDashboard() {
                 </button>
               );
             })}
-          </div>
+          </SwipeTabsBody>
         )}
       </div>
 
-      {/* Detail Modal */}
-      {showDetailModal && selectedAlert && typeof document !== 'undefined' && createPortal(
+      {/* Detail Modal — guard children: JSX evaluates even when portal is closed */}
+      <BodyPortal open={showDetailModal && !!selectedAlert}>
+        {selectedAlert ? (
         <div className="fixed inset-0" style={{ zIndex: 999999 }}>
           <div className="fixed inset-0 bg-black/50" onClick={closeDetailModal} />
           <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -913,12 +943,12 @@ export default function FraudAlertDashboard() {
               </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+        ) : null}
+      </BodyPortal>
 
       {/* Alert Action Modal */}
-      {showActionModal && selectedAlert && pendingAction && typeof document !== 'undefined' && createPortal(
+      <BodyPortal open={showActionModal && !!selectedAlert && !!pendingAction}>
         <div className="fixed inset-0" style={{ zIndex: 1000000 }}>
           <div className="fixed inset-0 bg-black/50" onClick={closeActionModal} />
           <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -956,12 +986,11 @@ export default function FraudAlertDashboard() {
               </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+      </BodyPortal>
 
       {/* Dismiss Modal */}
-      {showDismissModal && selectedAlert && typeof document !== 'undefined' && createPortal(
+      <BodyPortal open={showDismissModal && !!selectedAlert}>
         <div className="fixed inset-0" style={{ zIndex: 999999 }}>
           <div className="fixed inset-0 bg-black/50" onClick={closeDismissModal} />
           <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -1010,12 +1039,11 @@ export default function FraudAlertDashboard() {
               </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+      </BodyPortal>
 
       {/* Suspend Modal */}
-      {showSuspendModal && selectedAlert && typeof document !== 'undefined' && createPortal(
+      <BodyPortal open={showSuspendModal && !!selectedAlert}>
         <div className="fixed inset-0" style={{ zIndex: 999999 }}>
           <div className="fixed inset-0 bg-black/50" onClick={closeSuspendModal} />
           <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -1080,9 +1108,8 @@ export default function FraudAlertDashboard() {
               </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+      </BodyPortal>
     </div>
   );
 }

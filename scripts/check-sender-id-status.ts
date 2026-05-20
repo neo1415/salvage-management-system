@@ -42,39 +42,32 @@ async function checkSenderIDStatus() {
     console.log(JSON.stringify(response.data, null, 2));
     console.log('─'.repeat(60));
 
-    if (response.data && response.data.data) {
-      const senderIds = response.data.data;
-      
-      if (senderIds.length === 0) {
-        console.log('\n⚠️  NO SENDER IDs FOUND!');
-        console.log('\n💡 This is why your SMS is not being delivered!');
-        console.log('\n📝 To fix this:');
-        console.log('1. Go to https://termii.com');
-        console.log('2. Navigate to "Sender ID" section');
-        console.log('3. Request a sender ID (e.g., "NEMSAL" or "NEM")');
-        console.log('4. Wait for approval (usually 24-48 hours)');
-        console.log('\n💡 TEMPORARY SOLUTION:');
-        console.log('Use "dnd" channel instead of "generic" to bypass sender ID requirement');
-      } else {
-        console.log('\n📋 Your Sender IDs:');
-        senderIds.forEach((sender: any, index: number) => {
-          console.log(`\n${index + 1}. ${sender.sender_id}`);
-          console.log(`   Status: ${sender.status}`);
-          console.log(`   Created: ${sender.created_at}`);
-        });
+    const senderIds =
+      response.data?.content ?? response.data?.data ?? [];
 
-        const currentSender = senderIds.find((s: any) => s.sender_id === TERMII_SENDER_ID);
-        if (currentSender) {
-          console.log(`\n✅ Your sender ID "${TERMII_SENDER_ID}" is ${currentSender.status}`);
-          if (currentSender.status !== 'approved') {
-            console.log(`\n⚠️  Sender ID is not approved yet!`);
-            console.log('This is why SMS is not being delivered.');
-          }
-        } else {
-          console.log(`\n⚠️  Sender ID "${TERMII_SENDER_ID}" not found in your account!`);
-          console.log('\nAvailable sender IDs:');
-          senderIds.forEach((s: any) => console.log(`  - ${s.sender_id} (${s.status})`));
+    if (!Array.isArray(senderIds) || senderIds.length === 0) {
+      console.log('\n⚠️  NO SENDER IDs FOUND!');
+      console.log('Request sender IDs at https://accounts.termii.com/');
+    } else {
+      console.log('\n📋 Your Sender IDs:');
+      senderIds.forEach((sender: { sender_id: string; status: string; createdAt?: string }, index: number) => {
+        console.log(`\n${index + 1}. ${sender.sender_id}`);
+        console.log(`   Status: ${sender.status}`);
+        if (sender.createdAt) console.log(`   Created: ${sender.createdAt}`);
+      });
+
+      const currentSender = senderIds.find((s: { sender_id: string }) => s.sender_id === TERMII_SENDER_ID);
+      if (currentSender) {
+        console.log(`\n✅ Your sender ID "${TERMII_SENDER_ID}" is ${currentSender.status}`);
+        if (currentSender.status !== 'active' && currentSender.status !== 'approved') {
+          console.log('\n⚠️  Sender ID is not active/approved yet.');
         }
+      } else {
+        console.log(`\n⚠️  Sender ID "${TERMII_SENDER_ID}" not found in your account!`);
+        console.log('\nAvailable sender IDs:');
+        senderIds.forEach((s: { sender_id: string; status: string }) =>
+          console.log(`  - ${s.sender_id} (${s.status})`)
+        );
       }
     }
 

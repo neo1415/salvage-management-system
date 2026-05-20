@@ -40,9 +40,9 @@ export async function GET(request: NextRequest) {
       where: eq(users.id, session.user.id),
     });
 
-    if (!user || !['system_admin', 'salvage_manager'].includes(user.role)) {
+    if (!user || user.role !== 'system_admin') {
       return NextResponse.json(
-        { error: 'Forbidden: Admin or Salvage Manager access required' },
+        { error: 'Forbidden: System admin access required' },
         { status: 403 }
       );
     }
@@ -234,6 +234,11 @@ export async function GET(request: NextRequest) {
             deviceType: bid.deviceType,
             createdAt: bid.createdAt,
           })),
+          evidenceSummary: {
+            source: 'audit',
+            checksCompleted: [],
+            failedChecks: afterState?.patterns || [],
+          },
           alertSource: 'audit',
         };
       });

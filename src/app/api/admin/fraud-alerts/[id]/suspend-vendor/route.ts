@@ -58,7 +58,7 @@ export async function POST(
       where: eq(users.id, session.user.id),
     });
 
-    if (!user || !['system_admin', 'salvage_manager'].includes(user.role)) {
+    if (!user || user.role !== 'system_admin') {
       return NextResponse.json(
         { error: 'Forbidden: Admin or Salvage Manager access required' },
         { status: 403 }

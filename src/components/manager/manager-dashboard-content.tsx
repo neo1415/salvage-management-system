@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth/use-auth';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
+import { PageLoadingSkeleton } from '@/components/ui/loading-states';
 
 // Dynamic import for Recharts to reduce initial bundle size
 const LineChart = dynamic(
@@ -267,8 +268,8 @@ function ManagerDashboardContentInner() {
     );
   }
 
-  if (!dashboardData) {
-    return null;
+  if (isLoading || isLoadingData || !dashboardData) {
+    return <PageLoadingSkeleton />;
   }
 
   const { kpis, charts } = dashboardData;

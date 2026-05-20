@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { eq, or, ilike, and, inArray, ne, isNotNull, isNull, sql } from 'drizzle-orm';
 import { vendors } from '@/lib/db/schema/vendors';
 import { resolveVendorUserStatus } from '@/lib/utils/vendor-user-status';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 // Validation schema for staff account creation
 const createStaffSchema = z.object({
@@ -63,6 +64,7 @@ async function sendTemporaryPasswordEmail(
   };
 
   const roleDisplay = roleDisplayNames[role] || role;
+  const loginUrl = appPath('/login');
 
   const html = `
 <!DOCTYPE html>
@@ -117,7 +119,7 @@ async function sendTemporaryPasswordEmail(
               </p>
 
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/login" 
+                <a href="${loginUrl}" 
                    style="display: inline-block; padding: 14px 32px; background-color: #800020; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
                   Log In Now
                 </a>

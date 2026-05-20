@@ -50,7 +50,7 @@ import { useCachedAuctions } from '@/hooks/use-cached-auctions';
 import { useScheduledAuctionChecker } from '@/hooks/use-scheduled-auction-checker';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { RecommendationsFeed } from '@/components/intelligence/recommendations-feed';
-import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
 
 const AUCTION_TABS = ['active', 'for_you', 'my_bids', 'won', 'scheduled'] as const;
 
@@ -148,11 +148,6 @@ function AuctionBrowsingContent() {
     (searchParams.get('tab') as Filters['tab']) || 'active'
   );
 
-  const { swipeTabProps } = useSwipeTabs({
-    tabs: AUCTION_TABS,
-    activeTab,
-    onTabChange: setActiveTab,
-  });
   const [assetTypeFilter, setAssetTypeFilter] = useState<string[]>(
     searchParams.get('assetType')?.split(',').filter(Boolean) || []
   );
@@ -967,9 +962,11 @@ function AuctionBrowsingContent() {
       </div>
 
       {/* Main Content — swipe left/right on touch to change tabs */}
-      <div
-        className="max-w-7xl mx-auto px-2 md:px-4 py-6 touch-pan-y"
-        {...swipeTabProps}
+      <SwipeTabsBody
+        tabs={AUCTION_TABS}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        className="max-w-7xl mx-auto px-2 md:px-4 py-6"
       >
         {/* Loading State */}
         {isLoading && (
@@ -1052,7 +1049,7 @@ function AuctionBrowsingContent() {
             <RecommendationsFeed vendorId={session.user.vendorId} />
           </div>
         )}
-      </div>
+      </SwipeTabsBody>
     </div>
   );
 }

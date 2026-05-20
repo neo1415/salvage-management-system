@@ -8,6 +8,7 @@ import { uploadFile, validateFile } from '@/lib/storage/cloudinary';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { emailService } from '@/features/notifications/services/email.service';
 import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 const MAX_FILE_SIZE_MB = 5;
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
@@ -371,7 +372,7 @@ async function notifyFinanceOfficers(
                 </div>
                 
                 <div class="button-container">
-                  <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/finance/payments" class="button">Review Payment</a>
+                  <a href="${appPath('/finance/payments')}" class="button">Review Payment</a>
                 </div>
                 
                 <p style="margin-top: 30px;">Best regards,<br><strong>NEM Salvage Management System</strong></p>

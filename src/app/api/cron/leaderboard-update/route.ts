@@ -47,7 +47,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Call the leaderboard refresh endpoint
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const { getAppUrl } = await import('@/features/notifications/templates/email-urls');
+    const baseUrl = getAppUrl();
     const refreshUrl = `${baseUrl}/api/vendors/leaderboard/refresh`;
 
     const response = await fetch(refreshUrl, {

@@ -8,9 +8,8 @@ import { KYCStatusCard, type VendorTier } from '@/components/vendor/kyc-status-c
 import { usePaymentUnlockedModal } from '@/hooks/use-payment-unlocked-modal';
 import { useVendorDashboard } from '@/hooks/queries/use-vendor-dashboard';
 import { Check, Star, Trophy, Rocket, ClipboardList } from 'lucide-react';
-import { RippleButton } from '@/components/ui/ripple-button';
-import { StickyActionBar } from '@/components/ui/sticky-action-bar';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
+import { PageLoadingSkeleton } from '@/components/ui/loading-states';
 
 const PaymentUnlockedModal = dynamic(
   () => import('@/components/modals/payment-unlocked-modal'),
@@ -149,8 +148,8 @@ function VendorDashboardContentInner() {
     );
   }
 
-  if (!dashboardData) {
-    return null;
+  if (isAuthLoading || isLoadingData || !dashboardData) {
+    return <PageLoadingSkeleton />;
   }
 
   const { performanceStats, badges, comparisons, vendorTier, bidLimit, pendingPickupConfirmations } = dashboardData;
@@ -159,7 +158,7 @@ function VendorDashboardContentInner() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="pb-20 p-4 md:p-6"> {/* Add padding for sticky action bar */}
+      <div className="p-4 md:p-6">
         <div className="max-w-7xl mx-auto">
           {/* Page Header */}
           <div className="mb-6">
@@ -461,41 +460,8 @@ function VendorDashboardContentInner() {
           </div>
         </div>
 
-          {/* Quick Actions - Moved to sticky action bar */}
         </div>
       </div>
-
-      {/* Sticky Action Bar - Primary actions in thumb zone */}
-      <StickyActionBar position="bottom">
-        <div className="grid grid-cols-2 gap-3">
-          <RippleButton
-            onClick={() => router.push('/vendor/auctions')}
-            variant="primary"
-            size="md"
-            fullWidth
-            className="flex items-center justify-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="hidden sm:inline">Browse Auctions</span>
-            <span className="sm:hidden">Auctions</span>
-          </RippleButton>
-          <RippleButton
-            onClick={() => router.push('/vendor/wallet')}
-            variant="secondary"
-            size="md"
-            fullWidth
-            className="flex items-center justify-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-            </svg>
-            <span className="hidden sm:inline">My Wallet</span>
-            <span className="sm:hidden">Wallet</span>
-          </RippleButton>
-        </div>
-      </StickyActionBar>
 
       {/* Payment Unlocked Modal */}
       {isPaymentModalOpen && paymentData && (

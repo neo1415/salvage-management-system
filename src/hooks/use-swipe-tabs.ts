@@ -16,6 +16,7 @@ export interface UseSwipeTabsOptions<T extends string> {
 /**
  * Swipe left/right on touch devices to move between ordered tabs.
  * Ignores gestures that are mostly vertical (scroll / pull-to-refresh).
+ * Prefer {@link SwipeTabsBody} for animated panel transitions.
  */
 export function useSwipeTabs<T extends string>({
   tabs,
@@ -25,6 +26,13 @@ export function useSwipeTabs<T extends string>({
   threshold = DEFAULT_THRESHOLD,
 }: UseSwipeTabsOptions<T>) {
   const start = useRef<{ x: number; y: number } | null>(null);
+
+  const changeTab = useCallback(
+    (tab: T) => {
+      onTabChange(tab);
+    },
+    [onTabChange]
+  );
 
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
@@ -50,12 +58,12 @@ export function useSwipeTabs<T extends string>({
       if (index < 0) return;
 
       if (dx < 0 && index < tabs.length - 1) {
-        onTabChange(tabs[index + 1]);
+        changeTab(tabs[index + 1]);
       } else if (dx > 0 && index > 0) {
-        onTabChange(tabs[index - 1]);
+        changeTab(tabs[index - 1]);
       }
     },
-    [enabled, threshold, tabs, activeTab, onTabChange]
+    [enabled, threshold, tabs, activeTab, changeTab]
   );
 
   const onTouchCancel = useCallback(() => {
@@ -63,6 +71,7 @@ export function useSwipeTabs<T extends string>({
   }, []);
 
   return {
+    changeTab,
     swipeTabProps: {
       onTouchStart,
       onTouchEnd,

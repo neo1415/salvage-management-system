@@ -13,6 +13,7 @@ const VendorDashboardContent = dynamic(
   }
 );
 
+/** Vendor dashboard — bottom nav only (RoleMobileNav); no duplicate Auctions/Wallet bar. */
 export default function VendorDashboardPage() {
   return <VendorDashboardContent />;
 }

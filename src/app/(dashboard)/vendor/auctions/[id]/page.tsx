@@ -118,6 +118,7 @@ interface AuctionDetails {
       y: number; // latitude
     };
     locationName: string;
+    approvedAt?: string | null;
     photos: string[];
     voiceNotes: string[];
     vehicleCondition?: QualityTier;
@@ -1556,6 +1557,18 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     {auction.case.claimReference}
                   </p>
                 </div>
+                {auction.case.approvedAt && (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Date</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {new Date(auction.case.approvedAt).toLocaleDateString('en-NG', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </p>
+                  </div>
+                )}
                 {auction.case.assetType === 'vehicle' && auction.case.vehicleCondition && (
                   <div>
                     <p className="text-sm text-gray-600 mb-1">Condition</p>

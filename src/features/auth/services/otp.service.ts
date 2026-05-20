@@ -3,6 +3,7 @@ import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq } from 'drizzle-orm';
+import { smsService } from '@/features/notifications/services/sms.service';
 
 /**
  * OTP Service
@@ -29,8 +30,6 @@ export class OTPService {
   private termiiApiKey: string | null;
   private readonly OTP_EXPIRY_SECONDS = 5 * 60; // 5 minutes
   private readonly MAX_ATTEMPTS = 3;
-  private readonly TERMII_API_URL = 'https://api.ng.termii.com/api/sms/send';
-
   constructor() {
     // Initialize Termii API key
     const apiKey = process.env.TERMII_API_KEY;
@@ -129,38 +128,28 @@ export class OTPService {
       // This ensures OTP is available even if SMS sending fails
       await otpCache.set(normalizedPhone, otp);
 
-      // Send SMS via Termii REST API
-      const senderId = process.env.TERMII_SENDER_ID || 'NEMSAL';
       const message = `Your NEM Salvage verification code is: ${otp}. Valid for 5 minutes. Do not share this code.`;
 
       try {
         if (this.termiiApiKey) {
-          // Send SMS via Termii REST API
-          const response = await fetch(this.TERMII_API_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              to: normalizedPhone,
-              from: senderId,
-              sms: message,
-              type: 'plain',
-              channel: process.env.TERMII_CHANNEL || 'generic',
-              api_key: this.termiiApiKey,
-            }),
+          const smsResult = await smsService.sendSMS({
+            to: normalizedPhone,
+            message,
+            category: 'otp',
           });
 
-          const result = await response.json();
-
-          // Log the full Termii response for debugging
-          console.log('📱 Termii API Response:', JSON.stringify(result, null, 2));
-
-          if (!response.ok) {
-            throw new Error(`Termii API error: ${result.message || 'Failed to send SMS'}`);
+          if (!smsResult.success) {
+            throw new Error(smsResult.error || 'Failed to send OTP SMS');
           }
 
-          console.log(`✅ SMS sent successfully to ${phone} via Termii`);
+          if (smsResult.skipped) {
+            console.warn(`📱 OTP SMS skipped for ${normalizedPhone}: ${smsResult.messageId}`);
+          } else {
+            console.log(
+              `✅ OTP SMS accepted by Termii for ${normalizedPhone} (id: ${smsResult.messageId}). ` +
+                'Check Termii inbox for Sent vs Failed — "Successfully Sent" is not handset delivery.'
+            );
+          }
         } else {
           // In development/test mode without Termii, just log
           if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {

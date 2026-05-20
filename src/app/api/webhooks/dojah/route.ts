@@ -16,6 +16,7 @@ import { logAction, AuditActionType, AuditEntityType, DeviceType, getIpAddress }
 import type { NormalizedVerificationResult } from '@/features/kyc/types/provider-verification.types';
 import { extractVendorIdFromDojahReference } from '@/features/kyc/utils/dojah-reference';
 import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 export const dynamic = 'force-dynamic';
 
@@ -339,7 +340,7 @@ export async function POST(request: NextRequest) {
         vendorName: user?.fullName ?? 'Vendor',
         businessName: vendor.businessName,
         riskLevel: normalized.riskLevel,
-        reviewUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/manager/kyc-approvals/${vendor.id}`,
+        reviewUrl: appPath(`/manager/kyc-approvals/${vendor.id}`),
         outcome: 'pending_review',
       });
     }

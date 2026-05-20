@@ -118,12 +118,6 @@ const navigationItems: NavItem[] = [
     icon: Users,
     roles: ['salvage_manager'],
   },
-  {
-    label: 'Fraud Alerts',
-    href: '/admin/fraud',
-    icon: AlertTriangle,
-    roles: ['salvage_manager'],
-  },
 
   // Adjuster Navigation
   {

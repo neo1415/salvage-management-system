@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { CreditCard, CheckCircle, Clock, AlertCircle, Wallet, Banknote } from 'lucide-react';
 import Link from 'next/link';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 interface DashboardStats {
   totalPayments: number;
@@ -103,8 +104,8 @@ function FinanceDashboardContentInner() {
     return `₦${amount.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   };
 
-  if (status === 'loading' || (loading && !stats)) {
-    return null; // Skeleton will be shown by parent
+  if (status === 'loading' || loading || !stats) {
+    return <DataLoadingState label="Finance dashboard" variant="page" />;
   }
 
   return (

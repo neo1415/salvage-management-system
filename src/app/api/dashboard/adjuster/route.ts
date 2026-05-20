@@ -8,7 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { eq, and, sql } from 'drizzle-orm';
+import { auctions } from '@/lib/db/schema/auctions';
+import { eq, and, sql, inArray, gt } from 'drizzle-orm';
 
 /**
  * GET /api/dashboard/adjuster
@@ -103,13 +104,19 @@ export async function GET(request: NextRequest) {
     const rejected = cancelledResult[0]?.count || 0;
 
     // Get active auction cases
+    // IMPORTANT: Do NOT use case status as a proxy for auction activity.
+    // A case can remain `active_auction` even if the auction ended (or ended with no bids).
+    // Active auctions must be counted from the auctions table using status + endTime.
+    const now = new Date();
     const activeAuctionResult = await db
       .select({ count: sql<number>`count(*)::int` })
-      .from(salvageCases)
+      .from(auctions)
+      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
       .where(
         and(
           eq(salvageCases.createdBy, userId),
-          eq(salvageCases.status, 'active_auction')
+          inArray(auctions.status, ['active', 'extended']),
+          gt(auctions.endTime, now)
         )
       );
 

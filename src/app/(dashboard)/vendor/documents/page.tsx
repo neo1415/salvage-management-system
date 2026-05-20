@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
@@ -35,6 +35,8 @@ interface AuctionDocuments {
   status: 'scheduled' | 'active' | 'extended' | 'closed' | 'cancelled';
   documents: Document[];
 }
+
+const DOCUMENTS_PAGE_SIZE = 15;
 
 function isVisibleDocument(doc: Document) {
   return !(doc.documentType === 'pickup_authorization' && doc.status === 'pending');
@@ -80,12 +82,14 @@ function mapApiDocument(doc: {
 }
 
 export default function VendorDocumentsPage() {
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const [auctionDocuments, setAuctionDocuments] = useState<AuctionDocuments[]>([]);
   
   // Track if we need to scroll to a specific auction
   const [scrollToAuctionId, setScrollToAuctionId] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(DOCUMENTS_PAGE_SIZE);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // CRITICAL: Wrap fetchFn in useCallback to prevent infinite loop
   // Without this, fetchFn is recreated on every render, causing the hook to re-fetch infinitely
@@ -184,12 +188,54 @@ export default function VendorDocumentsPage() {
     if (cachedDocs && cachedDocs.length > 0) {
       console.log('✅ [DOCUMENTS PAGE] Setting auction documents:', cachedDocs.length, 'auctions');
       setAuctionDocuments(cachedDocs as unknown as AuctionDocuments[]);
-    } else if (!isLoading) {
-      // Clear documents if no cached docs and not loading
+    } else if (!isLoading && session?.user?.vendorId) {
       console.log('⚠️  [DOCUMENTS PAGE] Clearing auction documents (no cached docs and not loading)');
       setAuctionDocuments([]);
     }
-  }, [cachedDocs, isLoading]);
+  }, [cachedDocs, isLoading, session?.user?.vendorId]);
+
+  const scrollTargetIndex = useMemo(() => {
+    if (!scrollToAuctionId) return -1;
+    return auctionDocuments.findIndex((a) => a.auctionId === scrollToAuctionId);
+  }, [auctionDocuments, scrollToAuctionId]);
+
+  useEffect(() => {
+    setVisibleCount(DOCUMENTS_PAGE_SIZE);
+  }, [auctionDocuments.length]);
+
+  useEffect(() => {
+    if (scrollTargetIndex >= 0) {
+      setVisibleCount((prev) =>
+        Math.max(prev, scrollTargetIndex + 1, DOCUMENTS_PAGE_SIZE)
+      );
+    }
+  }, [scrollTargetIndex]);
+
+  const visibleAuctions = useMemo(
+    () => auctionDocuments.slice(0, visibleCount),
+    [auctionDocuments, visibleCount]
+  );
+
+  const hasMoreAuctions = visibleCount < auctionDocuments.length;
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel || !hasMoreAuctions || isLoading) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) =>
+            Math.min(prev + DOCUMENTS_PAGE_SIZE, auctionDocuments.length)
+          );
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreAuctions, isLoading, auctionDocuments.length]);
 
   // Handle anchor navigation from auction detail page
   useEffect(() => {
@@ -268,7 +314,7 @@ export default function VendorDocumentsPage() {
     router.push(receiptUrl);
   };
 
-  if (isLoading) {
+  if (isLoading || sessionStatus === 'loading') {
     console.log('⏳ [DOCUMENTS PAGE] Showing loading state');
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center">
@@ -449,7 +495,7 @@ export default function VendorDocumentsPage() {
           </div>
         ) : (
           <div className="grid gap-5 sm:gap-6">
-            {auctionDocuments.map((auction) => (
+            {visibleAuctions.map((auction) => (
               <AuctionDocumentCard
                 key={auction.auctionId}
                 auction={auction}
@@ -459,6 +505,15 @@ export default function VendorDocumentsPage() {
                 isOffline={isOffline}
               />
             ))}
+            {hasMoreAuctions && (
+              <div
+                ref={loadMoreRef}
+                className="py-6 text-center text-sm text-gray-500"
+                aria-hidden
+              >
+                Loading more auctions…
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -16,7 +16,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
 
 const APPROVAL_TABS = ['pending', 'approved', 'rejected', 'all'] as const;
 import { useRouter } from 'next/navigation';
@@ -27,6 +27,7 @@ import { validatePriceOverrides as validatePrices, type PriceOverrides } from '@
 import { formatConditionForDisplay } from '@/features/valuations/services/condition-mapping.service';
 import { AuctionScheduleSelector, type AuctionScheduleValue } from '@/components/ui/auction-schedule-selector';
 import { DataLoadingState } from '@/components/ui/loading-states';
+import { resolveCaseDisplayStatus } from '@/lib/metrics/case-display-status';
 import { LocationMap } from '@/components/ui/location-map';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
@@ -92,6 +93,11 @@ interface CaseData {
   approvedAt?: string | null;
   vehicleMileage?: number;
   vehicleCondition?: 'excellent' | 'good' | 'fair' | 'poor';
+  auctionId?: string | null;
+  auctionStatus?: string | null;
+  auctionEndTime?: string | null;
+  paymentId?: string | null;
+  paymentStatus?: string | null;
 }
 
 /**
@@ -117,11 +123,6 @@ export default function ApprovalsPage() {
   // State
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
 
-  const { swipeTabProps } = useSwipeTabs({
-    tabs: APPROVAL_TABS,
-    activeTab,
-    onTabChange: setActiveTab,
-  });
   const [allCases, setAllCases] = useState<CaseData[]>([]); // Store all cases
   const [cases, setCases] = useState<CaseData[]>([]); // Filtered cases for display
   const [selectedCase, setSelectedCase] = useState<CaseData | null>(null);
@@ -231,7 +232,9 @@ export default function ApprovalsPage() {
 
       // Add timestamp to bust cache
       const timestamp = Date.now();
-      const response = await fetch(`/api/cases?_t=${timestamp}`);
+      // Fetch enough rows so dashboard counts are actionable (avoid "phantom" pending items
+      // that exist beyond the first page).
+      const response = await fetch(`/api/cases?limit=500&offset=0&_t=${timestamp}`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch cases');
@@ -582,33 +585,21 @@ export default function ApprovalsPage() {
    * Maps 'active_auction' to 'Payment Pending' when auction is closed
    */
   const getStatusBadge = (caseData: CaseData) => {
-    const badges = {
+    const display = resolveCaseDisplayStatus(caseData);
+
+    const badges: Record<string, { label: string; color: string }> = {
       draft: { label: 'Draft', color: 'bg-gray-100 text-gray-800' },
       pending_approval: { label: 'Pending Approval', color: 'bg-yellow-100 text-yellow-800' },
       approved: { label: 'Approved', color: 'bg-green-100 text-green-800' },
       active_auction: { label: 'Active Auction', color: 'bg-blue-100 text-blue-800' },
+      awaiting_payment: { label: 'Payment Pending', color: 'bg-orange-100 text-orange-800' },
+      closed: { label: 'Auction Closed', color: 'bg-gray-100 text-gray-800' },
       sold: { label: 'Sold', color: 'bg-purple-100 text-purple-800' },
       cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800' },
       rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800' },
     };
 
-    // Default badge based on status
-    const badge = badges[caseData.status as keyof typeof badges] || badges.draft;
-
-    // Smart label mapping: Show "Payment Pending" for closed auctions awaiting payment
-    // This happens when status is 'active_auction' but the auction has closed
-    // and payment is still pending verification
-    if (caseData.status === 'active_auction') {
-      // In this context, if a case is in 'active_auction' status but appears in the
-      // approved tab (has approvedBy), it likely means the auction has closed
-      // and we're waiting for payment. Show a more accurate label.
-      return {
-        label: 'Payment Pending',
-        color: 'bg-orange-100 text-orange-800'
-      };
-    }
-
-    return badge;
+    return badges[display] || badges.draft;
   };
 
   if (status === 'loading' || isLoading) {
@@ -676,6 +667,11 @@ export default function ApprovalsPage() {
               <div>
                 <h2 className="text-lg font-bold text-gray-900">{selectedCase.claimReference}</h2>
                 <p className="text-sm text-gray-600">Submitted {formatDate(selectedCase.createdAt)}</p>
+                {selectedCase.adjusterName && (
+                  <p className="text-sm text-gray-700 mt-1">
+                    Claims adjuster: <span className="font-medium">{selectedCase.adjusterName}</span>
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(selectedCase.damageSeverity)}`}>
@@ -1418,7 +1414,12 @@ export default function ApprovalsPage() {
       </div>
 
       {/* Cases List — swipe left/right on touch to change tab */}
-      <div className="p-4 touch-pan-y" {...swipeTabProps}>
+      <SwipeTabsBody
+        tabs={APPROVAL_TABS}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        className="p-4"
+      >
         {cases.length === 0 ? (
           <div className="text-center py-12">
             <CheckCircle className="w-16 h-16 mx-auto mb-4 text-green-600" aria-label="All caught up" />
@@ -1447,6 +1448,11 @@ export default function ApprovalsPage() {
                     <div>
                       <h3 className="font-bold text-gray-900">{caseData.claimReference}</h3>
                       <p className="text-sm text-gray-600">{formatDate(caseData.createdAt)}</p>
+                      {caseData.adjusterName && (
+                        <p className="text-sm text-gray-700 mt-0.5">
+                          Adjuster: <span className="font-medium">{caseData.adjusterName}</span>
+                        </p>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(caseData.damageSeverity)}`}>
@@ -1510,7 +1516,7 @@ export default function ApprovalsPage() {
             </div>
           </>
         )}
-      </div>
+      </SwipeTabsBody>
     </div>
   );
 }

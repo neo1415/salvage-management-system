@@ -480,8 +480,8 @@ export async function POST(
         )
       );
 
-      const rejectAppUrl =
-        process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      const { getAppUrl } = await import('@/features/notifications/templates/email-urls');
+      const rejectAppUrl = getAppUrl();
 
       if (creator) {
         after(async () => {

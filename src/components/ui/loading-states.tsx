@@ -189,19 +189,6 @@ export function NavigationProgressBar() {
       aria-hidden
     >
       <div className="navigation-progress-bar h-full w-1/3 bg-burgundy-800 shadow-[0_0_8px_rgba(128,0,32,0.45)]" />
-      <style jsx global>{`
-        @keyframes navigation-progress-slide {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(350%);
-          }
-        }
-        .navigation-progress-bar {
-          animation: navigation-progress-slide 0.45s ease-out forwards;
-        }
-      `}</style>
     </div>
   );
 }

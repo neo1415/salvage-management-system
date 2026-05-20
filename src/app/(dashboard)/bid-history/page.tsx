@@ -30,7 +30,7 @@ import { useToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useCachedBidHistory } from '@/hooks/use-cached-bid-history';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
 
 const BID_HISTORY_TABS = ['active', 'completed'] as const;
 
@@ -62,6 +62,7 @@ interface BidHistoryItem {
       x: number;
       y: number;
     };
+    approvedAt?: string | null;
   };
   currentBidder: {
     vendor: {
@@ -103,14 +104,6 @@ export default function BidHistoryPage() {
   
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
 
-  const { swipeTabProps } = useSwipeTabs({
-    tabs: BID_HISTORY_TABS,
-    activeTab,
-    onTabChange: (tab) => {
-      setActiveTab(tab);
-      setPage(1);
-    },
-  });
   const [page, setPage] = useState(1);
   const [endingAuction, setEndingAuction] = useState<string | null>(null);
   const [showEndAuctionModal, setShowEndAuctionModal] = useState(false);
@@ -470,7 +463,14 @@ export default function BidHistoryPage() {
         </div>
 
         {/* Auction Cards — swipe to switch Active / Completed */}
-        <div className="touch-pan-y" {...swipeTabProps}>
+        <SwipeTabsBody
+          tabs={BID_HISTORY_TABS}
+          activeTab={activeTab}
+          onTabChange={(tab) => {
+            setActiveTab(tab);
+            setPage(1);
+          }}
+        >
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {loading && data.length === 0 ? (
             // Loading skeleton (first load only)
@@ -576,9 +576,20 @@ export default function BidHistoryPage() {
                   </h3>
                   
                   {/* Claim Reference */}
-                  <p className="text-sm text-gray-600 mb-4">
+                  <p className="text-sm text-gray-600 mb-1">
                     Claim: {item.case.claimReference}
                   </p>
+                  {item.case.approvedAt && (
+                    <p className="text-sm text-gray-500 mb-4 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" />
+                      {new Date(item.case.approvedAt).toLocaleDateString('en-NG', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </p>
+                  )}
+                  {!item.case.approvedAt && <div className="mb-4" />}
 
                   {/* Key Specs */}
                   <div className="space-y-2 mb-4">
@@ -667,7 +678,7 @@ export default function BidHistoryPage() {
             ))
           )}
         </div>
-        </div>
+        </SwipeTabsBody>
 
         {/* Pagination */}
         {totalPages > 1 && (

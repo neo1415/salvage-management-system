@@ -416,14 +416,74 @@ export async function GET(request: NextRequest) {
     }
 
     // Execute query
-    const cases = await query;
-    
-    // DEBUG: Log severity values being returned
-    console.log('📋 Returning cases with severities:', cases.map(c => ({ 
-      id: c.id, 
-      claimRef: c.claimReference,
-      severity: c.damageSeverity 
-    })));
+    let cases = await query;
+
+    if (createdByMe && cases.length > 0) {
+      const { auditLogs } = await import('@/lib/db/schema/audit-logs');
+      const { inArray, desc, and: andOp, eq: eqOp } = await import('drizzle-orm');
+      const { alias } = await import('drizzle-orm/pg-core');
+
+      const caseIds = [...new Set(cases.map((c) => c.id))];
+      const rejectorUsers = alias(users, 'rejector_users');
+
+      const rejectionRows = await db
+        .select({
+          entityId: auditLogs.entityId,
+          rejectionReason: auditLogs.afterState,
+          rejectedAt: auditLogs.createdAt,
+          rejectedByName: rejectorUsers.fullName,
+        })
+        .from(auditLogs)
+        .leftJoin(
+          rejectorUsers,
+          sql`${rejectorUsers.id}::text = ${auditLogs.afterState}->>'rejectedBy'`
+        )
+        .where(
+          andOp(
+            eqOp(auditLogs.actionType, 'case_rejected'),
+            eqOp(auditLogs.entityType, 'case'),
+            inArray(auditLogs.entityId, caseIds)
+          )
+        )
+        .orderBy(desc(auditLogs.createdAt));
+
+      const latestRejectionByCase = new Map<
+        string,
+        {
+          rejectionReason: string | null;
+          rejectedAt: Date;
+          rejectedByName: string | null;
+        }
+      >();
+
+      for (const row of rejectionRows) {
+        if (latestRejectionByCase.has(row.entityId)) continue;
+        const after = row.rejectionReason as Record<string, unknown> | null;
+        latestRejectionByCase.set(row.entityId, {
+          rejectionReason:
+            typeof after?.rejectionReason === 'string'
+              ? after.rejectionReason
+              : null,
+          rejectedAt: row.rejectedAt,
+          rejectedByName: row.rejectedByName ?? null,
+        });
+      }
+
+      cases = cases.map((caseRow) => {
+        const rejection = latestRejectionByCase.get(caseRow.id);
+        return {
+          ...caseRow,
+          rejectionReason: rejection?.rejectionReason ?? null,
+          rejectedAt: rejection?.rejectedAt ?? null,
+          rejectedByName: rejection?.rejectedByName ?? null,
+          wasRejected: Boolean(
+            rejection?.rejectionReason &&
+              !caseRow.approvedBy &&
+              caseRow.status === 'draft'
+          ),
+        };
+      });
+    }
 
     const response = {
       success: true,

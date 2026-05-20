@@ -344,6 +344,11 @@ function NewCasePageContent() {
   const [gpsLocation, setGpsLocation] = useState<GeoLocation | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [isCapturingGPS, setIsCapturingGPS] = useState(false);
+  const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
+  const [coordinateSource, setCoordinateSource] = useState<'gps' | 'address' | null>(null);
+  const skipAddressGeocodeRef = useRef(false);
+  const addressGeocodeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const locationName = watch('locationName');
   const [isRecording, setIsRecording] = useState(false);
   const [aiAssessment, setAiAssessment] = useState<AIAssessmentResult | null>(null);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
@@ -598,10 +603,60 @@ function NewCasePageContent() {
   }, [vehicleMileage]);
 
   /**
-   * Capture GPS location using hybrid approach
-   * - When online: Uses Google Maps Geolocation API (accurate)
-   * - When offline: Falls back to browser geolocation
-   * - When offline and GPS fails: Shows optional message
+   * When the adjuster types an address (common on laptops), forward-geocode to pin coordinates.
+   * Device GPS remains available via the 📍 button.
+   */
+  useEffect(() => {
+    if (isOffline || isCapturingGPS) return;
+
+    const address = (locationName || '').trim();
+    if (address.length < 5) return;
+
+    if (skipAddressGeocodeRef.current) {
+      skipAddressGeocodeRef.current = false;
+      return;
+    }
+
+    if (addressGeocodeTimerRef.current) {
+      clearTimeout(addressGeocodeTimerRef.current);
+    }
+
+    addressGeocodeTimerRef.current = setTimeout(async () => {
+      setIsGeocodingAddress(true);
+      try {
+        const response = await fetch('/api/locations/geocode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address }),
+        });
+        if (!response.ok) return;
+
+        const json = await response.json();
+        if (json.success && json.data) {
+          setGpsLocation({
+            latitude: json.data.latitude,
+            longitude: json.data.longitude,
+          });
+          setCoordinateSource('address');
+          setGpsError(null);
+        }
+      } catch (err) {
+        console.warn('Address geocode failed:', err);
+      } finally {
+        setIsGeocodingAddress(false);
+      }
+    }, 1200);
+
+    return () => {
+      if (addressGeocodeTimerRef.current) {
+        clearTimeout(addressGeocodeTimerRef.current);
+      }
+    };
+  }, [locationName, isOffline, isCapturingGPS]);
+
+  /**
+   * Capture GPS location using device GPS (most accurate on phones).
+   * When offline and GPS fails: location is optional for draft/submit rules.
    */
   const captureGPSLocation = async () => {
     if (!navigator.geolocation) {
@@ -625,7 +680,9 @@ function NewCasePageContent() {
       };
 
       setGpsLocation(location);
-      
+      setCoordinateSource('gps');
+      skipAddressGeocodeRef.current = true;
+
       // Set location name (already includes reverse geocoding)
       setValue('locationName', result.locationName || `${result.latitude.toFixed(6)}, ${result.longitude.toFixed(6)}`);
 
@@ -1034,12 +1091,25 @@ function NewCasePageContent() {
       return;
     }
 
-    // Request microphone permission first
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (error) {
-      console.error('Microphone permission denied:', error);
-      toast.error('Microphone access denied', 'Please enable microphone permissions in your browser settings.');
+    const { PermissionManager } = await import('@/lib/voice/error-handling');
+    const permissionState = await PermissionManager.checkMicrophonePermission();
+
+    if (permissionState === 'denied') {
+      toast.error(
+        'Microphone access blocked',
+        'Tap the lock or site icon in your browser address bar, allow microphone access, then tap record again.'
+      );
+      return;
+    }
+
+    const granted = await PermissionManager.requestMicrophonePermission();
+    if (!granted) {
+      toast.error(
+        'Microphone access required',
+        permissionState === 'denied'
+          ? 'Enable microphone access in your browser site settings, then try again.'
+          : 'Allow microphone access when your browser prompts you, then tap record again.'
+      );
       return;
     }
 
@@ -2652,17 +2722,25 @@ function NewCasePageContent() {
               {isCapturingGPS ? '📍...' : '📍'}
             </button>
           </div>
+          {isGeocodingAddress && (
+            <p className="mt-1 text-sm text-gray-500">Looking up coordinates for this address…</p>
+          )}
           {gpsLocation && (
             <p className="mt-1 text-sm text-green-600">
-              ✓ GPS captured: {gpsLocation.latitude.toFixed(6)}, {gpsLocation.longitude.toFixed(6)}
-              <span className="text-gray-600 ml-2">(You can edit the location name above)</span>
+              ✓ Coordinates: {gpsLocation.latitude.toFixed(6)}, {gpsLocation.longitude.toFixed(6)}
+              {coordinateSource === 'gps' && (
+                <span className="text-gray-600 ml-2">(from device GPS)</span>
+              )}
+              {coordinateSource === 'address' && (
+                <span className="text-gray-600 ml-2">(from address lookup)</span>
+              )}
             </p>
           )}
           {gpsError && (
             <p className="mt-1 text-sm text-red-600">{gpsError}</p>
           )}
           <p className="mt-1 text-xs text-gray-500">
-            Tip: Use GPS button for coordinates, then edit the location name if needed
+            Type the full address or use 📍 for device GPS. Coordinates update automatically when online.
           </p>
         </div>
 

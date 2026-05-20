@@ -1,5 +1,7 @@
 import { SMSService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
+import { appPath } from '@/features/notifications/templates/email-urls';
 import { createKYCUpdateNotification } from '@/features/notifications/services/notification.service';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
@@ -280,7 +282,7 @@ export class KYCNotificationService {
       const result = await emailService.sendEmail({
         to: email,
         subject,
-        html,
+        html: wrapProfessionalEmail(subject, html),
       });
       
       if (!result.success) {
@@ -293,7 +295,11 @@ export class KYCNotificationService {
 
   private async sendEmailWithResult(email: string, subject: string, html: string) {
     try {
-      return await emailService.sendEmail({ to: email, subject, html });
+      return await emailService.sendEmail({
+        to: email,
+        subject,
+        html: wrapProfessionalEmail(subject, html),
+      });
     } catch (e) {
       return {
         success: false,
@@ -340,7 +346,7 @@ function tier2RejectionEmail(fullName: string, reason: string, rejectedSections:
       <p><strong>Sections to review:</strong></p>
       <ul>${sectionItems}</ul>
       <p>Please sign in and return to your Tier 2 verification page to correct the requested items and resubmit:</p>
-      <p><a href="${process.env.NEXT_PUBLIC_APP_URL || ''}/vendor/kyc/tier2">Open Tier 2 verification</a></p>
+      <p><a href="${appPath('/vendor/kyc/tier2')}">Open Tier 2 verification</a></p>
       <p>For your security, this email does not include BVN, NIN, raw document links, raw provider payloads, or sensitive fraud/AML details.</p>
       <p>Best regards,<br>NEM Salvage Team</p>
     </div>
