@@ -10,6 +10,9 @@ import { EscrowPaymentAuditTrail } from '@/components/finance/escrow-payment-aud
 import { ClipboardList, Star } from 'lucide-react';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
+import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+
+const PAYMENT_VIEW_TABS: ViewTab[] = ['all', 'today', 'pending', 'overdue'];
 
 const SuccessModal = dynamic(
   () => import('@/components/modals/success-modal').then(mod => ({ default: mod.SuccessModal })),
@@ -147,6 +150,12 @@ export default function FinancePaymentsPage() {
 
   // Filter states
   const [activeTab, setActiveTab] = useState<ViewTab>('all');
+
+  const { swipeTabProps } = useSwipeTabs({
+    tabs: PAYMENT_VIEW_TABS,
+    activeTab,
+    onTabChange: setActiveTab,
+  });
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [methodFilter, setMethodFilter] = useState<string>('');
   const [paymentTypeFilter, setPaymentTypeFilter] = useState<string>(''); // NEW: Payment type filter
@@ -1247,7 +1256,7 @@ export default function FinancePaymentsPage() {
           </div>
         )}
 
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-gray-200 touch-pan-y" {...swipeTabProps}>
           {payments.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

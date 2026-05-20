@@ -16,6 +16,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+
+const APPROVAL_TABS = ['pending', 'approved', 'rejected', 'all'] as const;
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
@@ -113,6 +116,12 @@ export default function ApprovalsPage() {
   
   // State
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+
+  const { swipeTabProps } = useSwipeTabs({
+    tabs: APPROVAL_TABS,
+    activeTab,
+    onTabChange: setActiveTab,
+  });
   const [allCases, setAllCases] = useState<CaseData[]>([]); // Store all cases
   const [cases, setCases] = useState<CaseData[]>([]); // Filtered cases for display
   const [selectedCase, setSelectedCase] = useState<CaseData | null>(null);
@@ -1408,8 +1417,8 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
-      {/* Cases List */}
-      <div className="p-4">
+      {/* Cases List — swipe left/right on touch to change tab */}
+      <div className="p-4 touch-pan-y" {...swipeTabProps}>
         {cases.length === 0 ? (
           <div className="text-center py-12">
             <CheckCircle className="w-16 h-16 mx-auto mb-4 text-green-600" aria-label="All caught up" />

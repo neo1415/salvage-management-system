@@ -10,6 +10,9 @@ export default async function DashboardRedirectPage() {
 
   switch (session.user.role) {
     case 'vendor':
+      if (!session.user.bvnVerified) {
+        redirect('/vendor/kyc/tier1');
+      }
       redirect('/vendor/dashboard');
     case 'salvage_manager':
       redirect('/manager/dashboard');

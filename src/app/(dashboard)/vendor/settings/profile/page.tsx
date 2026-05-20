@@ -49,6 +49,15 @@ export default function ProfilePage() {
   const router = useRouter();
   const { profile, isLoading: loading, isOffline, lastCached, refresh, error: cacheError } = useCachedProfile();
   const [error, setError] = useState<string | null>(null);
+  const [phoneDraft, setPhoneDraft] = useState('');
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [phoneMessage, setPhoneMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (profile?.user?.phone) {
+      setPhoneDraft(profile.user.phone);
+    }
+  }, [profile?.user?.phone]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -93,6 +102,31 @@ export default function ProfilePage() {
     if (!accountNumber) return 'Not provided';
     const lastFour = accountNumber.slice(-4);
     return `****${lastFour}`;
+  };
+
+  const savePhone = async () => {
+    setPhoneMessage(null);
+    setPhoneSaving(true);
+    try {
+      const response = await fetch('/api/vendor/settings/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phoneDraft.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update phone number');
+      }
+      setPhoneMessage({ type: 'success', text: 'Phone number updated successfully.' });
+      await refresh();
+    } catch (err) {
+      setPhoneMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to update phone number',
+      });
+    } finally {
+      setPhoneSaving(false);
+    }
   };
 
   const formatDate = (dateString: string | null | undefined) => {
@@ -188,10 +222,45 @@ export default function ProfilePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-              <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
-                {profile.user?.phone || 'Not provided'}
-              </div>
+              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                Phone Number
+              </label>
+              {isOffline ? (
+                <div className="px-4 py-3 bg-gray-50 rounded-lg text-gray-900">
+                  {profile.user?.phone || 'Not provided'}
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      id="phone"
+                      type="tel"
+                      value={phoneDraft}
+                      onChange={(e) => setPhoneDraft(e.target.value)}
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020]"
+                      placeholder="+2348012345678"
+                    />
+                    <button
+                      type="button"
+                      onClick={savePhone}
+                      disabled={phoneSaving || phoneDraft.trim() === (profile.user?.phone || '')}
+                      className="px-4 py-3 bg-[#800020] text-white rounded-lg hover:bg-[#600018] disabled:opacity-50 transition-colors font-medium"
+                    >
+                      {phoneSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                  {phoneMessage && (
+                    <p
+                      className={`mt-2 text-sm ${
+                        phoneMessage.type === 'success' ? 'text-green-700' : 'text-red-600'
+                      }`}
+                    >
+                      {phoneMessage.text}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-500">Format: +234XXXXXXXXXX or 0XXXXXXXXXX</p>
+                </>
+              )}
             </div>
 
             <div>

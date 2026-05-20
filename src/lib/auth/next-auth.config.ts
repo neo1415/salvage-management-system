@@ -7,7 +7,12 @@ import { compare } from 'bcryptjs';
 import { db, withRetry } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
-import { eq, or } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
+import {
+  looksLikeEmail,
+  normalizeNigerianPhone,
+  nigerianPhoneLookupVariants,
+} from '@/lib/utils/phone';
 import { kv } from '@vercel/kv';
 import { redis } from '@/lib/redis/client';
 import { isPersonalEmail, getPersonalEmailErrorMessage } from '@/lib/utils/email-validation';
@@ -156,18 +161,26 @@ export const authConfig: NextAuthConfig = {
           throw new Error(`Account locked due to too many failed login attempts. Please try again in ${remainingMinutes} minutes.`);
         }
 
-        // Find user by email OR phone with retry logic
-        const [user] = await withRetry(async () => {
+        // Find user by email OR phone (normalized variants for Nigerian numbers)
+        const user = await withRetry(async () => {
+          if (looksLikeEmail(emailOrPhone)) {
+            return await db
+              .select()
+              .from(users)
+              .where(eq(users.email, emailOrPhone))
+              .limit(1)
+              .then((rows) => rows[0]);
+          }
+
+          // NOTE: use the raw identifier the user typed; variants() normalizes internally.
+          // This must never throw (CallbackRouteError) or login breaks.
+          const phoneVariants = nigerianPhoneLookupVariants(emailOrPhone);
           return await db
             .select()
             .from(users)
-            .where(
-              or(
-                eq(users.email, emailOrPhone),
-                eq(users.phone, emailOrPhone)
-              )
-            )
-            .limit(1);
+            .where(inArray(users.phone, phoneVariants))
+            .limit(1)
+            .then((rows) => rows[0]);
         });
 
         if (!user) {
@@ -176,8 +189,22 @@ export const authConfig: NextAuthConfig = {
           throw new Error('Invalid credentials');
         }
 
+        // Guard: some accounts (e.g. OAuth-only) may not have a password hash.
+        // bcrypt.compare would throw and surface as CallbackRouteError.
+        if (!user.passwordHash || typeof user.passwordHash !== 'string') {
+          await recordFailedLogin(emailOrPhone);
+          throw new Error('Invalid credentials');
+        }
+
         // Verify password
-        const isValidPassword = await compare(password, user.passwordHash);
+        let isValidPassword = false;
+        try {
+          isValidPassword = await compare(password, user.passwordHash);
+        } catch (error) {
+          console.error('[Auth] Password compare failed:', error);
+          await recordFailedLogin(emailOrPhone);
+          throw new Error('Invalid credentials');
+        }
         if (!isValidPassword) {
           // Record failed login attempt
           const attempts = await recordFailedLogin(emailOrPhone);
@@ -551,28 +578,33 @@ export const authConfig: NextAuthConfig = {
           // If user doesn't exist or is deleted, invalidate the token
           if (!currentUser || currentUser.status === 'deleted') {
             console.warn(`[JWT] Invalid token for user ${token.id} - user not found or deleted`);
-            throw new Error('Invalid session');
+            // Don't throw (would surface as CallbackRouteError). Returning an empty token
+            // tells NextAuth to treat this as an unauthenticated session.
+            return {};
           }
 
           // Verify the token's user ID matches the database user ID
           // This prevents token tampering
           if (currentUser.id !== token.id) {
             console.error(`[JWT] Token user ID mismatch! Token: ${token.id}, DB: ${currentUser.id}`);
-            throw new Error('Session validation failed');
+            return {};
           }
 
           // Verify the token's email matches the database email
           // This catches cases where the wrong user's token is being used
-          if (currentUser.email !== token.email) {
+          // NOTE: some accounts may have null/empty emails (e.g. phone-only registration),
+          // so only enforce when both sides have a value.
+          if (currentUser.email && token.email && currentUser.email !== token.email) {
             console.error(`[JWT] Token email mismatch! Token: ${token.email}, DB: ${currentUser.email}`);
-            throw new Error('Session validation failed');
+            return {};
           }
           
           // Update last validation timestamp
           token.lastValidation = now;
         } catch (error) {
           console.error('[JWT] Validation error:', error);
-          throw error;
+          // Never throw from jwt() callback; it breaks the whole auth callback route.
+          return {};
         }
       }
 

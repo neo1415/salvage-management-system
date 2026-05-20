@@ -30,6 +30,9 @@ import { useToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useCachedBidHistory } from '@/hooks/use-cached-bid-history';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
+import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+
+const BID_HISTORY_TABS = ['active', 'completed'] as const;
 
 interface BidHistoryItem {
   auction: {
@@ -99,6 +102,15 @@ export default function BidHistoryPage() {
   const toast = useToast();
   
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+
+  const { swipeTabProps } = useSwipeTabs({
+    tabs: BID_HISTORY_TABS,
+    activeTab,
+    onTabChange: (tab) => {
+      setActiveTab(tab);
+      setPage(1);
+    },
+  });
   const [page, setPage] = useState(1);
   const [endingAuction, setEndingAuction] = useState<string | null>(null);
   const [showEndAuctionModal, setShowEndAuctionModal] = useState(false);
@@ -457,7 +469,8 @@ export default function BidHistoryPage() {
           </div>
         </div>
 
-        {/* Auction Cards */}
+        {/* Auction Cards — swipe to switch Active / Completed */}
+        <div className="touch-pan-y" {...swipeTabProps}>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {loading && data.length === 0 ? (
             // Loading skeleton (first load only)
@@ -653,6 +666,7 @@ export default function BidHistoryPage() {
               </div>
             ))
           )}
+        </div>
         </div>
 
         {/* Pagination */}

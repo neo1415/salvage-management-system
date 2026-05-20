@@ -194,6 +194,13 @@ export async function POST(
   }
 
   if (vendorUser) {
+    if (decision === 'approve') {
+      await db
+        .update(users)
+        .set({ status: 'verified_tier_2', updatedAt: now })
+        .where(eq(users.id, vendorUser.id));
+    }
+
     const target = {
       vendorId,
       userId: vendorUser.id,

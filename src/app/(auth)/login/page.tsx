@@ -174,7 +174,8 @@ function LoginForm() {
             </div>
           )}
 
-          {/* OAuth Buttons */}
+          {/* OAuth disabled until production OAuth review (Google/Facebook) */}
+          {false && (
           <div className="space-y-3 mb-6">
             {/* TEMPORARILY DISABLED: Google OAuth - Uncomment when business email validation is ready for production
             <button
@@ -224,6 +225,7 @@ function LoginForm() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Login Form */}
           <form onSubmit={handleSubmit(handleLogin)} className="space-y-4">

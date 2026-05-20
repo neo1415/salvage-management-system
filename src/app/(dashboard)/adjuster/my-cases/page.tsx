@@ -23,6 +23,17 @@ import { AuctionStatusService } from '@/features/auctions/services/status.servic
 import { getAllDrafts, type DraftCase, getAllOfflineCases, type OfflineCase } from '@/lib/db/indexeddb';
 import { useOffline } from '@/hooks/use-offline';
 import { DataLoadingState } from '@/components/ui/loading-states';
+import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+
+const CASE_STATUS_SWIPE_ORDER: StatusFilter[] = [
+  'all',
+  'draft',
+  'pending_approval',
+  'approved',
+  'cancelled',
+  'active_auction',
+  'sold',
+];
 
 interface Case {
   id: string;
@@ -56,6 +67,12 @@ export default function AdjusterMyCasesPage() {
   const [filteredCases, setFilteredCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+
+  const { swipeTabProps } = useSwipeTabs({
+    tabs: CASE_STATUS_SWIPE_ORDER,
+    activeTab: statusFilter,
+    onTabChange: setStatusFilter,
+  });
   const [searchQuery, setSearchQuery] = useState('');
   
   // Export states
@@ -668,7 +685,7 @@ export default function AdjusterMyCasesPage() {
         </div>
 
         {/* Cases List */}
-        <div className="p-6">
+        <div className="p-6 touch-pan-y" {...swipeTabProps}>
           {statusFilter === 'draft' ? (
             // Show drafts from IndexedDB
             drafts.length === 0 ? (

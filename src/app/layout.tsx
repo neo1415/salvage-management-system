@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Sora } from 'next/font/google';
 import './globals.css';
 import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register';
 import { InstallPrompt } from '@/components/pwa/install-prompt';
@@ -8,8 +8,15 @@ import { AuthProvider } from '@/lib/auth/auth-provider';
 import { QueryProvider } from '@/lib/query-provider';
 import { ToastProvider } from '@/components/ui/toast';
 import { CookieConsentBanner } from '@/components/legal/cookie-consent-banner';
+import { PwaSplashScreen } from '@/components/pwa/pwa-splash-screen';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
+const sora = Sora({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-display',
+  weight: ['500', '600', '700'],
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com'),
@@ -143,10 +150,11 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={inter.className} suppressHydrationWarning>
+      <body className={`${inter.className} ${sora.variable}`} suppressHydrationWarning>
         <AuthProvider>
           <QueryProvider>
             <ToastProvider>
+              <PwaSplashScreen />
               <ServiceWorkerRegister />
               <OfflineIndicator />
               <InstallPrompt />

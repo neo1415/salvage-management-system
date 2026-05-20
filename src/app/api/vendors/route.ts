@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, or, sql, inArray, isNotNull, desc } from 'drizzle-orm';
+import { eq, and, or, sql, inArray, isNotNull, isNull, desc, ne } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { hasProviderVerificationStorage, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
@@ -101,7 +101,13 @@ export async function GET(request: NextRequest) {
     // SCALABILITY: Cache key for this specific query
     // Cache for 10 minutes to balance freshness with performance
     const cacheKey = `vendors:list:${statusFilter}:${tierFilter}:${search}:${page}:${pageSize}`;
-    const bypassCache = statusFilter === 'pending' || tierFilter === 'tier2_full' || tierFilter === 'tier2';
+    const bypassCache =
+      statusFilter === 'pending' ||
+      tierFilter === 'tier2_full' ||
+      tierFilter === 'tier2' ||
+      tierFilter === 'tier1_bvn' ||
+      tierFilter === 'tier1' ||
+      tierFilter === 'tier0';
     const cached = bypassCache ? null : await cache.get(cacheKey);
     
     if (cached) {
@@ -123,7 +129,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build query conditions
-    const conditions = [];
+    const conditions = [ne(users.status, 'deleted')];
     // NOTE: Do NOT filter by vendors.status here - we need to filter by Tier 2 KYC status AFTER determining it
     // The statusFilter will be applied after we calculate kycStatus based on tier2ApprovedAt/tier2RejectionReason/tier2SubmittedAt
     
@@ -171,33 +177,17 @@ export async function GET(request: NextRequest) {
           )
         );
       } else if (dbTier === 'tier1_bvn') {
+        // Tier 1: BVN successfully verified (bvnVerifiedAt), not yet Tier 2 approved
         conditions.push(
-          providerVerificationTableExists
-            ? or(
-                eq(vendors.tier, 'tier1_bvn'),
-                eq(vendors.tier, 'tier2_full'),
-                isNotNull(vendors.bvnVerifiedAt),
-                inArray(
-                  vendors.id,
-                  db
-                    .select({ vendorId: providerVerificationRecords.vendorId })
-                    .from(providerVerificationRecords)
-                    .where(
-                      and(
-                        eq(providerVerificationRecords.provider, 'dojah'),
-                        inArray(providerVerificationRecords.verificationType, ['bvn', 'tier1']),
-                        inArray(providerVerificationRecords.status, ['passed', 'review_required']),
-                        isNotNull(providerVerificationRecords.vendorId)
-                      )
-                    )
-                )
-              )
-            : or(
-                eq(vendors.tier, 'tier1_bvn'),
-                eq(vendors.tier, 'tier2_full'),
-                isNotNull(vendors.bvnVerifiedAt)
-              )
+          and(
+            isNotNull(vendors.bvnVerifiedAt),
+            isNull(vendors.tier2ApprovedAt),
+            ne(vendors.tier, 'tier2_full')
+          )
         );
+      } else if (dbTier === 'tier0') {
+        // Tier 0: registered vendors who have not completed BVN verification
+        conditions.push(isNull(vendors.bvnVerifiedAt));
       } else {
         conditions.push(eq(vendors.tier, dbTier as 'tier0' | 'tier1_bvn' | 'tier2_full'));
       }
@@ -306,20 +296,16 @@ export async function GET(request: NextRequest) {
     // For Tier 2 pending applications, return verification statuses from database
     const vendorsWithVerification = data.map((vendor) => {
       const latestProviderEvidence = providerRows.find((record) => record.vendorId === vendor.id);
-      const hasDojahTier1Passed = providerRows.some((record) =>
-        record.vendorId === vendor.id &&
-        ['bvn', 'tier1'].includes(record.verificationType) &&
-        ['passed', 'review_required'].includes(record.status)
-      );
-
       // Determine KYC status based on the selected tier workflow.
       let kycStatus: 'pending' | 'approved' | 'rejected' = 'pending';
 
-      if (tierFilter === 'tier1_bvn') {
+      if (tierFilter === 'tier1_bvn' || tierFilter === 'tier1') {
         if (vendor.status === 'suspended') {
           kycStatus = 'rejected';
-        } else if (vendor.bvnVerifiedAt || hasDojahTier1Passed || vendor.tier === 'tier1_bvn' || vendor.tier === 'tier2_full') {
+        } else if (vendor.bvnVerifiedAt) {
           kycStatus = 'approved';
+        } else {
+          kycStatus = 'pending';
         }
       } else if (vendor.tier2ApprovedAt || vendor.tier === 'tier2_full') {
         kycStatus = 'approved';

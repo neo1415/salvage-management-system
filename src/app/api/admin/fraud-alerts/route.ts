@@ -162,9 +162,17 @@ export async function GET(request: NextRequest) {
         })
       : [];
 
-    // Format fraud alerts
+    function intelligenceWorkflowStatus(
+      status: (typeof intelligenceAlerts)[number]['status']
+    ): 'open' | 'in_review' | 'dismissed' | 'confirmed' {
+      if (status === 'dismissed') return 'dismissed';
+      if (status === 'confirmed') return 'confirmed';
+      if (status === 'reviewed') return 'in_review';
+      return 'open';
+    }
+
+    // Format fraud alerts (include dismissed audit flags so they appear under Dismissed tab)
     const auditFraudAlerts = fraudLogs
-      .filter(log => !dismissedAuctionIds.has(log.entityId)) // Exclude dismissed flags
       .map(log => {
         const afterState = log.afterState as {
           auctionId?: string;
@@ -178,8 +186,11 @@ export async function GET(request: NextRequest) {
         const vendor = vendorDetails.find(v => v.id === afterState?.vendorId);
         const auctionBidList = auctionBids.filter(b => b.auctionId === log.entityId);
 
+        const isDismissed = dismissedAuctionIds.has(log.entityId);
+
         return {
           id: log.id,
+          workflowStatus: isDismissed ? ('dismissed' as const) : ('open' as const),
           auctionId: log.entityId,
           vendorId: afterState?.vendorId,
           bidAmount: afterState?.bidAmount,
@@ -279,6 +290,7 @@ export async function GET(request: NextRequest) {
       return {
         id: alert.id,
         status: alert.status,
+        workflowStatus: intelligenceWorkflowStatus(alert.status),
         severity: alert.riskScore >= 90 ? 'critical' : alert.riskScore >= 75 ? 'high' : alert.riskScore >= 50 ? 'medium' : 'low',
         riskScore: alert.riskScore,
         entityType: alert.entityType,

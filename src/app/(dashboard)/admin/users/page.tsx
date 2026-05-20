@@ -463,8 +463,8 @@ export default function AdminUserManagement() {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.status)}`}>
-                            {getStatusDisplayName(user.status)}
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.displayStatus ?? user.status)}`}>
+                            {getStatusDisplayName(user.displayStatus ?? user.status)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -934,8 +934,8 @@ function UserRow({
           </span>
         </div>
         <div>
-          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.status)}`}>
-            {getStatusDisplayName(user.status)}
+          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.displayStatus ?? user.status)}`}>
+            {getStatusDisplayName(user.displayStatus ?? user.status)}
           </span>
         </div>
         <div className="text-sm text-gray-500">

@@ -50,6 +50,9 @@ import { useCachedAuctions } from '@/hooks/use-cached-auctions';
 import { useScheduledAuctionChecker } from '@/hooks/use-scheduled-auction-checker';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { RecommendationsFeed } from '@/components/intelligence/recommendations-feed';
+import { useSwipeTabs } from '@/hooks/use-swipe-tabs';
+
+const AUCTION_TABS = ['active', 'for_you', 'my_bids', 'won', 'scheduled'] as const;
 
 // Types
 interface Auction {
@@ -144,6 +147,12 @@ function AuctionBrowsingContent() {
   const [activeTab, setActiveTab] = useState<Filters['tab']>(
     (searchParams.get('tab') as Filters['tab']) || 'active'
   );
+
+  const { swipeTabProps } = useSwipeTabs({
+    tabs: AUCTION_TABS,
+    activeTab,
+    onTabChange: setActiveTab,
+  });
   const [assetTypeFilter, setAssetTypeFilter] = useState<string[]>(
     searchParams.get('assetType')?.split(',').filter(Boolean) || []
   );
@@ -957,8 +966,11 @@ function AuctionBrowsingContent() {
         )}
       </div>
 
-      {/* Main Content - Reduced side padding for bigger cards */}
-      <div className="max-w-7xl mx-auto px-2 md:px-4 py-6">
+      {/* Main Content — swipe left/right on touch to change tabs */}
+      <div
+        className="max-w-7xl mx-auto px-2 md:px-4 py-6 touch-pan-y"
+        {...swipeTabProps}
+      >
         {/* Loading State */}
         {isLoading && (
           <DataLoadingState label="Auctions" variant="page" />
