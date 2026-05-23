@@ -19,7 +19,8 @@ import {
   graceExtensions, 
   depositForfeitures,
   auctionWinners,
-  releaseFormDocuments,
+  releaseForms,
+  salvageCases,
   vendors
 } from '@/lib/db/schema';
 import { eq, desc, and } from 'drizzle-orm';
@@ -97,7 +98,18 @@ export async function GET(
       );
     }
 
+    const caseRecord = await db.query.salvageCases.findFirst({
+      where: eq(salvageCases.id, auction.caseId),
+    });
+
     const timeline: TimelineEvent[] = [];
+    const parseMoney = (value: string | null | undefined) => parseFloat(value ?? '0');
+    const assetDetails = caseRecord?.assetDetails;
+    const assetName = [
+      assetDetails?.year,
+      assetDetails?.make || assetDetails?.brand || assetDetails?.propertyType,
+      assetDetails?.model,
+    ].filter(Boolean).join(' ') || caseRecord?.assetType || `Auction ${auction.id.slice(0, 8)}`;
 
     // 1. Get all bids
     const auctionBids = await db
@@ -151,11 +163,11 @@ export async function GET(
         actor: vendor?.businessName || 'Unknown Vendor',
         details: {
           eventType: event.eventType,
-          amount: parseFloat(event.amount),
-          balanceBefore: parseFloat(event.balanceBefore),
-          balanceAfter: parseFloat(event.balanceAfter),
-          frozenBefore: parseFloat(event.frozenBefore),
-          frozenAfter: parseFloat(event.frozenAfter),
+          amount: parseMoney(event.amount),
+          balanceBefore: parseMoney(event.balanceBefore),
+          balanceAfter: parseMoney(event.balanceAfter),
+          frozenBefore: parseMoney(event.frozenBefore),
+          frozenAfter: parseMoney(event.frozenAfter),
         },
       });
     });
@@ -186,21 +198,37 @@ export async function GET(
         },
       });
 
-      if (winner.documentsSignedAt) {
-        timeline.push({
-          id: `${winner.id}-docs`,
-          type: 'document',
-          timestamp: winner.documentsSignedAt,
-          description: 'Documents signed',
-          actor: vendor?.businessName || 'Unknown Vendor',
-          details: {
-            paymentDeadline: winner.paymentDeadline,
-          },
-        });
-      }
     });
 
-    // 4. Get grace extensions
+    // 4. Get document signing events
+    const documents = await db
+      .select({
+        document: releaseForms,
+        vendor: vendors,
+      })
+      .from(releaseForms)
+      .leftJoin(vendors, eq(releaseForms.vendorId, vendors.id))
+      .where(eq(releaseForms.auctionId, auctionId))
+      .orderBy(desc(releaseForms.createdAt));
+
+    documents.forEach(({ document, vendor }) => {
+      if (!document.signedAt) return;
+
+      timeline.push({
+        id: `${document.id}-signed`,
+        type: 'document',
+        timestamp: document.signedAt,
+        description: `${document.title} signed`,
+        actor: vendor?.businessName || 'Unknown Vendor',
+        details: {
+          documentType: document.documentType,
+          status: document.status,
+          paymentDeadline: document.paymentDeadline,
+        },
+      });
+    });
+
+    // 5. Get grace extensions
     const extensions = await db
       .select()
       .from(graceExtensions)
@@ -216,14 +244,14 @@ export async function GET(
         actor: 'Finance Officer',
         details: {
           reason: extension.reason,
-          previousDeadline: extension.previousDeadline,
+          previousDeadline: extension.oldDeadline,
           newDeadline: extension.newDeadline,
           grantedBy: extension.grantedBy,
         },
       });
     });
 
-    // 5. Get forfeitures
+    // 6. Get forfeitures
     const forfeitures = await db
       .select({
         forfeiture: depositForfeitures,
@@ -244,12 +272,12 @@ export async function GET(
         details: {
           depositAmount: parseFloat(forfeiture.depositAmount),
           forfeitedAmount: parseFloat(forfeiture.forfeitedAmount),
-          transferred: forfeiture.transferred,
+          transferred: Boolean(forfeiture.transferredAt),
           transferredAt: forfeiture.transferredAt,
         },
       });
 
-      if (forfeiture.transferred && forfeiture.transferredAt) {
+      if (forfeiture.transferredAt) {
         timeline.push({
           id: `${forfeiture.id}-transfer`,
           type: 'payment',
@@ -271,7 +299,7 @@ export async function GET(
       success: true,
       auction: {
         id: auction.id,
-        assetName: auction.assetName,
+        assetName,
         status: auction.status,
         currentBid: parseFloat(auction.currentBid || '0'),
         createdAt: auction.createdAt,

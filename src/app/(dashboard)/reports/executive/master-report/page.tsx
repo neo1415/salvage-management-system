@@ -221,7 +221,7 @@ export default function MasterReportPage() {
                       }}
                     />
                   </div>
-                  <Button onClick={fetchMasterReport} className="w-full bg-[#800020] hover:bg-[#600018]">
+                  <Button onClick={() => fetchMasterReport()} className="w-full bg-[#800020] hover:bg-[#600018]">
                     Apply Dates
                   </Button>
                   <Button
@@ -237,7 +237,7 @@ export default function MasterReportPage() {
                 </div>
               </PopoverContent>
             </Popover>
-            <Button onClick={fetchMasterReport} variant="outline" size="sm" disabled={isBusy}>
+            <Button onClick={() => fetchMasterReport()} variant="outline" size="sm" disabled={isBusy}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
             </Button>

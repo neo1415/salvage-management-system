@@ -27,7 +27,7 @@ interface Document {
   receiptUrl?: string;
 }
 
-interface AuctionDocuments {
+interface AuctionDocuments extends Record<string, unknown> {
   auctionId: string;
   assetName: string;
   winningBid: number;
@@ -36,13 +36,43 @@ interface AuctionDocuments {
   documents: Document[];
 }
 
+interface WonAuctionDocumentPayload {
+  id: string;
+  assetName?: string;
+  currentBid?: string | number | null;
+  closedAt?: string;
+  status?: AuctionDocuments['status'];
+  payment?: {
+    id?: string;
+    createdAt?: string;
+  } | null;
+}
+
+interface ApiDocumentPayload {
+  id: string;
+  auctionId: string;
+  documentType: Document['documentType'];
+  title: string;
+  status: Document['status'];
+  pdfUrl: string;
+  createdAt: string;
+  signedAt: string | null;
+  documentData?: {
+    assetDescription?: string;
+    salePrice?: number;
+  };
+}
+
 const DOCUMENTS_PAGE_SIZE = 15;
 
 function isVisibleDocument(doc: Document) {
   return !(doc.documentType === 'pickup_authorization' && doc.status === 'pending');
 }
 
-function createReceiptDocument(auction: any, payment: any): Document | null {
+function createReceiptDocument(
+  auction: WonAuctionDocumentPayload,
+  payment: NonNullable<WonAuctionDocumentPayload['payment']>
+): Document | null {
   if (!payment?.id) return null;
 
   return {
@@ -52,23 +82,18 @@ function createReceiptDocument(auction: any, payment: any): Document | null {
     title: 'Payment Receipt',
     status: 'signed',
     signedAt: payment.createdAt ? new Date(payment.createdAt) : null,
-    createdAt: payment.createdAt ? new Date(payment.createdAt) : new Date(auction.closedAt),
+    createdAt: payment.createdAt
+      ? new Date(payment.createdAt)
+      : auction.closedAt
+        ? new Date(auction.closedAt)
+        : new Date(),
     pdfUrl: '',
     isReceipt: true,
     receiptUrl: `/receipt/${payment.id}`,
   };
 }
 
-function mapApiDocument(doc: {
-  id: string;
-  auctionId: string;
-  documentType: Document['documentType'];
-  title: string;
-  status: Document['status'];
-  pdfUrl: string;
-  createdAt: string;
-  signedAt: string | null;
-}): Document {
+function mapApiDocument(doc: ApiDocumentPayload): Document {
   return {
     id: doc.id,
     auctionId: doc.auctionId,
@@ -112,10 +137,11 @@ export default function VendorDocumentsPage() {
       ? await documentsResponse.json()
       : { documents: [] };
 
-    const wonAuctions = auctionsPayload.data?.auctions ?? [];
+    const wonAuctions = (auctionsPayload.data?.auctions ?? []) as WonAuctionDocumentPayload[];
+    const rawDocuments = (documentsPayload.documents ?? []) as ApiDocumentPayload[];
 
-    const docsByAuction = new Map();
-    for (const raw of documentsPayload.documents ?? []) {
+    const docsByAuction = new Map<string, Document[]>();
+    for (const raw of rawDocuments) {
       const doc = mapApiDocument(raw);
       const existing = docsByAuction.get(doc.auctionId) ?? [];
       existing.push(doc);
@@ -128,7 +154,7 @@ export default function VendorDocumentsPage() {
       ...docsByAuction.keys(),
     ]);
 
-    const grouped = [];
+    const grouped: AuctionDocuments[] = [];
 
     for (const auctionId of auctionIds) {
       const auction = auctionMeta.get(auctionId);
@@ -143,7 +169,7 @@ export default function VendorDocumentsPage() {
 
       if (documents.length === 0) continue;
 
-      const saleFromDoc = (documentsPayload.documents ?? []).find(
+      const saleFromDoc = rawDocuments.find(
         (d) => d.auctionId === auctionId
       );
 
@@ -154,9 +180,9 @@ export default function VendorDocumentsPage() {
           saleFromDoc?.documentData?.assetDescription ||
           'Salvage Item',
         winningBid: auction
-          ? parseFloat(auction.currentBid || '0')
+          ? Number(auction.currentBid ?? 0)
           : saleFromDoc?.documentData?.salePrice ?? 0,
-        closedAt: auction ? new Date(auction.closedAt) : documents[0].createdAt,
+        closedAt: auction?.closedAt ? new Date(auction.closedAt) : documents[0].createdAt,
         status: auction?.status ?? 'closed',
         documents,
       });
@@ -175,7 +201,7 @@ export default function VendorDocumentsPage() {
     lastUpdated, 
     refresh,
     error: cacheError 
-  } = useCachedDocuments(null, session?.user?.vendorId ? fetchDocuments : undefined);
+  } = useCachedDocuments<AuctionDocuments>(null, session?.user?.vendorId ? fetchDocuments : undefined);
 
   // Update local state when cached docs change
   useEffect(() => {

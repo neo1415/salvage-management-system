@@ -77,7 +77,7 @@ function managerSafeProviderFields(section: Record<string, string> | null, hidde
 
 function cleanBusinessFields(fields: Record<string, string>, businessNumber: unknown): Record<string, string> {
   const number = displayOrFallback(businessNumber, 'Not returned');
-  const clean = {
+  const clean: Record<string, string> = {
     ...fields,
     'Registration number': number,
   };
@@ -87,7 +87,7 @@ function cleanBusinessFields(fields: Record<string, string>, businessNumber: unk
 
 function cleanBusinessIdFields(fields: Record<string, string>, businessNumber: unknown): Record<string, string> {
   const number = displayOrFallback(businessNumber, 'Not returned');
-  const clean = {
+  const clean: Record<string, string> = {
     ...fields,
     'Business ID number': number,
   };

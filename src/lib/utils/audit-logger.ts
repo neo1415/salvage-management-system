@@ -23,6 +23,10 @@ export enum AuditActionType {
   OTP_VERIFIED = 'otp_verified',
   PASSWORD_RESET = 'password_reset',
   OAUTH_LOGIN = 'oauth_login',
+  MFA_CHALLENGE_SENT = 'mfa_challenge_sent',
+  MFA_VERIFICATION_SUCCESSFUL = 'mfa_verification_successful',
+  MFA_VERIFICATION_FAILED = 'mfa_verification_failed',
+  MFA_SETTINGS_UPDATED = 'mfa_settings_updated',
   
   // Case management actions
   CASE_CREATED = 'case_created',

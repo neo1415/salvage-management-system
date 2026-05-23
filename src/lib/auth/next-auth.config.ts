@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from 'next-auth';
 import NextAuth from 'next-auth';
+import { skipCSRFCheck } from '@auth/core';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import FacebookProvider from 'next-auth/providers/facebook';
@@ -16,6 +17,12 @@ import {
 import { kv } from '@vercel/kv';
 import { redis } from '@/lib/redis/client';
 import { isPersonalEmail, getPersonalEmailErrorMessage } from '@/lib/utils/email-validation';
+import {
+  isMfaRequiredForUser,
+  sendLoginMfaCode,
+  verifyLoginMfaCode,
+} from '@/lib/auth/mfa';
+import { AuditActionType } from '@/lib/utils/audit-logger';
 
 // SECURITY: Validate E2E testing mode is not enabled in production
 if (process.env.NODE_ENV === 'production' && process.env.E2E_TESTING === 'true') {
@@ -132,9 +139,12 @@ export const authConfig: NextAuthConfig = {
   // Required on Vercel / reverse proxies so Auth.js trusts the production host for callbacks & cookies
   trustHost: true,
 
-  // SECURITY: Skip CSRF check only in non-production environments with E2E testing enabled
-  // Production validation above ensures this can never be true in production
-  skipCSRFCheck: process.env.NODE_ENV !== 'production' && process.env.E2E_TESTING === 'true',
+  // SECURITY: Skip CSRF check only in non-production environments with E2E testing enabled.
+  // Auth.js v5 expects a special symbol, not a boolean. Production validation above
+  // ensures this can never be enabled in production.
+  ...(process.env.NODE_ENV !== 'production' && process.env.E2E_TESTING === 'true'
+    ? { skipCSRFCheck }
+    : {}),
   
   providers: [
     // Credentials provider for email/phone + password login
@@ -143,6 +153,7 @@ export const authConfig: NextAuthConfig = {
       credentials: {
         emailOrPhone: { label: 'Email or Phone', type: 'text' },
         password: { label: 'Password', type: 'password' },
+        mfaCode: { label: 'MFA Code', type: 'text' },
         ipAddress: { label: 'IP Address', type: 'hidden' },
         userAgent: { label: 'User Agent', type: 'hidden' },
       },
@@ -153,8 +164,10 @@ export const authConfig: NextAuthConfig = {
 
         const emailOrPhone = credentials.emailOrPhone as string;
         const password = credentials.password as string;
+        const mfaCode = typeof credentials.mfaCode === 'string' ? credentials.mfaCode.trim() : '';
         const ipAddress = (credentials.ipAddress as string) || 'unknown';
         const userAgent = (credentials.userAgent as string) || '';
+        const deviceType = getDeviceType(userAgent);
 
         // Check account lockout
         const lockoutStatus = await checkAccountLockout(emailOrPhone);
@@ -212,7 +225,6 @@ export const authConfig: NextAuthConfig = {
           const attempts = await recordFailedLogin(emailOrPhone);
           
           // Create audit log for failed login
-          const deviceType = getDeviceType(userAgent);
           await createAuditLog(
             user.id,
             'login_failed',
@@ -243,6 +255,47 @@ export const authConfig: NextAuthConfig = {
           throw new Error('Account not found.');
         }
 
+        if (isMfaRequiredForUser(user)) {
+          if (!mfaCode) {
+            const mfaResult = await sendLoginMfaCode(user, ipAddress, deviceType);
+            await createAuditLog(
+              user.id,
+              AuditActionType.MFA_CHALLENGE_SENT,
+              ipAddress,
+              deviceType,
+              userAgent,
+              {
+                channel: mfaResult.channel,
+                success: mfaResult.success,
+              }
+            );
+
+            throw new Error(
+              mfaResult.success
+                ? 'MFA_REQUIRED'
+                : 'MFA_UNAVAILABLE'
+            );
+          }
+
+          const mfaVerification = await verifyLoginMfaCode(user, mfaCode);
+          await createAuditLog(
+            user.id,
+            mfaVerification.success
+              ? AuditActionType.MFA_VERIFICATION_SUCCESSFUL
+              : AuditActionType.MFA_VERIFICATION_FAILED,
+            ipAddress,
+            deviceType,
+            userAgent,
+            {
+              channel: user.mfaChannel || 'email',
+            }
+          );
+
+          if (!mfaVerification.success) {
+            throw new Error(mfaVerification.message || 'Invalid verification code');
+          }
+        }
+
         // Reset failed login attempts on successful login
         await resetFailedLogins(emailOrPhone);
 
@@ -262,7 +315,6 @@ export const authConfig: NextAuthConfig = {
         }
 
         // Update last login timestamp and device type with retry logic
-        const deviceType = getDeviceType(userAgent);
         await withRetry(async () => {
           await db
             .update(users)
@@ -582,14 +634,14 @@ export const authConfig: NextAuthConfig = {
             console.warn(`[JWT] Invalid token for user ${token.id} - user not found or deleted`);
             // Don't throw (would surface as CallbackRouteError). Returning an empty token
             // tells NextAuth to treat this as an unauthenticated session.
-            return {};
+            return null;
           }
 
           // Verify the token's user ID matches the database user ID
           // This prevents token tampering
           if (currentUser.id !== token.id) {
             console.error(`[JWT] Token user ID mismatch! Token: ${token.id}, DB: ${currentUser.id}`);
-            return {};
+            return null;
           }
 
           // Verify the token's email matches the database email
@@ -598,7 +650,7 @@ export const authConfig: NextAuthConfig = {
           // so only enforce when both sides have a value.
           if (currentUser.email && token.email && currentUser.email !== token.email) {
             console.error(`[JWT] Token email mismatch! Token: ${token.email}, DB: ${currentUser.email}`);
-            return {};
+            return null;
           }
           
           // Update last validation timestamp
@@ -606,7 +658,7 @@ export const authConfig: NextAuthConfig = {
         } catch (error) {
           console.error('[JWT] Validation error:', error);
           // Never throw from jwt() callback; it breaks the whole auth callback route.
-          return {};
+          return null;
         }
       }
 

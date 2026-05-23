@@ -34,6 +34,11 @@ export interface PriceExtractionResult {
   extractedAt: Date;
 }
 
+interface PriceExtractionOptions {
+  mode?: 'market' | 'part';
+  partName?: string;
+}
+
 // Nigerian Naira price patterns
 const NAIRA_PATTERNS = [
   // Standard formats: ₦1,000,000 or ₦ 1,000,000 (with optional spaces)
@@ -80,7 +85,8 @@ export class PriceExtractionService {
   extractPrices(
     results: SerperSearchResult[], 
     itemType?: ItemIdentifier['type'],
-    targetYear?: number
+    targetYear?: number,
+    options: PriceExtractionOptions = {}
   ): PriceExtractionResult {
     const extractedPrices: ExtractedPrice[] = [];
     
@@ -138,7 +144,7 @@ export class PriceExtractionService {
     this.extractYearsFromPrices(extractedPrices);
     
     // Remove duplicates and validate (with year filtering if target year provided)
-    const validPrices = this.validateAndDeduplicatePrices(extractedPrices, itemType, targetYear);
+    const validPrices = this.validateAndDeduplicatePrices(extractedPrices, itemType, targetYear, options);
     
     console.log(`📊 Valid prices after filtering: ${validPrices.length}`);
     
@@ -352,10 +358,11 @@ export class PriceExtractionService {
   private validateAndDeduplicatePrices(
     prices: ExtractedPrice[], 
     itemType?: ItemIdentifier['type'],
-    targetYear?: number
+    targetYear?: number,
+    options: PriceExtractionOptions = {}
   ): ExtractedPrice[] {
     // Filter out invalid prices
-    let validPrices = prices.filter(price => this.validatePrice(price, itemType));
+    let validPrices = prices.filter(price => this.validatePrice(price, itemType, options));
     
     // Apply year filtering for vehicles if target year provided
     if (itemType === 'vehicle' && targetYear) {
@@ -449,7 +456,11 @@ export class PriceExtractionService {
    * 
    * Philosophy: Trust internet search results. Only reject clearly invalid data.
    */
-  private validatePrice(price: ExtractedPrice, itemType?: ItemIdentifier['type']): boolean {
+  private validatePrice(
+    price: ExtractedPrice,
+    itemType?: ItemIdentifier['type'],
+    options: PriceExtractionOptions = {}
+  ): boolean {
     // Basic validation - only reject clearly invalid prices
     if (!price.price || price.price <= 0 || !isFinite(price.price)) {
       return false;
@@ -471,13 +482,32 @@ export class PriceExtractionService {
       'furniture': 10000, // Minimum ₦10k for furniture
     };
     
-    const minPrice = itemType ? minPriceThresholds[itemType] || 1000 : 1000;
+    const minPrice = options.mode === 'part'
+      ? this.getMinimumPlausiblePartPrice(itemType, options.partName)
+      : itemType ? minPriceThresholds[itemType] || 1000 : 1000;
     if (price.price < minPrice) {
       console.log(`🚫 Rejecting price ₦${price.price.toLocaleString()} - below minimum threshold of ₦${minPrice.toLocaleString()} for ${itemType || 'unknown'} type`);
       return false;
     }
     
     return true;
+  }
+
+  private getMinimumPlausiblePartPrice(itemType?: ItemIdentifier['type'], partName?: string): number {
+    const normalizedPart = partName?.toLowerCase() || '';
+
+    if (itemType === 'vehicle') {
+      if (/(engine|transmission|gearbox)/.test(normalizedPart)) return 50000;
+      if (/(bumper|hood|door|fender|windshield|headlight|taillight|mirror|wheel|tire|tyre)/.test(normalizedPart)) return 5000;
+      return 3000;
+    }
+
+    if (itemType === 'machinery') return 20000;
+    if (itemType === 'property') return 10000;
+    if (itemType === 'electronics' || itemType === 'appliance') return 5000;
+    if (itemType === 'jewelry' || itemType === 'furniture') return 3000;
+
+    return 2000;
   }
 
   /**

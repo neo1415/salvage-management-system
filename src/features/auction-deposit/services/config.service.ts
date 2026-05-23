@@ -59,6 +59,9 @@ export interface GetConfigHistoryParams {
  * Handles system configuration management
  */
 export class ConfigService {
+  private configCache: { value: SystemConfiguration; expiresAt: number } | null = null;
+  private readonly CONFIG_CACHE_TTL_MS = Number(process.env.SYSTEM_CONFIG_CACHE_TTL_MS || 30_000);
+
   // Default configuration values
   private readonly DEFAULT_CONFIG: SystemConfiguration = {
     registrationFee: 12500, // ₦12,500
@@ -82,6 +85,10 @@ export class ConfigService {
    * @returns Current system configuration
    */
   async getConfig(): Promise<SystemConfiguration> {
+    if (this.configCache && this.configCache.expiresAt > Date.now()) {
+      return { ...this.configCache.value };
+    }
+
     const configRecords = await db
       .select()
       .from(systemConfig);
@@ -100,7 +107,12 @@ export class ConfigService {
       }
     }
 
-    return config;
+    this.configCache = {
+      value: { ...config },
+      expiresAt: Date.now() + this.CONFIG_CACHE_TTL_MS,
+    };
+
+    return { ...config };
   }
 
   /**
@@ -201,6 +213,8 @@ export class ConfigService {
         reason,
       });
     });
+
+    this.configCache = null;
   }
 
   /**

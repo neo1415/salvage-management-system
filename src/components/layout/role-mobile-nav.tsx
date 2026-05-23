@@ -34,33 +34,53 @@ const ROLE_NAV: Record<AppRole, NavItem[]> = {
     { href: '/vendor/auctions', label: 'Auctions', icon: Gavel },
     { href: '/vendor/wallet', label: 'Wallet', icon: Wallet },
     {
-      href: '/vendor/settings/profile',
-      label: 'Profile',
+      href: '/settings/profile',
+      label: 'Settings',
       icon: User,
-      match: (p) => p.startsWith('/vendor/settings'),
+      match: (p) => p.startsWith('/settings') || p.startsWith('/vendor/settings'),
     },
   ],
   salvage_manager: [
     { href: '/manager/dashboard', label: 'Home', icon: Home },
     { href: '/manager/approvals', label: 'Approvals', icon: ClipboardList },
     { href: '/manager/vendors', label: 'Vendors', icon: Users },
-    { href: '/bid-history', label: 'Bids', icon: History },
+    {
+      href: '/settings/profile',
+      label: 'Settings',
+      icon: User,
+      match: (p) => p.startsWith('/settings'),
+    },
   ],
   claims_adjuster: [
     { href: '/adjuster/dashboard', label: 'Home', icon: Home },
     { href: '/adjuster/cases/new', label: 'New', icon: FileText },
     { href: '/adjuster/my-cases', label: 'Cases', icon: ClipboardList },
+    {
+      href: '/settings/profile',
+      label: 'Settings',
+      icon: User,
+      match: (p) => p.startsWith('/settings'),
+    },
   ],
   finance_officer: [
     { href: '/finance/dashboard', label: 'Home', icon: Home },
     { href: '/finance/payments', label: 'Payments', icon: CreditCard },
-    { href: '/finance/reconciliation', label: 'Reconcile', icon: Database },
+    {
+      href: '/settings/profile',
+      label: 'Settings',
+      icon: User,
+      match: (p) => p.startsWith('/settings'),
+    },
   ],
   system_admin: [
     { href: '/admin/dashboard', label: 'Home', icon: Home },
     { href: '/admin/users', label: 'Users', icon: Users },
-    { href: '/admin/auction-config', label: 'Config', icon: Settings },
-    { href: '/admin/fraud', label: 'Fraud', icon: AlertTriangle },
+    {
+      href: '/settings/profile',
+      label: 'Settings',
+      icon: User,
+      match: (p) => p.startsWith('/settings'),
+    },
   ],
 };
 

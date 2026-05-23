@@ -18,7 +18,7 @@ export function useTierUpgrade({ currentTier, onUpgradeRequired }: UseTierUpgrad
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const response = await fetch('/api/admin/config');
+        const response = await fetch('/api/config/system');
         if (response.ok) {
           const data = await response.json();
           if (data.config?.tier1Limit) {

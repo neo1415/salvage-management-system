@@ -100,7 +100,7 @@ export class BulkImportService {
       },
     });
 
-    return records;
+    return records as ImportRecord[];
   }
 
   /**
@@ -121,7 +121,7 @@ export class BulkImportService {
       },
     });
 
-    return records;
+    return records as DeductionImportRecord[];
   }
 
   /**
@@ -298,9 +298,11 @@ export class BulkImportService {
           // Update existing record
           await db.update(damageDeductions)
             .set({
-              repairCostEstimate: record.repairCostEstimate.toString(),
-              valuationDeductionPercent: record.valuationDeductionPercent.toString(),
-              description: record.description,
+              repairCostLow: record.repairCostEstimate.toString(),
+              repairCostHigh: record.repairCostEstimate.toString(),
+              valuationDeductionLow: record.valuationDeductionPercent.toString(),
+              valuationDeductionHigh: record.valuationDeductionPercent.toString(),
+              notes: record.description,
               updatedAt: new Date(),
             })
             .where(eq(damageDeductions.id, existing.id));
@@ -311,9 +313,11 @@ export class BulkImportService {
           await db.insert(damageDeductions).values({
             component: record.component,
             damageLevel: record.damageLevel,
-            repairCostEstimate: record.repairCostEstimate.toString(),
-            valuationDeductionPercent: record.valuationDeductionPercent.toString(),
-            description: record.description,
+            repairCostLow: record.repairCostEstimate.toString(),
+            repairCostHigh: record.repairCostEstimate.toString(),
+            valuationDeductionLow: record.valuationDeductionPercent.toString(),
+            valuationDeductionHigh: record.valuationDeductionPercent.toString(),
+            notes: record.description,
             createdBy: userId,
           });
           

@@ -64,6 +64,13 @@ export async function POST(
       );
     }
 
+    if (!payment.auctionId) {
+      return NextResponse.json(
+        { error: 'This payment is not linked to an auction' },
+        { status: 400 }
+      );
+    }
+
     // Initiate payment with Paystack
     const paymentInitiation = await initiatePayment(
       payment.auctionId,

@@ -102,7 +102,8 @@ export function shouldRunSeeds(): boolean {
   
   // Run in production and staging by default
   const env = process.env.NODE_ENV;
-  if (env === 'production' || env === 'staging') {
+  const appEnv = process.env.APP_ENV;
+  if (env === 'production' || appEnv === 'staging') {
     return true;
   }
   

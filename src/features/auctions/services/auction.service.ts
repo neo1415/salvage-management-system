@@ -453,7 +453,7 @@ export class AuctionService {
                 
                 <div class="detail-row">
                   <span class="detail-label">Damage Severity:</span>
-                  <span class="detail-value">${this.escapeHtml(salvageCase.damageSeverity.toUpperCase())}</span>
+                  <span class="detail-value">${this.escapeHtml((salvageCase.damageSeverity ?? 'unknown').toUpperCase())}</span>
                 </div>
                 
                 <div class="detail-row">

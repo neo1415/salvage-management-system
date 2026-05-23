@@ -25,9 +25,21 @@ export interface VendorOutreachContext {
   appUrl: string;
 }
 
+const SUPPORTED_VENDOR_CATEGORIES = ['vehicle', 'property', 'electronics', 'machinery'] as const;
+type VendorCategory = typeof SUPPORTED_VENDOR_CATEGORIES[number];
+
+function isVendorCategory(value: string): value is VendorCategory {
+  return (SUPPORTED_VENDOR_CATEGORIES as readonly string[]).includes(value);
+}
+
 export async function notifyMatchingVendorsOfNewAuction(
   context: VendorOutreachContext
 ): Promise<number> {
+  if (!isVendorCategory(context.assetType)) {
+    console.warn(`[CaseApproval] Unsupported asset type for vendor outreach: ${context.assetType}`);
+    return 0;
+  }
+
   const matchingVendors = await db
     .select({
       vendorId: vendors.id,
@@ -71,14 +83,14 @@ export async function notifyMatchingVendorsOfNewAuction(
 
       try {
         await emailService.sendAuctionStartEmail(vendor.email, {
-          vendorName: vendor.fullName,
+          vendorName: vendor.fullName ?? 'Vendor',
           auctionId: context.auctionId,
           assetType: context.assetType,
           assetName: `${context.assetType.toUpperCase()} - ${context.claimReference}`,
           reservePrice: parseFloat(context.reservePrice),
           startTime: startLabel,
           endTime: endLabel,
-          location: context.locationName,
+          location: context.locationName ?? 'NEM Salvage Yard',
           appUrl: context.appUrl,
         });
       } catch (error) {

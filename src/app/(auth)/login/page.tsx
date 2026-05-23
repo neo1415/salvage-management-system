@@ -19,6 +19,7 @@ const loginSchema = z.object({
   password: z
     .string()
     .min(1, 'Password is required'),
+  mfaCode: z.string().optional(),
   rememberMe: z.boolean().optional(),
 });
 
@@ -33,6 +34,8 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaDestination, setMfaDestination] = useState<string | null>(null);
 
   // Don't set a default callbackUrl - let the middleware handle role-based redirect
   const callbackUrl = searchParams.get('callbackUrl') || null;
@@ -76,20 +79,61 @@ function LoginForm() {
     try {
       const userAgent = navigator.userAgent;
 
+      if (!mfaRequired) {
+        const mfaResponse = await fetch('/api/auth/mfa/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            emailOrPhone: data.emailOrPhone,
+            password: data.password,
+          }),
+        });
+
+        const mfaJson = await mfaResponse.json().catch(() => ({}));
+        if (mfaResponse.ok && mfaJson.required) {
+          setMfaRequired(true);
+          setMfaDestination(mfaJson.destination || null);
+          setError(null);
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (!mfaResponse.ok && mfaJson.required) {
+          setError(mfaJson.error || 'Verification code could not be sent. Please try again.');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      if (mfaRequired && (!data.mfaCode || data.mfaCode.length !== 6)) {
+        setError('Enter the 6-digit verification code.');
+        setIsSubmitting(false);
+        return;
+      }
+
       // Let Auth.js set the session cookie, then server redirect via /api/auth/after-login
       const result = await signIn('credentials', {
         emailOrPhone: data.emailOrPhone,
         password: data.password,
+        mfaCode: data.mfaCode,
         userAgent,
         callbackUrl: buildPostLoginRedirect(),
-        redirect: true,
+        redirect: false,
       });
 
-      // redirect: true navigates away; if we still run, surface the error
-      if (result && 'error' in result && result.error) {
+      if (result?.error) {
+        if (result.error === 'MFA_REQUIRED') {
+          setMfaRequired(true);
+          setError(null);
+          setIsSubmitting(false);
+          return;
+        }
         setError(result.error);
         setIsSubmitting(false);
+        return;
       }
+
+      window.location.assign(result?.url || buildPostLoginRedirect());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
       setIsSubmitting(false);
@@ -257,6 +301,26 @@ function LoginForm() {
                 </p>
               )}
             </div>
+
+            {mfaRequired && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <label htmlFor="mfaCode" className="block text-sm font-medium text-amber-950 mb-1">
+                  Verification code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  {...register('mfaCode')}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  id="mfaCode"
+                  className="w-full px-4 py-3 border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020] bg-white"
+                  placeholder="Enter 6-digit code"
+                />
+                <p className="mt-2 text-sm text-amber-900">
+                  We sent a login code{mfaDestination ? ` to ${mfaDestination}` : ''}.
+                </p>
+              </div>
+            )}
 
             {/* Remember Me & Forgot Password */}
             <div className="flex items-center justify-between">

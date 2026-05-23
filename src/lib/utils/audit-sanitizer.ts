@@ -11,6 +11,10 @@
  * List of sensitive field names that should be removed from audit logs
  */
 const SENSITIVE_FIELDS = [
+  'authorization',
+  'cookie',
+  'setCookie',
+  'set-cookie',
   'passwordHash',
   'password',
   'token',
@@ -36,6 +40,33 @@ const SENSITIVE_FIELDS = [
   'rawProviderPayload',
   'raw_payload_encrypted',
 ] as const;
+
+const SENSITIVE_FIELD_FRAGMENTS = [
+  'password',
+  'secret',
+  'token',
+  'apikey',
+  'api_key',
+  'privatekey',
+  'private_key',
+  'authorization',
+  'cookie',
+  'bvn',
+  'nin',
+  'otp',
+  'verificationcode',
+  'verification_code',
+  'documentnumber',
+  'document_number',
+  'rawpayload',
+  'raw_payload',
+  'rawresponse',
+  'raw_response',
+] as const;
+
+function normalizeFieldName(fieldName: string): string {
+  return fieldName.replace(/[-_\s]/g, '').toLowerCase();
+}
 
 /**
  * Sanitize an object for audit logging by removing sensitive fields
@@ -68,7 +99,12 @@ export function sanitizeForAudit<T>(obj: T): Partial<T> {
   
   for (const [key, value] of Object.entries(obj)) {
     // Skip sensitive fields
-    if (SENSITIVE_FIELDS.includes(key as typeof SENSITIVE_FIELDS[number])) {
+    const normalizedKey = normalizeFieldName(key);
+    const isSensitive =
+      SENSITIVE_FIELDS.some((field) => normalizeFieldName(field) === normalizedKey) ||
+      SENSITIVE_FIELD_FRAGMENTS.some((fragment) => normalizedKey.includes(normalizeFieldName(fragment)));
+
+    if (isSensitive) {
       continue;
     }
 
@@ -107,5 +143,9 @@ export function sanitizeMultipleForAudit<T>(objects: T[]): Partial<T>[] {
  * @returns True if the field is sensitive, false otherwise
  */
 export function isSensitiveField(fieldName: string): boolean {
-  return SENSITIVE_FIELDS.includes(fieldName as typeof SENSITIVE_FIELDS[number]);
+  const normalizedFieldName = normalizeFieldName(fieldName);
+  return (
+    SENSITIVE_FIELDS.some((field) => normalizeFieldName(field) === normalizedFieldName) ||
+    SENSITIVE_FIELD_FRAGMENTS.some((fragment) => normalizedFieldName.includes(normalizeFieldName(fragment)))
+  );
 }

@@ -62,6 +62,27 @@ function vendorDisplayName(application: VendorApplication): string {
   return application.user.email || 'Unknown vendor';
 }
 
+function getEmptyVendorTitle(
+  searchQuery: string,
+  hasActiveFilters: boolean,
+  statusFilter: StatusFilter
+): string {
+  if (searchQuery) return `No results found for "${searchQuery}"`;
+  if (hasActiveFilters) return 'No vendors match your filters';
+  if (statusFilter === 'pending') return 'No Pending Vendors';
+  if (statusFilter === 'approved') return 'No Approved Vendors';
+  if (statusFilter === 'rejected') return 'No Rejected Vendors';
+  return 'No Vendors';
+}
+
+function getEmptyVendorDescription(hasActiveFilters: boolean, statusFilter: StatusFilter): string {
+  if (hasActiveFilters) return 'Try adjusting your filters to see more results.';
+  if (statusFilter === 'pending') {
+    return 'All vendors have been reviewed. Check back later for new submissions.';
+  }
+  return 'No vendors found in this category.';
+}
+
 export default function VendorManagementPage() {
   return (
     <Suspense fallback={<DataLoadingState label="Vendor management" variant="page" />}>
@@ -575,26 +596,10 @@ function VendorManagementContent() {
               <CheckCircle2 className="w-8 h-8 text-gray-400" />
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">
-              {searchQuery 
-                ? `No results found for "${searchQuery}"` 
-                : hasActiveFilters 
-                  ? 'No vendors match your filters' 
-                  : statusFilter === 'pending'
-                    ? 'No Pending Vendors'
-                    : statusFilter === 'approved'
-                      ? 'No Approved Vendors'
-                      : statusFilter === 'rejected'
-                        ? 'No Rejected Vendors'
-                        : 'No Vendors'
-              }
+              {getEmptyVendorTitle(searchQuery, hasActiveFilters, statusFilter)}
             </h2>
             <p className="text-gray-600">
-              {hasActiveFilters 
-                ? 'Try adjusting your filters to see more results.' 
-                : statusFilter === 'pending'
-                  ? 'All vendors have been reviewed. Check back later for new submissions.'
-                  : 'No vendors found in this category.'
-              }
+              {getEmptyVendorDescription(hasActiveFilters, statusFilter)}
             </p>
             {hasActiveFilters && (
               <button

@@ -34,7 +34,6 @@ export const marketDataCache = pgTable('market_data_cache', {
     // Machinery fields
     machineryType?: string;
     // Universal fields
-    condition?: string;
   }>(),
   medianPrice: decimal('median_price', { precision: 12, scale: 2 }).notNull(),
   minPrice: decimal('min_price', { precision: 12, scale: 2 }).notNull(),
@@ -114,7 +113,6 @@ export const backgroundJobs = pgTable('background_jobs', {
     // Machinery fields
     machineryType?: string;
     // Universal fields
-    condition?: string;
   }>(),
   status: varchar('status', { length: 20 }).notNull().default('pending'),
   errorMessage: text('error_message'),

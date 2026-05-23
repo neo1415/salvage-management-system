@@ -1,6 +1,5 @@
 import { pgTable, uuid, varchar, text, jsonb, decimal, boolean, timestamp, index } from 'drizzle-orm/pg-core';
 import { users } from './users';
-import { cases } from './cases';
 
 /**
  * Fraud Attempts Table

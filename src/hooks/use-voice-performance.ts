@@ -33,7 +33,7 @@ interface UseVoicePerformanceReturn {
   
   // Optimized callbacks
   throttledCallback: <T extends (...args: any[]) => any>(callback: T, delay?: number) => T;
-  debouncedStateUpdate: <T>(callback: (state: T) => void, delay?: number) => DebouncedStateManager<T>;
+  debouncedStateUpdate: <T>(callback: (state: Partial<T>) => void, delay?: number) => DebouncedStateManager<T>;
   
   // Text virtualization
   virtualizeText: (content: string, container: HTMLElement) => string;
@@ -134,7 +134,7 @@ export function useVoicePerformance(
    * Create debounced state manager
    */
   const debouncedStateUpdate = useCallback(<T>(
-    callback: (state: T) => void,
+    callback: (state: Partial<T>) => void,
     delay: number = debounceDelay
   ): DebouncedStateManager<T> => {
     return new DebouncedStateManager(callback, delay);
@@ -330,7 +330,7 @@ export function useOptimizedEventListener<K extends keyof WindowEventMap>(
   } = options;
 
   const handlerRef = useRef(handler);
-  const optimizedHandlerRef = useRef<(event: WindowEventMap[K]) => void>();
+  const optimizedHandlerRef = useRef<((event: WindowEventMap[K]) => void) | null>(null);
 
   // Update handler ref
   useEffect(() => {

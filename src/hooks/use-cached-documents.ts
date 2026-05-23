@@ -11,8 +11,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useOffline } from '@/hooks/use-offline';
 import { CacheService } from '@/features/cache/services/cache.service';
 
-export interface UseCachedDocumentsReturn {
-  documents: Array<Record<string, unknown>>;
+export interface UseCachedDocumentsReturn<TDocument extends Record<string, unknown> = Record<string, unknown>> {
+  documents: TDocument[];
   isLoading: boolean;
   isOffline: boolean;
   lastUpdated: Date | null;
@@ -23,9 +23,17 @@ export interface UseCachedDocumentsReturn {
 export function useCachedDocuments(
   auctionId: string | null,
   fetchFn?: () => Promise<Array<Record<string, unknown>>>
-): UseCachedDocumentsReturn {
+): UseCachedDocumentsReturn;
+export function useCachedDocuments<TDocument extends Record<string, unknown>>(
+  auctionId: string | null,
+  fetchFn?: () => Promise<TDocument[]>
+): UseCachedDocumentsReturn<TDocument>;
+export function useCachedDocuments<TDocument extends Record<string, unknown> = Record<string, unknown>>(
+  auctionId: string | null,
+  fetchFn?: () => Promise<TDocument[]>
+): UseCachedDocumentsReturn<TDocument> {
   const isOffline = useOffline();
-  const [documents, setDocuments] = useState<Array<Record<string, unknown>>>([]);
+  const [documents, setDocuments] = useState<TDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -43,7 +51,7 @@ export function useCachedDocuments(
     try {
       const cached = await CacheService.getCachedDocuments(auctionId);
       if (cached.length > 0) {
-        setDocuments(cached.map(c => c.data));
+        setDocuments(cached.map(c => c.data as TDocument));
         setLastUpdated(cached[0]?.cachedAt || null);
       } else {
         setDocuments([]);

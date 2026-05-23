@@ -164,6 +164,11 @@ export default function PaymentPage() {
   // Handle Paystack payment with inline popup
   const handlePayWithPaystack = async () => {
     try {
+      if (!payment) {
+        throw new Error('Payment details not loaded yet');
+      }
+
+      const currentPayment = payment;
       setError(null);
       
       const response = await fetch(`/api/payments/${paymentId}/initiate`, {
@@ -189,18 +194,18 @@ export default function PaymentPage() {
         ref: data.reference,
         currency: 'NGN',
         metadata: {
-          paymentId: payment.id,
-          auctionId: payment.auctionId,
+          paymentId: currentPayment.id,
+          auctionId: currentPayment.auctionId,
           custom_fields: [
             {
               display_name: 'Payment ID',
               variable_name: 'payment_id',
-              value: payment.id,
+              value: currentPayment.id,
             },
             {
               display_name: 'Auction ID',
               variable_name: 'auction_id',
-              value: payment.auctionId,
+              value: currentPayment.auctionId,
             },
           ],
         },

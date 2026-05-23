@@ -96,8 +96,8 @@ export function AnalyticsFiltersComponent({ filters, onFiltersChange, onApply, o
             selected={{
               from: filters.dateRange.from,
               to: filters.dateRange.to,
-            }}
-            onSelect={(range) => {
+            } as any}
+            onSelect={(range: any) => {
               if (range?.from && range?.to) {
                 handleDateRangeChange({ from: range.from, to: range.to });
               }

@@ -33,7 +33,7 @@
 - Paystack keys: `sk_live_`, `pk_live_`, `sk_test_`, `pk_test_`
 - Google API keys: `AIza`
 - AWS keys: `AKIA`
-- Database URLs: `mongodb+srv://`, `postgres://`, `mysql://`
+- Database URLs: MongoDB, PostgreSQL, and MySQL connection strings
 - Generic patterns: `password=`, `api_key=`, `secret=`
 
 ### ✅ Safe Patterns Found

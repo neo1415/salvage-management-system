@@ -467,7 +467,7 @@ export class RecommendationService {
         const similarity = this.calculateItemSimilarity(
           auction,
           historicalBid,
-          historicalBid.created_at
+          historicalBid.created_at instanceof Date ? historicalBid.created_at : new Date(String(historicalBid.created_at))
         );
 
         if (similarity > maxSimilarity) {
@@ -1334,16 +1334,18 @@ export class RecommendationService {
       let matchScore = 50; // Base score for cold start
 
       // Category match boost
-      if (vendorCategories.includes(auction.asset_type)) {
+      const assetType = String(auction.asset_type ?? '');
+      if (vendorCategories.includes(assetType as 'vehicle' | 'property' | 'electronics' | 'machinery')) {
         matchScore += 30;
       }
 
       // Popularity boost
-      const popularityBoost = Math.min(10, (auction.watching_count || 0) / 2);
+      const watchingCount = Number(auction.watching_count || 0);
+      const popularityBoost = Math.min(10, watchingCount / 2);
       matchScore += popularityBoost;
 
       recommendations.push({
-        auctionId: auction.auction_id,
+        auctionId: String(auction.auction_id),
         matchScore: Number(matchScore.toFixed(2)),
         collaborativeScore: 0,
         contentScore: matchScore - popularityBoost,
@@ -1351,13 +1353,13 @@ export class RecommendationService {
         winRateBoost: 0,
         reasonCodes: ['Popular auction', 'Matches your interests'],
         auctionDetails: {
-          assetType: auction.asset_type,
+          assetType,
           assetDetails: auction.asset_details,
-          marketValue: parseFloat(auction.market_value || '0'),
-          reservePrice: parseFloat(auction.reserve_price || '0'),
-          currentBid: auction.current_bid ? parseFloat(auction.current_bid) : null,
-          watchingCount: auction.watching_count || 0,
-          endTime: new Date(auction.end_time),
+          marketValue: parseFloat(String(auction.market_value || '0')),
+          reservePrice: parseFloat(String(auction.reserve_price || '0')),
+          currentBid: auction.current_bid ? parseFloat(String(auction.current_bid)) : null,
+          watchingCount,
+          endTime: new Date(String(auction.end_time)),
         },
       });
     }

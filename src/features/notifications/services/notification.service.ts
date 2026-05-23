@@ -171,13 +171,15 @@ export async function createRoleNotifications(
   const excludeTest = options?.excludeTestRecipients ?? false;
 
   const roleUsers = await db
-    .select({ id: users.id, email: users.email })
+    .select({ id: users.id, email: users.email, status: users.status })
     .from(users)
     .where(inArray(users.role, roles));
 
+  const activeRoleUsers = roleUsers.filter((user) => user.status !== 'suspended' && user.status !== 'deleted');
+
   const recipients = excludeTest
-    ? roleUsers.filter((user) => !isTestOrPlaceholderEmail(user.email))
-    : roleUsers;
+    ? activeRoleUsers.filter((user) => !isTestOrPlaceholderEmail(user.email))
+    : activeRoleUsers;
 
   const results = await Promise.allSettled(
     recipients.map((user) =>
@@ -191,8 +193,11 @@ export async function createRoleNotifications(
   const sentCount = results.filter((result) => result.status === 'fulfilled').length;
   console.log(
     `Created ${sentCount}/${recipients.length} role notifications for ${roles.join(', ')}` +
+      (activeRoleUsers.length < roleUsers.length
+        ? ` (${roleUsers.length - activeRoleUsers.length} inactive accounts skipped)`
+        : '') +
       (excludeTest && recipients.length < roleUsers.length
-        ? ` (${roleUsers.length - recipients.length} test accounts skipped)`
+        ? ` (${activeRoleUsers.length - recipients.length} test accounts skipped)`
         : '')
   );
 

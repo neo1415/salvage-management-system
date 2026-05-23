@@ -186,7 +186,7 @@ export class SchemaEvolutionService {
         .update(schemaEvolutionLog)
         .set({
           status: 'applied',
-          updatedAt: new Date(),
+          appliedAt: new Date(),
         })
         .where(sql`${schemaEvolutionLog.id} = ${changeId}`);
       
@@ -204,7 +204,7 @@ export class SchemaEvolutionService {
         .update(schemaEvolutionLog)
         .set({
           status: 'applied',
-          updatedAt: new Date(),
+          appliedAt: new Date(),
         })
         .where(sql`${schemaEvolutionLog.id} = ${changeId}`);
       

@@ -12,12 +12,12 @@ export const winnerStatusEnum = pgEnum('winner_status', [
   'completed',
 ]);
 
-export const documentTypeEnum = pgEnum('document_type', [
+const auctionDepositDocumentTypeEnum = pgEnum('document_type', [
   'bill_of_sale',
   'liability_waiver',
 ]);
 
-export const documentStatusEnum = pgEnum('document_status', [
+const auctionDepositDocumentStatusEnum = pgEnum('document_status', [
   'pending',
   'signed',
   'voided',
@@ -69,9 +69,9 @@ export const auctionDocuments = pgTable('auction_documents', {
   vendorId: uuid('vendor_id')
     .notNull()
     .references(() => vendors.id),
-  type: documentTypeEnum('type').notNull(),
+  type: auctionDepositDocumentTypeEnum('type').notNull(),
   content: text('content').notNull(),
-  status: documentStatusEnum('status').notNull().default('pending'),
+  status: auctionDepositDocumentStatusEnum('status').notNull().default('pending'),
   signedAt: timestamp('signed_at'),
   signatureData: text('signature_data'),
   validityDeadline: timestamp('validity_deadline').notNull(),

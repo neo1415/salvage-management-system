@@ -30,7 +30,10 @@ function verifySignature(payload: string, signature: string): boolean {
     .update(payload)
     .digest('hex');
   
-  return hash === signature;
+  const expected = Buffer.from(hash, 'hex');
+  const received = Buffer.from(signature, 'hex');
+
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
 export async function POST(request: NextRequest) {
@@ -140,11 +143,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         status: 'error',
-        error: {
-          code: 'WEBHOOK_PROCESSING_ERROR',
-          message: error instanceof Error ? error.message : 'Failed to process webhook',
-          timestamp: new Date().toISOString(),
-        },
+          error: {
+            code: 'WEBHOOK_PROCESSING_ERROR',
+          message: 'Failed to process webhook',
+            timestamp: new Date().toISOString(),
+          },
       },
       { status: 500 }
     );

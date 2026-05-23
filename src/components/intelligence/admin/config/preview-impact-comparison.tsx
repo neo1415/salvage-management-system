@@ -12,6 +12,8 @@ import { AlgorithmConfig } from './algorithm-config-content';
 interface PreviewImpactComparisonProps {
   currentConfig: AlgorithmConfig;
   proposedConfig: AlgorithmConfig;
+  onClose?: () => void;
+  onConfirm?: () => void | Promise<void>;
 }
 
 export function PreviewImpactComparison({

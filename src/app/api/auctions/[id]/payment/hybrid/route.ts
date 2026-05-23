@@ -15,6 +15,7 @@ import { paymentService } from '@/features/auction-deposit/services/payment.serv
 import { db } from '@/lib/db/drizzle';
 import { vendors, auctionWinners, users, auctions, escrowWallets, releaseForms } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
 
 /**
  * POST /api/auctions/[id]/payment/hybrid
@@ -44,6 +45,19 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: 'Vendor profile not found' },
         { status: 404 }
+      );
+    }
+
+    const rateLimitResult = await rateLimit(request, {
+      identifier: `auction-hybrid-payment:${vendor.id}:${auctionId}`,
+      limit: 10,
+      window: 60,
+    });
+    const rateLimitHeaders = createRateLimitHeaders(rateLimitResult);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { success: false, error: 'Too many payment attempts. Please wait and try again.' },
+        { status: 429, headers: rateLimitHeaders }
       );
     }
 
@@ -196,16 +210,11 @@ export async function POST(
   } catch (error) {
     console.error('Hybrid payment error:', error);
     
-    // Extract meaningful error message
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : 'Failed to process hybrid payment. Please try again.';
-    
     return NextResponse.json(
       { 
         success: false, 
-        error: errorMessage,
-        message: errorMessage
+        error: 'Failed to process hybrid payment. Please try again.',
+        message: 'Failed to process hybrid payment. Please try again.'
       },
       { status: 500 }
     );

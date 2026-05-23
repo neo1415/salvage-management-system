@@ -160,7 +160,7 @@ export default function AuctionPerformancePage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={fetchReport} variant="outline" size="sm" disabled={isBusy}>
+            <Button onClick={() => fetchReport()} variant="outline" size="sm" disabled={isBusy}>
               <RefreshCw className={`mr-2 h-4 w-4 ${isBusy ? 'animate-spin' : ''}`} />
               Refresh
             </Button>

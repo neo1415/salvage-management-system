@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { escrowWallets, walletTransactions, reconciliationLogs, unmatchedTransactions, reconciliationAlerts } from '@/lib/db/schema';
-import { sql, eq, and, gte, lte, desc } from 'drizzle-orm';
+import { sql, eq, and, gte, lte, desc, isNull } from 'drizzle-orm';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 
@@ -384,7 +384,7 @@ export async function getUnresolvedUnmatchedTransactions() {
   return await db
     .select()
     .from(unmatchedTransactions)
-    .where(eq(unmatchedTransactions.resolvedAt, null))
+    .where(isNull(unmatchedTransactions.resolvedAt))
     .orderBy(desc(unmatchedTransactions.createdAt));
 }
 

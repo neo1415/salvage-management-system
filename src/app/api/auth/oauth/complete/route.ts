@@ -73,12 +73,18 @@ export async function POST(request: NextRequest) {
     };
     await redis.set(tempKey, JSON.stringify(updatedTempData), { ex: 15 * 60 });
 
-    // Generate and send OTP
-    const otpResult = await otpService.generateOTP(phone);
+    const otpResult = await otpService.sendOTP(
+      phone,
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown',
+      'desktop',
+      email,
+      tempData.name || tempData.fullName,
+      'authentication'
+    );
 
     if (!otpResult.success) {
       return NextResponse.json(
-        { error: otpResult.error || 'Failed to send OTP' },
+        { error: otpResult.message || 'Failed to send OTP' },
         { status: 500 }
       );
     }

@@ -233,6 +233,10 @@ export const schemaEvolutionLog = pgTable('schema_evolution_log', {
     newValue?: any;
     reason?: string;
     impact?: string;
+    occurrenceCount?: number;
+    firstSeen?: string | Date;
+    sampleCaseId?: string;
+    assetType?: string;
   }>(),
   status: varchar('status', { length: 20 }).notNull().default('pending'), // 'pending', 'approved', 'rejected', 'applied'
   reviewedBy: uuid('reviewed_by'),

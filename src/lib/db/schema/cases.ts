@@ -81,7 +81,7 @@ export const salvageCases = pgTable('salvage_cases', {
       isRepairable?: boolean;
       recommendation?: string;
       warnings?: string[];
-      analysisMethod?: 'gemini' | 'vision' | 'neutral' | 'mock' | 'google-vision';
+      analysisMethod?: 'gemini' | 'vision' | 'neutral' | 'mock' | 'google-vision' | 'claude';
       photoCount?: number;
     }>(),
   gpsLocation: point('gps_location').notNull(),

@@ -43,7 +43,10 @@ function verifySignature(payload: string, signature: string): boolean {
     .update(payload)
     .digest('hex');
   
-  return hash === signature;
+  const expected = Buffer.from(hash, 'hex');
+  const received = Buffer.from(signature, 'hex');
+
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
 /**
@@ -134,7 +137,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: 'Webhook processing failed',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: 'Failed to process webhook',
         failedAfter: totalDuration,
       },
       { status: 500 }

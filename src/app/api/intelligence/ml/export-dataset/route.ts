@@ -11,7 +11,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { MLDatasetService } from '@/features/intelligence/services/ml-dataset.service';
 import { z } from 'zod';
 
 const exportSchema = z.object({
@@ -58,28 +57,19 @@ export async function POST(request: NextRequest) {
 
     const exportParams = validation.data;
 
-    const mlDatasetService = new MLDatasetService();
-    const exportResult = await mlDatasetService.exportDataset({
-      datasetType: exportParams.datasetType,
-      format: exportParams.format,
-      startDate: exportParams.startDate ? new Date(exportParams.startDate) : undefined,
-      endDate: exportParams.endDate ? new Date(exportParams.endDate) : undefined,
-      splitRatio: exportParams.splitRatio,
-      anonymize: exportParams.anonymize,
-    });
-
     return NextResponse.json({
-      success: true,
+      success: false,
+      error: 'ML dataset export is not wired to the current dataset service yet',
       data: {
-        datasetId: exportResult.datasetId,
+        datasetId: null,
         datasetType: exportParams.datasetType,
         format: exportParams.format,
-        recordCount: exportResult.recordCount,
-        splits: exportResult.splits,
-        downloadUrl: exportResult.downloadUrl,
-        expiresAt: exportResult.expiresAt,
+        recordCount: 0,
+        splits: null,
+        downloadUrl: null,
+        expiresAt: null,
       },
-    }, { status: 201 });
+    }, { status: 501 });
 
   } catch (error) {
     console.error('[ML Dataset Export API] Error:', error);

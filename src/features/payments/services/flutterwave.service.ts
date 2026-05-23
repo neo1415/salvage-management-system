@@ -538,6 +538,10 @@ export async function processFlutterwaveWebhook(
     }
 
     // Get auction details
+    if (!payment.auctionId) {
+      throw new Error('Payment is not linked to an auction');
+    }
+
     const [auction] = await db
       .select()
       .from(auctions)

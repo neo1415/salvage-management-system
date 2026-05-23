@@ -15,6 +15,7 @@ import { paymentService } from '@/features/auction-deposit/services/payment.serv
 import { db } from '@/lib/db/drizzle';
 import { vendors, auctionWinners, auctions, escrowWallets, releaseForms } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
 
 /**
  * POST /api/auctions/[id]/payment/wallet
@@ -44,6 +45,19 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: 'Vendor profile not found' },
         { status: 404 }
+      );
+    }
+
+    const rateLimitResult = await rateLimit(request, {
+      identifier: `auction-wallet-payment:${vendor.id}:${auctionId}`,
+      limit: 10,
+      window: 60,
+    });
+    const rateLimitHeaders = createRateLimitHeaders(rateLimitResult);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { success: false, error: 'Too many wallet payment attempts. Please wait and try again.' },
+        { status: 429, headers: rateLimitHeaders }
       );
     }
 
@@ -162,24 +176,22 @@ export async function POST(
 
     console.log('[Wallet Payment] Payment processed successfully:', result);
 
-    return NextResponse.json({
-      success: true,
-      payment: result,
-      message: 'Payment processed successfully from wallet',
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        payment: result,
+        message: 'Payment processed successfully from wallet',
+      },
+      { headers: rateLimitHeaders }
+    );
   } catch (error) {
     console.error('Wallet payment error:', error);
-    
-    // Extract meaningful error message
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : 'Failed to process wallet payment. Please try again.';
     
     return NextResponse.json(
       { 
         success: false, 
-        error: errorMessage,
-        message: errorMessage
+        error: 'Failed to process wallet payment. Please try again.',
+        message: 'Failed to process wallet payment. Please try again.'
       },
       { status: 500 }
     );

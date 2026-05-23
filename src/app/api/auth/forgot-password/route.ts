@@ -6,6 +6,14 @@ import { redis } from '@/lib/redis/client';
 import { emailService } from '@/features/notifications/services/email.service';
 import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 import crypto from 'crypto';
+import { Ratelimit } from '@upstash/ratelimit';
+
+const forgotPasswordRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(5, '1 h'),
+  analytics: true,
+  prefix: 'ratelimit:forgot-password',
+});
 
 /**
  * POST /api/auth/forgot-password
@@ -13,6 +21,29 @@ import crypto from 'crypto';
  */
 export async function POST(request: NextRequest) {
   try {
+    const ipAddress =
+      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+      request.headers.get('x-real-ip') ||
+      'unknown';
+    const rateLimitResult = await forgotPasswordRateLimit.limit(ipAddress);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          success: true,
+          message: 'If an account exists with that email, a password reset link has been sent.',
+        },
+        {
+          status: 200,
+          headers: {
+            'X-RateLimit-Limit': rateLimitResult.limit.toString(),
+            'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+            'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
+            'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
+          },
+        }
+      );
+    }
+
     const body = await request.json();
     const { email } = body;
 

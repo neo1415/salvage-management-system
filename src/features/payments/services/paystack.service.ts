@@ -410,6 +410,10 @@ async function processAuctionPayment(reference: string, amountInKobo: number): P
       }
 
       // Get auction details
+      if (!payment.auctionId) {
+        throw new Error('Payment is not linked to an auction');
+      }
+
       const [auction] = await tx
         .select()
         .from(auctions)

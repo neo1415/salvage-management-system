@@ -173,6 +173,13 @@ export async function POST(
       );
     }
 
+    if (!payment.auctionId) {
+      return NextResponse.json(
+        { error: 'Auction payment required for this verification workflow' },
+        { status: 400 }
+      );
+    }
+
     // Get vendor details
     const [vendor] = await db
       .select()

@@ -101,8 +101,19 @@ export class AnalyticsAggregationService {
           totalBids: parseInt(row.total_bids || '0'),
           avgBidsPerAuction: parseFloat(row.avg_bids_per_auction || '0'),
           avgFinalPrice: parseFloat(row.avg_final_price || '0'),
+          avgSellThroughRate: null,
           activeVendors: parseInt(row.active_vendors || '0'),
-        },
+          avgVendorActivity: null,
+          avgPredictionAccuracy: null,
+          avgConfidenceScore: null,
+          totalPredictions: null,
+          totalRecommendations: null,
+          avgMatchScore: null,
+          clickThroughRate: null,
+          bidConversionRate: null,
+          fraudAlertsCount: null,
+          avgRiskScore: null,
+        } as any,
       });
 
       console.log(`[Analytics Aggregation] Created ${period} rollup: ${row.total_auctions} auctions, ${row.total_bids} bids, ${row.active_vendors} vendors`);

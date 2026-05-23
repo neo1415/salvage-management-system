@@ -321,7 +321,7 @@ export class SerperApiClient {
     retryable: boolean, 
     rateLimited: boolean
   ): SearchError {
-    const error = new Error(message) as SearchError;
+    const error = new Error(message) as unknown as SearchError;
     error.code = code;
     error.retryable = retryable;
     error.rateLimited = rateLimited;

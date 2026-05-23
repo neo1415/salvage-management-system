@@ -44,7 +44,7 @@ function isDojahResultComplete(result: DojahVerificationResult): boolean {
 }
 
 function collectReferences(
-  vendorReference?: string | null,
+  vendorReference: string | null | undefined,
   records: Array<{ providerReference: string | null }>
 ): string[] {
   const refs = new Set<string>();

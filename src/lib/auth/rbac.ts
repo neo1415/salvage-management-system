@@ -24,6 +24,7 @@ const AUTHENTICATED_COMMON_PREFIXES = [
   '/unauthorized',
   '/forbidden',
   '/notifications',
+  '/settings',
 ];
 
 const ROLE_PAGE_PREFIXES: Record<AppRole, string[]> = {
@@ -70,6 +71,7 @@ export const PROTECTED_PAGE_PREFIXES = [
   '/notifications',
   '/dashboard',
   '/receipt',
+  '/settings',
 ];
 
 /** API prefixes restricted by role (JWT verified server-side) */

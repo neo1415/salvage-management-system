@@ -111,7 +111,7 @@ export async function checkOverduePayments(): Promise<void> {
           message: `Your payment of ₦${parseFloat(payment.amount).toLocaleString()} is ${daysOverdue} day(s) overdue. Please complete payment immediately to avoid auction cancellation.`,
           data: {
             paymentId: payment.id,
-            auctionId: payment.auctionId,
+            ...(payment.auctionId ? { auctionId: payment.auctionId } : {}),
             daysOverdue,
           },
         });
@@ -197,11 +197,11 @@ async function sendOverdueEscalationToFinanceOfficers(
         type: 'payment_reminder',
         title: '🚨 Payment Overdue',
         message: `Payment ${payment.id.substring(0, 8)} is ${daysOverdue} day(s) overdue. Amount: ₦${parseFloat(payment.amount).toLocaleString()}`,
-        data: {
-          paymentId: payment.id,
-          auctionId: payment.auctionId,
-          daysOverdue,
-        },
+          data: {
+            paymentId: payment.id,
+            ...(payment.auctionId ? { auctionId: payment.auctionId } : {}),
+            daysOverdue,
+          },
       });
     }
 
@@ -362,7 +362,7 @@ export async function grantGracePeriod(
       message: `You have been granted a ${extensionHours}-hour grace period. New deadline: ${newDeadline.toLocaleString('en-NG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}. Please complete payment before this deadline.`,
       data: {
         paymentId: payment.id,
-        auctionId: payment.auctionId,
+        ...(payment.auctionId ? { auctionId: payment.auctionId } : {}),
         newDeadline: newDeadline.toISOString(),
         documentsEnabled: auction.status === 'forfeited',
       },

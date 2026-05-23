@@ -153,8 +153,8 @@ export async function POST(
     if (body.priceOverrides && Object.keys(body.priceOverrides).length > 0) {
       const aiEstimates = {
         marketValue: parseFloat(caseRecord.marketValue),
-        salvageValue: parseFloat(caseRecord.estimatedSalvageValue),
-        reservePrice: parseFloat(caseRecord.reservePrice),
+        salvageValue: parseFloat(caseRecord.estimatedSalvageValue ?? '0'),
+        reservePrice: parseFloat(caseRecord.reservePrice ?? '0'),
       };
 
       const validationResult = validatePriceOverrides(body.priceOverrides, aiEstimates);
@@ -190,8 +190,8 @@ export async function POST(
       const aiEstimates = {
         marketValue: parseFloat(caseRecord.marketValue),
         repairCost: caseRecord.aiAssessment?.estimatedRepairCost || 0,
-        salvageValue: parseFloat(caseRecord.estimatedSalvageValue),
-        reservePrice: parseFloat(caseRecord.reservePrice),
+        salvageValue: parseFloat(caseRecord.estimatedSalvageValue ?? '0'),
+        reservePrice: parseFloat(caseRecord.reservePrice ?? '0'),
         confidence: caseRecord.aiAssessment?.confidence?.overall || caseRecord.aiAssessment?.confidenceScore || 0,
       };
 
@@ -409,7 +409,7 @@ export async function POST(
             auctionId: auction.id,
             assetType: caseRecord.assetType,
             claimReference: caseRecord.claimReference,
-            reservePrice: caseRecord.reservePrice,
+            reservePrice: finalReservePrice.toString(),
             locationName: caseRecord.locationName,
             endTime,
             appUrl,

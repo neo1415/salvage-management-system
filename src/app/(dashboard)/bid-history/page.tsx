@@ -122,6 +122,7 @@ export default function BidHistoryPage() {
     error: cacheError, 
     totalPages 
   } = useCachedBidHistory(activeTab, page);
+  const bidHistoryItems = data as BidHistoryItem[];
 
   const [error, setError] = useState<string | null>(null);
 
@@ -472,7 +473,7 @@ export default function BidHistoryPage() {
           }}
         >
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {loading && data.length === 0 ? (
+          {loading && bidHistoryItems.length === 0 ? (
             // Loading skeleton (first load only)
             Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="bg-white rounded-xl shadow-lg overflow-hidden animate-pulse">
@@ -487,7 +488,7 @@ export default function BidHistoryPage() {
                 </div>
               </div>
             ))
-          ) : data.length === 0 ? (
+          ) : bidHistoryItems.length === 0 ? (
             <div className="col-span-full text-center py-12">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Gavel className="w-8 h-8 text-gray-400" />
@@ -501,7 +502,7 @@ export default function BidHistoryPage() {
               </p>
             </div>
           ) : (
-            data.map((item) => (
+            bidHistoryItems.map((item) => (
               <div key={item.auction.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300 group">
                 {/* Item Image */}
                 <div className="relative h-48 bg-gray-100">

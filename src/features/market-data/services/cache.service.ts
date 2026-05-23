@@ -239,10 +239,10 @@ export async function setCachedPrice(
         cacheId,
         sourceName: price.source,
         price: price.price.toString(),
-        currency: price.currency,
-        listingUrl: price.listingUrl,
-        listingTitle: price.listingTitle,
-        scrapedAt: price.scrapedAt,
+        currency: price.currency ?? 'NGN',
+        listingUrl: price.listingUrl ?? price.url ?? 'unknown',
+        listingTitle: price.listingTitle ?? price.title ?? 'Market listing',
+        scrapedAt: price.scrapedAt ?? new Date(),
       }));
 
       if (sourceValues.length > 0) {

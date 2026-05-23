@@ -215,11 +215,11 @@ async function forfeitAuctionWinners(now: Date, results: EnforcementResults) {
             )
           );
 
-        // Update payment status to forfeited
+        // Keep payment in the supported overdue terminal state while the auction is forfeited.
         await db
           .update(payments)
           .set({
-            status: 'forfeited',
+            status: 'overdue',
             updatedAt: now,
           })
           .where(eq(payments.id, payment.id));
@@ -262,7 +262,7 @@ async function forfeitAuctionWinners(now: Date, results: EnforcementResults) {
         });
 
         // Alert Finance Officers for manual review
-        await alertFinanceOfficersForForfeiture(payment, auction, vendor, user);
+        await alertFinanceOfficersForForfeiture(payment, auction, vendor, user, paymentDeadlineHours);
 
         results.winnersForfeited++;
       } catch (error) {
@@ -283,7 +283,8 @@ async function alertFinanceOfficersForForfeiture(
   payment: typeof payments.$inferSelect,
   auction: typeof auctions.$inferSelect,
   vendor: typeof vendors.$inferSelect,
-  user: typeof users.$inferSelect
+  user: typeof users.$inferSelect,
+  paymentDeadlineHours: number
 ): Promise<void> {
   try {
     // Get Finance Officer users

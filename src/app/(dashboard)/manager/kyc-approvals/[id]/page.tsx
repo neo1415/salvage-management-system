@@ -290,6 +290,10 @@ export default function KYCApprovalDetailPage() {
   const scoreUnavailable = verificationSource === 'dojah' ? 'Not available in this verification' : '—';
   const documents = getApprovalDocuments(approval);
   const managerDecision = (normalized.managerDecision ?? {}) as Record<string, unknown>;
+  const managerDecisionReviewedAt = managerDecision.reviewedAt
+    ? String(managerDecision.reviewedAt)
+    : null;
+  const managerDecisionReason = managerDecision.reason ? String(managerDecision.reason) : null;
   const decisionMade = isReviewFinalized || Boolean(managerDecision.decision);
 
   return (
@@ -380,10 +384,10 @@ export default function KYCApprovalDetailPage() {
           <p className="font-semibold text-gray-900">
             Manager decision: <span className="capitalize">{String(managerDecision.decision)}</span>
           </p>
-          {managerDecision.reviewedAt && (
-            <p className="text-gray-600">Reviewed at {new Date(String(managerDecision.reviewedAt)).toLocaleString()}</p>
+          {managerDecisionReviewedAt && (
+            <p className="text-gray-600">Reviewed at {new Date(managerDecisionReviewedAt).toLocaleString()}</p>
           )}
-          {managerDecision.reason && <p className="mt-2 text-gray-700">Reason: {String(managerDecision.reason)}</p>}
+          {managerDecisionReason && <p className="mt-2 text-gray-700">Reason: {managerDecisionReason}</p>}
         </div>
       )}
 

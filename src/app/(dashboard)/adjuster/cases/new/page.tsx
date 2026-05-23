@@ -75,6 +75,7 @@ interface SpeechRecognition extends EventTarget {
   lang: string;
   onresult: ((event: SpeechRecognitionEvent) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
   start(): void;
   stop(): void;
 }
@@ -100,7 +101,7 @@ const ASSET_TYPES = [
 ] as const;
 
 const LAUNCH_ASSET_TYPES = ASSET_TYPES.filter((type) =>
-  ['vehicle', 'electronics', 'property'].includes(type.value)
+  ['vehicle', 'electronics', 'property', 'machinery'].includes(type.value)
 );
 
 /**
@@ -308,7 +309,7 @@ function NewCasePageContent() {
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<CaseFormData>({
-    resolver: zodResolver(caseFormSchema),
+    resolver: zodResolver(caseFormSchema) as never,
     defaultValues: {
       photos: [],
       unifiedVoiceContent: '',
@@ -342,6 +343,7 @@ function NewCasePageContent() {
   
   // UI state
   const [gpsLocation, setGpsLocation] = useState<GeoLocation | null>(null);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [isCapturingGPS, setIsCapturingGPS] = useState(false);
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
@@ -350,6 +352,7 @@ function NewCasePageContent() {
   const addressGeocodeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const locationName = watch('locationName');
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [aiAssessment, setAiAssessment] = useState<AIAssessmentResult | null>(null);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [mileageWarning, setMileageWarning] = useState<string | null>(null);
@@ -413,6 +416,8 @@ function NewCasePageContent() {
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const shouldContinueRecordingRef = useRef(false);
+  const isRecordingPausedRef = useRef(false);
   const mileageDebounceRef = useRef<NodeJS.Timeout | null>(null);
   
   // Form state persistence key
@@ -517,13 +522,15 @@ function NewCasePageContent() {
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognitionConstructor = window.webkitSpeechRecognition || window.SpeechRecognition;
+      if (!SpeechRecognitionConstructor) return;
       recognitionRef.current = new SpeechRecognitionConstructor();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
+      const recognition = recognitionRef.current;
+      recognition.continuous = true;
+      recognition.interimResults = true;
       // CRITICAL FIX: Use multiple language variants for better recognition
-      recognitionRef.current.lang = 'en-US';
+      recognition.lang = 'en-US';
       // CRITICAL FIX: Set max alternatives for better accuracy
-      (recognitionRef.current as any).maxAlternatives = 3;
+      (recognition as any).maxAlternatives = 3;
     }
   }, []);
 
@@ -637,6 +644,7 @@ function NewCasePageContent() {
             latitude: json.data.latitude,
             longitude: json.data.longitude,
           });
+          setGpsAccuracy(null);
           setCoordinateSource('address');
           setGpsError(null);
         }
@@ -680,6 +688,7 @@ function NewCasePageContent() {
       };
 
       setGpsLocation(location);
+      setGpsAccuracy(result.accuracy);
       setCoordinateSource('gps');
       skipAddressGeocodeRef.current = true;
 
@@ -688,6 +697,9 @@ function NewCasePageContent() {
 
       // Log accuracy for debugging
       console.log(`GPS captured via ${result.source}, accuracy: ${result.accuracy}m`);
+      if (result.accuracy > 100) {
+        setGpsError('GPS was captured, but accuracy is low. Please confirm the address before submitting.');
+      }
     } catch (error) {
       console.error('GPS capture error:', error);
       
@@ -1106,14 +1118,15 @@ function NewCasePageContent() {
     if (!granted) {
       toast.error(
         'Microphone access required',
-        permissionState === 'denied'
-          ? 'Enable microphone access in your browser site settings, then try again.'
-          : 'Allow microphone access when your browser prompts you, then tap record again.'
+        'Allow microphone access when your browser prompts you, then tap record again.'
       );
       return;
     }
 
     setIsRecording(true);
+    setIsRecordingPaused(false);
+    shouldContinueRecordingRef.current = true;
+    isRecordingPausedRef.current = false;
     setRecordingDuration(0);
     
     // Start timer
@@ -1191,7 +1204,7 @@ function NewCasePageContent() {
     // CRITICAL FIX: Auto-restart on end to keep recording continuous
     recognitionRef.current.onend = () => {
       // Only restart if we're still supposed to be recording
-      if (isRecording && recognitionRef.current) {
+      if (shouldContinueRecordingRef.current && !isRecordingPausedRef.current && recognitionRef.current) {
         try {
           recognitionRef.current.start();
           console.log('Voice recognition auto-restarted');
@@ -1220,6 +1233,9 @@ function NewCasePageContent() {
     
     // CRITICAL FIX: Set recording state to false FIRST to prevent auto-restart
     setIsRecording(false);
+    setIsRecordingPaused(false);
+    shouldContinueRecordingRef.current = false;
+    isRecordingPausedRef.current = false;
     
     if (recognitionRef.current) {
       try {
@@ -1246,10 +1262,52 @@ function NewCasePageContent() {
   };
 
   /**
-   * Pause voice recording (same as stop for Web Speech API)
+   * Pause voice recording without clearing the current transcript.
+   * Web Speech has no native pause, so we stop recognition and resume it later.
    */
   const pauseVoiceRecording = () => {
-    stopVoiceRecording();
+    if (!recognitionRef.current || !isRecording || isRecordingPaused) return;
+
+    shouldContinueRecordingRef.current = false;
+    isRecordingPausedRef.current = true;
+    setIsRecordingPaused(true);
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    try {
+      recognitionRef.current.stop();
+      toast.info('Recording paused', 'Tap resume to continue.');
+    } catch (error) {
+      console.error('Error pausing voice recognition:', error);
+      toast.error('Could not pause recording', 'Please stop and start again.');
+    }
+  };
+
+  const resumeVoiceRecording = () => {
+    if (!recognitionRef.current || !isRecording || !isRecordingPaused) return;
+
+    shouldContinueRecordingRef.current = true;
+    isRecordingPausedRef.current = false;
+    setIsRecordingPaused(false);
+
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingDuration(prev => prev + 1);
+    }, 1000);
+
+    try {
+      recognitionRef.current.start();
+      toast.success('Recording resumed', 'Continue speaking clearly.');
+    } catch (error) {
+      console.error('Error resuming voice recognition:', error);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      toast.error('Could not resume recording', 'Please stop and start again.');
+    }
   };
   
   /**
@@ -1508,6 +1566,8 @@ function NewCasePageContent() {
         // Save to IndexedDB for offline sync
         await saveOfflineCase({
           ...caseData,
+          marketValue: caseData.marketValue ?? 0,
+          gpsLocation: caseData.gpsLocation ?? { latitude: 0, longitude: 0 },
           createdBy: 'current-user-id', // TODO: Get from session
           syncStatus: 'pending',
         });
@@ -2415,7 +2475,7 @@ function NewCasePageContent() {
                 isProcessing={isProcessingAI}
                 marketValue={marketValue}
                 confidenceScore={aiAssessment?.confidenceScore}
-                error={searchProgress.stage === 'error' ? searchProgress.error || 'Analysis failed' : null}
+                error={(searchProgress as SearchProgress).stage === 'error' ? searchProgress.error || 'Analysis failed' : null}
                 className="w-full"
               />
               
@@ -2728,6 +2788,9 @@ function NewCasePageContent() {
           {gpsLocation && (
             <p className="mt-1 text-sm text-green-600">
               ✓ Coordinates: {gpsLocation.latitude.toFixed(6)}, {gpsLocation.longitude.toFixed(6)}
+              {gpsAccuracy !== null && (
+                <span className="text-gray-600 ml-2">(accuracy: {Math.round(gpsAccuracy).toLocaleString()}m)</span>
+              )}
               {coordinateSource === 'gps' && (
                 <span className="text-gray-600 ml-2">(from device GPS)</span>
               )}
@@ -2790,9 +2853,11 @@ function NewCasePageContent() {
             <div className="flex flex-col items-center space-y-4 py-4">
               <ModernVoiceControls
                 isRecording={isRecording}
+                isPaused={isRecordingPaused}
                 onStartRecording={startVoiceRecording}
                 onStopRecording={stopVoiceRecording}
                 onPauseRecording={pauseVoiceRecording}
+                onResumeRecording={resumeVoiceRecording}
                 duration={recordingDuration}
                 disabled={false}
                 className="flex justify-center"

@@ -43,6 +43,19 @@ interface NavItem {
   submenu?: SubMenuItem[];
 }
 
+const settingsNavItem: NavItem = {
+  label: 'Settings',
+  href: '/settings/profile',
+  icon: Settings,
+  roles: ['vendor', 'salvage_manager', 'claims_adjuster', 'finance_officer', 'system_admin'],
+  submenu: [
+    { name: 'Profile', href: '/settings/profile' },
+    { name: 'Notifications', href: '/settings/notifications' },
+    { name: 'Security', href: '/settings/security' },
+    { name: 'Change Password', href: '/settings/change-password' },
+  ],
+};
+
 const navigationItems: NavItem[] = [
   // Vendor Navigation
   {
@@ -80,17 +93,6 @@ const navigationItems: NavItem[] = [
     href: '/vendor/leaderboard',
     icon: Trophy,
     roles: ['vendor'],
-  },
-  {
-    label: 'Settings',
-    href: '/vendor/settings/profile',
-    icon: Settings,
-    roles: ['vendor'],
-    submenu: [
-      { name: 'Profile', href: '/vendor/settings/profile' },
-      { name: 'Notifications', href: '/vendor/settings/notifications' },
-      { name: 'Change Password', href: '/vendor/settings/change-password' },
-    ],
   },
 
   // Manager Navigation
@@ -238,9 +240,12 @@ export default function DashboardSidebar() {
   const userRole = session?.user?.role || 'vendor';
 
   // Filter navigation items based on user role
-  const filteredNavItems = navigationItems.filter((item) =>
+  const roleNavItems = navigationItems.filter((item) =>
     item.roles.includes(userRole)
   );
+  const filteredNavItems = settingsNavItem.roles.includes(userRole)
+    ? [...roleNavItems, settingsNavItem]
+    : roleNavItems;
 
   const prefetchRoutes = useMemo(() => {
     const routes = new Set<string>();

@@ -473,7 +473,7 @@ export class KYCRepository {
     return {
       vendorId: r.id,
       vendorName: resolveVendorDisplayName(r.businessName, r.userFullName, r.userEmail, normalizedResult),
-      vendorEmail: r.userEmail,
+      vendorEmail: r.userEmail ?? '',
       submittedAt,
       amlRiskLevel: (r.amlRiskLevel as PendingApproval['amlRiskLevel']) ?? undefined,
       fraudRiskScore: r.fraudRiskScore ? Number(r.fraudRiskScore) : undefined,
@@ -686,7 +686,7 @@ function extractProviderDocuments(
             label: documentLabel(type, sourceKey),
             type,
             url,
-            sourceKey,
+            ...(sourceKey ? { sourceKey } : {}),
           }
         : null;
     })

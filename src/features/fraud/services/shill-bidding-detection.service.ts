@@ -2,7 +2,7 @@ import { db } from '@/lib/db';
 import { bids } from '@/lib/db/schema/bids';
 import { auctions } from '@/lib/db/schema/auctions';
 import { vendors } from '@/lib/db/schema/vendors';
-import { eq, and, gte, desc, sql } from 'drizzle-orm';
+import { eq, and, gte, desc, sql, inArray, isNotNull, ne } from 'drizzle-orm';
 
 interface ShillBiddingAnalysis {
   vendorId: string;
@@ -149,10 +149,10 @@ export class ShillBiddingDetectionService {
       .from(auctions)
       .where(
         and(
-          sql`${auctions.id} = ANY(${auctionIds})`,
+          inArray(auctions.id, auctionIds),
           sql`${auctions.status} IN ('closed', 'completed')`,
-          sql`${auctions.winnerId} IS NOT NULL`,
-          sql`${auctions.winnerId} != ${vendorId}`
+          isNotNull(auctions.currentBidder),
+          ne(auctions.currentBidder, vendorId)
         )
       );
     
@@ -163,8 +163,8 @@ export class ShillBiddingDetectionService {
     // Count how many times they lost to the same winner
     const winnerCounts = new Map<string, number>();
     closedAuctions.forEach(auction => {
-      if (auction.winnerId) {
-        winnerCounts.set(auction.winnerId, (winnerCounts.get(auction.winnerId) || 0) + 1);
+      if (auction.currentBidder) {
+        winnerCounts.set(auction.currentBidder, (winnerCounts.get(auction.currentBidder) || 0) + 1);
       }
     });
     

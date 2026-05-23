@@ -214,7 +214,7 @@ export default function RevenueAnalysisPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            onClick={fetchReport}
+            onClick={() => fetchReport()}
             variant="outline"
             size="sm"
             disabled={isBusy}

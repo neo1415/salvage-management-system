@@ -179,7 +179,11 @@ export async function GET() {
     // Ensure one entry per auction (join duplication guard).
     const pendingPickupConfirmationsUnique = Array.from(
       new Map(pendingPickupConfirmations.map((p) => [p.auctionId, p])).values()
-    );
+    ).map((confirmation) => ({
+      ...confirmation,
+      pickupConfirmedVendor: confirmation.pickupConfirmedVendor ?? false,
+      pickupConfirmedAdmin: confirmation.pickupConfirmedAdmin ?? false,
+    }));
 
     const dashboardData: VendorDashboardData = {
       performanceStats,

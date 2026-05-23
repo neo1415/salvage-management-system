@@ -15,6 +15,7 @@ import { paymentService } from '@/features/auction-deposit/services/payment.serv
 import { db } from '@/lib/db/drizzle';
 import { vendors, auctionWinners, auctions, releaseForms } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
 
 /**
  * POST /api/auctions/[id]/payment/paystack
@@ -44,6 +45,19 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: 'Vendor profile not found' },
         { status: 404 }
+      );
+    }
+
+    const rateLimitResult = await rateLimit(request, {
+      identifier: `auction-paystack:${vendor.id}:${auctionId}`,
+      limit: 10,
+      window: 60,
+    });
+    const rateLimitHeaders = createRateLimitHeaders(rateLimitResult);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { success: false, error: 'Too many payment attempts. Please wait and try again.' },
+        { status: 429, headers: rateLimitHeaders }
       );
     }
 
@@ -127,27 +141,24 @@ export async function POST(
       idempotencyKey: paymentReference,
     });
 
-    return NextResponse.json({
-      success: true,
-      authorization_url: result.authorizationUrl,
-      access_code: result.accessCode,
-      reference: result.paystackReference,
-      amount: result.amount,
-      message: 'Paystack payment initialized. Amount is fixed and cannot be modified.',
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        authorization_url: result.authorizationUrl,
+        access_code: result.accessCode,
+        reference: result.paystackReference,
+        amount: result.amount,
+        message: 'Paystack payment initialized. Amount is fixed and cannot be modified.',
+      },
+      { headers: rateLimitHeaders }
+    );
   } catch (error) {
     console.error('Paystack initialization error:', error);
-    
-    // Extract detailed error message
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Detailed error message:', errorMessage);
-    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-    
+
     return NextResponse.json(
       { 
         success: false, 
-        error: errorMessage,
-        details: error instanceof Error ? error.stack : undefined
+        error: 'Failed to initialize payment. Please try again.',
       },
       { status: 500 }
     );

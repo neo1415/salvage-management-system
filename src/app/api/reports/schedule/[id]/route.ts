@@ -40,7 +40,7 @@ const updateSchema = z.object({
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Authentication
@@ -59,7 +59,7 @@ export async function GET(
       );
     }
 
-    const scheduleId = params.id;
+    const { id: scheduleId } = await params;
 
     // Get scheduled report
     const schedule = await ReportSchedulerService.getScheduledReport(scheduleId);
@@ -119,7 +119,7 @@ export async function GET(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Authentication
@@ -138,7 +138,7 @@ export async function PATCH(
       );
     }
 
-    const scheduleId = params.id;
+    const { id: scheduleId } = await params;
 
     // Get scheduled report to check ownership
     const schedule = await ReportSchedulerService.getScheduledReport(scheduleId);
@@ -183,7 +183,7 @@ export async function PATCH(
           error: {
             code: 'VALIDATION_ERROR',
             message: 'Invalid request data',
-            details: validation.error.errors,
+            details: validation.error.issues,
             timestamp: new Date().toISOString(),
           },
         },
@@ -240,7 +240,7 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Authentication
@@ -259,7 +259,7 @@ export async function DELETE(
       );
     }
 
-    const scheduleId = params.id;
+    const { id: scheduleId } = await params;
 
     // Get scheduled report to check ownership
     const schedule = await ReportSchedulerService.getScheduledReport(scheduleId);

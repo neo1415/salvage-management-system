@@ -462,7 +462,7 @@ export class PaymentService {
       amountInKobo,
       hasSecretKey: !!PAYSTACK_SECRET_KEY,
       appUrl: APP_URL,
-      email: user.email,
+      hasVendorEmail: !!user.email,
       reference: idempotencyKey,
     });
 
@@ -485,7 +485,11 @@ export class PaymentService {
       },
     };
 
-    console.log('Paystack API request payload:', paystackPayload);
+    console.log('Paystack API request prepared:', {
+      amountInKobo,
+      reference: idempotencyKey,
+      metadataKeys: Object.keys(paystackPayload.metadata),
+    });
 
     const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
@@ -510,7 +514,12 @@ export class PaymentService {
     }
 
     const paystackData = await paystackResponse.json();
-    console.log('Paystack API success response:', paystackData);
+    console.log('Paystack API success response received:', {
+      hasAuthorizationUrl: !!paystackData.data?.authorization_url,
+      hasAccessCode: !!paystackData.data?.access_code,
+      status: paystackResponse.status,
+      reference: idempotencyKey,
+    });
 
     if (!paystackData.data || !paystackData.data.authorization_url) {
       console.error('Invalid Paystack response structure:', paystackData);

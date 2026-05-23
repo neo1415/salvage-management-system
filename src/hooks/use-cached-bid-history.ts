@@ -62,7 +62,7 @@ export function useCachedBidHistory(
   const loadFromPersistentCache = useCallback(
     async (tab: BidHistoryTab, pageNum: number): Promise<CacheEntry | null> => {
       try {
-        const cached = await CacheService.get(cacheKey(tab, pageNum));
+        const cached = await CacheService.get<{ items?: unknown[]; totalPages?: number }>(cacheKey(tab, pageNum));
         if (!cached?.data) return null;
         return {
           items: cached.data.items || [],

@@ -47,6 +47,7 @@ export default function Tier2ManualKYCPage() {
   const router = useRouter();
   const { data: session, status: authStatus } = useSession();
   const [pageState, setPageState] = useState<PageState>('loading');
+  const isSubmittingKyc = pageState === 'submitting';
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormData>({
     businessName: '',
@@ -549,10 +550,10 @@ export default function Tier2ManualKYCPage() {
 
               <button
                 type="submit"
-                disabled={pageState === 'submitting'}
+                disabled={isSubmittingKyc}
                 className="w-full bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-bold py-4 rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
               >
-                {pageState === 'submitting' ? (
+                {isSubmittingKyc ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> Submitting...</>
                 ) : (
                   <><Shield className="w-5 h-5" /> Submit for Review</>

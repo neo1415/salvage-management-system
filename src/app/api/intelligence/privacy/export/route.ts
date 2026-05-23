@@ -96,11 +96,11 @@ export async function GET(request: NextRequest) {
         auctionId: interactions.auctionId,
         eventType: interactions.eventType,
         sessionId: interactions.sessionId,
-        createdAt: interactions.createdAt,
+        createdAt: interactions.timestamp,
       })
       .from(interactions)
       .where(eq(interactions.vendorId, vendorId))
-      .orderBy(sql`${interactions.createdAt} DESC`)
+      .orderBy(sql`${interactions.timestamp} DESC`)
       .limit(1000);
 
     // Anonymize sensitive data
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
         email: 'REDACTED', // Anonymize email
         exportDate: new Date().toISOString(),
       },
-      predictions: userPredictions.map((p: any) => ({
+      predictions: Array.from(userPredictions as Iterable<any>).map((p: any) => ({
         id: p.id,
         auctionId: p.auction_id,
         predictedPrice: parseFloat(p.predicted_price),
@@ -124,9 +124,9 @@ export async function GET(request: NextRequest) {
       recommendations: userRecommendations.map(r => ({
         id: r.id,
         auctionId: r.auctionId,
-        matchScore: parseFloat(r.matchScore),
-        collaborativeScore: parseFloat(r.collaborativeScore),
-        contentScore: parseFloat(r.contentScore),
+        matchScore: parseFloat(r.matchScore ?? '0'),
+        collaborativeScore: parseFloat(r.collaborativeScore ?? '0'),
+        contentScore: parseFloat(r.contentScore ?? '0'),
         reasonCodes: r.reasonCodes,
         clicked: r.clicked,
         bidPlaced: r.bidPlaced,

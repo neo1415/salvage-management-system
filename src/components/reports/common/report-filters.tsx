@@ -60,6 +60,10 @@ export function ReportFiltersComponent({
     onFiltersChange({ ...filters, [field]: date });
   };
 
+  const formatFilterDate = (date: ReportFilters['startDate']) => {
+    return date instanceof Date ? format(date, 'PPP') : 'All time';
+  };
+
   const toggleArrayFilter = (field: keyof ReportFilters, value: string) => {
     const current = (filters[field] as string[]) || [];
     const updated = current.includes(value)
@@ -89,14 +93,14 @@ export function ReportFiltersComponent({
                 className="w-full justify-start text-left font-normal min-w-[240px]"
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {filters.startDate ? format(filters.startDate, 'PPP') : 'All time'}
+                {formatFilterDate(filters.startDate)}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0 bg-white min-w-[280px]" align="start">
               <Calendar
                 mode="single"
-                selected={filters.startDate}
-                onSelect={(date) => handleDateChange('startDate', date)}
+                selected={filters.startDate as any}
+                onSelect={(date) => handleDateChange('startDate', date instanceof Date ? date : undefined)}
                 initialFocus
               />
             </PopoverContent>
@@ -114,14 +118,14 @@ export function ReportFiltersComponent({
                 className="w-full justify-start text-left font-normal min-w-[240px]"
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {filters.endDate ? format(filters.endDate, 'PPP') : 'All time'}
+                {formatFilterDate(filters.endDate)}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0 bg-white min-w-[280px]" align="start">
               <Calendar
                 mode="single"
-                selected={filters.endDate}
-                onSelect={(date) => handleDateChange('endDate', date)}
+                selected={filters.endDate as any}
+                onSelect={(date) => handleDateChange('endDate', date instanceof Date ? date : undefined)}
                 initialFocus
               />
             </PopoverContent>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { walletTransactions, escrowWallets, bids, auctions, vendors } from '@/lib/db/schema';
+import { walletTransactions, escrowWallets, bids, auctions, vendors, payments } from '@/lib/db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import { ExportService } from '@/features/export/services/export.service';
 
@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
           amount: bids.amount,
           auctionStatus: auctions.status,
           currentBid: auctions.currentBid,
-          winnerId: auctions.winnerId,
+          winnerId: auctions.currentBidder,
         })
         .from(bids)
         .innerJoin(auctions, eq(bids.auctionId, auctions.id))
@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
             } else {
               bidStatus = 'lost';
             }
-          } else if (parseFloat(b.currentBid) > parseFloat(b.amount)) {
+          } else if (parseFloat(b.currentBid ?? '0') > parseFloat(b.amount)) {
             bidStatus = 'outbid';
           }
 
@@ -179,33 +179,33 @@ export async function GET(request: NextRequest) {
 
       const results = await db
         .select({
-          date: auctions.closedAt,
-          auctionId: auctions.id,
-          winningBid: auctions.winningBid,
-          status: auctions.status,
+          date: payments.verifiedAt,
+          auctionId: payments.auctionId,
+          amount: payments.amount,
+          status: payments.status,
         })
-        .from(auctions)
+        .from(payments)
         .where(
           and(
-            eq(auctions.winnerId, vendor.id),
-            gte(auctions.closedAt, new Date(startDate)),
-            lte(auctions.closedAt, new Date(endDate + 'T23:59:59'))
+            eq(payments.vendorId, vendor.id),
+            gte(payments.createdAt, new Date(startDate)),
+            lte(payments.createdAt, new Date(endDate + 'T23:59:59'))
           )
         )
-        .orderBy(desc(auctions.closedAt));
+        .orderBy(desc(payments.createdAt));
 
       exportData = results.map((a) => ({
         date: new Date(a.date || new Date()).toISOString(),
-        auctionId: a.auctionId,
-        amount: parseFloat(a.winningBid || '0'),
-        status: a.status === 'closed' ? 'completed' : 'pending',
+        auctionId: a.auctionId || 'Registration fee',
+        amount: parseFloat(a.amount || '0'),
+        status: a.status === 'verified' ? 'completed' : a.status,
       }));
 
       csvData = results.map((a) => [
         new Date(a.date || new Date()).toISOString(),
-        a.auctionId,
-        a.winningBid || '0',
-        a.status === 'closed' ? 'completed' : 'pending',
+        a.auctionId || 'Registration fee',
+        a.amount || '0',
+        a.status === 'verified' ? 'completed' : a.status,
       ]);
     }
 
@@ -256,7 +256,7 @@ export async function GET(request: NextRequest) {
         title: 'WALLET TRANSACTIONS',
       });
 
-      return new NextResponse(pdfBuffer, {
+      return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="wallet-transactions-${date}.pdf"`,

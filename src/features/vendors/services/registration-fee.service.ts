@@ -167,7 +167,7 @@ export class RegistrationFeeService {
       vendorId,
       reference,
       amount: feeAmount,
-      email: userEmail,
+      hasVendorEmail: !!userEmail,
     });
 
     const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
@@ -203,7 +203,8 @@ export class RegistrationFeeService {
     console.log('[Registration Fee] Paystack payment initialized successfully:', {
       paymentId: payment.id,
       reference,
-      authorizationUrl: paystackData.data.authorization_url,
+      hasAuthorizationUrl: !!paystackData.data.authorization_url,
+      hasAccessCode: !!paystackData.data.access_code,
     });
 
     return {

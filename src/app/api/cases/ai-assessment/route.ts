@@ -208,6 +208,15 @@ export async function POST(request: NextRequest) {
               age: itemInfo.age || (itemInfo.year ? new Date().getFullYear() - itemInfo.year : undefined),
               brandPrestige: getElectronicsBrandPrestige(itemInfo.brand),
             };
+
+          case 'property':
+            return {
+              ...baseItem,
+              propertyType: itemInfo.propertyType || itemInfo.type || 'property',
+              location: itemInfo.location,
+              bedrooms: itemInfo.bedrooms,
+              age: itemInfo.age,
+            };
           
           case 'appliance':
             return {
@@ -217,12 +226,25 @@ export async function POST(request: NextRequest) {
               age: itemInfo.age || (itemInfo.year ? new Date().getFullYear() - itemInfo.year : undefined),
               brandPrestige: getApplianceBrandPrestige(itemInfo.brand),
             };
+
+          case 'machinery':
+            return {
+              ...baseItem,
+              brand: itemInfo.brand,
+              model: itemInfo.model,
+              year: itemInfo.year,
+              machineryType: itemInfo.type || itemInfo.machineryType || 'equipment',
+              age: itemInfo.age || (itemInfo.year ? new Date().getFullYear() - itemInfo.year : undefined),
+              brandPrestige: itemInfo.brandPrestige,
+            };
           
+          case 'jewelry':
           case 'watch':
             return {
               ...baseItem,
               brand: itemInfo.brand,
               model: itemInfo.model,
+              material: itemInfo.material,
               movementType: itemInfo.movementType,
               age: itemInfo.age || (itemInfo.year ? new Date().getFullYear() - itemInfo.year : undefined),
               brandPrestige: getWatchBrandPrestige(itemInfo.brand),

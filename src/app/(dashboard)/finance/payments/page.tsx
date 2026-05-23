@@ -137,12 +137,7 @@ export default function FinancePaymentsPage() {
     Map<string, { payments: Payment[]; stats: PaymentStats }>
   >(new Map());
   const prefetchedViewsRef = useRef(false);
-  const [stats, setStats] = useState<PaymentStats>({
-    total: 0,
-    autoVerified: 0,
-    pendingManual: 0,
-    overdue: 0,
-  });
+  const [stats, setStats] = useState<PaymentStats>(DEFAULT_STATS);
   const [loading, setLoading] = useState(true);
   const [isFiltering, setIsFiltering] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);

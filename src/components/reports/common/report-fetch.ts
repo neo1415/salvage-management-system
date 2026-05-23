@@ -1,6 +1,6 @@
 'use client';
 
-import { ReportFilters } from '@/features/reports/types';
+import type { ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters } from '@/features/reports/utils/report-date-range';
 import {
   buildReportCacheKey,

@@ -125,7 +125,7 @@ export class FeatureEngineeringService {
       assetType: row.asset_type,
       make: row.asset_details?.make,
       model: row.asset_details?.model,
-      year: row.asset_details?.year ? parseInt(row.asset_details.year) : undefined,
+      year: row.asset_details?.year ? parseInt(row.asset_details.year) : null,
       damageSeverity: row.damage_severity,
       marketValue: parseFloat(row.market_value || '0'),
       estimatedSalvageValue: parseFloat(row.estimated_salvage_value || '0'),
@@ -136,12 +136,28 @@ export class FeatureEngineeringService {
       monthSin: Math.sin((2 * Math.PI * endTime.getMonth()) / 12),
       monthCos: Math.cos((2 * Math.PI * endTime.getMonth()) / 12),
       damagedPartsCount: row.damaged_parts?.length || 0,
+      structuralDamageScore: null,
+      mechanicalDamageScore: null,
+      cosmeticDamageScore: null,
+      region: null,
+      competitionLevel: null,
+      avgBidsPerAuction: null,
+      priceTrend: null,
+      vendorRating: null,
+      vendorWinRate: null,
+      vendorTotalBids: null,
+      vendorAvgBidAmount: null,
+      vendorLocationLat: null,
+      vendorLocationLng: null,
+      regionalDemandScore: null,
+      seasonalDemandScore: null,
+      regionalPriceVariance: null,
     };
 
     await db.insert(featureVectors).values({
       entityType: 'auction',
       entityId: auctionId,
-      features,
+      features: features as any,
       version: 'v1.0',
     });
   }
@@ -167,16 +183,42 @@ export class FeatureEngineeringService {
     const row = vendorData[0];
 
     const features = {
+      assetType: null,
+      make: null,
+      model: null,
+      year: null,
+      damageSeverity: null,
+      marketValue: null,
+      estimatedSalvageValue: null,
+      hourSin: null,
+      hourCos: null,
+      dayOfWeekSin: null,
+      dayOfWeekCos: null,
+      monthSin: null,
+      monthCos: null,
+      damagedPartsCount: null,
+      structuralDamageScore: null,
+      mechanicalDamageScore: null,
+      cosmeticDamageScore: null,
+      region: null,
+      competitionLevel: null,
+      avgBidsPerAuction: null,
+      priceTrend: null,
       vendorRating: parseFloat(row.rating || '0'),
       vendorWinRate: parseFloat(row.win_rate || '0'),
       vendorTotalBids: parseInt(row.total_bids || '0'),
       vendorAvgBidAmount: parseFloat(row.avg_bid_amount || '0'),
+      vendorLocationLat: null,
+      vendorLocationLng: null,
+      regionalDemandScore: null,
+      seasonalDemandScore: null,
+      regionalPriceVariance: null,
     };
 
     await db.insert(featureVectors).values({
       entityType: 'vendor',
       entityId: vendorId,
-      features,
+      features: features as any,
       version: 'v1.0',
     });
   }

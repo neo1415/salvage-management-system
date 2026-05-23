@@ -14,7 +14,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { transferService } from '@/features/auction-deposit/services/transfer.service';
 import { db } from '@/lib/db/drizzle';
 import { auctions, depositForfeitures } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 
 /**
  * POST /api/auctions/[id]/forfeitures/transfer
@@ -59,12 +59,12 @@ export async function POST(
       );
     }
 
-    // Verify auction status is deposit_forfeited
-    if (auction.status !== 'deposit_forfeited') {
+    // Verify auction status is forfeited.
+    if (auction.status !== 'forfeited') {
       return NextResponse.json(
         {
           success: false,
-          error: `Cannot transfer funds. Auction status is ${auction.status}, expected deposit_forfeited`,
+          error: `Cannot transfer funds. Auction status is ${auction.status}, expected forfeited`,
         },
         { status: 400 }
       );
@@ -74,7 +74,7 @@ export async function POST(
     const forfeiture = await db.query.depositForfeitures.findFirst({
       where: and(
         eq(depositForfeitures.auctionId, auctionId),
-        eq(depositForfeitures.transferred, false)
+        isNull(depositForfeitures.transferredAt)
       ),
     });
 
@@ -89,25 +89,15 @@ export async function POST(
     }
 
     // Transfer forfeited funds
-    const result = await transferService.transferForfeitedFunds(
+    const result = await transferService.transferForfeitedFunds({
       auctionId,
-      session.user.id
-    );
-
-    if (!result.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: result.error,
-        },
-        { status: 400 }
-      );
-    }
+      transferredBy: session.user.id,
+    });
 
     return NextResponse.json({
       success: true,
-      transfer: result.transfer,
-      message: `Successfully transferred ₦${result.transfer?.amount.toLocaleString()} to platform account`,
+      transfer: result,
+      message: `Successfully transferred NGN ${result.amount.toLocaleString()} to platform account`,
     });
   } catch (error) {
     console.error('Forfeiture transfer error:', error);
@@ -176,7 +166,7 @@ export async function GET(
         vendorId: forfeiture.vendorId,
         depositAmount: parseFloat(forfeiture.depositAmount),
         forfeitedAmount: parseFloat(forfeiture.forfeitedAmount),
-        transferred: forfeiture.transferred,
+        transferred: Boolean(forfeiture.transferredAt),
         transferredAt: forfeiture.transferredAt,
         transferredBy: forfeiture.transferredBy,
         createdAt: forfeiture.createdAt,

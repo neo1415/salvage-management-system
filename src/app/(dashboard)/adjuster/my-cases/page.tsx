@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -860,7 +860,7 @@ function DraftCard({ draft, onDelete }: DraftCardProps) {
 interface CaseCardProps {
   caseItem: Case;
   onDelete?: () => void;
-  getStatusBadge: (caseItem: Case) => JSX.Element;
+  getStatusBadge: (caseItem: Case) => ReactElement;
   isOfflineCase?: boolean;
   showRejectionReason?: boolean;
 }

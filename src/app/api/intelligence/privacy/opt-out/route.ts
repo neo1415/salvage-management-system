@@ -78,17 +78,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update vendor preferences
-    await db
-      .update(vendors)
-      .set({
-        preferences: {
-          intelligenceOptOut: optOut,
-        },
-        updatedAt: new Date(),
-      })
-      .where(eq(vendors.id, vendorId));
-
     // Audit logging
     const ipAddress = request.headers.get('x-forwarded-for') || 
                       request.headers.get('x-real-ip') || 
@@ -110,7 +99,8 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({
-      success: true,
+      success: false,
+      error: 'Recommendation opt-out persistence is not configured on the current vendor schema',
       data: {
         vendorId,
         intelligenceOptOut: optOut,
@@ -119,7 +109,7 @@ export async function POST(request: NextRequest) {
           : 'Successfully opted in to personalized recommendations',
         timestamp: new Date().toISOString(),
       },
-    }, { status: 200 });
+    }, { status: 501 });
 
   } catch (error) {
     console.error('[Privacy Opt-Out API] Error:', error);

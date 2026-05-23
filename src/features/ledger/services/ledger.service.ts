@@ -17,7 +17,7 @@
 import { db } from '@/lib/db';
 import { ledgerAccounts, ledgerEntries, ledgerTransactionSummary } from '@/lib/db/schema/ledger';
 import { eq, and, sql } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 export interface LedgerEntry {
   accountType: 'vendor_wallet' | 'nem_paystack' | 'nem_bank';
@@ -133,7 +133,7 @@ export class LedgerService {
     reference: string,
     description: string
   ): Promise<void> {
-    const transactionId = uuidv4();
+    const transactionId = randomUUID();
 
     await this.recordTransaction({
       transactionId,
@@ -175,7 +175,7 @@ export class LedgerService {
     auctionId: string,
     description: string
   ): Promise<void> {
-    const transactionId = uuidv4();
+    const transactionId = randomUUID();
 
     await this.recordTransaction({
       transactionId,
@@ -217,7 +217,7 @@ export class LedgerService {
     auctionId: string,
     description: string
   ): Promise<void> {
-    const transactionId = uuidv4();
+    const transactionId = randomUUID();
 
     await this.recordTransaction({
       transactionId,
@@ -260,7 +260,7 @@ export class LedgerService {
     reference: string,
     description: string
   ): Promise<void> {
-    const transactionId = uuidv4();
+    const transactionId = randomUUID();
 
     await this.recordTransaction({
       transactionId,
@@ -303,7 +303,7 @@ export class LedgerService {
     reference: string,
     description: string
   ): Promise<void> {
-    const transactionId = uuidv4();
+    const transactionId = randomUUID();
 
     await this.recordTransaction({
       transactionId,

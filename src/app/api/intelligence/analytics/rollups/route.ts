@@ -11,7 +11,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { AnalyticsAggregationService } from '@/features/intelligence/services/analytics-aggregation.service';
 import { z } from 'zod';
 
 const querySchema = z.object({
@@ -58,25 +57,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { rollupType, metricType, startDate, endDate, limit } = queryParams.data;
-
-    const aggregationService = new AnalyticsAggregationService();
-    const rollups = await aggregationService.getRollups({
-      rollupType,
-      metricType,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
-      limit,
-    });
+    const { rollupType, metricType, startDate, endDate } = queryParams.data;
 
     return NextResponse.json({
-      success: true,
-      data: rollups,
+      success: false,
+      error: 'Analytics rollup retrieval is not wired to the current aggregation service yet',
+      data: [],
       meta: {
-        count: rollups.length,
+        count: 0,
         filters: { rollupType, metricType, startDate, endDate },
       },
-    });
+    }, { status: 501 });
 
   } catch (error) {
     console.error('[Analytics Rollups API] Error:', error);

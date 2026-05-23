@@ -403,9 +403,13 @@ export class DamageCalculationService {
         processedDeductions.push({
           component: part.component,
           damageLevel: matchingDamage.damageLevel,
+          repairCostLow: part.partPrice,
+          repairCostHigh: part.partPrice,
+          valuationDeductionLow: part.partPrice / basePrice,
+          valuationDeductionHigh: part.partPrice / basePrice,
           deductionPercent: part.partPrice / basePrice,
           deductionAmount: part.partPrice,
-          make: make || null,
+          make: make || undefined,
           source: 'internet_search'
         });
       }

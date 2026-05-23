@@ -224,6 +224,14 @@ export const fraudAlerts = pgTable('fraud_alerts', {
       exifMismatch?: boolean;
       aiGenerated?: boolean;
     };
+    source?: string;
+    providerReference?: string;
+    workflowReference?: string;
+    verificationType?: string;
+    riskLevel?: string;
+    checksCompleted?: string[];
+    failedChecks?: string[];
+    reasonCodes?: string[];
   }>(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, (table) => ({

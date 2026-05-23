@@ -31,6 +31,23 @@ const APP_URL = getAppUrl();
 
 type AssetDetails = AssetNameDetails;
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function normalizeAssetDetails(details: unknown): AssetDetails {
+  return typeof details === 'object' && details !== null ? (details as AssetDetails) : {};
+}
+
 /**
  * Generate a document and store in database
  */
@@ -91,7 +108,7 @@ export async function generateDocument(
     const verificationUrl = `${APP_URL}/verify-document/${auctionId}`;
 
     // Extract asset details from JSONB
-    const assetDetails = caseData.assetDetails as AssetDetails;
+    const assetDetails = normalizeAssetDetails(caseData.assetDetails);
 
     // Prepare document data based on type
     let pdfBuffer: Buffer;
@@ -110,10 +127,10 @@ export async function generateDocument(
       assetType: caseData.assetType,
       assetDescription,
       assetCondition: caseData.vehicleCondition || 'salvage',
-      vin: assetDetails.vin,
-      make: assetDetails.make,
-      model: assetDetails.model,
-      year: assetDetails.year,
+      vin: optionalString(assetDetails.vin),
+      make: optionalString(assetDetails.make),
+      model: optionalString(assetDetails.model),
+      year: optionalNumber(assetDetails.year),
       salePrice: Number(auction.currentBid || 0),
       paymentMethod: 'To be determined',
       paymentReference: undefined,
@@ -141,10 +158,10 @@ export async function generateDocument(
           assetType: caseData.assetType,
           assetDescription,
           assetCondition: caseData.vehicleCondition || 'salvage',
-          vin: assetDetails.vin,
-          make: assetDetails.make,
-          model: assetDetails.model,
-          year: assetDetails.year,
+          vin: optionalString(assetDetails.vin),
+          make: optionalString(assetDetails.make),
+          model: optionalString(assetDetails.model),
+          year: optionalNumber(assetDetails.year),
           salePrice: Number(auction.currentBid || 0),
           paymentMethod: 'To be determined',
           pickupLocation: caseData.locationName || 'NEM Insurance Salvage Yard',
@@ -193,7 +210,8 @@ export async function generateDocument(
 
       case 'salvage_certificate':
         title = 'Salvage Certificate';
-        if (!assetDetails.vin) {
+        const vin = optionalString(assetDetails.vin);
+        if (!vin) {
           throw new Error('Salvage certificate requires VIN');
         }
         // Construct damage description from AI assessment
@@ -203,10 +221,10 @@ export async function generateDocument(
           : 'Salvage vehicle with undisclosed damage';
         
         const salvageCertData: SalvageCertificateData = {
-          vin: assetDetails.vin,
-          make: assetDetails.make || 'Unknown',
-          model: assetDetails.model || 'Unknown',
-          year: assetDetails.year || new Date().getFullYear(),
+          vin,
+          make: optionalString(assetDetails.make) || 'Unknown',
+          model: optionalString(assetDetails.model) || 'Unknown',
+          year: optionalNumber(assetDetails.year) || new Date().getFullYear(),
           damageAssessment: damageDescription,
           totalLossDeclaration: true,
           claimReference: caseData.claimReference || 'N/A',
@@ -386,7 +404,7 @@ export async function signDocument(
 
         if (auctionData) {
           const { auction, case: caseData, vendor, vendorUser } = auctionData;
-          const assetDetails = caseData.assetDetails as AssetDetails;
+          const assetDetails = normalizeAssetDetails(caseData.assetDetails);
           const assetDescription = formatAssetName(caseData.assetType, assetDetails, caseData.claimReference);
           
           let pdfBuffer: Buffer;
@@ -425,10 +443,10 @@ export async function signDocument(
               assetType: caseData.assetType,
               assetDescription,
               assetCondition: caseData.vehicleCondition || 'salvage',
-              vin: assetDetails.vin,
-              make: assetDetails.make,
-              model: assetDetails.model,
-              year: assetDetails.year,
+              vin: optionalString(assetDetails.vin),
+              make: optionalString(assetDetails.make),
+              model: optionalString(assetDetails.model),
+              year: optionalNumber(assetDetails.year),
               salePrice: Number(auction.currentBid || 0),
               paymentMethod: 'Escrow Wallet',
               pickupLocation: caseData.locationName || 'NEM Insurance Salvage Yard',

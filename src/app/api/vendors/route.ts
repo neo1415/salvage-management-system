@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, or, sql, inArray, isNotNull, isNull, desc, ne } from 'drizzle-orm';
+import { eq, and, or, sql, inArray, isNotNull, isNull, desc, ne, type SQL } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { hasProviderVerificationStorage, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build query conditions
-    const conditions = [ne(users.status, 'deleted')];
+    const conditions: SQL<unknown>[] = [ne(users.status, 'deleted')];
     // NOTE: Do NOT filter by vendors.status here - we need to filter by Tier 2 KYC status AFTER determining it
     // The statusFilter will be applied after we calculate kycStatus based on tier2ApprovedAt/tier2RejectionReason/tier2SubmittedAt
     
@@ -147,8 +147,7 @@ export async function GET(request: NextRequest) {
       
       // For tier2_full filter, include legacy submissions and Dojah provider pending review
       if (dbTier === 'tier2_full') {
-        conditions.push(
-          or(
+        const tier2Condition = or(
             eq(vendors.tier, 'tier2_full'),
             and(
               eq(vendors.tier, 'tier1_bvn'),
@@ -174,17 +173,20 @@ export async function GET(request: NextRequest) {
                   )
                 : isNotNull(vendors.tier2SubmittedAt)
             )
-          )
         );
+        if (tier2Condition) {
+          conditions.push(tier2Condition);
+        }
       } else if (dbTier === 'tier1_bvn') {
         // Tier 1: BVN successfully verified (bvnVerifiedAt), not yet Tier 2 approved
-        conditions.push(
-          and(
+        const tier1Condition = and(
             isNotNull(vendors.bvnVerifiedAt),
             isNull(vendors.tier2ApprovedAt),
             ne(vendors.tier, 'tier2_full')
-          )
         );
+        if (tier1Condition) {
+          conditions.push(tier1Condition);
+        }
       } else if (dbTier === 'tier0') {
         // Tier 0: registered vendors who have not completed BVN verification
         conditions.push(isNull(vendors.bvnVerifiedAt));
@@ -197,13 +199,14 @@ export async function GET(request: NextRequest) {
     // Requirements: 7.1, 7.4
     if (search) {
       const searchLower = search.toLowerCase();
-      conditions.push(
-        or(
+      const searchCondition = or(
           sql`LOWER(${vendors.businessName}) LIKE ${`%${searchLower}%`}`,
           sql`LOWER(${users.email}) LIKE ${`%${searchLower}%`}`,
           sql`LOWER(${users.phone}) LIKE ${`%${searchLower}%`}`
-        )
       );
+      if (searchCondition) {
+        conditions.push(searchCondition);
+      }
     }
 
     // Calculate offset

@@ -32,9 +32,9 @@ export class PDFGenerator {
   private pageHeight: number;
   private margin: number = 20;
   private currentY: number = 20;
-  private readonly primaryColor = [128, 0, 32]; // #800020
-  private readonly textColor = [31, 41, 55]; // #1f2937
-  private readonly grayColor = [107, 114, 128]; // #6b7280
+  private readonly primaryColor: [number, number, number] = [128, 0, 32]; // #800020
+  private readonly textColor: [number, number, number] = [31, 41, 55]; // #1f2937
+  private readonly grayColor: [number, number, number] = [107, 114, 128]; // #6b7280
 
   constructor() {
     this.doc = new jsPDF({

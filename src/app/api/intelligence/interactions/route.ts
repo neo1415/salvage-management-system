@@ -18,7 +18,7 @@ import { db } from '@/lib/db';
 import { interactions } from '@/lib/db/schema/intelligence';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { z } from 'zod';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 /**
  * Task 7.3.2: Implement event validation schema
@@ -92,11 +92,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Task 7.3.3: Implement session tracking logic
-    const sessionId = eventData.sessionId || uuidv4();
+    const sessionId = eventData.sessionId || randomUUID();
+    const storedEventType = eventData.eventType === 'click_recommendation'
+      ? 'view'
+      : eventData.eventType;
 
     // Enrich metadata
     const enrichedMetadata = {
       ...eventData.metadata,
+      originalEventType: eventData.eventType,
       deviceType,
       ipAddress,
       userAgent,
@@ -107,9 +111,9 @@ export async function POST(request: NextRequest) {
     await db.insert(interactions).values({
       vendorId: eventData.vendorId,
       auctionId: eventData.auctionId,
-      eventType: eventData.eventType,
+      eventType: storedEventType,
       sessionId,
-      metadata: enrichedMetadata,
+      metadata: enrichedMetadata as typeof interactions.$inferInsert['metadata'],
     });
 
     // Log to audit logs

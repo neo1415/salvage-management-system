@@ -29,7 +29,7 @@ import { eq, sql, desc } from 'drizzle-orm';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { predictionId: string } }
+  { params }: { params: Promise<{ predictionId: string }> }
 ) {
   try {
     // Authentication check
@@ -50,7 +50,7 @@ export async function GET(
       );
     }
 
-    const predictionId = params.predictionId;
+    const { predictionId } = await params;
 
     // Get prediction details
     const predictionData = await db

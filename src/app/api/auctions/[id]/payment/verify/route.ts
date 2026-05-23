@@ -151,6 +151,16 @@ export async function POST(
       );
     }
     
+    if (!payment.paymentReference) {
+      return NextResponse.json(
+        {
+          error: 'Payment reference missing',
+          message: 'This payment cannot be verified automatically. Please contact support.',
+        },
+        { status: 400 }
+      );
+    }
+
     // Verify payment with Paystack API
     console.log('🔍 Verifying payment with Paystack API...');
     const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;

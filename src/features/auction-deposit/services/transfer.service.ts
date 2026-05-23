@@ -4,11 +4,11 @@
  * 
  * Requirements:
  * - Requirement 12.1: Display "Transfer Forfeited Funds" button for forfeited deposits
- * - Requirement 12.2: Verify auction status is "deposit_forfeited"
+ * - Requirement 12.2: Verify auction status is "forfeited"
  * - Requirement 12.3: Decrease vendor's frozenAmount by forfeitedAmount
  * - Requirement 12.4: Increase platform_account balance by forfeitedAmount
  * - Requirement 12.5: Record transaction with all details
- * - Requirement 12.6: Update auction status to "forfeiture_collected"
+ * - Requirement 12.6: Mark forfeiture record transferred while preserving auction status
  * - Requirement 12.7: Keep remaining frozen amount frozen until auction resolved
  */
 
@@ -51,7 +51,7 @@ export class TransferService {
 
     // Use database transaction for atomicity
     const result = await db.transaction(async (tx) => {
-      // Verify auction exists and is in "deposit_forfeited" status
+      // Verify auction exists and is in "forfeited" status
       const [auction] = await tx
         .select()
         .from(auctions)
@@ -62,9 +62,9 @@ export class TransferService {
         throw new Error(`Auction not found: ${auctionId}`);
       }
 
-      if (auction.status !== 'deposit_forfeited') {
+      if (auction.status !== 'forfeited') {
         throw new Error(
-          `Cannot transfer forfeited funds. Auction status is "${auction.status}", expected "deposit_forfeited"`
+          `Cannot transfer forfeited funds. Auction status is "${auction.status}", expected "forfeited"`
         );
       }
 
@@ -170,11 +170,10 @@ export class TransferService {
         description: `Forfeited funds transferred to platform account`,
       });
 
-      // Update auction status to "forfeiture_collected"
+      // Preserve the auction's terminal forfeited status; transfer state lives on deposit_forfeitures.
       await tx
         .update(auctions)
         .set({
-          status: 'forfeiture_collected',
           updatedAt: new Date(),
         })
         .where(eq(auctions.id, auctionId));
