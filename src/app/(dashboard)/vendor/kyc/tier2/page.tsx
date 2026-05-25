@@ -32,6 +32,12 @@ import {
   resolveTier2ApiError,
   resolveTier2WidgetError,
 } from '@/lib/kyc/kyc-user-messages';
+import {
+  isDojahWidgetFinalSuccess,
+  isDojahWidgetIntermediateStep,
+  resolveDojahWidgetReference,
+  type DojahWidgetCallbackResponse,
+} from '@/lib/kyc/dojah-widget-completion';
 import type { ResolvedVerificationError } from '@/lib/kyc/kyc-user-messages';
 import {
   VerificationErrorAlert,
@@ -70,18 +76,7 @@ interface DojahWidgetOptions {
   onClose: () => void;
 }
 
-interface DojahWidgetResponse {
-  reference_id?: string;
-  referenceId?: string;
-  reference?: string;
-  verification_reference?: string;
-  workflow_reference?: string;
-  data?: {
-    reference_id?: string;
-    referenceId?: string;
-    reference?: string;
-  };
-}
+type DojahWidgetResponse = DojahWidgetCallbackResponse;
 
 interface DojahConnect {
   setup(): void;
@@ -154,6 +149,7 @@ export default function Tier2KYCPage() {
   const [geolocationPermissionGranted, setGeolocationPermissionGranted] = useState(false);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
+  const [widgetSessionActive, setWidgetSessionActive] = useState(false);
 
   const showVerificationError = (
     error: ResolvedVerificationError,
@@ -315,45 +311,48 @@ export default function Tier2KYCPage() {
       origin: window.location.origin,
     });
 
-    const resolveReferenceFromWidgetResponse = (response?: DojahWidgetResponse) =>
-      response?.reference_id ||
-      response?.referenceId ||
-      response?.reference ||
-      response?.verification_reference ||
-      response?.workflow_reference ||
-      response?.data?.reference_id ||
-      response?.data?.referenceId ||
-      response?.data?.reference ||
-      undefined;
-
-    const widgetReturnedCompletionPayload = (response?: DojahWidgetResponse) =>
-      Boolean(
-        response?.data ||
-          response?.reference_id ||
-          response?.referenceId ||
-          response?.verification_reference
-      );
-
     const handleWidgetCompletion = async (response: DojahWidgetResponse | undefined, source: 'success' | 'complete') => {
-      const referenceId = resolveReferenceFromWidgetResponse(response);
+      const referenceId = resolveDojahWidgetReference(response);
+      const isFinal = isDojahWidgetFinalSuccess(response);
+      const isIntermediate = isDojahWidgetIntermediateStep(response);
 
-      console.info('[Dojah Widget] Completion callback received', {
+      console.info('[Dojah Widget] Callback received', {
         source,
         hasProviderReference: Boolean(referenceId),
-        hasCompletionPayload: widgetReturnedCompletionPayload(response),
+        isFinal,
+        isIntermediate,
+        verificationStatus: response?.verification_status ?? response?.verificationStatus,
       });
 
-      if (!referenceId || !widgetReturnedCompletionPayload(response)) {
+      if (!isFinal) {
+        if (isIntermediate) {
+          console.info('[Dojah Widget] Ignoring intermediate step — continue in the identity window');
+          setWidgetSessionActive(true);
+          setPageState('ready');
+          return;
+        }
         if (source === 'complete') {
+          setWidgetSessionActive(false);
           setPageState('ready');
           return;
         }
         showVerificationError(
           resolveTier2ApiError({
             message:
-              'Verification finished in the browser, but we could not link it to your account. Try again or contact support.',
+              'Verification finished in the browser, but we could not confirm a completed application. Try again or contact support.',
           }),
           { nextPageState: 'error', openDialog: true }
+        );
+        return;
+      }
+
+      setWidgetSessionActive(false);
+      if (!referenceId) {
+        showVerificationError(
+          resolveTier2ApiError({
+            message: 'Verification completed but no reference was returned. Please try again.',
+          }),
+          { openDialog: true, nextPageState: 'ready' }
         );
         return;
       }
@@ -375,13 +374,17 @@ export default function Tier2KYCPage() {
         workflow_slug: widgetConfig.workflowSlug ?? 'salvage',
         reference_id: verificationReference ?? '',
       },
-      onSuccess: async (response) => handleWidgetCompletion(response, 'success'),
-      onComplete: async (response) => {
-        if (widgetReturnedCompletionPayload(response)) {
-          await handleWidgetCompletion(response, 'complete');
-        } else {
-          setPageState('ready');
+      // onSuccess often fires per step (e.g. liveness) — do not submit until the full workflow completes.
+      onSuccess: (response) => {
+        if (isDojahWidgetFinalSuccess(response)) {
+          void handleWidgetCompletion(response, 'success');
+        } else if (isDojahWidgetIntermediateStep(response)) {
+          console.info('[Dojah Widget] Step succeeded; waiting for remaining checks');
+          setWidgetSessionActive(true);
         }
+      },
+      onComplete: async (response) => {
+        await handleWidgetCompletion(response, 'complete');
       },
       onError: (err) => {
         const errorObj = err as { message?: string; referenceId?: string };
@@ -418,7 +421,10 @@ export default function Tier2KYCPage() {
         showVerificationError(widgetError, { openDialog: true, nextPageState: 'ready' });
       },
       onClose: () => {
-        if (pageState === 'verifying') setPageState('ready');
+        setWidgetSessionActive(false);
+        if (pageState === 'verifying') {
+          setPageState('ready');
+        }
       },
     };
 
@@ -465,18 +471,25 @@ export default function Tier2KYCPage() {
         body: JSON.stringify({ reference_id: referenceId, widget_completed: widgetCompleted }),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: { error?: string; message?: string; status?: string } = {};
+      try {
+        data = rawText ? (JSON.parse(rawText) as typeof data) : {};
+      } catch {
+        showVerificationError(
+          resolveTier2ApiError({
+            message: 'The server returned an unexpected response. Please try again in a moment.',
+          }),
+          { openDialog: true, nextPageState: 'ready' }
+        );
+        return;
+      }
 
       if (!res.ok) {
-        const resolved =
-          data.error === 'verification_incomplete'
-            ? resolveTier2ApiError({
-                error: data.error,
-                message:
-                  data.message ??
-                  'Verification was not finished. Complete every step in the identity window, then try again.',
-              })
-            : resolveTier2ApiError({ error: data.error, message: data.message });
+        const resolved = resolveTier2ApiError({
+          error: data.error,
+          message: data.message,
+        });
         showVerificationError(resolved, {
           openDialog: true,
           nextPageState: 'ready',
@@ -489,9 +502,15 @@ export default function Tier2KYCPage() {
       } else {
         setPageState('pending_review');
       }
-    } catch {
+    } catch (err) {
+      const aborted = err instanceof Error && err.name === 'AbortError';
       showVerificationError(
-        resolveTier2ApiError({ error: 'network_error', message: 'Network error. Check your connection and try again.' }),
+        resolveTier2ApiError({
+          error: aborted ? 'verification_pending' : 'network_error',
+          message: aborted
+            ? 'The request was interrupted. If the identity window is still open, finish all steps there first.'
+            : 'We could not reach the server to process your verification. Wait a moment and try again.',
+        }),
         { openDialog: true, nextPageState: 'ready' }
       );
     }
@@ -606,6 +625,7 @@ export default function Tier2KYCPage() {
       );
       return;
     }
+    setWidgetSessionActive(true);
     setPageState('verifying');
     applyDojahIframePermissions();
     connect.open();
@@ -844,6 +864,14 @@ export default function Tier2KYCPage() {
                 {/* Error message */}
                 {verificationError && (
                   <VerificationErrorAlert error={verificationError} className="mb-4" />
+                )}
+
+                {widgetSessionActive && !verificationError && (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
+                    Identity checks are in progress. Complete every step in the verification window (NIN, documents,
+                    liveness, business details). A step may show as submitted — that is normal; only the full flow
+                    finishes your application.
+                  </div>
                 )}
 
                 <button

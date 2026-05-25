@@ -16,15 +16,25 @@ describe('tier2-submission-readiness', () => {
     expect(isTier2ReadyForVendorSubmission(result)).toBe(false);
   });
 
-  it('accepts results with NIN evidence', () => {
+  it('rejects selfie-only partial result', () => {
     const result = {
       status: 'pending',
+      data: { selfie: { data: { liveness_score: 88 } } },
+    } as DojahVerificationResult;
+
+    expect(isTier2ReadyForVendorSubmission(result)).toBe(false);
+  });
+
+  it('accepts results with NIN and selfie evidence', () => {
+    const result = {
+      verification_status: 'Completed',
       data: {
         government_data: {
           data: {
             nin: { entity: { nin: '12345678901', firstname: 'Ada' } },
           },
         },
+        selfie: { data: { liveness_score: 90 } },
       },
     } as DojahVerificationResult;
 

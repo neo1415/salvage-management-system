@@ -122,87 +122,15 @@ export async function POST(request: NextRequest) {
         providerReference: referenceId,
       });
 
-      if (!widgetCompleted) {
-        return NextResponse.json(
-          {
-            error: 'verification_incomplete',
-            message: 'We could not confirm a completed verification. Please try again.',
-            errorSource: 'identity_provider',
-          },
-          { status: 409 }
-        );
-      }
-
-      const now = new Date();
-      await providerService.persistVerification({
-        userId,
-        vendorId,
-        actorId: userId,
-        result: {
-          provider: 'dojah',
-          providerReference: referenceId,
-          workflowReference: referenceId,
-          verificationType: 'tier2',
-          status: 'provider_unavailable',
-          riskLevel: 'medium',
-          checksCompleted: [],
-          pendingChecks: ['provider_result_fetch'],
-          failedChecks: [],
-          reasonCodes: ['dojah_result_fetch_unavailable'],
-          displayMessage: 'Identity verification was completed, but the full result could not be fetched yet. Manual review is required.',
-          normalizedResult: {
-            source: 'frontend_callback',
-            fetchStatus: 'failed',
-            submittedAt: now.toISOString(),
-          },
+      return NextResponse.json(
+        {
+          error: 'verification_pending',
+          message:
+            'We could not load your verification result yet. Continue in the identity window if it is still open, or wait a minute and try again.',
+          errorSource: 'identity_provider',
         },
-        rawPayload: { providerReference: referenceId, source: 'frontend_callback', error: 'provider_fetch_failed' },
-        ipAddress,
-        userAgent: request.headers.get('user-agent') ?? 'unknown',
-      });
-
-      await repo.upsertVerificationData(vendorId, {
-        dojahReferenceId: referenceId,
-        tier2SubmittedAt: now,
-      });
-
-      await audit.log({
-        vendorId,
-        actorId: userId,
-        action: AuditActionType.VENDOR_TIER2_PENDING_REVIEW,
-        ipAddress,
-        userAgent: request.headers.get('user-agent') ?? 'unknown',
-        afterState: { provider: 'dojah', providerReference: referenceId, reason: 'provider_result_unavailable' },
-      });
-
-      const vendorTarget = {
-        vendorId,
-        userId,
-        phone: session.user.phone ?? '',
-        email: session.user.email ?? '',
-        fullName: session.user.name ?? '',
-      };
-
-      await notify.sendKYCUnderReviewNotification(vendorTarget);
-      await createRoleNotifications(['salvage_manager', 'system_admin'], {
-        type: 'tier2_pending_review',
-        title: 'Tier 2 KYC Ready for Review',
-        message: `${session.user.name || 'A vendor'} completed identity verification, but the full result needs review.`,
-        data: { vendorId, providerReference: referenceId, url: `/manager/kyc-approvals/${vendorId}` },
-      }).catch((error) => console.error('[KYC Complete] manager notification failed', error));
-      await notify.sendTier2SubmissionManagerEmails({
-        vendorName: session.user.name ?? 'Vendor',
-        businessName: vendor.businessName,
-        riskLevel: 'Medium',
-        reviewUrl: appPath(`/manager/kyc-approvals/${vendorId}`),
-        outcome: 'pending_review',
-        reason: 'Verification result needs review',
-      });
-
-      return NextResponse.json({
-        status: 'pending_review',
-        message: 'Your application is under review. You will be notified within 24-48 hours.',
-      });
+        { status: 503 }
+      );
     }
 
     const normalizedPreview = normalizeDojahWorkflowResult(verificationResult);

@@ -29,8 +29,24 @@ export function isTier2ReadyForVendorSubmission(
     result.verification_status ?? result.verificationStatus ?? result.status ?? normalized?.status ?? ''
   ).toLowerCase();
 
+  const hasNin = hasNinEvidence(result);
+  const hasSelfie = Boolean(result.data?.selfie?.data);
+  const hasId = Boolean(result.data?.id?.data?.id_data || result.data?.id?.data);
+  const hasBusiness = Boolean(result.data?.business_id || result.data?.business_data);
+
+  // Liveness-only (selfie) is an intermediate step — not a full Tier 2 submission.
+  if (hasSelfie && !hasNin && !hasId && !hasBusiness) {
+    if (
+      !statusText.includes('complete') &&
+      !statusText.includes('success') &&
+      !statusText.includes('pass')
+    ) {
+      return false;
+    }
+  }
+
   if (statusText.includes('fail') || statusText.includes('reject')) {
-    return true;
+    return hasNin || hasId || hasBusiness;
   }
 
   if (
@@ -43,16 +59,15 @@ export function isTier2ReadyForVendorSubmission(
   }
 
   const completedChecks = normalized?.checksCompleted?.length ?? 0;
-  if (completedChecks > 0) {
+  if (completedChecks > 0 && (hasNin || hasId || hasBusiness)) {
     return true;
   }
 
-  // Bare "pending" with only workflow metadata is not a submission.
   if (statusText.includes('pending') || statusText.includes('submitted')) {
-    return hasTier2VerificationEvidence(result) && (completedChecks > 0 || hasNinEvidence(result));
+    return hasNin && (hasSelfie || hasId || hasBusiness);
   }
 
-  return hasTier2VerificationEvidence(result);
+  return hasNin && (hasSelfie || hasId || hasBusiness);
 }
 
 function hasNinEvidence(result: DojahVerificationResult): boolean {

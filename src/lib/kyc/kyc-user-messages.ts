@@ -178,6 +178,16 @@ export function resolveTier2ApiError(payload: {
     };
   }
 
+  if (payload.error === 'verification_pending') {
+    return {
+      title: 'Verification still processing',
+      message:
+        payload.message ??
+        'Your result is not ready yet. If the identity window is still open, finish the remaining steps. Otherwise wait a minute and try again.',
+      source: 'identity_provider',
+    };
+  }
+
   if (payload.error?.includes('already in progress')) {
     return {
       title: 'Verification in progress',
