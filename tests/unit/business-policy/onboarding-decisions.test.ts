@@ -110,6 +110,7 @@ describe('onboarding policy decisions', () => {
 
   it('honors changed policy for no registration fee deployments', () => {
     const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'no_registration_fee';
     policy.onboarding.registrationFeeRequired = false;
     policy.onboarding.registrationFeeAmount = 0;
 
@@ -121,6 +122,38 @@ describe('onboarding policy decisions', () => {
 
     expect(result.allowed).toBe(true);
     expect(result.value).toBe('tier2_available');
+  });
+
+  it('blocks all non-Tier-2 bidding when full KYC is required before bidding', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'full_kyc_before_bidding';
+    policy.onboarding.allowBidAfterTier1 = false;
+
+    const result = resolveVendorBidEligibility(
+      policy,
+      { tier: 'tier1_bvn', bvnVerified: true, registrationFeePaid: true },
+      100_000
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.value?.bidLimit).toBe(0);
+    expect(result.decision.rulePath).toBe('onboarding.mode');
+  });
+
+  it('requires registration fee before Tier 1 bidding when configured', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'fee_before_tier1';
+    policy.onboarding.registrationFeeRequired = true;
+
+    const result = resolveVendorBidEligibility(
+      policy,
+      { tier: 'tier1_bvn', bvnVerified: true, registrationFeePaid: false },
+      100_000
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.decision.rulePath).toBe('onboarding.mode');
+    expect(result.decision.resolvedValue).toBe(policy.onboarding.registrationFeeAmount);
   });
 });
 

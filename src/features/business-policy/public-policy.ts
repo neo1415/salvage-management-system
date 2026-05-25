@@ -14,7 +14,9 @@ export function toPublicBusinessPolicy(policy: BusinessPolicy): PublicBusinessPo
       tier1BidLimit: policy.onboarding.tier1BidLimit,
       registrationFeeRequired: policy.onboarding.registrationFeeRequired,
       registrationFeeAmount: policy.onboarding.registrationFeeAmount,
+      allowBrowseBeforeKyc: policy.onboarding.allowBrowseBeforeKyc,
       allowBidAfterTier1: policy.onboarding.allowBidAfterTier1,
+      requireTier2ForUnlimitedBidding: policy.onboarding.requireTier2ForUnlimitedBidding,
     },
     payments: {
       walletEnabled: policy.payments.walletEnabled,

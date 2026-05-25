@@ -186,7 +186,8 @@ export class BiddingService {
         data.vendorId,
         data.auctionId,
         config,
-        Boolean(vendor.bvnVerifiedAt)
+        Boolean(vendor.bvnVerifiedAt),
+        Boolean(vendor.registrationFeePaid)
       );
 
       await this.logBidPolicyDecisionShadow({
@@ -545,6 +546,7 @@ export class BiddingService {
         {
           tier,
           bvnVerified: input.bvnVerified,
+          registrationFeePaid: input.registrationFeePaid,
         },
         input.bidAmount
       );
@@ -638,7 +640,8 @@ export class BiddingService {
     vendorId: string,
     auctionId: string,
     config: SystemConfiguration,
-    bvnVerified = true
+    bvnVerified = true,
+    registrationFeePaid = false
   ): Promise<ValidationResult> {
     const errors: string[] = [];
 
@@ -661,11 +664,11 @@ export class BiddingService {
           : vendorTier === 'tier1_bvn'
             ? 'tier1_bvn'
             : 'tier0';
-      const decision = resolveVendorBidEligibility(policy, { tier, bvnVerified }, bidAmount);
+      const decision = resolveVendorBidEligibility(policy, { tier, bvnVerified, registrationFeePaid }, bidAmount);
 
       if (!decision.allowed) {
         const bidLimit = decision.value?.bidLimit;
-        if (typeof bidLimit === 'number') {
+        if (typeof bidLimit === 'number' && bidLimit > 0) {
           errors.push(`Bid exceeds your Tier 1 limit of NGN ${bidLimit.toLocaleString()}. Upgrade to Tier 2 for unlimited bidding and access to premium auctions.`);
         } else {
           errors.push(decision.message);

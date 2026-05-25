@@ -87,6 +87,36 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     issues.push(issue('onboarding.tier1BidLimit', 'Tier 1 bid limit cannot be negative.'));
   }
 
+  if (
+    (policy.onboarding.mode === 'full_kyc_before_bidding' || policy.onboarding.mode === 'single_full_kyc') &&
+    policy.onboarding.allowBidAfterTier1
+  ) {
+    issues.push(
+      issue(
+        'onboarding.allowBidAfterTier1',
+        'This onboarding mode requires full KYC before bidding, so Tier 1 bidding must be disabled.'
+      )
+    );
+  }
+
+  if (policy.onboarding.mode === 'no_registration_fee' && policy.onboarding.registrationFeeRequired) {
+    issues.push(issue('onboarding.registrationFeeRequired', 'No-fee onboarding cannot require a registration fee.'));
+  }
+
+  if (policy.onboarding.mode === 'fee_before_tier1' && !policy.onboarding.registrationFeeRequired) {
+    issues.push(issue('onboarding.registrationFeeRequired', 'Fee-before-Tier-1 onboarding must require a registration fee.'));
+  }
+
+  if (!policy.onboarding.requireTier2ForUnlimitedBidding && policy.onboarding.tier1BidLimit > 0) {
+    issues.push(
+      issue(
+        'onboarding.requireTier2ForUnlimitedBidding',
+        'Tier 1 bid cap is configured, but Tier 2 is not required for unlimited bidding.',
+        'warning'
+      )
+    );
+  }
+
   if (policy.onboarding.registrationFeeRequired && policy.onboarding.registrationFeeAmount <= 0) {
     issues.push(issue('onboarding.registrationFeeAmount', 'Required registration fee must be greater than zero.'));
   }

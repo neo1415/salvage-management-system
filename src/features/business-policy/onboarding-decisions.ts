@@ -9,7 +9,7 @@ export function resolveVendorBvnGate(
   policy: BusinessPolicy,
   vendor: Pick<VendorPolicySnapshot, 'role' | 'bvnVerified'>
 ): PolicyDecision {
-  const requiresBvn = vendor.role === 'vendor' && policy.kyc.tier1RequiresBvn;
+  const requiresBvn = vendor.role === 'vendor' && policy.kyc.tier1RequiresBvn && policy.onboarding.mode !== 'single_full_kyc';
   const allowed = !requiresBvn || vendor.bvnVerified;
 
   return {
@@ -38,19 +38,25 @@ export function resolveVendorBidLimit(
   policy: BusinessPolicy,
   vendor: Pick<VendorPolicySnapshot, 'tier'>
 ): PolicyDecision<number | null> {
-  const limit = vendor.tier === 'tier2_full' ? null : policy.onboarding.tier1BidLimit;
+  const tier2HasUnlimitedAccess = vendor.tier === 'tier2_full' && policy.onboarding.requireTier2ForUnlimitedBidding;
+  const fullKycRequired = policy.onboarding.mode === 'full_kyc_before_bidding' || policy.onboarding.mode === 'single_full_kyc';
+  const limit = tier2HasUnlimitedAccess ? null : fullKycRequired ? 0 : policy.onboarding.tier1BidLimit;
 
   return {
     allowed: true,
     value: limit,
-    message: limit === null ? 'Tier 2 vendor has no Tier 1 bid limit.' : 'Tier 1 or unverified vendor uses the configured Tier 1 bid limit.',
+    message: limit === null
+      ? 'Tier 2 vendor has no Tier 1 bid limit.'
+      : limit === 0
+        ? 'Current onboarding mode requires full KYC approval before bidding.'
+        : 'Tier 1 or unverified vendor uses the configured Tier 1 bid limit.',
     decision: createPolicyDecisionRecord({
       policy,
       decisionType: 'vendor_bid_limit_resolved',
-      rulePath: vendor.tier === 'tier2_full' ? 'onboarding.requireTier2ForUnlimitedBidding' : 'onboarding.tier1BidLimit',
+      rulePath: limit === 0 ? 'onboarding.mode' : vendor.tier === 'tier2_full' ? 'onboarding.requireTier2ForUnlimitedBidding' : 'onboarding.tier1BidLimit',
       outcome: 'value_resolved',
       entityType: 'vendor',
-      reason: limit === null ? 'Vendor is Tier 2.' : 'Vendor is not Tier 2.',
+      reason: limit === null ? 'Vendor is Tier 2.' : limit === 0 ? 'Full KYC is required before bidding.' : 'Vendor is not Tier 2.',
       inputs: {
         tier: vendor.tier,
       },
@@ -61,9 +67,37 @@ export function resolveVendorBidLimit(
 
 export function resolveVendorBidEligibility(
   policy: BusinessPolicy,
-  vendor: Pick<VendorPolicySnapshot, 'tier' | 'bvnVerified'>,
+  vendor: Pick<VendorPolicySnapshot, 'tier' | 'bvnVerified'> & Partial<Pick<VendorPolicySnapshot, 'registrationFeePaid'>>,
   bidAmount: number
 ): PolicyDecision<{ bidLimit: number | null }> {
+  if (
+    vendor.tier !== 'tier2_full' &&
+    policy.onboarding.mode === 'fee_before_tier1' &&
+    policy.onboarding.registrationFeeRequired &&
+    !vendor.registrationFeePaid
+  ) {
+    return {
+      allowed: false,
+      value: { bidLimit: 0 },
+      message: 'Vendor must pay the registration fee before bidding under the current onboarding policy.',
+      decision: createPolicyDecisionRecord({
+        policy,
+        decisionType: 'vendor_bid_denied',
+        rulePath: 'onboarding.mode',
+        outcome: 'deny',
+        entityType: 'vendor',
+        reason: 'Registration fee is required before Tier 1 bidding.',
+        inputs: {
+          tier: vendor.tier,
+          bvnVerified: vendor.bvnVerified,
+          registrationFeePaid: vendor.registrationFeePaid ?? false,
+          bidAmount,
+        },
+        resolvedValue: policy.onboarding.registrationFeeAmount,
+      }),
+    };
+  }
+
   const bvnGate = resolveVendorBvnGate(policy, { role: 'vendor', bvnVerified: vendor.bvnVerified });
   if (!bvnGate.allowed) {
     return {
@@ -88,6 +122,29 @@ export function resolveVendorBidEligibility(
 
   const limitDecision = resolveVendorBidLimit(policy, vendor);
   const bidLimit = limitDecision.value ?? null;
+  if (bidLimit === 0 && vendor.tier !== 'tier2_full') {
+    return {
+      allowed: false,
+      value: { bidLimit },
+      message: 'Vendor must complete full Tier 2 KYC before bidding under the current onboarding policy.',
+      decision: createPolicyDecisionRecord({
+        policy,
+        decisionType: 'vendor_bid_denied',
+        rulePath: 'onboarding.mode',
+        outcome: 'deny',
+        entityType: 'vendor',
+        reason: 'Current onboarding mode requires full KYC before bidding.',
+        inputs: {
+          tier: vendor.tier,
+          bvnVerified: vendor.bvnVerified,
+          registrationFeePaid: vendor.registrationFeePaid ?? false,
+          bidAmount,
+        },
+        resolvedValue: bidLimit,
+      }),
+    };
+  }
+
   const allowed = bidLimit === null || bidAmount <= bidLimit;
 
   return {
@@ -135,7 +192,7 @@ export function resolveTier2Access(
     };
   }
 
-  if (policy.kyc.tier1RequiresBvn && !vendor.bvnVerified) {
+  if (policy.kyc.tier1RequiresBvn && policy.onboarding.mode !== 'single_full_kyc' && !vendor.bvnVerified) {
     return {
       allowed: false,
       value: 'bvn_required',
@@ -155,7 +212,8 @@ export function resolveTier2Access(
     };
   }
 
-  if (policy.onboarding.registrationFeeRequired && !vendor.registrationFeePaid) {
+  const feeRequiredBeforeTier2 = policy.onboarding.registrationFeeRequired && policy.onboarding.mode !== 'no_registration_fee';
+  if (feeRequiredBeforeTier2 && !vendor.registrationFeePaid) {
     return {
       allowed: false,
       value: 'registration_fee_required',

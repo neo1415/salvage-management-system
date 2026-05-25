@@ -25,6 +25,8 @@ describe('business policy foundation', () => {
     policy.branding.supportEmail = 'not-an-email';
     policy.branding.logoPath = 'javascript:alert(1)';
     policy.branding.homepageCopy.heroTitle = '';
+    policy.onboarding.mode = 'no_registration_fee';
+    policy.onboarding.registrationFeeRequired = true;
 
     const result = validateBusinessPolicy(policy);
 
@@ -40,6 +42,7 @@ describe('business policy foundation', () => {
         'branding.supportEmail',
         'branding.logoPath',
         'branding.homepageCopy.heroTitle',
+        'onboarding.registrationFeeRequired',
       ])
     );
   });

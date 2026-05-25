@@ -227,7 +227,13 @@ export type PublicBusinessPolicy = Pick<BusinessPolicy, 'version' | 'branding'> 
   auth: Pick<AuthPolicy, 'emailPasswordEnabled' | 'googleOAuthEnabled' | 'businessEmailOnly'>;
   onboarding: Pick<
     VendorOnboardingPolicy,
-    'mode' | 'tier1BidLimit' | 'registrationFeeRequired' | 'registrationFeeAmount' | 'allowBidAfterTier1'
+    | 'mode'
+    | 'tier1BidLimit'
+    | 'registrationFeeRequired'
+    | 'registrationFeeAmount'
+    | 'allowBrowseBeforeKyc'
+    | 'allowBidAfterTier1'
+    | 'requireTier2ForUnlimitedBidding'
   >;
   payments: Pick<PaymentPolicy, 'walletEnabled' | 'paystackEnabled' | 'flutterwaveEnabled' | 'hybridPaymentEnabled' | 'manualPaymentEnabled'>;
   auctions: Pick<AuctionPolicy, 'minimumBidIncrement'>;

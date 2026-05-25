@@ -89,6 +89,83 @@ function Toggle({
   );
 }
 
+const ONBOARDING_PRESETS: Array<{
+  mode: BusinessPolicy['onboarding']['mode'];
+  title: string;
+  description: string;
+}> = [
+  {
+    mode: 'tiered_bvn_fee_tier2',
+    title: 'NEM tiered default',
+    description: 'BVN unlocks limited bidding, registration fee unlocks Tier 2 KYC, final approval stays manual.',
+  },
+  {
+    mode: 'full_kyc_before_bidding',
+    title: 'Full KYC before bidding',
+    description: 'Vendors can browse, but cannot bid until full business KYC is approved.',
+  },
+  {
+    mode: 'fee_before_tier1',
+    title: 'Fee before Tier 1',
+    description: 'Registration fee must be paid before the vendor can use Tier 1 bidding.',
+  },
+  {
+    mode: 'single_full_kyc',
+    title: 'Single full KYC',
+    description: 'Skip the Tier 1 path and require one full KYC flow before bidding.',
+  },
+  {
+    mode: 'no_registration_fee',
+    title: 'No registration fee',
+    description: 'Keep verification controls, but remove registration fee gates.',
+  },
+];
+
+function applyOnboardingPreset(draft: BusinessPolicy, mode: BusinessPolicy['onboarding']['mode']) {
+  draft.onboarding.mode = mode;
+
+  if (mode === 'tiered_bvn_fee_tier2') {
+    draft.kyc.tier1RequiresBvn = true;
+    draft.onboarding.registrationFeeRequired = true;
+    draft.onboarding.allowBrowseBeforeKyc = false;
+    draft.onboarding.allowBidAfterTier1 = true;
+    draft.onboarding.requireTier2ForUnlimitedBidding = true;
+  }
+
+  if (mode === 'full_kyc_before_bidding') {
+    draft.kyc.tier1RequiresBvn = true;
+    draft.onboarding.registrationFeeRequired = true;
+    draft.onboarding.allowBrowseBeforeKyc = true;
+    draft.onboarding.allowBidAfterTier1 = false;
+    draft.onboarding.requireTier2ForUnlimitedBidding = true;
+  }
+
+  if (mode === 'fee_before_tier1') {
+    draft.kyc.tier1RequiresBvn = true;
+    draft.onboarding.registrationFeeRequired = true;
+    draft.onboarding.allowBrowseBeforeKyc = false;
+    draft.onboarding.allowBidAfterTier1 = true;
+    draft.onboarding.requireTier2ForUnlimitedBidding = true;
+  }
+
+  if (mode === 'single_full_kyc') {
+    draft.kyc.tier1RequiresBvn = false;
+    draft.onboarding.registrationFeeRequired = true;
+    draft.onboarding.allowBrowseBeforeKyc = true;
+    draft.onboarding.allowBidAfterTier1 = false;
+    draft.onboarding.requireTier2ForUnlimitedBidding = true;
+  }
+
+  if (mode === 'no_registration_fee') {
+    draft.kyc.tier1RequiresBvn = true;
+    draft.onboarding.registrationFeeRequired = false;
+    draft.onboarding.registrationFeeAmount = 0;
+    draft.onboarding.allowBrowseBeforeKyc = false;
+    draft.onboarding.allowBidAfterTier1 = true;
+    draft.onboarding.requireTier2ForUnlimitedBidding = true;
+  }
+}
+
 export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditorProps) {
   const [policy, setPolicy] = useState(() => clonePolicy(initialPolicy));
   const [notes, setNotes] = useState('');
@@ -350,7 +427,34 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
 
         <div className="space-y-4 rounded-lg border border-gray-200 p-4">
           <h3 className="font-bold text-gray-900">Vendor Onboarding</h3>
+          <div className="grid gap-3">
+            {ONBOARDING_PRESETS.map((preset) => (
+              <button
+                key={preset.mode}
+                type="button"
+                onClick={() => updatePolicy((draft) => applyOnboardingPreset(draft, preset.mode))}
+                className={`rounded-md border p-3 text-left transition ${
+                  policy.onboarding.mode === preset.mode
+                    ? 'border-[#800020] bg-[#800020]/5'
+                    : 'border-gray-200 bg-white hover:border-[#800020]/40 hover:bg-gray-50'
+                }`}
+              >
+                <span className="block text-sm font-semibold text-gray-900">{preset.title}</span>
+                <span className="mt-1 block text-xs text-gray-600">{preset.description}</span>
+              </button>
+            ))}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Journey mode">
+              <SelectInput
+                value={policy.onboarding.mode}
+                onChange={(event) => updatePolicy((draft) => applyOnboardingPreset(draft, event.target.value as BusinessPolicy['onboarding']['mode']))}
+              >
+                {ONBOARDING_PRESETS.map((preset) => (
+                  <option key={preset.mode} value={preset.mode}>{preset.title}</option>
+                ))}
+              </SelectInput>
+            </Field>
             <Field label="Tier 1 bid limit">
               <TextInput type="number" value={policy.onboarding.tier1BidLimit} onChange={(event) => updatePolicy((draft) => { draft.onboarding.tier1BidLimit = numberValue(event.target.value, draft.onboarding.tier1BidLimit); })} />
             </Field>
@@ -361,6 +465,9 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
               <TextInput type="number" value={policy.onboarding.registrationFeeDueDays} onChange={(event) => updatePolicy((draft) => { draft.onboarding.registrationFeeDueDays = numberValue(event.target.value, draft.onboarding.registrationFeeDueDays); })} />
             </Field>
             <Toggle checked={policy.onboarding.registrationFeeRequired} onChange={(checked) => updatePolicy((draft) => { draft.onboarding.registrationFeeRequired = checked; })} label="Registration fee required" />
+            <Toggle checked={policy.onboarding.allowBidAfterTier1} onChange={(checked) => updatePolicy((draft) => { draft.onboarding.allowBidAfterTier1 = checked; })} label="Allow Tier 1 bidding" />
+            <Toggle checked={policy.onboarding.requireTier2ForUnlimitedBidding} onChange={(checked) => updatePolicy((draft) => { draft.onboarding.requireTier2ForUnlimitedBidding = checked; })} label="Tier 2 unlocks unlimited bidding" />
+            <Toggle checked={policy.onboarding.allowBrowseBeforeKyc} onChange={(checked) => updatePolicy((draft) => { draft.onboarding.allowBrowseBeforeKyc = checked; })} label="Allow browsing before KYC" />
           </div>
         </div>
 
