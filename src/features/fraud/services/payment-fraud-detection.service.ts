@@ -176,7 +176,8 @@ export class PaymentFraudDetectionService {
         `);
         
         if (Array.isArray(auction) && auction[0]) {
-          const requiredAmount = parseFloat(auction[0].required_amount || '0');
+          const row = auction[0] as { required_amount?: string | number | null };
+          const requiredAmount = parseFloat(String(row.required_amount || '0'));
           const paidAmount = parseFloat(payment.amount);
           
           if (paidAmount > requiredAmount * 1.1) { // More than 10% over

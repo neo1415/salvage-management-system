@@ -1,13 +1,11 @@
 /**
  * Location Autocomplete API
- * 
- * Provides autocomplete suggestions for location search based on existing locations in database.
- * Requirements: 9.2, 9.3
+ *
+ * Suggests location names from past cases; includes stored GPS when available.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { salvageCases } from '@/lib/db/schema/cases';
 import { sql } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
@@ -15,31 +13,47 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q') || '';
 
-    // Return empty array if query is too short
     if (query.length < 2) {
       return NextResponse.json({
         success: true,
-        data: { locations: [] },
+        data: { locations: [], suggestions: [] },
       });
     }
 
-    // Query distinct locations that match the query (case-insensitive partial match)
-    const locations = await db
-      .selectDistinct({ locationName: salvageCases.locationName })
-      .from(salvageCases)
-      .where(sql`LOWER(${salvageCases.locationName}) LIKE LOWER(${`%${query}%`})`)
-      .limit(10)
-      .execute();
+    const pattern = `%${query}%`;
 
-    // Extract location names and sort alphabetically
-    const locationNames = locations
-      .map((loc) => loc.locationName)
-      .filter((name): name is string => name !== null)
-      .sort();
+    const rows = await db.execute(sql`
+      SELECT DISTINCT ON (LOWER(sc.location_name))
+        sc.location_name,
+        (sc.gps_location)[1] AS latitude,
+        (sc.gps_location)[0] AS longitude
+      FROM salvage_cases sc
+      WHERE LOWER(sc.location_name) LIKE LOWER(${pattern})
+        AND sc.location_name IS NOT NULL
+      ORDER BY LOWER(sc.location_name), sc.created_at DESC
+      LIMIT 10
+    `);
+
+    const resultRows = (Array.isArray(rows) ? rows : []) as Array<{
+      location_name: string;
+      latitude: number | null;
+      longitude: number | null;
+    }>;
+
+    const suggestions = resultRows
+      .filter((row) => row.location_name)
+      .map((row) => ({
+        name: row.location_name,
+        latitude: row.latitude != null ? Number(row.latitude) : undefined,
+        longitude: row.longitude != null ? Number(row.longitude) : undefined,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const locations = suggestions.map((s) => s.name);
 
     return NextResponse.json({
       success: true,
-      data: { locations: locationNames },
+      data: { locations, suggestions },
     });
   } catch (error) {
     console.error('Error fetching location autocomplete:', error);

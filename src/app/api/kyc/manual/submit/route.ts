@@ -189,7 +189,10 @@ export async function POST(request: NextRequest) {
     // Upload documents to Supabase Storage
     const uploadService = getDocumentUploadService();
     
-    const documentsToUpload = [
+    const documentsToUpload: Array<{
+      file: File;
+      type: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id';
+    }> = [
       { file: ninCard, type: 'nin_card' as const },
       { file: utilityBill, type: 'utility_bill' as const },
       { file: bankStatement, type: 'bank_statement' as const },

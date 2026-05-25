@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth/use-auth';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
+import { PageLoadingSkeleton } from '@/components/ui/loading-states';
 
 // Dynamic import for Recharts to reduce initial bundle size
 const LineChart = dynamic(
@@ -115,7 +116,9 @@ function ManagerDashboardContentInner() {
   const { user, isAuthenticated, isLoading } = useAuth();
 
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const dashboardDataRef = useRef<DashboardData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   // Filters
@@ -127,7 +130,13 @@ function ManagerDashboardContentInner() {
 
   // Fetch dashboard data
   const fetchDashboardData = useCallback(async () => {
+    const showFullPageLoader = dashboardDataRef.current == null;
     try {
+      if (showFullPageLoader) {
+        setIsLoadingData(true);
+      } else {
+        setIsRefreshing(true);
+      }
       setError(null);
       const params = new URLSearchParams();
       params.append('dateRange', dateRange);
@@ -150,6 +159,7 @@ function ManagerDashboardContentInner() {
       }
 
       const data: DashboardData = await response.json();
+      dashboardDataRef.current = data;
       setDashboardData(data);
       setLastRefresh(new Date());
     } catch (err) {
@@ -157,6 +167,7 @@ function ManagerDashboardContentInner() {
       setError('Failed to load dashboard data. Please try again.');
     } finally {
       setIsLoadingData(false);
+      setIsRefreshing(false);
     }
   }, [dateRange, assetType, router]);
 
@@ -204,12 +215,10 @@ function ManagerDashboardContentInner() {
   // Handle filter changes
   const handleDateRangeChange = (newRange: string) => {
     setDateRange(newRange);
-    setIsLoadingData(true);
   };
 
   const handleAssetTypeChange = (newType: string) => {
     setAssetType(newType);
-    setIsLoadingData(true);
   };
 
   // Handle chart drill-down with proper Recharts types
@@ -259,8 +268,8 @@ function ManagerDashboardContentInner() {
     );
   }
 
-  if (!dashboardData) {
-    return null;
+  if (isLoading || isLoadingData || !dashboardData) {
+    return <PageLoadingSkeleton />;
   }
 
   const { kpis, charts } = dashboardData;
@@ -287,6 +296,7 @@ function ManagerDashboardContentInner() {
               </svg>
               <span>
                 Updated {lastRefresh.toLocaleTimeString()}
+                {isRefreshing && ' · Refreshing…'}
               </span>
             </div>
           </div>
@@ -333,14 +343,13 @@ function ManagerDashboardContentInner() {
             <div className="flex items-end">
               <button
                 onClick={() => {
-                  setIsLoadingData(true);
-                  fetchDashboardData();
+                  void fetchDashboardData();
                 }}
-                disabled={isLoadingData}
+                disabled={isLoadingData || isRefreshing}
                 className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <svg 
-                  className={`w-5 h-5 ${isLoadingData ? 'animate-spin' : ''}`} 
+                  className={`w-5 h-5 ${isLoadingData || isRefreshing ? 'animate-spin' : ''}`} 
                   fill="none" 
                   stroke="currentColor" 
                   viewBox="0 0 24 24"

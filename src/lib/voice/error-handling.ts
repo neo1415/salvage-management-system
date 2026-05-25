@@ -16,6 +16,14 @@ export interface VoiceError {
   metadata?: Record<string, any>;
 }
 
+type SpeechRecognitionConstructor = new () => unknown;
+type SpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  mozSpeechRecognition?: SpeechRecognitionConstructor;
+  msSpeechRecognition?: SpeechRecognitionConstructor;
+};
+
 export type VoiceErrorType = 
   | 'permission-denied'
   | 'not-supported'
@@ -193,10 +201,10 @@ export class BrowserCompatibilityChecker {
    */
   static isSpeechRecognitionSupported(): boolean {
     return !!(
-      window.SpeechRecognition ||
-      window.webkitSpeechRecognition ||
-      window.mozSpeechRecognition ||
-      window.msSpeechRecognition
+      (window as SpeechWindow).SpeechRecognition ||
+      (window as SpeechWindow).webkitSpeechRecognition ||
+      (window as SpeechWindow).mozSpeechRecognition ||
+      (window as SpeechWindow).msSpeechRecognition
     );
   }
 
@@ -210,12 +218,12 @@ export class BrowserCompatibilityChecker {
   /**
    * Get speech recognition constructor
    */
-  static getSpeechRecognitionConstructor(): typeof SpeechRecognition | null {
+  static getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null {
     return (
-      window.SpeechRecognition ||
-      window.webkitSpeechRecognition ||
-      window.mozSpeechRecognition ||
-      window.msSpeechRecognition ||
+      (window as SpeechWindow).SpeechRecognition ||
+      (window as SpeechWindow).webkitSpeechRecognition ||
+      (window as SpeechWindow).mozSpeechRecognition ||
+      (window as SpeechWindow).msSpeechRecognition ||
       null
     );
   }

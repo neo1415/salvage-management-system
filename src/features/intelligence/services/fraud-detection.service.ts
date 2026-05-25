@@ -276,7 +276,7 @@ export class FraudDetectionService {
 
     // Check if duplicates are from same user
     const caseData = await db
-      .select({ userId: salvageCases.userId })
+      .select({ userId: salvageCases.createdBy })
       .from(salvageCases)
       .where(eq(salvageCases.id, caseId))
       .limit(1);
@@ -286,7 +286,7 @@ export class FraudDetectionService {
       
       for (const dup of duplicates) {
         const dupCase = await db
-          .select({ userId: salvageCases.userId, createdAt: salvageCases.createdAt })
+          .select({ userId: salvageCases.createdBy, createdAt: salvageCases.createdAt })
           .from(salvageCases)
           .where(eq(salvageCases.id, dup.caseId))
           .limit(1);
@@ -554,9 +554,10 @@ export class FraudDetectionService {
         sc.created_at,
         sc.asset_details,
         sc.damage_severity,
+        sc.ai_assessment->'damagedParts' AS damaged_parts,
         EXTRACT(DAY FROM (${new Date()} - sc.created_at)) AS days_ago
       FROM ${salvageCases} sc
-      WHERE sc.user_id = ${targetCase.userId}
+      WHERE sc.created_by = ${targetCase.createdBy}
         AND sc.id != ${caseId}
         AND sc.created_at > NOW() - INTERVAL '12 months'
       ORDER BY sc.created_at DESC
@@ -571,7 +572,7 @@ export class FraudDetectionService {
     // Task 4.3.2: Detect similar damage patterns (Jaccard similarity)
     for (const claim of repeatClaims) {
       const similarity = this.calculateDamageSimilarity(
-        targetCase.damagedParts as string[] || [],
+        ((targetCase.aiAssessment as { damagedParts?: string[] } | null)?.damagedParts || []),
         claim.damaged_parts || []
       );
 
@@ -600,7 +601,7 @@ export class FraudDetectionService {
           sc.asset_details->>'city' AS city,
           EXTRACT(DAY FROM (${new Date()} - sc.created_at)) AS days_ago
         FROM ${salvageCases} sc
-        WHERE sc.user_id = ${targetCase.userId}
+        WHERE sc.created_by = ${targetCase.createdBy}
           AND sc.id != ${caseId}
           AND sc.created_at > NOW() - INTERVAL '12 months'
           AND sc.asset_details->>'region' IS NOT NULL

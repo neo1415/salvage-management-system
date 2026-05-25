@@ -10,7 +10,8 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { createPortal } from 'react-dom';
 import { UserAvatar } from '@/components/ui/user-avatar';
 
@@ -43,7 +44,9 @@ interface PaginationInfo {
 
 export default function AuditLogViewer() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const logsRef = useRef<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   
@@ -86,8 +89,13 @@ export default function AuditLogViewer() {
   }, [showExportMenu]);
 
   const fetchLogs = async () => {
+    const showFullPageLoader = logsRef.current.length === 0;
     try {
-      setLoading(true);
+      if (showFullPageLoader) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       setError(null);
 
       const params = new URLSearchParams();
@@ -107,12 +115,19 @@ export default function AuditLogViewer() {
       }
 
       const data = await response.json();
-      setLogs(data.logs || []);
+      const nextLogs = data.logs || [];
+      logsRef.current = nextLogs;
+      setLogs(nextLogs);
       setPagination(data.pagination);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch audit logs');
+      if (showFullPageLoader) {
+        logsRef.current = [];
+        setLogs([]);
+      }
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -582,16 +597,15 @@ export default function AuditLogViewer() {
         </div>
       )}
 
-      {/* Loading State */}
-      {loading && (
-        <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-600"></div>
-          <p className="mt-4 text-gray-600">Loading audit logs...</p>
-        </div>
+      {isRefreshing && logs.length > 0 && <DataRefreshingHint />}
+
+      {/* Loading State — first load only */}
+      {loading && logs.length === 0 && (
+        <DataLoadingState label="Audit logs" variant="table" />
       )}
 
       {/* Audit Logs Table */}
-      {!loading && logs.length > 0 && (
+      {logs.length > 0 && (
         <>
           {/* Summary */}
           {pagination && (
@@ -750,7 +764,7 @@ export default function AuditLogViewer() {
       )}
 
       {/* Empty State */}
-      {!loading && logs.length === 0 && (
+      {!loading && !isRefreshing && logs.length === 0 && (
         <div className="bg-white rounded-lg shadow-sm p-12 text-center">
           <svg
             className="mx-auto h-12 w-12 text-gray-400"

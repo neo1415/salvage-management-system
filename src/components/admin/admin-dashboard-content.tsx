@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 interface DashboardStats {
   totalUsers: number;
@@ -29,6 +30,7 @@ function AdminDashboardContentInner() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const statsRef = useRef<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -62,7 +64,11 @@ function AdminDashboardContentInner() {
   }, [session, status, router]);
 
   const fetchDashboardStats = async () => {
+    const showFullPageLoader = statsRef.current == null;
     try {
+      if (showFullPageLoader) {
+        setLoading(true);
+      }
       const response = await fetch('/api/dashboard/admin');
       
       if (!response.ok) {
@@ -70,11 +76,11 @@ function AdminDashboardContentInner() {
       }
 
       const data = await response.json();
+      statsRef.current = data;
       setStats(data);
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error);
-      // Set default values on error
-      setStats({
+      const fallback: DashboardStats = {
         totalUsers: 0,
         activeVendors: 0,
         pendingFraudAlerts: 0,
@@ -82,14 +88,18 @@ function AdminDashboardContentInner() {
         userGrowth: 0,
         systemHealth: 'healthy',
         pendingPickupConfirmations: 0,
-      });
+      };
+      if (showFullPageLoader) {
+        statsRef.current = fallback;
+        setStats(fallback);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  if (status === 'loading' || loading) {
-    return null; // Skeleton will be shown by parent
+  if (status === 'loading' || loading || !stats) {
+    return <DataLoadingState label="Admin dashboard" variant="page" />;
   }
 
   return (
@@ -285,7 +295,7 @@ function AdminDashboardContentInner() {
           </Link>
 
           <Link
-            href="/manager/kyc-approvals"
+            href="/manager/vendors?tier=tier2&status=pending"
             className="p-4 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
           >
             <Users className="w-8 h-8 mx-auto mb-2 text-[#800020]" />

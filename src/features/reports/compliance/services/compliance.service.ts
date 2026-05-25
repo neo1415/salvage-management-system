@@ -83,7 +83,7 @@ export class ComplianceService {
       .select({
         id: reportAuditLog.id,
         userId: reportAuditLog.userId,
-        userName: users.name,
+        userName: users.fullName,
         reportType: reportAuditLog.reportType,
         action: reportAuditLog.action,
         timestamp: reportAuditLog.createdAt,
@@ -126,8 +126,8 @@ export class ComplianceService {
         userName: a.userName || 'Unknown User',
         reportType: a.reportType,
         action: a.action,
-        timestamp: a.timestamp,
-        success: a.success,
+        timestamp: a.timestamp ?? new Date(0),
+        success: a.success ?? false,
         executionTimeMs: a.executionTimeMs || 0,
         ipAddress: a.ipAddress || undefined,
       })),
@@ -161,7 +161,7 @@ export class ComplianceService {
         claimReference: salvageCases.claimReference,
         status: salvageCases.status,
         hasAuction: sql<boolean>`EXISTS(SELECT 1 FROM ${auctions} WHERE ${auctions.caseId} = ${salvageCases.id})`,
-        hasPayment: sql<boolean>`EXISTS(SELECT 1 FROM ${payments} p JOIN ${auctions} a ON p.auction_id = a.id WHERE a.case_id = ${salvageCases.id} AND p.status = 'completed')`,
+        hasPayment: sql<boolean>`EXISTS(SELECT 1 FROM ${payments} p JOIN ${auctions} a ON p.auction_id = a.id WHERE a.case_id = ${salvageCases.id} AND p.status = 'verified')`,
       })
       .from(salvageCases)
       .where(whereClause)
@@ -170,7 +170,7 @@ export class ComplianceService {
     // Determine compliance for each case
     const caseCompliance = cases.map(c => {
       const hasAllDocuments = c.status !== 'draft'; // Simplified check
-      const hasApproval = c.status === 'approved' || c.status === 'active_auction' || c.status === 'closed';
+      const hasApproval = c.status === 'approved' || c.status === 'active_auction' || c.status === 'sold';
       const isCompliant = hasAllDocuments && hasApproval;
 
       return {
@@ -227,7 +227,7 @@ export class ComplianceService {
     const userActivity = await db
       .select({
         userId: reportAuditLog.userId,
-        userName: users.name,
+        userName: users.fullName,
         userRole: users.role,
         totalActions: count(reportAuditLog.id),
         reportTypes: sql<string[]>`array_agg(DISTINCT ${reportAuditLog.reportType})`,
@@ -235,7 +235,7 @@ export class ComplianceService {
       .from(reportAuditLog)
       .leftJoin(users, eq(reportAuditLog.userId, users.id))
       .where(whereClause)
-      .groupBy(reportAuditLog.userId, users.name, users.role)
+      .groupBy(reportAuditLog.userId, users.fullName, users.role)
       .orderBy(desc(count(reportAuditLog.id)));
 
     return {

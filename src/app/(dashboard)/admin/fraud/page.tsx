@@ -10,9 +10,13 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useRouter } from 'next/navigation';
+import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
+import { BodyPortal } from '@/components/ui/body-portal';
+import { ChevronRight } from 'lucide-react';
 
 interface FraudPattern {
   pattern: string;
@@ -31,6 +35,8 @@ interface BidHistoryItem {
 interface FraudAlert {
   id: string;
   status?: string;
+  /** Normalized queue bucket from API */
+  workflowStatus?: 'open' | 'in_review' | 'dismissed' | 'confirmed';
   severity?: 'low' | 'medium' | 'high' | 'critical';
   riskScore?: number;
   entityType?: string;
@@ -50,6 +56,10 @@ interface FraudAlert {
     checksCompleted?: string[];
     failedChecks?: string[];
     ipAddress?: string;
+    pendingReason?: string;
+    providerMessage?: string;
+    amlStatus?: boolean | null;
+    amlMatchDetails?: string;
   };
   providerVerification?: {
     id: string;
@@ -120,10 +130,36 @@ interface FraudAlert {
   alertSource?: 'audit' | 'intelligence';
 }
 
+type FraudListTab = 'open' | 'in_review' | 'dismissed' | 'confirmed' | 'all';
+
+const FRAUD_LIST_TAB_ORDER: FraudListTab[] = ['open', 'in_review', 'dismissed', 'confirmed', 'all'];
+
+const FRAUD_TAB_LABELS: Record<FraudListTab, string> = {
+  open: 'Open',
+  in_review: 'In review',
+  dismissed: 'Dismissed',
+  confirmed: 'Confirmed',
+  all: 'All',
+};
+
+function alertWorkflowBucket(alert: FraudAlert): FraudListTab {
+  if (alert.workflowStatus === 'in_review') return 'in_review';
+  if (alert.workflowStatus === 'dismissed') return 'dismissed';
+  if (alert.workflowStatus === 'confirmed') return 'confirmed';
+  if (alert.workflowStatus === 'open') return 'open';
+  if (alert.alertSource === 'intelligence' && alert.status === 'reviewed') return 'in_review';
+  if (alert.alertSource === 'intelligence' && alert.status === 'dismissed') return 'dismissed';
+  if (alert.alertSource === 'intelligence' && alert.status === 'confirmed') return 'confirmed';
+  return 'open';
+}
+
 export default function FraudAlertDashboard() {
   const router = useRouter();
+  const { data: session, status: sessionStatus } = useSession();
   const [fraudAlerts, setFraudAlerts] = useState<FraudAlert[]>([]);
+  const fraudAlertsRef = useRef<FraudAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<FraudAlert | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -141,11 +177,46 @@ export default function FraudAlertDashboard() {
   const [dismissComment, setDismissComment] = useState('');
   const [suspendDuration, setSuspendDuration] = useState<'7' | '30' | '90' | 'permanent'>('7');
   const [suspendReason, setSuspendReason] = useState('');
+  const [fraudListTab, setFraudListTab] = useState<FraudListTab>('open');
+
+
+  const fraudTabCounts = useMemo(() => {
+    const counts: Record<FraudListTab, number> = {
+      open: 0,
+      in_review: 0,
+      dismissed: 0,
+      confirmed: 0,
+      all: fraudAlerts.length,
+    };
+    for (const a of fraudAlerts) {
+      counts[alertWorkflowBucket(a)] += 1;
+    }
+    return counts;
+  }, [fraudAlerts]);
+
+  const filteredFraudAlerts = useMemo(() => {
+    if (fraudListTab === 'all') return fraudAlerts;
+    return fraudAlerts.filter((a) => alertWorkflowBucket(a) === fraudListTab);
+  }, [fraudAlerts, fraudListTab]);
 
   useEffect(() => {
+    if (sessionStatus === 'loading') return;
+    if (sessionStatus === 'unauthenticated') {
+      router.replace('/login');
+      return;
+    }
+    const role = session?.user?.role;
+    if (role !== 'system_admin') {
+      if (role === 'salvage_manager') router.replace('/manager/dashboard');
+      else if (role === 'finance_officer') router.replace('/finance/dashboard');
+      else if (role === 'claims_adjuster') router.replace('/adjuster/dashboard');
+      else if (role === 'vendor') router.replace('/vendor/dashboard');
+      else router.replace('/unauthorized');
+      return;
+    }
     fetchFraudAlerts();
     fetchFraudSettings();
-  }, []);
+  }, [sessionStatus, session?.user?.role, router]);
 
   const fetchFraudSettings = async () => {
     try {
@@ -185,23 +256,37 @@ export default function FraudAlertDashboard() {
   };
 
   const fetchFraudAlerts = async () => {
+    const showFullPageLoader = fraudAlertsRef.current.length === 0;
     try {
-      setLoading(true);
+      if (showFullPageLoader) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       setError(null);
 
       const response = await fetch('/api/admin/fraud-alerts');
-      
+
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || 'Failed to fetch fraud alerts');
       }
 
       const data = await response.json();
-      setFraudAlerts(data.fraudAlerts || []);
+      const nextAlerts = (data.fraudAlerts || []).filter(
+        (a: FraudAlert | null | undefined): a is FraudAlert => Boolean(a?.id)
+      );
+      fraudAlertsRef.current = nextAlerts;
+      setFraudAlerts(nextAlerts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      if (showFullPageLoader) {
+        fraudAlertsRef.current = [];
+        setFraudAlerts([]);
+      }
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -239,7 +324,8 @@ export default function FraudAlertDashboard() {
 
       // Refresh fraud alerts
       await fetchFraudAlerts();
-      
+      setFraudListTab('dismissed');
+
       // Close modal and reset state
       setShowDismissModal(false);
       setDismissComment('');
@@ -382,6 +468,11 @@ export default function FraudAlertDashboard() {
       }
 
       await fetchFraudAlerts();
+      if (pendingAction === 'resolve') {
+        setFraudListTab('confirmed');
+      } else if (pendingAction === 'mark_under_review') {
+        setFraudListTab('in_review');
+      }
       closeActionModal();
       closeDetailModal();
     } catch (err) {
@@ -411,11 +502,8 @@ export default function FraudAlertDashboard() {
     });
   };
 
-  const getPatternBadgeColor = (pattern: string) => {
-    if (pattern.includes('Same IP')) return 'bg-red-100 text-red-800';
-    if (pattern.includes('Unusual bid')) return 'bg-orange-100 text-orange-800';
-    if (pattern.includes('Duplicate identity')) return 'bg-purple-100 text-purple-800';
-    return 'bg-gray-100 text-gray-800';
+  const formatReasonCode = (reason: string) => {
+    return reason.replace(/^dojah_/i, '').replace(/_/g, ' ');
   };
 
   const getSeverityBadgeColor = (severity?: FraudAlert['severity']) => {
@@ -425,20 +513,28 @@ export default function FraudAlertDashboard() {
     return 'bg-blue-100 text-blue-800';
   };
 
-  if (loading) {
+  if (sessionStatus === 'loading' || (session?.user?.role && session.user.role !== 'system_admin')) {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Fraud Alert Dashboard</h1>
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-900"></div>
-          </div>
+          <DataLoadingState label="Fraud alerts" variant="page" />
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (loading && fraudAlerts.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-3xl font-bold text-gray-900 mb-8">Fraud Alert Dashboard</h1>
+          <DataLoadingState label="Fraud alerts" variant="table" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error && fraudAlerts.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
@@ -465,6 +561,7 @@ export default function FraudAlertDashboard() {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Fraud Alert Dashboard</h1>
           <p className="text-gray-600">
             Review and take action on flagged auctions with suspicious activity
+            {isRefreshing && <DataRefreshingHint className="inline-flex mb-0 ml-2" />}
           </p>
         </div>
 
@@ -492,280 +589,141 @@ export default function FraudAlertDashboard() {
           </button>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-sm text-gray-600 mb-1">Total Alerts</div>
-            <div className="text-3xl font-bold text-gray-900">{fraudAlerts.length}</div>
+        <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+          <p className="font-medium text-gray-900 mb-1">What the actions do</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>
+              <strong>Mark under review</strong> — moves an intelligence alert into review while you investigate (status becomes &quot;reviewed&quot; in the database).
+            </li>
+            <li>
+              <strong>Resolve</strong> — marks the alert as <strong>confirmed fraud</strong> after investigation (requires a reason, min. 10 characters).
+            </li>
+            <li>
+              <strong>Dismiss (false positive)</strong> — closes the alert as not fraud; it moves to the <strong>Dismissed</strong> tab.
+            </li>
+            <li>
+              <strong>Suspend vendor</strong> — suspends the linked vendor account (separate from closing the alert).
+            </li>
+          </ul>
+        </div>
+
+        {/* Summary stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="text-xs text-gray-500">Total</div>
+            <div className="text-2xl font-bold text-gray-900">{fraudTabCounts.all}</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-sm text-gray-600 mb-1">Active Auctions</div>
-            <div className="text-3xl font-bold text-orange-600">
-              {fraudAlerts.filter(a => a.auction?.status === 'active').length}
-            </div>
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="text-xs text-gray-500">Open</div>
+            <div className="text-2xl font-bold text-orange-600">{fraudTabCounts.open}</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-sm text-gray-600 mb-1">Unique Vendors</div>
-            <div className="text-3xl font-bold text-purple-600">
-              {new Set(fraudAlerts.map(a => a.vendorId)).size}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="text-xs text-gray-500">In review</div>
+            <div className="text-2xl font-bold text-blue-600">{fraudTabCounts.in_review}</div>
+          </div>
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="text-xs text-gray-500">Dismissed / Confirmed</div>
+            <div className="text-2xl font-bold text-gray-800">
+              {fraudTabCounts.dismissed} / {fraudTabCounts.confirmed}
             </div>
           </div>
         </div>
 
-        {/* Fraud Alerts List */}
+        {/* Tabs — one fetch, client-side filter; swipe on touch */}
+        <div className="mb-4 flex flex-wrap gap-2 border-b border-gray-200 pb-3">
+          {FRAUD_LIST_TAB_ORDER.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setFraudListTab(tab)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                fraudListTab === tab
+                  ? 'bg-[#800020] text-white shadow'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {FRAUD_TAB_LABELS[tab]}
+              <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
+                fraudListTab === tab ? 'bg-white/20 text-white' : 'bg-white text-gray-600'
+              }`}>
+                {fraudTabCounts[tab]}
+              </span>
+            </button>
+          ))}
+        </div>
+
         {fraudAlerts.length === 0 ? (
           <div className="bg-white rounded-lg shadow p-8 text-center">
             <div className="text-6xl mb-4">✅</div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">No Fraud Alerts</h2>
-            <p className="text-gray-600">All auctions are running smoothly with no suspicious activity detected.</p>
+            <p className="text-gray-600">All clear — no alerts in the system.</p>
+          </div>
+        ) : filteredFraudAlerts.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-gray-600">
+            No alerts in <strong>{FRAUD_TAB_LABELS[fraudListTab]}</strong>. Try another tab or refresh.
           </div>
         ) : (
-          <div className="space-y-6">
-            {fraudAlerts.map((alert) => (
-              <div key={alert.id} className="bg-white rounded-lg shadow overflow-hidden">
-                {/* Alert Header */}
-                <div className="bg-red-50 border-b border-red-200 p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-red-900 mb-1">
-                        🚨 Fraud Alert - Auction #{alert.auctionId.slice(0, 8)}
-                      </h3>
-                      <p className="text-sm text-red-700">
-                        {alert.evidenceSummary?.source === 'dojah' ? 'Dojah vendor verification alert' : 'Flagged activity'} - {formatDate(alert.flaggedAt)}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2 justify-end">
-                      {alert.status && (
-                        <span className="px-3 py-1 rounded-full text-xs font-medium bg-white text-gray-700 border border-red-200">
-                          {alert.status.replace(/_/g, ' ').toUpperCase()}
-                        </span>
-                      )}
+          <SwipeTabsBody
+            tabs={FRAUD_LIST_TAB_ORDER}
+            activeTab={fraudListTab}
+            onTabChange={setFraudListTab}
+            className="space-y-2"
+          >
+            {filteredFraudAlerts.map((alert) => {
+              if (!alert) return null;
+              const bucket = alertWorkflowBucket(alert);
+              const headline =
+                alert.auction?.case?.claimReference ||
+                (alert.entityType ? `${alert.entityType}` : 'Fraud alert');
+              const sub =
+                (alert.patterns?.[0] && formatReasonCode(alert.patterns[0])) ||
+                alert?.evidenceSummary?.source ||
+                'Suspicious activity';
+              const who =
+                alert.vendor?.businessName ||
+                alert.vendor?.user?.fullName ||
+                (alert.entityType === 'user' ? 'User alert' : 'Unknown party');
+              return (
+                <button
+                  key={`${alert.alertSource}-${alert.id}`}
+                  type="button"
+                  onClick={() => openDetailModal(alert)}
+                  className="flex w-full items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-[#800020]/40 hover:bg-gray-50 md:p-4"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-semibold text-gray-900">{headline}</span>
                       {alert.severity && (
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityBadgeColor(alert.severity)}`}>
-                          {alert.severity.toUpperCase()}
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${getSeverityBadgeColor(alert.severity)}`}>
+                          {alert.severity}
                         </span>
                       )}
-                      {alert.patterns.map((pattern, idx) => (
-                        <span
-                          key={idx}
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${getPatternBadgeColor(pattern)}`}
-                        >
-                          {pattern}
-                        </span>
-                      ))}
+                      <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                        {bucket.replace('_', ' ')}
+                      </span>
+                      <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">
+                        {alert.alertSource === 'intelligence' ? 'Intel' : 'Bid/IP'}
+                      </span>
                     </div>
+                    <p className="truncate text-sm text-gray-600">{sub}</p>
+                    <p className="truncate text-sm text-gray-800">{who}</p>
+                    <p className="text-xs text-gray-500">
+                      {formatDate(alert.flaggedAt)}
+                      {typeof alert.riskScore === 'number' ? ` · Risk ${alert.riskScore}` : ''}
+                      {alert.auction?.status ? ` · Auction ${alert.auction.status}` : ''}
+                    </p>
                   </div>
-                </div>
-
-                <div className="p-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Left Column: Auction & Vendor Details */}
-                    <div className="space-y-6">
-                      {/* Auction Details */}
-                      {alert.auction && (
-                        <div>
-                          <h4 className="font-semibold text-gray-900 mb-3">Auction Details</h4>
-                          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Claim Reference:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {alert.auction.case?.claimReference || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Asset Type:</span>
-                              <span className="text-sm font-medium text-gray-900 capitalize">
-                                {alert.auction.case?.assetType || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Market Value:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {alert.auction.case?.marketValue ? formatCurrency(alert.auction.case.marketValue) : 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Current Bid:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {formatCurrency(alert.auction.currentBid)}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Status:</span>
-                              <span className={`text-sm font-medium ${
-                                alert.auction.status === 'active' ? 'text-green-600' : 'text-gray-600'
-                              }`}>
-                                {alert.auction.status.toUpperCase()}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Vendor Details */}
-                      {alert.vendor && (
-                        <div>
-                          <h4 className="font-semibold text-gray-900 mb-3">Vendor Details</h4>
-                          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Name:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {alert.vendor.user?.fullName || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Business:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {alert.vendor.businessName || 'Individual'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Email:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {alert.vendor.user?.email || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Phone:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {alert.vendor.user?.phone || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Tier:</span>
-                              <span className="text-sm font-medium text-gray-900 uppercase">
-                                {alert.vendor.tier}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Rating:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {Number(alert.vendor.rating || 0).toFixed(1)} / 5.0
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Total Bids:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {alert.vendor.performanceStats.totalBids}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Win Rate:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {alert.vendor.performanceStats.winRate.toFixed(1)}%
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Fraud Flags:</span>
-                              <span className={`text-sm font-medium ${
-                                alert.vendor.performanceStats.fraudFlags > 0 ? 'text-red-600' : 'text-green-600'
-                              }`}>
-                                {alert.vendor.performanceStats.fraudFlags}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Right Column: Evidence & Bid History */}
-                    <div className="space-y-6">
-                      {/* Evidence */}
-                      <div>
-                        <h4 className="font-semibold text-gray-900 mb-3">Evidence</h4>
-                        <div className="space-y-3">
-                          {alert.details.map((detail, idx) => (
-                            <div key={idx} className="bg-red-50 border border-red-200 rounded-lg p-4">
-                              <div className="font-medium text-red-900 mb-1">{detail.pattern}</div>
-                              <div className="text-sm text-red-700">{detail.evidence}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Bid History */}
-                      <div>
-                        <h4 className="font-semibold text-gray-900 mb-3">
-                          Bid History ({alert.bidHistory.length} bids)
-                        </h4>
-                        <div className="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
-                          <div className="space-y-2">
-                            {alert.bidHistory.map((bid) => (
-                              <div
-                                key={bid.id}
-                                className={`p-3 rounded border ${
-                                  bid.vendorId === alert.vendorId
-                                    ? 'bg-red-50 border-red-200'
-                                    : 'bg-white border-gray-200'
-                                }`}
-                              >
-                                <div className="flex justify-between items-start mb-1">
-                                  <span className="text-sm font-medium text-gray-900">
-                                    {formatCurrency(bid.amount)}
-                                  </span>
-                                  <span className="text-xs text-gray-500">
-                                    {formatDate(bid.createdAt)}
-                                  </span>
-                                </div>
-                                <div className="text-xs text-gray-600">
-                                  IP: {bid.ipAddress} • {bid.deviceType}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="mt-6 pt-6 border-t border-gray-200">
-                    <div className="flex flex-wrap gap-3">
-                      <button
-                        onClick={() => openDetailModal(alert)}
-                        className="px-6 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800 transition-colors"
-                      >
-                        View Details
-                      </button>
-                      {alert.alertSource === 'intelligence' && alert.status === 'pending' && (
-                        <button
-                          onClick={() => openActionModal(alert, 'mark_under_review')}
-                          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          Mark Under Review
-                        </button>
-                      )}
-                      {alert.alertSource === 'intelligence' && alert.status !== 'confirmed' && (
-                        <button
-                          onClick={() => openActionModal(alert, 'resolve')}
-                          className="px-6 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 transition-colors"
-                        >
-                          Resolve
-                        </button>
-                      )}
-                      <button
-                        onClick={() => openDismissModal(alert)}
-                        className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                      >
-                        Dismiss Flag (False Positive)
-                      </button>
-                      <button
-                        onClick={() => openSuspendModal(alert)}
-                        className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                      >
-                        Suspend Vendor
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+                  <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+                </button>
+              );
+            })}
+          </SwipeTabsBody>
         )}
       </div>
 
-      {/* Detail Modal */}
-      {showDetailModal && selectedAlert && typeof document !== 'undefined' && createPortal(
+      {/* Detail Modal — guard children: JSX evaluates even when portal is closed */}
+      <BodyPortal open={showDetailModal && !!selectedAlert}>
+        {selectedAlert ? (
         <div className="fixed inset-0" style={{ zIndex: 999999 }}>
           <div className="fixed inset-0 bg-black/50" onClick={closeDetailModal} />
           <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -804,6 +762,48 @@ export default function FraudAlertDashboard() {
                   </div>
                 </div>
 
+                {selectedAlert.auction && (
+                  <section className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="font-semibold text-gray-900 mb-3">Auction</h4>
+                    <dl className="grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Claim</dt><dd className="font-medium text-right">{selectedAlert.auction.case?.claimReference || '—'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Asset</dt><dd className="font-medium text-right capitalize">{selectedAlert.auction.case?.assetType || '—'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Market value</dt><dd className="font-medium text-right">{selectedAlert.auction.case?.marketValue ? formatCurrency(selectedAlert.auction.case.marketValue) : '—'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Current bid</dt><dd className="font-medium text-right">{formatCurrency(selectedAlert.auction.currentBid)}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Auction status</dt><dd className="font-medium text-right">{selectedAlert.auction.status}</dd></div>
+                    </dl>
+                  </section>
+                )}
+
+                {selectedAlert.details?.length > 0 && (
+                  <section className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="font-semibold text-gray-900 mb-3">Evidence</h4>
+                    <div className="space-y-2">
+                      {selectedAlert.details.map((detail, idx) => (
+                        <div key={idx} className="rounded border border-red-100 bg-red-50/80 p-3 text-sm">
+                          <div className="font-medium text-red-900">{detail.pattern}</div>
+                          <div className="text-red-800">{formatReasonCode(detail.evidence)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {selectedAlert.bidHistory?.length > 0 && (
+                  <section className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="font-semibold text-gray-900 mb-3">Bid history ({selectedAlert.bidHistory.length})</h4>
+                    <div className="max-h-56 space-y-2 overflow-y-auto text-sm">
+                      {selectedAlert.bidHistory.map((bid) => (
+                        <div key={bid.id} className="flex flex-wrap justify-between gap-2 rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                          <span className="font-medium">{formatCurrency(bid.amount)}</span>
+                          <span className="text-gray-500">{formatDate(bid.createdAt)}</span>
+                          <span className="w-full text-xs text-gray-600">IP {bid.ipAddress} · {bid.deviceType}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                   <section className="border border-gray-200 rounded-lg p-5">
                     <h4 className="font-semibold text-gray-900 mb-4">Vendor / User</h4>
@@ -824,14 +824,28 @@ export default function FraudAlertDashboard() {
                   </section>
 
                   <section className="border border-gray-200 rounded-lg p-5">
-                    <h4 className="font-semibold text-gray-900 mb-4">Dojah / Provider Evidence</h4>
+                    <h4 className="font-semibold text-gray-900 mb-4">Verification Evidence</h4>
                     <dl className="space-y-2 text-sm">
-                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Provider ref</dt><dd className="font-medium text-right break-all">{selectedAlert.evidenceSummary?.providerReference || selectedAlert.providerVerification?.providerReference || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Verification ref</dt><dd className="font-medium text-right break-all">{selectedAlert.evidenceSummary?.providerReference || selectedAlert.providerVerification?.providerReference || 'N/A'}</dd></div>
                       <div className="flex justify-between gap-4"><dt className="text-gray-500">Workflow ref</dt><dd className="font-medium text-right break-all">{selectedAlert.evidenceSummary?.workflowReference || selectedAlert.providerVerification?.workflowReference || 'N/A'}</dd></div>
                       <div className="flex justify-between gap-4"><dt className="text-gray-500">Verification type</dt><dd className="font-medium text-right">{selectedAlert.evidenceSummary?.verificationType || selectedAlert.providerVerification?.verificationType || 'N/A'}</dd></div>
-                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Provider status</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.status || 'N/A'}</dd></div>
-                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Provider risk</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.riskLevel || selectedAlert.evidenceSummary?.riskLevel || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Verification status</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.status || 'N/A'}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Risk level</dt><dd className="font-medium text-right">{selectedAlert.providerVerification?.riskLevel || selectedAlert.evidenceSummary?.riskLevel || 'N/A'}</dd></div>
+                    <div className="flex justify-between gap-4"><dt className="text-gray-500">AML status</dt><dd className="font-medium text-right">{selectedAlert.evidenceSummary?.amlStatus === false ? 'Flagged' : selectedAlert.evidenceSummary?.amlStatus === true ? 'No named hits' : 'N/A'}</dd></div>
                     </dl>
+                  {(selectedAlert.evidenceSummary?.pendingReason || selectedAlert.evidenceSummary?.providerMessage || selectedAlert.evidenceSummary?.amlMatchDetails) && (
+                    <div className="mt-4 rounded-lg bg-red-50 border border-red-100 p-3 text-sm">
+                      {selectedAlert.evidenceSummary?.pendingReason && (
+                        <p className="text-red-900"><span className="font-semibold">Review reason:</span> {selectedAlert.evidenceSummary.pendingReason}</p>
+                      )}
+                      {selectedAlert.evidenceSummary?.providerMessage && (
+                        <p className="mt-1 text-red-900"><span className="font-semibold">Verification message:</span> {selectedAlert.evidenceSummary.providerMessage}</p>
+                      )}
+                      {selectedAlert.evidenceSummary?.amlMatchDetails && (
+                        <p className="mt-1 text-red-900"><span className="font-semibold">AML match detail:</span> {selectedAlert.evidenceSummary.amlMatchDetails}</p>
+                      )}
+                    </div>
+                  )}
                   </section>
                 </div>
 
@@ -840,7 +854,7 @@ export default function FraudAlertDashboard() {
                   <div className="flex flex-wrap gap-2 mb-4">
                     {(selectedAlert.reasonCodes?.length ? selectedAlert.reasonCodes : selectedAlert.patterns).map((reason) => (
                       <span key={reason} className="px-3 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
-                        {reason}
+                        {formatReasonCode(reason)}
                       </span>
                     ))}
                   </div>
@@ -913,15 +927,28 @@ export default function FraudAlertDashboard() {
                     )}
                   </div>
                 )}
+
+                {selectedAlert.alertSource === 'audit' && alertWorkflowBucket(selectedAlert) === 'open' && (
+                  <div className="border-t border-gray-200 pt-5 flex flex-wrap gap-3">
+                    <button onClick={() => { setShowDetailModal(false); openDismissModal(selectedAlert); }} className="px-5 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+                      Dismiss (false positive)
+                    </button>
+                    {selectedAlert.vendorId && (
+                      <button onClick={() => { setShowDetailModal(false); openSuspendModal(selectedAlert); }} className="px-5 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                        Suspend vendor
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+        ) : null}
+      </BodyPortal>
 
       {/* Alert Action Modal */}
-      {showActionModal && selectedAlert && pendingAction && typeof document !== 'undefined' && createPortal(
+      <BodyPortal open={showActionModal && !!selectedAlert && !!pendingAction}>
         <div className="fixed inset-0" style={{ zIndex: 1000000 }}>
           <div className="fixed inset-0 bg-black/50" onClick={closeActionModal} />
           <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -959,12 +986,11 @@ export default function FraudAlertDashboard() {
               </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+      </BodyPortal>
 
       {/* Dismiss Modal */}
-      {showDismissModal && selectedAlert && typeof document !== 'undefined' && createPortal(
+      <BodyPortal open={showDismissModal && !!selectedAlert}>
         <div className="fixed inset-0" style={{ zIndex: 999999 }}>
           <div className="fixed inset-0 bg-black/50" onClick={closeDismissModal} />
           <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -1013,12 +1039,11 @@ export default function FraudAlertDashboard() {
               </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+      </BodyPortal>
 
       {/* Suspend Modal */}
-      {showSuspendModal && selectedAlert && typeof document !== 'undefined' && createPortal(
+      <BodyPortal open={showSuspendModal && !!selectedAlert}>
         <div className="fixed inset-0" style={{ zIndex: 999999 }}>
           <div className="fixed inset-0 bg-black/50" onClick={closeSuspendModal} />
           <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -1083,9 +1108,8 @@ export default function FraudAlertDashboard() {
               </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+      </BodyPortal>
     </div>
   );
 }

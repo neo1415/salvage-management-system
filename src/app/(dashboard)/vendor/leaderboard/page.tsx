@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/use-auth';
 import { TrustBadges } from '@/components/vendor/trust-badges';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useCachedLeaderboard } from '@/hooks/use-cached-leaderboard';
 import { Trophy, Medal, Award, Star, TrendingUp, Target, Clock, WifiOff, AlertTriangle, Banknote } from 'lucide-react';
@@ -131,14 +132,7 @@ export default function VendorLeaderboardPage() {
 
   // Loading state
   if (isLoading || isLoadingData) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading leaderboard...</p>
-        </div>
-      </div>
-    );
+    return <DataLoadingState label="Leaderboard" variant="page" />;
   }
 
   // Error state

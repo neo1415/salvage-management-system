@@ -277,3 +277,56 @@ img {
     print-color-adjust: exact !important;
   }
 }
+
+/* PWA: instant boot splash (no blurry manifest icon flash) */
+#pwa-instant-splash {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #800020 0%, #6b001a 50%, #4a0012 100%);
+  color: #fff;
+  font-family: var(--font-display, system-ui), sans-serif;
+  pointer-events: none;
+}
+
+#pwa-instant-splash.pwa-instant-splash--visible {
+  display: flex;
+}
+
+#pwa-instant-splash.pwa-instant-splash--hide {
+  opacity: 0;
+  transition: opacity 0.55s ease;
+}
+
+#pwa-instant-splash .pwa-instant-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+#pwa-instant-splash .pwa-instant-sub {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* Splash overlays sit above #app-root; do not hide app-root (causes stuck PWA if JS is slow) */
+
+@keyframes navigation-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+.navigation-progress-bar {
+  animation: navigation-progress-slide 0.45s ease-out forwards;
+}

@@ -16,6 +16,16 @@ import { biddingService } from '@/features/auctions/services/bidding.service';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
+
+const bidRequestSchema = z.object({
+  amount: z.union([z.number(), z.string()])
+    .transform((value) => (typeof value === 'number' ? value : Number(value)))
+    .refine((value) => Number.isFinite(value) && value > 0, 'Bid amount must be a positive number')
+    .refine((value) => value <= 1_000_000_000_000, 'Bid amount is too large'),
+  otp: z.string().trim().regex(/^\d{6}$/, 'A valid 6-digit OTP is required'),
+});
 
 /**
  * POST /api/auctions/[id]/bids
@@ -51,15 +61,24 @@ export async function POST(
       );
     }
 
-    // Parse request body
-    const body = await request.json();
-    const { amount, otp } = body;
-
-    // Validate input
-    if (!amount || !otp) {
+    const rateLimitResult = await rateLimit(request, {
+      limit: 30,
+      window: 60,
+      identifier: `bid:${vendor.id}:${id}`,
+    });
+    const rateLimitHeaders = createRateLimitHeaders(rateLimitResult);
+    if (!rateLimitResult.success) {
       return NextResponse.json(
-        { success: false, error: 'Bid amount and OTP are required' },
-        { status: 400 }
+        { success: false, error: 'Too many bid attempts. Please slow down and try again.' },
+        { status: 429, headers: rateLimitHeaders }
+      );
+    }
+
+    const parsed = bidRequestSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message || 'Invalid bid request' },
+        { status: 400, headers: rateLimitHeaders }
       );
     }
 
@@ -69,7 +88,7 @@ export async function POST(
     const userAgent = request.headers.get('user-agent') || 'unknown';
     const deviceFingerprint = generateDeviceFingerprint(request);
 
-    const bidAmount = parseFloat(amount);
+    const { amount: bidAmount, otp } = parsed.data;
 
     // Place bid (bidding service handles all deposit/escrow logic internally)
     const result = await biddingService.placeBid({
@@ -89,7 +108,7 @@ export async function POST(
           error: result.error,
           errors: result.errors 
         },
-        { status: 400 }
+      { status: 400, headers: rateLimitHeaders }
       );
     }
 
@@ -99,10 +118,13 @@ export async function POST(
     });
 
     // Return bid confirmation
-    return NextResponse.json({
-      success: true,
-      bid: result.bid,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        bid: result.bid,
+      },
+      { headers: rateLimitHeaders }
+    );
   } catch (error) {
     console.error('Bid placement error:', error);
     

@@ -1,18 +1,12 @@
 // Next.js configuration file
 import type { NextConfig } from 'next';
 
-// Disable SSL verification in development for external image URLs
-if (process.env.NODE_ENV === 'development') {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-}
-
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   
   // TypeScript configuration
   typescript: {
-    // Don't fail build on type errors - we'll handle them separately
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   
   // Performance optimizations
@@ -33,18 +27,28 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
-        hostname: 'cloudinary.com',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
         hostname: '**.cloudinary.com',
         pathname: '/**',
       },
-      // Allow all HTTPS domains for external images
       {
         protocol: 'https',
-        hostname: '**',
+        hostname: 'identity.dojah.io',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'widget.dojah.io',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'maps.googleapis.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'www.googleapis.com',
+        pathname: '/**',
       },
     ],
     unoptimized: false,
@@ -107,7 +111,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(self "https://identity.dojah.io" "https://widget.dojah.io"), microphone=(self "https://identity.dojah.io" "https://widget.dojah.io"), fullscreen=(self "https://identity.dojah.io" "https://widget.dojah.io"), geolocation=(self), payment=(self)',
+            value: 'camera=(self "https://identity.dojah.io" "https://widget.dojah.io"), microphone=(self "https://identity.dojah.io" "https://widget.dojah.io"), fullscreen=(self "https://identity.dojah.io" "https://widget.dojah.io"), geolocation=(self "https://identity.dojah.io" "https://widget.dojah.io"), payment=(self)',
           },
           {
             key: 'X-DNS-Prefetch-Control',

@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Build the URL to the actual report page
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const { getAppUrl } = await import('@/features/notifications/templates/email-urls');
+    const baseUrl = getAppUrl();
     const reportPath = getReportPath(reportType);
     
     // Build query parameters from filters
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Return PDF with proper headers for download
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${filename}"`,

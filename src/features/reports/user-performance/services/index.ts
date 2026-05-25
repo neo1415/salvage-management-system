@@ -9,6 +9,7 @@ import { db } from '@/lib/db/drizzle';
 import { salvageCases, auctions, payments, bids, users } from '@/lib/db/schema';
 import { eq, and, gte, lte, inArray, desc, count, sum } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
+import { resolveReportDateRange } from '../../utils/report-date-range';
 
 // ============================================================================
 // TASK 18: User Performance Data Repository
@@ -474,8 +475,7 @@ export class MyPerformanceService {
    * Shows ALL adjusters' performance and cases pending approval
    */
   private static async generateManagerTeamReport(filters: ReportFilters, managerId: string): Promise<MyPerformanceReport> {
-    const startDate = filters.startDate ? new Date(filters.startDate) : new Date('2000-01-01');
-    const endDate = filters.endDate ? new Date(filters.endDate) : new Date('2099-12-31');
+    const { start: startDate, end: endDate } = resolveReportDateRange(filters.startDate, filters.endDate);
 
     // Get all cases in date range with adjuster info
     const allCases = await db

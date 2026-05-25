@@ -210,6 +210,7 @@ export async function POST(
       console.log(`Notifying ${realVendors.length} vendors for restarted auction ${auctionId}`);
 
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      const reservePrice = parseFloat(caseRecord.reservePrice ?? '0');
 
       for (const vendor of realVendors) {
         try {
@@ -226,7 +227,7 @@ export async function POST(
             auctionId: auctionId,
             assetType: assetType,
             assetName: `${assetType.toUpperCase()} - ${caseRecord.claimReference}`,
-            reservePrice: parseFloat(caseRecord.reservePrice),
+            reservePrice,
             startTime: now.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
             endTime: endTime.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
             location: caseRecord.locationName,

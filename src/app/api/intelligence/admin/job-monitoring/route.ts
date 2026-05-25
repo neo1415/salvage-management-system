@@ -7,13 +7,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import {
-  getJobPerformanceMetrics,
-  getRecentJobLogs,
-  getJobHealthStatus,
-  getJobLogsFromCache,
-  getJobFailureHistory,
-} from '@/features/intelligence/jobs';
 
 /**
  * GET /api/intelligence/admin/job-monitoring
@@ -38,38 +31,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get query parameters
-    const { searchParams } = new URL(request.url);
-    const jobName = searchParams.get('jobName');
-    const limit = parseInt(searchParams.get('limit') || '50');
-
-    // Get job health status
-    const healthStatus = getJobHealthStatus();
-
-    // Get performance metrics
-    const metrics = jobName
-      ? getJobPerformanceMetrics(jobName)
-      : getJobPerformanceMetrics();
-
-    // Get recent logs
-    const recentLogs = getRecentJobLogs(jobName || undefined, limit);
-
-    // Get cached logs and failure history if specific job requested
-    let cachedLogs = null;
-    let failureHistory = null;
-    if (jobName) {
-      cachedLogs = await getJobLogsFromCache(jobName);
-      failureHistory = await getJobFailureHistory(jobName);
-    }
-
     return NextResponse.json({
       success: true,
       data: {
-        healthStatus,
-        metrics,
-        recentLogs,
-        cachedLogs,
-        failureHistory,
+        healthStatus: {
+          status: 'disabled',
+          message: 'Background intelligence cron jobs are not configured in the Vercel runtime.',
+        },
+        metrics: [],
+        recentLogs: [],
+        cachedLogs: null,
+        failureHistory: null,
         timestamp: new Date().toISOString(),
       },
     });

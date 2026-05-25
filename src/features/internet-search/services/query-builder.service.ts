@@ -211,18 +211,53 @@ export class QueryBuilderService {
     partName: string, 
     damageType?: string
   ): string {
-    // Convert to PartIdentifier format
-    // For non-vehicles, use brand instead of 'generic'
-    const partIdentifier: PartIdentifier = {
-      vehicleMake: item.type === 'vehicle' ? item.make : (item.type === 'electronics' || item.type === 'appliance' || item.type === 'watch' ? (item as any).brand : 'generic'),
-      vehicleModel: item.type === 'vehicle' ? item.model : (item as any).model,
-      vehicleYear: item.type === 'vehicle' ? item.year : undefined,
-      partName,
-      partType: this.mapDamageTypeToPartType(damageType),
-      damageLevel: 'moderate' // Default damage level
-    };
-    
-    return this.buildPartQuery(partIdentifier);
+    const normalizedPart = partName.trim();
+    const damageContext = damageType ? ` ${damageType}` : '';
+
+    switch (item.type) {
+      case 'vehicle':
+        return this.buildPartQuery({
+          vehicleMake: item.make,
+          vehicleModel: item.model,
+          vehicleYear: item.year,
+          partName: normalizedPart,
+          partType: this.mapDamageTypeToPartType(damageType),
+          damageLevel: 'moderate'
+        });
+
+      case 'electronics':
+        return this.sanitizeQuery(
+          `${this.buildElectronicsQuery(item)} ${normalizedPart}${damageContext} replacement repair price Nigeria`
+        );
+
+      case 'appliance':
+        return this.sanitizeQuery(
+          `${this.buildApplianceQuery(item)} ${normalizedPart}${damageContext} spare part repair price Nigeria`
+        );
+
+      case 'property':
+        return this.sanitizeQuery(
+          `${this.buildPropertyQuery(item)} ${normalizedPart}${damageContext} repair replacement cost Nigeria`
+        );
+
+      case 'jewelry':
+        return this.sanitizeQuery(
+          `${this.buildJewelryQuery(item)} ${normalizedPart}${damageContext} repair replacement cost Nigeria`
+        );
+
+      case 'furniture':
+        return this.sanitizeQuery(
+          `${this.buildFurnitureQuery(item)} ${normalizedPart}${damageContext} repair replacement price Nigeria`
+        );
+
+      case 'machinery':
+        return this.sanitizeQuery(
+          `${this.buildMachineryQuery(item)} ${normalizedPart}${damageContext} spare part replacement repair price Nigeria`
+        );
+
+      default:
+        return this.sanitizeQuery(`${normalizedPart}${damageContext} replacement repair price Nigeria`);
+    }
   }
 
   /**

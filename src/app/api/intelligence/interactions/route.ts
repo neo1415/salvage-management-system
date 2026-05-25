@@ -93,10 +93,14 @@ export async function POST(request: NextRequest) {
 
     // Task 7.3.3: Implement session tracking logic
     const sessionId = eventData.sessionId || randomUUID();
+    const storedEventType = eventData.eventType === 'click_recommendation'
+      ? 'view'
+      : eventData.eventType;
 
     // Enrich metadata
     const enrichedMetadata = {
       ...eventData.metadata,
+      originalEventType: eventData.eventType,
       deviceType,
       ipAddress,
       userAgent,
@@ -107,9 +111,9 @@ export async function POST(request: NextRequest) {
     await db.insert(interactions).values({
       vendorId: eventData.vendorId,
       auctionId: eventData.auctionId,
-      eventType: eventData.eventType,
+      eventType: storedEventType,
       sessionId,
-      metadata: enrichedMetadata,
+      metadata: enrichedMetadata as typeof interactions.$inferInsert['metadata'],
     });
 
     // Log to audit logs

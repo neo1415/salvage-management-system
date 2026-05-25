@@ -69,10 +69,9 @@ export function useTierUpgrade({ currentTier, onUpgradeRequired }: UseTierUpgrad
   const canAccessAuction = useCallback(
     (auctionValue: number): boolean => {
       if (currentTier === 'tier2_full') {
-        return true; // Tier 2 vendors have unlimited access
+        return true;
       }
 
-      // Tier 1 vendors can only access auctions up to the configured limit
       return auctionValue <= tier1Limit;
     },
     [currentTier, tier1Limit]
@@ -98,32 +97,19 @@ export function useTierUpgrade({ currentTier, onUpgradeRequired }: UseTierUpgrad
     [canAccessAuction, onUpgradeRequired]
   );
 
-  /**
-   * Close the upgrade modal
-   */
   const closeUpgradeModal = useCallback(() => {
     setShowUpgradeModal(false);
     setBlockedAuctionValue(undefined);
   }, []);
 
-  /**
-   * Get the tier limit for display purposes
-   */
   const getTierLimit = useCallback((): number | null => {
     if (currentTier === 'tier1_bvn') {
       return tier1Limit;
     }
-    return null; // Tier 2 has no limit
+    return null;
   }, [currentTier, tier1Limit]);
 
-  /**
-   * Check if vendor is Tier 1
-   */
   const isTier1 = currentTier === 'tier1_bvn';
-
-  /**
-   * Check if vendor is Tier 2
-   */
   const isTier2 = currentTier === 'tier2_full';
 
   return {

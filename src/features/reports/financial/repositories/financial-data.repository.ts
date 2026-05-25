@@ -9,6 +9,7 @@ import { db } from '@/lib/db/drizzle';
 import { salvageCases, auctions, payments, vendors, users } from '@/lib/db/schema';
 import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
+import { resolveReportIsoDateRange } from '../../utils/report-date-range';
 
 export interface RevenueData {
   caseId: string;
@@ -65,8 +66,7 @@ export class FinancialDataRepository {
    * Get the LATEST payment per case (highest payment.created_at)
    */
   static async getRevenueData(filters: ReportFilters): Promise<RevenueData[]> {
-    const startDate = filters.startDate || '2000-01-01';
-    const endDate = filters.endDate || '2099-12-31';
+    const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
 
     // Use raw SQL with DISTINCT ON to handle duplicate payments per case
     // Get the LATEST verified payment per case

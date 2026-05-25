@@ -40,9 +40,9 @@ export async function GET(request: NextRequest) {
       where: eq(users.id, session.user.id),
     });
 
-    if (!user || !['system_admin', 'salvage_manager'].includes(user.role)) {
+    if (!user || user.role !== 'system_admin') {
       return NextResponse.json(
-        { error: 'Forbidden: Admin or Salvage Manager access required' },
+        { error: 'Forbidden: System admin access required' },
         { status: 403 }
       );
     }
@@ -162,9 +162,17 @@ export async function GET(request: NextRequest) {
         })
       : [];
 
-    // Format fraud alerts
+    function intelligenceWorkflowStatus(
+      status: (typeof intelligenceAlerts)[number]['status']
+    ): 'open' | 'in_review' | 'dismissed' | 'confirmed' {
+      if (status === 'dismissed') return 'dismissed';
+      if (status === 'confirmed') return 'confirmed';
+      if (status === 'reviewed') return 'in_review';
+      return 'open';
+    }
+
+    // Format fraud alerts (include dismissed audit flags so they appear under Dismissed tab)
     const auditFraudAlerts = fraudLogs
-      .filter(log => !dismissedAuctionIds.has(log.entityId)) // Exclude dismissed flags
       .map(log => {
         const afterState = log.afterState as {
           auctionId?: string;
@@ -178,8 +186,11 @@ export async function GET(request: NextRequest) {
         const vendor = vendorDetails.find(v => v.id === afterState?.vendorId);
         const auctionBidList = auctionBids.filter(b => b.auctionId === log.entityId);
 
+        const isDismissed = dismissedAuctionIds.has(log.entityId);
+
         return {
           id: log.id,
+          workflowStatus: isDismissed ? ('dismissed' as const) : ('open' as const),
           auctionId: log.entityId,
           vendorId: afterState?.vendorId,
           bidAmount: afterState?.bidAmount,
@@ -223,6 +234,11 @@ export async function GET(request: NextRequest) {
             deviceType: bid.deviceType,
             createdAt: bid.createdAt,
           })),
+          evidenceSummary: {
+            source: 'audit',
+            checksCompleted: [],
+            failedChecks: afterState?.patterns || [],
+          },
           alertSource: 'audit',
         };
       });
@@ -263,6 +279,7 @@ export async function GET(request: NextRequest) {
         (metadata?.providerReference && record.providerReference === metadata.providerReference) ||
         (primaryVendorId && record.vendorId === primaryVendorId)
       );
+      const normalizedProviderResult = (linkedProviderRecord?.normalizedResult as Record<string, unknown> | null) ?? null;
       const timeline = alertTimelineLogs
         .filter(log => log.entityId === alert.id || log.entityId === primaryVendorId || log.entityId === alert.entityId)
         .slice(0, 12)
@@ -278,6 +295,7 @@ export async function GET(request: NextRequest) {
       return {
         id: alert.id,
         status: alert.status,
+        workflowStatus: intelligenceWorkflowStatus(alert.status),
         severity: alert.riskScore >= 90 ? 'critical' : alert.riskScore >= 75 ? 'high' : alert.riskScore >= 50 ? 'medium' : 'low',
         riskScore: alert.riskScore,
         entityType: alert.entityType,
@@ -302,6 +320,10 @@ export async function GET(request: NextRequest) {
           checksCompleted: metadata?.checksCompleted || [],
           failedChecks: metadata?.failedChecks || [],
           ipAddress: metadata?.ipAddress,
+          pendingReason: normalizedProviderResult?.pendingReason,
+          providerMessage: normalizedProviderResult?.providerMessage,
+          amlStatus: normalizedProviderResult?.amlStatus,
+          amlMatchDetails: normalizedProviderResult?.amlMatchDetails,
         },
         providerVerification: linkedProviderRecord ? {
           id: linkedProviderRecord.id,

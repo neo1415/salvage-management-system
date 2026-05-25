@@ -96,8 +96,8 @@ export function useRequireRole(requiredRole: string | string[]) {
   const router = useRouter();
   const hasRequiredRole = useRole(requiredRole);
 
-  if (!isLoading && !hasRequiredRole) {
-    router.push('/dashboard');
+  if (!isLoading && user && !hasRequiredRole) {
+    router.replace(`/unauthorized?from=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '/dashboard')}`);
   }
 
   return { user, isLoading, hasRequiredRole };

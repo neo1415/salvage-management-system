@@ -173,6 +173,13 @@ export async function POST(
       );
     }
 
+    if (!payment.auctionId) {
+      return NextResponse.json(
+        { error: 'Auction payment required for this verification workflow' },
+        { status: 400 }
+      );
+    }
+
     // Get vendor details
     const [vendor] = await db
       .select()
@@ -306,7 +313,7 @@ export async function POST(
             documentTitle: 'Vehicle Pickup Authorization',
             auctionId: payment.auctionId,
             assetDescription: assetName,
-            downloadUrl: `${process.env.NEXTAUTH_URL}/vendor/documents`,
+            downloadUrl: `${process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL}/vendor/documents#auction-${payment.auctionId}`,
           }),
         });
 
@@ -387,7 +394,7 @@ export async function POST(
         pickupAuthCode: pickupAuthCode,
         pickupLocation: caseDetails.locationName,
         pickupDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
-        appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+        appUrl: (await import('@/features/notifications/templates/email-urls')).getAppUrl(),
       });
 
       // Log activity
@@ -543,6 +550,9 @@ async function sendRejectionEmail(
       caseDetails.assetDetails as Record<string, unknown>,
       caseDetails.claimReference
     );
+
+    const { appPath } = await import('@/features/notifications/templates/email-urls');
+    const resubmitUrl = appPath(`/vendor/payments/${payment.id}`);
     
     const emailSubject = 'Payment Verification Failed - Action Required';
     const emailHtml = `
@@ -677,7 +687,7 @@ async function sendRejectionEmail(
               </div>
               
               <div class="button-container">
-                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/payments/${payment.id}" class="button">Resubmit Payment Proof</a>
+                <a href="${resubmitUrl}" class="button">Resubmit Payment Proof</a>
               </div>
               
               <p style="margin-top: 30px;">If you believe this is an error or need assistance, please contact our support team:</p>

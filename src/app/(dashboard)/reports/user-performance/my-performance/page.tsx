@@ -1,24 +1,25 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useReportFetchState } from '@/hooks/use-report-fetch-state';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
+import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { MyPerformanceReport } from '@/components/reports/user-performance/my-performance-report';
 
 export default function MyPerformancePage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+    useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
-  const [filters, setFilters] = useState<ReportFilters>({
-    startDate: undefined,
-    endDate: undefined,
-  });
+  const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
   useEffect(() => {
     if (session?.user) {
@@ -27,20 +28,18 @@ export default function MyPerformancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]); // Only fetch on mount, user clicks Apply button for filter changes
 
-  const fetchReport = async () => {
-    setLoading(true);
+  const fetchReport = async (force = false) => {
+    startFetch();
     try {
-      const params = new URLSearchParams();
-      if (filters.startDate) params.append('startDate', filters.startDate.toISOString());
-      if (filters.endDate) params.append('endDate', filters.endDate.toISOString());
-
-      const response = await fetch(`/api/reports/user-performance/my-performance?${params}`);
-      const result = await response.json();
-      setReportData(result.data);
+      const result = await loadReportFromApi('/api/reports/user-performance/my-performance', filters, { force });
+      if (result.status === 'success') {
+        setReportData(result.data);
+        markHasData();
+      }
     } catch (error) {
       console.error('Failed to fetch report:', error);
     } finally {
-      setLoading(false);
+      endFetch();
     }
   };
 
@@ -173,7 +172,7 @@ export default function MyPerformancePage() {
               filters={filters}
               onFiltersChange={setFilters}
               onApply={fetchReport}
-              onReset={() => setFilters({ startDate: undefined, endDate: undefined })}
+              onReset={() => setFilters(defaultReportFilters())}
               showAssetTypes={false}
               showRegions={false}
               showGroupBy={true}
@@ -181,9 +180,15 @@ export default function MyPerformancePage() {
           </CardContent>
         </Card>
 
+        {loading && !reportData && (
+          <DataLoadingState label="My performance" variant="report" className="no-print" />
+        )}
+
+        {isRefreshing && reportData && <DataRefreshingHint />}
+
         {reportData && (
           <div data-report-content>
-            <MyPerformanceReport data={reportData} loading={loading} />
+            <MyPerformanceReport data={reportData} />
           </div>
         )}
       </div>

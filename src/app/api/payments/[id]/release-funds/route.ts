@@ -111,6 +111,13 @@ export async function POST(
       );
     }
 
+    if (!payment.auctionId) {
+      return NextResponse.json(
+        { error: 'Cannot release auction funds for a payment without an auction' },
+        { status: 400 }
+      );
+    }
+
     // Get auction details
     const [auction] = await db
       .select()

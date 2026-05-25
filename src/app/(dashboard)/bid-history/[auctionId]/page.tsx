@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth/use-auth';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import Image from 'next/image';
 import { 
   ArrowLeft, 
@@ -72,6 +73,7 @@ interface DetailedAuctionData {
       x: number;
       y: number;
     };
+    approvedAt?: string | null;
     aiAssessment?: any;
   };
   currentBidder: {
@@ -401,14 +403,7 @@ export default function AuctionDetailPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading auction details...</p>
-        </div>
-      </div>
-    );
+    return <DataLoadingState label="Auction details" variant="page" />;
   }
 
   if (error) {
@@ -814,6 +809,21 @@ export default function AuctionDetailPage() {
                 </div>
                 
                 <div className="pt-4 border-t border-gray-200 space-y-3">
+                  {data.case.approvedAt && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5" />
+                        Date:
+                      </span>
+                      <span className="font-medium">
+                        {new Date(data.case.approvedAt).toLocaleDateString('en-NG', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Started:</span>
                     <span className="font-medium">{formatDateTime(data.auction.startTime)}</span>

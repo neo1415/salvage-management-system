@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -19,9 +19,26 @@ import {
   Trash2
 } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
-import { AuctionStatusService } from '@/features/auctions/services/status.service';
+import {
+  isCaseInLiveAuction,
+  resolveCaseDisplayStatus,
+  type CaseDisplayStatus,
+} from '@/lib/metrics/case-display-status';
+import { isRejectedTabCase } from '@/lib/metrics/case-rejection';
 import { getAllDrafts, type DraftCase, getAllOfflineCases, type OfflineCase } from '@/lib/db/indexeddb';
 import { useOffline } from '@/hooks/use-offline';
+import { DataLoadingState } from '@/components/ui/loading-states';
+import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
+
+const CASE_STATUS_SWIPE_ORDER: StatusFilter[] = [
+  'all',
+  'draft',
+  'pending_approval',
+  'rejected',
+  'approved',
+  'active_auction',
+  'sold',
+];
 
 interface Case {
   id: string;
@@ -41,9 +58,20 @@ interface Case {
   // Payment data for verification status
   paymentId: string | null;
   paymentStatus: string | null;
+  rejectionReason?: string | null;
+  rejectedAt?: string | null;
+  rejectedByName?: string | null;
+  wasRejected?: boolean;
 }
 
-type StatusFilter = 'all' | 'draft' | 'pending_approval' | 'approved' | 'cancelled' | 'active_auction' | 'sold';
+type StatusFilter =
+  | 'all'
+  | 'draft'
+  | 'pending_approval'
+  | 'rejected'
+  | 'approved'
+  | 'active_auction'
+  | 'sold';
 
 export default function AdjusterMyCasesPage() {
   const { data: session, status } = useSession();
@@ -55,6 +83,7 @@ export default function AdjusterMyCasesPage() {
   const [filteredCases, setFilteredCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+
   const [searchQuery, setSearchQuery] = useState('');
   
   // Export states
@@ -124,7 +153,9 @@ export default function AdjusterMyCasesPage() {
       if (!isOffline) {
         // Add timestamp to bust cache
         const timestamp = Date.now();
-        const response = await fetch(`/api/cases?createdByMe=true&_t=${timestamp}`);
+        const response = await fetch(
+          `/api/cases?createdByMe=true&limit=500&_t=${timestamp}`
+        );
         
         if (!response.ok) {
           throw new Error('Failed to fetch cases');
@@ -203,29 +234,13 @@ export default function AdjusterMyCasesPage() {
         // Approved filter shows all cases with approvedBy field
         filtered = filtered.filter(c => c.approvedBy !== null && c.approvedBy !== undefined);
       } else if (statusFilter === 'pending_approval') {
-        // CRITICAL: Only show cases that are truly pending (not approved yet)
-        // Must have pending_approval status AND no approvedBy
-        filtered = filtered.filter(c => c.status === 'pending_approval' && !c.approvedBy);
+        filtered = filtered.filter(
+          (c) => c.status === 'pending_approval' && !c.approvedBy
+        );
+      } else if (statusFilter === 'rejected') {
+        filtered = filtered.filter((c) => isRejectedTabCase(c));
       } else if (statusFilter === 'active_auction') {
-        // CRITICAL: Only show auctions that are truly active (not closed)
-        filtered = filtered.filter(c => {
-          // Must have active_auction status
-          if (c.status !== 'active_auction') return false;
-          
-          // If case has auction data, check real-time status
-          if (c.auctionId && c.auctionStatus && c.auctionEndTime) {
-            const realTimeStatus = AuctionStatusService.getAuctionStatus({
-              status: c.auctionStatus,
-              endTime: new Date(c.auctionEndTime),
-            });
-            
-            // Only include if auction is not closed
-            return realTimeStatus !== 'closed';
-          }
-          
-          // If no auction data, include it
-          return true;
-        });
+        filtered = filtered.filter((c) => isCaseInLiveAuction(c));
       } else if (statusFilter === 'sold') {
         // CRITICAL: Only show cases that are truly sold (with verified payment)
         filtered = filtered.filter(c => {
@@ -240,9 +255,6 @@ export default function AdjusterMyCasesPage() {
           // If no payment data but status is sold, include it (legacy data)
           return true;
         });
-      } else if (statusFilter === 'cancelled') {
-        // Cancelled filter shows only cancelled cases
-        filtered = filtered.filter(c => c.status === 'cancelled');
       } else {
         // Fallback: exact status match
         filtered = filtered.filter(c => c.status === statusFilter);
@@ -263,21 +275,8 @@ export default function AdjusterMyCasesPage() {
   };
 
   const getStatusBadge = (caseItem: Case) => {
-    // Use AuctionStatusService for real-time status if case has an auction
-    let displayStatus = caseItem.status;
-    
-    if (caseItem.auctionId && caseItem.auctionStatus && caseItem.auctionEndTime) {
-      const realTimeStatus = AuctionStatusService.getAuctionStatus({
-        status: caseItem.auctionStatus,
-        endTime: new Date(caseItem.auctionEndTime),
-      });
-      
-      // If auction is closed but case status is still active_auction, show awaiting payment
-      if (realTimeStatus === 'closed' && caseItem.status === 'active_auction') {
-        displayStatus = 'awaiting_payment';
-      }
-    }
-    
+    const displayStatus: CaseDisplayStatus = resolveCaseDisplayStatus(caseItem);
+
     const statusConfig: Record<string, { label: string; className: string; icon: any }> = {
       draft: {
         label: 'Draft',
@@ -288,6 +287,11 @@ export default function AdjusterMyCasesPage() {
         label: 'Pending Approval',
         className: 'bg-yellow-100 text-yellow-800',
         icon: Clock
+      },
+      rejected: {
+        label: 'Rejected',
+        className: 'bg-red-100 text-red-800',
+        icon: XCircle
       },
       approved: {
         label: 'Approved',
@@ -309,6 +313,11 @@ export default function AdjusterMyCasesPage() {
         className: 'bg-orange-100 text-orange-800',
         icon: Banknote
       },
+      closed: {
+        label: 'Closed',
+        className: 'bg-gray-100 text-gray-800',
+        icon: XCircle,
+      },
       sold: {
         label: 'Sold',
         className: 'bg-purple-100 text-purple-800',
@@ -328,25 +337,6 @@ export default function AdjusterMyCasesPage() {
   };
 
   const getStatusCounts = () => {
-    // Helper function to check if auction is truly active (not closed)
-    const isAuctionActive = (caseItem: Case) => {
-      if (caseItem.status !== 'active_auction') return false;
-      
-      // If case has auction data, check real-time status
-      if (caseItem.auctionId && caseItem.auctionStatus && caseItem.auctionEndTime) {
-        const realTimeStatus = AuctionStatusService.getAuctionStatus({
-          status: caseItem.auctionStatus,
-          endTime: new Date(caseItem.auctionEndTime),
-        });
-        
-        // Only count as active if auction is not closed
-        return realTimeStatus !== 'closed';
-      }
-      
-      // If no auction data, count as active
-      return true;
-    };
-    
     // Helper function to check if case is truly sold (payment verified)
     const isTrulySold = (caseItem: Case) => {
       // Must have sold status
@@ -366,11 +356,10 @@ export default function AdjusterMyCasesPage() {
       draft: drafts.length, // Count drafts from IndexedDB
       // Only count cases that are truly pending (not approved yet)
       pending_approval: cases.filter(c => c.status === 'pending_approval' && !c.approvedBy).length + offlineCases.filter(c => c.status === 'pending_approval').length,
-      // Approved includes cases with approvedBy field (active_auction, sold, etc.)
+      rejected: cases.filter((c) => isRejectedTabCase(c)).length,
       approved: cases.filter(c => c.approvedBy !== null && c.approvedBy !== undefined).length,
-      cancelled: cases.filter(c => c.status === 'cancelled').length,
       // Only count auctions that are truly active (not closed)
-      active_auction: cases.filter(c => isAuctionActive(c)).length,
+      active_auction: cases.filter((c) => isCaseInLiveAuction(c)).length,
       // Sold includes only cases with verified payments
       sold: cases.filter(c => isTrulySold(c)).length,
     };
@@ -541,12 +530,8 @@ export default function AdjusterMyCasesPage() {
     return str;
   };
 
-  if (status === 'loading' || loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020]"></div>
-      </div>
-    );
+  if (status === 'loading' || (loading && cases.length === 0)) {
+    return <DataLoadingState label="My cases" variant="page" />;
   }
 
   const statusCounts = getStatusCounts();
@@ -647,8 +632,8 @@ export default function AdjusterMyCasesPage() {
               { key: 'all', label: 'All Cases', count: statusCounts.all },
               { key: 'draft', label: 'Draft', count: statusCounts.draft },
               { key: 'pending_approval', label: 'Pending', count: statusCounts.pending_approval },
+              { key: 'rejected', label: 'Rejected', count: statusCounts.rejected },
               { key: 'approved', label: 'Approved', count: statusCounts.approved },
-              { key: 'cancelled', label: 'Cancelled', count: statusCounts.cancelled },
               { key: 'active_auction', label: 'Active Auction', count: statusCounts.active_auction },
               { key: 'sold', label: 'Sold', count: statusCounts.sold },
             ].map((tab) => (
@@ -671,7 +656,12 @@ export default function AdjusterMyCasesPage() {
         </div>
 
         {/* Cases List */}
-        <div className="p-6">
+        <SwipeTabsBody
+          tabs={CASE_STATUS_SWIPE_ORDER}
+          activeTab={statusFilter}
+          onTabChange={setStatusFilter}
+          className="p-6"
+        >
           {statusFilter === 'draft' ? (
             // Show drafts from IndexedDB
             drafts.length === 0 ? (
@@ -702,11 +692,13 @@ export default function AdjusterMyCasesPage() {
                 {searchQuery ? `No results found for "${searchQuery}"` : 'No cases found'}
               </h3>
               <p className="text-gray-600 mb-6">
-                {searchQuery 
+                {searchQuery
                   ? 'Try adjusting your search query or filters.'
-                  : statusFilter === 'all' 
-                    ? "You haven't created any cases yet."
-                    : `No cases with status "${statusFilter.replace('_', ' ')}".`}
+                  : statusFilter === 'rejected'
+                    ? 'No rejected cases yet. Cases returned by a salvage manager will show the rejection reason here.'
+                    : statusFilter === 'all'
+                      ? "You haven't created any cases yet."
+                      : `No cases with status "${statusFilter.replace('_', ' ')}".`}
               </p>
               {statusFilter === 'all' && !searchQuery && (
                 <Link
@@ -738,6 +730,7 @@ export default function AdjusterMyCasesPage() {
                     key={caseItem.id}
                     caseItem={caseItem}
                     onDelete={caseItem.status === 'draft' ? fetchMyCases : undefined}
+                    showRejectionReason={statusFilter === 'rejected' || Boolean(caseItem.rejectionReason)}
                     getStatusBadge={getStatusBadge}
                     isOfflineCase={isOfflineCase}
                   />
@@ -745,7 +738,7 @@ export default function AdjusterMyCasesPage() {
               })}
             </div>
           )}
-        </div>
+        </SwipeTabsBody>
       </div>
     </div>
   );
@@ -867,11 +860,18 @@ function DraftCard({ draft, onDelete }: DraftCardProps) {
 interface CaseCardProps {
   caseItem: Case;
   onDelete?: () => void;
-  getStatusBadge: (caseItem: Case) => JSX.Element;
+  getStatusBadge: (caseItem: Case) => ReactElement;
   isOfflineCase?: boolean;
+  showRejectionReason?: boolean;
 }
 
-function CaseCard({ caseItem, onDelete, getStatusBadge, isOfflineCase = false }: CaseCardProps) {
+function CaseCard({
+  caseItem,
+  onDelete,
+  getStatusBadge,
+  isOfflineCase = false,
+  showRejectionReason = false,
+}: CaseCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const router = useRouter();
 
@@ -965,6 +965,33 @@ function CaseCard({ caseItem, onDelete, getStatusBadge, isOfflineCase = false }:
             </div>
           </div>
         </div>
+
+        {showRejectionReason && caseItem.rejectionReason && (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-red-800">
+              Rejection reason
+              {caseItem.rejectedByName ? ` · ${caseItem.rejectedByName}` : ''}
+            </p>
+            <p className="mt-1 text-sm text-red-900">{caseItem.rejectionReason}</p>
+            {caseItem.rejectedAt && (
+              <p className="mt-1 text-xs text-red-700">
+                Rejected {formatRelativeDate(caseItem.rejectedAt)}
+              </p>
+            )}
+          </div>
+        )}
+        {showRejectionReason &&
+          !caseItem.rejectionReason &&
+          caseItem.status === 'cancelled' && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-red-800">
+                Cancelled
+              </p>
+              <p className="mt-1 text-sm text-red-900">
+                You cancelled this case before it was approved or auctioned.
+              </p>
+            </div>
+          )}
 
         {/* Expandable Section for Optional Details */}
         {(caseItem.approvedAt || caseItem.status === 'draft') && (

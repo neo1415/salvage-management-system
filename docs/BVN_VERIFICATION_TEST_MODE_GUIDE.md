@@ -19,7 +19,7 @@ The system automatically detects test mode by checking if your Paystack secret k
 
 ```typescript
 // From .env
-PAYSTACK_SECRET_KEY=sk_test_45ca11545148bed4becda5de54198e677eecbcbf
+PAYSTACK_SECRET_KEY=sk_test_your-paystack-secret-key
                     ^^^^^^^^ - This indicates TEST MODE
 ```
 

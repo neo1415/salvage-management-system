@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useSession } from 'next-auth/react';
 
 interface EscrowReportSummary {
@@ -46,6 +47,7 @@ interface DetailedPayment {
 export default function EscrowPerformanceReportPage() {
   const { data: session } = useSession();
   const [summary, setSummary] = useState<EscrowReportSummary | null>(null);
+  const hasReportDataRef = useRef(false);
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData[]>([]);
   const [detailedPayments, setDetailedPayments] = useState<DetailedPayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,8 +65,11 @@ export default function EscrowPerformanceReportPage() {
   });
 
   const fetchReport = useCallback(async () => {
+    const showFullPageLoader = !hasReportDataRef.current;
     try {
-      setLoading(true);
+      if (showFullPageLoader) {
+        setLoading(true);
+      }
       setError(null);
 
       const params = new URLSearchParams();
@@ -161,15 +166,8 @@ export default function EscrowPerformanceReportPage() {
     document.body.removeChild(link);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading report...</p>
-        </div>
-      </div>
-    );
+  if (loading && !summary) {
+    return <DataLoadingState label="Escrow performance report" variant="report" />;
   }
 
   if (error) {

@@ -140,9 +140,11 @@ export async function POST(request: NextRequest) {
     const result = await db.insert(damageDeductions).values({
       component: data.component,
       damageLevel: data.damageLevel,
-      repairCostEstimate: data.repairCostEstimate.toString(),
-      valuationDeductionPercent: data.valuationDeductionPercent.toString(),
-      description: data.description,
+      repairCostLow: data.repairCostEstimate.toString(),
+      repairCostHigh: data.repairCostEstimate.toString(),
+      valuationDeductionLow: data.valuationDeductionPercent.toString(),
+      valuationDeductionHigh: data.valuationDeductionPercent.toString(),
+      notes: data.description,
       createdBy: session.user.id,
     }).returning();
 

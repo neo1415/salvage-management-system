@@ -226,7 +226,10 @@ export async function GET(request: NextRequest) {
       ];
 
       if (status) {
-        conditions.push(eq(payments.status, status));
+        const allowedPaymentStatuses = ['pending', 'verified', 'rejected', 'overdue'] as const;
+        if (allowedPaymentStatuses.includes(status as (typeof allowedPaymentStatuses)[number])) {
+          conditions.push(eq(payments.status, status as (typeof allowedPaymentStatuses)[number]));
+        }
       }
 
       const paymentRecords = await db

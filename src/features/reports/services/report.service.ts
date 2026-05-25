@@ -8,14 +8,18 @@
 import { ReportConfig, ReportResult, ReportType, ReportFilters, UserRole, ROLE_PERMISSIONS } from '../types';
 import { ReportCacheService } from './report-cache.service';
 import { ReportAuditService } from './report-audit.service';
+import { resolveReportDateRange } from '../utils/report-date-range';
 import { randomUUID } from 'crypto';
 
 export class ReportService {
   /**
    * Check if user has permission to access report type
    */
-  static hasPermission(userRole: UserRole, reportType: ReportType): boolean {
-    const permissions = ROLE_PERMISSIONS[userRole];
+  static hasPermission(userRole: string | null | undefined, reportType: ReportType): boolean {
+    if (!userRole || !(userRole in ROLE_PERMISSIONS)) {
+      return false;
+    }
+    const permissions = ROLE_PERMISSIONS[userRole as UserRole];
     
     // Financial reports
     if (['revenue-analysis', 'payment-analytics', 'vendor-spending', 'profitability'].includes(reportType)) {
@@ -60,11 +64,14 @@ export class ReportService {
    */
   static filterDataByRole(
     data: any[],
-    userRole: UserRole,
-    userId: string,
+    userRole: string | null | undefined,
+    userId: string | null | undefined,
     dataType: 'user' | 'vendor' | 'general'
   ): any[] {
-    const permissions = ROLE_PERMISSIONS[userRole];
+    if (!userRole || !(userRole in ROLE_PERMISSIONS)) {
+      return [];
+    }
+    const permissions = ROLE_PERMISSIONS[userRole as UserRole];
     
     // Admins and managers see everything
     if (permissions.canViewAllUsers) {
@@ -90,8 +97,8 @@ export class ReportService {
    */
   static async generateReport<T = any>(
     config: ReportConfig,
-    userId: string,
-    userRole: UserRole,
+    userId: string | null | undefined,
+    userRole: string | null | undefined,
     dataFetcher: (filters: ReportFilters) => Promise<T>,
     options: {
       useCache?: boolean;
@@ -104,6 +111,10 @@ export class ReportService {
     const { useCache = true, cacheTTL = 15, ipAddress, userAgent } = options;
     
     try {
+      if (!userId) {
+        throw new Error('Unauthorized: missing user id for report generation');
+      }
+
       // Check permissions
       if (!this.hasPermission(userRole, config.type)) {
         throw new Error('Unauthorized: User does not have permission to access this report');
@@ -165,16 +176,18 @@ export class ReportService {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       // Log failed attempt
-      await ReportAuditService.logReportGeneration(
-        userId,
-        config.type,
-        config.filters,
-        executionTimeMs,
-        false,
-        errorMessage,
-        ipAddress,
-        userAgent
-      );
+      if (userId) {
+        await ReportAuditService.logReportGeneration(
+          userId,
+          config.type,
+          config.filters,
+          executionTimeMs,
+          false,
+          errorMessage,
+          ipAddress,
+          userAgent
+        );
+      }
 
       throw error;
     }
@@ -183,19 +196,8 @@ export class ReportService {
   /**
    * Validate date range
    */
-  static validateDateRange(startDate?: string, endDate?: string): { start: Date; end: Date } {
-    const start = startDate ? new Date(startDate) : new Date('2000-01-01T00:00:00.000Z');
-    const end = endDate ? new Date(endDate) : new Date('2099-12-31T23:59:59.999Z');
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      throw new Error('Invalid date format. Use ISO date strings');
-    }
-
-    if (start > end) {
-      throw new Error('startDate must be before endDate');
-    }
-
-    return { start, end };
+  static validateDateRange(startDate?: string | null, endDate?: string | null): { start: Date; end: Date } {
+    return resolveReportDateRange(startDate, endDate);
   }
 
   /**

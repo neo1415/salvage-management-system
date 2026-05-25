@@ -6,6 +6,8 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useReportFetchState } from '@/hooks/use-report-fetch-state';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, Calendar } from 'lucide-react';
@@ -15,45 +17,47 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { ExportButton } from '@/components/reports/common/export-button';
-import { ReportLoadingState } from '@/components/reports/common/report-ui';
+import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 
 export default function MasterReportPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+    useReportFetchState();
   const [reportData, setReportData] = useState<MasterReportData | null>(null);
-  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
-  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  const defaultRange = defaultReportFilters();
+  const [startDate, setStartDate] = useState<Date | undefined>(defaultRange.startDate);
+  const [endDate, setEndDate] = useState<Date | undefined>(defaultRange.endDate);
 
   useEffect(() => {
     fetchMasterReport();
   }, []);
 
-  const fetchMasterReport = async () => {
-    setLoading(true);
+  const fetchMasterReport = async (force = false) => {
+    startFetch();
     try {
-      const params = new URLSearchParams();
-      if (startDate) params.append('startDate', startDate.toISOString());
-      if (endDate) params.append('endDate', endDate.toISOString());
+      const result = await loadReportFromApi(
+        '/api/reports/executive/master-report',
+        { startDate, endDate },
+        { force }
+      );
 
-      const response = await fetch(`/api/reports/executive/master-report?${params}`);
-      const result = await response.json();
-      
       if (result.success) {
-        setReportData(result.data);
+        setReportData(result.data as MasterReportData);
+        markHasData();
       } else {
         console.error('Failed to fetch master report:', result.error);
       }
     } catch (error) {
       console.error('Failed to fetch master report:', error);
     } finally {
-      setLoading(false);
+      endFetch();
     }
   };
 
-  if (loading) {
+  if (loading && !reportData) {
     return (
       <div className="container mx-auto py-6">
-        <ReportLoadingState label="Loading master report" />
+        <DataLoadingState label="Master report" variant="report" />
       </div>
     );
   }
@@ -217,7 +221,7 @@ export default function MasterReportPage() {
                       }}
                     />
                   </div>
-                  <Button onClick={fetchMasterReport} className="w-full bg-[#800020] hover:bg-[#600018]">
+                  <Button onClick={() => fetchMasterReport()} className="w-full bg-[#800020] hover:bg-[#600018]">
                     Apply Dates
                   </Button>
                   <Button
@@ -233,7 +237,7 @@ export default function MasterReportPage() {
                 </div>
               </PopoverContent>
             </Popover>
-            <Button onClick={fetchMasterReport} variant="outline" size="sm" disabled={loading}>
+            <Button onClick={() => fetchMasterReport()} variant="outline" size="sm" disabled={isBusy}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
@@ -242,11 +246,13 @@ export default function MasterReportPage() {
                 reportType="master-report"
                 reportData={reportData}
                 filters={{ startDate, endDate }}
-                disabled={loading}
+                disabled={isBusy}
               />
             )}
           </div>
         </div>
+
+        {isRefreshing && reportData && <DataRefreshingHint />}
 
         {reportData && (
           <div data-report-content>

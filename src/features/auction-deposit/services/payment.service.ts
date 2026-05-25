@@ -454,14 +454,15 @@ export class PaymentService {
     // Initialize Paystack transaction with fixed amount (remainingAmount)
     const amountInKobo = Math.round(remainingAmount * 100); // Paystack uses kobo
     const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const { getAppUrl } = await import('@/features/notifications/templates/email-urls');
+    const APP_URL = getAppUrl();
 
     console.log('Paystack initialization details:', {
       remainingAmount,
       amountInKobo,
       hasSecretKey: !!PAYSTACK_SECRET_KEY,
       appUrl: APP_URL,
-      email: user.email,
+      hasVendorEmail: !!user.email,
       reference: idempotencyKey,
     });
 
@@ -484,7 +485,11 @@ export class PaymentService {
       },
     };
 
-    console.log('Paystack API request payload:', paystackPayload);
+    console.log('Paystack API request prepared:', {
+      amountInKobo,
+      reference: idempotencyKey,
+      metadataKeys: Object.keys(paystackPayload.metadata),
+    });
 
     const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
@@ -509,7 +514,12 @@ export class PaymentService {
     }
 
     const paystackData = await paystackResponse.json();
-    console.log('Paystack API success response:', paystackData);
+    console.log('Paystack API success response received:', {
+      hasAuthorizationUrl: !!paystackData.data?.authorization_url,
+      hasAccessCode: !!paystackData.data?.access_code,
+      status: paystackResponse.status,
+      reference: idempotencyKey,
+    });
 
     if (!paystackData.data || !paystackData.data.authorization_url) {
       console.error('Invalid Paystack response structure:', paystackData);
@@ -707,13 +717,35 @@ export class PaymentService {
       
       console.log(`✅ Payment processing complete for auction ${auctionId}`);
       try {
+        const vendorRecord = await db.query.vendors.findFirst({
+          where: eq(vendors.id, vendorId),
+        });
+        const vendorUser = vendorRecord
+          ? await db.query.users.findFirst({
+              where: eq(users.id, vendorRecord.userId),
+            })
+          : null;
+        const auctionRecord = await db.query.auctions.findFirst({
+          where: eq(auctions.id, auctionId),
+          with: { case: true },
+        });
+        const assetName = auctionRecord?.case
+          ? formatAssetName(
+              auctionRecord.case.assetType,
+              auctionRecord.case.assetDetails as Record<string, unknown>,
+              auctionRecord.case.claimReference
+            )
+          : 'auction';
+        const vendorLabel =
+          vendorRecord?.businessName || vendorUser?.fullName || 'Vendor';
+
         await createRoleNotifications(['finance_officer', 'system_admin'], {
           type: 'payment_success',
           title: 'Auction Payment Confirmed',
-          message: `${vendor.businessName || user.fullName} paid ₦${paymentInfo.amount.toLocaleString()} for ${assetName}.`,
+          message: `${vendorLabel} paid ₦${paymentInfo.amount.toLocaleString()} for ${assetName}.`,
           data: {
             auctionId: paymentInfo.auctionId,
-            vendorId: vendor.id,
+            vendorId: vendorRecord?.id ?? vendorId,
             amount: paymentInfo.amount,
             url: '/finance/payments',
           },
@@ -840,7 +872,8 @@ export class PaymentService {
       // Send email with pickup code (wrapped in try-catch to prevent blocking)
       try {
         if (user.email) {
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          const { getAppUrl } = await import('@/features/notifications/templates/email-urls');
+          const appUrl = getAppUrl();
           
           await emailService.sendPaymentConfirmationEmail(user.email, {
             vendorName: vendor.businessName || 'Vendor',

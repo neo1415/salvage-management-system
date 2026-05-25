@@ -21,6 +21,8 @@ interface LeaderboardEntry {
   totalBids: number;
   wins: number;
   totalSpent: string;
+  winRate: number;
+  participationRate: number;
   onTimePickupRate: number;
   rating: string;
 }

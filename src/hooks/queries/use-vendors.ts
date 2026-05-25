@@ -38,8 +38,26 @@ export interface Vendor {
   cacCertificateUrl: string;
   bankStatementUrl: string;
   ninCardUrl: string;
+  tier2SubmittedAt?: string | null;
+  tier2ApprovedAt?: string | null;
+  tier2RejectionReason?: string | null;
   createdAt: string;
   user: VendorUser;
+  verificationSource?: 'dojah' | 'legacy';
+  providerEvidence?: {
+    provider: string;
+    providerReference?: string | null;
+    verificationType: string;
+    status: string;
+    riskLevel: string;
+    checksCompleted: string[];
+    pendingChecks: string[];
+    failedChecks: string[];
+    reasonCodes: string[];
+    displayMessage?: string | null;
+    normalizedResult?: Record<string, unknown> | null;
+    updatedAt?: string;
+  };
 }
 
 interface VendorsResponse {

@@ -4,6 +4,7 @@
  */
 
 import { getBaseEmailTemplate } from './base.template';
+import { appPath } from './email-urls';
 
 export interface CaseApprovalTemplateData {
   adjusterName: string;
@@ -27,7 +28,6 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
   
   const isApproved = status === 'approved';
   const statusColor = isApproved ? '#28a745' : '#dc3545';
-  const statusIcon = isApproved ? '✅' : '❌';
   const statusText = isApproved ? 'APPROVED' : 'REJECTED';
   const hasAdjustments = priceAdjustments && Object.keys(priceAdjustments).length > 0;
   
@@ -45,7 +45,6 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     </p>
     
     <div style="background-color: ${isApproved ? '#d4edda' : '#f8d7da'}; border: 3px solid ${statusColor}; padding: 30px; text-align: center; border-radius: 12px; margin: 35px 0; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);">
-      <div style="font-size: 48px; margin-bottom: 15px;">${statusIcon}</div>
       <div style="font-size: 28px; font-weight: 700; color: ${statusColor}; margin-bottom: 10px;">
         Case ${statusText}${hasAdjustments ? ' with Price Adjustments' : ''}
       </div>
@@ -156,8 +155,8 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     `}
     
     <div style="text-align: center; margin: 35px 0;">
-      <a href="${appUrl}/adjuster/cases/${caseId}" class="button" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-        View Case Details →
+      <a href="${appPath(`/adjuster/cases/${caseId}`)}" class="button" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+        View Case Details
       </a>
     </div>
     

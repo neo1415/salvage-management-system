@@ -31,6 +31,12 @@ export interface EmailOptions {
   subject: string;
   html: string;
   replyTo?: string;
+  attachments?: Array<{
+    filename: string;
+    content: string | Buffer;
+    encoding?: string;
+    contentType?: string;
+  }>;
 }
 
 export interface EmailResult {
@@ -125,6 +131,7 @@ export class EmailService {
           subject: options.subject,
           html: options.html,
           replyTo: options.replyTo,
+          attachments: options.attachments,
         });
 
         // Resend returns { data: { id: string } } on success or { error: object } on failure

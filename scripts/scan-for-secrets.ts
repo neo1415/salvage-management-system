@@ -75,7 +75,11 @@ const IGNORE_PATTERNS = [
   'dist',
   'build',
   'coverage',
+  '.env',
+  '.env.local',
   '.env.example',
+  'google-cloud-credentials.json',
+  '-credentials.json',
   'package-lock.json',
   'yarn.lock',
   'pnpm-lock.yaml',
@@ -95,7 +99,16 @@ interface Finding {
 const findings: Finding[] = [];
 
 function shouldIgnore(filePath: string): boolean {
-  return IGNORE_PATTERNS.some(pattern => filePath.includes(pattern));
+  const normalized = filePath.replace(/\\/g, '/');
+  const basename = path.basename(normalized);
+
+  if (process.env.SCAN_LOCAL_SECRETS === 'true') {
+    return IGNORE_PATTERNS
+      .filter(pattern => !['.env', '.env.local', 'google-cloud-credentials.json', '-credentials.json'].includes(pattern))
+      .some(pattern => normalized.includes(pattern) || basename === pattern);
+  }
+
+  return IGNORE_PATTERNS.some(pattern => normalized.includes(pattern) || basename === pattern);
 }
 
 function scanFile(filePath: string): void {

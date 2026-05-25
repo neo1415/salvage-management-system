@@ -33,10 +33,8 @@ async function getNEMLogoDataURL(): Promise<string> {
       logoUrl = `${window.location.origin}/icons/Nem-insurance-Logo.jpg`;
     } else {
       // Server-side: use environment variable or construct from request
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}` 
-        : 'http://localhost:3000';
-      logoUrl = `${appUrl}/icons/Nem-insurance-Logo.jpg`;
+      const { getAppUrl } = await import('@/features/notifications/templates/email-urls');
+      logoUrl = `${getAppUrl()}/icons/Nem-insurance-Logo.jpg`;
     }
     
     // Validate URL before fetching

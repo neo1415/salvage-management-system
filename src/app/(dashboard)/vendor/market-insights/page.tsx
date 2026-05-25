@@ -8,6 +8,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import { useSession } from 'next-auth/react';
 import { TrendingUp, BarChart3, MapPin, Clock, Download, Filter } from 'lucide-react';
 
@@ -260,9 +261,7 @@ export default function MarketInsightsPage() {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <DataLoadingState label="Market insights" variant="page" />
       ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
           <p className="text-red-600">{error}</p>

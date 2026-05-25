@@ -135,7 +135,7 @@ export class ReportCacheService {
     try {
       const now = new Date();
       const result = await db.delete(reportCache).where(lt(reportCache.expiresAt, now));
-      return result.rowCount || 0;
+      return Number((result as { rowCount?: number }).rowCount ?? 0);
     } catch (error) {
       console.error('Error cleaning up expired cache:', error);
       return 0;

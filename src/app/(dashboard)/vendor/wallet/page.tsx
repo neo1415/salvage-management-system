@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Wallet, Plus, TrendingUp, TrendingDown, Lock, Unlock, CreditCard, WifiOff, Clock } from 'lucide-react';
 import { useOnlineStatus } from '@/hooks/use-online-status';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import { useCachedWallet } from '@/hooks/use-cached-wallet';
 import { DepositHistory } from '@/components/vendor/deposit-history';
 
@@ -407,14 +408,7 @@ export default function WalletPage() {
   };
 
   if (status === 'loading' || loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading wallet...</p>
-        </div>
-      </div>
-    );
+    return <DataLoadingState label="Wallet" variant="page" />;
   }
 
   return (

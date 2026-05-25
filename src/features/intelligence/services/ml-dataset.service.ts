@@ -230,7 +230,12 @@ export class MLDatasetService {
         featureCount: 0,
         dateRangeStart,
         dateRangeEnd,
-        metadata: { anonymized: true },
+        metadata: {
+          description: null,
+          version: 'v1',
+          anonymized: true,
+          filters: {},
+        },
       })
       .returning({ id: mlTrainingDatasets.id });
 

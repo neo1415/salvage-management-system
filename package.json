@@ -21,6 +21,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:apply-mfa-columns": "tsx scripts/apply-mfa-columns.ts",
+    "db:bootstrap-staging": "tsx scripts/bootstrap-staging-database.ts",
     "db:apply-optimized-indexes": "tsx scripts/apply-optimized-indexes.ts",
     "db:check-index-usage": "tsx scripts/check-index-usage.ts",
     "db:cleanup-redundant-indexes": "tsx scripts/cleanup-redundant-indexes.ts",
@@ -29,7 +31,7 @@
     "docs:generate": "tsx scripts/generate-documentation.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@anthropic-ai/sdk": "^0.98.0",
     "@google-cloud/documentai": "^9.5.0",
     "@google-cloud/vision": "^5.3.4",
     "@google/generative-ai": "^0.24.1",
@@ -66,8 +68,8 @@
     "idb": "^8.0.3",
     "isomorphic-dompurify": "^3.10.0",
     "jsonwebtoken": "^9.0.3",
-    "jspdf": "^2.5.2",
-    "jspdf-autotable": "^3.8.4",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.562.0",
     "next": "^16.1.6",
     "next-auth": "^5.0.0-beta.30",
@@ -125,5 +127,13 @@
     "typescript": "^5",
     "vitest": "^4.0.18",
     "vitest-mock-extended": "^3.1.0"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    },
+    "next": {
+      "postcss": "8.5.12"
+    }
   }
 }

@@ -12,6 +12,7 @@ import { extractNINFromDocument } from '@/lib/integrations/google-document-ai';
 import { verifyNIN } from '@/lib/integrations/nin-verification';
 import { verifyBankAccount } from '@/lib/integrations/paystack-bank-verification';
 import { z } from 'zod';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 /**
  * Tier 2 KYC API
@@ -388,7 +389,7 @@ export async function POST(request: NextRequest) {
                 <li><strong>CAC:</strong> Pending Manual Review</li>
               </ul>
               <p>Please log in to the admin panel to review the application and uploaded documents.</p>
-              <p><a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/manager/vendors" style="background-color: #800020; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Review Application</a></p>
+              <p><a href="${appPath('/manager/vendors')}" style="background-color: #800020; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Review Application</a></p>
               <p>Best regards,<br>NEM Salvage Management System</p>
             `,
           });

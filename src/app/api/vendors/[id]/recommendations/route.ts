@@ -40,11 +40,15 @@ const querySchema = z.object({
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const startTime = performance.now();
+  let vendorIdForAudit: string | undefined;
 
   try {
+    const { id: vendorId } = await params;
+    vendorIdForAudit = vendorId;
+
     // Authentication check
     const session = await auth();
     if (!session?.user) {
@@ -53,8 +57,6 @@ export async function GET(
         { status: 401 }
       );
     }
-
-    const vendorId = params.id;
 
     // Validate vendor ID format
     if (!vendorId || typeof vendorId !== 'string' || vendorId.length !== 36) {
@@ -121,22 +123,25 @@ export async function GET(
     const userAgent = request.headers.get('user-agent') || 'unknown';
     const deviceType = userAgent.toLowerCase().includes('mobile') ? 'mobile' : 'desktop';
 
-    // Audit logging
-    await db.insert(auditLogs).values({
-      userId: session.user.id,
-      actionType: 'intelligence_api_accessed',
-      entityType: 'recommendation',
-      entityId: vendorId,
-      ipAddress,
-      deviceType: deviceType as 'mobile' | 'desktop' | 'tablet',
-      userAgent,
-      afterState: {
-        endpoint: '/api/vendors/[id]/recommendations',
-        recommendationCount: recommendations.length,
-        responseTimeMs: Math.round(responseTime),
-        limit,
-      },
-    });
+    try {
+      await db.insert(auditLogs).values({
+        userId: session.user.id,
+        actionType: 'intelligence_api_accessed',
+        entityType: 'recommendation',
+        entityId: vendorId,
+        ipAddress,
+        deviceType: deviceType as 'mobile' | 'desktop' | 'tablet',
+        userAgent,
+        afterState: {
+          endpoint: '/api/vendors/[id]/recommendations',
+          recommendationCount: recommendations.length,
+          responseTimeMs: Math.round(responseTime),
+          limit,
+        },
+      });
+    } catch (auditError) {
+      console.warn('Recommendations audit log skipped:', auditError);
+    }
 
     // Return recommendations
     return NextResponse.json({
@@ -170,7 +175,7 @@ export async function GET(
           userId: session.user.id,
           actionType: 'intelligence_fallback',
           entityType: 'recommendation',
-          entityId: params.id,
+          entityId: vendorIdForAudit ?? 'unknown',
           ipAddress,
           deviceType: deviceType as 'mobile' | 'desktop' | 'tablet',
           userAgent,
@@ -181,7 +186,7 @@ export async function GET(
         });
       }
     } catch (auditError) {
-      console.error('Failed to log error to audit:', auditError);
+      console.warn('Failed to log error to audit:', auditError);
     }
 
     // Return generic error without exposing sensitive information

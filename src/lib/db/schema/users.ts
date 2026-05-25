@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, pgEnum, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, pgEnum, jsonb, boolean } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', [
   'vendor',
@@ -18,6 +18,8 @@ export const userStatusEnum = pgEnum('user_status', [
 ]);
 
 export const deviceTypeEnum = pgEnum('device_type', ['mobile', 'desktop', 'tablet']);
+
+export type MfaChannel = 'sms' | 'email' | 'both';
 
 export interface NotificationPreferences {
   pushEnabled: boolean;
@@ -56,6 +58,10 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   lastLoginAt: timestamp('last_login_at'),
   loginDeviceType: deviceTypeEnum('login_device_type'),
+  /** Phase 2: enforced on login when wired */
+  mfaEnabled: boolean('mfa_enabled').notNull().default(false),
+  mfaChannel: varchar('mfa_channel', { length: 20 }).notNull().default('email'),
+  mfaPhone: varchar('mfa_phone', { length: 20 }),
 });
 
 // Indexes are created via SQL in migrations

@@ -84,6 +84,21 @@ interface RecommendationConfig {
   similarityThreshold: number;
 }
 
+function rowsFromExecute<T>(result: unknown): T[] {
+  if (Array.isArray(result)) {
+    return result as T[];
+  }
+  if (
+    result &&
+    typeof result === 'object' &&
+    'rows' in result &&
+    Array.isArray((result as { rows: T[] }).rows)
+  ) {
+    return (result as { rows: T[] }).rows;
+  }
+  return [];
+}
+
 export class RecommendationService {
   private readonly ALGORITHM_VERSION = 'v1.0';
   private readonly CACHE_TTL_SECONDS = 900; // 15 minutes
@@ -185,14 +200,18 @@ export class RecommendationService {
       .sort((a, b) => b.matchScore - a.matchScore)
       .slice(0, limit);
 
-    // Store recommendations in database
-    await this.storeRecommendations(vendorId, topRecommendations);
+    try {
+      await this.storeRecommendations(vendorId, topRecommendations);
+      await this.logRecommendations(vendorId, topRecommendations);
+    } catch (persistError) {
+      console.warn('Recommendation persistence skipped:', persistError);
+    }
 
-    // Task 3.3.4: Log recommendations to recommendation_logs
-    await this.logRecommendations(vendorId, topRecommendations);
-
-    // Task 3.3.2: Cache result in Redis
-    await setCached(cacheKey, topRecommendations, CACHE_TTL.RECOMMENDATION);
+    try {
+      await setCached(cacheKey, topRecommendations, CACHE_TTL.RECOMMENDATION);
+    } catch (cacheError) {
+      console.warn('Recommendation cache write skipped:', cacheError);
+    }
 
     return topRecommendations;
   }
@@ -226,60 +245,29 @@ export class RecommendationService {
   private async extractVendorBiddingPattern(vendorId: string): Promise<VendorBiddingPattern> {
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-    const twelveMonthsAgoISO = twelveMonthsAgo.toISOString();
 
-    const result: any = await db.execute(sql`
-      WITH vendor_bids AS (
-        SELECT 
-          b.vendor_id,
-          b.amount,
-          b.created_at,
-          sc.asset_type,
-          sc.asset_details,
-          sc.damage_severity,
-          sc.market_value,
-          a.current_bidder = b.vendor_id AS is_winner
-        FROM ${bids} b
-        JOIN ${auctions} a ON b.auction_id = a.id
-        JOIN ${salvageCases} sc ON a.case_id = sc.id
-        WHERE b.vendor_id = ${vendorId}
-          AND a.status = 'closed'
-          AND b.created_at > ${twelveMonthsAgoISO}
-      )
-      SELECT 
-        vendor_id,
-        COUNT(*)::int AS total_bids,
-        jsonb_object_agg(
-          COALESCE(asset_type, 'unknown'),
-          COUNT(*)
-        ) FILTER (WHERE asset_type IS NOT NULL) AS asset_type_frequency,
-        ARRAY_AGG(DISTINCT asset_details->>'make' ORDER BY COUNT(*) DESC)
-          FILTER (WHERE asset_details->>'make' IS NOT NULL)
-          [1:5] AS top_makes,
-        ARRAY_AGG(DISTINCT asset_details->>'model' ORDER BY COUNT(*) DESC)
-          FILTER (WHERE asset_details->>'model' IS NOT NULL)
-          [1:10] AS top_models,
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY amount) AS price_p25,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY amount) AS price_p75,
-        AVG(amount) AS avg_bid_amount,
-        jsonb_object_agg(
-          COALESCE(damage_severity, 'unknown'),
-          COUNT(*)
-        ) FILTER (WHERE damage_severity IS NOT NULL) AS damage_preferences,
-        COUNT(*) FILTER (WHERE is_winner)::float / NULLIF(COUNT(*), 0) AS overall_win_rate,
-        jsonb_object_agg(
-          COALESCE(asset_type, 'unknown'),
-          COUNT(*) FILTER (WHERE is_winner)::float / NULLIF(COUNT(*), 0)
-        ) FILTER (WHERE asset_type IS NOT NULL) AS win_rate_by_asset_type,
-        AVG(amount / NULLIF(market_value, 0)) AS avg_bid_to_value_ratio,
-        COUNT(*) / NULLIF(COUNT(DISTINCT DATE_TRUNC('week', created_at)), 0) AS bids_per_week,
-        MAX(created_at) AS last_bid_at
-      FROM vendor_bids
-      GROUP BY vendor_id
-    `);
+    const bidRows = await db
+      .select({
+        amount: bids.amount,
+        createdAt: bids.createdAt,
+        assetType: salvageCases.assetType,
+        assetDetails: salvageCases.assetDetails,
+        damageSeverity: salvageCases.damageSeverity,
+        marketValue: salvageCases.marketValue,
+        currentBidder: auctions.currentBidder,
+      })
+      .from(bids)
+      .innerJoin(auctions, eq(bids.auctionId, auctions.id))
+      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+      .where(
+        and(
+          eq(bids.vendorId, vendorId),
+          eq(auctions.status, 'closed'),
+          gte(bids.createdAt, twelveMonthsAgo)
+        )
+      );
 
-    if (!result || result.length === 0) {
-      // Return empty pattern for new vendors
+    if (bidRows.length === 0) {
       return {
         vendorId,
         totalBids: 0,
@@ -298,23 +286,105 @@ export class RecommendationService {
       };
     }
 
-    const row = result[0];
+    const assetTypeFrequency: Record<string, number> = {};
+    const damagePreferences: Record<string, number> = {};
+    const makeCounts = new Map<string, number>();
+    const modelCounts = new Map<string, number>();
+    const winRateByAssetType: Record<string, { wins: number; total: number }> = {};
+    const amounts: number[] = [];
+    const bidToValueRatios: number[] = [];
+    const weekKeys = new Set<string>();
+    let winCount = 0;
+    let lastBidAt: Date | null = null;
+
+    for (const row of bidRows) {
+      const amount = parseFloat(String(row.amount ?? 0));
+      amounts.push(amount);
+
+      const assetType = row.assetType ?? 'unknown';
+      assetTypeFrequency[assetType] = (assetTypeFrequency[assetType] ?? 0) + 1;
+
+      const damage = row.damageSeverity ?? 'unknown';
+      damagePreferences[damage] = (damagePreferences[damage] ?? 0) + 1;
+
+      const details = (row.assetDetails ?? {}) as Record<string, unknown>;
+      const make = typeof details.make === 'string' ? details.make : null;
+      const model = typeof details.model === 'string' ? details.model : null;
+      if (make) makeCounts.set(make, (makeCounts.get(make) ?? 0) + 1);
+      if (model) modelCounts.set(model, (modelCounts.get(model) ?? 0) + 1);
+
+      const isWinner = row.currentBidder === vendorId;
+      if (isWinner) winCount += 1;
+
+      if (!winRateByAssetType[assetType]) {
+        winRateByAssetType[assetType] = { wins: 0, total: 0 };
+      }
+      winRateByAssetType[assetType].total += 1;
+      if (isWinner) winRateByAssetType[assetType].wins += 1;
+
+      const marketValue = parseFloat(String(row.marketValue ?? 0));
+      if (marketValue > 0) {
+        bidToValueRatios.push(amount / marketValue);
+      }
+
+      if (row.createdAt) {
+        const created = new Date(row.createdAt);
+        weekKeys.add(
+          `${created.getUTCFullYear()}-W${Math.ceil(
+            ((created.getTime() - Date.UTC(created.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7
+          )}`
+        );
+        if (!lastBidAt || created > lastBidAt) {
+          lastBidAt = created;
+        }
+      }
+    }
+
+    const sortedAmounts = [...amounts].sort((a, b) => a - b);
+    const percentile = (p: number) => {
+      if (sortedAmounts.length === 0) return 0;
+      const idx = Math.floor((sortedAmounts.length - 1) * p);
+      return sortedAmounts[idx];
+    };
+
+    const topMakes = [...makeCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([make]) => make);
+    const topModels = [...modelCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([model]) => model);
+
+    const winRateByAssetTypeFlat: Record<string, number> = {};
+    for (const [type, stats] of Object.entries(winRateByAssetType)) {
+      winRateByAssetTypeFlat[type] =
+        stats.total > 0 ? stats.wins / stats.total : 0;
+    }
 
     return {
       vendorId,
-      totalBids: parseInt(row.total_bids || '0'),
-      assetTypeFrequency: row.asset_type_frequency || {},
-      topMakes: row.top_makes || [],
-      topModels: row.top_models || [],
-      priceP25: parseFloat(row.price_p25 || '0'),
-      priceP75: parseFloat(row.price_p75 || '0'),
-      avgBidAmount: parseFloat(row.avg_bid_amount || '0'),
-      damagePreferences: row.damage_preferences || {},
-      overallWinRate: parseFloat(row.overall_win_rate || '0'),
-      winRateByAssetType: row.win_rate_by_asset_type || {},
-      avgBidToValueRatio: parseFloat(row.avg_bid_to_value_ratio || '0'),
-      bidsPerWeek: parseFloat(row.bids_per_week || '0'),
-      lastBidAt: row.last_bid_at ? new Date(row.last_bid_at) : null,
+      totalBids: bidRows.length,
+      assetTypeFrequency,
+      topMakes,
+      topModels,
+      priceP25: percentile(0.25),
+      priceP75: percentile(0.75),
+      avgBidAmount:
+        amounts.length > 0
+          ? amounts.reduce((sum, n) => sum + n, 0) / amounts.length
+          : 0,
+      damagePreferences,
+      overallWinRate: bidRows.length > 0 ? winCount / bidRows.length : 0,
+      winRateByAssetType: winRateByAssetTypeFlat,
+      avgBidToValueRatio:
+        bidToValueRatios.length > 0
+          ? bidToValueRatios.reduce((sum, n) => sum + n, 0) /
+            bidToValueRatios.length
+          : 0,
+      bidsPerWeek:
+        weekKeys.size > 0 ? bidRows.length / weekKeys.size : bidRows.length,
+      lastBidAt,
     };
   }
 
@@ -346,7 +416,7 @@ export class RecommendationService {
       LIMIT 100
     `);
 
-    return result as any[];
+    return rowsFromExecute(result);
   }
 
   /**
@@ -364,7 +434,7 @@ export class RecommendationService {
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    const historicalBids: any = await db.execute(sql`
+    const historicalBidsRaw = await db.execute(sql`
       SELECT 
         sc.asset_type,
         sc.asset_details,
@@ -383,7 +453,9 @@ export class RecommendationService {
       LIMIT 50
     `);
 
-    if (!historicalBids || historicalBids.length === 0) {
+    const historicalBids = rowsFromExecute<Record<string, unknown>>(historicalBidsRaw);
+
+    if (historicalBids.length === 0) {
       return scores;
     }
 
@@ -395,7 +467,7 @@ export class RecommendationService {
         const similarity = this.calculateItemSimilarity(
           auction,
           historicalBid,
-          historicalBid.created_at
+          historicalBid.created_at instanceof Date ? historicalBid.created_at : new Date(String(historicalBid.created_at))
         );
 
         if (similarity > maxSimilarity) {
@@ -1256,20 +1328,24 @@ export class RecommendationService {
 
     const recommendations: RecommendationResult[] = [];
 
-    for (const auction of result) {
+    const coldStartRows = rowsFromExecute<Record<string, unknown>>(result);
+
+    for (const auction of coldStartRows) {
       let matchScore = 50; // Base score for cold start
 
       // Category match boost
-      if (vendorCategories.includes(auction.asset_type)) {
+      const assetType = String(auction.asset_type ?? '');
+      if (vendorCategories.includes(assetType as 'vehicle' | 'property' | 'electronics' | 'machinery')) {
         matchScore += 30;
       }
 
       // Popularity boost
-      const popularityBoost = Math.min(10, (auction.watching_count || 0) / 2);
+      const watchingCount = Number(auction.watching_count || 0);
+      const popularityBoost = Math.min(10, watchingCount / 2);
       matchScore += popularityBoost;
 
       recommendations.push({
-        auctionId: auction.auction_id,
+        auctionId: String(auction.auction_id),
         matchScore: Number(matchScore.toFixed(2)),
         collaborativeScore: 0,
         contentScore: matchScore - popularityBoost,
@@ -1277,13 +1353,13 @@ export class RecommendationService {
         winRateBoost: 0,
         reasonCodes: ['Popular auction', 'Matches your interests'],
         auctionDetails: {
-          assetType: auction.asset_type,
+          assetType,
           assetDetails: auction.asset_details,
-          marketValue: parseFloat(auction.market_value || '0'),
-          reservePrice: parseFloat(auction.reserve_price || '0'),
-          currentBid: auction.current_bid ? parseFloat(auction.current_bid) : null,
-          watchingCount: auction.watching_count || 0,
-          endTime: new Date(auction.end_time),
+          marketValue: parseFloat(String(auction.market_value || '0')),
+          reservePrice: parseFloat(String(auction.reserve_price || '0')),
+          currentBid: auction.current_bid ? parseFloat(String(auction.current_bid)) : null,
+          watchingCount,
+          endTime: new Date(String(auction.end_time)),
         },
       });
     }

@@ -1,32 +1,30 @@
 'use client';
 
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type React from 'react';
+import {
+  DataLoadingState,
+  DataRefreshingHint,
+} from '@/components/ui/loading-states';
 
+export {
+  DataLoadingState,
+  DataRefreshingHint,
+  PageLoadingSkeleton,
+  AppSpinner,
+  AppSpinnerWithLabel,
+  NavigationProgressBar,
+} from '@/components/ui/loading-states';
+
+/** @deprecated Prefer `DataLoadingState` */
 export function ReportLoadingState({ label = 'Loading report' }: { label?: string }) {
-  return (
-    <div className="grid gap-4">
-      <div className="flex items-center justify-center rounded-lg border bg-white py-10 text-[#800020]">
-        <RefreshCw className="mr-3 h-6 w-6 animate-spin" />
-        <span className="text-sm font-medium text-gray-700">{label}...</span>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Card key={index} className="min-w-0 overflow-hidden">
-            <CardHeader className="space-y-2 pb-2">
-              <div className="h-4 w-28 animate-pulse rounded bg-gray-200" />
-            </CardHeader>
-            <CardContent>
-              <div className="h-8 w-36 max-w-full animate-pulse rounded bg-gray-200" />
-              <div className="mt-3 h-3 w-24 animate-pulse rounded bg-gray-100" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
+  return <DataLoadingState label={label} variant="report" />;
+}
+
+/** @deprecated Prefer `DataRefreshingHint` */
+export function ReportRefreshingHint({ className }: { className?: string }) {
+  return <DataRefreshingHint className={className} />;
 }
 
 export function MetricValue({

@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { signIn } from 'next-auth/react';
 import { VendorRegistrationForm } from '@/components/forms/vendor-registration-form';
 import { type RegistrationInput } from '@/lib/utils/validation';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
@@ -47,17 +46,6 @@ export default function RegisterPage() {
       }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
-    }
-  };
-
-  const handleOAuthLogin = async (provider: 'google' | 'facebook') => {
-    try {
-      // Trigger OAuth sign-in with NextAuth
-      await signIn(provider, {
-        callbackUrl: '/verify-otp',
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign in. Please try again.');
     }
   };
 
@@ -117,7 +105,6 @@ export default function RegisterPage() {
           {/* Registration Form */}
           <VendorRegistrationForm
             onSubmit={handleRegistration}
-            onOAuthLogin={handleOAuthLogin}
           />
         </div>
 

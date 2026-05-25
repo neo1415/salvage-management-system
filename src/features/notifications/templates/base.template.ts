@@ -3,6 +3,8 @@
  * Provides consistent styling and structure for all email templates
  */
 
+import { getAppUrl } from './email-urls';
+
 export interface BaseTemplateProps {
   title: string;
   preheader?: string;
@@ -11,8 +13,8 @@ export interface BaseTemplateProps {
 
 export function getBaseEmailTemplate(props: BaseTemplateProps): string {
   const { title, preheader, content } = props;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const logoUrl = `${appUrl}/icons/Nem-insurance-Logo.jpg`;
+  const appUrl = getAppUrl();
+  const logoUrl = `${appUrl}/icons/icon-192.png`;
   
   return `
     <!DOCTYPE html>
@@ -209,8 +211,8 @@ export function getBaseEmailTemplate(props: BaseTemplateProps): string {
                     <p class="footer-text"><strong>NEM Insurance Plc</strong></p>
                     <p class="footer-text">199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
                     <p class="footer-text">
-                      📞 <a href="tel:+2340201448956" class="footer-link">234-02-014489560</a> | 
-                      📧 <a href="mailto:nemsupport@nem-insurance.com" class="footer-link">nemsupport@nem-insurance.com</a>
+                      Phone: <a href="tel:+2340201448956" class="footer-link">234-02-014489560</a> |
+                      Email: <a href="mailto:nemsupport@nem-insurance.com" class="footer-link">nemsupport@nem-insurance.com</a>
                     </p>
                     <div class="divider"></div>
                     <p class="footer-text" style="font-size: 12px; color: #999999;">

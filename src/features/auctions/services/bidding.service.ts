@@ -381,8 +381,29 @@ export class BiddingService {
         }
       } catch (error) {
         console.error('❌ FAILED to freeze deposit:', error);
-        // Rollback bid creation if freeze fails
-        await db.delete(bids).where(eq(bids.id, newBid!.id));
+        // Roll back the bid and only restore the auction pointer if it still points
+        // at this failed bid. That avoids overwriting a newer valid bid in a race.
+        await db.transaction(async (tx) => {
+          await tx.delete(bids).where(eq(bids.id, newBid!.id));
+
+          await tx
+            .update(auctions)
+            .set({
+              currentBid: auction.currentBid,
+              currentBidder: previousBidderId,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(auctions.id, data.auctionId),
+                eq(auctions.currentBid, data.amount.toString()),
+                eq(auctions.currentBidder, data.vendorId)
+              )
+            );
+        });
+
+        await cache.del(`auction:details:${data.auctionId}`);
+
         return {
           success: false,
           error: 'Failed to freeze deposit. Please ensure you have sufficient wallet balance.',
@@ -408,9 +429,10 @@ export class BiddingService {
             let previousDepositAmount: number;
             try {
               const config = await configService.getConfig();
+              const depositRateDecimal = config.depositRate / 100;
               previousDepositAmount = depositCalculatorService.calculateDeposit(
                 previousBidAmount,
-                config.depositRate,
+                depositRateDecimal,
                 config.minimumDepositFloor
               );
             } catch (error) {

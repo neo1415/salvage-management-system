@@ -10,7 +10,7 @@
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { User as UserIcon } from 'lucide-react';
@@ -18,6 +18,7 @@ import ActionModal from './action-modal';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { useVirtualizedList } from '@/hooks/use-virtualized-list';
 import { User } from '@/hooks/queries/use-users';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 
 type ActionModalType = 'suspend' | 'unsuspend' | 'delete' | 'resetPassword' | 'changeRole' | 'view' | null;
 
@@ -32,6 +33,7 @@ export default function AdminUserManagement() {
   
   // Data states
   const [users, setUsers] = useState<User[]>([]);
+  const usersRef = useRef<User[]>([]);
   const [totalUsers, setTotalUsers] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,8 +91,11 @@ export default function AdminUserManagement() {
 
   // Fetch users with pagination
   const fetchUsers = useCallback(async () => {
+    const showFullPageLoader = usersRef.current.length === 0;
     try {
-      setLoading(true);
+      if (showFullPageLoader) {
+        setLoading(true);
+      }
       setError(null);
 
       const params = new URLSearchParams({
@@ -109,12 +114,16 @@ export default function AdminUserManagement() {
       }
 
       const data = await response.json();
-      setUsers(data.users || []);
+      const nextUsers = data.users || [];
+      usersRef.current = nextUsers;
+      setUsers(nextUsers);
       setTotalUsers(data.totalCount || 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch users');
-      setUsers([]);
-      setTotalUsers(0);
+      if (showFullPageLoader) {
+        setUsers([]);
+        setTotalUsers(0);
+      }
     } finally {
       setLoading(false);
     }
@@ -357,10 +366,7 @@ export default function AdminUserManagement() {
 
       {/* Loading State */}
       {loading && users.length === 0 && (
-        <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-600"></div>
-          <p className="mt-4 text-gray-600">Loading users...</p>
-        </div>
+        <DataLoadingState label="Users" variant="table" />
       )}
 
       {/* Users Table */}
@@ -457,8 +463,8 @@ export default function AdminUserManagement() {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.status)}`}>
-                            {getStatusDisplayName(user.status)}
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.displayStatus ?? user.status)}`}>
+                            {getStatusDisplayName(user.displayStatus ?? user.status)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -928,8 +934,8 @@ function UserRow({
           </span>
         </div>
         <div>
-          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.status)}`}>
-            {getStatusDisplayName(user.status)}
+          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.displayStatus ?? user.status)}`}>
+            {getStatusDisplayName(user.displayStatus ?? user.status)}
           </span>
         </div>
         <div className="text-sm text-gray-500">

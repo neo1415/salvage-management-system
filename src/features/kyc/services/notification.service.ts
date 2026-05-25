@@ -1,6 +1,11 @@
 import { SMSService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
+import { appPath } from '@/features/notifications/templates/email-urls';
 import { createKYCUpdateNotification } from '@/features/notifications/services/notification.service';
+import { db } from '@/lib/db/drizzle';
+import { users } from '@/lib/db/schema/users';
+import { eq } from 'drizzle-orm';
 import type { AMLRiskLevel } from '../types/kyc.types';
 
 interface VendorNotificationTarget {
@@ -16,6 +21,11 @@ interface ManagerNotificationTarget {
   phone: string;
   email: string;
   fullName: string;
+}
+
+interface KYCEmailResult {
+  emailSent: boolean;
+  emailError?: string;
 }
 
 /**
@@ -67,7 +77,13 @@ export class KYCNotificationService {
   }
 
   /** Vendor auto-approved (Low AML risk, all scores pass) */
-  async sendKYCApprovalNotification(vendor: VendorNotificationTarget): Promise<void> {
+  async sendKYCApprovalNotification(vendor: VendorNotificationTarget): Promise<KYCEmailResult> {
+    const email = await this.sendEmailWithResult(
+      vendor.email,
+      'Your Tier 2 verification has been approved',
+      tier2ApprovalEmail(vendor.fullName)
+    );
+
     await Promise.allSettled([
       this.sendSMSWithRetry(
         vendor.phone,
@@ -82,6 +98,8 @@ export class KYCNotificationService {
         console.error('[KYCNotification] in-app notification failed', e)
       ),
     ]);
+
+    return { emailSent: email.success, emailError: email.error };
   }
 
   /** Vendor flagged for manual review */
@@ -120,29 +138,39 @@ export class KYCNotificationService {
   }
 
   /** Manager approved the application */
-  async sendManagerApprovalNotification(vendor: VendorNotificationTarget): Promise<void> {
-    await this.sendKYCApprovalNotification(vendor);
+  async sendManagerApprovalNotification(vendor: VendorNotificationTarget): Promise<KYCEmailResult> {
+    return this.sendKYCApprovalNotification(vendor);
   }
 
   /** Manager rejected the application */
   async sendKYCRejectionNotification(
     vendor: VendorNotificationTarget,
-    reason: string
-  ): Promise<void> {
+    reason: string,
+    rejectedSections: string[] = []
+  ): Promise<KYCEmailResult> {
+    const email = await this.sendEmailWithResult(
+      vendor.email,
+      'Action required on your Tier 2 verification',
+      tier2RejectionEmail(vendor.fullName, reason, rejectedSections)
+    );
+
+    const safeSmsReason = reason.length > 120 ? `${reason.slice(0, 117)}...` : reason;
     await Promise.allSettled([
       this.sendSMSWithRetry(
         vendor.phone,
-        `Hi ${vendor.fullName}, your Tier 2 KYC application was not approved. Reason: ${reason}. You may resubmit after 24 hours. Contact support for assistance.`
+        `Hi ${vendor.fullName}, your Tier 2 KYC application needs correction. Reason: ${safeSmsReason}. Please sign in to resubmit.`
       ),
       createKYCUpdateNotification(
         vendor.userId,
         'tier2',
         'rejected',
-        `Your Tier 2 KYC application was not approved. Reason: ${reason}. You may resubmit after 24 hours.`
+        `Your Tier 2 KYC application needs correction. Please review the requested sections and resubmit.`
       ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
     ]);
+
+    return { emailSent: email.success, emailError: email.error };
   }
 
   /** Alert all managers about a high-risk AML result */
@@ -158,6 +186,35 @@ export class KYCNotificationService {
           `[NEM Salvage Alert] Tier 2 KYC application from ${vendor.fullName} flagged with ${riskLevel} AML risk. Please review in the manager dashboard.`
         )
       )
+    );
+  }
+
+  /** Email salvage managers when a Tier 2 submission needs visibility or action. */
+  async sendTier2SubmissionManagerEmails(input: {
+    vendorName: string;
+    businessName?: string | null;
+    riskLevel?: string | null;
+    reviewUrl: string;
+    outcome: 'pending_review' | 'auto_approved';
+    reason?: string;
+  }): Promise<void> {
+    const managers = await db
+      .select({
+        email: users.email,
+        fullName: users.fullName,
+      })
+      .from(users)
+      .where(eq(users.role, 'salvage_manager'));
+
+    const subject = input.outcome === 'auto_approved'
+      ? 'Tier 2 KYC Auto-Approved - NEM Salvage'
+      : 'Tier 2 KYC Ready for Review - NEM Salvage';
+    const html = tier2ManagerSubmissionEmail(input);
+
+    await Promise.allSettled(
+      managers
+        .filter((manager) => Boolean(manager.email))
+        .map((manager) => this.sendEmailNotification(manager.email, subject, html.replace('{{managerName}}', escapeHtml(manager.fullName || 'Manager'))))
     );
   }
 
@@ -225,7 +282,7 @@ export class KYCNotificationService {
       const result = await emailService.sendEmail({
         to: email,
         subject,
-        html,
+        html: wrapProfessionalEmail(subject, html),
       });
       
       if (!result.success) {
@@ -235,6 +292,97 @@ export class KYCNotificationService {
       console.error('[KYCNotification] Email send error', { email, error: e });
     }
   }
+
+  private async sendEmailWithResult(email: string, subject: string, html: string) {
+    try {
+      return await emailService.sendEmail({
+        to: email,
+        subject,
+        html: wrapProfessionalEmail(subject, html),
+      });
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : 'Email send error',
+      };
+    }
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  }[char] ?? char));
+}
+
+function tier2ApprovalEmail(fullName: string): string {
+  return `
+    <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
+      <h2 style="color: #800020;">Tier 2 Verification Approved</h2>
+      <p>Hi ${escapeHtml(fullName)},</p>
+      <p>Your Tier 2 verification has been approved by NEM Salvage.</p>
+      <p>You now have Tier 2 access, including the bidding privileges available to verified Tier 2 vendors.</p>
+      <p>No sensitive identity, document, or provider data is included in this email for your security.</p>
+      <p>Best regards,<br>NEM Salvage Team</p>
+    </div>
+  `;
+}
+
+function tier2RejectionEmail(fullName: string, reason: string, rejectedSections: string[]): string {
+  const sectionItems = rejectedSections.length
+    ? rejectedSections.map((section) => `<li>${escapeHtml(section)}</li>`).join('')
+    : '<li>Correction details are available in your Tier 2 verification page.</li>';
+
+  return `
+    <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
+      <h2 style="color: #800020;">Action Required on Your Tier 2 Verification</h2>
+      <p>Hi ${escapeHtml(fullName)},</p>
+      <p>Your Tier 2 verification could not be approved based on the submitted information.</p>
+      <p><strong>Manager reason:</strong> ${escapeHtml(reason)}</p>
+      <p><strong>Sections to review:</strong></p>
+      <ul>${sectionItems}</ul>
+      <p>Please sign in and return to your Tier 2 verification page to correct the requested items and resubmit:</p>
+      <p><a href="${appPath('/vendor/kyc/tier2')}">Open Tier 2 verification</a></p>
+      <p>For your security, this email does not include BVN, NIN, raw document links, raw provider payloads, or sensitive fraud/AML details.</p>
+      <p>Best regards,<br>NEM Salvage Team</p>
+    </div>
+  `;
+}
+
+function tier2ManagerSubmissionEmail(input: {
+  vendorName: string;
+  businessName?: string | null;
+  riskLevel?: string | null;
+  reviewUrl: string;
+  outcome: 'pending_review' | 'auto_approved';
+  reason?: string;
+}): string {
+  const heading = input.outcome === 'auto_approved'
+    ? 'Tier 2 Verification Auto-Approved'
+    : 'Tier 2 Verification Ready for Review';
+  const summary = input.outcome === 'auto_approved'
+    ? 'A clean Tier 2 verification was automatically approved based on the current review mode.'
+    : 'A Tier 2 verification has been submitted and is waiting for manager review.';
+
+  return `
+    <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
+      <h2 style="color: #800020;">${heading}</h2>
+      <p>Hi {{managerName}},</p>
+      <p>${summary}</p>
+      <ul>
+        <li><strong>Vendor:</strong> ${escapeHtml(input.vendorName || 'Vendor')}</li>
+        <li><strong>Business:</strong> ${escapeHtml(input.businessName || 'Individual')}</li>
+        <li><strong>Risk level:</strong> ${escapeHtml(input.riskLevel || 'Low')}</li>
+        ${input.reason ? `<li><strong>Reason:</strong> ${escapeHtml(input.reason)}</li>` : ''}
+      </ul>
+      <p><a href="${escapeHtml(input.reviewUrl)}" style="background-color:#800020;color:#ffffff;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block;">Open KYC Review</a></p>
+      <p>Best regards,<br>NEM Salvage Team</p>
+    </div>
+  `;
 }
 
 let _instance: KYCNotificationService | null = null;

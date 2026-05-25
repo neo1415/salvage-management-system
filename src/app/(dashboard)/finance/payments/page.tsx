@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
@@ -9,6 +10,9 @@ import { EscrowPaymentAuditTrail } from '@/components/finance/escrow-payment-aud
 import { ClipboardList, Star } from 'lucide-react';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
+import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
+
+const PAYMENT_VIEW_TABS: ViewTab[] = ['all', 'today', 'pending', 'overdue'];
 
 const SuccessModal = dynamic(
   () => import('@/components/modals/success-modal').then(mod => ({ default: mod.SuccessModal })),
@@ -78,15 +82,62 @@ interface PaymentStats {
 
 type ViewTab = 'all' | 'today' | 'pending' | 'overdue';
 
+const DEFAULT_STATS: PaymentStats = {
+  total: 0,
+  autoVerified: 0,
+  pendingManual: 0,
+  overdue: 0,
+  registrationFees: { count: 0, total: 0 },
+};
+
+const PAYMENTS_PAGE_SIZE = 20;
+
+function paymentsCacheKey(
+  view: ViewTab,
+  status: string,
+  method: string,
+  paymentType: string,
+  from: string,
+  to: string
+) {
+  return `${view}|${status}|${method}|${paymentType}|${from}|${to}`;
+}
+
+function filterPaymentsBySearch(payments: Payment[], query: string): Payment[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return payments;
+
+  return payments.filter((payment) => {
+    const vendorName = (
+      payment.vendor.businessName ||
+      payment.vendor.contactPersonName ||
+      ''
+    ).toLowerCase();
+    const claimRef = (payment.case?.claimReference || '').toLowerCase();
+    const created = new Date(payment.createdAt);
+    const dateFormats = [
+      created.toLocaleDateString('en-NG'),
+      created.toISOString().split('T')[0],
+      created.toLocaleDateString('en-GB'),
+    ].map((d) => d.toLowerCase());
+
+    return (
+      vendorName.includes(q) ||
+      claimRef.includes(q) ||
+      dateFormats.some((d) => d.includes(q))
+    );
+  });
+}
+
 export default function FinancePaymentsPage() {
   const { data: session } = useSession();
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [stats, setStats] = useState<PaymentStats>({
-    total: 0,
-    autoVerified: 0,
-    pendingManual: 0,
-    overdue: 0,
-  });
+  const paymentsRef = useRef<Payment[]>([]);
+  const paymentsCacheRef = useRef<
+    Map<string, { payments: Payment[]; stats: PaymentStats }>
+  >(new Map());
+  const prefetchedViewsRef = useRef(false);
+  const [stats, setStats] = useState<PaymentStats>(DEFAULT_STATS);
   const [loading, setLoading] = useState(true);
   const [isFiltering, setIsFiltering] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
@@ -122,78 +173,131 @@ export default function FinancePaymentsPage() {
 
   // Filter states
   const [activeTab, setActiveTab] = useState<ViewTab>('all');
+
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [methodFilter, setMethodFilter] = useState<string>('');
   const [paymentTypeFilter, setPaymentTypeFilter] = useState<string>(''); // NEW: Payment type filter
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [visibleCount, setVisibleCount] = useState(PAYMENTS_PAGE_SIZE);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Export states
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const fetchPayments = useCallback(async () => {
+    const cacheKey = paymentsCacheKey(
+      activeTab,
+      statusFilter,
+      methodFilter,
+      paymentTypeFilter,
+      dateFrom,
+      dateTo
+    );
+    const cached = paymentsCacheRef.current.get(cacheKey);
+    const showFullPageLoader =
+      paymentsRef.current.length === 0 && !cached;
+
+    if (cached) {
+      paymentsRef.current = cached.payments;
+      setPayments(cached.payments);
+      setStats(cached.stats);
+    }
+
     try {
-      // Use different loading state for initial load vs filtering
-      if (payments.length === 0) {
+      if (showFullPageLoader) {
         setLoading(true);
       } else {
         setIsFiltering(true);
       }
       setError(null);
 
-      // Build query parameters
       const params = new URLSearchParams();
       params.append('view', activeTab);
       if (statusFilter) params.append('status', statusFilter);
       if (methodFilter) params.append('paymentMethod', methodFilter);
-      if (paymentTypeFilter) params.append('paymentType', paymentTypeFilter); // NEW: Payment type filter
+      if (paymentTypeFilter) params.append('paymentType', paymentTypeFilter);
       if (dateFrom) params.append('dateFrom', dateFrom);
       if (dateTo) params.append('dateTo', dateTo);
 
       const response = await fetch(`/api/finance/payments?${params.toString()}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch payments');
       }
 
       const data = await response.json();
-      
-      // Debug logging for Paystack payments
-      const paystackPayments = (data.payments || []).filter((p: Payment) => p.paymentMethod === 'paystack');
-      if (paystackPayments.length > 0) {
-        console.log('🔍 Client: Received Paystack payments from API:');
-        paystackPayments.forEach((p: Payment) => {
-          console.log(`   - ${p.paymentReference}`);
-          console.log(`     Status: ${p.status}, Auction Status: ${p.auctionStatus || 'MISSING!'}`);
-          console.log(`     Should hide buttons: ${p.status === 'pending' && p.auctionStatus === 'awaiting_payment'}`);
-        });
-      }
-      
-      setPayments(data.payments || []);
-      setStats(data.stats || {
-        total: 0,
-        autoVerified: 0,
-        pendingManual: 0,
-        overdue: 0,
-        registrationFees: {
-          count: 0,
-          total: 0,
-        },
+      const nextPayments = data.payments || [];
+      const nextStats = data.stats || DEFAULT_STATS;
+
+      paymentsCacheRef.current.set(cacheKey, {
+        payments: nextPayments,
+        stats: nextStats,
       });
+      paymentsRef.current = nextPayments;
+      setPayments(nextPayments);
+      setStats(nextStats);
     } catch (err) {
       console.error('Error fetching payments:', err);
       setError(err instanceof Error ? err.message : 'Failed to load payments');
+      if (showFullPageLoader) {
+        paymentsRef.current = [];
+        setPayments([]);
+      }
     } finally {
       setLoading(false);
       setIsFiltering(false);
     }
-  }, [activeTab, statusFilter, methodFilter, dateFrom, dateTo, payments.length]);
+  }, [
+    activeTab,
+    statusFilter,
+    methodFilter,
+    paymentTypeFilter,
+    dateFrom,
+    dateTo,
+  ]);
+
+  const invalidateAndRefreshPayments = useCallback(async () => {
+    paymentsCacheRef.current.clear();
+    prefetchedViewsRef.current = false;
+    await fetchPayments();
+  }, [fetchPayments]);
 
   useEffect(() => {
     fetchPayments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, statusFilter, methodFilter, paymentTypeFilter, dateFrom, dateTo]);
+  }, [fetchPayments]);
+
+  // Prefetch view tabs (no extra filters) so tab switches feel instant
+  useEffect(() => {
+    if (prefetchedViewsRef.current) return;
+    if (statusFilter || methodFilter || paymentTypeFilter || dateFrom || dateTo) {
+      return;
+    }
+    prefetchedViewsRef.current = true;
+
+    const views: ViewTab[] = ['all', 'today', 'pending', 'overdue'];
+    void Promise.all(
+      views.map(async (view) => {
+        const key = paymentsCacheKey(view, '', '', '', '', '');
+        if (paymentsCacheRef.current.has(key)) return;
+        try {
+          const response = await fetch(
+            `/api/finance/payments?view=${encodeURIComponent(view)}`
+          );
+          if (!response.ok) return;
+          const data = await response.json();
+          paymentsCacheRef.current.set(key, {
+            payments: data.payments || [],
+            stats: data.stats || DEFAULT_STATS,
+          });
+        } catch {
+          // Prefetch is best-effort
+        }
+      })
+    );
+  }, [statusFilter, methodFilter, paymentTypeFilter, dateFrom, dateTo]);
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -216,12 +320,62 @@ export default function FinancePaymentsPage() {
     setActiveTab('all');
     setStatusFilter('');
     setMethodFilter('');
-    setPaymentTypeFilter(''); // NEW: Clear payment type filter
+    setPaymentTypeFilter('');
     setDateFrom('');
     setDateTo('');
+    setSearchQuery('');
   };
 
-  const hasActiveFilters = statusFilter || methodFilter || paymentTypeFilter || dateFrom || dateTo;
+  const hasActiveFilters =
+    statusFilter ||
+    methodFilter ||
+    paymentTypeFilter ||
+    dateFrom ||
+    dateTo ||
+    searchQuery.trim().length > 0;
+
+  const filteredPayments = useMemo(
+    () => filterPaymentsBySearch(payments, searchQuery),
+    [payments, searchQuery]
+  );
+
+  const visiblePayments = useMemo(
+    () => filteredPayments.slice(0, visibleCount),
+    [filteredPayments, visibleCount]
+  );
+
+  const hasMorePayments = visibleCount < filteredPayments.length;
+
+  useEffect(() => {
+    setVisibleCount(PAYMENTS_PAGE_SIZE);
+  }, [
+    activeTab,
+    statusFilter,
+    methodFilter,
+    paymentTypeFilter,
+    dateFrom,
+    dateTo,
+    searchQuery,
+  ]);
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel || !hasMorePayments) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) =>
+            Math.min(prev + PAYMENTS_PAGE_SIZE, filteredPayments.length)
+          );
+        }
+      },
+      { rootMargin: '240px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMorePayments, filteredPayments.length]);
 
   const handleVerifyPayment = async () => {
     if (!selectedPayment || !action) return;
@@ -268,8 +422,7 @@ export default function FinancePaymentsPage() {
       setSuccessMessage(message);
       setShowSuccessModal(true);
 
-      // Refresh payments list
-      await fetchPayments();
+      await invalidateAndRefreshPayments();
     } catch (err) {
       console.error('Error verifying payment:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to verify payment';
@@ -382,8 +535,7 @@ export default function FinancePaymentsPage() {
       setSuccessMessage(`Funds released successfully! ₦${parseFloat(selectedPayment.amount).toLocaleString()} transferred to NEM Insurance.`);
       setShowSuccessModal(true);
       
-      // Refresh payments list
-      await fetchPayments();
+      await invalidateAndRefreshPayments();
     } catch (err) {
       console.error('Error releasing funds:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to release funds';
@@ -425,8 +577,7 @@ export default function FinancePaymentsPage() {
       // Close details modal
       closeModal();
       
-      // Refresh payments list
-      await fetchPayments();
+      await invalidateAndRefreshPayments();
     } catch (err) {
       console.error('Error granting grace period:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to grant grace period';
@@ -744,15 +895,8 @@ export default function FinancePaymentsPage() {
     return str;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading payments...</p>
-        </div>
-      </div>
-    );
+  if (loading && payments.length === 0) {
+    return <DataLoadingState label="Payment verification" variant="page" />;
   }
 
   return (
@@ -765,12 +909,8 @@ export default function FinancePaymentsPage() {
           <p className="mt-1 text-sm text-gray-500">
             Review and verify vendor payments
             {isFiltering && (
-              <span className="ml-2 inline-flex items-center text-[#800020]">
-                <svg className="animate-spin h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Updating...
+              <span className="ml-2 inline-flex items-center">
+                <DataRefreshingHint className="mb-0" />
               </span>
             )}
           </p>
@@ -838,7 +978,7 @@ export default function FinancePaymentsPage() {
             type="button"
             onClick={(e) => {
               e.preventDefault();
-              fetchPayments();
+              void invalidateAndRefreshPayments();
             }}
             disabled={isFiltering}
             className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -1077,6 +1217,19 @@ export default function FinancePaymentsPage() {
               </button>
             )}
           </div>
+          <div className="mb-4">
+            <label htmlFor="payment-search" className="block text-xs font-medium text-gray-700 mb-1">
+              Search
+            </label>
+            <input
+              type="search"
+              id="payment-search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Vendor name, claim reference, or date (e.g. 2026-05-20)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+            />
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             {/* Status Filter */}
             <div>
@@ -1174,8 +1327,10 @@ export default function FinancePaymentsPage() {
                 {activeTab === 'overdue' && 'Overdue Payments'}
               </h2>
               <p className="text-sm text-gray-500 mt-1">
-                {payments.length} payment{payments.length !== 1 ? 's' : ''} found
-                {hasActiveFilters && ' (filtered)'}
+                {filteredPayments.length} payment{filteredPayments.length !== 1 ? 's' : ''} found
+                {searchQuery.trim() && ` matching "${searchQuery.trim()}"`}
+                {hasMorePayments &&
+                  ` · showing ${visiblePayments.length} of ${filteredPayments.length}`}
               </p>
             </div>
           </div>
@@ -1187,15 +1342,22 @@ export default function FinancePaymentsPage() {
           </div>
         )}
 
-        <div className="divide-y divide-gray-200">
-          {payments.length === 0 ? (
+        <SwipeTabsBody
+          tabs={PAYMENT_VIEW_TABS}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          className="divide-y divide-gray-200"
+        >
+          {filteredPayments.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <h3 className="mt-2 text-sm font-medium text-gray-900">No payments found</h3>
               <p className="mt-1 text-sm text-gray-500">
-                {hasActiveFilters 
+                {searchQuery.trim()
+                  ? 'No payments match your search. Try a different vendor name, claim reference, or date.'
+                  : hasActiveFilters 
                   ? 'Try adjusting your filters to see more results.'
                   : activeTab === 'today'
                   ? 'No payments have been made today yet.'
@@ -1208,7 +1370,7 @@ export default function FinancePaymentsPage() {
             </div>
           ) : (
             <div className={`transition-opacity duration-200 ${isFiltering ? 'opacity-50' : 'opacity-100'}`}>
-              {payments.map((payment) => (
+              {visiblePayments.map((payment) => (
               <div key={payment.id} className="px-4 sm:px-6 py-4 hover:bg-gray-50 transition-colors">
                 <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                   <div className="flex-1 w-full min-w-0">
@@ -1469,9 +1631,17 @@ export default function FinancePaymentsPage() {
                 </div>
               </div>
             ))}
+              {hasMorePayments && (
+                <div
+                  ref={loadMoreRef}
+                  className="px-6 py-8 text-center text-sm text-gray-500"
+                >
+                  Loading more payments…
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </SwipeTabsBody>
       </div>
 
       {/* Verification Modal */}

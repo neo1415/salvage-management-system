@@ -92,6 +92,43 @@ function calculateOverallDamagePercentage(scores: {
   return Math.round(weightedSum);
 }
 
+function deriveGeminiDetailedScores(assessment: GeminiDamageAssessment) {
+  const scores = {
+    structural: 0,
+    mechanical: 0,
+    cosmetic: 0,
+    electrical: 0,
+    interior: 0,
+  };
+
+  const categoryForPart = (part: string): keyof typeof scores => {
+    const normalized = part.toLowerCase();
+    if (/(frame|chassis|pillar|roof|rail|structure|subframe)/.test(normalized)) return 'structural';
+    if (/(engine|gear|transmission|suspension|brake|radiator|mechanical)/.test(normalized)) return 'mechanical';
+    if (/(light|wire|battery|sensor|electrical|dashboard|airbag)/.test(normalized)) return 'electrical';
+    if (/(seat|interior|trim|carpet|console|cabin)/.test(normalized)) return 'interior';
+    return 'cosmetic';
+  };
+
+  const severityScore = (severity: 'minor' | 'moderate' | 'severe') => {
+    if (severity === 'severe') return 85;
+    if (severity === 'moderate') return 55;
+    return 25;
+  };
+
+  for (const damagedPart of assessment.damagedParts || []) {
+    const category = categoryForPart(damagedPart.part);
+    scores[category] = Math.max(scores[category], severityScore(damagedPart.severity));
+  }
+
+  if (!assessment.damagedParts?.length) {
+    const fallback = severityScore(assessment.severity);
+    scores.cosmetic = fallback;
+  }
+
+  return scores;
+}
+
 /**
  * Determines quality tier based on damage assessment and vehicle context
  * 
@@ -148,6 +185,7 @@ function determineQualityTier(
  */
 function generateLabelsFromGemini(assessment: GeminiDamageAssessment): string[] {
   const labels: string[] = ['Vehicle', 'Car'];
+  const detailedScores = deriveGeminiDetailedScores(assessment);
 
   // Add severity-based labels
   if (assessment.severity === 'severe') {
@@ -159,19 +197,19 @@ function generateLabelsFromGemini(assessment: GeminiDamageAssessment): string[] 
   }
 
   // Add category-specific labels based on scores
-  if (assessment.structural > 50) {
+  if (detailedScores.structural > 50) {
     labels.push('Structural Damage', 'Frame Damage');
   }
-  if (assessment.mechanical > 50) {
+  if (detailedScores.mechanical > 50) {
     labels.push('Mechanical Damage', 'Engine Damage');
   }
-  if (assessment.cosmetic > 50) {
+  if (detailedScores.cosmetic > 50) {
     labels.push('Cosmetic Damage', 'Body Damage');
   }
-  if (assessment.electrical > 50) {
+  if (detailedScores.electrical > 50) {
     labels.push('Electrical Damage');
   }
-  if (assessment.interior > 50) {
+  if (detailedScores.interior > 50) {
     labels.push('Interior Damage');
   }
 
@@ -213,13 +251,8 @@ export function adaptGeminiResponse(
   vehicleContext?: VehicleContext
 ): DamageAssessmentResult {
   // Calculate overall damage percentage from individual scores
-  const damagePercentage = calculateOverallDamagePercentage({
-    structural: geminiAssessment.structural,
-    mechanical: geminiAssessment.mechanical,
-    cosmetic: geminiAssessment.cosmetic,
-    electrical: geminiAssessment.electrical,
-    interior: geminiAssessment.interior,
-  });
+  const detailedScores = deriveGeminiDetailedScores(geminiAssessment);
+  const damagePercentage = calculateOverallDamagePercentage(detailedScores);
 
   // Generate descriptive labels for backward compatibility
   const labels = generateLabelsFromGemini(geminiAssessment);
@@ -253,11 +286,11 @@ export function adaptGeminiResponse(
     // New optional fields (Gemini-specific)
     method: 'gemini',
     detailedScores: {
-      structural: geminiAssessment.structural,
-      mechanical: geminiAssessment.mechanical,
-      cosmetic: geminiAssessment.cosmetic,
-      electrical: geminiAssessment.electrical,
-      interior: geminiAssessment.interior,
+      structural: detailedScores.structural,
+      mechanical: detailedScores.mechanical,
+      cosmetic: detailedScores.cosmetic,
+      electrical: detailedScores.electrical,
+      interior: detailedScores.interior,
     },
     airbagDeployed: geminiAssessment.airbagDeployed,
     totalLoss: geminiAssessment.totalLoss,

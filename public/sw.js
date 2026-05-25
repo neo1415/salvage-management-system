@@ -1,6 +1,6 @@
 // Service Worker for Salvage Management System PWA
 // Implements offline-first caching strategies with Workbox
-// Version: 1.0.1 - Fixed external script caching
+// Version: 1.0.2 - Vendor dashboard: removed duplicate sticky Auctions/Wallet bar
 
 // Import Workbox from CDN (for runtime service worker)
 importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js');

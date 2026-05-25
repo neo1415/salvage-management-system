@@ -5,12 +5,14 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 interface DashboardStats {
   totalCases: number;
   pendingApproval: number;
   approved: number;
   rejected: number;
+  cancelled?: number;
   activeAuction: number;
   sold: number;
 }
@@ -56,6 +58,8 @@ export default function AdjusterDashboardPage() {
       const response = await fetch('/api/dashboard/adjuster');
       
       if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        console.error('Dashboard stats HTTP error:', response.status, errBody);
         throw new Error('Failed to fetch dashboard stats');
       }
 
@@ -64,7 +68,7 @@ export default function AdjusterDashboardPage() {
       if (result.success) {
         setStats(result.data);
       } else {
-        console.error('API returned error:', result.error);
+        console.error('API returned error:', result.error, result);
         setStats({
           totalCases: 0,
           pendingApproval: 0,
@@ -89,12 +93,8 @@ export default function AdjusterDashboardPage() {
     }
   };
 
-  if (status === 'loading' || loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020]"></div>
-      </div>
-    );
+  if (status === 'loading' || loading || !stats) {
+    return <DataLoadingState label="Dashboard" variant="page" />;
   }
 
   return (
@@ -152,8 +152,21 @@ export default function AdjusterDashboardPage() {
             <div>
               <p className="text-sm text-gray-600">Rejected</p>
               <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.rejected || 0}
+                {(stats?.cancelled ?? 0) + (stats?.rejected || 0)}
               </p>
+              {(stats?.cancelled ?? 0) > 0 || (stats?.rejected || 0) > 0 ? (
+                <p className="text-xs text-gray-500 mt-1">
+                  {(stats?.rejected || 0) > 0
+                    ? `${stats?.rejected} by manager`
+                    : ''}
+                  {(stats?.cancelled ?? 0) > 0 && (stats?.rejected || 0) > 0
+                    ? ' · '
+                    : ''}
+                  {(stats?.cancelled ?? 0) > 0
+                    ? `${stats?.cancelled} cancelled by you`
+                    : ''}
+                </p>
+              ) : null}
             </div>
             <div className="p-3 bg-red-100 rounded-lg">
               <AlertCircle className="w-8 h-8 text-red-600" />

@@ -17,6 +17,7 @@ import { db } from '@/lib/db/drizzle';
 import { users, vendors, auctions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { redis } from '@/lib/redis/client';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 export interface DepositNotificationContext {
   vendorId: string;
@@ -289,7 +290,7 @@ export class DepositNotificationService {
             </div>
             <p>Please complete the required action before the new deadline to avoid forfeiture.</p>
             <p style="margin-top: 24px;">
-              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/documents"
+              <a href="${appPath('/vendor/documents')}"
                  style="background-color: #800020; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">
                 View Documents
               </a>

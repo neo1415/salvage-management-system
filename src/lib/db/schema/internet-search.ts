@@ -38,9 +38,8 @@ export const internetSearchLogs = pgTable('internet_search_logs', {
     condition?: string;
     // Electronics fields
     brand?: string;
-    model?: string;
+    productModel?: string;
     storage?: string;
-    condition?: string;
     // Universal fields
     category?: string;
     description?: string;

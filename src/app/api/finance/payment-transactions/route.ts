@@ -12,8 +12,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { auctions, auctionWinners, vendors, escrowWallets, depositForfeitures } from '@/lib/db/schema';
-import { eq, inArray, desc, and, or } from 'drizzle-orm';
+import { auctions, auctionWinners, vendors, escrowWallets, depositForfeitures, releaseForms, salvageCases } from '@/lib/db/schema';
+import { eq, inArray, desc, and } from 'drizzle-orm';
 
 /**
  * GET /api/finance/payment-transactions
@@ -53,29 +53,28 @@ export async function GET(request: NextRequest) {
     let statusFilter;
     switch (status) {
       case 'awaiting_documents':
-        statusFilter = eq(auctions.status, 'awaiting_documents');
+        statusFilter = eq(auctions.status, 'closed');
         break;
       case 'awaiting_payment':
         statusFilter = eq(auctions.status, 'awaiting_payment');
         break;
       case 'deposit_forfeited':
-        statusFilter = eq(auctions.status, 'deposit_forfeited');
+        statusFilter = eq(auctions.status, 'forfeited');
         break;
       case 'failed_all_fallbacks':
-        statusFilter = eq(auctions.status, 'failed_all_fallbacks');
+        statusFilter = eq(auctions.status, 'cancelled');
         break;
       case 'paid':
-        statusFilter = eq(auctions.status, 'paid');
+        statusFilter = eq(auctions.status, 'closed');
         break;
       case 'all':
       default:
         statusFilter = inArray(auctions.status, [
-          'awaiting_documents',
+          'closed',
           'awaiting_payment',
-          'deposit_forfeited',
-          'failed_all_fallbacks',
-          'paid',
-        ]);
+          'forfeited',
+          'cancelled',
+        ] as const);
     }
 
     // Get auctions with winners
@@ -99,6 +98,8 @@ export async function GET(request: NextRequest) {
 
     // Get vendor IDs for batch query
     const vendorIds = [...new Set(auctionsWithWinners.map(a => a.winner.vendorId))];
+    const auctionIds = auctionsWithWinners.map(a => a.auction.id);
+    const caseIds = [...new Set(auctionsWithWinners.map(a => a.auction.caseId))];
 
     // Batch fetch vendors
     const vendorsMap = new Map();
@@ -109,6 +110,35 @@ export async function GET(request: NextRequest) {
         .where(inArray(vendors.id, vendorIds));
       
       vendorsList.forEach(v => vendorsMap.set(v.id, v));
+    }
+
+    const casesMap = new Map();
+    if (caseIds.length > 0) {
+      const casesList = await db
+        .select()
+        .from(salvageCases)
+        .where(inArray(salvageCases.id, caseIds));
+
+      casesList.forEach(c => casesMap.set(c.id, c));
+    }
+
+    const documentsMap = new Map();
+    if (auctionIds.length > 0) {
+      const documentsList = await db
+        .select()
+        .from(releaseForms)
+        .where(inArray(releaseForms.auctionId, auctionIds))
+        .orderBy(desc(releaseForms.createdAt));
+
+      for (const document of documentsList) {
+        const key = `${document.auctionId}:${document.vendorId}`;
+        const current = documentsMap.get(key) as { signedAt: Date | null; paymentDeadline: Date | null; extensionCount: number } | undefined;
+        documentsMap.set(key, {
+          signedAt: current?.signedAt || document.signedAt,
+          paymentDeadline: current?.paymentDeadline || document.paymentDeadline,
+          extensionCount: Math.max(current?.extensionCount ?? 0, document.extensionCount ?? 0),
+        });
+      }
     }
 
     // Batch fetch escrow wallets
@@ -124,7 +154,7 @@ export async function GET(request: NextRequest) {
 
     // Batch fetch forfeitures for forfeited auctions
     const forfeitedAuctionIds = auctionsWithWinners
-      .filter(a => a.auction.status === 'deposit_forfeited')
+      .filter(a => a.auction.status === 'forfeited')
       .map(a => a.auction.id);
     
     const forfeituresMap = new Map();
@@ -142,11 +172,21 @@ export async function GET(request: NextRequest) {
       const vendor = vendorsMap.get(winner.vendorId);
       const wallet = walletsMap.get(winner.vendorId);
       const forfeiture = forfeituresMap.get(auction.id);
+      const caseRecord = casesMap.get(auction.caseId);
+      const assetDetails = caseRecord?.assetDetails;
+      const assetName = [
+        assetDetails?.year,
+        assetDetails?.make || assetDetails?.brand || assetDetails?.propertyType,
+        assetDetails?.model,
+      ].filter(Boolean).join(' ') || caseRecord?.assetType || `Auction ${auction.id.slice(0, 8)}`;
+      const documentStatus = documentsMap.get(`${auction.id}:${winner.vendorId}`) as
+        | { signedAt: Date | null; paymentDeadline: Date | null; extensionCount: number }
+        | undefined;
 
       return {
         auction: {
           id: auction.id,
-          assetName: auction.assetName,
+          assetName,
           status: auction.status,
           currentBid: parseFloat(auction.currentBid || '0'),
           createdAt: auction.createdAt,
@@ -159,9 +199,10 @@ export async function GET(request: NextRequest) {
           bidAmount: parseFloat(winner.bidAmount),
           depositAmount: parseFloat(winner.depositAmount),
           rank: winner.rank,
-          documentsSignedAt: winner.documentsSignedAt,
-          paymentDeadline: winner.paymentDeadline,
-          extensionCount: winner.extensionCount,
+          status: winner.status,
+          documentsSignedAt: documentStatus?.signedAt ?? null,
+          paymentDeadline: documentStatus?.paymentDeadline ?? null,
+          extensionCount: documentStatus?.extensionCount ?? 0,
         },
         wallet: wallet ? {
           balance: parseFloat(wallet.balance),
@@ -172,15 +213,16 @@ export async function GET(request: NextRequest) {
         forfeiture: forfeiture ? {
           id: forfeiture.id,
           forfeitedAmount: parseFloat(forfeiture.forfeitedAmount),
-          transferred: forfeiture.transferred,
+          transferred: Boolean(forfeiture.transferredAt),
           transferredAt: forfeiture.transferredAt,
         } : null,
         actions: {
-          canGrantExtension: auction.status === 'awaiting_documents' && 
-                             (winner.extensionCount || 0) < 2,
-          canTransferForfeiture: auction.status === 'deposit_forfeited' && 
-                                 forfeiture && !forfeiture.transferred,
-          requiresManualIntervention: auction.status === 'failed_all_fallbacks',
+          canGrantExtension: auction.status === 'closed' &&
+                             !documentStatus?.signedAt &&
+                             (documentStatus?.extensionCount ?? 0) < 2,
+          canTransferForfeiture: auction.status === 'forfeited' && 
+                                 forfeiture && !forfeiture.transferredAt,
+          requiresManualIntervention: auction.status === 'cancelled',
         },
       };
     });
@@ -212,11 +254,11 @@ export async function GET(request: NextRequest) {
         hasMore: page < totalPages,
       },
       summary: {
-        awaitingDocuments: transactions.filter(t => t.auction.status === 'awaiting_documents').length,
+        awaitingDocuments: transactions.filter(t => t.auction.status === 'closed').length,
         awaitingPayment: transactions.filter(t => t.auction.status === 'awaiting_payment').length,
-        depositForfeited: transactions.filter(t => t.auction.status === 'deposit_forfeited').length,
-        failedAllFallbacks: transactions.filter(t => t.auction.status === 'failed_all_fallbacks').length,
-        paid: transactions.filter(t => t.auction.status === 'paid').length,
+        depositForfeited: transactions.filter(t => t.auction.status === 'forfeited').length,
+        failedAllFallbacks: transactions.filter(t => t.auction.status === 'cancelled').length,
+        paid: transactions.filter(t => t.winner.status === 'completed').length,
       },
     });
   } catch (error) {

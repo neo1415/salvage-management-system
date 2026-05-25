@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
     // Automation metrics
     const autoReleased = escrowPayments.filter(p => p.autoVerified && p.status === 'verified').length;
     const manualReleased = escrowPayments.filter(p => !p.autoVerified && p.status === 'verified').length;
-    const failed = escrowPayments.filter(p => p.escrowStatus === 'failed').length;
+    const failed = escrowPayments.filter(p => p.status === 'rejected' || p.status === 'overdue').length;
     const automationSuccessRate = totalPayments > 0 ? (autoReleased / totalPayments) * 100 : 0;
 
     // Document signing completion

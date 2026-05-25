@@ -75,6 +75,7 @@ interface SpeechRecognition extends EventTarget {
   lang: string;
   onresult: ((event: SpeechRecognitionEvent) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
   start(): void;
   stop(): void;
 }
@@ -315,7 +316,7 @@ function NewCasePageContent() {
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<CaseFormData>({
-    resolver: zodResolver(caseFormSchema),
+    resolver: zodResolver(caseFormSchema) as never,
     defaultValues: {
       photos: [],
       unifiedVoiceContent: '',
@@ -349,9 +350,16 @@ function NewCasePageContent() {
   
   // UI state
   const [gpsLocation, setGpsLocation] = useState<GeoLocation | null>(null);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [isCapturingGPS, setIsCapturingGPS] = useState(false);
+  const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
+  const [coordinateSource, setCoordinateSource] = useState<'gps' | 'address' | null>(null);
+  const skipAddressGeocodeRef = useRef(false);
+  const addressGeocodeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const locationName = watch('locationName');
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [aiAssessment, setAiAssessment] = useState<AIAssessmentResult | null>(null);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [mileageWarning, setMileageWarning] = useState<string | null>(null);
@@ -443,6 +451,8 @@ function NewCasePageContent() {
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const shouldContinueRecordingRef = useRef(false);
+  const isRecordingPausedRef = useRef(false);
   const mileageDebounceRef = useRef<NodeJS.Timeout | null>(null);
   
   // Form state persistence key
@@ -569,13 +579,15 @@ function NewCasePageContent() {
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognitionConstructor = window.webkitSpeechRecognition || window.SpeechRecognition;
+      if (!SpeechRecognitionConstructor) return;
       recognitionRef.current = new SpeechRecognitionConstructor();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
+      const recognition = recognitionRef.current;
+      recognition.continuous = true;
+      recognition.interimResults = true;
       // CRITICAL FIX: Use multiple language variants for better recognition
-      recognitionRef.current.lang = 'en-US';
+      recognition.lang = 'en-US';
       // CRITICAL FIX: Set max alternatives for better accuracy
-      (recognitionRef.current as any).maxAlternatives = 3;
+      (recognition as any).maxAlternatives = 3;
     }
   }, []);
 
@@ -655,10 +667,61 @@ function NewCasePageContent() {
   }, [vehicleMileage]);
 
   /**
-   * Capture GPS location using hybrid approach
-   * - When online: Uses Google Maps Geolocation API (accurate)
-   * - When offline: Falls back to browser geolocation
-   * - When offline and GPS fails: Shows optional message
+   * When the adjuster types an address (common on laptops), forward-geocode to pin coordinates.
+   * Device GPS remains available via the 📍 button.
+   */
+  useEffect(() => {
+    if (isOffline || isCapturingGPS) return;
+
+    const address = (locationName || '').trim();
+    if (address.length < 5) return;
+
+    if (skipAddressGeocodeRef.current) {
+      skipAddressGeocodeRef.current = false;
+      return;
+    }
+
+    if (addressGeocodeTimerRef.current) {
+      clearTimeout(addressGeocodeTimerRef.current);
+    }
+
+    addressGeocodeTimerRef.current = setTimeout(async () => {
+      setIsGeocodingAddress(true);
+      try {
+        const response = await fetch('/api/locations/geocode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address }),
+        });
+        if (!response.ok) return;
+
+        const json = await response.json();
+        if (json.success && json.data) {
+          setGpsLocation({
+            latitude: json.data.latitude,
+            longitude: json.data.longitude,
+          });
+          setGpsAccuracy(null);
+          setCoordinateSource('address');
+          setGpsError(null);
+        }
+      } catch (err) {
+        console.warn('Address geocode failed:', err);
+      } finally {
+        setIsGeocodingAddress(false);
+      }
+    }, 1200);
+
+    return () => {
+      if (addressGeocodeTimerRef.current) {
+        clearTimeout(addressGeocodeTimerRef.current);
+      }
+    };
+  }, [locationName, isOffline, isCapturingGPS]);
+
+  /**
+   * Capture GPS location using device GPS (most accurate on phones).
+   * When offline and GPS fails: location is optional for draft/submit rules.
    */
   const captureGPSLocation = async () => {
     if (!navigator.geolocation) {
@@ -682,12 +745,18 @@ function NewCasePageContent() {
       };
 
       setGpsLocation(location);
-      
+      setGpsAccuracy(result.accuracy);
+      setCoordinateSource('gps');
+      skipAddressGeocodeRef.current = true;
+
       // Set location name (already includes reverse geocoding)
       setValue('locationName', result.locationName || `${result.latitude.toFixed(6)}, ${result.longitude.toFixed(6)}`);
 
       // Log accuracy for debugging
       console.log(`GPS captured via ${result.source}, accuracy: ${result.accuracy}m`);
+      if (result.accuracy > 100) {
+        setGpsError('GPS was captured, but accuracy is low. Please confirm the address before submitting.');
+      }
     } catch (error) {
       console.error('GPS capture error:', error);
       
@@ -1098,16 +1167,30 @@ function NewCasePageContent() {
       return;
     }
 
-    // Request microphone permission first
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (error) {
-      console.error('Microphone permission denied:', error);
-      toast.error('Microphone access denied', 'Please enable microphone permissions in your browser settings.');
+    const { PermissionManager } = await import('@/lib/voice/error-handling');
+    const permissionState = await PermissionManager.checkMicrophonePermission();
+
+    if (permissionState === 'denied') {
+      toast.error(
+        'Microphone access blocked',
+        'Tap the lock or site icon in your browser address bar, allow microphone access, then tap record again.'
+      );
+      return;
+    }
+
+    const granted = await PermissionManager.requestMicrophonePermission();
+    if (!granted) {
+      toast.error(
+        'Microphone access required',
+        'Allow microphone access when your browser prompts you, then tap record again.'
+      );
       return;
     }
 
     setIsRecording(true);
+    setIsRecordingPaused(false);
+    shouldContinueRecordingRef.current = true;
+    isRecordingPausedRef.current = false;
     setRecordingDuration(0);
     
     // Start timer
@@ -1185,7 +1268,7 @@ function NewCasePageContent() {
     // CRITICAL FIX: Auto-restart on end to keep recording continuous
     recognitionRef.current.onend = () => {
       // Only restart if we're still supposed to be recording
-      if (isRecording && recognitionRef.current) {
+      if (shouldContinueRecordingRef.current && !isRecordingPausedRef.current && recognitionRef.current) {
         try {
           recognitionRef.current.start();
           console.log('Voice recognition auto-restarted');
@@ -1214,6 +1297,9 @@ function NewCasePageContent() {
     
     // CRITICAL FIX: Set recording state to false FIRST to prevent auto-restart
     setIsRecording(false);
+    setIsRecordingPaused(false);
+    shouldContinueRecordingRef.current = false;
+    isRecordingPausedRef.current = false;
     
     if (recognitionRef.current) {
       try {
@@ -1240,10 +1326,52 @@ function NewCasePageContent() {
   };
 
   /**
-   * Pause voice recording (same as stop for Web Speech API)
+   * Pause voice recording without clearing the current transcript.
+   * Web Speech has no native pause, so we stop recognition and resume it later.
    */
   const pauseVoiceRecording = () => {
-    stopVoiceRecording();
+    if (!recognitionRef.current || !isRecording || isRecordingPaused) return;
+
+    shouldContinueRecordingRef.current = false;
+    isRecordingPausedRef.current = true;
+    setIsRecordingPaused(true);
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    try {
+      recognitionRef.current.stop();
+      toast.info('Recording paused', 'Tap resume to continue.');
+    } catch (error) {
+      console.error('Error pausing voice recognition:', error);
+      toast.error('Could not pause recording', 'Please stop and start again.');
+    }
+  };
+
+  const resumeVoiceRecording = () => {
+    if (!recognitionRef.current || !isRecording || !isRecordingPaused) return;
+
+    shouldContinueRecordingRef.current = true;
+    isRecordingPausedRef.current = false;
+    setIsRecordingPaused(false);
+
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingDuration(prev => prev + 1);
+    }, 1000);
+
+    try {
+      recognitionRef.current.start();
+      toast.success('Recording resumed', 'Continue speaking clearly.');
+    } catch (error) {
+      console.error('Error resuming voice recognition:', error);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      toast.error('Could not resume recording', 'Please stop and start again.');
+    }
   };
   
   /**
@@ -1502,6 +1630,8 @@ function NewCasePageContent() {
         // Save to IndexedDB for offline sync
         await saveOfflineCase({
           ...caseData,
+          marketValue: caseData.marketValue ?? 0,
+          gpsLocation: caseData.gpsLocation ?? { latitude: 0, longitude: 0 },
           createdBy: 'current-user-id', // TODO: Get from session
           syncStatus: 'pending',
         });
@@ -2409,7 +2539,7 @@ function NewCasePageContent() {
                 isProcessing={isProcessingAI}
                 marketValue={marketValue}
                 confidenceScore={aiAssessment?.confidenceScore}
-                error={searchProgress.stage === 'error' ? searchProgress.error || 'Analysis failed' : null}
+                error={(searchProgress as SearchProgress).stage === 'error' ? searchProgress.error || 'Analysis failed' : null}
                 className="w-full"
               />
               
@@ -2716,17 +2846,28 @@ function NewCasePageContent() {
               {isCapturingGPS ? '📍...' : '📍'}
             </button>
           </div>
+          {isGeocodingAddress && (
+            <p className="mt-1 text-sm text-gray-500">Looking up coordinates for this address…</p>
+          )}
           {gpsLocation && (
             <p className="mt-1 text-sm text-green-600">
-              ✓ GPS captured: {gpsLocation.latitude.toFixed(6)}, {gpsLocation.longitude.toFixed(6)}
-              <span className="text-gray-600 ml-2">(You can edit the location name above)</span>
+              ✓ Coordinates: {gpsLocation.latitude.toFixed(6)}, {gpsLocation.longitude.toFixed(6)}
+              {gpsAccuracy !== null && (
+                <span className="text-gray-600 ml-2">(accuracy: {Math.round(gpsAccuracy).toLocaleString()}m)</span>
+              )}
+              {coordinateSource === 'gps' && (
+                <span className="text-gray-600 ml-2">(from device GPS)</span>
+              )}
+              {coordinateSource === 'address' && (
+                <span className="text-gray-600 ml-2">(from address lookup)</span>
+              )}
             </p>
           )}
           {gpsError && (
             <p className="mt-1 text-sm text-red-600">{gpsError}</p>
           )}
           <p className="mt-1 text-xs text-gray-500">
-            Tip: Use GPS button for coordinates, then edit the location name if needed
+            Type the full address or use 📍 for device GPS. Coordinates update automatically when online.
           </p>
         </div>
 
@@ -2776,9 +2917,11 @@ function NewCasePageContent() {
             <div className="flex flex-col items-center space-y-4 py-4">
               <ModernVoiceControls
                 isRecording={isRecording}
+                isPaused={isRecordingPaused}
                 onStartRecording={startVoiceRecording}
                 onStopRecording={stopVoiceRecording}
                 onPauseRecording={pauseVoiceRecording}
+                onResumeRecording={resumeVoiceRecording}
                 duration={recordingDuration}
                 disabled={false}
                 className="flex justify-center"

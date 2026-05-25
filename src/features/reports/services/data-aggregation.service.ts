@@ -50,17 +50,17 @@ export class DataAggregationService {
     
     // Asset types
     if (filters.assetTypes && filters.assetTypes.length > 0) {
-      conditions.push(inArray(salvageCases.assetType, filters.assetTypes));
+      conditions.push(sql`${salvageCases.assetType} = ANY(${filters.assetTypes})`);
     }
     
     // Status
     if (filters.status && filters.status.length > 0) {
-      conditions.push(inArray(salvageCases.status, filters.status));
+      conditions.push(sql`${salvageCases.status} = ANY(${filters.status})`);
     }
     
     // User IDs (adjuster)
     if (filters.userIds && filters.userIds.length > 0) {
-      conditions.push(inArray(salvageCases.adjusterId, filters.userIds));
+      conditions.push(inArray(salvageCases.createdBy, filters.userIds));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -74,18 +74,18 @@ export class DataAggregationService {
         estimatedSalvageValue: salvageCases.estimatedSalvageValue,
         caseStatus: salvageCases.status,
         caseCreatedAt: salvageCases.createdAt,
-        adjusterId: salvageCases.adjusterId,
+        adjusterId: salvageCases.createdBy,
         auctionId: auctions.id,
         currentBid: auctions.currentBid,
-        reservePrice: auctions.reservePrice,
+        reservePrice: salvageCases.reservePrice,
         auctionStatus: auctions.status,
-        winnerId: auctions.winnerId,
+        winnerId: auctions.currentBidder,
         auctionCreatedAt: auctions.createdAt,
-        auctionClosedAt: auctions.closedAt,
+        auctionClosedAt: auctions.updatedAt,
         paymentId: payments.id,
         paymentAmount: payments.amount,
         paymentStatus: payments.status,
-        paymentMethod: payments.method,
+        paymentMethod: payments.paymentMethod,
         paymentCreatedAt: payments.createdAt,
         paymentVerifiedAt: payments.verifiedAt,
         vendorId: payments.vendorId,
@@ -114,7 +114,7 @@ export class DataAggregationService {
     
     // Status
     if (filters.status && filters.status.length > 0) {
-      conditions.push(inArray(payments.status, filters.status));
+      conditions.push(sql`${payments.status} = ANY(${filters.status})`);
     }
     
     // Vendor IDs
@@ -137,7 +137,7 @@ export class DataAggregationService {
         paymentId: payments.id,
         amount: payments.amount,
         status: payments.status,
-        method: payments.method,
+        method: payments.paymentMethod,
         createdAt: payments.createdAt,
         verifiedAt: payments.verifiedAt,
         vendorId: payments.vendorId,
@@ -168,7 +168,7 @@ export class DataAggregationService {
     
     // Status
     if (filters.status && filters.status.length > 0) {
-      conditions.push(inArray(auctions.status, filters.status));
+      conditions.push(sql`${auctions.status} = ANY(${filters.status})`);
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -178,15 +178,16 @@ export class DataAggregationService {
         auctionId: auctions.id,
         caseId: auctions.caseId,
         currentBid: auctions.currentBid,
-        reservePrice: auctions.reservePrice,
+        reservePrice: salvageCases.reservePrice,
         status: auctions.status,
-        winnerId: auctions.winnerId,
+        winnerId: auctions.currentBidder,
         createdAt: auctions.createdAt,
-        closedAt: auctions.closedAt,
+        closedAt: auctions.updatedAt,
         startTime: auctions.startTime,
         endTime: auctions.endTime,
       })
       .from(auctions)
+      .leftJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
       .where(whereClause);
 
     // Get bids for these auctions

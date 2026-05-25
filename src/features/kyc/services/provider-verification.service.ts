@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
   providerVerificationRecords,
@@ -7,11 +7,14 @@ import {
   type VerificationStatus,
 } from '@/lib/db/schema/provider-verifications';
 import { fraudAlerts } from '@/lib/db/schema/intelligence';
+import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { createRoleNotifications } from '@/features/notifications/services/notification.service';
 import { getEncryptionService } from './encryption.service';
+import { assertProviderVerificationStorageReady } from './provider-verification-readiness';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import type { NormalizedVerificationResult } from '../types/provider-verification.types';
+import { buildDojahReference } from '../utils/dojah-reference';
 
 interface PersistVerificationInput {
   userId?: string;
@@ -19,6 +22,15 @@ interface PersistVerificationInput {
   result: NormalizedVerificationResult;
   rawPayload?: unknown;
   actorId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+interface StartWorkflowInput {
+  userId: string;
+  vendorId: string;
+  actorId: string;
+  workflowSlug?: string;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -63,7 +75,149 @@ function actionForStatus(status: VerificationStatus): AuditActionType {
 }
 
 export class ProviderVerificationService {
+  async getOrCreatePendingWorkflow(input: StartWorkflowInput): Promise<{ providerReference: string; created: boolean }> {
+    await assertProviderVerificationStorageReady();
+
+    const existing = await db.query.providerVerificationRecords.findFirst({
+      where: and(
+        eq(providerVerificationRecords.provider, 'dojah'),
+        eq(providerVerificationRecords.vendorId, input.vendorId),
+        eq(providerVerificationRecords.verificationType, 'tier2'),
+        inArray(providerVerificationRecords.status, ['pending', 'provider_unavailable'])
+      ),
+      orderBy: [desc(providerVerificationRecords.updatedAt)],
+    });
+
+    if (existing?.providerReference) {
+      return { providerReference: existing.providerReference, created: false };
+    }
+
+    const [vendorState] = await db
+      .select({ tier2RejectionReason: vendors.tier2RejectionReason })
+      .from(vendors)
+      .where(eq(vendors.id, input.vendorId))
+      .limit(1);
+
+    const providerReference = buildDojahReference(input.vendorId);
+    const now = new Date();
+    const isResubmission = Boolean(vendorState?.tier2RejectionReason);
+    const pendingChecks = [
+      'business_data',
+      'business_id',
+      'digital_address',
+      'government_id',
+      'liveness',
+      'government_data',
+      'aml_screening',
+      'duplicate_id_face',
+      'ip_device_screening',
+    ];
+
+    await db.insert(providerVerificationRecords).values({
+      provider: 'dojah',
+      providerReference,
+      workflowReference: input.workflowSlug || 'salvage',
+      userId: input.userId,
+      vendorId: input.vendorId,
+      verificationType: 'tier2',
+      status: 'pending',
+      riskLevel: 'low',
+      checksCompleted: [],
+      pendingChecks,
+      failedChecks: [],
+      reasonCodes: [],
+      displayMessage: isResubmission
+        ? 'Dojah Tier 2 verification has been resubmitted.'
+        : 'Dojah Tier 2 verification workflow has been started.',
+      normalizedResult: {
+        workflowSlug: input.workflowSlug || 'salvage',
+        startedAt: now.toISOString(),
+        ...(isResubmission ? { resubmittedAt: now.toISOString() } : {}),
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (isResubmission) {
+      await db
+        .update(vendors)
+        .set({
+          tier2RejectionReason: null,
+          tier2SubmittedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(vendors.id, input.vendorId));
+
+      await logAction({
+        userId: input.actorId,
+        actionType: AuditActionType.VENDOR_TIER2_RESUBMITTED,
+        entityType: AuditEntityType.KYC,
+        entityId: input.vendorId,
+        ipAddress: input.ipAddress ?? 'system',
+        deviceType: DeviceType.DESKTOP,
+        userAgent: input.userAgent ?? 'system',
+        afterState: {
+          provider: 'dojah',
+          providerReference,
+          rejectedReasonCleared: true,
+          timestamp: now.toISOString(),
+        },
+      });
+    }
+
+    await logAction({
+      userId: input.actorId,
+      actionType: AuditActionType.DOJAH_WORKFLOW_STARTED,
+      entityType: AuditEntityType.KYC,
+      entityId: input.vendorId,
+      ipAddress: input.ipAddress ?? 'system',
+      deviceType: DeviceType.DESKTOP,
+      userAgent: input.userAgent ?? 'system',
+      afterState: {
+        provider: 'dojah',
+        providerReference,
+        workflowSlug: input.workflowSlug || 'salvage',
+        verificationType: 'tier2',
+      },
+    });
+
+    await logAction({
+      userId: input.actorId,
+      actionType: AuditActionType.DOJAH_REFERENCE_CREATED,
+      entityType: AuditEntityType.KYC,
+      entityId: input.vendorId,
+      ipAddress: input.ipAddress ?? 'system',
+      deviceType: DeviceType.DESKTOP,
+      userAgent: input.userAgent ?? 'system',
+      afterState: {
+        provider: 'dojah',
+        providerReference,
+        workflowSlug: input.workflowSlug || 'salvage',
+        verificationType: 'tier2',
+      },
+    });
+
+    await logAction({
+      userId: input.actorId,
+      actionType: AuditActionType.DOJAH_VERIFICATION_STARTED,
+      entityType: AuditEntityType.KYC,
+      entityId: input.vendorId,
+      ipAddress: input.ipAddress ?? 'system',
+      deviceType: DeviceType.DESKTOP,
+      userAgent: input.userAgent ?? 'system',
+      afterState: {
+        provider: 'dojah',
+        providerReference,
+        verificationType: 'tier2',
+      },
+    });
+
+    return { providerReference, created: true };
+  }
+
   async recordWebhookEvent(input: WebhookEventInput): Promise<{ duplicate: boolean }> {
+    await assertProviderVerificationStorageReady();
+
     const encrypted = encryptPayload(input.rawPayload);
     const existing = await db.query.providerWebhookEvents.findFirst({
       where: and(
@@ -109,6 +263,8 @@ export class ProviderVerificationService {
   }
 
   async persistVerification(input: PersistVerificationInput): Promise<void> {
+    await assertProviderVerificationStorageReady();
+
     const encrypted = input.rawPayload ? encryptPayload(input.rawPayload) : null;
     const now = new Date();
     const actorId = input.actorId || input.userId;
@@ -164,6 +320,23 @@ export class ProviderVerificationService {
     }
 
     if (actorId) {
+      await logAction({
+        userId: actorId,
+        actionType: AuditActionType.PROVIDER_VERIFICATION_STORED,
+        entityType: AuditEntityType.KYC,
+        entityId,
+        ipAddress: input.ipAddress ?? 'system',
+        deviceType: DeviceType.DESKTOP,
+        userAgent: input.userAgent ?? 'system',
+        afterState: {
+          provider: input.result.provider,
+          providerReference: input.result.providerReference,
+          verificationType: input.result.verificationType,
+          status: input.result.status,
+          riskLevel: input.result.riskLevel,
+        },
+      });
+
       await logAction({
         userId: actorId,
         actionType: actionForStatus(input.result.status),
@@ -245,7 +418,7 @@ export class ProviderVerificationService {
     if (adminUsers.length > 0) {
       await createRoleNotifications(['system_admin'], {
         type: 'system_alert',
-        title: 'Dojah verification alert',
+        title: 'Verification alert',
         message: 'A vendor verification returned a risk signal and needs review.',
         data: {
           vendorId: input.vendorId,

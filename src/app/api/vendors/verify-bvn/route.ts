@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
         .insert(vendors)
         .values({
           userId,
-          tier: 'tier1_bvn',
+          tier: 'tier0',
           status: 'pending',
           categories: [],
           performanceStats: {

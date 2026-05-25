@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from 'next-auth';
 import NextAuth from 'next-auth';
+import { skipCSRFCheck } from '@auth/core';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import FacebookProvider from 'next-auth/providers/facebook';
@@ -7,10 +8,21 @@ import { compare } from 'bcryptjs';
 import { db, withRetry } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
-import { eq, or } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
+import {
+  looksLikeEmail,
+  normalizeNigerianPhone,
+  nigerianPhoneLookupVariants,
+} from '@/lib/utils/phone';
 import { kv } from '@vercel/kv';
 import { redis } from '@/lib/redis/client';
 import { isPersonalEmail, getPersonalEmailErrorMessage } from '@/lib/utils/email-validation';
+import {
+  isMfaRequiredForUser,
+  sendLoginMfaCode,
+  verifyLoginMfaCode,
+} from '@/lib/auth/mfa';
+import { AuditActionType } from '@/lib/utils/audit-logger';
 
 // SECURITY: Validate E2E testing mode is not enabled in production
 if (process.env.NODE_ENV === 'production' && process.env.E2E_TESTING === 'true') {
@@ -124,10 +136,15 @@ async function createAuditLog(
 
 export const authConfig: NextAuthConfig = {
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+  // Required on Vercel / reverse proxies so Auth.js trusts the production host for callbacks & cookies
+  trustHost: true,
 
-  // SECURITY: Skip CSRF check only in non-production environments with E2E testing enabled
-  // Production validation above ensures this can never be true in production
-  skipCSRFCheck: process.env.NODE_ENV !== 'production' && process.env.E2E_TESTING === 'true',
+  // SECURITY: Skip CSRF check only in non-production environments with E2E testing enabled.
+  // Auth.js v5 expects a special symbol, not a boolean. Production validation above
+  // ensures this can never be enabled in production.
+  ...(process.env.NODE_ENV !== 'production' && process.env.E2E_TESTING === 'true'
+    ? { skipCSRFCheck }
+    : {}),
   
   providers: [
     // Credentials provider for email/phone + password login
@@ -136,6 +153,7 @@ export const authConfig: NextAuthConfig = {
       credentials: {
         emailOrPhone: { label: 'Email or Phone', type: 'text' },
         password: { label: 'Password', type: 'password' },
+        mfaCode: { label: 'MFA Code', type: 'text' },
         ipAddress: { label: 'IP Address', type: 'hidden' },
         userAgent: { label: 'User Agent', type: 'hidden' },
       },
@@ -146,8 +164,10 @@ export const authConfig: NextAuthConfig = {
 
         const emailOrPhone = credentials.emailOrPhone as string;
         const password = credentials.password as string;
+        const mfaCode = typeof credentials.mfaCode === 'string' ? credentials.mfaCode.trim() : '';
         const ipAddress = (credentials.ipAddress as string) || 'unknown';
         const userAgent = (credentials.userAgent as string) || '';
+        const deviceType = getDeviceType(userAgent);
 
         // Check account lockout
         const lockoutStatus = await checkAccountLockout(emailOrPhone);
@@ -156,18 +176,26 @@ export const authConfig: NextAuthConfig = {
           throw new Error(`Account locked due to too many failed login attempts. Please try again in ${remainingMinutes} minutes.`);
         }
 
-        // Find user by email OR phone with retry logic
-        const [user] = await withRetry(async () => {
+        // Find user by email OR phone (normalized variants for Nigerian numbers)
+        const user = await withRetry(async () => {
+          if (looksLikeEmail(emailOrPhone)) {
+            return await db
+              .select()
+              .from(users)
+              .where(eq(users.email, emailOrPhone))
+              .limit(1)
+              .then((rows) => rows[0]);
+          }
+
+          // NOTE: use the raw identifier the user typed; variants() normalizes internally.
+          // This must never throw (CallbackRouteError) or login breaks.
+          const phoneVariants = nigerianPhoneLookupVariants(emailOrPhone);
           return await db
             .select()
             .from(users)
-            .where(
-              or(
-                eq(users.email, emailOrPhone),
-                eq(users.phone, emailOrPhone)
-              )
-            )
-            .limit(1);
+            .where(inArray(users.phone, phoneVariants))
+            .limit(1)
+            .then((rows) => rows[0]);
         });
 
         if (!user) {
@@ -176,14 +204,27 @@ export const authConfig: NextAuthConfig = {
           throw new Error('Invalid credentials');
         }
 
+        // Guard: some accounts (e.g. OAuth-only) may not have a password hash.
+        // bcrypt.compare would throw and surface as CallbackRouteError.
+        if (!user.passwordHash || typeof user.passwordHash !== 'string') {
+          await recordFailedLogin(emailOrPhone);
+          throw new Error('Invalid credentials');
+        }
+
         // Verify password
-        const isValidPassword = await compare(password, user.passwordHash);
+        let isValidPassword = false;
+        try {
+          isValidPassword = await compare(password, user.passwordHash);
+        } catch (error) {
+          console.error('[Auth] Password compare failed:', error);
+          await recordFailedLogin(emailOrPhone);
+          throw new Error('Invalid credentials');
+        }
         if (!isValidPassword) {
           // Record failed login attempt
           const attempts = await recordFailedLogin(emailOrPhone);
           
           // Create audit log for failed login
-          const deviceType = getDeviceType(userAgent);
           await createAuditLog(
             user.id,
             'login_failed',
@@ -214,6 +255,47 @@ export const authConfig: NextAuthConfig = {
           throw new Error('Account not found.');
         }
 
+        if (isMfaRequiredForUser(user)) {
+          if (!mfaCode) {
+            const mfaResult = await sendLoginMfaCode(user, ipAddress, deviceType);
+            await createAuditLog(
+              user.id,
+              AuditActionType.MFA_CHALLENGE_SENT,
+              ipAddress,
+              deviceType,
+              userAgent,
+              {
+                channel: mfaResult.channel,
+                success: mfaResult.success,
+              }
+            );
+
+            throw new Error(
+              mfaResult.success
+                ? 'MFA_REQUIRED'
+                : 'MFA_UNAVAILABLE'
+            );
+          }
+
+          const mfaVerification = await verifyLoginMfaCode(user, mfaCode);
+          await createAuditLog(
+            user.id,
+            mfaVerification.success
+              ? AuditActionType.MFA_VERIFICATION_SUCCESSFUL
+              : AuditActionType.MFA_VERIFICATION_FAILED,
+            ipAddress,
+            deviceType,
+            userAgent,
+            {
+              channel: user.mfaChannel || 'email',
+            }
+          );
+
+          if (!mfaVerification.success) {
+            throw new Error(mfaVerification.message || 'Invalid verification code');
+          }
+        }
+
         // Reset failed login attempts on successful login
         await resetFailedLogins(emailOrPhone);
 
@@ -233,7 +315,6 @@ export const authConfig: NextAuthConfig = {
         }
 
         // Update last login timestamp and device type with retry logic
-        const deviceType = getDeviceType(userAgent);
         await withRetry(async () => {
           await db
             .update(users)
@@ -551,28 +632,33 @@ export const authConfig: NextAuthConfig = {
           // If user doesn't exist or is deleted, invalidate the token
           if (!currentUser || currentUser.status === 'deleted') {
             console.warn(`[JWT] Invalid token for user ${token.id} - user not found or deleted`);
-            throw new Error('Invalid session');
+            // Don't throw (would surface as CallbackRouteError). Returning an empty token
+            // tells NextAuth to treat this as an unauthenticated session.
+            return null;
           }
 
           // Verify the token's user ID matches the database user ID
           // This prevents token tampering
           if (currentUser.id !== token.id) {
             console.error(`[JWT] Token user ID mismatch! Token: ${token.id}, DB: ${currentUser.id}`);
-            throw new Error('Session validation failed');
+            return null;
           }
 
           // Verify the token's email matches the database email
           // This catches cases where the wrong user's token is being used
-          if (currentUser.email !== token.email) {
+          // NOTE: some accounts may have null/empty emails (e.g. phone-only registration),
+          // so only enforce when both sides have a value.
+          if (currentUser.email && token.email && currentUser.email !== token.email) {
             console.error(`[JWT] Token email mismatch! Token: ${token.email}, DB: ${currentUser.email}`);
-            throw new Error('Session validation failed');
+            return null;
           }
           
           // Update last validation timestamp
           token.lastValidation = now;
         } catch (error) {
           console.error('[JWT] Validation error:', error);
-          throw error;
+          // Never throw from jwt() callback; it breaks the whole auth callback route.
+          return null;
         }
       }
 

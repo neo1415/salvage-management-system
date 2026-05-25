@@ -174,7 +174,7 @@ const DojahBusinessDataSchema = z.object({
 const DojahAddressDataSchema = z.object({
   status: z.string().optional().nullable(),
   reference_id: z.string().optional().nullable(),
-  data: z.record(z.unknown()).optional().nullable(),
+  data: z.record(z.string(), z.unknown()).optional().nullable(),
 }).passthrough();
 
 // ---------------------------------------------------------------------------
@@ -182,14 +182,31 @@ const DojahAddressDataSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const DojahVerificationResultSchema = z.object({
-  status: z.boolean(),
+  status: z.boolean().optional().nullable(),
   message: z.string().optional().nullable(),
   reference_id: z.string().optional().nullable(),
+  referenceId: z.string().optional().nullable(),
+  reference: z.string().optional().nullable(),
+  app_id: z.string().optional().nullable(),
+  appId: z.string().optional().nullable(),
+  environment: z.string().optional().nullable(),
   verification_status: z.string().optional().nullable(),
+  verificationStatus: z.string().optional().nullable(),
   verification_mode: z.string().optional().nullable(),
   verification_type: z.string().optional().nullable(),
   verification_value: z.string().optional().nullable(),
   verification_url: z.string().optional().nullable(),
+  datetime: z.string().optional().nullable(),
+  created_at: z.string().optional().nullable(),
+  updated_at: z.string().optional().nullable(),
+  first_name: z.string().optional().nullable(),
+  last_name: z.string().optional().nullable(),
+  full_name: z.string().optional().nullable(),
+  email: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  business_name: z.string().optional().nullable(),
+  pending_reason: z.string().optional().nullable(),
+  reason: z.string().optional().nullable(),
   selfie_url: z.string().optional().nullable(),
   id_url: z.string().optional().nullable(),
   back_url: z.string().optional().nullable(),
@@ -264,15 +281,18 @@ export const DojahVerificationResultSchema = z.object({
             .object({
               first_name: z.string().optional().nullable(),
               last_name: z.string().optional().nullable(),
+              email: z.string().optional().nullable(),
               dob: z
                 .string()
                 .optional()
                 .nullable()
                 .transform((v) => (v ? toISODate(v) : v)),
             })
+            .passthrough()
             .optional()
             .nullable(),
         })
+        .passthrough()
         .optional()
         .nullable(),
       phone_number: z
@@ -301,16 +321,18 @@ export const DojahVerificationResultSchema = z.object({
         .optional()
         .nullable(),
     })
+    .passthrough()
     .optional()
     .nullable(),
   metadata: z
     .object({
-      ipinfo: z.record(z.unknown()).optional().nullable(),
+      ipinfo: z.record(z.string(), z.unknown()).optional().nullable(),
       device_info: z.string().optional().nullable(),
     })
+    .passthrough()
     .optional()
     .nullable(),
-});
+}).passthrough();
 
 export type DojahVerificationResult = z.infer<typeof DojahVerificationResultSchema>;
 
@@ -361,7 +383,7 @@ export const DojahCACResultSchema = z.object({
       company_status: z.string().optional().nullable(),
       company_type: z.string().optional().nullable(),
       address: z.string().optional().nullable(),
-      directors: z.array(z.record(z.unknown())).optional().nullable(),
+      directors: z.array(z.record(z.string(), z.unknown())).optional().nullable(),
     })
     .optional()
     .nullable(),

@@ -14,7 +14,7 @@ Framing 'https://www.google.com/' violates the following Content Security Policy
 https://checkout.flutterwave.com https://widget.dojah.io https://identity.dojah.io https://*.dojah.io 
 https://res.cloudinary.com https://*.cloudinary.com". The request has been blocked.
 
-Unsafe attempt to load URL https://www.google.com/maps/embed/v1/place?key=AIzaSyBpNs3iZUa16V03YfhypvmXgkxbKXcmKkM&q=...
+Unsafe attempt to load URL https://www.google.com/maps/embed/v1/place?key=GOOGLE_MAPS_API_KEY&q=...
 from frame with URL chrome-error://chromewebdata/. Domains, protocols and ports must match.
 ```
 

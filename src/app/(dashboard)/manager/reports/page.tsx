@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 /**
  * Manager Reports Page - REDIRECT
@@ -18,12 +19,5 @@ export default function ManagerReportsPage() {
     router.replace('/reports');
   }, [router]);
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
-        <p className="text-gray-600">Redirecting to Reports...</p>
-      </div>
-    </div>
-  );
+  return <DataLoadingState label="Opening reports" variant="minimal" className="min-h-[50vh] justify-center" />;
 }

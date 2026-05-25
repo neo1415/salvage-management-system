@@ -7,6 +7,9 @@ export type VerificationStatus =
   | 'passed'
   | 'failed'
   | 'review_required'
+  | 'pending_review'
+  | 'under_review'
+  | 'manual_review'
   | 'provider_unavailable'
   | 'expired';
 

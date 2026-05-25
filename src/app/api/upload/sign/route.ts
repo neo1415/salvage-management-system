@@ -25,6 +25,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { auth } from '@/lib/auth';
+import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
 import {
   generateSignedUploadParams,
   getSalvageCaseFolder,
@@ -32,24 +35,63 @@ import {
   TRANSFORMATION_PRESETS,
 } from '@/lib/storage/cloudinary';
 
+const uploadSignSchema = z.object({
+  entityType: z.enum(['salvage-case', 'kyc-document']),
+  entityId: z
+    .string()
+    .min(1)
+    .max(80)
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Invalid entityId format'),
+  transformation: z.enum(['thumbnail', 'medium', 'large', 'compressed']).optional(),
+});
+
+const SALVAGE_UPLOAD_ROLES = new Set(['claims_adjuster', 'salvage_manager', 'system_admin']);
+const KYC_UPLOAD_ROLES = new Set(['vendor', 'salvage_manager', 'system_admin']);
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { entityType, entityId, transformation } = body;
+    const session = await auth();
+    if (!session?.user?.id || !session.user.role) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    // Validate required fields
-    if (!entityType || !entityId) {
+    const rateLimitResult = await rateLimit(request, {
+      limit: 20,
+      window: 60 * 60,
+      identifier: `upload-sign:${session.user.id}`,
+    });
+    const rateLimitHeaders = createRateLimitHeaders(rateLimitResult);
+    if (!rateLimitResult.success) {
       return NextResponse.json(
-        { error: 'Missing required fields: entityType, entityId' },
+        { error: 'Too many upload signing requests. Please try again later.' },
+        { status: 429, headers: rateLimitHeaders }
+      );
+    }
+
+    const body = await request.json();
+    const validation = uploadSignSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: 'Invalid upload signing request', details: validation.error.issues },
         { status: 400 }
       );
     }
 
-    // Validate entity type
-    if (!['salvage-case', 'kyc-document'].includes(entityType)) {
+    const { entityType, entityId, transformation } = validation.data;
+    const role = session.user.role;
+
+    if (entityType === 'salvage-case' && !SALVAGE_UPLOAD_ROLES.has(role)) {
       return NextResponse.json(
-        { error: 'Invalid entityType. Must be "salvage-case" or "kyc-document"' },
-        { status: 400 }
+        { error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
+    if (entityType === 'kyc-document' && !KYC_UPLOAD_ROLES.has(role)) {
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
       );
     }
 
@@ -81,7 +123,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ...params,
       uploadUrl: `https://api.cloudinary.com/v1_1/${params.cloudName}/image/upload`,
-    });
+    }, { headers: rateLimitHeaders });
   } catch (error) {
     console.error('Error generating signed upload params:', error);
     return NextResponse.json(

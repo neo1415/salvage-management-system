@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
@@ -27,7 +27,7 @@ interface Document {
   receiptUrl?: string;
 }
 
-interface AuctionDocuments {
+interface AuctionDocuments extends Record<string, unknown> {
   auctionId: string;
   assetName: string;
   winningBid: number;
@@ -36,11 +36,43 @@ interface AuctionDocuments {
   documents: Document[];
 }
 
+interface WonAuctionDocumentPayload {
+  id: string;
+  assetName?: string;
+  currentBid?: string | number | null;
+  closedAt?: string;
+  status?: AuctionDocuments['status'];
+  payment?: {
+    id?: string;
+    createdAt?: string;
+  } | null;
+}
+
+interface ApiDocumentPayload {
+  id: string;
+  auctionId: string;
+  documentType: Document['documentType'];
+  title: string;
+  status: Document['status'];
+  pdfUrl: string;
+  createdAt: string;
+  signedAt: string | null;
+  documentData?: {
+    assetDescription?: string;
+    salePrice?: number;
+  };
+}
+
+const DOCUMENTS_PAGE_SIZE = 15;
+
 function isVisibleDocument(doc: Document) {
   return !(doc.documentType === 'pickup_authorization' && doc.status === 'pending');
 }
 
-function createReceiptDocument(auction: any, payment: any): Document | null {
+function createReceiptDocument(
+  auction: WonAuctionDocumentPayload,
+  payment: NonNullable<WonAuctionDocumentPayload['payment']>
+): Document | null {
   if (!payment?.id) return null;
 
   return {
@@ -50,128 +82,115 @@ function createReceiptDocument(auction: any, payment: any): Document | null {
     title: 'Payment Receipt',
     status: 'signed',
     signedAt: payment.createdAt ? new Date(payment.createdAt) : null,
-    createdAt: payment.createdAt ? new Date(payment.createdAt) : new Date(auction.closedAt),
+    createdAt: payment.createdAt
+      ? new Date(payment.createdAt)
+      : auction.closedAt
+        ? new Date(auction.closedAt)
+        : new Date(),
     pdfUrl: '',
     isReceipt: true,
     receiptUrl: `/receipt/${payment.id}`,
   };
 }
 
-async function fetchReceiptDocument(auction: any): Promise<Document | null> {
-  if (auction.payment?.id) {
-    return createReceiptDocument(auction, auction.payment);
-  }
-
-  try {
-    const response = await fetch(`/api/payments?auctionId=${auction.id}`);
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    return createReceiptDocument(auction, data.data?.payment);
-  } catch (error) {
-    console.warn(`Unable to load receipt for auction ${auction.id}:`, error);
-    return null;
-  }
+function mapApiDocument(doc: ApiDocumentPayload): Document {
+  return {
+    id: doc.id,
+    auctionId: doc.auctionId,
+    documentType: doc.documentType,
+    title: doc.title,
+    status: doc.status,
+    signedAt: doc.signedAt ? new Date(doc.signedAt) : null,
+    createdAt: new Date(doc.createdAt),
+    pdfUrl: doc.pdfUrl,
+  };
 }
 
 export default function VendorDocumentsPage() {
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const [auctionDocuments, setAuctionDocuments] = useState<AuctionDocuments[]>([]);
   
   // Track if we need to scroll to a specific auction
   const [scrollToAuctionId, setScrollToAuctionId] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(DOCUMENTS_PAGE_SIZE);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // CRITICAL: Wrap fetchFn in useCallback to prevent infinite loop
   // Without this, fetchFn is recreated on every render, causing the hook to re-fetch infinitely
   const fetchDocuments = useCallback(async () => {
-    console.log('🔵 [DOCUMENTS PAGE] Starting document fetch...');
-    console.log('   Navigation type:', window.location.hash ? 'HASH (from auction detail)' : 'NORMAL (direct navigation)');
-    console.log('   Hash:', window.location.hash || 'none');
-    console.log('   Timestamp:', new Date().toISOString());
-    console.log('   Session status:', session?.user?.vendorId ? 'READY' : 'NOT READY');
-    
-    // Only fetch if we have a valid session
     if (!session?.user?.vendorId) {
-      console.log('❌ [DOCUMENTS PAGE] No vendor ID, returning empty');
       return [];
     }
 
-    console.log('✅ [DOCUMENTS PAGE] Vendor ID:', session.user.vendorId);
+    const [auctionsResponse, documentsResponse] = await Promise.all([
+      fetch('/api/vendor/won-auctions'),
+      fetch('/api/vendor/documents'),
+    ]);
 
-    // OPTIMIZED: Fetch won auctions first, then fetch documents in parallel
-    console.log('📡 [DOCUMENTS PAGE] Fetching won auctions...');
-    const auctionsResponse = await fetch('/api/vendor/won-auctions');
-    
     if (!auctionsResponse.ok) {
-      console.error('❌ [DOCUMENTS PAGE] Failed to fetch won auctions:', auctionsResponse.status);
       throw new Error('Failed to fetch documents');
     }
 
-    const data = await auctionsResponse.json();
-    console.log('📦 [DOCUMENTS PAGE] Won auctions response:', {
-      status: data.status,
-      auctionCount: data.data?.auctions?.length || 0,
-      auctions: data.data?.auctions?.map((a: any) => ({ id: a.id, status: a.status })) || []
-    });
-    
-    if (data.status === 'success' && data.data.auctions && data.data.auctions.length > 0) {
-      // CRITICAL FIX: Fetch ALL documents in parallel instead of sequentially
-      // This reduces load time from N seconds to ~1 second
-      console.log('📄 [DOCUMENTS PAGE] Fetching documents for', data.data.auctions.length, 'auctions in parallel...');
-      
-      const documentPromises = data.data.auctions.map(async (auction: any) => {
-        const receiptDocument = await fetchReceiptDocument(auction);
+    const auctionsPayload = await auctionsResponse.json();
+    const documentsPayload = documentsResponse.ok
+      ? await documentsResponse.json()
+      : { documents: [] };
 
-        return fetch(`/api/auctions/${auction.id}/documents`)
-          .then(res => {
-            console.log(`   📄 Auction ${auction.id}: Response status ${res.status}`);
-            return res.json();
-          })
-          .then(docsData => {
-            const docCount = docsData.status === 'success' ? docsData.data.documents.length : 0;
-            console.log(`   ✅ Auction ${auction.id}: ${docCount} documents`);
-            return {
-              auctionId: auction.id,
-              assetName: auction.assetName || 'Salvage Item',
-              winningBid: parseFloat(auction.currentBid || '0'),
-              closedAt: new Date(auction.closedAt),
-              status: auction.status,
-              documents: [
-                ...(docsData.status === 'success' ? docsData.data.documents : []),
-                ...(receiptDocument ? [receiptDocument] : []),
-              ],
-            };
-          })
-          .catch(err => {
-            console.error(`   ❌ Auction ${auction.id}: Failed to fetch documents:`, err);
-            return {
-              auctionId: auction.id,
-              assetName: auction.assetName || 'Salvage Item',
-              winningBid: parseFloat(auction.currentBid || '0'),
-              closedAt: new Date(auction.closedAt),
-              status: auction.status,
-              documents: receiptDocument ? [receiptDocument] : [],
-            };
-          })
-      });
+    const wonAuctions = (auctionsPayload.data?.auctions ?? []) as WonAuctionDocumentPayload[];
+    const rawDocuments = (documentsPayload.documents ?? []) as ApiDocumentPayload[];
 
-      const auctionsWithDocs = await Promise.all(documentPromises);
-      
-      // Only return auctions that have documents
-      const filtered = auctionsWithDocs.filter(a => a.documents.length > 0);
-      console.log('🎯 [DOCUMENTS PAGE] Final result:', {
-        totalAuctions: auctionsWithDocs.length,
-        auctionsWithDocs: filtered.length,
-        details: filtered.map(a => ({ id: a.auctionId, docCount: a.documents.length }))
-      });
-      
-      return filtered;
+    const docsByAuction = new Map<string, Document[]>();
+    for (const raw of rawDocuments) {
+      const doc = mapApiDocument(raw);
+      const existing = docsByAuction.get(doc.auctionId) ?? [];
+      existing.push(doc);
+      docsByAuction.set(doc.auctionId, existing);
     }
-    
-    console.log('⚠️  [DOCUMENTS PAGE] No won auctions found, returning empty');
-    return [];
-  }, [session?.user?.vendorId]); // Only recreate if vendorId changes
+
+    const auctionMeta = new Map(wonAuctions.map((auction) => [auction.id, auction]));
+    const auctionIds = new Set([
+      ...wonAuctions.map((a) => a.id),
+      ...docsByAuction.keys(),
+    ]);
+
+    const grouped: AuctionDocuments[] = [];
+
+    for (const auctionId of auctionIds) {
+      const auction = auctionMeta.get(auctionId);
+      const receipt = auction?.payment?.id
+        ? createReceiptDocument(auction, auction.payment)
+        : null;
+
+      const documents = [
+        ...(docsByAuction.get(auctionId) ?? []),
+        ...(receipt ? [receipt] : []),
+      ];
+
+      if (documents.length === 0) continue;
+
+      const saleFromDoc = rawDocuments.find(
+        (d) => d.auctionId === auctionId
+      );
+
+      grouped.push({
+        auctionId,
+        assetName:
+          auction?.assetName ||
+          saleFromDoc?.documentData?.assetDescription ||
+          'Salvage Item',
+        winningBid: auction
+          ? Number(auction.currentBid ?? 0)
+          : saleFromDoc?.documentData?.salePrice ?? 0,
+        closedAt: auction?.closedAt ? new Date(auction.closedAt) : documents[0].createdAt,
+        status: auction?.status ?? 'closed',
+        documents,
+      });
+    }
+
+    grouped.sort((a, b) => b.closedAt.getTime() - a.closedAt.getTime());
+    return grouped;
+  }, [session?.user?.vendorId]);
 
   // Use cached documents hook - pass null for auctionId since we're fetching all auctions
   // CRITICAL: Only pass fetchDocuments when session is ready to prevent premature fetches
@@ -182,7 +201,7 @@ export default function VendorDocumentsPage() {
     lastUpdated, 
     refresh,
     error: cacheError 
-  } = useCachedDocuments(null, session?.user?.vendorId ? fetchDocuments : undefined);
+  } = useCachedDocuments<AuctionDocuments>(null, session?.user?.vendorId ? fetchDocuments : undefined);
 
   // Update local state when cached docs change
   useEffect(() => {
@@ -195,12 +214,54 @@ export default function VendorDocumentsPage() {
     if (cachedDocs && cachedDocs.length > 0) {
       console.log('✅ [DOCUMENTS PAGE] Setting auction documents:', cachedDocs.length, 'auctions');
       setAuctionDocuments(cachedDocs as unknown as AuctionDocuments[]);
-    } else if (!isLoading) {
-      // Clear documents if no cached docs and not loading
+    } else if (!isLoading && session?.user?.vendorId) {
       console.log('⚠️  [DOCUMENTS PAGE] Clearing auction documents (no cached docs and not loading)');
       setAuctionDocuments([]);
     }
-  }, [cachedDocs, isLoading]);
+  }, [cachedDocs, isLoading, session?.user?.vendorId]);
+
+  const scrollTargetIndex = useMemo(() => {
+    if (!scrollToAuctionId) return -1;
+    return auctionDocuments.findIndex((a) => a.auctionId === scrollToAuctionId);
+  }, [auctionDocuments, scrollToAuctionId]);
+
+  useEffect(() => {
+    setVisibleCount(DOCUMENTS_PAGE_SIZE);
+  }, [auctionDocuments.length]);
+
+  useEffect(() => {
+    if (scrollTargetIndex >= 0) {
+      setVisibleCount((prev) =>
+        Math.max(prev, scrollTargetIndex + 1, DOCUMENTS_PAGE_SIZE)
+      );
+    }
+  }, [scrollTargetIndex]);
+
+  const visibleAuctions = useMemo(
+    () => auctionDocuments.slice(0, visibleCount),
+    [auctionDocuments, visibleCount]
+  );
+
+  const hasMoreAuctions = visibleCount < auctionDocuments.length;
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel || !hasMoreAuctions || isLoading) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) =>
+            Math.min(prev + DOCUMENTS_PAGE_SIZE, auctionDocuments.length)
+          );
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreAuctions, isLoading, auctionDocuments.length]);
 
   // Handle anchor navigation from auction detail page
   useEffect(() => {
@@ -279,7 +340,7 @@ export default function VendorDocumentsPage() {
     router.push(receiptUrl);
   };
 
-  if (isLoading) {
+  if (isLoading || sessionStatus === 'loading') {
     console.log('⏳ [DOCUMENTS PAGE] Showing loading state');
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center">
@@ -460,7 +521,7 @@ export default function VendorDocumentsPage() {
           </div>
         ) : (
           <div className="grid gap-5 sm:gap-6">
-            {auctionDocuments.map((auction) => (
+            {visibleAuctions.map((auction) => (
               <AuctionDocumentCard
                 key={auction.auctionId}
                 auction={auction}
@@ -470,6 +531,15 @@ export default function VendorDocumentsPage() {
                 isOffline={isOffline}
               />
             ))}
+            {hasMoreAuctions && (
+              <div
+                ref={loadMoreRef}
+                className="py-6 text-center text-sm text-gray-500"
+                aria-hidden
+              >
+                Loading more auctions…
+              </div>
+            )}
           </div>
         )}
       </div>

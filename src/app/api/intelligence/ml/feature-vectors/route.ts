@@ -11,7 +11,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { FeatureEngineeringService } from '@/features/intelligence/services/feature-engineering.service';
 import { z } from 'zod';
 
 const querySchema = z.object({
@@ -45,23 +44,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { entityType, entityId, limit } = queryParams.data;
-
-    const featureService = new FeatureEngineeringService();
-    const vectors = await featureService.getFeatureVectors({
-      entityType,
-      entityId,
-      limit,
-    });
+    const { entityType, entityId } = queryParams.data;
 
     return NextResponse.json({
-      success: true,
-      data: vectors,
+      success: false,
+      error: 'Feature vector retrieval is not wired to the current feature engineering service yet',
+      data: [],
       meta: {
-        count: vectors.length,
+        count: 0,
         filters: { entityType, entityId },
       },
-    });
+    }, { status: 501 });
 
   } catch (error) {
     console.error('[Feature Vectors API] Error:', error);

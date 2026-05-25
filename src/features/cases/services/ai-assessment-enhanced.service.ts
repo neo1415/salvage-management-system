@@ -40,6 +40,25 @@ import { getGeminiRateLimiter } from '@/lib/integrations/gemini-rate-limiter';
 import { type QualityTier, mapAnyConditionToQuality } from '@/features/valuations/services/condition-mapping.service';
 
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
+const DEFAULT_RESERVE_PRICE_RATIO = 0.7;
+const DEFAULT_TOTAL_LOSS_SALVAGE_CAP_RATIO = 0.3;
+
+function getClampedRatio(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+
+  return Math.min(0.95, Math.max(0.05, parsed));
+}
+
+function getReservePriceRatio(): number {
+  return getClampedRatio(process.env.DEFAULT_RESERVE_PRICE_RATIO, DEFAULT_RESERVE_PRICE_RATIO);
+}
+
+function getTotalLossSalvageCapRatio(): number {
+  return getClampedRatio(process.env.DEFAULT_TOTAL_LOSS_SALVAGE_CAP_RATIO, DEFAULT_TOTAL_LOSS_SALVAGE_CAP_RATIO);
+}
 
 /**
  * Determines quality tier based on damage assessment and vehicle context
@@ -89,7 +108,7 @@ function determineQualityTier(
 // Universal Item Information (replaces VehicleInfo)
 export interface UniversalItemInfo {
   // Universal fields
-  type: 'vehicle' | 'electronics' | 'appliance' | 'watch' | 'artwork' | 'equipment' | 'machinery' | 'other';
+  type: 'vehicle' | 'electronics' | 'appliance' | 'property' | 'watch' | 'jewelry' | 'furniture' | 'artwork' | 'equipment' | 'machinery' | 'other';
   condition: 'Brand New' | 'Foreign Used (Tokunbo)' | 'Nigerian Used' | 'Heavily Used';
 
   // Vehicle-specific fields
@@ -105,6 +124,15 @@ export interface UniversalItemInfo {
 
   // Watch-specific fields
   movementType?: 'automatic' | 'quartz' | 'manual';
+
+  // Property-specific fields
+  propertyType?: string;
+  location?: string;
+  bedrooms?: number;
+
+  // Machinery/furniture/jewelry helper fields
+  machineryType?: string;
+  material?: string;
 
   // Universal fields
   age?: number; // Years since manufacture
@@ -465,10 +493,11 @@ export async function assessDamageEnhanced(params: {
       }
       
       // TOTAL LOSS OVERRIDE: Cap salvage value at 30% of condition-adjusted market value for total loss items
-      if (isActuallyTotalLoss && salvageValue > conditionAdjustedMarketValue * 0.3) {
+      const totalLossSalvageCapRatio = getTotalLossSalvageCapRatio();
+      if (isActuallyTotalLoss && salvageValue > conditionAdjustedMarketValue * totalLossSalvageCapRatio) {
         const originalSalvage = salvageValue;
-        salvageValue = Math.round(conditionAdjustedMarketValue * 0.3);
-        console.log(`🚨 Total loss override applied: Salvage value capped from ₦${originalSalvage.toLocaleString()} to ₦${salvageValue.toLocaleString()} (30% of condition-adjusted market value ₦${conditionAdjustedMarketValue.toLocaleString()})`);
+        salvageValue = Math.round(conditionAdjustedMarketValue * totalLossSalvageCapRatio);
+        console.log(`🚨 Total loss override applied: Salvage value capped from ₦${originalSalvage.toLocaleString()} to ₦${salvageValue.toLocaleString()} (${Math.round(totalLossSalvageCapRatio * 100)}% of condition-adjusted market value ₦${conditionAdjustedMarketValue.toLocaleString()})`);
         console.log(`   Source: ${geminiTotalLoss === true ? 'Gemini AI' : 'Damage Calculation'}`);
       }
       
@@ -522,15 +551,15 @@ export async function assessDamageEnhanced(params: {
     }
   }
   
-  const reservePrice = salvageValue * 0.7;
+  const reservePrice = salvageValue * getReservePriceRatio();
   
   // Step 5: Determine severity
   const damagePercentage = calculateDamagePercentage(damageScore);
   let damageSeverity = determineSeverity(damagePercentage);
   
-  // CRITICAL FIX: Use Gemini's severity as authoritative when available
-  if (damageAnalysis.method === 'gemini' && damageAnalysis.severity) {
-    console.log(`🎯 Using Gemini's severity assessment: ${damageAnalysis.severity} (overriding calculated: ${damageSeverity})`);
+  // Use model severity as authoritative when available; percentage remains the deterministic fallback.
+  if ((damageAnalysis.method === 'gemini' || damageAnalysis.method === 'claude') && damageAnalysis.severity) {
+    console.log(`🎯 Using AI severity assessment: ${damageAnalysis.severity} (overriding calculated: ${damageSeverity})`);
     damageSeverity = damageAnalysis.severity;
   }
   
@@ -1370,11 +1399,20 @@ function getUniversalAdjustment(itemInfo: UniversalItemInfo, skipConditionAdjust
       break;
 
     case 'watch':
+    case 'jewelry':
       adjustment *= getWatchAdjustment(itemInfo);
       break;
 
     case 'appliance':
       adjustment *= getApplianceAdjustment(itemInfo);
+      break;
+
+    case 'property':
+      adjustment *= getPropertyAdjustment(itemInfo);
+      break;
+
+    case 'furniture':
+      adjustment *= getFurnitureAdjustment(itemInfo);
       break;
 
     case 'artwork':
@@ -1486,6 +1524,29 @@ function getApplianceAdjustment(itemInfo: UniversalItemInfo): number {
   }
 
   return Math.max(0.15, adjustment); // Minimum 15% of value
+}
+
+function getPropertyAdjustment(itemInfo: UniversalItemInfo): number {
+  let adjustment = 1.0;
+
+  // Property age matters, but land/buildings tend to retain value better than movable assets.
+  if (itemInfo.age) {
+    const ageDepreciation = Math.min(itemInfo.age * 0.01, 0.20);
+    adjustment *= (1.0 - ageDepreciation);
+  }
+
+  return Math.max(0.60, adjustment);
+}
+
+function getFurnitureAdjustment(itemInfo: UniversalItemInfo): number {
+  let adjustment = 1.0;
+
+  if (itemInfo.age) {
+    const ageDepreciation = Math.min(itemInfo.age * 0.12, 0.65);
+    adjustment *= (1.0 - ageDepreciation);
+  }
+
+  return Math.max(0.15, adjustment);
 }
 
 // Artwork-specific adjustments
@@ -1648,7 +1709,7 @@ function assessRepairability(
   damageScore: DamageScore,
   repairCost: number,
   marketValue: number,
-  itemType?: 'vehicle' | 'electronics' | 'appliance' | 'watch' | 'artwork' | 'equipment' | 'other'
+  itemType?: UniversalItemInfo['type']
 ): {
   isRepairable: boolean;
   recommendation: string;
@@ -1657,7 +1718,11 @@ function assessRepairability(
   const itemLabel = itemType === 'vehicle' ? 'vehicle' :
                     itemType === 'electronics' ? 'device' :
                     itemType === 'appliance' ? 'appliance' :
+                    itemType === 'property' ? 'property' :
                     itemType === 'watch' ? 'watch' :
+                    itemType === 'jewelry' ? 'jewelry item' :
+                    itemType === 'furniture' ? 'furniture item' :
+                    itemType === 'machinery' ? 'machinery' :
                     itemType === 'artwork' ? 'artwork' :
                     itemType === 'equipment' ? 'equipment' :
                     'item';
@@ -1885,6 +1950,34 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
   }
 
   // For non-vehicles, use internet search or estimation
+  if (itemInfo.type === 'property' && itemInfo.propertyType && itemInfo.location) {
+    try {
+      console.log(`🌐 Searching for property market price: ${itemInfo.propertyType} in ${itemInfo.location}...`);
+
+      const searchResult = await internetSearchService.searchMarketPrice({
+        item: {
+          type: 'property',
+          propertyType: itemInfo.propertyType,
+          location: itemInfo.location,
+          bedrooms: itemInfo.bedrooms,
+          condition: itemInfo.condition as UniversalCondition
+        },
+        maxResults: 10,
+        timeout: 5000
+      });
+
+      if (searchResult.success && searchResult.priceData.averagePrice) {
+        return {
+          value: Math.round(searchResult.priceData.medianPrice || searchResult.priceData.averagePrice),
+          confidence: Math.round(searchResult.priceData.confidence),
+          source: 'internet_search'
+        };
+      }
+    } catch (error) {
+      console.error('❌ Property market search failed, using estimation:', error);
+    }
+  }
+
   if (itemInfo.brand && itemInfo.model) {
     try {
       console.log(`🌐 Searching for ${itemInfo.type} market price: ${itemInfo.brand} ${itemInfo.model}...`);
@@ -1911,6 +2004,15 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
           type: 'appliance',
           brand: itemInfo.brand || '',
           model: itemInfo.model || ''
+        };
+      } else if (itemInfo.type === 'machinery') {
+        itemIdentifier = {
+          type: 'machinery',
+          brand: itemInfo.brand || '',
+          machineryType: itemInfo.machineryType || 'equipment',
+          model: itemInfo.model,
+          year: itemInfo.year,
+          condition: itemInfo.condition as UniversalCondition
         };
       } else {
         // For watch, artwork, equipment, other - use machinery as fallback
@@ -1965,9 +2067,13 @@ function estimateUniversalMarketValue(itemInfo: UniversalItemInfo): number {
     'vehicle': 8000000,      // 8M default for vehicles
     'electronics': 1200000,  // 1.2M default for electronics (increased from 500K)
     'appliance': 800000,     // 800K default for appliances (increased from 300K)
+    'property': 25000000,    // 25M default for property when search is unavailable
     'watch': 300000,         // 300K default for watches (increased from 150K)
+    'jewelry': 300000,       // 300K default for jewelry/watches
+    'furniture': 500000,     // 500K default for furniture
     'artwork': 500000,       // 500K default for artwork (increased from 200K)
     'equipment': 1500000,    // 1.5M default for equipment (increased from 1M)
+    'machinery': 2500000,    // 2.5M default for machinery/equipment
     'other': 800000,         // 800K default for other items (increased from 500K)
   };
 
@@ -2034,7 +2140,7 @@ async function searchUniversalPartPrices(
   confidence?: number;
   source: 'internet_search' | 'not_found';
 }>> {
-  if ((!itemInfo?.brand && !itemInfo?.make) || damages.length === 0) {
+  if ((!itemInfo?.brand && !itemInfo?.make && !(itemInfo?.type === 'property' && itemInfo.propertyType && itemInfo.location)) || damages.length === 0) {
     return [];
   }
 
@@ -2059,6 +2165,23 @@ async function searchUniversalPartPrices(
       type: 'appliance',
       brand: itemInfo.brand || itemInfo.make || '',
       model: itemInfo.model || ''
+    };
+  } else if (itemInfo.type === 'property' && itemInfo.propertyType && itemInfo.location) {
+    itemIdentifier = {
+      type: 'property',
+      propertyType: itemInfo.propertyType,
+      location: itemInfo.location,
+      bedrooms: itemInfo.bedrooms,
+      condition: itemInfo.condition as UniversalCondition
+    };
+  } else if (itemInfo.type === 'machinery') {
+    itemIdentifier = {
+      type: 'machinery',
+      brand: itemInfo.brand || itemInfo.make || '',
+      machineryType: itemInfo.machineryType || 'equipment',
+      model: itemInfo.model,
+      year: itemInfo.year,
+      condition: itemInfo.condition as UniversalCondition
     };
   } else {
     // For watch, artwork, equipment, other - use machinery as fallback
@@ -2093,12 +2216,29 @@ async function searchUniversalPartPrices(
           'interior': 'internal parts'
         };
       case 'watch':
+      case 'jewelry':
         return {
           'structure': 'case',
           'engine': 'movement', // Map mechanical/engine to movement for watches
           'electrical': 'movement',
           'body': 'crystal',
           'interior': 'mechanism'
+        };
+      case 'property':
+        return {
+          'structure': 'structural repair',
+          'engine': 'building services repair',
+          'electrical': 'electrical repair',
+          'body': 'wall roof exterior repair',
+          'interior': 'interior repair'
+        };
+      case 'machinery':
+        return {
+          'structure': 'frame',
+          'engine': 'engine parts',
+          'electrical': 'electrical parts',
+          'body': 'body panel',
+          'interior': 'cabin parts'
         };
       case 'artwork':
         return {

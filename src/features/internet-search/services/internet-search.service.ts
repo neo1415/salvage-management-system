@@ -337,8 +337,12 @@ export class InternetSearchService {
         throw new Error('No search results returned');
       }
       
-      // Extract prices from results (no type filtering for parts)
-      const priceData = priceExtractor.extractPrices(searchResults.organic);
+      const priceData = priceExtractor.extractPrices(
+        searchResults.organic,
+        item.type,
+        undefined,
+        { mode: 'part', partName }
+      );
       
       const executionTime = Date.now() - startTime;
       

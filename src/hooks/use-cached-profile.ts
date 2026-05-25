@@ -68,7 +68,7 @@ export function useCachedProfile(): UseCachedProfileReturn {
       setIsLoading(true);
       setError(null);
       
-      const response = await fetch('/api/vendor/settings/profile');
+      const response = await fetch('/api/settings/profile');
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Failed to fetch profile data' }));

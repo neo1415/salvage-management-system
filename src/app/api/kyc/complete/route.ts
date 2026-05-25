@@ -14,7 +14,15 @@ import { getIpAddress } from '@/lib/utils/audit-logger';
 import type { KYCVerificationData } from '@/features/kyc/types/kyc.types';
 import { normalizeDojahWorkflowResult } from '@/features/kyc/services/dojah-normalizer.service';
 import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
+import { assertProviderVerificationStorageReady, isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
+import { ingestDojahMediaForVendor } from '@/features/kyc/services/dojah-media-ingest.service';
 import { createRoleNotifications } from '@/features/notifications/services/notification.service';
+import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
+import {
+  getTier2AutoReviewEnabled,
+  isCleanTier2Verification,
+} from '@/features/kyc/services/tier2-review-settings.service';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 const LOCK_TTL_SECONDS = 300; // 5 minutes
 
@@ -45,6 +53,14 @@ export async function POST(request: NextRequest) {
 
   const vendorId = vendor.id;
   const lockKey = `kyc:lock:${vendorId}`;
+  try {
+    await assertProviderVerificationStorageReady();
+  } catch (error) {
+    if (isProviderVerificationStorageError(error)) {
+      return NextResponse.json({ error: PROVIDER_VERIFICATION_MIGRATION_MISSING }, { status: 503 });
+    }
+    throw error;
+  }
 
   // Acquire Redis lock — prevent concurrent submissions
   const locked = await redis.set(lockKey, '1', { nx: true, ex: LOCK_TTL_SECONDS });
@@ -57,7 +73,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const referenceId: string = body?.reference_id;
+    const referenceId: string = body?.reference_id || body?.referenceId || body?.reference || body?.verification_reference;
 
     if (!referenceId || typeof referenceId !== 'string') {
       return NextResponse.json({ error: 'reference_id is required' }, { status: 400 });
@@ -69,20 +85,99 @@ export async function POST(request: NextRequest) {
     const repo = getKYCRepository();
     const audit = getKYCAuditService();
     const notify = getKYCNotificationService();
+    const providerService = getProviderVerificationService();
 
     // Log widget completion
     await audit.logWidgetLaunch(vendorId, userId, ipAddress);
+    await audit.log({
+      vendorId,
+      actorId: userId,
+      action: AuditActionType.DOJAH_KYC_COMPLETED,
+      ipAddress,
+      userAgent: request.headers.get('user-agent') ?? 'unknown',
+      afterState: { provider: 'dojah', providerReference: referenceId, source: 'frontend_callback' },
+    });
 
     // Fetch full verification result from Dojah
     let verificationResult;
     try {
       verificationResult = await dojah.getVerificationResult(referenceId);
     } catch (err) {
-      console.error('[KYC Complete] Dojah fetch failed', err);
-      return NextResponse.json(
-        { error: 'Verification service is temporarily unavailable. Please try again.' },
-        { status: 503 }
-      );
+      console.error('[KYC Complete] Dojah fetch failed', {
+        message: err instanceof Error ? err.message : 'Unknown Dojah fetch error',
+        providerReference: referenceId,
+      });
+
+      const now = new Date();
+      await providerService.persistVerification({
+        userId,
+        vendorId,
+        actorId: userId,
+        result: {
+          provider: 'dojah',
+          providerReference: referenceId,
+          workflowReference: referenceId,
+          verificationType: 'tier2',
+          status: 'provider_unavailable',
+          riskLevel: 'medium',
+          checksCompleted: [],
+          pendingChecks: ['provider_result_fetch'],
+          failedChecks: [],
+          reasonCodes: ['dojah_result_fetch_unavailable'],
+          displayMessage: 'Identity verification was completed, but the full result could not be fetched yet. Manual review is required.',
+          normalizedResult: {
+            source: 'frontend_callback',
+            fetchStatus: 'failed',
+            submittedAt: now.toISOString(),
+          },
+        },
+        rawPayload: { providerReference: referenceId, source: 'frontend_callback', error: 'provider_fetch_failed' },
+        ipAddress,
+        userAgent: request.headers.get('user-agent') ?? 'unknown',
+      });
+
+      await repo.upsertVerificationData(vendorId, {
+        dojahReferenceId: referenceId,
+        tier2SubmittedAt: now,
+      });
+
+      await audit.log({
+        vendorId,
+        actorId: userId,
+        action: AuditActionType.VENDOR_TIER2_PENDING_REVIEW,
+        ipAddress,
+        userAgent: request.headers.get('user-agent') ?? 'unknown',
+        afterState: { provider: 'dojah', providerReference: referenceId, reason: 'provider_result_unavailable' },
+      });
+
+      const vendorTarget = {
+        vendorId,
+        userId,
+        phone: session.user.phone ?? '',
+        email: session.user.email ?? '',
+        fullName: session.user.name ?? '',
+      };
+
+      await notify.sendKYCUnderReviewNotification(vendorTarget);
+      await createRoleNotifications(['salvage_manager', 'system_admin'], {
+        type: 'tier2_pending_review',
+        title: 'Tier 2 KYC Ready for Review',
+        message: `${session.user.name || 'A vendor'} completed identity verification, but the full result needs review.`,
+        data: { vendorId, providerReference: referenceId, url: `/manager/kyc-approvals/${vendorId}` },
+      }).catch((error) => console.error('[KYC Complete] manager notification failed', error));
+      await notify.sendTier2SubmissionManagerEmails({
+        vendorName: session.user.name ?? 'Vendor',
+        businessName: vendor.businessName,
+        riskLevel: 'Medium',
+        reviewUrl: appPath(`/manager/kyc-approvals/${vendorId}`),
+        outcome: 'pending_review',
+        reason: 'Verification result needs review',
+      });
+
+      return NextResponse.json({
+        status: 'pending_review',
+        message: 'Your application is under review. You will be notified within 24-48 hours.',
+      });
     }
 
     // Extract NIN entity
@@ -129,7 +224,33 @@ export async function POST(request: NextRequest) {
     const fraudRiskScore = fraud.calculateFraudScore(fraudSignals);
     const fraudFlags = fraud.detectFraudFlags(fraudSignals);
     const normalizedResult = normalizeDojahWorkflowResult(verificationResult, amlResult ?? null);
-    await getProviderVerificationService().persistVerification({
+    const media = await ingestDojahMediaForVendor({
+      vendorId,
+      userId,
+      providerReference: normalizedResult.providerReference || referenceId,
+      verificationResult,
+    }).catch((error) => {
+      console.warn('[KYC Complete] Dojah media ingest failed', {
+        providerReference: referenceId,
+        message: error instanceof Error ? error.message : 'Unknown media ingest error',
+      });
+      return null;
+    });
+    normalizedResult.normalizedResult = {
+      ...normalizedResult.normalizedResult,
+      dojahMedia: media
+        ? {
+            assets: media.assets.map((asset) => ({
+              type: asset.type,
+              sourceKey: asset.sourceKey,
+              storedUrl: asset.storedUrl,
+            })),
+            diagnostics: media.diagnostics,
+            profilePictureImported: Boolean(media.profilePictureUrl),
+          }
+        : null,
+    };
+    await providerService.persistVerification({
       userId,
       vendorId,
       actorId: userId,
@@ -137,6 +258,20 @@ export async function POST(request: NextRequest) {
       rawPayload: { verificationResult, amlResult },
       ipAddress,
       userAgent: request.headers.get('user-agent') ?? 'unknown',
+    });
+    await logAction({
+      userId,
+      actionType: AuditActionType.PROVIDER_VERIFICATION_STORED,
+      entityType: AuditEntityType.KYC,
+      entityId: vendorId,
+      ipAddress,
+      deviceType: DeviceType.DESKTOP,
+      userAgent: request.headers.get('user-agent') ?? 'unknown',
+      afterState: {
+        provider: 'dojah',
+        providerReference: normalizedResult.providerReference || referenceId,
+        event: 'evidence_stored',
+      },
     });
     void dojah.sendEasyDetectOnboardingEvent({
       userId,
@@ -172,10 +307,19 @@ export async function POST(request: NextRequest) {
       fraudRiskScore,
       fraudFlags,
       tier2SubmittedAt: now,
+      ...(media?.verificationData ?? {}),
     };
 
     // Persist to DB
     await repo.upsertVerificationData(vendorId, verificationData);
+    await audit.log({
+      vendorId,
+      actorId: userId,
+      action: AuditActionType.VENDOR_TIER2_PENDING_REVIEW,
+      ipAddress,
+      userAgent: request.headers.get('user-agent') ?? 'unknown',
+      afterState: { provider: 'dojah', providerReference: referenceId },
+    });
 
     // Record cost
     await repo.recordVerificationCost(vendorId, {
@@ -192,7 +336,7 @@ export async function POST(request: NextRequest) {
       amlRiskLevel,
     });
 
-    // Dojah is evidence. NEM Salvage remains the final manual review layer.
+    // Identity verification is evidence. NEM Salvage remains the final review authority.
     const sanctionsMatch = (amlResult?.entity?.sanctions?.length ?? 0) > 0;
 
     const vendorTarget = {
@@ -213,12 +357,68 @@ export async function POST(request: NextRequest) {
       await createRoleNotifications(['salvage_manager', 'system_admin'], {
         type: 'tier2_pending_review',
         title: 'High-risk KYC review required',
-        message: `${session.user.name || 'A vendor'} submitted KYC with a Dojah AML/sanctions signal.`,
+        message: `${session.user.name || 'A vendor'} submitted KYC with an AML/sanctions signal.`,
         data: { vendorId, providerReference: referenceId, url: `/manager/kyc-approvals/${vendorId}` },
       }).catch((error) => console.error('[KYC Complete] manager notification failed', error));
+      await notify.sendTier2SubmissionManagerEmails({
+        vendorName: session.user.name ?? 'Vendor',
+        businessName: vendor.businessName,
+        riskLevel: 'High',
+        reviewUrl: appPath(`/manager/kyc-approvals/${vendorId}`),
+        outcome: 'pending_review',
+        reason: 'AML/sanctions signal',
+      });
       return NextResponse.json({
         status: 'pending_review',
         message: 'Your application requires manual review.',
+      });
+    }
+
+    const automaticReviewEnabled = await getTier2AutoReviewEnabled();
+    const canAutoApprove = automaticReviewEnabled && isCleanTier2Verification({
+      failedChecks: normalizedResult.failedChecks,
+      pendingChecks: normalizedResult.pendingChecks,
+      reasonCodes: normalizedResult.reasonCodes,
+      amlRiskLevel,
+      fraudRiskScore,
+      livenessScore,
+      biometricMatchScore,
+    });
+
+    if (canAutoApprove) {
+      await repo.autoApprove(vendorId);
+      const emailResult = await notify.sendKYCApprovalNotification(vendorTarget);
+      await createRoleNotifications(['salvage_manager', 'system_admin'], {
+        type: 'system_alert',
+        title: 'Tier 2 KYC Auto-Approved',
+        message: `${session.user.name || 'A vendor'} completed a clean Tier 2 verification and was automatically approved.`,
+        data: { vendorId, providerReference: referenceId, url: `/manager/kyc-approvals/${vendorId}` },
+      }).catch((error) => console.error('[KYC Complete] manager notification failed', error));
+      await notify.sendTier2SubmissionManagerEmails({
+        vendorName: session.user.name ?? 'Vendor',
+        businessName: vendor.businessName,
+        riskLevel: amlRiskLevel,
+        reviewUrl: appPath(`/manager/kyc-approvals/${vendorId}`),
+        outcome: 'auto_approved',
+      });
+      await audit.log({
+        vendorId,
+        actorId: userId,
+        action: AuditActionType.VENDOR_TIER2_APPROVED,
+        ipAddress,
+        userAgent: request.headers.get('user-agent') ?? 'unknown',
+        afterState: {
+          provider: 'dojah',
+          providerReference: referenceId,
+          reviewMode: 'automatic',
+          emailSent: emailResult.emailSent,
+          emailError: emailResult.emailError,
+        },
+      });
+
+      return NextResponse.json({
+        status: 'approved',
+        message: 'Your Tier 2 verification has been approved.',
       });
     }
 
@@ -226,9 +426,16 @@ export async function POST(request: NextRequest) {
     await createRoleNotifications(['salvage_manager', 'system_admin'], {
       type: 'tier2_pending_review',
       title: 'Tier 2 KYC Ready for Review',
-      message: `${session.user.name || 'A vendor'} completed Dojah verification and is ready for review.`,
+      message: `${session.user.name || 'A vendor'} completed identity verification and is ready for review.`,
       data: { vendorId, providerReference: referenceId, url: `/manager/kyc-approvals/${vendorId}` },
     }).catch((error) => console.error('[KYC Complete] manager notification failed', error));
+    await notify.sendTier2SubmissionManagerEmails({
+      vendorName: session.user.name ?? 'Vendor',
+      businessName: vendor.businessName,
+      riskLevel: amlRiskLevel,
+      reviewUrl: appPath(`/manager/kyc-approvals/${vendorId}`),
+      outcome: 'pending_review',
+    });
 
     return NextResponse.json({
       status: 'pending_review',

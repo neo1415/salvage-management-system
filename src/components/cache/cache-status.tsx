@@ -47,7 +47,7 @@ export function CacheStatus({
   const loadStats = async () => {
     try {
       setIsLoading(true);
-      const cacheService = CacheService.getInstance();
+      const cacheService = CacheService;
       
       // Get storage usage
       const totalSize = await cacheService.getStorageUsage();
@@ -90,7 +90,7 @@ export function CacheStatus({
 
     try {
       setIsClearing(true);
-      const cacheService = CacheService.getInstance();
+      const cacheService = CacheService;
       await cacheService.clearAll();
       
       toast.success('Cache cleared', 'All cached data has been removed');

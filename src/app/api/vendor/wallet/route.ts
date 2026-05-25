@@ -50,24 +50,34 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get wallet transactions (last 50)
-    const transactions = await db
-      .select()
-      .from(walletTransactions)
-      .where(eq(walletTransactions.vendorId, vendor.id))
-      .orderBy(desc(walletTransactions.createdAt))
-      .limit(50);
-
     // Get escrow wallet for deposit information
     const escrowWallet = await db.query.escrowWallets.findFirst({
       where: eq(escrowWallets.vendorId, vendor.id),
     });
 
+    if (!escrowWallet) {
+      return NextResponse.json({
+        balance: 0,
+        availableBalance: 0,
+        frozenAmount: 0,
+        forfeitedAmount: 0,
+        transactions: [],
+      });
+    }
+
+    // Get wallet transactions (last 50)
+    const transactions = await db
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.walletId, escrowWallet.id))
+      .orderBy(desc(walletTransactions.createdAt))
+      .limit(50);
+
     // Calculate wallet balance breakdown
-    const balance = parseFloat(vendor.walletBalance || '0');
-    const availableBalance = escrowWallet ? parseFloat(escrowWallet.availableBalance) : balance;
-    const frozenAmount = escrowWallet ? parseFloat(escrowWallet.frozenAmount) : 0;
-    const forfeitedAmount = escrowWallet ? parseFloat(escrowWallet.forfeitedAmount || '0') : 0;
+    const balance = parseFloat(escrowWallet.balance || '0');
+    const availableBalance = parseFloat(escrowWallet.availableBalance || '0');
+    const frozenAmount = parseFloat(escrowWallet.frozenAmount || '0');
+    const forfeitedAmount = parseFloat(escrowWallet.forfeitedAmount || '0');
 
     return NextResponse.json({
       balance,
@@ -78,7 +88,7 @@ export async function GET(request: NextRequest) {
         id: tx.id,
         type: tx.type,
         amount: parseFloat(tx.amount),
-        status: tx.status,
+        status: 'completed',
         description: tx.description,
         reference: tx.reference,
         createdAt: tx.createdAt,

@@ -175,8 +175,7 @@ export async function GET(
     console.error('Error polling auction:', error);
     return NextResponse.json(
       { 
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: 'Failed to poll auction state',
       },
       { status: 500 }
     );

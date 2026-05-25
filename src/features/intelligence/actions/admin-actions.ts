@@ -35,6 +35,7 @@ export async function exportMLDataset(datasetId: string) {
     }
 
     const datasetInfo = dataset[0];
+    const format = datasetInfo.format as 'csv' | 'json' | 'parquet';
 
     // Initialize ML dataset service
     const mlService = new MLDatasetService();
@@ -44,34 +45,25 @@ export async function exportMLDataset(datasetId: string) {
     switch (datasetInfo.datasetType) {
       case 'price_prediction':
         exportData = await mlService.exportPricePredictionDataset(
-          datasetInfo.format as 'csv' | 'json' | 'parquet',
-          {
-            trainSplit: datasetInfo.trainSplit / 100,
-            validationSplit: datasetInfo.validationSplit / 100,
-            testSplit: datasetInfo.testSplit / 100,
-          }
+          datasetInfo.dateRangeStart,
+          datasetInfo.dateRangeEnd,
+          format
         );
         break;
 
       case 'recommendation':
         exportData = await mlService.exportRecommendationDataset(
-          datasetInfo.format as 'csv' | 'json' | 'parquet',
-          {
-            trainSplit: datasetInfo.trainSplit / 100,
-            validationSplit: datasetInfo.validationSplit / 100,
-            testSplit: datasetInfo.testSplit / 100,
-          }
+          datasetInfo.dateRangeStart,
+          datasetInfo.dateRangeEnd,
+          format
         );
         break;
 
       case 'fraud_detection':
         exportData = await mlService.exportFraudDetectionDataset(
-          datasetInfo.format as 'csv' | 'json' | 'parquet',
-          {
-            trainSplit: datasetInfo.trainSplit / 100,
-            validationSplit: datasetInfo.validationSplit / 100,
-            testSplit: datasetInfo.testSplit / 100,
-          }
+          datasetInfo.dateRangeStart,
+          datasetInfo.dateRangeEnd,
+          format
         );
         break;
 

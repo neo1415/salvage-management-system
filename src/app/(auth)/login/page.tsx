@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -20,6 +20,7 @@ const loginSchema = z.object({
   password: z
     .string()
     .min(1, 'Password is required'),
+  mfaCode: z.string().optional(),
   rememberMe: z.boolean().optional(),
 });
 
@@ -30,22 +31,35 @@ type LoginInput = z.infer<typeof loginSchema>;
  * Separated to use useSearchParams with Suspense boundary
  */
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { branding } = usePublicBranding();
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaDestination, setMfaDestination] = useState<string | null>(null);
 
   // Don't set a default callbackUrl - let the middleware handle role-based redirect
   const callbackUrl = searchParams.get('callbackUrl') || null;
   const successMessage = searchParams.get('message') || null;
   const emailParam = searchParams.get('email') || '';
 
+  const BLOCKED_CALLBACK_PATHS = new Set(['/', '/login', '/launch', '/register']);
+
   const getSafeCallbackUrl = (url: string | null): string | null => {
     if (!url) return null;
     if (!url.startsWith('/') || url.startsWith('//')) return null;
+    const base = url.split('?')[0];
+    if (BLOCKED_CALLBACK_PATHS.has(base)) return null;
     return url;
+  };
+
+  const buildPostLoginRedirect = (): string => {
+    const safe = getSafeCallbackUrl(callbackUrl);
+    if (safe) {
+      return `/api/auth/after-login?callbackUrl=${encodeURIComponent(safe)}`;
+    }
+    return '/api/auth/after-login';
   };
 
   const {
@@ -65,74 +79,66 @@ function LoginForm() {
     setIsSubmitting(true);
 
     try {
-      // Get user agent and IP for audit logging
       const userAgent = navigator.userAgent;
-      
-      // Call NextAuth signIn with credentials
+
+      if (!mfaRequired) {
+        const mfaResponse = await fetch('/api/auth/mfa/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            emailOrPhone: data.emailOrPhone,
+            password: data.password,
+          }),
+        });
+
+        const mfaJson = await mfaResponse.json().catch(() => ({}));
+        if (mfaResponse.ok && mfaJson.required) {
+          setMfaRequired(true);
+          setMfaDestination(mfaJson.destination || null);
+          setError(null);
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (!mfaResponse.ok && mfaJson.required) {
+          setError(mfaJson.error || 'Verification code could not be sent. Please try again.');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      if (mfaRequired && (!data.mfaCode || data.mfaCode.length !== 6)) {
+        setError('Enter the 6-digit verification code.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Let Auth.js set the session cookie, then server redirect via /api/auth/after-login
       const result = await signIn('credentials', {
         emailOrPhone: data.emailOrPhone,
         password: data.password,
+        mfaCode: data.mfaCode,
         userAgent,
+        callbackUrl: buildPostLoginRedirect(),
         redirect: false,
       });
 
       if (result?.error) {
+        if (result.error === 'MFA_REQUIRED') {
+          setMfaRequired(true);
+          setError(null);
+          setIsSubmitting(false);
+          return;
+        }
         setError(result.error);
         setIsSubmitting(false);
         return;
       }
 
-      if (!result?.ok) {
-        setError('Login failed. Please try again.');
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Successful login - redirect based on role
-      // Fetch the session to get the user's role
-      const response = await fetch('/api/auth/session');
-      const session = await response.json();
-      
-      const safeCallbackUrl = getSafeCallbackUrl(callbackUrl);
-
-      if (safeCallbackUrl) {
-        router.push(safeCallbackUrl);
-      } else if (session?.user?.role) {
-        const role = session.user.role;
-        
-        // Use router.push instead of window.location.href
-        // This ensures Next.js middleware runs and can intercept the navigation
-        if (role === 'vendor') {
-          router.push('/vendor/dashboard');
-        } else if (role === 'salvage_manager') {
-          router.push('/manager/dashboard');
-        } else if (role === 'claims_adjuster') {
-          router.push('/adjuster/dashboard');
-        } else if (role === 'finance_officer') {
-          router.push('/finance/dashboard');
-        } else if (role === 'system_admin') {
-          router.push('/admin/dashboard');
-        } else {
-          // Fallback to home if role is unknown
-          router.push('/');
-        }
-      } else {
-        // Fallback to home
-        router.push('/');
-      }
+      window.location.assign(result?.url || buildPostLoginRedirect());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
       setIsSubmitting(false);
-    }
-  };
-
-  const handleOAuthLogin = async (provider: 'google' | 'facebook') => {
-    try {
-      await signIn(provider, {
-        callbackUrl: callbackUrl || '/',
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign in. Please try again.');
     }
   };
 
@@ -175,57 +181,6 @@ function LoginForm() {
               </div>
             </div>
           )}
-
-          {/* OAuth Buttons */}
-          <div className="space-y-3 mb-6">
-            {/* TEMPORARILY DISABLED: Google OAuth - Uncomment when business email validation is ready for production
-            <button
-              type="button"
-              onClick={() => handleOAuthLogin('google')}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
-              <span className="font-medium text-gray-700">Sign in with Google</span>
-            </button>
-            */}
-
-            <button
-              type="button"
-              onClick={() => handleOAuthLogin('facebook')}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-[#1877F2] text-white rounded-lg hover:bg-[#166FE5] transition-colors"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-              </svg>
-              <span className="font-medium">Sign in with Facebook</span>
-            </button>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Or continue with email/phone</span>
-              </div>
-            </div>
-          </div>
 
           {/* Login Form */}
           <form onSubmit={handleSubmit(handleLogin)} className="space-y-4">
@@ -285,6 +240,26 @@ function LoginForm() {
                 </p>
               )}
             </div>
+
+            {mfaRequired && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <label htmlFor="mfaCode" className="block text-sm font-medium text-amber-950 mb-1">
+                  Verification code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  {...register('mfaCode')}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  id="mfaCode"
+                  className="w-full px-4 py-3 border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020] bg-white"
+                  placeholder="Enter 6-digit code"
+                />
+                <p className="mt-2 text-sm text-amber-900">
+                  We sent a login code{mfaDestination ? ` to ${mfaDestination}` : ''}.
+                </p>
+              </div>
+            )}
 
             {/* Remember Me & Forgot Password */}
             <div className="flex items-center justify-between">

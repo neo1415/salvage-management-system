@@ -5,12 +5,12 @@
  * Generates and signs a document with a digital signature.
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { generateDocument, signDocument } from '@/features/documents/services/document.service';
 import { validateSignature } from '@/features/documents/services/signature.service';
 import { logAction, AuditActionType, AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
-import { notifyDocumentSigned, notifyPaymentUnlocked } from '@/features/notifications/services/notification.service';
+import { notifyDocumentSigned } from '@/features/notifications/services/notification.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { documentReadyTemplate } from '@/features/notifications/templates/document-ready.template';
 import { db } from '@/lib/db/drizzle';
@@ -100,26 +100,7 @@ export async function POST(
       .where(eq(vendors.id, vendorId))
       .limit(1);
 
-    if (vendor) {
-      // Send notification
-      await notifyDocumentSigned(vendor.user.id, signedDocument.id);
-
-      // Send email with document
-      await emailService.sendEmail({
-        to: vendor.user.email,
-        subject: `Document Signed: ${signedDocument.title}`,
-        html: documentReadyTemplate({
-          vendorName: vendor.user.fullName,
-          documentType: signedDocument.documentType,
-          documentTitle: signedDocument.title,
-          auctionId,
-          assetDescription: 'Salvage Item',
-          downloadUrl: `${process.env.NEXTAUTH_URL}/vendor/documents`,
-        }),
-      });
-    }
-
-    // Audit log
+    // Audit log (keep synchronous for compliance)
     await logAction({
       userId: session.user.id,
       actionType: AuditActionType.DOCUMENT_SIGNED,
@@ -131,6 +112,28 @@ export async function POST(
       beforeState: { status: 'pending' },
       afterState: { status: 'signed', signedAt: signedDocument.signedAt },
     });
+
+    if (vendor) {
+      after(async () => {
+        try {
+          await notifyDocumentSigned(vendor.user.id, signedDocument.id);
+          await emailService.sendEmail({
+            to: vendor.user.email,
+            subject: `Document Signed: ${signedDocument.title}`,
+            html: documentReadyTemplate({
+              vendorName: vendor.user.fullName,
+              documentType: signedDocument.documentType,
+              documentTitle: signedDocument.title,
+              auctionId,
+              assetDescription: 'Salvage Item',
+              downloadUrl: `${process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL}/vendor/documents#auction-${auctionId}`,
+            }),
+          });
+        } catch (notifyError) {
+          console.error('Post-sign notification failed:', notifyError);
+        }
+      });
+    }
 
     // NOTE: Fund release is NO LONGER automatic after document signing.
     // Vendor must now choose payment method (wallet, paystack, or hybrid) via PaymentOptions modal.

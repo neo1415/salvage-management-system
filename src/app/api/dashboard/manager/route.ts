@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions, salvageCases, bids, payments } from '@/lib/db/schema';
-import { eq, and, gte, sql, inArray } from 'drizzle-orm';
+import { eq, and, gte, gt, sql, inArray } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 import { ACTIVE_AUCTION_STATUSES, PENDING_CASE_STATUSES, VERIFIED_PAYMENT_STATUS } from '@/lib/metrics/dashboard-status';
 
@@ -125,7 +125,8 @@ export async function GET(request: NextRequest) {
  * Calculate KPIs for dashboard
  */
 async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
-  // Active auctions count
+  // Active auctions: status active/extended AND not past endTime (matches adjuster KPI logic)
+  const now = new Date();
   let activeAuctionsQuery;
   
   if (assetType) {
@@ -136,6 +137,7 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
       .where(
         and(
           inArray(auctions.status, [...ACTIVE_AUCTION_STATUSES]),
+          gt(auctions.endTime, now),
           eq(salvageCases.assetType, assetType as any)
         )
       );
@@ -143,7 +145,12 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
     activeAuctionsQuery = db
       .select({ count: sql<number>`count(*)::int` })
       .from(auctions)
-      .where(inArray(auctions.status, [...ACTIVE_AUCTION_STATUSES]));
+      .where(
+        and(
+          inArray(auctions.status, [...ACTIVE_AUCTION_STATUSES]),
+          gt(auctions.endTime, now)
+        )
+      );
   }
 
   const activeAuctionsResult = await activeAuctionsQuery;

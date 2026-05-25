@@ -30,6 +30,15 @@ const TERMII_API_URL = 'https://api.ng.termii.com/api/sms/send';
 const TERMII_API_KEY = process.env.TERMII_API_KEY || '';
 const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || 'NEM Salvage';
 const TERMII_CHANNEL = process.env.TERMII_CHANNEL || 'generic';
+/** Termii requires dnd for OTP/transactional; generic is promotional-only. */
+const TERMII_TRANSACTIONAL_CHANNEL = process.env.TERMII_TRANSACTIONAL_CHANNEL || 'dnd';
+const TRANSACTIONAL_SMS_CATEGORIES = new Set([
+  'otp',
+  'auction_won',
+  'forfeiture',
+  'grace_period',
+  'pickup_code',
+]);
 const SMS_TEST_MODE = process.env.SMS_TEST_MODE === 'true';
 const SMS_ENABLED_CATEGORIES = (process.env.SMS_ENABLED_CATEGORIES || 'otp,auction_won,forfeiture,grace_period,pickup_code')
   .split(',')
@@ -166,7 +175,7 @@ export class SMSService {
       let result: SMSResult;
       
       if (TERMII_API_KEY) {
-        result = await this.sendViaTermii(normalizedPhone, options.message);
+        result = await this.sendViaTermii(normalizedPhone, options.message, category);
         
         // If Termii fails and Africa's Talking is configured, try fallback
         if (!result.success && AFRICAS_TALKING_API_KEY) {
@@ -220,64 +229,107 @@ export class SMSService {
   }
 
   /**
-   * Send SMS via Termii with retry logic
-   * @param phone - Normalized phone number
-   * @param message - SMS message
-   * @returns SMS result
+   * Termii routes for transactional vs promotional SMS (see developers.termii.com/messaging-api).
    */
-  private async sendViaTermii(phone: string, message: string): Promise<SMSResult> {
+  private resolveTermiiChannels(category: string): string[] {
+    if (TRANSACTIONAL_SMS_CATEGORIES.has(category)) {
+      const channels = [TERMII_TRANSACTIONAL_CHANNEL];
+      if (TERMII_TRANSACTIONAL_CHANNEL !== 'generic') {
+        channels.push('generic');
+      }
+      return channels;
+    }
+    return [TERMII_CHANNEL];
+  }
+
+  /**
+   * Send SMS via Termii with retry logic and transactional channel selection.
+   */
+  private async sendViaTermii(
+    phone: string,
+    message: string,
+    category: string = 'routine'
+  ): Promise<SMSResult> {
     let lastError: Error | null = null;
+    const channels = this.resolveTermiiChannels(category);
 
-    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
-      try {
-        const response = await axios.post(
-          TERMII_API_URL,
-          {
-            to: phone,
-            from: TERMII_SENDER_ID,
-            sms: message,
-            type: 'plain',
-            channel: TERMII_CHANNEL,
-            api_key: TERMII_API_KEY,
-          },
-          {
-            headers: {
-              'Content-Type': 'application/json',
+    for (const channel of channels) {
+      for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+        try {
+          const response = await axios.post(
+            TERMII_API_URL,
+            {
+              to: phone,
+              from: TERMII_SENDER_ID,
+              sms: message,
+              type: 'plain',
+              channel,
+              api_key: TERMII_API_KEY,
             },
-            timeout: 10000, // 10 second timeout
+            {
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              timeout: 10000,
+            }
+          );
+
+          if (response.data?.message_id) {
+            if (
+              channel === 'generic' &&
+              TRANSACTIONAL_SMS_CATEGORIES.has(category)
+            ) {
+              console.warn(
+                `⚠️ [SMS] ${category} sent on Termii "generic" (promotional) route. ` +
+                  'Handset delivery is unreliable for OTP/transactional until Termii activates the DND route on your account. ' +
+                  'Email support@termii.com to enable DND for Nigeria.'
+              );
+            }
+            return {
+              success: true,
+              messageId: `termii-${response.data.message_id}`,
+            };
           }
-        );
-
-        // Termii returns { message_id: string, message: string, balance: number, user: string }
-        if (response.data && response.data.message_id) {
-          return {
-            success: true,
-            messageId: `termii-${response.data.message_id}`,
-          };
-        } else if (response.data && response.data.message) {
-          throw new Error(response.data.message);
-        } else {
+          if (response.data?.message) {
+            throw new Error(response.data.message);
+          }
           throw new Error('Unexpected response from Termii API');
-        }
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        console.error(`📱 Termii attempt ${attempt}/${this.maxRetries} failed:`, lastError.message);
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          const termiiMessage = axios.isAxiosError(error)
+            ? String(error.response?.data?.message || '')
+            : '';
 
-        // Don't retry on certain errors to save money
-        if (axios.isAxiosError(error)) {
-          const status = error.response?.status;
-          const errorMessage = error.response?.data?.message || '';
-          
-          // Don't retry on authentication or validation errors
-          if (status === 401 || status === 400 || errorMessage.includes('Invalid')) {
-            console.error('❌ Termii error (no retry):', errorMessage);
+          if (
+            channel === TERMII_TRANSACTIONAL_CHANNEL &&
+            termiiMessage.includes('Country Inactive')
+          ) {
+            console.error(
+              '❌ [SMS] Termii DND (transactional) route is not activated on this account. ' +
+                'Contact support@termii.com to enable it. Falling back to generic (limited delivery).'
+            );
             break;
           }
-        }
 
-        // Wait before retrying
-        if (attempt < this.maxRetries) {
-          await this.sleep(this.retryDelay);
+          console.error(
+            `📱 Termii (${channel}) attempt ${attempt}/${this.maxRetries} failed:`,
+            lastError.message
+          );
+
+          if (axios.isAxiosError(error)) {
+            const status = error.response?.status;
+            if (
+              status === 401 ||
+              status === 400 ||
+              termiiMessage.includes('Invalid')
+            ) {
+              break;
+            }
+          }
+
+          if (attempt < this.maxRetries) {
+            await this.sleep(this.retryDelay);
+          }
         }
       }
     }

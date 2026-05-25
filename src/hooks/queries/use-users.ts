@@ -20,6 +20,8 @@ export interface User {
   fullName: string;
   role: string;
   status: string;
+  /** KYC-derived status for vendors when users.status is stale */
+  displayStatus?: string;
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;

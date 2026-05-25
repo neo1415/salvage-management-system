@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { useCachedAuctions } from '@/hooks/use-cached-auctions';
@@ -172,14 +173,7 @@ export default function AdminAuctionsPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-900 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading auctions...</p>
-        </div>
-      </div>
-    );
+    return <DataLoadingState label="Auctions" variant="page" />;
   }
 
   const getDocumentStatus = (auction: AuctionWithStatus) => {

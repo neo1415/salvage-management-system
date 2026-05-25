@@ -14,6 +14,7 @@ import { users } from '@/lib/db/schema/users';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { sendNotificationToUser } from '@/lib/socket/server';
 import { sendPushToUser } from './push-subscription.service';
+import { isTestOrPlaceholderEmail } from '@/lib/utils/notification-recipients';
 
 export interface CreateNotificationInput {
   userId: string;
@@ -164,15 +165,24 @@ export async function createNotification(input: CreateNotificationInput) {
  */
 export async function createRoleNotifications(
   roles: NotificationRole[],
-  notification: Omit<CreateNotificationInput, 'userId'>
+  notification: Omit<CreateNotificationInput, 'userId'>,
+  options?: { excludeTestRecipients?: boolean }
 ) {
+  const excludeTest = options?.excludeTestRecipients ?? false;
+
   const roleUsers = await db
-    .select({ id: users.id })
+    .select({ id: users.id, email: users.email, status: users.status })
     .from(users)
     .where(inArray(users.role, roles));
 
+  const activeRoleUsers = roleUsers.filter((user) => user.status !== 'suspended' && user.status !== 'deleted');
+
+  const recipients = excludeTest
+    ? activeRoleUsers.filter((user) => !isTestOrPlaceholderEmail(user.email))
+    : activeRoleUsers;
+
   const results = await Promise.allSettled(
-    roleUsers.map((user) =>
+    recipients.map((user) =>
       createNotification({
         ...notification,
         userId: user.id,
@@ -181,9 +191,17 @@ export async function createRoleNotifications(
   );
 
   const sentCount = results.filter((result) => result.status === 'fulfilled').length;
-  console.log(`Created ${sentCount}/${roleUsers.length} role notifications for ${roles.join(', ')}`);
+  console.log(
+    `Created ${sentCount}/${recipients.length} role notifications for ${roles.join(', ')}` +
+      (activeRoleUsers.length < roleUsers.length
+        ? ` (${roleUsers.length - activeRoleUsers.length} inactive accounts skipped)`
+        : '') +
+      (excludeTest && recipients.length < roleUsers.length
+        ? ` (${activeRoleUsers.length - recipients.length} test accounts skipped)`
+        : '')
+  );
 
-  return { sentCount, targetCount: roleUsers.length };
+  return { sentCount, targetCount: recipients.length };
 }
 
 /**

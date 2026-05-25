@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+**/node_modules
 /.pnp
 .pnp.js
 .yarn/install-state.gz
@@ -15,6 +16,7 @@
 
 # production
 /build
+socket-sidecar/dist
 
 # misc
 .DS_Store
@@ -32,6 +34,7 @@ yarn-error.log*
 
 # Google Cloud credentials
 google-cloud-credentials.json
+google-cloud-credentials.example.json
 *-credentials.json
 
 # vercel

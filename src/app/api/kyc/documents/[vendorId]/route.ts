@@ -65,25 +65,30 @@ export async function GET(
       );
     }
 
-    // Generate signed URLs for all documents
+    // Generate signed URLs for private Supabase paths; imported Dojah Cloudinary URLs can be returned directly.
     const uploadService = getDocumentUploadService();
+    const resolveDocumentUrl = async (value: string | null): Promise<string | null> => {
+      if (!value) return null;
+      if (/^https:\/\//i.test(value)) return value;
+      return uploadService.getSignedUrl(value, 3600);
+    };
     const signedUrls: Record<string, string | null> = {};
 
     // Generate signed URLs for each document (valid for 1 hour)
     if (vendor.cacCertificateUrl) {
-      signedUrls.cacCertificateUrl = await uploadService.getSignedUrl(vendor.cacCertificateUrl, 3600);
+      signedUrls.cacCertificateUrl = await resolveDocumentUrl(vendor.cacCertificateUrl);
     }
     if (vendor.ninCardUrl) {
-      signedUrls.ninCardUrl = await uploadService.getSignedUrl(vendor.ninCardUrl, 3600);
+      signedUrls.ninCardUrl = await resolveDocumentUrl(vendor.ninCardUrl);
     }
     if (vendor.addressProofUrl) {
-      signedUrls.addressProofUrl = await uploadService.getSignedUrl(vendor.addressProofUrl, 3600);
+      signedUrls.addressProofUrl = await resolveDocumentUrl(vendor.addressProofUrl);
     }
     if (vendor.bankStatementUrl) {
-      signedUrls.bankStatementUrl = await uploadService.getSignedUrl(vendor.bankStatementUrl, 3600);
+      signedUrls.bankStatementUrl = await resolveDocumentUrl(vendor.bankStatementUrl);
     }
     if (vendor.photoIdUrl) {
-      signedUrls.photoIdUrl = await uploadService.getSignedUrl(vendor.photoIdUrl, 3600);
+      signedUrls.photoIdUrl = await resolveDocumentUrl(vendor.photoIdUrl);
     }
 
     return NextResponse.json({

@@ -469,7 +469,11 @@ export async function releaseFunds(
       }
 
       const transferData = await transferResponse.json();
-      console.log('Paystack transfer initiated:', transferData);
+      console.log('Paystack transfer initiated:', {
+        status: transferData?.data?.status || transferData?.status,
+        reference: transferReference,
+        amountInKobo,
+      });
     }
 
     // ATOMIC UPDATE: Update wallet with BOTH balance and frozen amount reduced

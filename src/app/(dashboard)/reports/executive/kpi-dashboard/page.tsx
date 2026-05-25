@@ -1,43 +1,39 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useReportFetchState } from '@/hooks/use-report-fetch-state';
+import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, TrendingUp, TrendingDown } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
+import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
 
 export default function KPIDashboardPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+    useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
-  const [filters, setFilters] = useState<ReportFilters>({
-    startDate: undefined,
-    endDate: undefined,
-  });
+  const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
   useEffect(() => {
     fetchReport();
   }, []);
 
-  const fetchReport = async () => {
-    setLoading(true);
+  const fetchReport = async (force = false) => {
+    startFetch();
     try {
-      const params = new URLSearchParams();
-      if (filters.startDate) params.append('startDate', filters.startDate.toISOString());
-      if (filters.endDate) params.append('endDate', filters.endDate.toISOString());
-
-      const response = await fetch(`/api/reports/executive/kpi-dashboard?${params}`);
-      const result = await response.json();
-      
+      const result = await loadReportFromApi('/api/reports/executive/kpi-dashboard', filters, { force });
       if (result.status === 'success') {
         setReportData(result.data);
+        markHasData();
       }
     } catch (error) {
       console.error('Failed to fetch report:', error);
     } finally {
-      setLoading(false);
+      endFetch();
     }
   };
 
@@ -190,22 +186,20 @@ export default function KPIDashboardPage() {
               filters={filters}
               onFiltersChange={setFilters}
               onApply={fetchReport}
-              onReset={() => setFilters({ startDate: undefined, endDate: undefined })}
+              onReset={() => setFilters(defaultReportFilters())}
               showAssetTypes={false}
               showRegions={false}
             />
           </CardContent>
         </Card>
 
-        {loading && (
-          <Card className="no-print">
-            <CardContent className="pt-6">
-              <div className="text-center py-8">Loading KPI data...</div>
-            </CardContent>
-          </Card>
+        {loading && !reportData && (
+          <DataLoadingState label="KPI dashboard" variant="report" className="no-print" />
         )}
 
-      {!loading && reportData && (
+        {isRefreshing && reportData && <DataRefreshingHint />}
+
+      {reportData && (
         <div data-report-content className="space-y-6">
           <div>
             <h2 className="text-xl font-semibold mb-4">Financial KPIs</h2>

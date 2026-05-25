@@ -6,7 +6,7 @@
  * - Requirement 11.1: Calculate forfeiture_amount as deposit_amount × forfeiture_percentage
  * - Requirement 11.2: Mark deposit as "forfeited" without unfreezing it
  * - Requirement 11.3: Update vendor's escrow record with forfeitedAmount field
- * - Requirement 11.4: Update auction status to "deposit_forfeited"
+ * - Requirement 11.4: Update auction status to "forfeited"
  * - Requirement 11.5: Notify vendor of forfeiture with reason
  * - Requirement 11.6: Configurable forfeiture_percentage (default 100%)
  */
@@ -148,11 +148,11 @@ export class ForfeitureService {
         description: `Deposit forfeited: ${reason}`,
       });
 
-      // Update auction status to "deposit_forfeited"
+      // Update auction status to "forfeited"
       await tx
         .update(auctions)
         .set({
-          status: 'deposit_forfeited',
+          status: 'forfeited',
           updatedAt: new Date(),
         })
         .where(eq(auctions.id, auctionId));

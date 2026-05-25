@@ -53,7 +53,7 @@ export function filterByYear(
   }> = [];
 
   for (const listing of listings) {
-    const extractedYear = extractYear(listing.listingTitle);
+    const extractedYear = extractYear(listing.listingTitle ?? listing.title ?? '');
 
     // Reject if year cannot be extracted
     if (extractedYear === null) {

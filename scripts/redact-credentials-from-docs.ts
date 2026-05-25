@@ -9,42 +9,42 @@ import path from 'path';
 
 const REDACTIONS = [
   {
-    pattern: /postgresql:\/\/postgres\.htdehmkqfrwjewzjingm:K%40tsur0u1415@aws-1-eu-central-1\.pooler\.supabase\.com:\d+\/postgres/g,
+    pattern: /postgresql:\/\/[^@\s]+@[^/\s]+\/[^\s]+/g,
     replacement: 'postgresql://user:password@host:5432/database',
     name: 'Database URL',
   },
   {
-    pattern: /fHsfOrcyQhnzwSRlWV7xYQMS0tnJKYjLBBCSAnMljCM/g,
+    pattern: /NEXTAUTH_SECRET\s*=\s*[^\s]+/g,
     replacement: 'your-nextauth-secret-here',
     name: 'NextAuth Secret',
   },
   {
-    pattern: /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/g,
+    pattern: /GOOGLE_CLIENT_SECRET\s*=\s*[^\s]+/g,
     replacement: 'your-google-client-secret',
     name: 'Google Client Secret',
   },
   {
-    pattern: /sk_test_45ca11545148bed4becda5de54198e677eecbcbf/g,
+    pattern: /sk_test_[A-Za-z0-9]{24,}/g,
     replacement: 'sk_test_your-paystack-secret-key',
     name: 'Paystack Secret Key',
   },
   {
-    pattern: /AIzaSyB_sUhe6VTP3Dz6_diIrgfFbgBqOeoUHpQ/g,
+    pattern: /AIzaSy[A-Za-z0-9_-]{33}/g,
     replacement: 'your-gemini-api-key',
     name: 'Gemini API Key',
   },
   {
-    pattern: /i89uqGTPhslWwuSHP3BfG9nXekQ/g,
+    pattern: /CLOUDINARY_API_SECRET\s*=\s*[^\s]+/g,
     replacement: 'your-cloudinary-api-secret',
     name: 'Cloudinary API Secret',
   },
   {
-    pattern: /ARWHAAImcDEwZThiNmFhZmM4MTc0MGI2YjIzYjAyMTEyNzY1YzUyN3AxNTUxMQ/g,
+    pattern: /KV_REST_API_TOKEN\s*=\s*[^\s]+/g,
     replacement: 'your-kv-rest-api-token',
     name: 'Vercel KV Token',
   },
   {
-    pattern: /cron_secret_a8f3b2e9c4d7f1a6b5e8c3d9f2a7b4e1c6d8f3a9b2e5c7d1f4a8b3e6c9d2f5a1/g,
+    pattern: /CRON_SECRET\s*=\s*[^\s]+/g,
     replacement: 'your-cron-secret',
     name: 'Cron Secret',
   },

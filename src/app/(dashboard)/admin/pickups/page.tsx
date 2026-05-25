@@ -9,11 +9,12 @@
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { AdminPickupConfirmation } from '@/components/admin/admin-pickup-confirmation';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 interface PickupConfirmation {
   auctionId: string;
@@ -51,7 +52,8 @@ interface PickupConfirmation {
 export default function AdminPickupsPage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const [pickups, setPickups] = useState<PickupConfirmation[]>([]);
+  const [allPickups, setAllPickups] = useState<PickupConfirmation[]>([]);
+  const pickupsRef = useRef<PickupConfirmation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPickup, setSelectedPickup] = useState<PickupConfirmation | null>(null);
@@ -70,37 +72,78 @@ export default function AdminPickupsPage() {
     }
   }, [session, router]);
 
-  // Fetch pickup confirmations
+  // Fetch all pickup confirmations once; filter/sort client-side
   const fetchPickups = useCallback(async () => {
+    const showFullPageLoader = pickupsRef.current.length === 0;
     try {
-      setLoading(true);
+      if (showFullPageLoader) {
+        setLoading(true);
+      }
       setError(null);
 
       const params = new URLSearchParams({
-        status: statusFilter,
-        sortBy,
-        sortOrder,
+        status: 'all',
+        sortBy: 'confirmedAt',
+        sortOrder: 'desc',
       });
 
       const response = await fetch(`/api/admin/pickups?${params.toString()}`);
-      
+
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || 'Failed to fetch pickup confirmations');
       }
 
       const data = await response.json();
-      setPickups(data.pickups || []);
+      const nextPickups = data.pickups || [];
+      pickupsRef.current = nextPickups;
+      setAllPickups(nextPickups);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch pickup confirmations');
+      if (showFullPageLoader) {
+        pickupsRef.current = [];
+        setAllPickups([]);
+      }
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, sortBy, sortOrder]);
+  }, []);
 
   useEffect(() => {
     fetchPickups();
   }, [fetchPickups]);
+
+  const pickups = useMemo(() => {
+    let list =
+      statusFilter === 'pending'
+        ? allPickups.filter((p) => !p.adminConfirmation.confirmed)
+        : [...allPickups];
+
+    const sorted = [...list];
+    if (sortBy === 'amount') {
+      sorted.sort((a, b) => {
+        const amountA = parseFloat(a.amount || '0');
+        const amountB = parseFloat(b.amount || '0');
+        return sortOrder === 'desc' ? amountB - amountA : amountA - amountB;
+      });
+    } else if (sortBy === 'claimRef') {
+      sorted.sort((a, b) => {
+        const comparison = a.claimReference.localeCompare(b.claimReference);
+        return sortOrder === 'desc' ? -comparison : comparison;
+      });
+    } else {
+      sorted.sort((a, b) => {
+        const dateA = a.vendorConfirmation.confirmedAt
+          ? new Date(a.vendorConfirmation.confirmedAt).getTime()
+          : 0;
+        const dateB = b.vendorConfirmation.confirmedAt
+          ? new Date(b.vendorConfirmation.confirmedAt).getTime()
+          : 0;
+        return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+      });
+    }
+    return sorted;
+  }, [allPickups, statusFilter, sortBy, sortOrder]);
 
   // Handle admin confirmation
   const handleConfirmPickup = async (notes: string) => {
@@ -156,15 +199,8 @@ export default function AdminPickupsPage() {
     );
   });
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-900 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading pickup confirmations...</p>
-        </div>
-      </div>
-    );
+  if (loading && allPickups.length === 0) {
+    return <DataLoadingState label="Pickup confirmations" variant="page" />;
   }
 
   return (

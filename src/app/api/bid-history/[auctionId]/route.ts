@@ -95,6 +95,7 @@ export async function GET(
         status: auction.case?.status,
         locationName: auction.case?.locationName,
         gpsLocation: auction.case?.gpsLocation,
+        approvedAt: auction.case?.approvedAt ?? null,
         aiAssessment: auction.case?.aiAssessment,
       },
       currentBidder: auction.currentBidderVendor ? {

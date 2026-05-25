@@ -74,7 +74,7 @@ export function applyDepreciation(
 
   for (const listing of listings) {
     // Extract year from listing title
-    const listingYear = extractYear(listing.listingTitle);
+    const listingYear = extractYear(listing.listingTitle ?? listing.title ?? '');
 
     // Only adjust newer vehicles
     if (listingYear === null || listingYear <= targetYear) {

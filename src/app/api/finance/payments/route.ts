@@ -147,13 +147,13 @@ export async function GET(request: NextRequest) {
     
     // NEW: Calculate registration fee stats
     const registrationFees = filteredPayments.filter(p => !p.payment.auctionId);
-    const registrationFeeTotal = registrationFees.reduce((sum, p) => sum + p.payment.amount, 0);
+    const registrationFeeTotal = registrationFees.reduce((sum, p) => sum + parseFloat(p.payment.amount || '0'), 0);
     const registrationFeeCount = registrationFees.length;
 
     // BATCH QUERY FIX: Extract unique vendor IDs and auction IDs from escrow wallet payments
     const escrowPayments = filteredPayments.filter(p => p.payment.paymentMethod === 'escrow_wallet');
     const uniqueVendorIds = [...new Set(escrowPayments.map(p => p.payment.vendorId))];
-    const uniqueAuctionIds = [...new Set(escrowPayments.map(p => p.payment.auctionId))];
+    const uniqueAuctionIds = [...new Set(escrowPayments.map(p => p.payment.auctionId).filter((id): id is string => Boolean(id)))];
 
     console.log(`📊 Finance Payments API - Batch Query Optimization:`);
     console.log(`   - Total payments: ${filteredPayments.length}`);
@@ -247,7 +247,7 @@ export async function GET(request: NextRequest) {
       const wallet = walletMap.get(payment.vendorId);
       
       // Get documents from map (no query needed)
-      const documents = documentMap.get(payment.auctionId) || [];
+      const documents = payment.auctionId ? documentMap.get(payment.auctionId) || [] : [];
       
       // Calculate document progress locally (same logic as getDocumentProgress)
       const totalDocuments = 2; // bill_of_sale, liability_waiver (pickup_authorization sent after payment)

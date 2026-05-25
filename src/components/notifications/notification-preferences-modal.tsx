@@ -194,7 +194,7 @@ export function NotificationPreferencesModal({
                     <Switch
                       id="sms-enabled"
                       checked={preferences.smsEnabled}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setPreferences((prev) => ({ ...prev, smsEnabled: checked }))
                       }
                     />
@@ -213,7 +213,7 @@ export function NotificationPreferencesModal({
                     <Switch
                       id="email-enabled"
                       checked={preferences.emailEnabled}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setPreferences((prev) => ({ ...prev, emailEnabled: checked }))
                       }
                     />
@@ -241,7 +241,7 @@ export function NotificationPreferencesModal({
                     <Switch
                       id="bid-alerts"
                       checked={preferences.bidAlerts}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setPreferences((prev) => ({ ...prev, bidAlerts: checked }))
                       }
                     />
@@ -260,7 +260,7 @@ export function NotificationPreferencesModal({
                     <Switch
                       id="auction-ending"
                       checked={preferences.auctionEnding}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setPreferences((prev) => ({ ...prev, auctionEnding: checked }))
                       }
                     />
@@ -279,7 +279,7 @@ export function NotificationPreferencesModal({
                     <Switch
                       id="payment-reminders"
                       checked={preferences.paymentReminders}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setPreferences((prev) => ({
                           ...prev,
                           paymentReminders: checked,
@@ -301,7 +301,7 @@ export function NotificationPreferencesModal({
                     <Switch
                       id="leaderboard-updates"
                       checked={preferences.leaderboardUpdates}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setPreferences((prev) => ({
                           ...prev,
                           leaderboardUpdates: checked,

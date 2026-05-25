@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { vendorInteractions, vendorRecommendations } from '@/lib/db/schema/fraud-tracking';
 import { auctions } from '@/lib/db/schema/auctions';
+import { salvageCases } from '@/lib/db/schema/cases';
 import { vendors } from '@/lib/db/schema/vendors';
 import { eq, desc, and, inArray, sql } from 'drizzle-orm';
 import crypto from 'crypto';
@@ -107,21 +108,25 @@ export class RecommendationGenerationService {
     const auctionIds = interactions.map(i => i.auctionId);
     
     const interactedAuctions = await db
-      .select()
+      .select({
+        auction: auctions,
+        caseData: salvageCases,
+      })
       .from(auctions)
+      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
       .where(inArray(auctions.id, auctionIds));
     
     // Extract patterns
     const assetTypes = interactedAuctions
-      .map(a => a.case?.assetType)
+      .map(a => a.caseData.assetType)
       .filter(Boolean);
     
     const prices = interactedAuctions
-      .map(a => parseFloat(a.currentBid || a.case?.reservePrice || '0'))
+      .map(a => parseFloat(a.auction.currentBid || a.caseData.reservePrice || '0'))
       .filter(p => p > 0);
     
     const conditions = interactedAuctions
-      .map(a => a.case?.damageSeverity)
+      .map(a => a.caseData.damageSeverity)
       .filter(Boolean);
     
     // Get vendor location
@@ -133,8 +138,8 @@ export class RecommendationGenerationService {
       preferredAssetTypes: this.getMostCommon(assetTypes, 3),
       minPrice: prices.length > 0 ? Math.min(...prices) * 0.8 : 0,
       maxPrice: prices.length > 0 ? Math.max(...prices) * 1.2 : Number.MAX_SAFE_INTEGER,
-      preferredConditions: this.getMostCommon(conditions, 2),
-      location: vendor?.businessAddress as any, // Assuming this has lat/lng
+      preferredConditions: this.getMostCommon(conditions.filter((condition): condition is NonNullable<typeof condition> => Boolean(condition)), 2),
+      location: undefined,
     };
   }
   

@@ -12,7 +12,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
 import { cache } from '@/lib/redis/client';
 
@@ -42,7 +42,7 @@ export async function POST(
       where: eq(users.id, session.user.id),
     });
 
-    if (!user || !['system_admin', 'salvage_manager'].includes(user.role)) {
+    if (!user || user.role !== 'system_admin') {
       return NextResponse.json(
         { error: 'Forbidden: Admin or Salvage Manager access required' },
         { status: 403 }
@@ -60,9 +60,13 @@ export async function POST(
       );
     }
 
-    // Get the fraud flag audit log
+    // Fraud flag raised for this auction (must match action type, not any random audit row)
     const fraudLog = await db.query.auditLogs.findFirst({
-      where: eq(auditLogs.entityId, auctionId),
+      where: and(
+        eq(auditLogs.entityId, auctionId),
+        eq(auditLogs.actionType, AuditActionType.FRAUD_FLAG_RAISED)
+      ),
+      orderBy: (logs, { desc }) => [desc(logs.createdAt)],
     });
 
     if (!fraudLog) {

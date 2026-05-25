@@ -5,6 +5,7 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq } from 'drizzle-orm';
 import { RegistrationInput } from '@/lib/utils/validation';
+import { tombstoneEmail, tombstonePhone } from '@/lib/utils/user-tombstone';
 
 export interface RegistrationResult {
   success: boolean;
@@ -30,7 +31,6 @@ export class AuthService {
     deviceType: 'mobile' | 'desktop' | 'tablet'
   ): Promise<RegistrationResult> {
     try {
-      // Check if email already exists (excluding soft-deleted users)
       const existingUserByEmail = await db
         .select()
         .from(users)
@@ -38,21 +38,21 @@ export class AuthService {
         .limit(1);
 
       if (existingUserByEmail.length > 0) {
-        // If user is soft-deleted, provide helpful error message
-        if (existingUserByEmail[0].status === 'deleted') {
-          return {
-            success: false,
-            error: 'This email was previously registered and deleted. Please contact support to reactivate your account or use a different email.',
-          };
+        const existing = existingUserByEmail[0];
+        if (existing.status === 'deleted') {
+          await db
+            .update(users)
+            .set({
+              email: tombstoneEmail(existing.id),
+              phone: tombstonePhone(existing.id),
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, existing.id));
+        } else {
+          return { success: false, error: 'Email already registered' };
         }
-        
-        return {
-          success: false,
-          error: 'Email already registered',
-        };
       }
 
-      // Check if phone already exists (excluding soft-deleted users)
       const existingUserByPhone = await db
         .select()
         .from(users)
@@ -60,18 +60,19 @@ export class AuthService {
         .limit(1);
 
       if (existingUserByPhone.length > 0) {
-        // If user is soft-deleted, provide helpful error message
-        if (existingUserByPhone[0].status === 'deleted') {
-          return {
-            success: false,
-            error: 'This phone number was previously registered and deleted. Please contact support to reactivate your account or use a different phone number.',
-          };
+        const existing = existingUserByPhone[0];
+        if (existing.status === 'deleted') {
+          await db
+            .update(users)
+            .set({
+              email: tombstoneEmail(existing.id),
+              phone: tombstonePhone(existing.id),
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, existing.id));
+        } else {
+          return { success: false, error: 'Phone number already registered' };
         }
-        
-        return {
-          success: false,
-          error: 'Phone number already registered',
-        };
       }
 
       // Hash password with bcrypt (12 rounds)
@@ -103,7 +104,7 @@ export class AuthService {
           .insert(vendors)
           .values({
             userId: newUser.id,
-            tier: 'tier1_bvn',
+            tier: 'tier0',
             status: 'pending',
             registrationFeePaid: false,
             performanceStats: {

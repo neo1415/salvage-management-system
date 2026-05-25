@@ -6,6 +6,7 @@ import { HeroSection } from '@/components/landing/hero-section';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePublicBranding } from '@/hooks/use-public-branding';
+import { isStandalonePwa } from '@/lib/pwa/detect';
 
 // Lazy load ALL sections below the fold
 const BelowFoldSections = dynamic(() => import('@/components/landing/below-fold-sections'), {
@@ -18,13 +19,17 @@ export default function Home() {
   const { branding, loading } = usePublicBranding();
 
   useEffect(() => {
-    // Load below-the-fold content after hero is visible
+    if (isStandalonePwa()) {
+      router.replace('/launch');
+      return;
+    }
+
     const timer = setTimeout(() => {
       setShowBelowFold(true);
     }, 100);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!loading && branding.homepageMode === 'login_first') {

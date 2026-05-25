@@ -16,6 +16,7 @@
 
 import { kv } from '@vercel/kv';
 import { getSocketServer } from '@/lib/socket/server';
+import { broadcastToSocketSidecar } from '@/lib/socket/sidecar-client';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 
 // Redis key prefixes
@@ -264,7 +265,12 @@ async function broadcastWatchingCount(
     const io = getSocketServer();
 
     if (!io) {
-      console.warn('Socket.io server not initialized, skipping broadcast');
+      console.warn('Socket.io server not initialized, trying sidecar broadcast if configured');
+      await broadcastToSocketSidecar({
+        type: 'auction:watching-count',
+        target: { auctionId },
+        payload: { auctionId, count },
+      });
       return;
     }
 
@@ -272,6 +278,12 @@ async function broadcastWatchingCount(
     io.to(`auction:${auctionId}`).emit('auction:watching-count', {
       auctionId,
       count,
+    });
+
+    await broadcastToSocketSidecar({
+      type: 'auction:watching-count',
+      target: { auctionId },
+      payload: { auctionId, count },
     });
 
     console.log(`📢 Broadcasted watching count for auction ${auctionId}: ${count}`);

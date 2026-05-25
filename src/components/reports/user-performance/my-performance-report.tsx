@@ -56,11 +56,7 @@ interface MyPerformanceReportProps {
   loading?: boolean;
 }
 
-export function MyPerformanceReport({ data, loading }: MyPerformanceReportProps) {
-  if (loading) {
-    return <div>Loading...</div>;
-  }
-
+export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
   const isManagerView = !!data.teamBreakdown;
 
   // Memoize chart data to prevent recreation on every render

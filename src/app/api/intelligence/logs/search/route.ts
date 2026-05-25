@@ -16,7 +16,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { predictionLogs, recommendationLogs, fraudDetectionLogs } from '@/lib/db/schema/ml-training';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
-import { sql, desc, gte, lte, eq } from 'drizzle-orm';
+import { sql, desc, eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -80,62 +80,45 @@ export async function POST(request: NextRequest) {
     // Query logs based on type
     switch (logType) {
       case 'prediction':
-        const predQuery = db
+        logs = await db
           .select()
           .from(predictionLogs)
-          .where(
-            sql`${predictionLogs.createdAt} >= ${startDate} AND ${predictionLogs.createdAt} <= ${endDate}`
-          )
+          .where(and(
+            sql`${predictionLogs.createdAt} >= ${startDate}`,
+            sql`${predictionLogs.createdAt} <= ${endDate}`,
+            filters?.entityId ? eq(predictionLogs.auctionId, filters.entityId) : undefined
+          ))
           .orderBy(desc(predictionLogs.createdAt))
           .limit(limit);
-
-        if (filters?.entityId) {
-          predQuery.where(eq(predictionLogs.auctionId, filters.entityId));
-        }
-
-        logs = await predQuery;
         break;
 
       case 'recommendation':
-        const recQuery = db
+        logs = await db
           .select()
           .from(recommendationLogs)
-          .where(
-            sql`${recommendationLogs.createdAt} >= ${startDate} AND ${recommendationLogs.createdAt} <= ${endDate}`
-          )
+          .where(and(
+            sql`${recommendationLogs.createdAt} >= ${startDate}`,
+            sql`${recommendationLogs.createdAt} <= ${endDate}`,
+            filters?.entityId
+              ? sql`${recommendationLogs.vendorId} = ${filters.entityId} OR ${recommendationLogs.auctionId} = ${filters.entityId}`
+              : undefined
+          ))
           .orderBy(desc(recommendationLogs.createdAt))
           .limit(limit);
-
-        if (filters?.entityId) {
-          recQuery.where(
-            sql`${recommendationLogs.vendorId} = ${filters.entityId} OR ${recommendationLogs.auctionId} = ${filters.entityId}`
-          );
-        }
-
-        logs = await recQuery;
         break;
 
       case 'fraud':
-        let fraudQuery = db
+        logs = await db
           .select()
           .from(fraudDetectionLogs)
-          .where(
-            sql`${fraudDetectionLogs.createdAt} >= ${startDate} AND ${fraudDetectionLogs.createdAt} <= ${endDate}`
-          )
+          .where(and(
+            sql`${fraudDetectionLogs.createdAt} >= ${startDate}`,
+            sql`${fraudDetectionLogs.createdAt} <= ${endDate}`,
+            filters?.entityId ? eq(fraudDetectionLogs.entityId, filters.entityId) : undefined,
+            filters?.minRiskScore !== undefined ? sql`${fraudDetectionLogs.riskScore} >= ${filters.minRiskScore}` : undefined
+          ))
           .orderBy(desc(fraudDetectionLogs.createdAt))
           .limit(limit);
-
-        if (filters?.entityId) {
-          fraudQuery = fraudQuery.where(eq(fraudDetectionLogs.entityId, filters.entityId));
-        }
-
-        if (filters?.minRiskScore !== undefined) {
-          fraudQuery = fraudQuery.where(
-            sql`${fraudDetectionLogs.riskScore} >= ${filters.minRiskScore}`
-          );
-        }
-
-        logs = await fraudQuery;
         break;
 
       default:

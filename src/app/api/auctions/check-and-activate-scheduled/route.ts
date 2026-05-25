@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
               auctionId: auction.id,
               assetType: assetType,
               assetName: `${assetType.toUpperCase()} - ${caseRecord.claimReference}`,
-              reservePrice: parseFloat(caseRecord.reservePrice),
+              reservePrice: parseFloat(caseRecord.reservePrice ?? '0'),
               startTime: now.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
               endTime: auction.endTime.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
               location: caseRecord.locationName,

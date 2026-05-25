@@ -29,3 +29,6 @@ export type { DocumentReadyTemplateData } from './document-ready.template';
 
 export { documentSignedTemplate } from './document-signed.template';
 export type { DocumentSignedTemplateData } from './document-signed.template';
+
+export { getAppUrl, getVendorDocumentsUrl, appPath } from './email-urls';
+export { wrapProfessionalEmail } from './wrap-professional-email';

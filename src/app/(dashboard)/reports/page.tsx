@@ -9,6 +9,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -285,9 +286,10 @@ export default function ReportsHubPage() {
             <CardContent>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {category.reports.map((report) => (
-                  <button
+                  <Link
                     key={report.id}
-                    onClick={() => router.push(report.path)}
+                    href={report.path}
+                    prefetch
                     className="flex items-start gap-3 p-4 border rounded-lg hover:border-[#800020] hover:bg-[#800020]/5 transition-all text-left"
                   >
                     <report.icon className="h-5 w-5 text-[#800020] flex-shrink-0 mt-0.5" />
@@ -296,7 +298,7 @@ export default function ReportsHubPage() {
                       <p className="text-sm text-gray-600 mt-1">{report.description}</p>
                     </div>
                     <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
-                  </button>
+                  </Link>
                 ))}
               </div>
             </CardContent>

@@ -127,6 +127,7 @@ export async function GET(request: NextRequest) {
         status: item.case?.status,
         locationName: item.case?.locationName,
         gpsLocation: item.case?.gpsLocation,
+        approvedAt: item.case?.approvedAt ?? null,
       },
       currentBidder: item.currentBidderVendor ? {
         vendor: {

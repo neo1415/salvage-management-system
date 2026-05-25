@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { WalletPaymentConfirmation } from '@/components/payments/wallet-payment-confirmation';
 import Script from 'next/script';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 interface PaymentDetails {
   id: string;
@@ -163,6 +164,11 @@ export default function PaymentPage() {
   // Handle Paystack payment with inline popup
   const handlePayWithPaystack = async () => {
     try {
+      if (!payment) {
+        throw new Error('Payment details not loaded yet');
+      }
+
+      const currentPayment = payment;
       setError(null);
       
       const response = await fetch(`/api/payments/${paymentId}/initiate`, {
@@ -188,18 +194,18 @@ export default function PaymentPage() {
         ref: data.reference,
         currency: 'NGN',
         metadata: {
-          paymentId: payment.id,
-          auctionId: payment.auctionId,
+          paymentId: currentPayment.id,
+          auctionId: currentPayment.auctionId,
           custom_fields: [
             {
               display_name: 'Payment ID',
               variable_name: 'payment_id',
-              value: payment.id,
+              value: currentPayment.id,
             },
             {
               display_name: 'Auction ID',
               variable_name: 'auction_id',
-              value: payment.auctionId,
+              value: currentPayment.auctionId,
             },
           ],
         },
@@ -312,14 +318,7 @@ export default function PaymentPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-900 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading payment details...</p>
-        </div>
-      </div>
-    );
+    return <DataLoadingState label="Payment details" variant="page" />;
   }
 
   if (error && !payment) {

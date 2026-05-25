@@ -134,7 +134,7 @@ export async function getMarketPrice(
           
           // For condition-specific searches, use the search service's median
           // This preserves the condition differentiation from search queries
-          const median = conditionSpecificPrice;
+          const median = conditionSpecificPrice ?? prices[0]?.price ?? 0;
           const sortedPrices = prices.map(p => p.price).sort((a, b) => a - b);
           const min = Math.min(...sortedPrices);
           const max = Math.max(...sortedPrices);

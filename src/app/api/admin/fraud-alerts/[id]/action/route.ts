@@ -66,7 +66,7 @@ export async function POST(
     where: eq(users.id, session.user.id),
   });
 
-  if (!actor || !['system_admin', 'salvage_manager'].includes(actor.role)) {
+  if (!actor || actor.role !== 'system_admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

@@ -38,7 +38,7 @@ async function canSendNotification(vendorId: string): Promise<boolean> {
       return true;
     }
     
-    const currentCount = parseInt(count);
+    const currentCount = parseInt(String(count), 10);
     if (currentCount >= 5) {
       console.log(`⚠️ Rate limit exceeded for vendor ${vendorId} (${currentCount}/5 notifications today)`);
       return false; // Rate limit exceeded

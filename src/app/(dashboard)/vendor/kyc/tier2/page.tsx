@@ -22,6 +22,11 @@ import {
   requestCameraPermission, 
   getCameraPermissionInstructions 
 } from '@/lib/utils/camera-permissions';
+import {
+  checkGeolocationPermission,
+  requestGeolocationPermission,
+  getGeolocationPermissionInstructions,
+} from '@/lib/utils/geolocation-permissions';
 
 declare global {
   interface Window {
@@ -49,9 +54,23 @@ interface DojahWidgetOptions {
     mobile?: string; // Phone number goes here according to Dojah React SDK docs
   };
   metadata?: Record<string, string>;
-  onSuccess: (response: { reference_id?: string }) => void;
+  onSuccess: (response: DojahWidgetResponse) => void;
+  onComplete?: (response: DojahWidgetResponse) => void;
   onError: (err: unknown) => void;
   onClose: () => void;
+}
+
+interface DojahWidgetResponse {
+  reference_id?: string;
+  referenceId?: string;
+  reference?: string;
+  verification_reference?: string;
+  workflow_reference?: string;
+  data?: {
+    reference_id?: string;
+    referenceId?: string;
+    reference?: string;
+  };
 }
 
 interface DojahConnect {
@@ -61,15 +80,15 @@ interface DojahConnect {
 
 type PageState = 'idle' | 'loading_config' | 'ready' | 'verifying' | 'pending_review' | 'approved' | 'rejected' | 'expired' | 'error';
 
-const DOJAH_IFRAME_ALLOW = 'camera; microphone; fullscreen; autoplay';
+const DOJAH_IFRAME_ALLOW = 'camera; microphone; geolocation; fullscreen; autoplay';
 const TIER2_KYC_PROVIDER = process.env.NEXT_PUBLIC_TIER2_KYC_PROVIDER === 'manual' ? 'manual' : 'dojah';
 
 function formatEmbeddedCameraHelp(prefix: string) {
   return [
     prefix,
-    'Camera access is requested inside the Dojah verification window, so allowing camera for this app may not be enough.',
+    'Camera access is requested inside the verification window, so allowing camera for this app may not be enough.',
     'Please allow camera access when the verification window asks.',
-    'If it still fails, check browser site settings for this app URL and for identity.dojah.io if Chrome shows it.',
+    'If it still fails, check your browser site settings for this app URL and the verification window.',
     'For local testing, use an HTTPS ngrok or cloudflared URL if localhost blocks embedded camera access.',
   ].join(' ');
 }
@@ -114,12 +133,14 @@ export default function Tier2KYCPage() {
     dob?: string;
     vendorId?: string;
     workflowSlug?: string;
+    verificationReference?: string;
   } | null>(null);
   const [widgetReady, setWidgetReady] = useState(false);
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [connect, setConnect] = useState<DojahConnect | null>(null);
   const [cameraPermissionGranted, setCameraPermissionGranted] = useState(false);
+  const [geolocationPermissionGranted, setGeolocationPermissionGranted] = useState(false);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
 
@@ -145,15 +166,28 @@ export default function Tier2KYCPage() {
     }
   }, [authStatus, router]);
 
-  // Load widget config and current KYC status
+  async function loadWidgetConfig() {
+    const configRes = await fetch('/api/kyc/widget-config');
+    if (!configRes.ok) {
+      setPageState('error');
+      setErrorMessage('KYC service is not available. Please contact support.');
+      return false;
+    }
+
+    const config = await configRes.json();
+    setWidgetConfig(config);
+    return true;
+  }
+
+  // Load current KYC status first. Only create/load a new widget reference when the
+  // vendor is actually ready to start or resubmit verification.
   useEffect(() => {
     if (authStatus !== 'authenticated') return;
     if (TIER2_KYC_PROVIDER === 'manual') return;
 
     async function init() {
       try {
-        const [configRes, statusRes, feeRes] = await Promise.all([
-          fetch('/api/kyc/widget-config'),
+        const [statusRes, feeRes] = await Promise.all([
           fetch('/api/kyc/status'),
           fetch('/api/vendors/registration-fee/status'),
         ]);
@@ -170,15 +204,6 @@ export default function Tier2KYCPage() {
           }
         }
 
-        if (!configRes.ok) {
-          setPageState('error');
-          setErrorMessage('KYC service is not available. Please contact support.');
-          return;
-        }
-
-        const config = await configRes.json();
-        setWidgetConfig(config);
-
         if (statusRes.ok) {
           const status: KYCStatus = await statusRes.json();
           setKycStatus(status);
@@ -189,6 +214,8 @@ export default function Tier2KYCPage() {
           if (status.status === 'expired') { setPageState('expired'); return; }
         }
 
+        const configLoaded = await loadWidgetConfig();
+        if (!configLoaded) return;
         setPageState('ready');
       } catch {
         setPageState('error');
@@ -239,11 +266,7 @@ export default function Tier2KYCPage() {
         ? 'test'
         : 'unknown';
     const widgetType = widgetConfig.widgetId ? 'custom' : 'verification';
-    const verificationReference = [
-      'nem',
-      widgetConfig.vendorId ?? user?.id ?? 'vendor',
-      Date.now().toString(36),
-    ].join('-');
+    const verificationReference = widgetConfig.verificationReference;
 
     console.info('[Dojah Widget] Initializing', {
       publicKeyMode,
@@ -252,9 +275,39 @@ export default function Tier2KYCPage() {
       hasVendorId: Boolean(widgetConfig.vendorId),
       hasPhone: Boolean(widgetConfig.phone),
       hasDob: Boolean(widgetConfig.dob),
+      hasVerificationReference: Boolean(verificationReference),
       type: widgetType,
       origin: window.location.origin,
     });
+
+    const resolveReferenceId = (response?: DojahWidgetResponse) =>
+      response?.reference_id ||
+      response?.referenceId ||
+      response?.reference ||
+      response?.verification_reference ||
+      response?.workflow_reference ||
+      response?.data?.reference_id ||
+      response?.data?.referenceId ||
+      response?.data?.reference ||
+      verificationReference;
+
+    const handleWidgetCompletion = async (response: DojahWidgetResponse | undefined, source: 'success' | 'complete') => {
+      const referenceId = resolveReferenceId(response);
+
+      console.info('[Dojah Widget] Completion callback received', {
+        source,
+        hasProviderReference: Boolean(referenceId),
+        usedStoredReference: Boolean(referenceId && referenceId === verificationReference),
+      });
+
+      if (!referenceId) {
+        setErrorMessage('Verification completed, but the app could not identify the verification reference. Please contact support.');
+        setPageState('error');
+        return;
+      }
+
+      await handleVerificationComplete(referenceId);
+    };
 
     const options: DojahWidgetOptions = {
       app_id: widgetConfig.appId,
@@ -268,29 +321,10 @@ export default function Tier2KYCPage() {
         user_id: user?.id ?? '',
         vendor_id: widgetConfig.vendorId ?? '',
         workflow_slug: widgetConfig.workflowSlug ?? 'salvage',
+        reference_id: verificationReference ?? '',
       },
-      onSuccess: async (response) => {
-        const referenceId = response?.reference_id;
-        
-        // Check if we're in test mode
-        const isTestMode = widgetConfig.publicKey?.startsWith('test_');
-        
-        if (!referenceId) {
-          if (isTestMode) {
-            setErrorMessage(
-              'Test credentials do not support full verification. ' +
-              'This is expected behavior in sandbox mode. ' +
-              'Test mode only provides simplified face verification without document checks, AML screening, or complete verification data. ' +
-              'To enable real verification with all features, please contact support@dojah.io to upgrade to production credentials.'
-            );
-          } else {
-            setErrorMessage('Verification completed but no reference ID received. Please contact support.');
-          }
-          setPageState('error');
-          return;
-        }
-        await handleVerificationComplete(referenceId);
-      },
+      onSuccess: async (response) => handleWidgetCompletion(response, 'success'),
+      onComplete: async (response) => handleWidgetCompletion(response, 'complete'),
       onError: (err) => {
         const errorObj = err as { message?: string; referenceId?: string };
         console.error('[Dojah Widget] Error', {
@@ -311,12 +345,12 @@ export default function Tier2KYCPage() {
 
         if (isCameraPermissionError) {
           setErrorMessage(
-            formatEmbeddedCameraHelp('Camera permission was denied or unavailable in the Dojah verification window.')
+            formatEmbeddedCameraHelp('Camera permission was denied or unavailable in the verification window.')
           );
         } else if (errorObj.message === 'Verification Failed' && !errorObj.referenceId) {
           setErrorMessage(
-            'Verification failed before Dojah returned a reference. Please try again. ' +
-            'If this continues locally, confirm the Dojah widget ID, app ID, public key, and allowed local origin in the Dojah dashboard.'
+            'Verification failed before a reference was returned. Please try again. ' +
+            'If this continues locally, confirm the verification widget settings and allowed local origin.'
           );
         } else {
           const errorMsg = typeof err === 'object' && err !== null && 'message' in err 
@@ -407,42 +441,69 @@ export default function Tier2KYCPage() {
     setErrorMessage(null);
 
     try {
-      // First check if permission is already granted
-      const checkResult = await checkCameraPermission();
+      // First check camera permission
+      const cameraCheckResult = await checkCameraPermission();
       
-      if (checkResult.granted) {
+      if (cameraCheckResult.granted) {
         setCameraPermissionGranted(true);
+      } else if (cameraCheckResult.error && !cameraCheckResult.needsPrompt) {
+        // Camera permission is denied or there's a hard error
+        setErrorMessage(formatEmbeddedCameraHelp(`${cameraCheckResult.error} ${getCameraPermissionInstructions()}`));
+        setCheckingPermissions(false);
+        return;
+      } else if (cameraCheckResult.needsPrompt) {
+        // Need to request camera permission
+        const cameraRequestResult = await requestCameraPermission();
+        
+        if (cameraRequestResult.granted) {
+          setCameraPermissionGranted(true);
+        } else {
+          console.warn('Camera permission request failed, but continuing to geolocation check');
+        }
+      }
+
+      // Now check geolocation permission
+      const geoCheckResult = await checkGeolocationPermission();
+      
+      if (geoCheckResult.granted) {
+        setGeolocationPermissionGranted(true);
         setCheckingPermissions(false);
         openDojahWidget();
         return;
       }
 
-      if (checkResult.error && !checkResult.needsPrompt) {
-        // Permission is denied or there's a hard error
-        setErrorMessage(formatEmbeddedCameraHelp(`${checkResult.error} ${getCameraPermissionInstructions()}`));
+      if (geoCheckResult.error && !geoCheckResult.needsPrompt) {
+        // Geolocation permission is denied or there's a hard error
+        const instructions = getGeolocationPermissionInstructions();
+        setErrorMessage(
+          `Location permission is required for verification. ${geoCheckResult.error}. ${instructions} After allowing location, please try again.`
+        );
         setCheckingPermissions(false);
         return;
       }
 
-      // Need to request permission
-      const requestResult = await requestCameraPermission();
+      // Need to request geolocation permission
+      const geoRequestResult = await requestGeolocationPermission();
       
-      if (requestResult.granted) {
-        setCameraPermissionGranted(true);
+      if (geoRequestResult.granted) {
+        setGeolocationPermissionGranted(true);
         setCheckingPermissions(false);
         openDojahWidget();
       } else {
-        // Even if permission request failed, still try to open widget
-        // Dojah will handle its own permission prompts
-        console.warn('Pre-check camera permission failed, but opening widget anyway');
+        // Show clear message about location requirement
+        const instructions = getGeolocationPermissionInstructions();
+        setErrorMessage(
+          `Location permission is required for verification. ${geoRequestResult.error || 'Please allow location access'}. ${instructions} After allowing location, please try again.`
+        );
         setCheckingPermissions(false);
-        openDojahWidget();
       }
     } catch (error) {
       console.error('Permission check failed:', error);
-      // Don't block the widget from opening - let Dojah handle it
+      // Show error but allow user to retry
+      setErrorMessage(
+        'Unable to check permissions. Please ensure your browser allows camera and location access for this site, then try again.'
+      );
       setCheckingPermissions(false);
-      openDojahWidget();
     }
   }
 
@@ -551,9 +612,24 @@ export default function Tier2KYCPage() {
                     <p className="text-sm text-red-700">{kycStatus.rejectionReason}</p>
                   </div>
                 )}
-                <p className="text-gray-600 mb-6 text-sm">You may resubmit after 24 hours. Contact support if you need assistance.</p>
+                {kycStatus?.rejectedSections?.length ? (
+                  <div className="bg-white border border-red-200 rounded-lg p-4 mb-6 text-left">
+                    <p className="text-sm font-semibold text-red-900 mb-2">Sections to correct:</p>
+                    <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+                      {kycStatus.rejectedSections.map((section) => (
+                        <li key={section}>{section}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                <p className="text-gray-600 mb-6 text-sm">
+                  Please correct the requested items and resubmit. Verification will restart as a new attempt.
+                </p>
                 <button
-                  onClick={() => setPageState('ready')}
+                  onClick={() => {
+                    setPageState('ready');
+                    void loadWidgetConfig();
+                  }}
                   className="w-full bg-[#800020] text-white font-bold py-3 rounded-lg hover:bg-[#600018] transition-colors flex items-center justify-center gap-2"
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -652,7 +728,7 @@ export default function Tier2KYCPage() {
                         <li>No NIN verification against NIMC database</li>
                         <li>May return incomplete data or fail randomly</li>
                       </ul>
-                      <p className="font-semibold">To enable full verification, contact support@dojah.io for production credentials.</p>
+                      <p className="font-semibold">To enable full verification, configure production verification credentials.</p>
                     </div>
                   </div>
                 )}
@@ -672,7 +748,7 @@ export default function Tier2KYCPage() {
                   className="w-full bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-bold py-4 rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg min-h-[56px]"
                 >
                   {checkingPermissions ? (
-                    <><Loader2 className="w-5 h-5 animate-spin" /> Checking camera access...</>
+                    <><Loader2 className="w-5 h-5 animate-spin" /> Checking permissions...</>
                   ) : !widgetReady ? (
                     <><Loader2 className="w-5 h-5 animate-spin" /> Loading...</>
                   ) : (
@@ -680,11 +756,11 @@ export default function Tier2KYCPage() {
                   )}
                 </button>
 
-                {/* Camera permission info */}
+                {/* Camera and location permission info */}
                 <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
                   <Camera className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-blue-800">
-                    This verification requires camera access for selfie and liveness checks. Camera access is requested inside Dojah's verification window, so your browser may ask for permission again.
+                    This verification requires camera and location access. Your browser will ask for these permissions before starting. Location is used for identity verification only and coordinates are not stored.
                   </p>
                 </div>
 

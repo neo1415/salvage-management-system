@@ -6,7 +6,10 @@ import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { hash } from 'bcryptjs';
 import { emailService } from '@/features/notifications/services/email.service';
 import { z } from 'zod';
-import { eq, or, ilike, and, inArray, ne } from 'drizzle-orm';
+import { eq, or, ilike, and, inArray, ne, isNotNull, isNull, sql } from 'drizzle-orm';
+import { vendors } from '@/lib/db/schema/vendors';
+import { resolveVendorUserStatus } from '@/lib/utils/vendor-user-status';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 // Validation schema for staff account creation
 const createStaffSchema = z.object({
@@ -61,6 +64,7 @@ async function sendTemporaryPasswordEmail(
   };
 
   const roleDisplay = roleDisplayNames[role] || role;
+  const loginUrl = appPath('/login');
 
   const html = `
 <!DOCTYPE html>
@@ -115,7 +119,7 @@ async function sendTemporaryPasswordEmail(
               </p>
 
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/login" 
+                <a href="${loginUrl}" 
                    style="display: inline-block; padding: 14px 32px; background-color: #800020; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
                   Log In Now
                 </a>
@@ -198,12 +202,34 @@ export async function GET(request: NextRequest) {
       conditions.push(inArray(users.role, roles));
     }
 
-    // Filter by status
+    // Filter by status (includes vendor KYC-derived tiers)
     if (statusFilter && statusFilter !== 'all') {
       const statuses = statusFilter.split(',') as Array<'unverified_tier_0' | 'phone_verified_tier_0' | 'verified_tier_1' | 'verified_tier_2' | 'suspended' | 'deleted'>;
-      conditions.push(inArray(users.status, statuses));
+      const statusConditions = statuses.flatMap((status) => {
+        if (status === 'verified_tier_2') {
+          return [
+            eq(users.status, 'verified_tier_2'),
+            and(
+              eq(users.role, 'vendor'),
+              or(isNotNull(vendors.tier2ApprovedAt), eq(vendors.tier, 'tier2_full'))
+            ),
+          ];
+        }
+        if (status === 'verified_tier_1') {
+          return [
+            eq(users.status, 'verified_tier_1'),
+            and(
+              eq(users.role, 'vendor'),
+              isNotNull(vendors.bvnVerifiedAt),
+              isNull(vendors.tier2ApprovedAt),
+              ne(vendors.tier, 'tier2_full')
+            ),
+          ];
+        }
+        return [eq(users.status, status)];
+      });
+      conditions.push(or(...statusConditions));
     } else {
-      // If no specific status filter, exclude deleted users by default
       conditions.push(ne(users.status, 'deleted'));
     }
 
@@ -221,36 +247,68 @@ export async function GET(request: NextRequest) {
     // Calculate offset
     const offset = (page - 1) * pageSize;
 
-    // Fetch users with pagination
-    const usersList = await db.query.users.findMany({
-      where: conditions.length > 0 ? and(...conditions) : undefined,
-      orderBy: (users, { desc }) => [desc(users.createdAt)],
-      columns: {
-        id: true,
-        email: true,
-        phone: true,
-        fullName: true,
-        role: true,
-        status: true,
-        profilePictureUrl: true,
-        createdAt: true,
-        updatedAt: true,
-        lastLoginAt: true,
-        loginDeviceType: true,
-      },
-      limit: pageSize + 1,
-      offset,
-    });
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Check if there are more items
+    const usersList = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        phone: users.phone,
+        fullName: users.fullName,
+        role: users.role,
+        status: users.status,
+        profilePictureUrl: users.profilePictureUrl,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+        lastLoginAt: users.lastLoginAt,
+        loginDeviceType: users.loginDeviceType,
+        vendorBvnVerifiedAt: vendors.bvnVerifiedAt,
+        vendorTier: vendors.tier,
+        vendorTier2ApprovedAt: vendors.tier2ApprovedAt,
+      })
+      .from(users)
+      .leftJoin(vendors, eq(vendors.userId, users.id))
+      .where(whereClause)
+      .orderBy(sql`${users.createdAt} DESC`)
+      .limit(pageSize + 1)
+      .offset(offset);
+
     const hasMore = usersList.length > pageSize;
-    const data = hasMore ? usersList.slice(0, pageSize) : usersList;
+    const raw = hasMore ? usersList.slice(0, pageSize) : usersList;
 
-    // Get total count for pagination
-    const totalCountResult = await db.query.users.findMany({
-      where: conditions.length > 0 ? and(...conditions) : undefined,
-      columns: { id: true },
+    const data = raw.map((row) => {
+      const vendorSnapshot =
+        row.role === 'vendor' && row.vendorTier
+          ? {
+              bvnVerifiedAt: row.vendorBvnVerifiedAt,
+              tier: row.vendorTier,
+              tier2ApprovedAt: row.vendorTier2ApprovedAt,
+            }
+          : null;
+
+      const displayStatus = resolveVendorUserStatus(row.status, vendorSnapshot);
+
+      return {
+        id: row.id,
+        email: row.email,
+        phone: row.phone,
+        fullName: row.fullName,
+        role: row.role,
+        status: row.status,
+        displayStatus,
+        profilePictureUrl: row.profilePictureUrl,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        lastLoginAt: row.lastLoginAt,
+        loginDeviceType: row.loginDeviceType,
+      };
     });
+
+    const totalCountResult = await db
+      .select({ id: users.id })
+      .from(users)
+      .leftJoin(vendors, eq(vendors.userId, users.id))
+      .where(whereClause);
 
     return NextResponse.json({
       success: true,

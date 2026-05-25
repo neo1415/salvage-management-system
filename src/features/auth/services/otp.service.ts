@@ -3,13 +3,16 @@ import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq } from 'drizzle-orm';
+import { smsService } from '@/features/notifications/services/sms.service';
 
 /**
  * OTP Service
  * Handles SMS OTP generation, sending, and verification using Termii REST API
  */
 // OTP Context Types
-export type OTPContext = 'authentication' | 'bidding';
+export type OTPContext = 'authentication' | 'bidding' | 'phone_change';
+
+let termiiConfigLogged = false;
 
 // Rate limit configurations
 const RATE_LIMITS = {
@@ -23,14 +26,16 @@ const RATE_LIMITS = {
     perAuctionMax: 5, // Max 5 bids per auction per 5 minutes
     perAuctionWindowSeconds: 5 * 60, // 5 minutes
   },
+  phone_change: {
+    maxAttempts: 5,
+    windowSeconds: 30 * 60,
+  },
 };
 
 export class OTPService {
   private termiiApiKey: string | null;
   private readonly OTP_EXPIRY_SECONDS = 5 * 60; // 5 minutes
   private readonly MAX_ATTEMPTS = 3;
-  private readonly TERMII_API_URL = 'https://api.ng.termii.com/api/sms/send';
-
   constructor() {
     // Initialize Termii API key
     const apiKey = process.env.TERMII_API_KEY;
@@ -40,7 +45,10 @@ export class OTPService {
       this.termiiApiKey = null;
     } else {
       this.termiiApiKey = apiKey;
-      console.log('✅ Termii configured for production SMS sending');
+      if (!termiiConfigLogged) {
+        console.log('✅ Termii configured for production SMS sending');
+        termiiConfigLogged = true;
+      }
     }
   }
 
@@ -129,38 +137,28 @@ export class OTPService {
       // This ensures OTP is available even if SMS sending fails
       await otpCache.set(normalizedPhone, otp);
 
-      // Send SMS via Termii REST API
-      const senderId = process.env.TERMII_SENDER_ID || 'NEMSAL';
       const message = `Your NEM Salvage verification code is: ${otp}. Valid for 5 minutes. Do not share this code.`;
 
       try {
         if (this.termiiApiKey) {
-          // Send SMS via Termii REST API
-          const response = await fetch(this.TERMII_API_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              to: normalizedPhone,
-              from: senderId,
-              sms: message,
-              type: 'plain',
-              channel: process.env.TERMII_CHANNEL || 'generic',
-              api_key: this.termiiApiKey,
-            }),
+          const smsResult = await smsService.sendSMS({
+            to: normalizedPhone,
+            message,
+            category: 'otp',
           });
 
-          const result = await response.json();
-
-          // Log the full Termii response for debugging
-          console.log('📱 Termii API Response:', JSON.stringify(result, null, 2));
-
-          if (!response.ok) {
-            throw new Error(`Termii API error: ${result.message || 'Failed to send SMS'}`);
+          if (!smsResult.success) {
+            throw new Error(smsResult.error || 'Failed to send OTP SMS');
           }
 
-          console.log(`✅ SMS sent successfully to ${phone} via Termii`);
+          if (smsResult.skipped) {
+            console.warn(`📱 OTP SMS skipped for ${normalizedPhone}: ${smsResult.messageId}`);
+          } else {
+            console.log(
+              `✅ OTP SMS accepted by Termii for ${normalizedPhone} (id: ${smsResult.messageId}). ` +
+                'Check Termii inbox for Sent vs Failed — "Successfully Sent" is not handset delivery.'
+            );
+          }
         } else {
           // In development/test mode without Termii, just log
           if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
@@ -257,6 +255,49 @@ export class OTPService {
    * @param deviceType - Device type
    * @returns Verification result
    */
+  /**
+   * Verify OTP code only (no user status updates). Used for phone change and future login MFA.
+   */
+  async verifyOTPCode(
+    phone: string,
+    otp: string
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const normalizedPhone = this.normalizePhoneNumber(phone);
+      const otpData = await otpCache.get(normalizedPhone);
+
+      if (!otpData) {
+        return {
+          success: false,
+          message: 'OTP expired or not found. Please request a new code.',
+        };
+      }
+
+      if (otpData.attempts >= this.MAX_ATTEMPTS) {
+        await otpCache.del(normalizedPhone);
+        return {
+          success: false,
+          message: 'Maximum verification attempts exceeded. Please request a new code.',
+        };
+      }
+
+      if (otpData.otp !== otp) {
+        const newAttempts = await otpCache.incrementAttempts(normalizedPhone);
+        const remainingAttempts = this.MAX_ATTEMPTS - newAttempts;
+        return {
+          success: false,
+          message: `Invalid code. ${remainingAttempts} attempt${remainingAttempts !== 1 ? 's' : ''} remaining.`,
+        };
+      }
+
+      await otpCache.del(normalizedPhone);
+      return { success: true, message: 'Verified' };
+    } catch (error) {
+      console.error('Verify OTP code error:', error);
+      return { success: false, message: 'Verification failed. Please try again.' };
+    }
+  }
+
   async verifyOTP(
     phone: string,
     otp: string,
@@ -264,44 +305,14 @@ export class OTPService {
     deviceType: 'mobile' | 'desktop' | 'tablet'
   ): Promise<{ success: boolean; message: string; userId?: string }> {
     try {
+      const codeCheck = await this.verifyOTPCode(phone, otp);
+      if (!codeCheck.success) {
+        return { success: false, message: codeCheck.message };
+      }
+
       const normalizedPhone = this.normalizePhoneNumber(phone);
 
-      // Get OTP data from cache
-      const otpData = await otpCache.get(normalizedPhone);
-
-      if (!otpData) {
-        return {
-          success: false,
-          message: 'OTP expired or not found. Please request a new OTP.',
-        };
-      }
-
-      // Check if max attempts exceeded
-      if (otpData.attempts >= this.MAX_ATTEMPTS) {
-        // Delete OTP to force resend
-        await otpCache.del(normalizedPhone);
-        
-        return {
-          success: false,
-          message: 'Maximum verification attempts exceeded. Please request a new OTP.',
-        };
-      }
-
-      // Verify OTP
-      if (otpData.otp !== otp) {
-        // Increment attempts and get the new count
-        const newAttempts = await otpCache.incrementAttempts(normalizedPhone);
-        
-        // Calculate remaining attempts using the NEW attempts value
-        const remainingAttempts = this.MAX_ATTEMPTS - newAttempts;
-        
-        return {
-          success: false,
-          message: `Invalid OTP. ${remainingAttempts} attempt${remainingAttempts !== 1 ? 's' : ''} remaining.`,
-        };
-      }
-
-      // OTP is valid - update user status
+      // OTP is valid - update user status (registration flow)
       const user = await db
         .select()
         .from(users)

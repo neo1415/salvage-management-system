@@ -158,12 +158,25 @@ export async function POST(
       );
     }
 
+    if (!result.newDeadline) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Extension was granted but no new deadline was returned',
+        },
+        { status: 500 }
+      );
+    }
+
+    const extensionCount = result.extensionCount ?? 0;
+    const maxExtensions = result.maxExtensions ?? extensionCount;
+
     return NextResponse.json({
       success: true,
       newDeadline: result.newDeadline,
-      extensionCount: result.extensionCount,
-      maxExtensions: result.maxExtensions,
-      canGrantMore: result.extensionCount < result.maxExtensions,
+      extensionCount,
+      maxExtensions,
+      canGrantMore: extensionCount < maxExtensions,
       message: `Extension granted. New deadline: ${result.newDeadline.toLocaleString()}`,
     });
   } catch (error) {
@@ -210,23 +223,12 @@ export async function GET(
       );
     }
 
-    // Get extension history
-    const result = await extensionService.getExtensionHistory(auctionId);
-
-    if (!result.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: result.error,
-        },
-        { status: 400 }
-      );
-    }
+    const extensions = await extensionService.getExtensionHistory(auctionId);
 
     return NextResponse.json({
       success: true,
-      extensions: result.extensions,
-      count: result.extensions?.length || 0,
+      extensions,
+      count: extensions.length,
     });
   } catch (error) {
     console.error('Get extensions error:', error);

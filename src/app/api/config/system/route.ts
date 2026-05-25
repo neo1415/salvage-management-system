@@ -21,6 +21,7 @@ export async function GET() {
         success: true,
         config: {
           minimumBidIncrement: config.minimumBidIncrement,
+          tier1Limit: config.tier1Limit,
           depositRate: config.depositRate,
           documentValidityPeriod: config.documentValidityPeriod,
           paymentDeadlineAfterSigning: config.paymentDeadlineAfterSigning,

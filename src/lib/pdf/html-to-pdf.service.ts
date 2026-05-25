@@ -36,7 +36,6 @@ export class HtmlToPdfService {
           '--hide-scrollbars',
           '--disable-web-security',
         ],
-        ignoreHTTPSErrors: true,
       });
     }
     return this.browser;
