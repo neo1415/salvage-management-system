@@ -9,6 +9,7 @@ import { getKYCAuditService } from '@/features/kyc/services/audit.service';
 import { getKYCNotificationService } from '@/features/kyc/services/notification.service';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { logAction, createAuditLogData, AuditActionType, AuditEntityType } from '@/lib/utils/audit-logger';
+import { abandonOpenTier2Workflows } from '@/features/kyc/services/kyc-testing-reset.service';
 
 /**
  * POST /api/kyc/approvals/[id]/decision
@@ -83,6 +84,10 @@ export async function POST(
     rejectedSections: cleanRejectedSections,
     decidedAt: now,
   });
+
+  if (decision === 'reject') {
+    await abandonOpenTier2Workflows(vendorId);
+  }
 
   const [providerRecord] = await db
     .select()

@@ -11,6 +11,7 @@ import {
   applyKycTestingStatusOverride,
   isKycTestingMode,
 } from '@/lib/kyc/kyc-testing-mode';
+import { clearPrematureTier2Submission } from '@/features/kyc/services/clear-premature-tier2-submission';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +29,11 @@ export async function GET(request: NextRequest) {
     }
 
     const [vendorRow] = await db
-      .select({ id: vendors.id })
+      .select({
+        id: vendors.id,
+        tier2SubmittedAt: vendors.tier2SubmittedAt,
+        tier2ApprovedAt: vendors.tier2ApprovedAt,
+      })
       .from(vendors)
       .where(eq(vendors.userId, session.user.id))
       .limit(1);
@@ -38,6 +43,24 @@ export async function GET(request: NextRequest) {
     }
 
     if (!isKycTestingMode()) {
+      await clearPrematureTier2Submission(vendorRow.id);
+    }
+
+    const [vendorAfterCleanup] = await db
+      .select({
+        tier2SubmittedAt: vendors.tier2SubmittedAt,
+        tier2ApprovedAt: vendors.tier2ApprovedAt,
+      })
+      .from(vendors)
+      .where(eq(vendors.id, vendorRow.id))
+      .limit(1);
+
+    // Only sync provider results after a real submission — never on first widget load.
+    if (
+      !isKycTestingMode() &&
+      vendorAfterCleanup?.tier2SubmittedAt &&
+      !vendorAfterCleanup.tier2ApprovedAt
+    ) {
       await reconcileTier2FromDojah({
         vendorId: vendorRow.id,
         userId: session.user.id,

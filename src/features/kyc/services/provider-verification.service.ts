@@ -16,6 +16,7 @@ import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/u
 import type { NormalizedVerificationResult } from '../types/provider-verification.types';
 import { buildDojahReference } from '../utils/dojah-reference';
 import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
+import { abandonOpenTier2Workflows } from './kyc-testing-reset.service';
 
 interface PersistVerificationInput {
   userId?: string;
@@ -79,7 +80,16 @@ export class ProviderVerificationService {
   async getOrCreatePendingWorkflow(input: StartWorkflowInput): Promise<{ providerReference: string; created: boolean }> {
     await assertProviderVerificationStorageReady();
 
-    if (!isKycTestingMode()) {
+    const [vendorState] = await db
+      .select({
+        tier2RejectionReason: vendors.tier2RejectionReason,
+        tier2SubmittedAt: vendors.tier2SubmittedAt,
+      })
+      .from(vendors)
+      .where(eq(vendors.id, input.vendorId))
+      .limit(1);
+
+    if (!isKycTestingMode() && vendorState?.tier2SubmittedAt) {
       const existing = await db.query.providerVerificationRecords.findFirst({
         where: and(
           eq(providerVerificationRecords.provider, 'dojah'),
@@ -95,11 +105,9 @@ export class ProviderVerificationService {
       }
     }
 
-    const [vendorState] = await db
-      .select({ tier2RejectionReason: vendors.tier2RejectionReason })
-      .from(vendors)
-      .where(eq(vendors.id, input.vendorId))
-      .limit(1);
+    if (!vendorState?.tier2SubmittedAt) {
+      await abandonOpenTier2Workflows(input.vendorId);
+    }
 
     const providerReference = buildDojahReference(input.vendorId);
     const now = new Date();
@@ -146,7 +154,6 @@ export class ProviderVerificationService {
         .update(vendors)
         .set({
           tier2RejectionReason: null,
-          tier2SubmittedAt: now,
           updatedAt: now,
         })
         .where(eq(vendors.id, input.vendorId));

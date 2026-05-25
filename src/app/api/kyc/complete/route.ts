@@ -23,6 +23,7 @@ import {
   isCleanTier2Verification,
 } from '@/features/kyc/services/tier2-review-settings.service';
 import { appPath } from '@/features/notifications/templates/email-urls';
+import { isTier2ReadyForVendorSubmission } from '@/features/kyc/services/tier2-submission-readiness';
 
 const LOCK_TTL_SECONDS = 300; // 5 minutes
 
@@ -74,9 +75,22 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const referenceId: string = body?.reference_id || body?.referenceId || body?.reference || body?.verification_reference;
+    const widgetCompleted = body?.widget_completed === true;
 
     if (!referenceId || typeof referenceId !== 'string') {
       return NextResponse.json({ error: 'reference_id is required' }, { status: 400 });
+    }
+
+    if (!widgetCompleted) {
+      return NextResponse.json(
+        {
+          error: 'verification_incomplete',
+          message:
+            'Verification was not completed in the identity window. Finish all steps or close and use Start Verification again.',
+          errorSource: 'app',
+        },
+        { status: 409 }
+      );
     }
 
     const dojah = getDojahService();
@@ -107,6 +121,17 @@ export async function POST(request: NextRequest) {
         message: err instanceof Error ? err.message : 'Unknown Dojah fetch error',
         providerReference: referenceId,
       });
+
+      if (!widgetCompleted) {
+        return NextResponse.json(
+          {
+            error: 'verification_incomplete',
+            message: 'We could not confirm a completed verification. Please try again.',
+            errorSource: 'identity_provider',
+          },
+          { status: 409 }
+        );
+      }
 
       const now = new Date();
       await providerService.persistVerification({
@@ -178,6 +203,19 @@ export async function POST(request: NextRequest) {
         status: 'pending_review',
         message: 'Your application is under review. You will be notified within 24-48 hours.',
       });
+    }
+
+    const normalizedPreview = normalizeDojahWorkflowResult(verificationResult);
+    if (!isTier2ReadyForVendorSubmission(verificationResult, normalizedPreview)) {
+      return NextResponse.json(
+        {
+          error: 'verification_incomplete',
+          message:
+            'Identity verification is not finished yet. Complete every step in the verification window before leaving the page.',
+          errorSource: 'app',
+        },
+        { status: 409 }
+      );
     }
 
     // Extract NIN entity

@@ -536,6 +536,7 @@ export class KYCRepository {
           .set({
             tier2RejectionReason: decision.reason ?? 'Application rejected',
             tier2SubmittedAt: null,
+            tier2DojahReferenceId: null,
             updatedAt: new Date(),
           })
           .where(eq(vendors.id, vendorId));

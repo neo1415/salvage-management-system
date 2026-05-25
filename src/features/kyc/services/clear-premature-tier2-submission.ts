@@ -1,0 +1,45 @@
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db/drizzle';
+import { vendors } from '@/lib/db/schema/vendors';
+import { abandonOpenTier2Workflows } from './kyc-testing-reset.service';
+
+/**
+ * Clears a Tier 2 queue entry that was created without real verification evidence
+ * (e.g. user left for browser permissions and reconcile marked submitted).
+ */
+export async function clearPrematureTier2Submission(vendorId: string): Promise<boolean> {
+  const [vendor] = await db
+    .select({
+      tier2SubmittedAt: vendors.tier2SubmittedAt,
+      tier2ApprovedAt: vendors.tier2ApprovedAt,
+      ninVerified: vendors.ninVerified,
+      livenessScore: vendors.livenessScore,
+      biometricMatchScore: vendors.biometricMatchScore,
+    })
+    .from(vendors)
+    .where(eq(vendors.id, vendorId))
+    .limit(1);
+
+  if (!vendor?.tier2SubmittedAt || vendor.tier2ApprovedAt) {
+    return false;
+  }
+
+  const hasEvidence = Boolean(
+    vendor.ninVerified || vendor.livenessScore || vendor.biometricMatchScore
+  );
+  if (hasEvidence) {
+    return false;
+  }
+
+  await db
+    .update(vendors)
+    .set({
+      tier2SubmittedAt: null,
+      tier2DojahReferenceId: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendors.id, vendorId));
+
+  await abandonOpenTier2Workflows(vendorId);
+  return true;
+}

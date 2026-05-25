@@ -315,7 +315,7 @@ export default function Tier2KYCPage() {
       origin: window.location.origin,
     });
 
-    const resolveReferenceId = (response?: DojahWidgetResponse) =>
+    const resolveReferenceFromWidgetResponse = (response?: DojahWidgetResponse) =>
       response?.reference_id ||
       response?.referenceId ||
       response?.reference ||
@@ -324,18 +324,30 @@ export default function Tier2KYCPage() {
       response?.data?.reference_id ||
       response?.data?.referenceId ||
       response?.data?.reference ||
-      verificationReference;
+      undefined;
+
+    const widgetReturnedCompletionPayload = (response?: DojahWidgetResponse) =>
+      Boolean(
+        response?.data ||
+          response?.reference_id ||
+          response?.referenceId ||
+          response?.verification_reference
+      );
 
     const handleWidgetCompletion = async (response: DojahWidgetResponse | undefined, source: 'success' | 'complete') => {
-      const referenceId = resolveReferenceId(response);
+      const referenceId = resolveReferenceFromWidgetResponse(response);
 
       console.info('[Dojah Widget] Completion callback received', {
         source,
         hasProviderReference: Boolean(referenceId),
-        usedStoredReference: Boolean(referenceId && referenceId === verificationReference),
+        hasCompletionPayload: widgetReturnedCompletionPayload(response),
       });
 
-      if (!referenceId) {
+      if (!referenceId || !widgetReturnedCompletionPayload(response)) {
+        if (source === 'complete') {
+          setPageState('ready');
+          return;
+        }
         showVerificationError(
           resolveTier2ApiError({
             message:
@@ -346,7 +358,7 @@ export default function Tier2KYCPage() {
         return;
       }
 
-      await handleVerificationComplete(referenceId);
+      await handleVerificationComplete(referenceId, true);
     };
 
     const options: DojahWidgetOptions = {
@@ -364,7 +376,13 @@ export default function Tier2KYCPage() {
         reference_id: verificationReference ?? '',
       },
       onSuccess: async (response) => handleWidgetCompletion(response, 'success'),
-      onComplete: async (response) => handleWidgetCompletion(response, 'complete'),
+      onComplete: async (response) => {
+        if (widgetReturnedCompletionPayload(response)) {
+          await handleWidgetCompletion(response, 'complete');
+        } else {
+          setPageState('ready');
+        }
+      },
       onError: (err) => {
         const errorObj = err as { message?: string; referenceId?: string };
         console.error('[Dojah Widget] Error', {
@@ -436,7 +454,7 @@ export default function Tier2KYCPage() {
     return () => observer.disconnect();
   }, []);
 
-  async function handleVerificationComplete(referenceId: string) {
+  async function handleVerificationComplete(referenceId: string, widgetCompleted = false) {
     setPageState('verifying');
     clearVerificationError();
 
@@ -444,13 +462,22 @@ export default function Tier2KYCPage() {
       const res = await fetch('/api/kyc/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reference_id: referenceId }),
+        body: JSON.stringify({ reference_id: referenceId, widget_completed: widgetCompleted }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        showVerificationError(resolveTier2ApiError({ error: data.error, message: data.message }), {
+        const resolved =
+          data.error === 'verification_incomplete'
+            ? resolveTier2ApiError({
+                error: data.error,
+                message:
+                  data.message ??
+                  'Verification was not finished. Complete every step in the identity window, then try again.',
+              })
+            : resolveTier2ApiError({ error: data.error, message: data.message });
+        showVerificationError(resolved, {
           openDialog: true,
           nextPageState: 'ready',
         });

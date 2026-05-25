@@ -10,6 +10,10 @@ import { getKYCRepository } from '../repositories/kyc.repository';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import type { DojahVerificationResult } from '../schemas/dojah.schemas';
 import { assertProviderVerificationStorageReady } from './provider-verification-readiness';
+import {
+  isDojahResultFetchable,
+  isTier2ReadyForVendorSubmission,
+} from './tier2-submission-readiness';
 
 export interface ReconcileTier2Result {
   synced: boolean;
@@ -17,30 +21,6 @@ export interface ReconcileTier2Result {
   providerStatus?: string;
   vendorPendingReview?: boolean;
   fetchError?: string;
-}
-
-function isDojahResultComplete(result: DojahVerificationResult): boolean {
-  const statusText = String(result.verification_status ?? result.verificationStatus ?? result.status ?? '').toLowerCase();
-  if (
-    statusText.includes('complete') ||
-    statusText.includes('success') ||
-    statusText.includes('pass') ||
-    statusText.includes('review') ||
-    statusText.includes('fail') ||
-    statusText.includes('pending') ||
-    statusText.includes('submitted')
-  ) {
-    return true;
-  }
-
-  const data = result.data;
-  return Boolean(
-    data?.id?.status !== undefined ||
-      data?.selfie?.data ||
-      data?.government_data?.status !== undefined ||
-      data?.business_id ||
-      data?.business_data
-  );
 }
 
 function collectReferences(
@@ -165,9 +145,7 @@ export async function reconcileTier2FromDojah(input: {
         userAgent: input.userAgent,
       });
 
-      const shouldMarkPending =
-        !vendor.tier2SubmittedAt ||
-        ['pending', 'review_required', 'passed', 'failed', 'provider_unavailable'].includes(normalized.status);
+      const shouldMarkPending = isTier2ReadyForVendorSubmission(verificationResult, normalized);
 
       if (shouldMarkPending) {
         await repo.upsertVerificationData(input.vendorId, {

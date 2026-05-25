@@ -5,11 +5,11 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
-import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
 import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
 import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
 import { resetVendorTier2ForTesting } from '@/features/kyc/services/kyc-testing-reset.service';
+import { clearPrematureTier2Submission } from '@/features/kyc/services/clear-premature-tier2-submission';
 
 /**
  * GET /api/kyc/widget-config
@@ -59,6 +59,8 @@ export async function GET(request: Request) {
 
   if (isKycTestingMode()) {
     await resetVendorTier2ForTesting(result.vendorId);
+  } else {
+    await clearPrematureTier2Submission(result.vendorId);
   }
 
   let workflow: { providerReference: string; created: boolean };
@@ -78,21 +80,6 @@ export async function GET(request: Request) {
     throw error;
   }
 
-  const reconcileResult = isKycTestingMode()
-    ? { synced: false as const }
-    : await reconcileTier2FromDojah({
-        vendorId: result.vendorId,
-        userId: session.user.id,
-        actorId: session.user.id,
-        ipAddress: getIpAddress(request.headers),
-        userAgent: request.headers.get('user-agent') ?? 'unknown',
-      }).catch((error) => {
-        console.error('[KYC] Dojah reconcile on widget-config failed', {
-          message: error instanceof Error ? error.message : 'Unknown error',
-        });
-        return { synced: false as const };
-      });
-
   console.info('[KYC] Dojah widget config loaded', {
     hasAppId: Boolean(appId),
     publicKeyMode: publicKey.startsWith('prod_') ? 'production' : publicKey.startsWith('test_') ? 'test' : 'unknown',
@@ -103,7 +90,6 @@ export async function GET(request: Request) {
     workflowSlug,
     hasVerificationReference: Boolean(workflow.providerReference),
     referenceCreated: workflow.created,
-    reconcileSynced: reconcileResult.synced,
   });
 
   return NextResponse.json({

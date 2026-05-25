@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
+import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
 
 /**
@@ -39,4 +40,23 @@ export async function resetVendorTier2ForTesting(vendorId: string): Promise<bool
     .where(eq(vendors.id, vendorId));
 
   return true;
+}
+
+/** Close abandoned in-widget sessions so vendors can start fresh. */
+export async function abandonOpenTier2Workflows(vendorId: string): Promise<void> {
+  await db
+    .update(providerVerificationRecords)
+    .set({
+      status: 'failed',
+      displayMessage: 'Verification session ended before completion. Vendor may start again.',
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(providerVerificationRecords.vendorId, vendorId),
+        eq(providerVerificationRecords.provider, 'dojah'),
+        eq(providerVerificationRecords.verificationType, 'tier2'),
+        inArray(providerVerificationRecords.status, ['pending', 'provider_unavailable'])
+      )
+    );
 }
