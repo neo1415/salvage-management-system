@@ -101,11 +101,14 @@ export async function reconcileTier2FromDojah(input: {
   for (const providerReference of references) {
     try {
       const verificationResult = await dojah.getVerificationResult(providerReference);
-      if (!isDojahResultComplete(verificationResult)) {
+      if (!isDojahResultFetchable(verificationResult)) {
         continue;
       }
 
       const normalized = normalizeDojahWorkflowResult(verificationResult);
+      if (!isTier2ReadyForVendorSubmission(verificationResult, normalized)) {
+        continue;
+      }
       normalized.providerReference = normalized.providerReference || providerReference;
       normalized.workflowReference = normalized.workflowReference || providerReference;
       const media = await ingestDojahMediaForVendor({
