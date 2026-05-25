@@ -61,12 +61,34 @@ export function isDojahWidgetFinalSuccess(response?: DojahWidgetCallbackResponse
     statusText.includes('complete') ||
     statusText.includes('success') ||
     statusText.includes('passed') ||
-    statusText.includes('approved')
+    statusText.includes('approved') ||
+    statusText.includes('pending') ||
+    statusText.includes('review') ||
+    statusText.includes('submitted')
+  ) {
+    return true;
+  }
+
+  const messageText = (response.message ?? '').toLowerCase();
+  if (
+    messageText.includes('review') ||
+    messageText.includes('submitted') ||
+    messageText.includes('received')
   ) {
     return true;
   }
 
   return false;
+}
+
+/** Widget reported a step failure but the overall session may still have finished (manual review). */
+export function isDojahWidgetRecoverableAfterError(err: unknown): boolean {
+  const errorObj = err as { message?: string; referenceId?: string; reference_id?: string };
+  const hasReference = Boolean(
+    errorObj.referenceId || errorObj.reference_id || errorObj.message?.toLowerCase().includes('review')
+  );
+  const message = (errorObj.message ?? '').toLowerCase();
+  return hasReference && (message.includes('verification failed') || message.includes('failed'));
 }
 
 /** Intermediate step (e.g. liveness only) — has a reference or partial data but workflow not done. */

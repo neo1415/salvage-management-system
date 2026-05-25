@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Script from 'next/script';
@@ -35,9 +35,11 @@ import {
 import {
   isDojahWidgetFinalSuccess,
   isDojahWidgetIntermediateStep,
+  isDojahWidgetRecoverableAfterError,
   resolveDojahWidgetReference,
   type DojahWidgetCallbackResponse,
 } from '@/lib/kyc/dojah-widget-completion';
+import { VerificationSuccessDialog } from '@/components/kyc/verification-success-dialog';
 import type { ResolvedVerificationError } from '@/lib/kyc/kyc-user-messages';
 import {
   VerificationErrorAlert,
@@ -150,6 +152,14 @@ export default function Tier2KYCPage() {
   const [checkingPermissions, setCheckingPermissions] = useState(false);
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
   const [widgetSessionActive, setWidgetSessionActive] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [successModalCopy, setSuccessModalCopy] = useState({ title: '', message: '' });
+  const submissionFinishedRef = useRef(false);
+
+  const goToDashboard = useCallback(() => {
+    setSuccessModalOpen(false);
+    router.push('/vendor/dashboard');
+  }, [router]);
 
   const showVerificationError = (
     error: ResolvedVerificationError,
@@ -164,6 +174,37 @@ export default function Tier2KYCPage() {
     setVerificationError(null);
     setErrorDialogOpen(false);
   };
+
+  const showSubmissionSuccess = useCallback((status: 'approved' | 'pending_review') => {
+    submissionFinishedRef.current = true;
+    setVerificationError(null);
+    setErrorDialogOpen(false);
+    setWidgetSessionActive(false);
+    setPageState(status);
+    setSuccessModalCopy({
+      title: status === 'approved' ? 'Verification approved' : 'Application submitted',
+      message:
+        status === 'approved'
+          ? 'Your Tier 2 verification is approved. You now have full bidding access.'
+          : 'Your documents were received and are under review. You will get an SMS and email update within 24–48 hours.',
+    });
+    setSuccessModalOpen(true);
+  }, []);
+
+  const recoverSubmissionFromServer = useCallback(async () => {
+    try {
+      const statusRes = await fetch('/api/kyc/status');
+      if (!statusRes.ok) return false;
+      const status = (await statusRes.json()) as KYCStatus;
+      if (status.status === 'approved' || status.status === 'pending_review') {
+        showSubmissionSuccess(status.status);
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  }, [showSubmissionSuccess]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -387,6 +428,8 @@ export default function Tier2KYCPage() {
         await handleWidgetCompletion(response, 'complete');
       },
       onError: (err) => {
+        if (submissionFinishedRef.current) return;
+
         const errorObj = err as { message?: string; referenceId?: string };
         console.error('[Dojah Widget] Error', {
           message: errorObj?.message ?? 'Unknown Dojah widget error',
@@ -417,7 +460,24 @@ export default function Tier2KYCPage() {
           widgetError.message = formatEmbeddedCameraHelp(
             'Camera permission was denied or unavailable in the verification window.'
           );
+          showVerificationError(widgetError, { openDialog: true, nextPageState: 'ready' });
+          return;
         }
+
+        if (isDojahWidgetRecoverableAfterError(err) || errorObj.referenceId) {
+          void recoverSubmissionFromServer().then((recovered) => {
+            if (!recovered) {
+              showVerificationError(
+                resolveTier2WidgetError(
+                  'Some checks need manual review, but your session may still be processing. Wait a moment, then refresh this page.'
+                ),
+                { openDialog: true, nextPageState: 'ready' }
+              );
+            }
+          });
+          return;
+        }
+
         showVerificationError(widgetError, { openDialog: true, nextPageState: 'ready' });
       },
       onClose: () => {
@@ -498,11 +558,13 @@ export default function Tier2KYCPage() {
       }
 
       if (data.status === 'approved') {
-        setPageState('approved');
+        showSubmissionSuccess('approved');
       } else {
-        setPageState('pending_review');
+        showSubmissionSuccess('pending_review');
       }
     } catch (err) {
+      const recovered = await recoverSubmissionFromServer();
+      if (recovered) return;
       const aborted = err instanceof Error && err.name === 'AbortError';
       showVerificationError(
         resolveTier2ApiError({
@@ -650,6 +712,12 @@ export default function Tier2KYCPage() {
         open={errorDialogOpen}
         onOpenChange={setErrorDialogOpen}
         error={verificationError}
+      />
+      <VerificationSuccessDialog
+        open={successModalOpen}
+        title={successModalCopy.title}
+        message={successModalCopy.message}
+        onRedirect={goToDashboard}
       />
       {/* Load Dojah widget script */}
       <Script
