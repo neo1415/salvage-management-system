@@ -13,7 +13,7 @@ interface KYCStatusCardProps {
   className?: string;
 }
 
-export function KYCStatusCard({ currentTier, className = '' }: KYCStatusCardProps) {
+export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStatusCardProps) {
   const router = useRouter();
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
@@ -154,6 +154,7 @@ export function KYCStatusCard({ currentTier, className = '' }: KYCStatusCardProp
                 <h3 className="text-lg md:text-xl font-bold mb-1">Complete Your Registration</h3>
                 <p className="text-white/90 text-sm md:text-base">
                   Pay the one-time registration fee to unlock Tier 2 KYC and unlimited bidding.
+                  {bidLimit ? ` Your current Tier 1 limit is ₦${bidLimit.toLocaleString()}.` : ''}
                 </p>
               </div>
               <button
@@ -185,6 +186,7 @@ export function KYCStatusCard({ currentTier, className = '' }: KYCStatusCardProp
               <h3 className="text-lg md:text-xl font-bold mb-1">Unlock Premium Auctions — Upgrade to Tier 2</h3>
               <p className="text-white/90 text-sm md:text-base">
                 Get unlimited bidding on high-value auctions, priority support, and leaderboard access.
+                {bidLimit ? ` Your current Tier 1 limit is ₦${bidLimit.toLocaleString()}.` : ''}
               </p>
             </div>
             <button

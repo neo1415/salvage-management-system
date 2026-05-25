@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useTierUpgrade } from '@/hooks/use-tier-upgrade';
 
 describe('useTierUpgrade', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => {}))
+    );
   });
 
   describe('Tier 1 vendor', () => {
@@ -158,6 +162,47 @@ describe('useTierUpgrade', () => {
       );
 
       expect(result.current.TIER_1_LIMIT).toBe(500000);
+    });
+
+    it('should load the Tier 1 limit from public business policy first', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, policy: { onboarding: { tier1BidLimit: 750000 } } }),
+      } as Response);
+
+      const { result } = renderHook(() =>
+        useTierUpgrade({ currentTier: 'tier1_bvn' })
+      );
+
+      await waitFor(() => {
+        expect(result.current.TIER_1_LIMIT).toBe(750000);
+      });
+
+      expect(fetch).toHaveBeenCalledWith('/api/business-policy/public');
+      expect(fetch).not.toHaveBeenCalledWith('/api/config/system');
+    });
+
+    it('should fall back to legacy system config when public policy is unavailable', async () => {
+      vi.mocked(fetch)
+        .mockResolvedValueOnce({
+          ok: false,
+          json: async () => ({ success: false }),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ success: true, config: { tier1Limit: 650000 } }),
+        } as Response);
+
+      const { result } = renderHook(() =>
+        useTierUpgrade({ currentTier: 'tier1_bvn' })
+      );
+
+      await waitFor(() => {
+        expect(result.current.TIER_1_LIMIT).toBe(650000);
+      });
+
+      expect(fetch).toHaveBeenCalledWith('/api/business-policy/public');
+      expect(fetch).toHaveBeenCalledWith('/api/config/system');
     });
   });
 });

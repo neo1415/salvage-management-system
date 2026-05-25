@@ -7,8 +7,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
 
 export default function ForgotPasswordPage() {
+  const { branding } = usePublicBranding();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,12 +43,12 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: getBrandGradient(branding) }}>
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Forgot Password?</h1>
           <p className="text-gray-600">
-            Enter your email address and we'll send you a link to reset your password.
+            Enter your email address and we'll send you a link to reset your {branding.brandName} password.
           </p>
         </div>
 
@@ -91,7 +93,8 @@ export default function ForgotPasswordPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#800020] text-white py-3 px-4 rounded-lg font-semibold hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full text-white py-3 px-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+              style={{ backgroundColor: branding.primaryColor }}
             >
               {loading ? 'Sending...' : 'Send Reset Link'}
             </button>
@@ -101,7 +104,8 @@ export default function ForgotPasswordPage() {
         <div className="mt-6 text-center">
           <Link
             href="/login"
-            className="text-sm text-[#800020] hover:underline font-medium"
+            className="text-sm hover:underline font-medium"
+            style={{ color: branding.primaryColor }}
           >
             ← Back to Login
           </Link>

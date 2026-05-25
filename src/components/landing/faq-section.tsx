@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 
 const faqs = [
   {
@@ -36,6 +37,7 @@ const faqs = [
 ];
 
 export function FAQSection() {
+  const { branding } = usePublicBranding();
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -156,9 +158,10 @@ export function FAQSection() {
             Our support team is here to help you get started
           </p>
           <motion.a
-            href="mailto:support@nemsalvage.com"
+            href={`mailto:${branding.supportEmail}`}
             className="inline-block px-8 py-3 bg-burgundy-800 text-white font-bold rounded-lg"
-            whileHover={{ scale: 1.05, backgroundColor: '#6b0019' }}
+            style={{ backgroundColor: branding.primaryColor }}
+            whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
             Contact Support

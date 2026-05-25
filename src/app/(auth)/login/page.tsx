@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { AlertCircle, Eye, EyeOff, Loader2, Lock } from 'lucide-react';
+import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
 
 /**
  * Login validation schema
@@ -31,6 +32,7 @@ type LoginInput = z.infer<typeof loginSchema>;
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { branding } = usePublicBranding();
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -135,16 +137,16 @@ function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: getBrandGradient(branding) }}>
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full mb-4">
-            <Lock className="w-8 h-8 text-[#800020]" />
+            <Lock className="w-8 h-8" style={{ color: branding.primaryColor }} />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Welcome Back</h1>
           <p className="text-gray-200">
-            Sign in to access your account
+            Sign in to access your {branding.brandName} account
           </p>
         </div>
 
@@ -287,16 +289,18 @@ function LoginForm() {
             {/* Remember Me & Forgot Password */}
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  {...register('rememberMe')}
-                  type="checkbox"
-                  className="w-4 h-4 text-[#800020] border-gray-300 rounded focus:ring-[#800020]"
-                />
+              <input
+                {...register('rememberMe')}
+                type="checkbox"
+                className="w-4 h-4 border-gray-300 rounded focus:ring-[#800020]"
+                style={{ accentColor: branding.primaryColor }}
+              />
                 <span className="text-sm text-gray-700">Remember me</span>
               </label>
               <a
                 href="/forgot-password"
-                className="text-sm text-[#800020] hover:underline font-medium"
+                className="text-sm hover:underline font-medium"
+                style={{ color: branding.primaryColor }}
               >
                 Forgot password?
               </a>
@@ -306,7 +310,8 @@ function LoginForm() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full bg-[#FFD700] text-[#800020] font-bold py-3 px-4 rounded-lg hover:bg-[#FFC700] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 hover:opacity-90"
+              style={{ backgroundColor: branding.accentColor, color: branding.primaryColor }}
             >
               {isSubmitting ? (
                 <>
@@ -322,7 +327,7 @@ function LoginForm() {
           {/* Register Link */}
           <p className="mt-6 text-center text-sm text-gray-600">
             Don't have an account?{' '}
-            <a href="/register" className="text-[#800020] font-medium hover:underline">
+            <a href="/register" className="font-medium hover:underline" style={{ color: branding.primaryColor }}>
               Sign up
             </a>
           </p>
@@ -332,7 +337,7 @@ function LoginForm() {
         <div className="mt-8 text-center">
           <p className="text-sm text-gray-300">
             Need help?{' '}
-            <a href="/contact" className="text-[#FFD700] hover:underline">
+            <a href="/contact" className="hover:underline" style={{ color: branding.accentColor }}>
               Contact Support
             </a>
           </p>

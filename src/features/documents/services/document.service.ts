@@ -24,10 +24,43 @@ import {
   type SalvageCertificateData,
 } from './pdf-generation.service';
 import { formatAssetName, type AssetNameDetails } from '@/lib/utils/asset-name';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
+import { appPath, getAppUrl } from '@/features/notifications/templates/email-urls';
+import {
+  businessPolicyService,
+  isBusinessPolicyEnforcementEnabled,
+  resolvePaymentDeadlineHours,
+} from '@/features/business-policy';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+const APP_URL = getAppUrl();
 
 type AssetDetails = AssetNameDetails;
+
+async function getEffectivePaymentDeadlineHours(legacyHours: number): Promise<number> {
+  if (!isBusinessPolicyEnforcementEnabled()) {
+    return legacyHours;
+  }
+
+  const policy = await businessPolicyService.getEffectivePolicy();
+  return resolvePaymentDeadlineHours(policy).value ?? legacyHours;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function normalizeAssetDetails(details: unknown): AssetDetails {
+  return typeof details === 'object' && details !== null ? (details as AssetDetails) : {};
+}
 
 /**
  * Generate a document and store in database
@@ -89,7 +122,7 @@ export async function generateDocument(
     const verificationUrl = `${APP_URL}/verify-document/${auctionId}`;
 
     // Extract asset details from JSONB
-    const assetDetails = caseData.assetDetails as AssetDetails;
+    const assetDetails = normalizeAssetDetails(caseData.assetDetails);
 
     // Prepare document data based on type
     let pdfBuffer: Buffer;
@@ -108,10 +141,10 @@ export async function generateDocument(
       assetType: caseData.assetType,
       assetDescription,
       assetCondition: caseData.vehicleCondition || 'salvage',
-      vin: assetDetails.vin,
-      make: assetDetails.make,
-      model: assetDetails.model,
-      year: assetDetails.year,
+      vin: optionalString(assetDetails.vin),
+      make: optionalString(assetDetails.make),
+      model: optionalString(assetDetails.model),
+      year: optionalNumber(assetDetails.year),
       salePrice: Number(auction.currentBid || 0),
       paymentMethod: 'To be determined',
       paymentReference: undefined,
@@ -139,10 +172,10 @@ export async function generateDocument(
           assetType: caseData.assetType,
           assetDescription,
           assetCondition: caseData.vehicleCondition || 'salvage',
-          vin: assetDetails.vin,
-          make: assetDetails.make,
-          model: assetDetails.model,
-          year: assetDetails.year,
+          vin: optionalString(assetDetails.vin),
+          make: optionalString(assetDetails.make),
+          model: optionalString(assetDetails.model),
+          year: optionalNumber(assetDetails.year),
           salePrice: Number(auction.currentBid || 0),
           paymentMethod: 'To be determined',
           pickupLocation: caseData.locationName || 'NEM Insurance Salvage Yard',
@@ -191,7 +224,8 @@ export async function generateDocument(
 
       case 'salvage_certificate':
         title = 'Salvage Certificate';
-        if (!assetDetails.vin) {
+        const vin = optionalString(assetDetails.vin);
+        if (!vin) {
           throw new Error('Salvage certificate requires VIN');
         }
         // Construct damage description from AI assessment
@@ -201,10 +235,10 @@ export async function generateDocument(
           : 'Salvage vehicle with undisclosed damage';
         
         const salvageCertData: SalvageCertificateData = {
-          vin: assetDetails.vin,
-          make: assetDetails.make || 'Unknown',
-          model: assetDetails.model || 'Unknown',
-          year: assetDetails.year || new Date().getFullYear(),
+          vin,
+          make: optionalString(assetDetails.make) || 'Unknown',
+          model: optionalString(assetDetails.model) || 'Unknown',
+          year: optionalNumber(assetDetails.year) || new Date().getFullYear(),
           damageAssessment: damageDescription,
           totalLossDeclaration: true,
           claimReference: caseData.claimReference || 'N/A',
@@ -384,7 +418,7 @@ export async function signDocument(
 
         if (auctionData) {
           const { auction, case: caseData, vendor, vendorUser } = auctionData;
-          const assetDetails = caseData.assetDetails as AssetDetails;
+          const assetDetails = normalizeAssetDetails(caseData.assetDetails);
           const assetDescription = formatAssetName(caseData.assetType, assetDetails, caseData.claimReference);
           
           let pdfBuffer: Buffer;
@@ -423,10 +457,10 @@ export async function signDocument(
               assetType: caseData.assetType,
               assetDescription,
               assetCondition: caseData.vehicleCondition || 'salvage',
-              vin: assetDetails.vin,
-              make: assetDetails.make,
-              model: assetDetails.model,
-              year: assetDetails.year,
+              vin: optionalString(assetDetails.vin),
+              make: optionalString(assetDetails.make),
+              model: optionalString(assetDetails.model),
+              year: optionalNumber(assetDetails.year),
               salePrice: Number(auction.currentBid || 0),
               paymentMethod: 'Escrow Wallet',
               pickupLocation: caseData.locationName || 'NEM Insurance Salvage Yard',
@@ -541,8 +575,9 @@ export async function signDocument(
           
           const { configService } = await import('@/features/auction-deposit/services/config.service');
           const config = await configService.getConfig();
+          const paymentDeadlineHours = await getEffectivePaymentDeadlineHours(config.paymentDeadlineAfterSigning);
           const paymentDeadline = new Date();
-          paymentDeadline.setHours(paymentDeadline.getHours() + config.paymentDeadlineAfterSigning);
+          paymentDeadline.setHours(paymentDeadline.getHours() + paymentDeadlineHours);
 
           await db
             .update(releaseForms)
@@ -1057,7 +1092,7 @@ async function sendDocumentSigningProgressNotifications(
             timeStyle: 'short',
           }),
           nextSteps: `All 2 required documents have been successfully signed! Your payment of ₦${parseFloat(auction.currentBid || '0').toLocaleString()} is now being processed. Once payment is verified, you will receive your pickup authorization code via SMS and email. You can then schedule a pickup time for your ${assetDescription}.`,
-          downloadUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vendor/documents/${auctionId}`,
+          downloadUrl: appPath(`/vendor/documents#auction-${auctionId}`),
         });
 
         await emailService.sendEmail({
@@ -1149,8 +1184,9 @@ export async function triggerFundReleaseOnDocumentCompletion(
 
       const { configService } = await import('@/features/auction-deposit/services/config.service');
       const config = await configService.getConfig();
+      const paymentDeadlineHours = await getEffectivePaymentDeadlineHours(config.paymentDeadlineAfterSigning);
       const paymentDeadline = new Date();
-      paymentDeadline.setHours(paymentDeadline.getHours() + config.paymentDeadlineAfterSigning);
+      paymentDeadline.setHours(paymentDeadline.getHours() + paymentDeadlineHours);
 
       // Generate unique payment reference
       const reference = `PAY_${auctionId.substring(0, 8)}_${Date.now()}`;
@@ -1334,7 +1370,7 @@ export async function triggerFundReleaseOnDocumentCompletion(
           pickupAuthCode,
           pickupLocation,
           pickupDeadline,
-          appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+          appUrl: getAppUrl(),
         });
 
         // FIXED: Send push notification with PAYMENT_UNLOCKED type for modal trigger
@@ -1442,13 +1478,12 @@ async function sendFundReleaseFailureAlert(
     for (const officer of financeOfficers) {
       await emailService.sendEmail({
         to: officer.email,
-        subject: `🚨 Escrow Payment Failed - Action Required - Auction ${auctionId.substring(0, 8)}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #dc2626;">Automatic Fund Release Failed</h2>
+        subject: `Escrow Payment Failed - Action Required - Auction ${auctionId.substring(0, 8)}`,
+        html: wrapProfessionalEmail(
+          'Automatic Fund Release Failed',
+          `
             <p>Dear ${officer.fullName},</p>
             <p>An automatic fund release failed and requires your immediate attention.</p>
-            
             <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #991b1b;">Error Details</h3>
               <p><strong>Auction ID:</strong> ${auctionId}</p>
@@ -1456,31 +1491,13 @@ async function sendFundReleaseFailureAlert(
               <p><strong>Error:</strong> ${errorMessage}</p>
               <p><strong>Time:</strong> ${new Date().toLocaleString('en-NG')}</p>
             </div>
-
-            <h3>What Happened?</h3>
-            <p>The vendor completed all 2 required documents (Bill of Sale, Liability Waiver), which should have automatically triggered fund release from their escrow wallet to NEM Insurance. However, the Paystack transfer failed.</p>
-
-            <h3>Action Required</h3>
-            <ol>
-              <li>Log in to the Finance Officer dashboard</li>
-              <li>Navigate to Payments → Escrow Wallet Payments</li>
-              <li>Find auction ${auctionId.substring(0, 8)}</li>
-              <li>Review the error details</li>
-              <li>Click "Manual Release" to retry the fund transfer</li>
-            </ol>
-
-            <p style="margin-top: 30px;">
-              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com'}/finance/payments" 
-                 style="background-color: #7f1d1d; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                View Payment Dashboard
-              </a>
+            <p>The vendor completed all required documents, but the Paystack transfer failed.</p>
+            <p style="margin-top: 24px;">
+              <a href="${APP_URL}/finance/payments" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">View Payment Dashboard</a>
             </p>
-
-            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-              This is an automated alert from the NEM Salvage Management System.
-            </p>
-          </div>
-        `,
+          `,
+          'Escrow fund release failed — manual review required'
+        ),
       });
 
       // Send push notification
@@ -1557,13 +1574,12 @@ async function sendFundReleaseSuccessNotification(
       // Send email notification
       await emailService.sendEmail({
         to: officer.email,
-        subject: `✅ Escrow Payment Released - ${auctionId.substring(0, 8)}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #10b981;">Automatic Fund Release Successful</h2>
-            <p>Dear ${officer.fullName},</p>
+        subject: `Escrow Payment Released - ${auctionId.substring(0, 8)}`,
+        html: wrapProfessionalEmail(
+          'Automatic Fund Release Successful',
+          `
+            <p style="font-size: 18px; color: #800020; font-weight: 600;">Dear ${officer.fullName},</p>
             <p>An escrow wallet payment has been successfully released automatically.</p>
-            
             <div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 16px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #065f46;">Payment Details</h3>
               <p><strong>Auction ID:</strong> ${auctionId}</p>
@@ -1572,30 +1588,14 @@ async function sendFundReleaseSuccessNotification(
               <p><strong>Asset:</strong> ${assetDescription}</p>
               <p><strong>Time:</strong> ${new Date().toLocaleString('en-NG')}</p>
             </div>
-
-            <h3>What Happened?</h3>
-            <p>The vendor completed all 2 required documents (Bill of Sale, Liability Waiver), which automatically triggered fund release from their escrow wallet to NEM Insurance. The Paystack transfer was successful.</p>
-
-            <h3>Next Steps</h3>
-            <ul>
-              <li>Payment has been marked as "verified"</li>
-              <li>Case status updated to "sold"</li>
-              <li>Vendor has been notified with pickup authorization code</li>
-              <li>No action required from you</li>
-            </ul>
-
-            <p style="margin-top: 30px;">
-              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com'}/finance/payments" 
-                 style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                View Payment Dashboard
-              </a>
-            </p>
-
-            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-              This is an automated notification from the NEM Salvage Management System.
-            </p>
-          </div>
-        `,
+            <h3 style="color: #800020;">Summary</h3>
+            <p>The vendor completed all required documents and funds were released successfully. No further action is required.</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${APP_URL}/finance/payments" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">View Payment Dashboard</a>
+            </div>
+          `,
+          `Escrow payment of ₦${amount.toLocaleString()} released successfully`
+        ),
       });
 
       // Send push notification

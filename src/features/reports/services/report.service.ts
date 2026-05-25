@@ -8,7 +8,7 @@
 import { ReportConfig, ReportResult, ReportType, ReportFilters, UserRole, ROLE_PERMISSIONS } from '../types';
 import { ReportCacheService } from './report-cache.service';
 import { ReportAuditService } from './report-audit.service';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 export class ReportService {
   /**
@@ -146,7 +146,7 @@ export class ReportService {
 
       // Build result
       const result: ReportResult<T> = {
-        reportId: uuidv4(),
+        reportId: randomUUID(),
         type: config.type,
         data: data as T,
         metadata: {

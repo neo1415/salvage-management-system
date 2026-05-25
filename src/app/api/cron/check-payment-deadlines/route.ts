@@ -34,6 +34,15 @@ import { forfeitureService } from '@/features/auction-deposit/services/forfeitur
 import { transferService } from '@/features/auction-deposit/services/transfer.service';
 import * as fallbackService from '@/features/auction-deposit/services/fallback.service';
 import { configService } from '@/features/auction-deposit/services/config.service';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveFallbackBufferHours,
+  resolveForfeiturePercentage,
+} from '@/features/business-policy';
+import { AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60 seconds max execution time
@@ -77,11 +86,22 @@ export async function GET(request: NextRequest) {
     // Testing mode: Override buffer period with environment variable
     const testingMode = process.env.TESTING_MODE === 'true';
     const testingBufferMinutes = parseInt(process.env.TESTING_BUFFER_MINUTES || '0');
-    const effectiveBufferHours = testingMode && testingBufferMinutes > 0 
+    let effectiveBufferHours = testingMode && testingBufferMinutes > 0 
       ? testingBufferMinutes / 60 
       : fallbackBufferPeriod;
 
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const fallbackBufferDecision = resolveFallbackBufferHours(policy);
+    const forfeitureDecision = resolveForfeiturePercentage(policy);
+    if (!testingMode && isBusinessPolicyEnforcementEnabled()) {
+      effectiveBufferHours = fallbackBufferDecision.value ?? effectiveBufferHours;
+    }
+    const effectiveForfeiturePercentage = isBusinessPolicyEnforcementEnabled()
+      ? forfeitureDecision.value ?? config.forfeiturePercentage
+      : config.forfeiturePercentage;
+
     console.log(`[Payment Deadline Cron] Buffer period: ${effectiveBufferHours} hours ${testingMode ? '(TESTING MODE)' : ''}`);
+    const systemActorId = await getSystemActorId();
 
     // Calculate cutoff time (now - buffer period)
     const cutoffTime = new Date(now.getTime() - (effectiveBufferHours * 60 * 60 * 1000));
@@ -145,6 +165,45 @@ export async function GET(request: NextRequest) {
         console.log(`  - Cutoff time: ${cutoffTime.toISOString()}`);
         console.log(`  - Buffer period elapsed: ${effectiveBufferHours} hours`);
 
+        await logPolicyDecision({
+          userId: systemActorId,
+          entityType: AuditEntityType.AUCTION,
+          entityId: auction.id,
+          ipAddress: 'system',
+          deviceType: DeviceType.DESKTOP,
+          userAgent: 'cron:check-payment-deadlines',
+          decision: fallbackBufferDecision.decision,
+          context: {
+            mode: getBusinessPolicyRuntimeMode(),
+            cron: 'check-payment-deadlines',
+            winnerId: winner.vendorId,
+            paymentDeadline: document.paymentDeadline?.toISOString() ?? null,
+            cutoffTime: cutoffTime.toISOString(),
+            legacyEffectiveBufferHours: effectiveBufferHours,
+            policyBufferHours: fallbackBufferDecision.value,
+            testingMode,
+          },
+        });
+
+        await logPolicyDecision({
+          userId: systemActorId,
+          entityType: AuditEntityType.PAYMENT,
+          entityId: auction.id,
+          ipAddress: 'system',
+          deviceType: DeviceType.DESKTOP,
+          userAgent: 'cron:check-payment-deadlines',
+          decision: forfeitureDecision.decision,
+          context: {
+            mode: getBusinessPolicyRuntimeMode(),
+            cron: 'check-payment-deadlines',
+            winnerId: winner.vendorId,
+            depositAmount: winner.depositAmount,
+            legacyForfeiturePercentage: config.forfeiturePercentage,
+            policyForfeiturePercentage: forfeitureDecision.value,
+            effectiveForfeiturePercentage,
+          },
+        });
+
         // Step 1: Forfeit deposit
         console.log(`[Payment Deadline Cron] Forfeiting deposit for auction ${auction.id}`);
         const forfeitureResult = await forfeitureService.forfeitDeposit({
@@ -152,7 +211,7 @@ export async function GET(request: NextRequest) {
           vendorId: winner.vendorId,
           depositAmount: parseFloat(winner.depositAmount),
           reason: 'payment_deadline_expired',
-          forfeiturePercentage: config.forfeiturePercentage,
+          forfeiturePercentage: effectiveForfeiturePercentage,
         });
 
         console.log(`[Payment Deadline Cron] ✅ Deposit forfeited: ₦${forfeitureResult.forfeitedAmount?.toLocaleString()}`);
@@ -239,4 +298,15 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+async function getSystemActorId(): Promise<string> {
+  const { users } = await import('@/lib/db/schema/users');
+  const [systemAdmin] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.role, 'system_admin'))
+    .limit(1);
+
+  return systemAdmin?.id ?? '00000000-0000-0000-0000-000000000000';
 }

@@ -15,6 +15,14 @@ import * as extensionService from '@/features/auction-deposit/services/extension
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  logPolicyDecision,
+  resolveGraceExtensionDurationHours,
+  resolveGraceExtensionLimit,
+} from '@/features/business-policy';
+import { AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 
 /**
  * POST /api/auctions/[id]/extensions
@@ -91,6 +99,54 @@ export async function POST(
       session.user.id,
       reason.trim()
     );
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const currentExtensionCount = result.extensionCount !== undefined
+      ? Math.max(result.extensionCount - (result.success ? 1 : 0), 0)
+      : 0;
+    const limitDecision = resolveGraceExtensionLimit(policy, currentExtensionCount);
+    const durationDecision = resolveGraceExtensionDurationHours(policy);
+
+    await logPolicyDecision({
+      userId: session.user.id,
+      entityType: AuditEntityType.AUCTION,
+      entityId: auctionId,
+      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+      userAgent: request.headers.get('user-agent') || 'unknown',
+      deviceType: DeviceType.DESKTOP,
+      decision: {
+        ...limitDecision.decision,
+        entityId: auctionId,
+      },
+      context: {
+        mode: getBusinessPolicyRuntimeMode(),
+        surface: 'auction_extension_route',
+        auctionId,
+        vendorId: auction.currentBidder,
+        legacyResultSuccess: result.success,
+        legacyMaxExtensions: result.maxExtensions ?? null,
+      },
+    });
+
+    await logPolicyDecision({
+      userId: session.user.id,
+      entityType: AuditEntityType.AUCTION,
+      entityId: auctionId,
+      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+      userAgent: request.headers.get('user-agent') || 'unknown',
+      deviceType: DeviceType.DESKTOP,
+      decision: {
+        ...durationDecision.decision,
+        entityId: auctionId,
+      },
+      context: {
+        mode: getBusinessPolicyRuntimeMode(),
+        surface: 'auction_extension_route',
+        auctionId,
+        vendorId: auction.currentBidder,
+        legacyNewDeadline: result.newDeadline?.toISOString() ?? null,
+      },
+    });
 
     if (!result.success) {
       return NextResponse.json(

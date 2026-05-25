@@ -15,6 +15,12 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { eq, and, desc } from 'drizzle-orm';
 import { extendDocumentDeadline } from './document-integration.service';
 import { depositNotificationService } from './deposit-notification.service';
+import {
+  businessPolicyService,
+  isBusinessPolicyEnforcementEnabled,
+  resolveGraceExtensionDurationHours,
+  resolveGraceExtensionLimit,
+} from '@/features/business-policy';
 
 /**
  * Get configuration value from system_config table with testing mode support
@@ -74,10 +80,16 @@ export async function grantExtension(
 }> {
   try {
     // 1. Get max extensions allowed from config (Requirement 7.2)
-    const maxExtensions = await getConfigValue('max_grace_extensions', 2);
+    let maxExtensions = await getConfigValue('max_grace_extensions', 2);
     
     // 2. Get extension duration from config (Requirement 7.3)
-    const extensionHours = await getConfigValue('grace_extension_duration', 24);
+    let extensionHours = await getConfigValue('grace_extension_duration', 24);
+
+    if (isBusinessPolicyEnforcementEnabled()) {
+      const policy = await businessPolicyService.getEffectivePolicy();
+      maxExtensions = resolveGraceExtensionLimit(policy, 0).value ?? maxExtensions;
+      extensionHours = resolveGraceExtensionDurationHours(policy).value ?? extensionHours;
+    }
 
     // 3. Get current document status
     const documents = await db
@@ -101,10 +113,22 @@ export async function grantExtension(
     const currentExtensionCount = firstDoc.extensionCount || 0;
 
     // 4. Verify extensionCount < max_grace_extensions (Requirement 7.2)
-    if (currentExtensionCount >= maxExtensions) {
+    if (isBusinessPolicyEnforcementEnabled()) {
+      const policy = await businessPolicyService.getEffectivePolicy();
+      const limitDecision = resolveGraceExtensionLimit(policy, currentExtensionCount);
+      if (!limitDecision.allowed) {
+        return {
+          success: false,
+          extensionCount: currentExtensionCount,
+          maxExtensions,
+          error: `Maximum extensions reached (${maxExtensions})`
+        };
+      }
+    } else if (currentExtensionCount >= maxExtensions) {
       return {
         success: false,
         extensionCount: currentExtensionCount,
+        maxExtensions,
         error: `Maximum extensions reached (${maxExtensions})`
       };
     }
@@ -224,7 +248,11 @@ export async function canGrantExtension(
 }> {
   try {
     // Get max extensions allowed
-    const maxExtensions = await getConfigValue('max_grace_extensions', 2);
+    let maxExtensions = await getConfigValue('max_grace_extensions', 2);
+    if (isBusinessPolicyEnforcementEnabled()) {
+      const policy = await businessPolicyService.getEffectivePolicy();
+      maxExtensions = resolveGraceExtensionLimit(policy, 0).value ?? maxExtensions;
+    }
 
     // Get current extension count from documents
     const documents = await db
@@ -248,7 +276,9 @@ export async function canGrantExtension(
     }
 
     const currentCount = documents[0].extensionCount || 0;
-    const canGrant = currentCount < maxExtensions;
+    const canGrant = isBusinessPolicyEnforcementEnabled()
+      ? resolveGraceExtensionLimit(await businessPolicyService.getEffectivePolicy(), currentCount).allowed
+      : currentCount < maxExtensions;
 
     return {
       canGrant,

@@ -3,29 +3,10 @@
 import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { Phone, Mail, MapPin, Send } from 'lucide-react';
-
-const contactInfo = [
-  {
-    icon: Phone,
-    label: 'Phone',
-    value: '234-02-014489560',
-    href: 'tel:+23402014489560',
-  },
-  {
-    icon: Mail,
-    label: 'Email',
-    value: 'noreply@nemsalvage.com',
-    href: 'mailto:noreply@nemsalvage.com',
-  },
-  {
-    icon: MapPin,
-    label: 'Address',
-    value: 'NEM Insurance Plc, 199 Ikorodu Road, Obanikoro, Lagos',
-    href: 'https://maps.google.com/?q=NEM+Insurance+Plc+199+Ikorodu+Road+Obanikoro+Lagos',
-  },
-];
+import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
 
 export function ContactSection() {
+  const { branding } = usePublicBranding();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -33,6 +14,26 @@ export function ContactSection() {
     message: '',
   });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const contactInfo = [
+    {
+      icon: Phone,
+      label: 'Phone',
+      value: branding.supportPhone || '234-02-014489560',
+      href: `tel:${branding.supportPhone || '+23402014489560'}`,
+    },
+    {
+      icon: Mail,
+      label: 'Email',
+      value: branding.supportEmail,
+      href: `mailto:${branding.supportEmail}`,
+    },
+    {
+      icon: MapPin,
+      label: 'Address',
+      value: `${branding.legalName}, 199 Ikorodu Road, Obanikoro, Lagos`,
+      href: 'https://maps.google.com/?q=NEM+Insurance+Plc+199+Ikorodu+Road+Obanikoro+Lagos',
+    },
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,12 +110,12 @@ export function ContactSection() {
                     whileHover={{ scale: 1.02, x: 5 }}
                     transition={{ type: 'spring', stiffness: 300 }}
                   >
-                    <div className="w-12 h-12 rounded-lg bg-gradient-to-r from-burgundy-600 to-burgundy-800 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                    <div className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform" style={{ background: getBrandGradient(branding) }}>
                       <Icon className="w-6 h-6 text-white" />
                     </div>
                     <div>
                       <div className="text-sm text-gray-500 mb-1">{info.label}</div>
-                      <div className="font-semibold text-burgundy-900 group-hover:text-burgundy-700 transition-colors">
+                      <div className="font-semibold transition-colors" style={{ color: branding.primaryColor }}>
                         {info.value}
                       </div>
                     </div>
@@ -224,8 +225,9 @@ export function ContactSection() {
                       ? 'bg-gray-400 cursor-not-allowed'
                       : status === 'success'
                       ? 'bg-green-600'
-                      : 'bg-gradient-to-r from-burgundy-800 to-burgundy-600'
+                      : ''
                   }`}
+                  style={status === 'idle' || status === 'error' ? { background: getBrandGradient(branding) } : undefined}
                   whileHover={status === 'idle' ? { scale: 1.02 } : {}}
                   whileTap={status === 'idle' ? { scale: 0.98 } : {}}
                 >

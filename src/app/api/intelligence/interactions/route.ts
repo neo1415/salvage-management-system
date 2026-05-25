@@ -18,7 +18,7 @@ import { db } from '@/lib/db';
 import { interactions } from '@/lib/db/schema/intelligence';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { z } from 'zod';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 /**
  * Task 7.3.2: Implement event validation schema
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Task 7.3.3: Implement session tracking logic
-    const sessionId = eventData.sessionId || uuidv4();
+    const sessionId = eventData.sessionId || randomUUID();
 
     // Enrich metadata
     const enrichedMetadata = {

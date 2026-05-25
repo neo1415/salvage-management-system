@@ -28,6 +28,11 @@ import {
 import { generateDocument } from '@/features/documents/services/document.service';
 import { broadcastAuctionClosure, broadcastAuctionUpdate, broadcastAuctionClosing, broadcastDocumentGenerated, broadcastDocumentGenerationComplete } from '@/lib/socket/server';
 import { configService } from '@/features/auction-deposit/services/config.service';
+import {
+  businessPolicyService,
+  isBusinessPolicyEnforcementEnabled,
+  resolveDocumentDeadlineHours,
+} from '@/features/business-policy';
 
 /**
  * Auction closure result
@@ -49,6 +54,15 @@ export interface BatchClosureResult {
   successful: number;
   failed: number;
   results: AuctionClosureResult[];
+}
+
+async function getEffectiveDocumentDeadlineHours(legacyHours: number): Promise<number> {
+  if (!isBusinessPolicyEnforcementEnabled()) {
+    return legacyHours;
+  }
+
+  const policy = await businessPolicyService.getEffectivePolicy();
+  return resolveDocumentDeadlineHours(policy).value ?? legacyHours;
 }
 
 /**
@@ -248,11 +262,12 @@ export class AuctionClosureService {
       }
 
       const config = await configService.getConfig();
+      const documentValidityHours = await getEffectiveDocumentDeadlineHours(config.documentValidityPeriod);
 
       // Initial deadline is for document signing. Payment deadline is reset from
       // paymentDeadlineAfterSigning when all required documents are signed.
       const documentDeadline = new Date();
-      documentDeadline.setHours(documentDeadline.getHours() + config.documentValidityPeriod);
+      documentDeadline.setHours(documentDeadline.getHours() + documentValidityHours);
 
       // IDEMPOTENCY CHECK: Check if payment already exists for this auction
       const [existingPayment] = await db
@@ -767,8 +782,9 @@ export class AuctionClosureService {
       // Broadcast document generation complete
       if (successCount === totalCount) {
         const config = await configService.getConfig();
+        const documentValidityHours = await getEffectiveDocumentDeadlineHours(config.documentValidityPeriod);
         const validityDeadline = new Date();
-        validityDeadline.setHours(validityDeadline.getHours() + config.documentValidityPeriod);
+        validityDeadline.setHours(validityDeadline.getHours() + documentValidityHours);
 
         const { releaseForms } = await import('@/lib/db/schema/release-forms');
         await db

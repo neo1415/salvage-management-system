@@ -2,8 +2,8 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
   LayoutDashboard,
@@ -27,8 +27,10 @@ import {
   TrendingUp,
   Brain,
   Database,
+  Building2,
 } from 'lucide-react';
 import NotificationBell from '@/components/notifications/notification-bell';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 
 interface SubMenuItem {
   name: string;
@@ -42,6 +44,19 @@ interface NavItem {
   roles: string[];
   submenu?: SubMenuItem[];
 }
+
+const settingsNavItem: NavItem = {
+  label: 'Settings',
+  href: '/settings/profile',
+  icon: Settings,
+  roles: ['vendor', 'salvage_manager', 'claims_adjuster', 'finance_officer', 'system_admin'],
+  submenu: [
+    { name: 'Profile', href: '/settings/profile' },
+    { name: 'Notifications', href: '/settings/notifications' },
+    { name: 'Security', href: '/settings/security' },
+    { name: 'Change Password', href: '/settings/change-password' },
+  ],
+};
 
 const navigationItems: NavItem[] = [
   // Vendor Navigation
@@ -81,17 +96,6 @@ const navigationItems: NavItem[] = [
     icon: Trophy,
     roles: ['vendor'],
   },
-  {
-    label: 'Settings',
-    href: '/vendor/settings/profile',
-    icon: Settings,
-    roles: ['vendor'],
-    submenu: [
-      { name: 'Profile', href: '/vendor/settings/profile' },
-      { name: 'Notifications', href: '/vendor/settings/notifications' },
-      { name: 'Change Password', href: '/vendor/settings/change-password' },
-    ],
-  },
 
   // Manager Navigation
   {
@@ -116,12 +120,6 @@ const navigationItems: NavItem[] = [
     label: 'Vendors',
     href: '/manager/vendors',
     icon: Users,
-    roles: ['salvage_manager'],
-  },
-  {
-    label: 'Fraud Alerts',
-    href: '/admin/fraud',
-    icon: AlertTriangle,
     roles: ['salvage_manager'],
   },
 
@@ -203,9 +201,15 @@ const navigationItems: NavItem[] = [
     roles: ['system_admin'],
   },
   {
-    label: 'Fraud Alerts',
-    href: '/admin/fraud',
-    icon: AlertTriangle,
+    label: 'Vendors',
+    href: '/manager/vendors',
+    icon: Users,
+    roles: ['system_admin'],
+  },
+  {
+    label: 'Enterprise Setup',
+    href: '/admin/enterprise-setup',
+    icon: Building2,
     roles: ['system_admin'],
   },
   {
@@ -221,6 +225,12 @@ const navigationItems: NavItem[] = [
     roles: ['system_admin'],
   },
   {
+    label: 'Fraud Alerts',
+    href: '/admin/fraud',
+    icon: AlertTriangle,
+    roles: ['system_admin'],
+  },
+  {
     label: 'Reports',
     href: '/reports',
     icon: BarChart3,
@@ -231,15 +241,39 @@ const navigationItems: NavItem[] = [
 export default function DashboardSidebar() {
   const { data: session } = useSession();
   const pathname = usePathname();
+  const router = useRouter();
+  const { policy: publicPolicy } = usePublicBusinessPolicy();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
   const userRole = session?.user?.role || 'vendor';
+  const brandName = publicPolicy?.branding.brandName || 'NEM Salvage';
+  const primaryColor = publicPolicy?.branding.primaryColor || '#800020';
 
   // Filter navigation items based on user role
-  const filteredNavItems = navigationItems.filter((item) =>
+  const roleNavItems = navigationItems.filter((item) =>
     item.roles.includes(userRole)
   );
+  const filteredNavItems = settingsNavItem.roles.includes(userRole)
+    ? [...roleNavItems, settingsNavItem]
+    : roleNavItems;
+
+  const prefetchRoutes = useMemo(() => {
+    const routes = new Set<string>();
+    for (const item of filteredNavItems) {
+      routes.add(item.href);
+      item.submenu?.forEach((sub) => routes.add(sub.href));
+    }
+    return Array.from(routes);
+  }, [filteredNavItems]);
+
+  useEffect(() => {
+    for (const href of prefetchRoutes) {
+      if (href !== pathname) {
+        router.prefetch(href);
+      }
+    }
+  }, [prefetchRoutes, pathname, router]);
 
   const toggleSubmenu = (href: string) => {
     setExpandedMenus((prev) => ({
@@ -279,9 +313,10 @@ export default function DashboardSidebar() {
                   onClick={() => toggleSubmenu(item.href)}
                   className={`flex items-center justify-between w-full px-4 py-3 rounded-lg transition-colors ${
                     isActive
-                      ? 'bg-[#800020] text-white'
+                      ? 'text-white'
                       : 'text-gray-700 hover:bg-gray-100'
                   }`}
+                  style={isActive ? { backgroundColor: primaryColor } : undefined}
                 >
                   <div className="flex items-center gap-3">
                     <Icon className="w-5 h-5" />
@@ -304,9 +339,10 @@ export default function DashboardSidebar() {
                           onClick={() => setIsMobileMenuOpen(false)}
                           className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm ${
                             isSubActive
-                              ? 'bg-[#800020] text-white'
+                              ? 'text-white'
                               : 'text-gray-600 hover:bg-gray-100'
                           }`}
+                          style={isSubActive ? { backgroundColor: primaryColor } : undefined}
                         >
                           <span>{subItem.name}</span>
                         </Link>
@@ -318,12 +354,14 @@ export default function DashboardSidebar() {
             ) : (
               <Link
                 href={item.href}
+                prefetch={true}
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                   isActive
-                    ? 'bg-[#800020] text-white'
+                    ? 'text-white'
                     : 'text-gray-700 hover:bg-gray-100'
                 }`}
+                style={isActive ? { backgroundColor: primaryColor } : undefined}
               >
                 <Icon className="w-5 h-5" />
                 <span className="font-medium">{item.label}</span>
@@ -358,8 +396,8 @@ export default function DashboardSidebar() {
           )}
         </button>
 
-        <h1 className="text-lg font-bold text-[#800020]">
-          NEM Salvage
+        <h1 className="text-lg font-bold" style={{ color: primaryColor }}>
+          {brandName}
         </h1>
 
         {/* Top Right: Notification Bell + Profile Picture */}
@@ -367,7 +405,8 @@ export default function DashboardSidebar() {
           <NotificationBell />
           <Link 
             href="/settings/profile-picture"
-            className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 hover:border-[#800020] transition-colors"
+            className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 transition-colors"
+            style={{ ['--brand-hover-border' as string]: primaryColor }}
           >
             {session?.user?.profilePictureUrl ? (
               <Image
@@ -378,7 +417,7 @@ export default function DashboardSidebar() {
                 sizes="40px"
               />
             ) : (
-              <div className="w-full h-full bg-[#800020] flex items-center justify-center rounded-full">
+              <div className="w-full h-full flex items-center justify-center rounded-full" style={{ backgroundColor: primaryColor }}>
                 <UserIcon className="w-5 h-5 text-white" />
               </div>
             )}
@@ -405,7 +444,7 @@ export default function DashboardSidebar() {
           <div className="flex items-center justify-between mb-4">
             {/* Left: User Info */}
             <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-bold text-[#800020]">NEM Salvage</h2>
+              <h2 className="text-lg font-bold" style={{ color: primaryColor }}>{brandName}</h2>
               <p className="text-sm text-gray-600 truncate">
                 {session?.user?.name || 'User'}
               </p>
@@ -419,7 +458,7 @@ export default function DashboardSidebar() {
               <NotificationBell />
               <Link 
                 href="/settings/profile-picture"
-                className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200 hover:border-[#800020] transition-colors flex-shrink-0"
+                className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200 transition-colors flex-shrink-0"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 {session?.user?.profilePictureUrl ? (
@@ -431,7 +470,7 @@ export default function DashboardSidebar() {
                     sizes="48px"
                   />
                 ) : (
-                  <div className="w-full h-full bg-[#800020] flex items-center justify-center rounded-full">
+                  <div className="w-full h-full flex items-center justify-center rounded-full" style={{ backgroundColor: primaryColor }}>
                     <UserIcon className="w-6 h-6 text-white" />
                   </div>
                 )}
@@ -448,7 +487,7 @@ export default function DashboardSidebar() {
       {/* Desktop Sidebar */}
       <aside className="hidden lg:block fixed top-0 left-0 bottom-0 w-64 bg-white border-r border-gray-200 z-30 overflow-y-auto">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-[#800020]">NEM Salvage</h2>
+          <h2 className="text-xl font-bold" style={{ color: primaryColor }}>{brandName}</h2>
           <p className="text-sm text-gray-600 mt-2 truncate">
             {session?.user?.name || 'User'}
           </p>

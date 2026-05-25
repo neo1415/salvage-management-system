@@ -137,6 +137,9 @@ export enum AuditActionType {
   // Reporting actions
   LEADERBOARD_VIEWED = 'leaderboard_viewed',
   REPORT_GENERATED = 'report_generated',
+  POLICY_DECISION_EVALUATED = 'policy_decision_evaluated',
+  BUSINESS_POLICY_DRAFT_SAVED = 'business_policy_draft_saved',
+  BUSINESS_POLICY_PUBLISHED = 'business_policy_published',
   
   // Rating actions
   VENDOR_RATED = 'vendor_rated',
@@ -157,6 +160,7 @@ export enum AuditEntityType {
   NOTIFICATION = 'notification',
   DOCUMENT = 'document',
   REPORT = 'report',
+  POLICY = 'policy',
   RATING = 'rating',
   FRAUD_FLAG = 'fraud_flag',
 }

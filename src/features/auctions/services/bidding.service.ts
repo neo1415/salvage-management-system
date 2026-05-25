@@ -26,6 +26,15 @@ import { createOutbidNotification } from '@/features/notifications/services/noti
 import { cache } from '@/lib/redis/client';
 import { depositCalculatorService } from './deposit-calculator.service';
 import { configService, SystemConfiguration } from '@/features/auction-deposit/services/config.service';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveDepositAmountRequired,
+  resolveVendorBidEligibility,
+  type VendorPolicySnapshot,
+} from '@/features/business-policy';
 
 /**
  * Bid placement data
@@ -176,8 +185,22 @@ export class BiddingService {
         user.phone,
         data.vendorId,
         data.auctionId,
-        config  // ✅ FIX: Pass config to validation
+        config,
+        Boolean(vendor.bvnVerifiedAt)
       );
+
+      await this.logBidPolicyDecisionShadow({
+        bidAmount: data.amount,
+        auctionId: data.auctionId,
+        vendorId: data.vendorId,
+        userId: user.id,
+        vendorTier: vendor.tier,
+        bvnVerified: Boolean(vendor.bvnVerifiedAt),
+        registrationFeePaid: Boolean(vendor.registrationFeePaid),
+        validation,
+        ipAddress: data.ipAddress,
+        userAgent: data.userAgent || 'unknown',
+      });
 
       if (!validation.valid) {
         return {
@@ -316,6 +339,18 @@ export class BiddingService {
           console.log(`⚠️ Using hardcoded fallback deposit calculation: ₦${depositAmount.toLocaleString()}`);
         }
       }
+
+      await this.logDepositPolicyDecisionShadow({
+        bidAmount: data.amount,
+        previousBidAmount: existingBid ? parseFloat(existingBid.amount) : null,
+        depositAmount,
+        incrementalDeposit,
+        auctionId: data.auctionId,
+        vendorId: data.vendorId,
+        userId: user.id,
+        ipAddress: data.ipAddress,
+        userAgent: data.userAgent || 'unknown',
+      });
 
       // Freeze INCREMENTAL deposit funds for this bid (Requirement 3.1: Freeze deposit on bid placement)
       try {
@@ -484,6 +519,99 @@ export class BiddingService {
     }
   }
 
+  private async logBidPolicyDecisionShadow(input: {
+    bidAmount: number;
+    auctionId: string;
+    vendorId: string;
+    userId: string;
+    vendorTier: string;
+    bvnVerified: boolean;
+    registrationFeePaid: boolean;
+    validation: ValidationResult;
+    ipAddress: string;
+    userAgent: string;
+  }): Promise<void> {
+    try {
+      const policy = await businessPolicyService.getEffectivePolicy();
+      const tier: VendorPolicySnapshot['tier'] =
+        input.vendorTier === 'tier2_full'
+          ? 'tier2_full'
+          : input.vendorTier === 'tier1_bvn'
+            ? 'tier1_bvn'
+            : 'tier0';
+
+      const decision = resolveVendorBidEligibility(
+        policy,
+        {
+          tier,
+          bvnVerified: input.bvnVerified,
+        },
+        input.bidAmount
+      );
+
+      await logPolicyDecision({
+        userId: input.userId,
+        entityType: AuditEntityType.BID,
+        entityId: input.auctionId,
+        ipAddress: input.ipAddress,
+        deviceType: this.getDeviceType(input.userAgent),
+        userAgent: input.userAgent,
+        decision: decision.decision,
+        context: {
+          mode: getBusinessPolicyRuntimeMode(),
+          auctionId: input.auctionId,
+          vendorId: input.vendorId,
+          bidAmount: input.bidAmount,
+          legacyValidationAllowed: input.validation.valid,
+          legacyValidationErrors: input.validation.errors,
+          policyAllowed: decision.allowed,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to log bid policy decision shadow audit:', error);
+    }
+  }
+
+  private async logDepositPolicyDecisionShadow(input: {
+    bidAmount: number;
+    previousBidAmount: number | null;
+    depositAmount: number;
+    incrementalDeposit: number;
+    auctionId: string;
+    vendorId: string;
+    userId: string;
+    ipAddress: string;
+    userAgent: string;
+  }): Promise<void> {
+    try {
+      const policy = await businessPolicyService.getEffectivePolicy();
+      const decision = resolveDepositAmountRequired(policy, input.bidAmount, input.previousBidAmount);
+
+      await logPolicyDecision({
+        userId: input.userId,
+        entityType: AuditEntityType.PAYMENT,
+        entityId: input.auctionId,
+        ipAddress: input.ipAddress,
+        deviceType: this.getDeviceType(input.userAgent),
+        userAgent: input.userAgent,
+        decision: decision.decision,
+        context: {
+          mode: 'shadow',
+          auctionId: input.auctionId,
+          vendorId: input.vendorId,
+          bidAmount: input.bidAmount,
+          previousBidAmount: input.previousBidAmount,
+          legacyDepositAmount: input.depositAmount,
+          legacyIncrementalDeposit: input.incrementalDeposit,
+          policyDepositAmount: decision.value?.totalDeposit,
+          policyIncrementalDeposit: decision.value?.incrementalDeposit,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to log deposit policy decision shadow audit:', error);
+    }
+  }
+
   /**
    * Validate bid before placement
    * 
@@ -509,7 +637,8 @@ export class BiddingService {
     phone: string,
     vendorId: string,
     auctionId: string,
-    config: SystemConfiguration  // ✅ FIX: Add config parameter
+    config: SystemConfiguration,
+    bvnVerified = true
   ): Promise<ValidationResult> {
     const errors: string[] = [];
 
@@ -524,9 +653,27 @@ export class BiddingService {
       errors.push(`Auction must be in active or extended status (current: ${auctionStatus})`);
     }
 
-    // ✅ FIX: Use config.tier1Limit instead of hardcoded 500000
-    if (bidAmount > config.tier1Limit && vendorTier === 'tier1_bvn') {
-      errors.push(`Bid exceeds your Tier 1 limit of ₦${config.tier1Limit.toLocaleString()}. Upgrade to Tier 2 for unlimited bidding and access to premium auctions.`);
+    if (isBusinessPolicyEnforcementEnabled()) {
+      const policy = await businessPolicyService.getEffectivePolicy();
+      const tier: VendorPolicySnapshot['tier'] =
+        vendorTier === 'tier2_full'
+          ? 'tier2_full'
+          : vendorTier === 'tier1_bvn'
+            ? 'tier1_bvn'
+            : 'tier0';
+      const decision = resolveVendorBidEligibility(policy, { tier, bvnVerified }, bidAmount);
+
+      if (!decision.allowed) {
+        const bidLimit = decision.value?.bidLimit;
+        if (typeof bidLimit === 'number') {
+          errors.push(`Bid exceeds your Tier 1 limit of NGN ${bidLimit.toLocaleString()}. Upgrade to Tier 2 for unlimited bidding and access to premium auctions.`);
+        } else {
+          errors.push(decision.message);
+        }
+      }
+    } else if (bidAmount > config.tier1Limit && vendorTier === 'tier1_bvn') {
+      // Shadow mode preserves the legacy NEM rule while policy decisions are audited separately.
+      errors.push(`Bid exceeds your Tier 1 limit of NGN ${config.tier1Limit.toLocaleString()}. Upgrade to Tier 2 for unlimited bidding and access to premium auctions.`);
     }
 
     // Check for existing bid from this vendor (for incremental deposit calculation)

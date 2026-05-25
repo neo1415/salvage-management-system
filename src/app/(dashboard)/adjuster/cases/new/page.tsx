@@ -103,6 +103,8 @@ const LAUNCH_ASSET_TYPES = ASSET_TYPES.filter((type) =>
   ['vehicle', 'electronics', 'property'].includes(type.value)
 );
 
+type PublicAssetTypePolicy = Record<string, { enabled: boolean }>;
+
 /**
  * Validation schema - Updated for universal item types
  */
@@ -360,6 +362,7 @@ function NewCasePageContent() {
   // Rate limiting state for AI assessment
   const [lastAnalysisTimes, setLastAnalysisTimes] = useState<number[]>([]);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
+  const [enabledAssetTypesPolicy, setEnabledAssetTypesPolicy] = useState<PublicAssetTypePolicy | null>(null);
   
   // Search progress state
   const {
@@ -381,6 +384,14 @@ function NewCasePageContent() {
   const formData = watch();
   const marketValue = watch('marketValue');
   const hasAIAnalysis = !!aiAssessment;
+  const enabledAssetTypes = useMemo(() => {
+    if (!enabledAssetTypesPolicy) {
+      return LAUNCH_ASSET_TYPES;
+    }
+
+    const filteredTypes = ASSET_TYPES.filter((type) => enabledAssetTypesPolicy[type.value]?.enabled);
+    return filteredTypes.length > 0 ? filteredTypes : LAUNCH_ASSET_TYPES;
+  }, [enabledAssetTypesPolicy]);
   
   const {
     currentDraftId,
@@ -419,6 +430,28 @@ function NewCasePageContent() {
   useEffect(() => {
     captureGPSLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch('/api/business-policy/public')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const enabledAssetTypes = data?.policy?.cases?.enabledAssetTypes;
+        if (!cancelled && enabledAssetTypes && typeof enabledAssetTypes === 'object') {
+          setEnabledAssetTypesPolicy(enabledAssetTypes);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEnabledAssetTypesPolicy(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /**
@@ -1716,7 +1749,7 @@ function NewCasePageContent() {
               control={control}
               render={({ field }) => (
                 <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {LAUNCH_ASSET_TYPES.map((type) => (
+                  {enabledAssetTypes.map((type) => (
                     <button
                       key={type.value}
                       type="button"

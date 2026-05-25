@@ -31,6 +31,14 @@ import { releaseForms } from '@/lib/db/schema/release-forms';
 import { eq, and, lte, isNull } from 'drizzle-orm';
 import * as fallbackService from '@/features/auction-deposit/services/fallback.service';
 import { configService } from '@/features/auction-deposit/services/config.service';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveFallbackBufferHours,
+} from '@/features/business-policy';
+import { AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60 seconds max execution time
@@ -74,11 +82,17 @@ export async function GET(request: NextRequest) {
     // Testing mode: Override buffer period with environment variable
     const testingMode = process.env.TESTING_MODE === 'true';
     const testingBufferMinutes = parseInt(process.env.TESTING_BUFFER_MINUTES || '0');
-    const effectiveBufferHours = testingMode && testingBufferMinutes > 0 
+    let effectiveBufferHours = testingMode && testingBufferMinutes > 0 
       ? testingBufferMinutes / 60 
       : fallbackBufferPeriod;
 
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const fallbackBufferDecision = resolveFallbackBufferHours(policy);
+    if (!testingMode && isBusinessPolicyEnforcementEnabled()) {
+      effectiveBufferHours = fallbackBufferDecision.value ?? effectiveBufferHours;
+    }
     console.log(`[Document Deadline Cron] Buffer period: ${effectiveBufferHours} hours ${testingMode ? '(TESTING MODE)' : ''}`);
+    const systemActorId = await getSystemActorId();
 
     // Calculate cutoff time (now - buffer period)
     const cutoffTime = new Date(now.getTime() - (effectiveBufferHours * 60 * 60 * 1000));
@@ -124,6 +138,26 @@ export async function GET(request: NextRequest) {
         console.log(`  - Document deadline: ${document.validityDeadline?.toISOString()}`);
         console.log(`  - Cutoff time: ${cutoffTime.toISOString()}`);
         console.log(`  - Buffer period elapsed: ${effectiveBufferHours} hours`);
+
+        await logPolicyDecision({
+          userId: systemActorId,
+          entityType: AuditEntityType.AUCTION,
+          entityId: auction.id,
+          ipAddress: 'system',
+          deviceType: DeviceType.DESKTOP,
+          userAgent: 'cron:check-document-deadlines',
+          decision: fallbackBufferDecision.decision,
+          context: {
+            mode: getBusinessPolicyRuntimeMode(),
+            cron: 'check-document-deadlines',
+            winnerId: winner.vendorId,
+            documentDeadline: document.validityDeadline?.toISOString() ?? null,
+            cutoffTime: cutoffTime.toISOString(),
+            legacyEffectiveBufferHours: effectiveBufferHours,
+            policyBufferHours: fallbackBufferDecision.value,
+            testingMode,
+          },
+        });
 
         // Trigger fallback chain
         const fallbackResult = await fallbackService.triggerFallback(
@@ -194,4 +228,15 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+async function getSystemActorId(): Promise<string> {
+  const { users } = await import('@/lib/db/schema/users');
+  const [systemAdmin] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.role, 'system_admin'))
+    .limit(1);
+
+  return systemAdmin?.id ?? '00000000-0000-0000-0000-000000000000';
 }

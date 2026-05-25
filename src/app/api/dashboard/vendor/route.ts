@@ -6,6 +6,7 @@ import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 import { calculateAutoRating } from '@/features/vendors/services/auto-rating.service';
 import { formatRatingLabel } from '@/lib/metrics/dashboard-status';
+import { businessPolicyService, resolveVendorBidLimit } from '@/features/business-policy';
 
 /**
  * Vendor Dashboard API
@@ -114,8 +115,14 @@ export async function GET() {
     const vendor = vendorRecord[0];
     console.log('[Dashboard API] Vendor found:', vendor.id);
 
-    // Try to get cached data
-    const cacheKey = `dashboard:vendor:${vendor.id}`;
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const bidLimitDecision = resolveVendorBidLimit(policy, {
+      tier: vendor.tier as 'tier0' | 'tier1_bvn' | 'tier2_full',
+    });
+
+    // Try to get cached data. Include policy version so display-only policy changes
+    // do not keep stale bid limits in the vendor dashboard cache.
+    const cacheKey = `dashboard:vendor:${vendor.id}:policy:${policy.version}`;
     try {
       const cachedData = await cache.get<VendorDashboardData>(cacheKey);
 
@@ -187,7 +194,7 @@ export async function GET() {
       comparisons,
       lastUpdated: new Date().toISOString(),
       vendorTier: vendor.tier as 'tier1_bvn' | 'tier2_full',
-      bidLimit: vendor.tier === 'tier1_bvn' ? 500000 : undefined, // ₦500k limit for Tier 1
+      bidLimit: typeof bidLimitDecision.value === 'number' ? bidLimitDecision.value : undefined,
       pendingPickupConfirmations: pendingPickupConfirmationsUnique,
     };
 

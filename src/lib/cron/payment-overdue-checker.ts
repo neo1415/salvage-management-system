@@ -23,6 +23,12 @@ import { emailService } from '@/features/notifications/services/email.service';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { createNotification } from '@/features/notifications/services/notification.service';
 import { configService } from '@/features/auction-deposit/services/config.service';
+import {
+  businessPolicyService,
+  logPolicyDecision,
+  resolveGraceExtensionDurationHours,
+} from '@/features/business-policy';
+import { AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 
 /**
  * Check for overdue payments and update their status
@@ -340,10 +346,35 @@ export async function grantGracePeriod(
 
     const config = await configService.getConfig();
     const extensionHours = config.graceExtensionDuration;
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const durationDecision = resolveGraceExtensionDurationHours(policy);
 
     // Extend from the later of the current deadline or now, so overdue payments get a real grace window.
     const baseDeadline = payment.paymentDeadline > new Date() ? payment.paymentDeadline : new Date();
     const newDeadline = new Date(baseDeadline.getTime() + extensionHours * 60 * 60 * 1000);
+
+    await logPolicyDecision({
+      userId: financeOfficerId,
+      entityType: AuditEntityType.PAYMENT,
+      entityId: paymentId,
+      ipAddress: 'system',
+      userAgent: 'payment-grace-period-service',
+      deviceType: DeviceType.DESKTOP,
+      decision: {
+        ...durationDecision.decision,
+        entityType: 'payment',
+        entityId: paymentId,
+      },
+      context: {
+        mode: 'shadow',
+        surface: 'payment_grace_period_service',
+        paymentId,
+        auctionId: auction.id,
+        vendorId: vendor.id,
+        legacyExtensionHours: extensionHours,
+        policyExtensionHours: durationDecision.value,
+      },
+    });
 
     // Update payment deadline and status
     await db
@@ -462,7 +493,7 @@ export async function grantGracePeriod(
     console.log(`✅ Grace period notifications sent to vendor ${user.email}`);
 
     // Log the grace period grant
-    const { logAction, AuditActionType, AuditEntityType, DeviceType } = await import('@/lib/utils/audit-logger');
+    const { logAction, AuditActionType } = await import('@/lib/utils/audit-logger');
     await logAction({
       userId: financeOfficerId,
       actionType: AuditActionType.PAYMENT_VERIFIED,

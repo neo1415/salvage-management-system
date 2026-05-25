@@ -9,29 +9,56 @@ interface UseTierUpgradeOptions {
   onUpgradeRequired?: (auctionValue: number) => void;
 }
 
+const DEFAULT_TIER_1_LIMIT = 500000;
+
+async function loadTier1Limit(): Promise<number | null> {
+  const policyResponse = await fetch('/api/business-policy/public');
+  if (policyResponse.ok) {
+    const data = await policyResponse.json();
+    const policyLimit = data.policy?.onboarding?.tier1BidLimit;
+
+    if (typeof policyLimit === 'number') {
+      return policyLimit;
+    }
+  }
+
+  const legacyResponse = await fetch('/api/config/system');
+  if (!legacyResponse.ok) {
+    return null;
+  }
+
+  const legacyData = await legacyResponse.json();
+  const legacyLimit = legacyData.config?.tier1Limit;
+
+  return typeof legacyLimit === 'number' ? legacyLimit : null;
+}
+
 export function useTierUpgrade({ currentTier, onUpgradeRequired }: UseTierUpgradeOptions) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [blockedAuctionValue, setBlockedAuctionValue] = useState<number | undefined>();
-  const [tier1Limit, setTier1Limit] = useState<number>(500000); // Default fallback
+  const [tier1Limit, setTier1Limit] = useState<number>(DEFAULT_TIER_1_LIMIT);
 
-  // Fetch tier1Limit from system configuration
+  // Prefer the public business policy layer, with the legacy config endpoint as a compatibility fallback.
   useEffect(() => {
+    let cancelled = false;
+
     const fetchConfig = async () => {
       try {
-        const response = await fetch('/api/admin/config');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.config?.tier1Limit) {
-            setTier1Limit(data.config.tier1Limit);
-            console.log(`✅ Tier 1 limit loaded from config: ₦${data.config.tier1Limit.toLocaleString()}`);
-          }
+        const configuredLimit = await loadTier1Limit();
+
+        if (!cancelled && typeof configuredLimit === 'number') {
+          setTier1Limit(configuredLimit);
         }
       } catch (error) {
-        console.error('Failed to fetch tier1Limit from config, using default:', error);
+        console.error('Failed to fetch Tier 1 policy, using default:', error);
       }
     };
 
     fetchConfig();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /**

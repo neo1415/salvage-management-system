@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Facebook, Twitter, Linkedin, ArrowRight } from 'lucide-react';
 import { useState } from 'react';
+import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
 
 const footerLinks = {
   company: [
@@ -34,6 +35,7 @@ const socialLinks = [
 ];
 
 export function Footer() {
+  const { branding } = usePublicBranding();
   const [email, setEmail] = useState('');
   const [subscribeStatus, setSubscribeStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
@@ -50,7 +52,7 @@ export function Footer() {
   };
 
   return (
-    <footer className="bg-gradient-to-b from-burgundy-900 to-burgundy-950 text-white pt-20 pb-8">
+    <footer className="text-white pt-20 pb-8" style={{ background: getBrandGradient(branding) }}>
       <div className="container mx-auto px-4">
         {/* Main Footer Content */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-12 mb-16">
@@ -58,17 +60,17 @@ export function Footer() {
           <div className="lg:col-span-2">
             <Link href="/" className="flex items-center space-x-3 mb-6">
               <Image 
-                src="/icons/Nem-insurance-Logo.jpg" 
-                alt="NEM Insurance Logo" 
+                src={branding.logoPath || '/icons/Nem-insurance-Logo.jpg'} 
+                alt={`${branding.brandName} logo`} 
                 width={48}
                 height={48}
                 className="object-contain rounded-lg"
               />
-              <span className="font-bold text-xl">NEM Insurance</span>
+              <span className="font-bold text-xl">{branding.brandName}</span>
             </Link>
 
             <p className="text-gray-300 mb-6 leading-relaxed">
-              Nigeria's leading salvage management platform. Empowering vendors with AI-powered auctions, instant payments, and mobile-first technology.
+              {branding.legalName} salvage management platform. Empowering vendors with AI-powered auctions, instant payments, and mobile-first technology.
             </p>
 
             {/* Newsletter */}
@@ -89,8 +91,9 @@ export function Footer() {
                   className={`px-4 py-2 rounded-lg font-semibold flex items-center gap-2 ${
                     subscribeStatus === 'success'
                       ? 'bg-green-600'
-                      : 'bg-gold-500 text-burgundy-900'
+                      : ''
                   }`}
+                  style={subscribeStatus === 'success' ? undefined : { backgroundColor: branding.accentColor, color: branding.primaryColor }}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -168,7 +171,7 @@ export function Footer() {
         <div className="flex flex-col md:flex-row justify-between items-center gap-6">
           {/* Copyright */}
           <div className="text-gray-400 text-sm text-center md:text-left">
-            © {new Date().getFullYear()} NEM Insurance Plc. All rights reserved.
+            © {new Date().getFullYear()} {branding.legalName}. All rights reserved.
             <br className="md:hidden" />
             <span className="hidden md:inline"> | </span>
             199 Ikorodu Road, Obanikoro, Lagos, Nigeria
