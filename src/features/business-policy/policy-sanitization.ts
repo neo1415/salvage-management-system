@@ -19,6 +19,11 @@ const PAYMENT_PROVIDERS: PaymentProvider[] = ['paystack', 'flutterwave', 'manual
 const VERIFICATION_PROVIDERS: VerificationProvider[] = ['dojah'];
 const AI_PROVIDERS: AiProvider[] = ['gemini', 'claude', 'serper'];
 const HOMEPAGE_MODES: BusinessPolicy['branding']['homepageMode'][] = ['landing', 'login_first'];
+const HOMEPAGE_TEMPLATES: BusinessPolicy['branding']['homepageTemplate'][] = [
+  'salvage_showcase',
+  'minimal_private',
+  'auction_marketplace',
+];
 const TIER2_DECISIONS: BusinessPolicy['onboarding']['finalTier2Decision'][] = ['manual_review'];
 const RESERVE_STRATEGIES: BusinessPolicy['auctions']['reserveValueStrategy'][] = ['percentage_of_salvage_value'];
 const SOCKET_MODES: BusinessPolicy['auctions']['socketMode'][] = [
@@ -85,6 +90,7 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
   const documents = asRecord(source.documents);
   const fraud = asRecord(source.fraud);
   const reports = asRecord(source.reports);
+  const homepageCopy = asRecord(branding.homepageCopy);
 
   const enabledAssetTypes: BusinessPolicy['cases']['enabledAssetTypes'] = {};
   const assetSource = asRecord(cases.enabledAssetTypes);
@@ -123,6 +129,14 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       accentColor: stringValue(branding.accentColor, fallback.branding.accentColor),
       logoPath: stringValue(branding.logoPath, fallback.branding.logoPath),
       homepageMode: enumValue(branding.homepageMode, HOMEPAGE_MODES, fallback.branding.homepageMode),
+      homepageTemplate: enumValue(branding.homepageTemplate, HOMEPAGE_TEMPLATES, fallback.branding.homepageTemplate),
+      homepageCopy: {
+        heroTitle: stringValue(homepageCopy.heroTitle, fallback.branding.homepageCopy.heroTitle),
+        heroSubtitle: stringValue(homepageCopy.heroSubtitle, fallback.branding.homepageCopy.heroSubtitle),
+        supportingText: stringValue(homepageCopy.supportingText, fallback.branding.homepageCopy.supportingText),
+        primaryCtaLabel: stringValue(homepageCopy.primaryCtaLabel, fallback.branding.homepageCopy.primaryCtaLabel),
+        secondaryCtaLabel: optionalStringValue(homepageCopy.secondaryCtaLabel, fallback.branding.homepageCopy.secondaryCtaLabel),
+      },
     },
     auth: {
       emailPasswordEnabled: booleanValue(auth.emailPasswordEnabled, fallback.auth.emailPasswordEnabled),

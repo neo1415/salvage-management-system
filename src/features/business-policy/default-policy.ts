@@ -13,6 +13,14 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
     accentColor: '#FFD700',
     logoPath: '/icons/Nem-insurance-Logo.jpg',
     homepageMode: 'landing',
+    homepageTemplate: 'salvage_showcase',
+    homepageCopy: {
+      heroTitle: 'Streamline Salvage Recovery',
+      heroSubtitle: '10x faster processing with AI-powered damage assessment',
+      supportingText: 'Instant payments - Real-time bidding - Mobile-first platform',
+      primaryCtaLabel: 'Start Bidding',
+      secondaryCtaLabel: 'Login',
+    },
   },
   auth: {
     emailPasswordEnabled: true,

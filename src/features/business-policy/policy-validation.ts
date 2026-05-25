@@ -31,6 +31,26 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     issues.push(issue('branding.logoPath', 'Logo path must be an app-relative path or HTTPS URL.'));
   }
 
+  if (!policy.branding.homepageCopy.heroTitle.trim()) {
+    issues.push(issue('branding.homepageCopy.heroTitle', 'Homepage hero title is required.'));
+  }
+
+  if (!policy.branding.homepageCopy.heroSubtitle.trim()) {
+    issues.push(issue('branding.homepageCopy.heroSubtitle', 'Homepage subtitle is required.'));
+  }
+
+  if (!policy.branding.homepageCopy.primaryCtaLabel.trim()) {
+    issues.push(issue('branding.homepageCopy.primaryCtaLabel', 'Primary call-to-action label is required.'));
+  }
+
+  if (policy.branding.homepageCopy.heroTitle.length > 70) {
+    issues.push(issue('branding.homepageCopy.heroTitle', 'Hero title is long and may wrap awkwardly on mobile.', 'warning'));
+  }
+
+  if (policy.branding.homepageCopy.heroSubtitle.length > 150) {
+    issues.push(issue('branding.homepageCopy.heroSubtitle', 'Hero subtitle is long and may reduce mobile readability.', 'warning'));
+  }
+
   if (!/^#[0-9A-Fa-f]{6}$/.test(policy.branding.primaryColor)) {
     issues.push(issue('branding.primaryColor', 'Primary color must be a six-digit hex color.'));
   }

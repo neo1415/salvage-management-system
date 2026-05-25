@@ -24,6 +24,7 @@ describe('business policy foundation', () => {
     policy.auth.googleOAuthEnabled = false;
     policy.branding.supportEmail = 'not-an-email';
     policy.branding.logoPath = 'javascript:alert(1)';
+    policy.branding.homepageCopy.heroTitle = '';
 
     const result = validateBusinessPolicy(policy);
 
@@ -38,6 +39,7 @@ describe('business policy foundation', () => {
         'auth',
         'branding.supportEmail',
         'branding.logoPath',
+        'branding.homepageCopy.heroTitle',
       ])
     );
   });
@@ -65,6 +67,7 @@ describe('business policy foundation', () => {
     const serialized = JSON.stringify(publicPolicy).toLowerCase();
 
     expect(publicPolicy).toHaveProperty('branding');
+    expect(publicPolicy.branding.homepageCopy.heroTitle).toBe(DEFAULT_BUSINESS_POLICY.branding.homepageCopy.heroTitle);
     expect(publicPolicy).toHaveProperty('auth.googleOAuthEnabled');
     expect(publicPolicy).not.toHaveProperty('kyc');
     expect(publicPolicy).not.toHaveProperty('fraud');

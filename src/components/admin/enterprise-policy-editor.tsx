@@ -278,6 +278,31 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
                 <option value="login_first">Login first</option>
               </SelectInput>
             </Field>
+            <Field label="Homepage template" description="Controls the public first impression for white-label deployments.">
+              <SelectInput
+                value={policy.branding.homepageTemplate}
+                onChange={(event) => updatePolicy((draft) => { draft.branding.homepageTemplate = event.target.value as BusinessPolicy['branding']['homepageTemplate']; })}
+              >
+                <option value="salvage_showcase">Salvage showcase</option>
+                <option value="auction_marketplace">Auction marketplace</option>
+                <option value="minimal_private">Minimal private portal</option>
+              </SelectInput>
+            </Field>
+            <Field label="Hero title" description="Keep this short enough to fit a mobile hero.">
+              <TextInput value={policy.branding.homepageCopy.heroTitle} onChange={(event) => updatePolicy((draft) => { draft.branding.homepageCopy.heroTitle = event.target.value; })} />
+            </Field>
+            <Field label="Hero subtitle">
+              <TextInput value={policy.branding.homepageCopy.heroSubtitle} onChange={(event) => updatePolicy((draft) => { draft.branding.homepageCopy.heroSubtitle = event.target.value; })} />
+            </Field>
+            <Field label="Supporting line">
+              <TextInput value={policy.branding.homepageCopy.supportingText} onChange={(event) => updatePolicy((draft) => { draft.branding.homepageCopy.supportingText = event.target.value; })} />
+            </Field>
+            <Field label="Primary CTA">
+              <TextInput value={policy.branding.homepageCopy.primaryCtaLabel} onChange={(event) => updatePolicy((draft) => { draft.branding.homepageCopy.primaryCtaLabel = event.target.value; })} />
+            </Field>
+            <Field label="Secondary CTA">
+              <TextInput value={policy.branding.homepageCopy.secondaryCtaLabel ?? ''} onChange={(event) => updatePolicy((draft) => { draft.branding.homepageCopy.secondaryCtaLabel = event.target.value; })} />
+            </Field>
           </div>
           <div className="overflow-hidden rounded-lg border border-gray-200">
             <div
@@ -287,6 +312,18 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
               <p className="text-xs font-semibold uppercase tracking-wide opacity-80">Brand preview</p>
               <p className="mt-2 text-2xl font-bold">{policy.branding.brandName || 'Brand name'}</p>
               <p className="mt-1 text-sm opacity-90">{policy.branding.legalName || 'Legal entity name'}</p>
+              <div className="mt-5 max-w-xl rounded-md bg-white/10 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide opacity-75">{policy.branding.homepageTemplate.replaceAll('_', ' ')}</p>
+                <p className="mt-2 text-xl font-bold">{policy.branding.homepageCopy.heroTitle}</p>
+                <p className="mt-1 text-sm opacity-90">{policy.branding.homepageCopy.heroSubtitle}</p>
+                <button
+                  type="button"
+                  className="mt-3 rounded-md px-4 py-2 text-sm font-bold"
+                  style={{ backgroundColor: policy.branding.accentColor, color: policy.branding.primaryColor }}
+                >
+                  {policy.branding.homepageCopy.primaryCtaLabel}
+                </button>
+              </div>
             </div>
             <div className="grid gap-3 bg-gray-50 p-4 text-sm text-gray-700 sm:grid-cols-2">
               <div>

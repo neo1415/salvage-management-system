@@ -9,6 +9,11 @@ describe('sanitizeBusinessPolicy', () => {
       branding: {
         ...DEFAULT_BUSINESS_POLICY.branding,
         brandName: 'Acme Salvage',
+        homepageTemplate: 'auction_marketplace',
+        homepageCopy: {
+          ...DEFAULT_BUSINESS_POLICY.branding.homepageCopy,
+          heroTitle: 'Bid On Verified Assets',
+        },
         paystackSecretKey: 'sk_test_should_not_store',
       },
       fraud: {
@@ -41,6 +46,8 @@ describe('sanitizeBusinessPolicy', () => {
     });
 
     expect(sanitized.branding.brandName).toBe('Acme Salvage');
+    expect(sanitized.branding.homepageTemplate).toBe('auction_marketplace');
+    expect(sanitized.branding.homepageCopy.heroTitle).toBe('Bid On Verified Assets');
     expect(sanitized.cases.enabledAssetTypes.boats).toEqual({
       enabled: true,
       requiresAiAnalysis: true,

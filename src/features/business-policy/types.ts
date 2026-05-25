@@ -27,6 +27,14 @@ export type BrandingPolicy = {
   accentColor: string;
   logoPath: string;
   homepageMode: 'landing' | 'login_first';
+  homepageTemplate: 'salvage_showcase' | 'minimal_private' | 'auction_marketplace';
+  homepageCopy: {
+    heroTitle: string;
+    heroSubtitle: string;
+    supportingText: string;
+    primaryCtaLabel: string;
+    secondaryCtaLabel?: string;
+  };
 };
 
 export type AuthPolicy = {

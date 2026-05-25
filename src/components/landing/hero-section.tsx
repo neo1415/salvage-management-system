@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useState, useEffect } from 'react';
+import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
 
 const heroSlides = [
   {
@@ -24,18 +25,28 @@ const heroSlides = [
 ];
 
 export function HeroSection() {
+  const { branding } = usePublicBranding();
   const [currentSlide, setCurrentSlide] = useState(0);
+  const copy = branding.homepageCopy;
+  const slides = [
+    {
+      title: copy.heroTitle || heroSlides[0].title,
+      subtitle: copy.heroSubtitle || heroSlides[0].subtitle,
+      image: heroSlides[0].image,
+    },
+    ...heroSlides.slice(1),
+  ];
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
+      setCurrentSlide((prev) => (prev + 1) % slides.length);
     }, 6000); // 6 seconds per slide
 
     return () => clearInterval(interval);
-  }, []);
+  }, [slides.length]);
 
   return (
-    <section id="home" className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-br from-burgundy-900 via-burgundy-800 to-burgundy-700 pt-20">
+    <section id="home" className="relative min-h-screen flex items-center overflow-hidden pt-20" style={{ background: getBrandGradient(branding) }}>
       {/* Background shapes */}
       <motion.div
         className="absolute top-20 right-20 w-96 h-96 bg-gold-500 rounded-full blur-3xl opacity-20"
@@ -68,10 +79,10 @@ export function HeroSection() {
                 className="mb-6"
               >
                 <h1 className="text-4xl md:text-5xl lg:text-6xl font-black leading-tight mb-4 bg-gradient-to-r from-white via-gold-200 to-gold-400 bg-clip-text text-transparent">
-                  {heroSlides[currentSlide].title}
+                  {slides[currentSlide].title}
                 </h1>
                 <p className="text-lg md:text-xl text-gray-200 max-w-xl">
-                  {heroSlides[currentSlide].subtitle}
+                  {slides[currentSlide].subtitle}
                 </p>
               </motion.div>
             </AnimatePresence>
@@ -82,7 +93,7 @@ export function HeroSection() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4, duration: 0.6 }}
             >
-              Instant payments • Real-time bidding • Mobile-first platform
+              {copy.supportingText}
             </motion.p>
 
             <motion.div
@@ -93,12 +104,13 @@ export function HeroSection() {
             >
               <Link href="/register">
                 <motion.button
-                  className="w-full sm:w-auto px-8 py-4 bg-gold-500 text-burgundy-900 font-bold rounded-lg shadow-xl text-lg"
+                  className="w-full sm:w-auto px-8 py-4 font-bold rounded-lg shadow-xl text-lg"
+                  style={{ backgroundColor: branding.accentColor, color: branding.primaryColor }}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 17 }}
                 >
-                  Start Bidding →
+                  {copy.primaryCtaLabel} -&gt;
                 </motion.button>
               </Link>
 
@@ -115,15 +127,16 @@ export function HeroSection() {
 
             {/* Slide Indicators */}
             <div className="flex gap-2 mt-8">
-              {heroSlides.map((_, index) => (
+              {slides.map((_, index) => (
                 <button
                   key={index}
                   onClick={() => setCurrentSlide(index)}
                   className={`h-1 rounded-full transition-all duration-300 ${
                     index === currentSlide
-                      ? 'w-8 bg-gold-500'
+                      ? 'w-8'
                       : 'w-4 bg-white/30 hover:bg-white/50'
                   }`}
+                  style={index === currentSlide ? { backgroundColor: branding.accentColor } : undefined}
                   aria-label={`Go to slide ${index + 1}`}
                 />
               ))}
@@ -149,8 +162,8 @@ export function HeroSection() {
                 >
                   <div className="relative h-full w-full rounded-2xl overflow-hidden shadow-2xl border-4 border-white/10">
                     <Image
-                      src={heroSlides[currentSlide].image}
-                      alt={heroSlides[currentSlide].title}
+                      src={slides[currentSlide].image}
+                      alt={slides[currentSlide].title}
                       fill
                       className="object-cover"
                       priority={currentSlide === 0}
@@ -195,8 +208,8 @@ export function HeroSection() {
                 >
                   <div className="relative h-full w-full rounded-2xl overflow-hidden shadow-2xl border-4 border-white/10">
                     <Image
-                      src={heroSlides[currentSlide].image}
-                      alt={heroSlides[currentSlide].title}
+                      src={slides[currentSlide].image}
+                      alt={slides[currentSlide].title}
                       fill
                       className="object-cover"
                       priority={currentSlide === 0}
