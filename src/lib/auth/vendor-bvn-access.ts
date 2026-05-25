@@ -16,9 +16,12 @@ export const VENDOR_PRE_BVN_API_PREFIXES = [
   '/api/vendors/verify-bvn',
   '/api/kyc/status',
   '/api/kyc/widget-config',
+  '/api/settings/profile',
   '/api/otp/',
   '/api/webhooks/',
 ] as const;
+
+export const VENDOR_TIER2_PATH = '/vendor/kyc/tier2';
 
 export function vendorNeedsBvnVerification(role: string | undefined, bvnVerified: boolean | undefined): boolean {
   return role === 'vendor' && bvnVerified !== true;

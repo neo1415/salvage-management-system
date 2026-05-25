@@ -27,6 +27,16 @@ import {
   requestGeolocationPermission,
   getGeolocationPermissionInstructions,
 } from '@/lib/utils/geolocation-permissions';
+import { isKycTestingModeClient } from '@/lib/kyc/kyc-testing-mode';
+import {
+  resolveTier2ApiError,
+  resolveTier2WidgetError,
+} from '@/lib/kyc/kyc-user-messages';
+import type { ResolvedVerificationError } from '@/lib/kyc/kyc-user-messages';
+import {
+  VerificationErrorAlert,
+  VerificationErrorDialog,
+} from '@/components/kyc/verification-error-dialog';
 
 declare global {
   interface Window {
@@ -137,12 +147,27 @@ export default function Tier2KYCPage() {
   } | null>(null);
   const [widgetReady, setWidgetReady] = useState(false);
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<ResolvedVerificationError | null>(null);
+  const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [connect, setConnect] = useState<DojahConnect | null>(null);
   const [cameraPermissionGranted, setCameraPermissionGranted] = useState(false);
   const [geolocationPermissionGranted, setGeolocationPermissionGranted] = useState(false);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
+
+  const showVerificationError = (
+    error: ResolvedVerificationError,
+    options?: { openDialog?: boolean; nextPageState?: PageState }
+  ) => {
+    setVerificationError(error);
+    if (options?.openDialog) setErrorDialogOpen(true);
+    if (options?.nextPageState) setPageState(options.nextPageState);
+  };
+
+  const clearVerificationError = () => {
+    setVerificationError(null);
+    setErrorDialogOpen(false);
+  };
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -170,7 +195,10 @@ export default function Tier2KYCPage() {
     const configRes = await fetch('/api/kyc/widget-config');
     if (!configRes.ok) {
       setPageState('error');
-      setErrorMessage('KYC service is not available. Please contact support.');
+      showVerificationError(
+        resolveTier2ApiError({ error: 'service_unavailable', message: 'Identity verification is not available. Please contact support.' }),
+        { nextPageState: 'error' }
+      );
       return false;
     }
 
@@ -208,10 +236,14 @@ export default function Tier2KYCPage() {
           const status: KYCStatus = await statusRes.json();
           setKycStatus(status);
 
-          if (status.status === 'approved') { setPageState('approved'); return; }
-          if (status.status === 'pending_review') { setPageState('pending_review'); return; }
-          if (status.status === 'rejected') { setPageState('rejected'); return; }
-          if (status.status === 'expired') { setPageState('expired'); return; }
+          const allowRetest = Boolean((status as KYCStatus & { kycTestingMode?: boolean }).kycTestingMode);
+
+          if (!allowRetest) {
+            if (status.status === 'approved') { setPageState('approved'); return; }
+            if (status.status === 'pending_review') { setPageState('pending_review'); return; }
+            if (status.status === 'rejected') { setPageState('rejected'); return; }
+            if (status.status === 'expired') { setPageState('expired'); return; }
+          }
         }
 
         const configLoaded = await loadWidgetConfig();
@@ -219,7 +251,10 @@ export default function Tier2KYCPage() {
         setPageState('ready');
       } catch {
         setPageState('error');
-        setErrorMessage('Failed to load verification service. Please try again.');
+        showVerificationError(
+          resolveTier2ApiError({ message: 'Failed to load verification service. Please try again.' }),
+          { nextPageState: 'error' }
+        );
       }
     }
 
@@ -301,8 +336,13 @@ export default function Tier2KYCPage() {
       });
 
       if (!referenceId) {
-        setErrorMessage('Verification completed, but the app could not identify the verification reference. Please contact support.');
-        setPageState('error');
+        showVerificationError(
+          resolveTier2ApiError({
+            message:
+              'Verification finished in the browser, but we could not link it to your account. Try again or contact support.',
+          }),
+          { nextPageState: 'error', openDialog: true }
+        );
         return;
       }
 
@@ -343,23 +383,21 @@ export default function Tier2KYCPage() {
           normalizedMessage.includes('denied') ||
           normalizedMessage.includes('unavailable');
 
+        const widgetError = isCameraPermissionError
+          ? resolveTier2WidgetError('camera permission denied')
+          : resolveTier2WidgetError(
+              errorObj.message === 'Verification Failed' && !errorObj.referenceId
+                ? 'verification failed'
+                : typeof err === 'object' && err !== null && 'message' in err
+                  ? String(err.message)
+                  : undefined
+            );
         if (isCameraPermissionError) {
-          setErrorMessage(
-            formatEmbeddedCameraHelp('Camera permission was denied or unavailable in the verification window.')
+          widgetError.message = formatEmbeddedCameraHelp(
+            'Camera permission was denied or unavailable in the verification window.'
           );
-        } else if (errorObj.message === 'Verification Failed' && !errorObj.referenceId) {
-          setErrorMessage(
-            'Verification failed before a reference was returned. Please try again. ' +
-            'If this continues locally, confirm the verification widget settings and allowed local origin.'
-          );
-        } else {
-          const errorMsg = typeof err === 'object' && err !== null && 'message' in err 
-            ? String(err.message) 
-            : 'Verification encountered an error. Please try again.';
-          setErrorMessage(errorMsg);
         }
-        
-        setPageState('ready');
+        showVerificationError(widgetError, { openDialog: true, nextPageState: 'ready' });
       },
       onClose: () => {
         if (pageState === 'verifying') setPageState('ready');
@@ -373,8 +411,10 @@ export default function Tier2KYCPage() {
       setWidgetReady(true);
     } catch (error) {
       console.error('[Dojah Widget] Initialization failed:', error);
-      setErrorMessage('Failed to initialize verification widget. Please refresh the page.');
-      setPageState('error');
+      showVerificationError(
+        resolveTier2ApiError({ message: 'Failed to initialize the verification window. Please refresh the page.' }),
+        { nextPageState: 'error', openDialog: true }
+      );
     }
   }, [widgetConfig, session, pageState]);
 
@@ -398,7 +438,7 @@ export default function Tier2KYCPage() {
 
   async function handleVerificationComplete(referenceId: string) {
     setPageState('verifying');
-    setErrorMessage(null);
+    clearVerificationError();
 
     try {
       const res = await fetch('/api/kyc/complete', {
@@ -410,8 +450,10 @@ export default function Tier2KYCPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setErrorMessage(data.error ?? 'Verification processing failed. Please try again.');
-        setPageState('ready');
+        showVerificationError(resolveTier2ApiError({ error: data.error, message: data.message }), {
+          openDialog: true,
+          nextPageState: 'ready',
+        });
         return;
       }
 
@@ -421,14 +463,19 @@ export default function Tier2KYCPage() {
         setPageState('pending_review');
       }
     } catch {
-      setErrorMessage('Network error. Please check your connection and try again.');
-      setPageState('ready');
+      showVerificationError(
+        resolveTier2ApiError({ error: 'network_error', message: 'Network error. Check your connection and try again.' }),
+        { openDialog: true, nextPageState: 'ready' }
+      );
     }
   }
 
   function handleStartVerification() {
     if (!connect) {
-      setErrorMessage('Verification widget is not ready. Please refresh the page.');
+      showVerificationError(
+        resolveTier2ApiError({ message: 'Verification is not ready yet. Please refresh the page.' }),
+        { openDialog: true }
+      );
       return;
     }
     
@@ -438,7 +485,7 @@ export default function Tier2KYCPage() {
 
   async function handleCameraPermissionCheck() {
     setCheckingPermissions(true);
-    setErrorMessage(null);
+    clearVerificationError();
 
     try {
       // First check camera permission
@@ -448,7 +495,11 @@ export default function Tier2KYCPage() {
         setCameraPermissionGranted(true);
       } else if (cameraCheckResult.error && !cameraCheckResult.needsPrompt) {
         // Camera permission is denied or there's a hard error
-        setErrorMessage(formatEmbeddedCameraHelp(`${cameraCheckResult.error} ${getCameraPermissionInstructions()}`));
+        {
+          const err = resolveTier2WidgetError('camera permission denied');
+          err.message = formatEmbeddedCameraHelp(`${cameraCheckResult.error} ${getCameraPermissionInstructions()}`);
+          showVerificationError(err, { openDialog: true });
+        }
         setCheckingPermissions(false);
         return;
       } else if (cameraCheckResult.needsPrompt) {
@@ -475,8 +526,13 @@ export default function Tier2KYCPage() {
       if (geoCheckResult.error && !geoCheckResult.needsPrompt) {
         // Geolocation permission is denied or there's a hard error
         const instructions = getGeolocationPermissionInstructions();
-        setErrorMessage(
-          `Location permission is required for verification. ${geoCheckResult.error}. ${instructions} After allowing location, please try again.`
+        showVerificationError(
+          {
+            title: 'Location access needed',
+            message: `Location permission is required for verification. ${geoCheckResult.error}. ${instructions} After allowing location, please try again.`,
+            source: 'app',
+          },
+          { openDialog: true }
         );
         setCheckingPermissions(false);
         return;
@@ -492,16 +548,24 @@ export default function Tier2KYCPage() {
       } else {
         // Show clear message about location requirement
         const instructions = getGeolocationPermissionInstructions();
-        setErrorMessage(
-          `Location permission is required for verification. ${geoRequestResult.error || 'Please allow location access'}. ${instructions} After allowing location, please try again.`
+        showVerificationError(
+          {
+            title: 'Location access needed',
+            message: `Location permission is required for verification. ${geoRequestResult.error || 'Please allow location access'}. ${instructions} After allowing location, please try again.`,
+            source: 'app',
+          },
+          { openDialog: true }
         );
         setCheckingPermissions(false);
       }
     } catch (error) {
       console.error('Permission check failed:', error);
       // Show error but allow user to retry
-      setErrorMessage(
-        'Unable to check permissions. Please ensure your browser allows camera and location access for this site, then try again.'
+      showVerificationError(
+        resolveTier2WidgetError(
+          'Unable to check permissions. Please ensure your browser allows camera and location access for this site, then try again.'
+        ),
+        { openDialog: true }
       );
       setCheckingPermissions(false);
     }
@@ -509,7 +573,10 @@ export default function Tier2KYCPage() {
 
   function openDojahWidget() {
     if (!connect) {
-      setErrorMessage('Verification widget is not ready. Please refresh the page.');
+      showVerificationError(
+        resolveTier2ApiError({ message: 'Verification is not ready yet. Please refresh the page.' }),
+        { openDialog: true }
+      );
       return;
     }
     setPageState('verifying');
@@ -532,6 +599,11 @@ export default function Tier2KYCPage() {
 
   return (
     <>
+      <VerificationErrorDialog
+        open={errorDialogOpen}
+        onOpenChange={setErrorDialogOpen}
+        error={verificationError}
+      />
       {/* Load Dojah widget script */}
       <Script
         src="https://widget.dojah.io/widget.js"
@@ -555,6 +627,11 @@ export default function Tier2KYCPage() {
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Tier 2 Verification</h1>
             <p className="text-gray-200">Complete identity verification to unlock unlimited bidding</p>
+            {isKycTestingModeClient() && (
+              <p className="text-xs text-amber-100 bg-amber-900/40 border border-amber-400/50 rounded-lg px-3 py-2 mt-4 max-w-md mx-auto">
+                KYC testing mode — Tier 2 state resets when you load this page so you can verify again with the same NIN and company details.
+              </p>
+            )}
           </div>
 
           <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
@@ -662,7 +739,11 @@ export default function Tier2KYCPage() {
                   <AlertCircle className="w-12 h-12 text-red-600" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h2>
-                <p className="text-gray-600 mb-6">{errorMessage ?? 'An unexpected error occurred.'}</p>
+                {verificationError ? (
+                  <VerificationErrorAlert error={verificationError} className="mb-6 text-left" />
+                ) : (
+                  <p className="text-gray-600 mb-6">An unexpected error occurred.</p>
+                )}
                 <button
                   onClick={() => router.refresh()}
                   className="w-full bg-[#800020] text-white font-bold py-3 rounded-lg hover:bg-[#600018] transition-colors"
@@ -734,11 +815,8 @@ export default function Tier2KYCPage() {
                 )}
 
                 {/* Error message */}
-                {errorMessage && (
-                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-red-700">{errorMessage}</p>
-                  </div>
+                {verificationError && (
+                  <VerificationErrorAlert error={verificationError} className="mb-4" />
                 )}
 
                 <button

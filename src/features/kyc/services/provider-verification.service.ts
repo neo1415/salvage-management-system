@@ -15,6 +15,7 @@ import { assertProviderVerificationStorageReady } from './provider-verification-
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import type { NormalizedVerificationResult } from '../types/provider-verification.types';
 import { buildDojahReference } from '../utils/dojah-reference';
+import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
 
 interface PersistVerificationInput {
   userId?: string;
@@ -78,18 +79,20 @@ export class ProviderVerificationService {
   async getOrCreatePendingWorkflow(input: StartWorkflowInput): Promise<{ providerReference: string; created: boolean }> {
     await assertProviderVerificationStorageReady();
 
-    const existing = await db.query.providerVerificationRecords.findFirst({
-      where: and(
-        eq(providerVerificationRecords.provider, 'dojah'),
-        eq(providerVerificationRecords.vendorId, input.vendorId),
-        eq(providerVerificationRecords.verificationType, 'tier2'),
-        inArray(providerVerificationRecords.status, ['pending', 'provider_unavailable'])
-      ),
-      orderBy: [desc(providerVerificationRecords.updatedAt)],
-    });
+    if (!isKycTestingMode()) {
+      const existing = await db.query.providerVerificationRecords.findFirst({
+        where: and(
+          eq(providerVerificationRecords.provider, 'dojah'),
+          eq(providerVerificationRecords.vendorId, input.vendorId),
+          eq(providerVerificationRecords.verificationType, 'tier2'),
+          inArray(providerVerificationRecords.status, ['pending', 'provider_unavailable'])
+        ),
+        orderBy: [desc(providerVerificationRecords.updatedAt)],
+      });
 
-    if (existing?.providerReference) {
-      return { providerReference: existing.providerReference, created: false };
+      if (existing?.providerReference) {
+        return { providerReference: existing.providerReference, created: false };
+      }
     }
 
     const [vendorState] = await db

@@ -9,6 +9,8 @@ import {
   type DojahCACResult,
   type DojahNINAdvancedResult,
   type DojahBVNValidationResult,
+  DojahBVNEntitySchema,
+  type DojahBVNEntity,
 } from '../schemas/dojah.schemas';
 
 interface DojahConfig {
@@ -246,12 +248,14 @@ export class DojahService {
   async validateBVN(input: {
     bvn: string;
     firstName?: string;
+    middleName?: string;
     lastName?: string;
     dateOfBirth?: string;
     customerReference?: string;
   }): Promise<DojahBVNValidationResult> {
     const params = new URLSearchParams({ bvn: input.bvn });
     if (input.firstName) params.set('first_name', input.firstName);
+    if (input.middleName) params.set('middle_name', input.middleName);
     if (input.lastName) params.set('last_name', input.lastName);
     if (input.dateOfBirth) params.set('dob', input.dateOfBirth);
     if (input.customerReference) params.set('customer_reference', input.customerReference);
@@ -268,6 +272,23 @@ export class DojahService {
       throw new Error('Dojah BVN result failed schema validation');
     }
     return parsed.data;
+  }
+
+  /** BVN lookup (no name params) — returns phone, DOB, and legal name on record. */
+  async lookupBVN(bvn: string): Promise<{ entity: DojahBVNEntity }> {
+    const url = `${this.config.baseUrl}/api/v1/kyc/bvn?${new URLSearchParams({ bvn }).toString()}`;
+    console.log('[DojahService] lookupBVN called');
+
+    const res = await this.fetchWithRetry(url, { method: 'GET', headers: this.headers });
+    const json = await res.json();
+    const parsed = DojahBVNEntitySchema.safeParse(
+      normalizeDojahBvnLookupEntity((json as { entity?: unknown })?.entity)
+    );
+    if (!parsed.success) {
+      console.error('[DojahService] lookupBVN parse error', parsed.error.flatten());
+      throw new Error('Dojah BVN lookup failed schema validation');
+    }
+    return { entity: parsed.data };
   }
 
   /**
@@ -585,6 +606,32 @@ function buildDojahDiagnostic(
     hasEntity: isRecord(rawRecord.entity) || Array.isArray(rawRecord.entity),
     hasData: isRecord(rawRecord.data) || Array.isArray(rawRecord.data),
     hasReferenceId: Boolean(getReferenceFromCandidate(candidate)),
+  };
+}
+
+/** Dojah returns match objects for validate; lookup uses plain strings — normalize both. */
+function normalizeDojahBvnLookupEntity(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object') return {};
+  const e = raw as Record<string, unknown>;
+  const pickString = (v: unknown): string | undefined =>
+    typeof v === 'string' ? v : undefined;
+  const pickFromMatch = (v: unknown): string | undefined => {
+    if (typeof v === 'string') return v;
+    if (v && typeof v === 'object' && 'value' in v) {
+      const val = (v as { value?: unknown }).value;
+      return typeof val === 'string' ? val : undefined;
+    }
+    return undefined;
+  };
+
+  return {
+    bvn: pickFromMatch(e.bvn) ?? pickString(e.bvn),
+    first_name: pickString(e.first_name) ?? pickFromMatch(e.first_name),
+    last_name: pickString(e.last_name) ?? pickFromMatch(e.last_name),
+    middle_name: pickString(e.middle_name) ?? pickFromMatch(e.middle_name),
+    date_of_birth: pickString(e.date_of_birth) ?? pickString(e.dob as string | undefined),
+    phone_number1: pickString(e.phone_number1),
+    gender: pickString(e.gender),
   };
 }
 

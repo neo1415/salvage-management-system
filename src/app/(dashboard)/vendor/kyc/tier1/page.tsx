@@ -3,7 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { AlertCircle, CheckCircle2, Loader2, Shield, Lock } from 'lucide-react';
+import { CheckCircle2, Loader2, Shield, Lock } from 'lucide-react';
+import { isKycTestingModeClient } from '@/lib/kyc/kyc-testing-mode';
+import { GENERIC_NAME_BVN_ORDER_EXAMPLE, resolveTier1VerificationError } from '@/lib/kyc/kyc-user-messages';
+import type { ResolvedVerificationError } from '@/lib/kyc/kyc-user-messages';
+import {
+  VerificationErrorAlert,
+  VerificationErrorDialog,
+} from '@/components/kyc/verification-error-dialog';
 
 /**
  * Tier 1 — BVN identity verification (required before platform access).
@@ -14,7 +21,8 @@ export default function Tier1KYCPage() {
 
   const [bvn, setBvn] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<ResolvedVerificationError | null>(null);
+  const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [success, setSuccess] = useState(false);
   const [verificationDetails, setVerificationDetails] = useState<{
     matchScore?: number;
@@ -29,20 +37,44 @@ export default function Tier1KYCPage() {
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
-    } else if (status === 'authenticated' && session?.user) {
-      setUserProfile({
-        fullName: session.user.name || '',
-        dateOfBirth: session.user.dateOfBirth || '',
-        phone: session.user.phone || '',
-      });
+      return;
     }
+    if (status !== 'authenticated') return;
+
+    fetch('/api/settings/profile')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) {
+          setUserProfile({
+            fullName: data.fullName || session?.user?.name || '',
+            dateOfBirth: data.dateOfBirth || session?.user?.dateOfBirth || '',
+            phone: data.phone || session?.user?.phone || '',
+          });
+        } else if (session?.user) {
+          setUserProfile({
+            fullName: session.user.name || '',
+            dateOfBirth: session.user.dateOfBirth || '',
+            phone: session.user.phone || '',
+          });
+        }
+      })
+      .catch(() => {
+        if (session?.user) {
+          setUserProfile({
+            fullName: session.user.name || '',
+            dateOfBirth: session.user.dateOfBirth || '',
+            phone: session.user.phone || '',
+          });
+        }
+      });
   }, [status, session, router]);
 
   const handleBvnChange = (value: string) => {
     const digitsOnly = value.replace(/\D/g, '');
     if (digitsOnly.length <= 11) {
       setBvn(digitsOnly);
-      setError(null);
+      setVerificationError(null);
+      setErrorDialogOpen(false);
     }
   };
 
@@ -50,12 +82,17 @@ export default function Tier1KYCPage() {
     e.preventDefault();
 
     if (!bvn || bvn.length !== 11) {
-      setError('Enter a valid 11-digit BVN.');
+      const validationError = resolveTier1VerificationError({
+        error: 'Invalid BVN format. BVN must be exactly 11 digits.',
+      });
+      setVerificationError(validationError);
+      setErrorDialogOpen(true);
       return;
     }
 
     setIsVerifying(true);
-    setError(null);
+    setVerificationError(null);
+    setErrorDialogOpen(false);
     setVerificationDetails(null);
 
     try {
@@ -74,21 +111,38 @@ export default function Tier1KYCPage() {
             mismatches: result.mismatches,
           });
         }
-        throw new Error(result.message || result.error || 'Verification failed.');
+        const resolved = resolveTier1VerificationError({
+          error: result.error,
+          message: result.message,
+          errorSource: result.errorSource,
+          mismatches: result.mismatches,
+        });
+        setVerificationError(resolved);
+        setErrorDialogOpen(true);
+        return;
       }
 
+      sessionStorage.setItem('bvn_verification_success', '1');
       setSuccess(true);
+      setIsVerifying(false);
+
+      await new Promise((resolve) => setTimeout(resolve, 2800));
 
       if (result.refreshSession) {
         await update();
-        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
-      setTimeout(() => {
-        window.location.href = '/vendor/dashboard';
-      }, 1500);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verification failed. Please try again.');
+      sessionStorage.removeItem('bvn_verification_success');
+      window.location.href = '/vendor/kyc/tier2';
+      return;
+    } catch {
+      const resolved = resolveTier1VerificationError({
+        error: 'network_error',
+        message: 'Network error. Check your connection and try again.',
+        errorSource: 'network',
+      });
+      setVerificationError(resolved);
+      setErrorDialogOpen(true);
     } finally {
       setIsVerifying(false);
     }
@@ -103,6 +157,12 @@ export default function Tier1KYCPage() {
   }
 
   return (
+    <>
+      <VerificationErrorDialog
+        open={errorDialogOpen}
+        onOpenChange={setErrorDialogOpen}
+        error={verificationError}
+      />
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 sm:p-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
@@ -113,6 +173,11 @@ export default function Tier1KYCPage() {
           <p className="text-sm text-gray-600 mt-2">
             Complete BVN verification to access your vendor account.
           </p>
+          {isKycTestingModeClient() && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4">
+              KYC testing mode is on — you can submit the same BVN again for this account.
+            </p>
+          )}
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -120,35 +185,25 @@ export default function Tier1KYCPage() {
             <div className="p-8 text-center">
               <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-gray-900 mb-2">Verification complete</h2>
-              <p className="text-sm text-gray-600">Redirecting to your dashboard…</p>
+              <p className="text-sm text-gray-600">Redirecting to Tier 2 verification…</p>
             </div>
           ) : (
             <div className="p-6 sm:p-8">
-              {error && (
-                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 text-sm">
-                      <p className="font-medium text-red-900">{error}</p>
-                      {verificationDetails?.mismatches && (
-                        <ul className="mt-2 text-red-700 space-y-1 list-disc list-inside">
-                          {verificationDetails.mismatches.map((m, i) => (
-                            <li key={i}>{m}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                </div>
+              {verificationError && (
+                <VerificationErrorAlert error={verificationError} className="mb-6" />
               )}
 
               {userProfile && (
                 <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm space-y-2">
                   <p className="text-gray-600 font-medium mb-2">Profile used for verification</p>
                   <div className="flex justify-between gap-4">
-                    <span className="text-gray-500">Name</span>
+                    <span className="text-gray-500">Name (registered)</span>
                     <span className="text-gray-900 text-right">{userProfile.fullName}</span>
                   </div>
+                  <p className="text-xs text-gray-500">
+                    We match this against your BVN as first, middle (if any), and surname — plus date of birth and
+                    BVN-linked phone. Use BVN order when you registered (e.g. {GENERIC_NAME_BVN_ORDER_EXAMPLE}).
+                  </p>
                   {userProfile.dateOfBirth && (
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-500">Date of birth</span>
@@ -227,5 +282,6 @@ export default function Tier1KYCPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

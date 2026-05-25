@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseFullNameBvnOrder } from '@/lib/utils/person-name';
 
 /**
  * Password validation schema
@@ -47,15 +48,18 @@ export const phoneSchema = z
 /**
  * User registration validation schema
  */
-export const registrationSchema = z.object({
-  fullName: z
-    .string()
-    .min(2, 'Full name must be at least 2 characters')
-    .max(255, 'Full name must not exceed 255 characters'),
-  email: emailSchema,
-  phone: phoneSchema,
-  password: passwordSchema,
-  dateOfBirth: z
+export const registrationSchema = z
+  .object({
+    fullName: z
+      .string()
+      .trim()
+      .min(2, 'Full name must be at least 2 characters')
+      .max(255, 'Full name must not exceed 255 characters')
+      .regex(/^[A-Za-zÀ-ÿ' -]+$/i, 'Use letters only (as on your BVN)'),
+    email: emailSchema,
+    phone: phoneSchema,
+    password: passwordSchema,
+    dateOfBirth: z
     .union([z.string(), z.date()])
     .transform((val) => (typeof val === 'string' ? new Date(val) : val))
     .refine((date) => {
@@ -71,9 +75,28 @@ export const registrationSchema = z.object({
       
       return age >= 18;
     }, 'You must be at least 18 years old'),
-  termsAccepted: z
-    .boolean()
-    .refine((val) => val === true, 'You must accept the terms and conditions'),
-});
+    termsAccepted: z
+      .boolean()
+      .refine((val) => val === true, 'You must accept the terms and conditions'),
+  })
+  .transform((data) => {
+    const fullName = data.fullName.trim();
+    const parsed = parseFullNameBvnOrder(fullName);
+    return {
+      ...data,
+      fullName,
+      firstName: parsed.firstName,
+      middleName: parsed.middleName,
+      lastName: parsed.lastName,
+    };
+  });
 
 export type RegistrationInput = z.infer<typeof registrationSchema>;
+
+/** Normalize Nigerian mobile for comparison (E.164 +234…) */
+export function normalizeNigerianPhone(phone: string): string {
+  const trimmed = phone.trim();
+  if (trimmed.startsWith('0')) return `+234${trimmed.slice(1)}`;
+  if (trimmed.startsWith('234')) return `+${trimmed}`;
+  return trimmed;
+}

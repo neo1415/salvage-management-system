@@ -8,6 +8,8 @@ import { getProviderVerificationService } from '@/features/kyc/services/provider
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
 import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
+import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
+import { resetVendorTier2ForTesting } from '@/features/kyc/services/kyc-testing-reset.service';
 
 /**
  * GET /api/kyc/widget-config
@@ -55,6 +57,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Vendor profile not found' }, { status: 404 });
   }
 
+  if (isKycTestingMode()) {
+    await resetVendorTier2ForTesting(result.vendorId);
+  }
+
   let workflow: { providerReference: string; created: boolean };
   try {
     workflow = await getProviderVerificationService().getOrCreatePendingWorkflow({
@@ -72,18 +78,20 @@ export async function GET(request: Request) {
     throw error;
   }
 
-  const reconcileResult = await reconcileTier2FromDojah({
-    vendorId: result.vendorId,
-    userId: session.user.id,
-    actorId: session.user.id,
-    ipAddress: getIpAddress(request.headers),
-    userAgent: request.headers.get('user-agent') ?? 'unknown',
-  }).catch((error) => {
-    console.error('[KYC] Dojah reconcile on widget-config failed', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-    return { synced: false as const };
-  });
+  const reconcileResult = isKycTestingMode()
+    ? { synced: false as const }
+    : await reconcileTier2FromDojah({
+        vendorId: result.vendorId,
+        userId: session.user.id,
+        actorId: session.user.id,
+        ipAddress: getIpAddress(request.headers),
+        userAgent: request.headers.get('user-agent') ?? 'unknown',
+      }).catch((error) => {
+        console.error('[KYC] Dojah reconcile on widget-config failed', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
+        return { synced: false as const };
+      });
 
   console.info('[KYC] Dojah widget config loaded', {
     hasAppId: Boolean(appId),
@@ -99,14 +107,14 @@ export async function GET(request: Request) {
   });
 
   return NextResponse.json({
-    appId, 
-    publicKey, 
+    appId,
+    publicKey,
     widgetId: widgetId ?? null,
-    // Pre-fill data from Tier 1 verification and registration
     phone: session.user.phone ?? undefined,
     dob: dob ?? undefined,
     vendorId: result?.vendorId,
     workflowSlug,
     verificationReference: workflow.providerReference,
+    ...(isKycTestingMode() ? { kycTestingMode: true as const } : {}),
   });
 }

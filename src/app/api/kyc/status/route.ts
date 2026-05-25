@@ -7,6 +7,10 @@ import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
 import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
+import {
+  applyKycTestingStatusOverride,
+  isKycTestingMode,
+} from '@/lib/kyc/kyc-testing-mode';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,30 +37,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
     }
 
-    await reconcileTier2FromDojah({
-      vendorId: vendorRow.id,
-      userId: session.user.id,
-      actorId: session.user.id,
-      ipAddress: getIpAddress(request.headers),
-      userAgent: request.headers.get('user-agent') ?? 'unknown',
-    }).catch((error) => {
-      if (isProviderVerificationStorageError(error)) {
-        throw error;
-      }
-      console.error('[KYC Status] reconcile skipped', {
-        message: error instanceof Error ? error.message : 'Unknown error',
+    if (!isKycTestingMode()) {
+      await reconcileTier2FromDojah({
+        vendorId: vendorRow.id,
+        userId: session.user.id,
+        actorId: session.user.id,
+        ipAddress: getIpAddress(request.headers),
+        userAgent: request.headers.get('user-agent') ?? 'unknown',
+      }).catch((error) => {
+        if (isProviderVerificationStorageError(error)) {
+          throw error;
+        }
+        console.error('[KYC Status] reconcile skipped', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
       });
-    });
+    }
 
     const kycStatus = await getKYCRepository().getVerificationStatus(vendorRow.id);
     if (!kycStatus) {
       return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
     }
 
+    const payload = isKycTestingMode()
+      ? applyKycTestingStatusOverride(kycStatus)
+      : kycStatus;
+
     return NextResponse.json(
       {
-        status: kycStatus.status,
-        tier: kycStatus.tier,
+        status: payload.status,
+        tier: payload.tier,
         submittedAt: kycStatus.submittedAt,
         approvedAt: kycStatus.approvedAt,
         expiresAt: kycStatus.expiresAt,
@@ -64,6 +74,7 @@ export async function GET(request: NextRequest) {
         rejectedSections: kycStatus.rejectedSections,
         dojahReferenceId: kycStatus.dojahReferenceId,
         steps: kycStatus.steps,
+        ...(isKycTestingMode() ? { kycTestingMode: true as const } : {}),
       },
       { headers: { 'Cache-Control': 'no-store' } }
     );

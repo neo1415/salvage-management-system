@@ -16,6 +16,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { RoleMobileNav } from '@/components/layout/role-mobile-nav';
 import { DashboardRouteGuard } from '@/components/layout/dashboard-route-guard';
+import { isKycTestingModeClient } from '@/lib/kyc/kyc-testing-mode';
 
 export function VendorBvnShell({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession();
@@ -33,8 +34,16 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (session?.user?.role === 'vendor' && session.user.bvnVerified && onTier1) {
-      router.replace('/vendor/dashboard');
+    if (
+      session?.user?.role === 'vendor' &&
+      session.user.bvnVerified &&
+      onTier1 &&
+      !isKycTestingModeClient()
+    ) {
+      if (typeof window !== 'undefined' && sessionStorage.getItem('bvn_verification_success') === '1') {
+        return;
+      }
+      router.replace('/vendor/kyc/tier2');
     }
   }, [status, needsBvn, onTier1, session?.user?.role, session?.user?.bvnVerified, router]);
 

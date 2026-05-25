@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { registrationSchema, type RegistrationInput } from '@/lib/utils/validation';
+import { GENERIC_NAME_BVN_ORDER_EXAMPLE } from '@/lib/kyc/kyc-user-messages';
 import { Eye, EyeOff, Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 
 interface VendorRegistrationFormProps {
@@ -97,16 +98,17 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
     <div className="w-full max-w-md mx-auto">
       {/* Registration Form */}
       <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-        {/* Full Name */}
+        {/* Full name — stored as fullName; split server-side for BVN */}
         <div>
           <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
-            Full Name <span className="text-red-500">*</span>
+            Full name <span className="text-red-500">*</span>
           </label>
           <div className="relative">
             <input
               {...register('fullName')}
               type="text"
               id="fullName"
+              autoComplete="name"
               className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
                 errors.fullName
                   ? 'border-red-500 focus:ring-red-500'
@@ -114,7 +116,7 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
                   ? 'border-green-500 focus:ring-green-500'
                   : 'border-gray-300 focus:ring-[#800020]'
               }`}
-              placeholder="Enter your full name"
+              placeholder={`e.g. ${GENERIC_NAME_BVN_ORDER_EXAMPLE}`}
             />
             {getFieldStatus('fullName') === 'success' && (
               <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-500" />
@@ -129,6 +131,9 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
               {errors.fullName.message}
             </p>
           )}
+          <p className="mt-1 text-xs text-gray-500">
+            Type your name in BVN order: first name, then middle name (if any), then surname.
+          </p>
         </div>
 
         {/* Email */}
@@ -198,7 +203,7 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
             </p>
           )}
           <p className="mt-1 text-xs text-gray-500">
-            Format: +234XXXXXXXXXX or 0XXXXXXXXXX
+            Use the mobile number linked to your BVN. Format: +234XXXXXXXXXX or 0XXXXXXXXXX
           </p>
         </div>
 

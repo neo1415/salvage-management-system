@@ -9,6 +9,9 @@ import { logAction, createAuditLogData, AuditActionType, AuditEntityType } from 
 import { auth } from '@/lib/auth/next-auth.config';
 import { normalizeDojahBVNResult } from '@/features/kyc/services/dojah-normalizer.service';
 import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
+import { resolveUserLegalNamesForBvn } from '@/lib/utils/person-name';
+import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
+import { sanitizeVerificationUserMessage } from '@/lib/kyc/kyc-user-messages';
 
 /**
  * POST /api/vendors/verify-bvn
@@ -123,10 +126,10 @@ export async function POST(request: NextRequest) {
       vendor = newVendor;
     }
 
-    // Check if already verified
-    if (vendor.bvnVerifiedAt) {
+    // One BVN verification per vendor (unless KYC testing mode is enabled)
+    if (vendor.bvnVerifiedAt && !isKycTestingMode()) {
       return NextResponse.json(
-        { 
+        {
           error: 'BVN already verified',
           message: 'Your BVN has already been verified. You are a Tier 1 vendor.',
         },
@@ -158,24 +161,41 @@ export async function POST(request: NextRequest) {
       )
     );
 
-    // 6. Call BVN verification service
-    const [firstName, ...lastNameParts] = user.fullName.split(' ');
-    const lastName = lastNameParts.join(' ');
-
-    console.log('[BVN Verification] Calling verification service:', {
-      bvnMasked: `***${bvn.slice(-4)}`,
-      firstName,
-      lastName,
-      dateOfBirth: user.dateOfBirth.toISOString().split('T')[0],
-      phone: user.phone,
+    // 6. BVN match: legal name parts + DOB (Dojah) + phone (BVN lookup)
+    const dateOfBirth = user.dateOfBirth.toISOString().split('T')[0];
+    const { primary, alternateAttempts } = resolveUserLegalNamesForBvn({
+      fullName: user.fullName,
     });
 
-    const verificationResult = await verifyBVN({
-      bvn,
-      firstName,
-      lastName,
-      dateOfBirth: user.dateOfBirth.toISOString().split('T')[0], // YYYY-MM-DD
-      phone: user.phone,
+    const runVerify = (parts: {
+      firstName: string;
+      lastName: string;
+      middleName?: string;
+    }) =>
+      verifyBVN({
+        bvn,
+        firstName: parts.firstName,
+        middleName: parts.middleName,
+        lastName: parts.lastName,
+        dateOfBirth,
+        phone: user.phone,
+      });
+
+    let verificationResult = await runVerify(primary);
+
+    for (const attempt of alternateAttempts) {
+      if (verificationResult.verified) break;
+      console.log('[BVN Verification] Retrying alternate name order:', attempt);
+      const retry = await runVerify(attempt);
+      if (retry.verified || (retry.matchScore ?? 0) > (verificationResult.matchScore ?? 0)) {
+        verificationResult = retry;
+      }
+    }
+
+    console.log('[BVN Verification] Final service response:', {
+      bvnMasked: `***${bvn.slice(-4)}`,
+      dateOfBirth,
+      verified: verificationResult.verified,
     });
 
     console.log('[BVN Verification] Service response:', {
@@ -228,9 +248,12 @@ export async function POST(request: NextRequest) {
       );
 
       return NextResponse.json(
-        { 
-          error: 'BVN verification failed',
-          message: verificationResult.error || 'Unable to verify BVN. Please try again.',
+        {
+          error: 'identity_verification_failed',
+          message:
+            'Our identity verification partner could not complete this BVN check right now. Please try again in a few minutes.',
+          detail: sanitizeVerificationUserMessage(verificationResult.error) || undefined,
+          errorSource: 'identity_provider',
         },
         { status: 400 }
       );
@@ -270,11 +293,13 @@ export async function POST(request: NextRequest) {
       );
 
       return NextResponse.json(
-        { 
+        {
           error: 'BVN details do not match',
-          message: 'The BVN details do not match your registration information. Please ensure your name, date of birth, and phone number match your BVN records.',
+          message:
+            'The name, date of birth, or phone number on your account does not match this BVN. Use the same first name, middle name (if any), surname, date of birth, and BVN-linked phone as on your bank records.',
           matchScore: verificationResult.matchScore,
           mismatches: verificationResult.mismatches,
+          errorSource: 'app',
         },
         { status: 400 }
       );
