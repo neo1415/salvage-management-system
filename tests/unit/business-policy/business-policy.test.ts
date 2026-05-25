@@ -71,6 +71,8 @@ describe('business policy foundation', () => {
 
     expect(publicPolicy).toHaveProperty('branding');
     expect(publicPolicy.branding.homepageCopy.heroTitle).toBe(DEFAULT_BUSINESS_POLICY.branding.homepageCopy.heroTitle);
+    expect(publicPolicy.cases.enabledAssetTypes.machinery.label).toBe('Machinery & Equipment');
+    expect(publicPolicy.cases.enabledAssetTypes.machinery.requiredFields).toEqual(['machineryBrand', 'machineryType']);
     expect(publicPolicy).toHaveProperty('auth.googleOAuthEnabled');
     expect(publicPolicy).not.toHaveProperty('kyc');
     expect(publicPolicy).not.toHaveProperty('fraud');

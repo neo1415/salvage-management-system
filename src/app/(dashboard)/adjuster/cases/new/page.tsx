@@ -100,10 +100,15 @@ const ASSET_TYPES = [
 ] as const;
 
 const LAUNCH_ASSET_TYPES = ASSET_TYPES.filter((type) =>
-  ['vehicle', 'electronics', 'property'].includes(type.value)
+  ['vehicle', 'electronics', 'property', 'machinery'].includes(type.value)
 );
 
-type PublicAssetTypePolicy = Record<string, { enabled: boolean }>;
+type PublicAssetTypePolicy = Record<string, {
+  enabled: boolean;
+  label?: string;
+  requiredFields?: string[];
+  requiresAiAnalysis?: boolean;
+}>;
 
 /**
  * Validation schema - Updated for universal item types
@@ -389,9 +394,28 @@ function NewCasePageContent() {
       return LAUNCH_ASSET_TYPES;
     }
 
-    const filteredTypes = ASSET_TYPES.filter((type) => enabledAssetTypesPolicy[type.value]?.enabled);
+    const filteredTypes = ASSET_TYPES
+      .filter((type) => enabledAssetTypesPolicy[type.value]?.enabled)
+      .map((type) => ({
+        ...type,
+        label: enabledAssetTypesPolicy[type.value]?.label || type.label,
+      }));
     return filteredTypes.length > 0 ? filteredTypes : LAUNCH_ASSET_TYPES;
   }, [enabledAssetTypesPolicy]);
+
+  const getConfiguredRequiredFields = (currentAssetType: string | undefined): string[] | null => {
+    if (!currentAssetType) return null;
+    const config = enabledAssetTypesPolicy?.[currentAssetType];
+    if (!config || !Array.isArray(config.requiredFields)) return null;
+    return config.requiredFields;
+  };
+
+  const areConfiguredRequiredFieldsPresent = (requiredFields: string[]): boolean => {
+    return requiredFields.every((field) => {
+      const value = watch(field as keyof CaseFormData);
+      return value !== undefined && value !== null && value !== '';
+    });
+  };
   
   const {
     currentDraftId,
@@ -705,6 +729,13 @@ function NewCasePageContent() {
     if (currentPhotos.length < 3) return false;
     
     const currentAssetType = watch('assetType');
+    const assetConfig = currentAssetType ? enabledAssetTypesPolicy?.[currentAssetType] : null;
+    if (assetConfig && assetConfig.requiresAiAnalysis === false) return false;
+
+    const configuredRequiredFields = getConfiguredRequiredFields(currentAssetType);
+    if (configuredRequiredFields) {
+      return areConfiguredRequiredFieldsPresent(configuredRequiredFields);
+    }
     
     // Check requirements based on asset type
     switch (currentAssetType) {

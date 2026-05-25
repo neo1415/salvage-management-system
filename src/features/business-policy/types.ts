@@ -13,6 +13,9 @@ export type AiProvider = 'gemini' | 'claude' | 'serper';
 
 export type AssetTypePolicy = {
   enabled: boolean;
+  label: string;
+  promptProfile: 'vehicle' | 'electronics' | 'property' | 'jewelry' | 'machinery' | 'general_asset';
+  requiredFields: string[];
   requiresAiAnalysis: boolean;
   requiresMarketValue: boolean;
   requiresInspectionLocation: boolean;

@@ -36,6 +36,9 @@ describe('sanitizeBusinessPolicy', () => {
           },
           boats: {
             enabled: true,
+            label: 'Boats',
+            promptProfile: 'general_asset',
+            requiredFields: ['boatMake'],
             requiresAiAnalysis: true,
             requiresMarketValue: false,
             requiresInspectionLocation: true,
@@ -50,6 +53,9 @@ describe('sanitizeBusinessPolicy', () => {
     expect(sanitized.branding.homepageCopy.heroTitle).toBe('Bid On Verified Assets');
     expect(sanitized.cases.enabledAssetTypes.boats).toEqual({
       enabled: true,
+      label: 'Boats',
+      promptProfile: 'general_asset',
+      requiredFields: ['boatMake'],
       requiresAiAnalysis: true,
       requiresMarketValue: false,
       requiresInspectionLocation: true,

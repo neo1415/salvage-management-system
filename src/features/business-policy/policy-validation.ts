@@ -197,6 +197,19 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
   }
 
   for (const [assetType, config] of enabledAssetTypes) {
+    if (!config.label.trim()) {
+      issues.push(issue(`cases.enabledAssetTypes.${assetType}.label`, `Asset type "${assetType}" needs a display label.`));
+    }
+
+    if (config.requiresAiAnalysis && config.requiredFields.length === 0 && assetType !== 'property') {
+      issues.push(
+        issue(
+          `cases.enabledAssetTypes.${assetType}.requiredFields`,
+          `Asset type "${assetType}" needs required field definitions before AI analysis can be enabled.`
+        )
+      );
+    }
+
     if (config.requiresAiAnalysis && !policy.aiValuation.enabled) {
       issues.push(
         issue(

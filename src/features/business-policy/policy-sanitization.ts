@@ -32,6 +32,14 @@ const SOCKET_MODES: BusinessPolicy['auctions']['socketMode'][] = [
 ];
 const REPORT_DATE_RANGES: BusinessPolicy['reports']['defaultDateRange'][] = ['all_time', 'last_30_days', 'last_90_days'];
 const DOCUMENT_TYPES: BusinessPolicy['documents']['requiredAuctionDocuments'][number][] = ['bill_of_sale', 'liability_waiver'];
+const ASSET_PROMPT_PROFILES: BusinessPolicy['cases']['enabledAssetTypes'][string]['promptProfile'][] = [
+  'vehicle',
+  'electronics',
+  'property',
+  'jewelry',
+  'machinery',
+  'general_asset',
+];
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -111,6 +119,9 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
 
     enabledAssetTypes[key] = {
       enabled: booleanValue(config.enabled, defaultAsset.enabled),
+      label: stringValue(config.label, defaultAsset.label ?? key),
+      promptProfile: enumValue(config.promptProfile, ASSET_PROMPT_PROFILES, defaultAsset.promptProfile ?? 'general_asset'),
+      requiredFields: stringArrayValue(config.requiredFields, defaultAsset.requiredFields ?? []),
       requiresAiAnalysis: booleanValue(config.requiresAiAnalysis, defaultAsset.requiresAiAnalysis),
       requiresMarketValue: booleanValue(config.requiresMarketValue, defaultAsset.requiresMarketValue),
       requiresInspectionLocation: booleanValue(config.requiresInspectionLocation, defaultAsset.requiresInspectionLocation),

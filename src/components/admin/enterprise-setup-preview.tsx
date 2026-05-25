@@ -261,7 +261,7 @@ export function EnterpriseSetupPreview({
 }: EnterpriseSetupPreviewProps) {
   const enabledAssetTypes = Object.entries(policy.cases.enabledAssetTypes)
     .filter(([, config]) => config.enabled)
-    .map(([assetType]) => assetType);
+    .map(([, config]) => `${config.label} (${config.promptProfile})`);
 
   return (
     <div className="space-y-6">

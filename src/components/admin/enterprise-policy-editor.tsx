@@ -533,19 +533,57 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
 
         <div className="space-y-4 rounded-lg border border-gray-200 p-4 xl:col-span-2">
           <h3 className="font-bold text-gray-900">Enabled Asset Types</h3>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <p className="text-sm text-gray-600">
+            Asset definitions control what appears in case creation and which AI prompt family should be used. Required fields are stored as form field keys so future white-label clients can safely customize this without code edits.
+          </p>
+          <div className="grid gap-3 lg:grid-cols-2">
             {Object.entries(policy.cases.enabledAssetTypes).map(([assetType, config]) => (
-              <Toggle
-                key={assetType}
-                checked={config.enabled}
-                onChange={(checked) => updatePolicy((draft) => {
-                  draft.cases.enabledAssetTypes[assetType] = {
-                    ...draft.cases.enabledAssetTypes[assetType],
-                    enabled: checked,
-                  };
-                })}
-                label={assetType}
-              />
+              <div key={assetType} className="rounded-lg border border-gray-200 p-4">
+                <Toggle
+                  checked={config.enabled}
+                  onChange={(checked) => updatePolicy((draft) => {
+                    draft.cases.enabledAssetTypes[assetType] = {
+                      ...draft.cases.enabledAssetTypes[assetType],
+                      enabled: checked,
+                    };
+                  })}
+                  label={config.label || assetType}
+                />
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Field label="Display label">
+                    <TextInput value={config.label} onChange={(event) => updatePolicy((draft) => { draft.cases.enabledAssetTypes[assetType].label = event.target.value; })} />
+                  </Field>
+                  <Field label="AI prompt profile">
+                    <SelectInput
+                      value={config.promptProfile}
+                      onChange={(event) => updatePolicy((draft) => { draft.cases.enabledAssetTypes[assetType].promptProfile = event.target.value as BusinessPolicy['cases']['enabledAssetTypes'][string]['promptProfile']; })}
+                    >
+                      <option value="vehicle">Vehicle</option>
+                      <option value="electronics">Electronics</option>
+                      <option value="property">Property</option>
+                      <option value="jewelry">Jewelry</option>
+                      <option value="machinery">Machinery</option>
+                      <option value="general_asset">General asset</option>
+                    </SelectInput>
+                  </Field>
+                  <Field label="Required fields" description="Comma-separated form field keys.">
+                    <TextInput
+                      value={config.requiredFields.join(', ')}
+                      onChange={(event) => updatePolicy((draft) => {
+                        draft.cases.enabledAssetTypes[assetType].requiredFields = event.target.value
+                          .split(',')
+                          .map((field) => field.trim())
+                          .filter(Boolean);
+                      })}
+                    />
+                  </Field>
+                  <div className="grid gap-2">
+                    <Toggle checked={config.requiresAiAnalysis} onChange={(checked) => updatePolicy((draft) => { draft.cases.enabledAssetTypes[assetType].requiresAiAnalysis = checked; })} label="AI analysis" />
+                    <Toggle checked={config.requiresMarketValue} onChange={(checked) => updatePolicy((draft) => { draft.cases.enabledAssetTypes[assetType].requiresMarketValue = checked; })} label="Market value" />
+                    <Toggle checked={config.requiresInspectionLocation} onChange={(checked) => updatePolicy((draft) => { draft.cases.enabledAssetTypes[assetType].requiresInspectionLocation = checked; })} label="Inspection location" />
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         </div>
