@@ -596,6 +596,75 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
           </div>
         </div>
 
+        <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+          <h3 className="font-bold text-gray-900">Case Workflow</h3>
+          <p className="text-sm text-gray-600">
+            Controls how case notes and voice transcripts move from claims adjusters to salvage managers.
+          </p>
+          <div className="grid gap-3">
+            <Toggle checked={policy.cases.voiceNotesEnabled} onChange={(checked) => updatePolicy((draft) => { draft.cases.voiceNotesEnabled = checked; })} label="Voice notes enabled" />
+            <Toggle checked={policy.cases.claimsAdjusterTranscriptEditable} onChange={(checked) => updatePolicy((draft) => { draft.cases.claimsAdjusterTranscriptEditable = checked; })} label="Adjuster can edit transcript" />
+            <Toggle checked={policy.cases.salvageManagerTranscriptReviewRequired} onChange={(checked) => updatePolicy((draft) => { draft.cases.salvageManagerTranscriptReviewRequired = checked; })} label="Manager reviews transcript before auction" />
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+          <h3 className="font-bold text-gray-900">Notifications</h3>
+          <p className="text-sm text-gray-600">
+            Keep SMS for important events and use email or push for lower-cost operational updates.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Toggle checked={policy.notifications.emailEnabled} onChange={(checked) => updatePolicy((draft) => { draft.notifications.emailEnabled = checked; })} label="Email" />
+            <Toggle checked={policy.notifications.smsEnabled} onChange={(checked) => updatePolicy((draft) => { draft.notifications.smsEnabled = checked; })} label="SMS" />
+            <Toggle checked={policy.notifications.pushEnabled} onChange={(checked) => updatePolicy((draft) => { draft.notifications.pushEnabled = checked; })} label="Push" />
+          </div>
+          <Field label="SMS categories" description="Comma-separated categories allowed to spend SMS credits.">
+            <TextInput
+              value={policy.notifications.smsCategories.join(', ')}
+              onChange={(event) => updatePolicy((draft) => {
+                draft.notifications.smsCategories = event.target.value
+                  .split(',')
+                  .map((category) => category.trim())
+                  .filter(Boolean);
+              })}
+            />
+          </Field>
+          <Toggle checked={policy.notifications.roleFanoutShouldBeQueued} onChange={(checked) => updatePolicy((draft) => { draft.notifications.roleFanoutShouldBeQueued = checked; })} label="Queue role fanout notifications" />
+        </div>
+
+        <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+          <h3 className="font-bold text-gray-900">Documents And Reports</h3>
+          <div className="grid gap-3">
+            <Toggle checked={policy.documents.useBrandLetterhead} onChange={(checked) => updatePolicy((draft) => { draft.documents.useBrandLetterhead = checked; })} label="Use brand letterhead" />
+            <Toggle checked={policy.documents.attachPaymentReceiptToAuctionDocuments} onChange={(checked) => updatePolicy((draft) => { draft.documents.attachPaymentReceiptToAuctionDocuments = checked; })} label="Attach payment receipts to auction documents" />
+            <Toggle checked={policy.reports.excludeMarkedTestDataByDefault} onChange={(checked) => updatePolicy((draft) => { draft.reports.excludeMarkedTestDataByDefault = checked; })} label="Exclude marked test data by default" />
+            <Toggle checked={policy.reports.requireConsistentMetricDefinitions} onChange={(checked) => updatePolicy((draft) => { draft.reports.requireConsistentMetricDefinitions = checked; })} label="Require consistent report metric definitions" />
+          </div>
+          <Field label="Default report date range">
+            <SelectInput
+              value={policy.reports.defaultDateRange}
+              onChange={(event) => updatePolicy((draft) => { draft.reports.defaultDateRange = event.target.value as BusinessPolicy['reports']['defaultDateRange']; })}
+            >
+              <option value="all_time">All time</option>
+              <option value="last_30_days">Last 30 days</option>
+              <option value="last_90_days">Last 90 days</option>
+            </SelectInput>
+          </Field>
+        </div>
+
+        <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+          <h3 className="font-bold text-gray-900">Fraud Controls</h3>
+          <p className="text-sm text-gray-600">
+            These switches control internal review posture. They do not expose provider secrets or sensitive fraud thresholds.
+          </p>
+          <div className="grid gap-3">
+            <Toggle checked={policy.fraud.dojahRiskAlertsEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.dojahRiskAlertsEnabled = checked; })} label="Dojah risk alerts" />
+            <Toggle checked={policy.fraud.ipFraudDetectionEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.ipFraudDetectionEnabled = checked; })} label="IP/device fraud detection" />
+            <Toggle checked={policy.fraud.biddingFraudDetectionEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.biddingFraudDetectionEnabled = checked; })} label="Bidding fraud detection" />
+            <Toggle checked={policy.fraud.highRiskRequiresManualReview} onChange={(checked) => updatePolicy((draft) => { draft.fraud.highRiskRequiresManualReview = checked; })} label="High risk requires manual review" />
+          </div>
+        </div>
+
         <div className="space-y-2 rounded-lg border border-gray-200 p-4 xl:col-span-2">
           <Field label="Draft notes" description="Reason/context for audit reviewers. Do not include secrets or credentials.">
             <textarea

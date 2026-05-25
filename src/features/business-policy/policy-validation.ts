@@ -224,6 +224,18 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     issues.push(issue('aiValuation.providerPriority', 'At least one AI provider is required when AI valuation is enabled.'));
   }
 
+  if (!policy.notifications.emailEnabled && !policy.notifications.smsEnabled && !policy.notifications.pushEnabled) {
+    issues.push(issue('notifications', 'At least one notification channel must be enabled.'));
+  }
+
+  if (policy.notifications.smsEnabled && policy.notifications.smsCategories.length === 0) {
+    issues.push(issue('notifications.smsCategories', 'SMS is enabled, but no SMS categories are allowed.'));
+  }
+
+  if (policy.documents.requiredAuctionDocuments.length === 0) {
+    issues.push(issue('documents.requiredAuctionDocuments', 'At least one auction document type must be required.'));
+  }
+
   const selectedProviders = [
     ['payments.defaultProvider', policy.payments.defaultProvider],
     ['payments.registrationFeeProvider', policy.payments.registrationFeeProvider],
