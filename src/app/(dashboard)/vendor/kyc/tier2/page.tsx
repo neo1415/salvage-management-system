@@ -1068,25 +1068,6 @@ export default function Tier2KYCPage() {
                   Estimated provider cost: <strong>NGN 510-630</strong>. Final approval is handled by the review team.
                 </div>
 
-                {/* Test credentials warning */}
-                {widgetConfig?.publicKey?.startsWith('test_') && (
-                  <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                    <div className="text-sm text-yellow-800">
-                      <p className="font-semibold mb-1">Test Mode Active - Limited Functionality</p>
-                      <p className="mb-2">You're using test credentials which have significant limitations:</p>
-                      <ul className="list-disc list-inside space-y-1 mb-2">
-                        <li>Only simplified face verification (no real biometric check)</li>
-                        <li>No document verification or OCR</li>
-                        <li>No AML screening against real databases</li>
-                        <li>No NIN verification against NIMC database</li>
-                        <li>May return incomplete data or fail randomly</li>
-                      </ul>
-                      <p className="font-semibold">To enable full verification, configure production verification credentials.</p>
-                    </div>
-                  </div>
-                )}
-
                 {/* Error message */}
                 {verificationError && (
                   <VerificationErrorAlert error={verificationError} className="mb-4" />

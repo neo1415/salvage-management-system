@@ -24,6 +24,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
+import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { CountdownTimer } from '@/components/ui/countdown-timer';
 import { DataLoadingState } from '@/components/ui/loading-states';
@@ -2159,8 +2160,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       )}
 
       {/* Paystack Return Confirmation Modal */}
-      {paystackReturnStatus !== 'idle' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      {paystackReturnStatus !== 'idle' && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center bg-black/60 p-4" style={{ zIndex: 999999 }}>
           <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] px-6 py-5 text-white">
               <div className="flex items-center gap-3">
@@ -2227,7 +2228,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Payment Unlocked Modal */}
