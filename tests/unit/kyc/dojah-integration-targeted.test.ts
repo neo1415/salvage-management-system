@@ -22,6 +22,48 @@ async function json(response: Response) {
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+function mockBusinessPolicy(overrides: Record<string, unknown> = {}) {
+  const policy = {
+    version: 'test-policy',
+    onboarding: {
+      mode: 'tiered_bvn_fee_tier2',
+      finalTier2Decision: 'manual_review',
+    },
+    kyc: {
+      tier1RequiresBvn: true,
+      tier2RequiresBusinessData: true,
+      tier2RequiresGovernmentId: true,
+      tier2RequiresLiveness: true,
+      tier2RequiresAddress: true,
+      tier2RequiresAmlScreening: true,
+      tier2RequiresDuplicateIdentityCheck: true,
+      providerPassRequiresInternalReview: true,
+    },
+    ...overrides,
+  };
+
+  vi.doMock('@/features/business-policy', () => ({
+    businessPolicyService: {
+      getEffectivePolicy: vi.fn(async () => policy),
+      createCurrentPolicySnapshot: vi.fn(async () => undefined),
+    },
+    getBusinessPolicyRuntimeMode: vi.fn(() => 'shadow'),
+    isBusinessPolicyEnforcementEnabled: vi.fn(() => false),
+    logPolicyDecision: vi.fn(async () => undefined),
+    resolveTier2Access: vi.fn(() => ({
+      allowed: true,
+      value: 'tier2_available',
+      message: 'Tier 2 verification is available.',
+      decision: {
+        policyVersion: 'test-policy',
+        decisionType: 'tier2_access_allowed',
+        rulePath: 'kyc',
+        outcome: 'allow',
+      },
+    })),
+  }));
+}
+
 describe('provider evidence display helpers', () => {
   it('masks sensitive identifiers and uses safe fallbacks', async () => {
     const { maskIdentifier, displayOrFallback, buildDojahEvidenceSections } = await import(
@@ -112,6 +154,8 @@ describe('Dojah widget config route', () => {
   });
 
   it('returns only safe public Dojah config and non-sensitive metadata', async () => {
+    mockBusinessPolicy();
+
     vi.doMock('@/lib/auth/next-auth.config', () => ({
       auth: vi.fn(async () => ({
         user: {
@@ -124,8 +168,28 @@ describe('Dojah widget config route', () => {
       })),
     }));
 
-    vi.doMock('@/lib/db/schema/vendors', () => ({ vendors: { id: 'vendors.id', userId: 'vendors.userId' } }));
-    vi.doMock('@/lib/db/schema/users', () => ({ users: { id: 'users.id', dateOfBirth: 'users.dateOfBirth' } }));
+    vi.doMock('@/lib/db/schema/vendors', () => ({
+      assetTypeEnum: vi.fn(() => ({ array: vi.fn(() => 'asset_type_array'), notNull: vi.fn(() => 'asset_type') })),
+      vendors: {
+        id: 'vendors.id',
+        userId: 'vendors.userId',
+        businessName: 'vendors.businessName',
+        cacNumber: 'vendors.cacNumber',
+        businessType: 'vendors.businessType',
+        tier: 'vendors.tier',
+        bvnVerifiedAt: 'vendors.bvnVerifiedAt',
+        registrationFeePaid: 'vendors.registrationFeePaid',
+      },
+    }));
+    vi.doMock('@/lib/db/schema/users', () => ({
+      users: {
+        id: 'users.id',
+        dateOfBirth: 'users.dateOfBirth',
+        fullName: 'users.fullName',
+        email: 'users.email',
+        phone: 'users.phone',
+      },
+    }));
     vi.doMock('drizzle-orm', () => ({ eq: vi.fn(() => ({ op: 'eq' })) }));
     vi.doMock('@/features/kyc/services/provider-verification.service', () => ({
       getProviderVerificationService: () => ({
@@ -138,12 +202,32 @@ describe('Dojah widget config route', () => {
     vi.doMock('@/features/kyc/services/dojah-reconcile.service', () => ({
       reconcileTier2FromDojah: vi.fn(async () => ({ synced: false })),
     }));
+    vi.doMock('@/lib/kyc/kyc-testing-mode', () => ({
+      isKycTestingMode: vi.fn(() => false),
+    }));
+    vi.doMock('@/features/kyc/services/clear-premature-tier2-submission', () => ({
+      clearPrematureTier2Submission: vi.fn(async () => undefined),
+    }));
     vi.doMock('@/lib/utils/audit-logger', () => ({
       getIpAddress: vi.fn(() => '127.0.0.1'),
+      getDeviceTypeFromUserAgent: vi.fn(() => 'desktop'),
+      AuditEntityType: { KYC: 'kyc' },
     }));
     vi.doMock('@/lib/db/drizzle', () => ({
       db: {
-        select: vi.fn(() => makeChain([{ vendorId: 'vendor-1', dateOfBirth: new Date('1990-01-15T00:00:00Z') }])),
+        select: vi.fn(() => makeChain([{
+          vendorId: 'vendor-1',
+          vendorTier: 'tier1_bvn',
+          bvnVerifiedAt: new Date(),
+          registrationFeePaid: true,
+          fullName: 'Vendor Person',
+          email: 'vendor@example.com',
+          phone: '+2348012345678',
+          businessName: 'Vendor Motors Ltd',
+          cacNumber: 'RC1234567',
+          businessType: 'limited_company',
+          dateOfBirth: new Date('1990-01-15T00:00:00Z'),
+        }])),
       },
     }));
 
@@ -161,6 +245,11 @@ describe('Dojah widget config route', () => {
       vendorId: 'vendor-1',
       workflowSlug: 'salvage',
       verificationReference: 'nem-tier2-vendor-1-reference',
+      profile: {
+        fullName: 'Vendor Person',
+        businessName: 'Vendor Motors Ltd',
+        businessRegistrationNumberMasked: '*****4567',
+      },
     });
 
     const serialized = JSON.stringify(body).toLowerCase();
@@ -393,6 +482,8 @@ describe('Provider verification service', () => {
 
   it('creates/updates provider records and creates fraud alerts for Dojah risk signals', async () => {
     vi.doUnmock('@/features/kyc/services/provider-verification.service');
+    mockBusinessPolicy();
+
     const insert = vi.fn(() => makeChain());
     const update = vi.fn(() => makeChain());
     const select = vi.fn(() => makeChain([{ id: 'admin-1' }]));
@@ -544,7 +635,10 @@ describe('Dojah webhook route', () => {
       DeviceType: { DESKTOP: 'desktop' },
     }));
     vi.doMock('@/lib/db/schema/users', () => ({ users: { id: 'users.id', role: 'users.role' } }));
-    vi.doMock('@/lib/db/schema/vendors', () => ({ vendors: { id: 'vendors.id', userId: 'vendors.userId' } }));
+    vi.doMock('@/lib/db/schema/vendors', () => ({
+      assetTypeEnum: vi.fn(() => ({ array: vi.fn(() => 'asset_type_array'), notNull: vi.fn(() => 'asset_type') })),
+      vendors: { id: 'vendors.id', userId: 'vendors.userId' },
+    }));
     vi.doMock('@/lib/db/schema/provider-verifications', () => ({
       providerVerificationRecords: {
         providerReference: 'provider_reference',
@@ -840,7 +934,10 @@ describe('evidence export route', () => {
       AuditEntityType: { KYC: 'kyc' },
     }));
     vi.doMock('@/lib/db/schema/users', () => ({ users: { id: 'users.id', fullName: 'users.fullName', email: 'users.email', phone: 'users.phone', status: 'users.status', role: 'users.role', createdAt: 'users.createdAt' } }));
-    vi.doMock('@/lib/db/schema/vendors', () => ({ vendors: { id: 'vendors.id', userId: 'vendors.userId' } }));
+    vi.doMock('@/lib/db/schema/vendors', () => ({
+      assetTypeEnum: vi.fn(() => ({ array: vi.fn(() => 'asset_type_array'), notNull: vi.fn(() => 'asset_type') })),
+      vendors: { id: 'vendors.id', userId: 'vendors.userId' },
+    }));
     vi.doMock('@/lib/db/schema/intelligence', () => ({ fraudAlerts: { entityId: 'entity_id', entityType: 'entity_type', createdAt: 'created_at' } }));
     vi.doMock('@/lib/db/schema/provider-verifications', () => ({ providerVerificationRecords: { vendorId: 'vendor_id', updatedAt: 'updated_at' } }));
     vi.doMock('@/lib/db/schema/audit-logs', () => ({ auditLogs: { entityId: 'entity_id', createdAt: 'created_at' } }));
@@ -913,7 +1010,7 @@ describe('evidence export route', () => {
     const text = await response.text();
 
     expect(response.status).toBe(200);
-    expect(text).toContain('NEM Salvage Vendor Verification Evidence Packet');
+    expect(text).toContain('Vendor Verification Evidence Packet');
     expect(text).toContain('*******6789');
     expect(text).toContain('********4321');
     expect(text).toContain('******6789');
@@ -960,7 +1057,10 @@ describe('fraud alert action route', () => {
     }));
     vi.doMock('@/lib/redis/client', () => ({ cache: { del: vi.fn(async () => undefined) } }));
     vi.doMock('@/lib/db/schema/users', () => ({ users: { id: 'users.id', role: 'users.role', status: 'users.status', updatedAt: 'users.updatedAt' } }));
-    vi.doMock('@/lib/db/schema/vendors', () => ({ vendors: { id: 'vendors.id', userId: 'vendors.userId', status: 'vendors.status', updatedAt: 'vendors.updatedAt' } }));
+    vi.doMock('@/lib/db/schema/vendors', () => ({
+      assetTypeEnum: vi.fn(() => ({ array: vi.fn(() => 'asset_type_array'), notNull: vi.fn(() => 'asset_type') })),
+      vendors: { id: 'vendors.id', userId: 'vendors.userId', status: 'vendors.status', updatedAt: 'vendors.updatedAt' },
+    }));
     vi.doMock('@/lib/db/schema/intelligence', () => ({ fraudAlerts: { id: 'fraud_alerts.id' } }));
     vi.doMock('drizzle-orm', () => ({ eq: vi.fn(() => ({})) }));
 

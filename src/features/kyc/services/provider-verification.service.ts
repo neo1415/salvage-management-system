@@ -10,6 +10,7 @@ import { fraudAlerts } from '@/lib/db/schema/intelligence';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { createRoleNotifications } from '@/features/notifications/services/notification.service';
+import { businessPolicyService } from '@/features/business-policy';
 import { getEncryptionService } from './encryption.service';
 import { assertProviderVerificationStorageReady } from './provider-verification-readiness';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
@@ -327,6 +328,15 @@ export class ProviderVerificationService {
         });
     } else {
       await db.insert(providerVerificationRecords).values(values);
+    }
+
+    if (input.vendorId || input.userId || input.result.providerReference) {
+      await businessPolicyService.createCurrentPolicySnapshot({
+        entityType: 'kyc',
+        entityId,
+        actorId,
+        reason: `${input.result.provider} ${input.result.verificationType} verification evidence stored.`,
+      });
     }
 
     if (actorId) {

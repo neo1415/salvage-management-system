@@ -147,6 +147,7 @@ export function buildDojahEvidenceSections(
   const mediaAssets = Array.isArray(media?.assets) ? media.assets : [];
   const documentMetadata = recordFrom(normalized?.documentMetadata);
   const managerDecision = recordFrom(normalized?.managerDecision);
+  const submittedProfile = recordFrom(normalized?.nemSubmittedProfile);
 
   return {
     providerSummary: {
@@ -167,6 +168,10 @@ export function buildDojahEvidenceSections(
       'Reviewed at': managerDecision?.reviewedAt
         ? new Date(String(managerDecision.reviewedAt)).toLocaleString()
         : 'Not reviewed yet',
+      'Submitted name': displayOrFallback(submittedProfile?.fullName, 'Not provided'),
+      'Submitted email': displayOrFallback(submittedProfile?.email, 'Not provided'),
+      'Submitted business': displayOrFallback(submittedProfile?.businessName, 'Not provided'),
+      'Submitted business number': displayOrFallback(submittedProfile?.businessRegistrationNumber, 'Not provided'),
     },
     pendingReason: {
       Reason: displayOrFallback(

@@ -104,6 +104,8 @@ function VendorManagementContent() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [automaticReviewEnabled, setAutomaticReviewEnabled] = useState(false);
+  const [automaticReviewAllowed, setAutomaticReviewAllowed] = useState(false);
+  const [reviewModeDisabledReason, setReviewModeDisabledReason] = useState<string | null>(null);
   const [reviewModeLoading, setReviewModeLoading] = useState(true);
   const [reviewModeSaving, setReviewModeSaving] = useState(false);
 
@@ -152,7 +154,11 @@ function VendorManagementContent() {
         const response = await fetch('/api/kyc/review-mode');
         if (!response.ok) return;
         const data = await response.json();
-        if (!cancelled) setAutomaticReviewEnabled(Boolean(data.automaticReviewEnabled));
+        if (!cancelled) {
+          setAutomaticReviewEnabled(Boolean(data.automaticReviewEnabled));
+          setAutomaticReviewAllowed(Boolean(data.automaticReviewAllowed));
+          setReviewModeDisabledReason(typeof data.disabledReason === 'string' ? data.disabledReason : null);
+        }
       } catch (err) {
         console.error('Failed to load Tier 2 review mode:', err);
       } finally {
@@ -168,6 +174,11 @@ function VendorManagementContent() {
 
   const handleReviewModeToggle = async () => {
     const nextValue = !automaticReviewEnabled;
+    if (nextValue && !automaticReviewAllowed) {
+      setError(reviewModeDisabledReason || 'Automatic review is disabled by the current verification policy.');
+      return;
+    }
+
     setReviewModeSaving(true);
     setError(null);
     try {
@@ -182,6 +193,8 @@ function VendorManagementContent() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to update review mode');
       setAutomaticReviewEnabled(Boolean(result.automaticReviewEnabled));
+      setAutomaticReviewAllowed(Boolean(result.automaticReviewAllowed));
+      setReviewModeDisabledReason(typeof result.disabledReason === 'string' ? result.disabledReason : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update review mode');
     } finally {
@@ -328,7 +341,7 @@ function VendorManagementContent() {
   if (sessionStatus === 'loading' || isInitialLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#800020] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[var(--brand-primary)] animate-spin" />
       </div>
     );
   }
@@ -349,7 +362,7 @@ function VendorManagementContent() {
           </div>
           
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 bg-[#800020] rounded-full flex items-center justify-center">
+            <div className="w-12 h-12 bg-[var(--brand-primary)] rounded-full flex items-center justify-center">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -364,7 +377,7 @@ function VendorManagementContent() {
               onClick={() => setActiveTab('tier0')}
               className={`px-6 py-3 font-semibold transition-all border-b-2 ${
                 activeTab === 'tier0'
-                  ? 'border-[#800020] text-[#800020]'
+                  ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                   : 'border-transparent text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -375,7 +388,7 @@ function VendorManagementContent() {
               onClick={() => setActiveTab('tier1')}
               className={`px-6 py-3 font-semibold transition-all border-b-2 ${
                 activeTab === 'tier1'
-                  ? 'border-[#800020] text-[#800020]'
+                  ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                   : 'border-transparent text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -386,7 +399,7 @@ function VendorManagementContent() {
               onClick={() => setActiveTab('tier2')}
               className={`px-6 py-3 font-semibold transition-all border-b-2 ${
                 activeTab === 'tier2'
-                  ? 'border-[#800020] text-[#800020]'
+                  ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                   : 'border-transparent text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -401,7 +414,7 @@ function VendorManagementContent() {
               onClick={() => setStatusFilter('all')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 statusFilter === 'all'
-                  ? 'bg-[#800020] text-white'
+                  ? 'bg-[var(--brand-primary)] text-white'
                   : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
               }`}
             >
@@ -453,16 +466,18 @@ function VendorManagementContent() {
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900 mb-1">Tier 2 Review Mode</h3>
                     <p className="text-xs text-gray-500">
-                      {automaticReviewEnabled
+                      {!automaticReviewAllowed
+                        ? 'Manual review is required by the current verification policy.'
+                        : automaticReviewEnabled
                         ? 'Automatic review is on. Clean submissions are approved immediately; flagged submissions still go to manager review.'
                         : 'Manual review is on. Every Tier 2 submission waits for manager approval.'}
                     </p>
                   </div>
                   <button
                     onClick={handleReviewModeToggle}
-                    disabled={reviewModeLoading || reviewModeSaving}
+                    disabled={reviewModeLoading || reviewModeSaving || !automaticReviewAllowed}
                     className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-                      automaticReviewEnabled ? 'bg-[#800020]' : 'bg-gray-300'
+                      automaticReviewEnabled ? 'bg-[var(--brand-primary)]' : 'bg-gray-300'
                     }`}
                     aria-pressed={automaticReviewEnabled}
                     aria-label="Toggle Tier 2 automatic review"
@@ -477,6 +492,9 @@ function VendorManagementContent() {
               <p className="mt-3 text-xs font-medium text-gray-700">
                 Current mode: {automaticReviewEnabled ? 'Automatic' : 'Manual'}
               </p>
+              {reviewModeDisabledReason && (
+                <p className="mt-1 text-xs text-gray-500">{reviewModeDisabledReason}</p>
+              )}
             </div>
           )}
 
@@ -485,14 +503,14 @@ function VendorManagementContent() {
             {verificationOptions.length > 0 && (
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2"
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:ring-offset-2"
                 aria-label="Toggle filters"
                 aria-expanded={showFilters}
               >
                 <FilterIcon size={18} aria-hidden="true" />
                 <span className="text-sm font-medium">Filters</span>
                 {activeFilterCount > 0 && (
-                  <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-medium">
+                  <span className="px-2 py-0.5 bg-[var(--brand-primary)] text-white rounded-full text-xs font-medium">
                     {activeFilterCount}
                   </span>
                 )}
@@ -532,7 +550,7 @@ function VendorManagementContent() {
             {hasActiveFilters && (
               <button
                 onClick={clearAllFilters}
-                className="flex items-center gap-1 px-3 py-1 text-sm text-gray-600 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2 rounded"
+                className="flex items-center gap-1 px-3 py-1 text-sm text-gray-600 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:ring-offset-2 rounded"
                 aria-label="Clear all filters"
               >
                 <X size={14} aria-hidden="true" />
@@ -604,7 +622,7 @@ function VendorManagementContent() {
             {hasActiveFilters && (
               <button
                 onClick={clearAllFilters}
-                className="mt-4 px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+                className="mt-4 px-6 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
               >
                 Clear Filters
               </button>
@@ -698,7 +716,7 @@ function ApplicationCard({
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-[#800020] rounded-full flex items-center justify-center flex-shrink-0">
+            <div className="w-12 h-12 bg-[var(--brand-primary)] rounded-full flex items-center justify-center flex-shrink-0">
               <Building2 className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -819,7 +837,7 @@ function ApplicationCard({
         {/* Action Button */}
         <button
           onClick={onReview}
-          className="w-full bg-[#800020] text-white font-bold py-3 px-4 rounded-lg hover:bg-[#600018] transition-colors flex items-center justify-center gap-2"
+          className="w-full bg-[var(--brand-primary)] text-white font-bold py-3 px-4 rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors flex items-center justify-center gap-2"
         >
           <Shield className="w-5 h-5" />
           {application.kycStatus === 'pending' ? 'Review' : 'View Details'}
@@ -909,7 +927,7 @@ function ReviewModal({
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#800020] rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-[var(--brand-primary)] rounded-full flex items-center justify-center">
               <Building2 className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -1031,7 +1049,7 @@ function ReviewModal({
               <h3 className="text-lg font-bold text-gray-900 mb-4">Uploaded Documents</h3>
               {loadingUrls ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-8 h-8 text-[#800020] animate-spin" />
+                  <Loader2 className="w-8 h-8 text-[var(--brand-primary)] animate-spin" />
                   <span className="ml-3 text-gray-600">Loading documents...</span>
                 </div>
               ) : (
@@ -1145,7 +1163,7 @@ function ReviewModal({
                   onChange={(e) => onCommentChange(e.target.value)}
                   disabled={submitting}
                   rows={4}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
                   placeholder={
                     reviewAction === 'approve'
                       ? 'Add any notes about this approval (optional)'
@@ -1178,7 +1196,7 @@ function ReviewModal({
           <button
             onClick={onSubmit}
             disabled={!reviewAction || submitting}
-            className="px-6 py-3 bg-[#800020] text-white font-bold rounded-lg hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-6 py-3 bg-[var(--brand-primary)] text-white font-bold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {submitting ? (
               <>
@@ -1237,7 +1255,7 @@ function DocumentPreview({
   return (
     <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
       <div className="flex items-center gap-2 mb-3">
-        <div className="text-[#800020]">{icon}</div>
+        <div className="text-[var(--brand-primary)]">{icon}</div>
         <h4 className="font-semibold text-gray-900 text-sm">{label}</h4>
       </div>
       
@@ -1261,7 +1279,7 @@ function DocumentPreview({
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center justify-center gap-2 w-full px-4 py-2 bg-[#800020] text-white text-sm font-medium rounded-lg hover:bg-[#600018] transition-colors"
+        className="flex items-center justify-center gap-2 w-full px-4 py-2 bg-[var(--brand-primary)] text-white text-sm font-medium rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
       >
         <ExternalLink className="w-4 h-4" />
         View Full Document

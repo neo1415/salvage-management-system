@@ -32,6 +32,7 @@ function EvidenceSectionGrid({ title, fields }: { title: string; fields: Record<
 }
 
 type ApprovalDocument = {
+  key: string;
   label: string;
   url?: string;
   type?: string;
@@ -66,15 +67,15 @@ function getApprovalDocuments(approval: PendingApproval): ApprovalDocument[] {
   const documents: ApprovalDocument[] = [];
   const seen = new Set<string>();
 
-  addDocument(documents, seen, { label: 'Photo ID', url: approval.photoIdUrl, type: 'photo_id' });
-  addDocument(documents, seen, { label: 'NIN / government ID', url: approval.ninCardUrl, type: 'photo_id' });
-  addDocument(documents, seen, { label: 'Address proof', url: approval.addressProofUrl, type: 'address_proof' });
-  addDocument(documents, seen, { label: 'Bank statement', url: approval.bankStatementUrl, type: 'bank_statement' });
-  addDocument(documents, seen, { label: 'CAC / business registration', url: approval.cacCertificateUrl, type: 'cac_certificate' });
-  addDocument(documents, seen, { label: 'Selfie / liveness image', url: approval.selfieUrl, type: 'selfie' });
+  addDocument(documents, seen, { key: 'photo-id', label: 'Photo ID', url: approval.photoIdUrl, type: 'photo_id' });
+  addDocument(documents, seen, { key: 'nin-card', label: 'NIN / government ID', url: approval.ninCardUrl, type: 'photo_id' });
+  addDocument(documents, seen, { key: 'address-proof', label: 'Address proof', url: approval.addressProofUrl, type: 'address_proof' });
+  addDocument(documents, seen, { key: 'bank-statement', label: 'Bank statement', url: approval.bankStatementUrl, type: 'bank_statement' });
+  addDocument(documents, seen, { key: 'business-registration', label: 'CAC / business registration', url: approval.cacCertificateUrl, type: 'cac_certificate' });
+  addDocument(documents, seen, { key: 'selfie', label: 'Selfie / liveness image', url: approval.selfieUrl, type: 'selfie' });
 
-  for (const providerDocument of approval.providerDocuments ?? []) {
-    addDocument(documents, seen, providerDocument);
+  for (const [index, providerDocument] of (approval.providerDocuments ?? []).entries()) {
+    addDocument(documents, seen, { ...providerDocument, key: `provider-${index}` });
   }
 
   return documents;
@@ -268,7 +269,7 @@ export default function KYCApprovalDetailPage() {
   }
 
   if (status === 'loading' || loading) {
-    return <div className="flex items-center justify-center min-h-[400px]"><Loader2 className="w-8 h-8 animate-spin text-[#800020]" /></div>;
+    return <div className="flex items-center justify-center min-h-[400px]"><Loader2 className="w-8 h-8 animate-spin text-[var(--brand-primary)]" /></div>;
   }
 
   if (!approval) {
@@ -352,7 +353,7 @@ export default function KYCApprovalDetailPage() {
 
       <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <Shield className="w-6 h-6 text-[#800020]" />
+          <Shield className="w-6 h-6 text-[var(--brand-primary)]" />
           <h1 className="text-2xl font-bold text-gray-900">KYC Review: {approval.vendorName}</h1>
           {approval.amlRiskLevel === 'High' && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">High Risk</span>}
           {approval.amlRiskLevel === 'Medium' && <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">Medium Risk</span>}
@@ -371,7 +372,7 @@ export default function KYCApprovalDetailPage() {
           <button
             onClick={handleEvidenceExport}
             disabled={exportingEvidence}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-[#800020] text-[#800020] font-semibold rounded-lg hover:bg-[#800020] hover:text-white transition-colors disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-[var(--brand-primary)] text-[var(--brand-primary)] font-semibold rounded-lg hover:bg-[var(--brand-primary)] hover:text-white transition-colors disabled:opacity-50"
           >
             {exportingEvidence ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Export Evidence CSV
@@ -460,7 +461,7 @@ export default function KYCApprovalDetailPage() {
       {approval.providerEvidence && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
           <div className="flex items-center gap-2 mb-4">
-            <Shield className="w-4 h-4 text-[#800020]" />
+            <Shield className="w-4 h-4 text-[var(--brand-primary)]" />
             <h2 className="font-semibold text-gray-900">Verification Evidence</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-4">
@@ -596,13 +597,15 @@ export default function KYCApprovalDetailPage() {
         </div>
         {documents.length ? (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {documents.map((document) => (
+            {documents.map((document) => {
+              const protectedDocumentUrl = `/api/kyc/approvals/${vendorId}/documents/${encodeURIComponent(document.key)}`;
+              return (
               <div key={`${document.label}-${document.url}`} className="text-center">
                 <p className="text-xs text-gray-500 mb-2">{document.label}</p>
-                <a href={document.url} target="_blank" rel="noopener noreferrer" className="block">
-                  <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-gray-200 hover:border-[#800020] transition-colors bg-gray-50">
+                <a href={protectedDocumentUrl} target="_blank" rel="noopener noreferrer" className="block">
+                  <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-gray-200 hover:border-[var(--brand-primary)] transition-colors bg-gray-50">
                     {isImageLike(document) ? (
-                      <Image src={document.url!} alt={document.label} fill className="object-cover" />
+                      <Image src={protectedDocumentUrl} alt={document.label} fill className="object-cover" />
                     ) : (
                       <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-gray-600">
                         <FileText className="h-8 w-8" />
@@ -618,7 +621,7 @@ export default function KYCApprovalDetailPage() {
                   <p className="mt-1 text-[11px] text-gray-400 break-all">{document.sourceKey}</p>
                 )}
               </div>
-            ))}
+            );})}
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-gray-300 p-6 text-sm text-gray-500">
@@ -645,7 +648,7 @@ export default function KYCApprovalDetailPage() {
                     type="checkbox"
                     checked={rejectedSections.includes(section)}
                     onChange={() => toggleRejectedSection(section)}
-                    className="h-4 w-4 rounded border-red-300 text-[#800020] focus:ring-[#800020]"
+                    className="h-4 w-4 rounded border-red-300 text-[var(--brand-primary)] focus:ring-[var(--brand-focus-ring)]"
                   />
                   {section}
                 </label>

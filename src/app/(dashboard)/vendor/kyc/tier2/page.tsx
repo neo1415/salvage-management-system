@@ -15,6 +15,10 @@ import {
   XCircle,
   RefreshCw,
   Camera,
+  Building2,
+  FileCheck2,
+  MapPin,
+  User,
 } from 'lucide-react';
 import type { KYCStatus } from '@/features/kyc/types/kyc.types';
 import { 
@@ -80,6 +84,42 @@ interface DojahWidgetOptions {
 
 type DojahWidgetResponse = DojahWidgetCallbackResponse;
 
+type Tier2WidgetConfig = {
+  appId: string;
+  publicKey: string;
+  widgetId?: string | null;
+  phone?: string;
+  dob?: string;
+  vendorId?: string;
+  workflowSlug?: string;
+  verificationReference?: string;
+  profile?: {
+    fullName?: string;
+    firstName?: string;
+    middleName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+    dateOfBirth?: string;
+    businessName?: string;
+    businessType?: string;
+    businessRegistrationNumberMasked?: string;
+    hasBusinessRegistrationNumber?: boolean;
+    bvnAlreadyVerified?: boolean;
+    registrationFeePaid?: boolean;
+  };
+  requirements?: {
+    bvnRequiredInThisFlow: boolean;
+    businessData: boolean;
+    governmentId: boolean;
+    liveness: boolean;
+    address: boolean;
+    amlScreening: boolean;
+    duplicateIdentityCheck: boolean;
+    manualReview: boolean;
+  };
+};
+
 interface DojahConnect {
   setup(): void;
   open(): void;
@@ -98,6 +138,34 @@ function formatEmbeddedCameraHelp(prefix: string) {
     'If it still fails, check your browser site settings for this app URL and the verification window.',
     'For local testing, use an HTTPS ngrok or cloudflared URL if localhost blocks embedded camera access.',
   ].join(' ');
+}
+
+function isPlainHttpLocalhost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+  return window.location.protocol === 'http:' && localHosts.has(window.location.hostname);
+}
+
+function getHttpsVerificationUrl(): string | null {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (!appUrl?.startsWith('https://')) return null;
+
+  try {
+    const url = new URL(appUrl);
+    if (typeof window !== 'undefined') {
+      url.pathname = window.location.pathname;
+      url.search = window.location.search;
+      url.hash = window.location.hash;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isSoftGeolocationPreflightFailure(error?: string): boolean {
+  const text = error?.toLowerCase() ?? '';
+  return text.includes('timed out') || text.includes('unavailable');
 }
 
 function applyDojahIframePermissions() {
@@ -132,16 +200,7 @@ export default function Tier2KYCPage() {
   const { data: session, status: authStatus } = useSession();
 
   const [pageState, setPageState] = useState<PageState>('loading_config');
-  const [widgetConfig, setWidgetConfig] = useState<{ 
-    appId: string; 
-    publicKey: string; 
-    widgetId?: string;
-    phone?: string;
-    dob?: string;
-    vendorId?: string;
-    workflowSlug?: string;
-    verificationReference?: string;
-  } | null>(null);
+  const [widgetConfig, setWidgetConfig] = useState<Tier2WidgetConfig | null>(null);
   const [widgetReady, setWidgetReady] = useState(false);
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
   const [verificationError, setVerificationError] = useState<ResolvedVerificationError | null>(null);
@@ -185,8 +244,8 @@ export default function Tier2KYCPage() {
       title: status === 'approved' ? 'Verification approved' : 'Application submitted',
       message:
         status === 'approved'
-          ? 'Your Tier 2 verification is approved. You now have full bidding access.'
-          : 'Your documents were received and are under review. You will get an SMS and email update within 24–48 hours.',
+          ? 'Your full verification is approved. Your account access has been updated.'
+          : 'Your documents were received and are under review. You will get an SMS and email update once review is complete.',
     });
     setSuccessModalOpen(true);
   }, []);
@@ -303,18 +362,15 @@ export default function Tier2KYCPage() {
     if (!widgetConfig || !window.Connect) return;
 
     const user = session?.user;
-    
-    // Parse full name - first word is first name, rest is last name
-    // User can edit these in the widget if needed
-    const nameParts = (user?.name ?? '').trim().split(/\s+/);
-    const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
+    const profile = widgetConfig.profile;
+    const firstName = profile?.firstName ?? '';
+    const lastName = profile?.lastName ?? '';
 
     // Build user_data object - only include defined values
     const userData: DojahWidgetOptions['user_data'] = {
       first_name: firstName || undefined,
       last_name: lastName || undefined,
-      email: user?.email ?? undefined,
+      email: profile?.email ?? user?.email ?? undefined,
     };
     
     // Add DOB if available (from registration) - format: YYYY-MM-DD
@@ -414,6 +470,11 @@ export default function Tier2KYCPage() {
         vendor_id: widgetConfig.vendorId ?? '',
         workflow_slug: widgetConfig.workflowSlug ?? 'salvage',
         reference_id: verificationReference ?? '',
+        expected_name: profile?.fullName ?? user?.name ?? '',
+        expected_business_name: profile?.businessName ?? '',
+        expected_business_number_masked: profile?.businessRegistrationNumberMasked ?? '',
+        policy_bvn_in_tier2: String(Boolean(widgetConfig.requirements?.bvnRequiredInThisFlow)),
+        policy_manual_review: String(Boolean(widgetConfig.requirements?.manualReview ?? true)),
       },
       // onSuccess often fires per step (e.g. liveness) — do not submit until the full workflow completes.
       onSuccess: (response) => {
@@ -594,31 +655,63 @@ export default function Tier2KYCPage() {
   async function handleCameraPermissionCheck() {
     setCheckingPermissions(true);
     clearVerificationError();
+    const requiresCamera = widgetConfig?.requirements?.liveness !== false || widgetConfig?.requirements?.governmentId !== false;
+    const requiresLocation = widgetConfig?.requirements?.address !== false;
 
     try {
-      // First check camera permission
-      const cameraCheckResult = await checkCameraPermission();
-      
-      if (cameraCheckResult.granted) {
-        setCameraPermissionGranted(true);
-      } else if (cameraCheckResult.error && !cameraCheckResult.needsPrompt) {
-        // Camera permission is denied or there's a hard error
-        {
-          const err = resolveTier2WidgetError('camera permission denied');
-          err.message = formatEmbeddedCameraHelp(`${cameraCheckResult.error} ${getCameraPermissionInstructions()}`);
-          showVerificationError(err, { openDialog: true });
-        }
+      if (requiresCamera && isPlainHttpLocalhost()) {
+        const httpsUrl = getHttpsVerificationUrl();
+        showVerificationError(
+          {
+            title: 'Use HTTPS for camera verification',
+            message: [
+              'Camera verification runs inside Dojah\'s secure identity window.',
+              'Your browser may allow camera for localhost, but still block the embedded Dojah camera request from a plain HTTP page.',
+              httpsUrl
+                ? `Open this page through your HTTPS app URL (${httpsUrl}) and start verification again.`
+                : 'Open this page through your HTTPS staging, production, ngrok, or cloudflared URL and start verification again.',
+            ].join(' '),
+            source: 'app',
+          },
+          { openDialog: true }
+        );
         setCheckingPermissions(false);
         return;
-      } else if (cameraCheckResult.needsPrompt) {
-        // Need to request camera permission
-        const cameraRequestResult = await requestCameraPermission();
-        
-        if (cameraRequestResult.granted) {
+      }
+
+      // First check camera permission
+      if (requiresCamera) {
+        const cameraCheckResult = await checkCameraPermission();
+      
+        if (cameraCheckResult.granted) {
           setCameraPermissionGranted(true);
-        } else {
-          console.warn('Camera permission request failed, but continuing to geolocation check');
+        } else if (cameraCheckResult.error && !cameraCheckResult.needsPrompt) {
+          // Camera permission is denied or there's a hard error
+          {
+            const err = resolveTier2WidgetError('camera permission denied');
+            err.message = formatEmbeddedCameraHelp(`${cameraCheckResult.error} ${getCameraPermissionInstructions()}`);
+            showVerificationError(err, { openDialog: true });
+          }
+          setCheckingPermissions(false);
+          return;
+        } else if (cameraCheckResult.needsPrompt) {
+          // Need to request camera permission
+          const cameraRequestResult = await requestCameraPermission();
+          
+          if (cameraRequestResult.granted) {
+            setCameraPermissionGranted(true);
+          } else {
+            console.warn('Camera permission request failed, but continuing to geolocation check');
+          }
         }
+      } else {
+        setCameraPermissionGranted(false);
+      }
+
+      if (!requiresLocation) {
+        setCheckingPermissions(false);
+        openDojahWidget();
+        return;
       }
 
       // Now check geolocation permission
@@ -633,6 +726,16 @@ export default function Tier2KYCPage() {
 
       if (geoCheckResult.error && !geoCheckResult.needsPrompt) {
         // Geolocation permission is denied or there's a hard error
+        if (isSoftGeolocationPreflightFailure(geoCheckResult.error)) {
+          console.warn('[KYC] Continuing after non-blocking location preflight issue', {
+            reason: geoCheckResult.error,
+          });
+          setGeolocationPermissionGranted(false);
+          setCheckingPermissions(false);
+          openDojahWidget();
+          return;
+        }
+
         const instructions = getGeolocationPermissionInstructions();
         showVerificationError(
           {
@@ -654,6 +757,16 @@ export default function Tier2KYCPage() {
         setCheckingPermissions(false);
         openDojahWidget();
       } else {
+        if (isSoftGeolocationPreflightFailure(geoRequestResult.error)) {
+          console.warn('[KYC] Continuing after non-blocking location request issue', {
+            reason: geoRequestResult.error,
+          });
+          setGeolocationPermissionGranted(false);
+          setCheckingPermissions(false);
+          openDojahWidget();
+          return;
+        }
+
         // Show clear message about location requirement
         const instructions = getGeolocationPermissionInstructions();
         showVerificationError(
@@ -697,7 +810,7 @@ export default function Tier2KYCPage() {
 
   if (authStatus === 'loading' || pageState === 'loading_config') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center">
         <div className="text-center text-white">
           <Loader2 className="w-10 h-10 animate-spin mx-auto mb-3" />
           <p>Loading verification service...</p>
@@ -705,6 +818,17 @@ export default function Tier2KYCPage() {
       </div>
     );
   }
+
+  const requirements = widgetConfig?.requirements;
+  const profile = widgetConfig?.profile;
+  const requiredChecks = [
+    requirements?.bvnRequiredInThisFlow ? 'BVN if requested in the identity window' : null,
+    requirements?.governmentId !== false ? 'Government ID or NIN' : null,
+    requirements?.businessData !== false ? 'Business registration details' : null,
+    requirements?.liveness !== false ? 'Camera liveness check' : null,
+    requirements?.address !== false ? 'Address or location confirmation' : null,
+    requirements?.amlScreening !== false ? 'AML and watchlist screening' : null,
+  ].filter((item): item is string => Boolean(item));
 
   return (
     <>
@@ -726,7 +850,7 @@ export default function Tier2KYCPage() {
         onLoad={initWidget}
       />
 
-      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] py-8 px-4">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] py-8 px-4">
         <div className="w-full max-w-2xl mx-auto">
           <button
             onClick={() => router.back()}
@@ -738,10 +862,10 @@ export default function Tier2KYCPage() {
 
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full mb-4">
-              <Award className="w-8 h-8 text-[#800020]" />
+              <Award className="w-8 h-8 text-[var(--brand-primary)]" />
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Tier 2 Verification</h1>
-            <p className="text-gray-200">Complete identity verification to unlock unlimited bidding</p>
+            <p className="text-gray-200">Complete identity verification for higher bidding access</p>
             {isKycTestingModeClient() && (
               <p className="text-xs text-amber-100 bg-amber-900/40 border border-amber-400/50 rounded-lg px-3 py-2 mt-4 max-w-md mx-auto">
                 KYC testing mode — Tier 2 state resets when you load this page so you can verify again with the same NIN and company details.
@@ -757,7 +881,7 @@ export default function Tier2KYCPage() {
                   <CheckCircle2 className="w-12 h-12 text-green-600" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Tier 2 Verified!</h2>
-                <p className="text-gray-600 mb-2">You now have unlimited bidding access.</p>
+                <p className="text-gray-600 mb-2">Your account access has been updated.</p>
                 {kycStatus?.expiresAt && (
                   <p className="text-sm text-gray-500 mb-6">
                     Verification valid until {new Date(kycStatus.expiresAt).toLocaleDateString()}
@@ -765,7 +889,7 @@ export default function Tier2KYCPage() {
                 )}
                 <button
                   onClick={() => router.push('/vendor/dashboard')}
-                  className="w-full bg-[#FFD700] text-[#800020] font-bold py-3 rounded-lg hover:bg-[#FFC700] transition-colors"
+                  className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] font-bold py-3 rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors"
                 >
                   Go to Dashboard
                 </button>
@@ -780,11 +904,11 @@ export default function Tier2KYCPage() {
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Under Review</h2>
                 <p className="text-gray-600 mb-6">
-                  Your application is being reviewed by our team. You'll receive an SMS and email notification within 24–48 hours.
+                  Your application is being reviewed by our team. You'll receive an SMS and email notification once the review is complete.
                 </p>
                 <button
                   onClick={() => router.push('/vendor/dashboard')}
-                  className="w-full bg-[#FFD700] text-[#800020] font-bold py-3 rounded-lg hover:bg-[#FFC700] transition-colors"
+                  className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] font-bold py-3 rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors"
                 >
                   Back to Dashboard
                 </button>
@@ -822,7 +946,7 @@ export default function Tier2KYCPage() {
                     setPageState('ready');
                     void loadWidgetConfig();
                   }}
-                  className="w-full bg-[#800020] text-white font-bold py-3 rounded-lg hover:bg-[#600018] transition-colors flex items-center justify-center gap-2"
+                  className="w-full bg-[var(--brand-primary)] text-white font-bold py-3 rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors flex items-center justify-center gap-2"
                 >
                   <RefreshCw className="w-4 h-4" />
                   Try Again
@@ -837,10 +961,10 @@ export default function Tier2KYCPage() {
                   <Clock className="w-12 h-12 text-orange-600" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Verification Expired</h2>
-                <p className="text-gray-600 mb-6">Your Tier 2 verification has expired. Please re-verify to restore unlimited bidding access.</p>
+                <p className="text-gray-600 mb-6">Your full verification has expired. Please re-verify to restore full access.</p>
                 <button
                   onClick={() => setPageState('ready')}
-                  className="w-full bg-[#FFD700] text-[#800020] font-bold py-3 rounded-lg hover:bg-[#FFC700] transition-colors"
+                  className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] font-bold py-3 rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors"
                 >
                   Re-verify Now
                 </button>
@@ -861,7 +985,7 @@ export default function Tier2KYCPage() {
                 )}
                 <button
                   onClick={() => router.refresh()}
-                  className="w-full bg-[#800020] text-white font-bold py-3 rounded-lg hover:bg-[#600018] transition-colors"
+                  className="w-full bg-[var(--brand-primary)] text-white font-bold py-3 rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
                 >
                   Refresh Page
                 </button>
@@ -875,39 +999,73 @@ export default function Tier2KYCPage() {
                   <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Processing Verification</h2>
-                <p className="text-gray-600">Please wait while we process your verification (30–60 seconds)...</p>
+                <p className="text-gray-600">Please wait while we process your verification (30-60 seconds)...</p>
               </div>
             )}
 
             {/* Ready to start */}
             {pageState === 'ready' && (
               <div className="p-6 sm:p-8">
-                {/* Benefits */}
-                <div className="bg-gradient-to-r from-[#800020] to-[#600018] rounded-xl p-5 text-white mb-6">
-                  <h2 className="text-lg font-bold mb-3">Tier 2 Benefits</h2>
-                  <ul className="space-y-2 text-sm text-gray-200">
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[#FFD700]" /> Unlimited bidding on all auctions</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[#FFD700]" /> Leaderboard eligibility</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[#FFD700]" /> Tier 2 Verified badge on your profile</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[#FFD700]" /> Priority support</li>
-                  </ul>
+                {/* Verification preflight */}
+                <div className="mb-6 rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                  <div className="flex items-start gap-3">
+                    <Shield className="mt-1 h-5 w-5 text-[var(--brand-primary)]" />
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-950">Full vendor verification</h2>
+                      <p className="mt-2 text-sm leading-6 text-gray-600">
+                        Complete the identity window once. Your submission will be reviewed before full access is updated.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                {/* What you'll need */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <h3 className="font-semibold text-blue-900 mb-2">What you'll need:</h3>
-                  <ul className="text-sm text-blue-800 space-y-1">
-                    <li>• Your NIN (National Identification Number)</li>
-                    <li>• A government-issued photo ID</li>
-                    <li>• A selfie for verification</li>
-                    <li>• A recent utility bill</li>
-                  </ul>
+                {/* Profile and requirements */}
+                <div className="mb-6 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <User className="mb-3 h-5 w-5 text-gray-500" />
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Representative</p>
+                    <p className="mt-1 font-semibold text-gray-950">{profile?.fullName || session?.user?.name || 'Your profile name'}</p>
+                    <p className="mt-1 text-xs text-gray-500">{profile?.email || session?.user?.email || 'Email on profile'}</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <Building2 className="mb-3 h-5 w-5 text-gray-500" />
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Business</p>
+                    <p className="mt-1 font-semibold text-gray-950">{profile?.businessName || 'Business details will be collected'}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {profile?.businessRegistrationNumberMasked
+                        ? `Registration ${profile.businessRegistrationNumberMasked}`
+                        : 'Registration number requested during verification'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <FileCheck2 className="mb-3 h-5 w-5 text-gray-500" />
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Review</p>
+                    <p className="mt-1 font-semibold text-gray-950">Manual decision</p>
+                    <p className="mt-1 text-xs text-gray-500">A reviewer checks the evidence before approval.</p>
+                  </div>
+                </div>
+
+                <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <h3 className="font-semibold text-blue-950">Checks in this verification</h3>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {requiredChecks.map((item) => (
+                      <div key={item} className="flex items-center gap-2 text-sm text-blue-900">
+                        <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-blue-600" />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {profile?.bvnAlreadyVerified && !requirements?.bvnRequiredInThisFlow && (
+                    <p className="mt-3 text-xs text-blue-800">
+                      Your basic identity check is already on file, so this step focuses on business, document, liveness, address, and risk review.
+                    </p>
+                  )}
                 </div>
 
                 {/* Cost estimate */}
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 text-sm text-gray-600">
                   <Shield className="w-4 h-4 inline mr-1 text-gray-500" />
-                  Estimated verification cost: <strong>₦510–630</strong> (charged to your account)
+                  Estimated provider cost: <strong>NGN 510-630</strong>. Final approval is handled by the review team.
                 </div>
 
                 {/* Test credentials warning */}
@@ -937,7 +1095,7 @@ export default function Tier2KYCPage() {
                 {widgetSessionActive && !verificationError && (
                   <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
                     Identity checks are in progress. Complete every step in the verification window (NIN, documents,
-                    liveness, business details). A step may show as submitted — that is normal; only the full flow
+                    liveness, business details). A step may show as submitted - that is normal; only the full flow
                     finishes your application.
                   </div>
                 )}
@@ -946,7 +1104,7 @@ export default function Tier2KYCPage() {
                   onClick={handleStartVerification}
                   disabled={!widgetReady || checkingPermissions}
                   aria-label="Start Tier 2 identity verification"
-                  className="w-full bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-bold py-4 rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg min-h-[56px]"
+                  className="w-full bg-[var(--brand-primary)] text-white font-bold py-4 rounded-lg hover:bg-[var(--brand-primary-hover)] hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg min-h-[56px]"
                 >
                   {checkingPermissions ? (
                     <><Loader2 className="w-5 h-5 animate-spin" /> Checking permissions...</>
@@ -957,12 +1115,20 @@ export default function Tier2KYCPage() {
                   )}
                 </button>
 
-                {/* Camera and location permission info */}
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
-                  <Camera className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-blue-800">
-                    This verification requires camera and location access. Your browser will ask for these permissions before starting. Location is used for identity verification only and coordinates are not stored.
-                  </p>
+                <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <div className="flex items-start gap-2 text-xs text-gray-700">
+                    <Camera className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-500" />
+                    <p>
+                      The verification window may ask for camera access{requirements?.address !== false ? ' and location access' : ''}.
+                      Allow the prompt in that window to continue.
+                    </p>
+                  </div>
+                  {requirements?.address !== false && (
+                    <div className="mt-2 flex items-start gap-2 text-xs text-gray-700">
+                      <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-500" />
+                      <p>Location is used for verification only. Exact coordinates are not shown in the vendor interface.</p>
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-xs text-gray-500 text-center mt-3">
@@ -975,7 +1141,7 @@ export default function Tier2KYCPage() {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-300">
               Need help?{' '}
-              <a href="/contact" className="text-[#FFD700] hover:underline">Contact Support</a>
+              <a href="/contact" className="text-[var(--brand-accent)] hover:underline">Contact Support</a>
             </p>
           </div>
         </div>

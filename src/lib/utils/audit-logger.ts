@@ -126,6 +126,7 @@ export enum AuditActionType {
   NIN_VERIFIED = 'nin_verified',
   CAC_UPLOADED = 'cac_uploaded',
   BANK_DETAILS_VERIFIED = 'bank_details_verified',
+  KYC_DOCUMENT_VIEWED = 'kyc_document_viewed',
   
   // Profile actions
   PROFILE_UPDATED = 'profile_updated',

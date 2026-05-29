@@ -4,6 +4,7 @@ import {
   getTier2AutoReviewEnabled,
   setTier2AutoReviewEnabled,
 } from '@/features/kyc/services/tier2-review-settings.service';
+import { businessPolicyService } from '@/features/business-policy';
 
 const READ_ROLES = new Set(['salvage_manager', 'system_admin']);
 const WRITE_ROLES = new Set(['salvage_manager']);
@@ -18,9 +19,18 @@ export async function GET() {
   }
 
   const automaticReviewEnabled = await getTier2AutoReviewEnabled();
+  const policy = await businessPolicyService.getEffectivePolicy();
+  const automaticReviewAllowed =
+    !policy.kyc.providerPassRequiresInternalReview &&
+    policy.onboarding.finalTier2Decision !== 'manual_review';
+
   return NextResponse.json({
-    automaticReviewEnabled,
-    mode: automaticReviewEnabled ? 'automatic' : 'manual',
+    automaticReviewEnabled: automaticReviewAllowed && automaticReviewEnabled,
+    automaticReviewAllowed,
+    disabledReason: automaticReviewAllowed
+      ? null
+      : 'Current verification policy requires internal manual review for Tier 2 submissions.',
+    mode: automaticReviewAllowed && automaticReviewEnabled ? 'automatic' : 'manual',
   });
 }
 
@@ -41,6 +51,22 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'automaticReviewEnabled must be a boolean' }, { status: 400 });
   }
 
+  const policy = await businessPolicyService.getEffectivePolicy();
+  const automaticReviewAllowed =
+    !policy.kyc.providerPassRequiresInternalReview &&
+    policy.onboarding.finalTier2Decision !== 'manual_review';
+
+  if (body.automaticReviewEnabled && !automaticReviewAllowed) {
+    return NextResponse.json(
+      {
+        error: 'Automatic review is disabled by the current verification policy.',
+        automaticReviewAllowed: false,
+        mode: 'manual',
+      },
+      { status: 409 }
+    );
+  }
+
   await setTier2AutoReviewEnabled({
     enabled: body.automaticReviewEnabled,
     actorId: session.user.id,
@@ -49,7 +75,8 @@ export async function PUT(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    automaticReviewEnabled: body.automaticReviewEnabled,
-    mode: body.automaticReviewEnabled ? 'automatic' : 'manual',
+    automaticReviewEnabled: automaticReviewAllowed && body.automaticReviewEnabled,
+    automaticReviewAllowed,
+    mode: automaticReviewAllowed && body.automaticReviewEnabled ? 'automatic' : 'manual',
   });
 }

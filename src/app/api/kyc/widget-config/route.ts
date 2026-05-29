@@ -5,11 +5,18 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
-import { getIpAddress } from '@/lib/utils/audit-logger';
+import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
 import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
 import { resetVendorTier2ForTesting } from '@/features/kyc/services/kyc-testing-reset.service';
 import { clearPrematureTier2Submission } from '@/features/kyc/services/clear-premature-tier2-submission';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveTier2Access,
+} from '@/features/business-policy';
 
 /**
  * GET /api/kyc/widget-config
@@ -39,6 +46,15 @@ export async function GET(request: Request) {
   const [result] = await db
     .select({ 
       vendorId: vendors.id,
+      vendorTier: vendors.tier,
+      businessName: vendors.businessName,
+      cacNumber: vendors.cacNumber,
+      businessType: vendors.businessType,
+      bvnVerifiedAt: vendors.bvnVerifiedAt,
+      registrationFeePaid: vendors.registrationFeePaid,
+      fullName: users.fullName,
+      email: users.email,
+      phone: users.phone,
       dateOfBirth: users.dateOfBirth,
     })
     .from(vendors)
@@ -55,6 +71,42 @@ export async function GET(request: Request) {
 
   if (!result?.vendorId) {
     return NextResponse.json({ error: 'Vendor profile not found' }, { status: 404 });
+  }
+
+  const policy = await businessPolicyService.getEffectivePolicy();
+  const tier2AccessDecision = resolveTier2Access(policy, {
+    tier: result.vendorTier === 'tier2_full' ? 'tier2_full' : result.vendorTier === 'tier1_bvn' ? 'tier1_bvn' : 'tier0',
+    bvnVerified: Boolean(result.bvnVerifiedAt),
+    registrationFeePaid: Boolean(result.registrationFeePaid),
+  });
+  await logPolicyDecision({
+    userId: session.user.id,
+    entityType: AuditEntityType.KYC,
+    entityId: result.vendorId,
+    ipAddress: getIpAddress(request.headers),
+    userAgent: request.headers.get('user-agent') ?? 'unknown',
+    deviceType: getDeviceTypeFromUserAgent(request.headers.get('user-agent') ?? 'unknown'),
+    decision: tier2AccessDecision.decision,
+    context: {
+      source: 'api/kyc/widget-config',
+      runtimeMode: getBusinessPolicyRuntimeMode(),
+    },
+  }).catch((error) => {
+    console.warn('[BusinessPolicy] Failed to audit Tier 2 widget access decision', {
+      vendorId: result.vendorId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  });
+
+  if (!tier2AccessDecision.allowed && isBusinessPolicyEnforcementEnabled()) {
+    return NextResponse.json(
+      {
+        error: 'tier2_not_available',
+        message: tier2AccessDecision.message,
+        reason: tier2AccessDecision.value,
+      },
+      { status: 403 }
+    );
   }
 
   if (isKycTestingMode()) {
@@ -92,15 +144,62 @@ export async function GET(request: Request) {
     referenceCreated: workflow.created,
   });
 
+  const nameParts = parseName(result.fullName);
+  const requirements = {
+    bvnRequiredInThisFlow: policy.onboarding.mode === 'single_full_kyc' && policy.kyc.tier1RequiresBvn,
+    businessData: policy.kyc.tier2RequiresBusinessData,
+    governmentId: policy.kyc.tier2RequiresGovernmentId,
+    liveness: policy.kyc.tier2RequiresLiveness,
+    address: policy.kyc.tier2RequiresAddress,
+    amlScreening: policy.kyc.tier2RequiresAmlScreening,
+    duplicateIdentityCheck: policy.kyc.tier2RequiresDuplicateIdentityCheck,
+    manualReview: policy.kyc.providerPassRequiresInternalReview || policy.onboarding.finalTier2Decision === 'manual_review',
+  };
+
   return NextResponse.json({
     appId,
     publicKey,
     widgetId: widgetId ?? null,
-    phone: session.user.phone ?? undefined,
+    phone: result.phone ?? session.user.phone ?? undefined,
     dob: dob ?? undefined,
     vendorId: result?.vendorId,
     workflowSlug,
     verificationReference: workflow.providerReference,
+    profile: {
+      fullName: result.fullName,
+      firstName: nameParts.firstName,
+      middleName: nameParts.middleName,
+      lastName: nameParts.lastName,
+      email: result.email ?? session.user.email ?? undefined,
+      phone: result.phone ?? session.user.phone ?? undefined,
+      dateOfBirth: dob ?? undefined,
+      businessName: result.businessName ?? undefined,
+      businessType: result.businessType ?? undefined,
+      businessRegistrationNumberMasked: maskIdentifier(result.cacNumber),
+      hasBusinessRegistrationNumber: Boolean(result.cacNumber),
+      bvnAlreadyVerified: Boolean(result.bvnVerifiedAt),
+      registrationFeePaid: Boolean(result.registrationFeePaid),
+    },
+    requirements,
     ...(isKycTestingMode() ? { kycTestingMode: true as const } : {}),
   });
+}
+
+function parseName(fullName: string | null): { firstName?: string; middleName?: string; lastName?: string } {
+  const parts = (fullName ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return {};
+  if (parts.length === 1) return { firstName: parts[0] };
+  if (parts.length === 2) return { firstName: parts[0], lastName: parts[1] };
+  return {
+    firstName: parts[0],
+    middleName: parts.slice(1, -1).join(' '),
+    lastName: parts[parts.length - 1],
+  };
+}
+
+function maskIdentifier(value: string | null | undefined): string | undefined {
+  const text = value?.trim();
+  if (!text) return undefined;
+  if (text.length <= 4) return '*'.repeat(text.length);
+  return `${'*'.repeat(Math.max(0, text.length - 4))}${text.slice(-4)}`;
 }

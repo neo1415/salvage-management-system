@@ -24,6 +24,7 @@ import {
 } from '@/features/kyc/services/tier2-review-settings.service';
 import { appPath } from '@/features/notifications/templates/email-urls';
 import { isTier2ReadyForVendorSubmission } from '@/features/kyc/services/tier2-submission-readiness';
+import { businessPolicyService } from '@/features/business-policy';
 
 const LOCK_TTL_SECONDS = 300; // 5 minutes
 
@@ -43,7 +44,14 @@ export async function POST(request: NextRequest) {
 
   // Get vendor record
   const [vendor] = await db
-    .select({ id: vendors.id, businessName: vendors.businessName })
+    .select({
+      id: vendors.id,
+      businessName: vendors.businessName,
+      cacNumber: vendors.cacNumber,
+      businessType: vendors.businessType,
+      bvnVerifiedAt: vendors.bvnVerifiedAt,
+      registrationFeePaid: vendors.registrationFeePaid,
+    })
     .from(vendors)
     .where(eq(vendors.userId, userId))
     .limit(1);
@@ -100,6 +108,7 @@ export async function POST(request: NextRequest) {
     const audit = getKYCAuditService();
     const notify = getKYCNotificationService();
     const providerService = getProviderVerificationService();
+    const policy = await businessPolicyService.getEffectivePolicy();
 
     // Log widget completion
     await audit.logWidgetLaunch(vendorId, userId, ipAddress);
@@ -204,6 +213,16 @@ export async function POST(request: NextRequest) {
     });
     normalizedResult.normalizedResult = {
       ...normalizedResult.normalizedResult,
+      nemSubmittedProfile: {
+        fullName: session.user.name ?? null,
+        email: session.user.email ?? null,
+        phone: session.user.phone ? maskPhone(session.user.phone) : null,
+        businessName: vendor.businessName ?? null,
+        businessType: vendor.businessType ?? null,
+        businessRegistrationNumber: maskIdentifier(vendor.cacNumber),
+        bvnAlreadyVerified: Boolean(vendor.bvnVerifiedAt),
+        registrationFeePaid: Boolean(vendor.registrationFeePaid),
+      },
       dojahMedia: media
         ? {
             assets: media.assets.map((asset) => ({
@@ -341,6 +360,10 @@ export async function POST(request: NextRequest) {
     }
 
     const automaticReviewEnabled = await getTier2AutoReviewEnabled();
+    const policyAllowsAutoApproval =
+      policy.onboarding.finalTier2Decision === 'manual_review'
+        ? !policy.kyc.providerPassRequiresInternalReview
+        : false;
     const canAutoApprove = automaticReviewEnabled && isCleanTier2Verification({
       failedChecks: normalizedResult.failedChecks,
       pendingChecks: normalizedResult.pendingChecks,
@@ -349,7 +372,7 @@ export async function POST(request: NextRequest) {
       fraudRiskScore,
       livenessScore,
       biometricMatchScore,
-    });
+    }) && policyAllowsAutoApproval;
 
     if (canAutoApprove) {
       await repo.autoApprove(vendorId);
@@ -405,10 +428,23 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       status: 'pending_review',
-      message: 'Your application is under review. You will be notified within 24-48 hours.',
+      message: 'Your application is under review. You will be notified once review is complete.',
     });
   } finally {
     // Always release the lock
     await redis.del(lockKey);
   }
+}
+
+function maskIdentifier(value: string | null | undefined): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  if (text.length <= 4) return '*'.repeat(text.length);
+  return `${'*'.repeat(Math.max(0, text.length - 4))}${text.slice(-4)}`;
+}
+
+function maskPhone(value: string): string {
+  const text = value.trim();
+  if (text.length <= 4) return '*'.repeat(text.length);
+  return `${text.slice(0, 4)}${'*'.repeat(Math.max(0, text.length - 7))}${text.slice(-3)}`;
 }

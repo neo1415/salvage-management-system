@@ -299,6 +299,19 @@ export async function POST(request: NextRequest) {
       providerReference,
       workflowReference
     );
+    normalized.normalizedResult = {
+      ...normalized.normalizedResult,
+      nemSubmittedProfile: {
+        fullName: user?.fullName ?? null,
+        email: user?.email ?? null,
+        phone: user?.phone ? maskPhone(user.phone) : null,
+        businessName: vendor.businessName ?? null,
+        businessType: vendor.businessType ?? null,
+        businessRegistrationNumber: maskIdentifier(vendor.cacNumber),
+        bvnAlreadyVerified: Boolean(vendor.bvnVerifiedAt),
+        registrationFeePaid: Boolean(vendor.registrationFeePaid),
+      },
+    };
     await providerService.persistVerification({
       userId: vendor.userId,
       vendorId: vendor.id,
@@ -373,4 +386,17 @@ async function getSystemActorId(): Promise<string> {
     .limit(1);
 
   return systemAdmin?.id ?? '00000000-0000-0000-0000-000000000000';
+}
+
+function maskIdentifier(value: string | null | undefined): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  if (text.length <= 4) return '*'.repeat(text.length);
+  return `${'*'.repeat(Math.max(0, text.length - 4))}${text.slice(-4)}`;
+}
+
+function maskPhone(value: string): string {
+  const text = value.trim();
+  if (text.length <= 4) return '*'.repeat(text.length);
+  return `${text.slice(0, 4)}${'*'.repeat(Math.max(0, text.length - 7))}${text.slice(-3)}`;
 }
