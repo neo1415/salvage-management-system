@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ConfigForm } from './config-form';
 import { ConfigHistory } from './config-history';
 import { Settings, History, ToggleLeft, ToggleRight } from 'lucide-react';
@@ -11,6 +11,24 @@ export function AuctionConfigContent() {
   const [activeTab, setActiveTab] = useState<Tab>('config');
   const [depositSystemEnabled, setDepositSystemEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchFeatureFlags = async () => {
+      try {
+        const response = await fetch('/api/admin/feature-flags');
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (typeof data.depositSystemEnabled === 'boolean') {
+          setDepositSystemEnabled(data.depositSystemEnabled);
+        }
+      } catch (error) {
+        console.error('Failed to fetch feature flags:', error);
+      }
+    };
+
+    fetchFeatureFlags();
+  }, []);
 
   const handleToggleFeatureFlag = async () => {
     try {

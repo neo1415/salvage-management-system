@@ -11,8 +11,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth/next-auth.config';
 import { configService } from '@/features/auction-deposit/services/config.service';
+import { businessPolicyService } from '@/features/business-policy/business-policy.service';
+import {
+  patchLegacyAuctionConfigPolicy,
+  policyToLegacyAuctionConfig,
+} from '@/features/business-policy/legacy-auction-config-bridge';
 
 /**
  * GET /api/admin/config
@@ -41,12 +47,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get current configuration
-    const config = await configService.getConfig();
+    // Auction Config is a friendly view over the effective business policy.
+    // This prevents it from drifting away from Enterprise Setup.
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const config = policyToLegacyAuctionConfig(policy);
 
     return NextResponse.json({
       success: true,
       config,
+      source: 'business_policy',
     });
   } catch (error) {
     console.error('Get config error:', error);
@@ -100,21 +109,79 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Update configuration
-    await configService.updateConfig(
-      parameter,
-      value,
-      session.user.id,
-      reason
-    );
+    const basePolicy = await businessPolicyService.getEffectivePolicy();
+    const patch = patchLegacyAuctionConfigPolicy(basePolicy, parameter, Number(value));
 
-    // Get updated configuration
-    const config = await configService.getConfig();
+    const notes = `Auction Config updated ${patch.canonicalParameter}${reason ? `: ${reason}` : ''}`;
+    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+
+    const draft = await businessPolicyService.saveDraftPolicy({
+      policy: patch.policy,
+      actorId: session.user.id,
+      notes,
+      ipAddress,
+      userAgent,
+    });
+
+    if (!draft.success || !draft.record) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: draft.error || 'This configuration could not be saved.',
+          validation: draft.validation,
+        },
+        { status: 400 }
+      );
+    }
+
+    const published = await businessPolicyService.publishPolicy({
+      id: draft.record.id,
+      actorId: session.user.id,
+      ipAddress,
+      userAgent,
+    });
+
+    if (!published.success || !published.record) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: published.error || 'This configuration could not be published.',
+          validation: published.validation,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Keep the legacy system_config table and existing history tab in sync while
+    // older runtime paths finish moving to the business policy service.
+    try {
+      await configService.updateConfig(
+        patch.canonicalParameter,
+        value,
+        session.user.id,
+        reason || 'Updated from Auction Config'
+      );
+    } catch (legacyMirrorError) {
+      console.warn('[AuctionConfig] Policy published, but legacy config mirror failed', {
+        parameter: patch.canonicalParameter,
+        error: legacyMirrorError instanceof Error ? legacyMirrorError.message : 'Unknown error',
+      });
+    }
+
+    revalidatePath('/');
+    revalidatePath('/login');
+    revalidatePath('/register');
+    revalidatePath('/admin/enterprise-setup');
+    revalidatePath('/admin/auction-config');
+
+    const config = policyToLegacyAuctionConfig(published.record.policy);
 
     return NextResponse.json({
       success: true,
       config,
-      message: `Configuration parameter '${parameter}' updated successfully`,
+      source: 'business_policy',
+      message: `Configuration parameter '${patch.canonicalParameter}' updated successfully`,
     });
   } catch (error) {
     console.error('Update config error:', error);

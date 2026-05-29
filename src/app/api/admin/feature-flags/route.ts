@@ -10,10 +10,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { systemConfig, configChangeHistory } from '@/lib/db/schema/auction-deposit';
 import { eq } from 'drizzle-orm';
+import { businessPolicyService } from '@/features/business-policy/business-policy.service';
+import { patchLegacyAuctionConfigPolicy } from '@/features/business-policy/legacy-auction-config-bridge';
 
 /**
  * GET /api/admin/feature-flags
@@ -42,18 +45,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get deposit system feature flag
-    const [featureFlag] = await db
-      .select()
-      .from(systemConfig)
-      .where(eq(systemConfig.parameter, 'deposit_system_enabled'))
-      .limit(1);
-
-    const enabled = featureFlag ? featureFlag.value === 'true' : true; // Default: enabled
+    const policy = await businessPolicyService.getEffectivePolicy();
 
     return NextResponse.json({
       success: true,
-      depositSystemEnabled: enabled,
+      depositSystemEnabled: policy.escrow.depositSystemEnabled,
+      source: 'business_policy',
     });
   } catch (error) {
     console.error('Get feature flags error:', error);
@@ -106,7 +103,50 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Use database transaction
+    const basePolicy = await businessPolicyService.getEffectivePolicy();
+    const patch = patchLegacyAuctionConfigPolicy(basePolicy, 'deposit_system_enabled', enabled);
+    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+
+    const draft = await businessPolicyService.saveDraftPolicy({
+      policy: patch.policy,
+      actorId: session.user.id,
+      notes: reason || `Deposit system ${enabled ? 'enabled' : 'disabled'} from Auction Config`,
+      ipAddress,
+      userAgent,
+    });
+
+    if (!draft.success || !draft.record) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: draft.error || 'Feature flag could not be saved.',
+          validation: draft.validation,
+        },
+        { status: 400 }
+      );
+    }
+
+    const published = await businessPolicyService.publishPolicy({
+      id: draft.record.id,
+      actorId: session.user.id,
+      ipAddress,
+      userAgent,
+    });
+
+    if (!published.success || !published.record) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: published.error || 'Feature flag could not be published.',
+          validation: published.validation,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Mirror into legacy feature-flag storage so existing history and any older
+    // readers remain compatible while Enterprise Setup becomes the source of truth.
     await db.transaction(async (tx) => {
       // Get current value
       const [currentFlag] = await tx
@@ -148,9 +188,16 @@ export async function PUT(request: NextRequest) {
       });
     });
 
+    revalidatePath('/');
+    revalidatePath('/login');
+    revalidatePath('/register');
+    revalidatePath('/admin/enterprise-setup');
+    revalidatePath('/admin/auction-config');
+
     return NextResponse.json({
       success: true,
       depositSystemEnabled: enabled,
+      source: 'business_policy',
       message: `Deposit system ${enabled ? 'enabled' : 'disabled'} successfully`,
     });
   } catch (error) {
