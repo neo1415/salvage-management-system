@@ -12,6 +12,7 @@ interface ConfigChange {
   changedByName?: string;
   reason?: string;
   createdAt: string;
+  source?: 'auction_config' | 'enterprise_setup';
 }
 
 interface ConfigHistoryProps {
@@ -80,6 +81,11 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
+  };
+
+  const formatSource = (source?: ConfigChange['source']) => {
+    if (source === 'enterprise_setup') return 'Enterprise Setup';
+    return 'Auction Config';
   };
 
   if (loading && page === 1) {
@@ -189,6 +195,10 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
                         <User className="w-3 h-3 text-gray-500" />
                         <span className="text-sm text-gray-600">
                           {change.changedByName || change.changedBy}
+                        </span>
+                        <span className="text-gray-300">•</span>
+                        <span className="text-xs font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">
+                          {formatSource(change.source)}
                         </span>
                         <span className="text-gray-300">•</span>
                         <Calendar className="w-3 h-3 text-gray-500" />
