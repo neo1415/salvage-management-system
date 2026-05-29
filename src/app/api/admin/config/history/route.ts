@@ -15,6 +15,7 @@ import { db } from '@/lib/db/drizzle';
 import { configChangeHistory } from '@/lib/db/schema/auction-deposit';
 import { businessPolicyVersions } from '@/lib/db/schema/business-policies';
 import { users } from '@/lib/db/schema/users';
+import { businessPolicyService } from '@/features/business-policy/business-policy.service';
 import { policyToLegacyAuctionConfig } from '@/features/business-policy/legacy-auction-config-bridge';
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import type { BusinessPolicy } from '@/features/business-policy/types';
@@ -184,12 +185,12 @@ async function getEnterprisePolicyHistory(filters: {
     .filter((row) => row.publishedAt)
     .sort((a, b) => (a.publishedAt?.getTime() ?? 0) - (b.publishedAt?.getTime() ?? 0));
 
+  const runtimePolicy = await businessPolicyService.getRuntimeDefaultPolicy();
   const entries: ConfigHistoryEntry[] = [];
   for (let index = 0; index < publishedRows.length; index += 1) {
     const row = publishedRows[index];
     const previous = publishedRows[index - 1];
 
-    if (!previous) continue;
     if (row.notes?.startsWith('Auction Config updated')) continue;
     if (row.notes?.startsWith('Deposit system ')) continue;
 
@@ -200,19 +201,36 @@ async function getEnterprisePolicyHistory(filters: {
     const actorId = row.publishedBy || row.createdBy || 'unknown';
     if (filters.changedBy && actorId !== filters.changedBy) continue;
 
-    const oldConfig = policyToHistoryConfig(previous.policy);
+    const previousPolicy = previous?.policy ?? runtimePolicy;
+    const oldConfig = policyToHistoryConfig(previousPolicy);
     const newConfig = policyToHistoryConfig(row.policy);
+    let changedAuctionConfigFields = 0;
 
     for (const [parameter, newValue] of Object.entries(newConfig)) {
       const oldValue = oldConfig[parameter];
       if (oldValue === newValue) continue;
       if (filters.parameter && parameter !== filters.parameter) continue;
 
+      changedAuctionConfigFields += 1;
       entries.push({
         id: `${row.id}:${parameter}`,
         parameter,
         oldValue,
         newValue,
+        changedBy: actorId,
+        changedByName: row.actorName || row.actorEmail || undefined,
+        reason: row.notes || `Enterprise Setup published ${row.version}`,
+        createdAt,
+        source: 'enterprise_setup',
+      });
+    }
+
+    if (changedAuctionConfigFields === 0 && (!filters.parameter || filters.parameter === 'enterprise_setup')) {
+      entries.push({
+        id: `${row.id}:enterprise_setup`,
+        parameter: 'enterprise_setup',
+        oldValue: previous?.version ?? runtimePolicy.version,
+        newValue: row.version,
         changedBy: actorId,
         changedByName: row.actorName || row.actorEmail || undefined,
         reason: row.notes || `Enterprise Setup published ${row.version}`,

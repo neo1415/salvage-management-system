@@ -194,7 +194,7 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
                       <div className="flex items-center gap-2 mt-1">
                         <User className="w-3 h-3 text-gray-500" />
                         <span className="text-sm text-gray-600">
-                          {change.changedByName || change.changedBy}
+                          {change.changedByName || 'Unknown user'}
                         </span>
                         <span className="text-gray-300">•</span>
                         <span className="text-xs font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">
