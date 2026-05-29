@@ -25,6 +25,7 @@ import { appPath } from '@/features/notifications/templates/email-urls';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { createNotification } from '@/features/notifications/services/notification.service';
 import { configService } from '@/features/auction-deposit/services/config.service';
+import { getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 import {
   businessPolicyService,
   logPolicyDecision,
@@ -148,6 +149,8 @@ async function sendOverdueEscalationToFinanceOfficers(
   daysOverdue: number
 ): Promise<void> {
   try {
+    const branding = await getEmailBranding();
+
     // Get Finance Officer users
     const financeOfficers = await db
       .select()
@@ -166,15 +169,13 @@ async function sendOverdueEscalationToFinanceOfficers(
       await emailService.sendEmail({
         to: officer.email,
         subject: `Payment Overdue - ${daysOverdue} Day(s) - Action Required`,
-        html: wrapProfessionalEmail(
+        html: await wrapProfessionalEmail(
           'Payment Overdue - Action Required',
           `
-            <p style="font-size: 18px; color: #800020; font-weight: 600;">Dear ${officer.fullName},</p>
+            <p style="font-size: 18px; color: ${branding.primaryColor}; font-weight: 600;">Dear ${officer.fullName},</p>
             <p>A payment has exceeded its deadline and requires your attention.</p>
             <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #991b1b;">Overdue Payment Details</h3>
-              <p><strong>Payment ID:</strong> ${payment.id}</p>
-              <p><strong>Auction ID:</strong> ${payment.auctionId}</p>
               <p><strong>Amount:</strong> ₦${parseFloat(payment.amount).toLocaleString()}</p>
               <p><strong>Asset:</strong> ${assetDescription}</p>
               <p><strong>Vendor:</strong> ${user.fullName} (${user.email})</p>
@@ -182,7 +183,7 @@ async function sendOverdueEscalationToFinanceOfficers(
               <p><strong>Deadline:</strong> ${payment.paymentDeadline.toLocaleDateString('en-NG')}</p>
               <p><strong>Days Overdue:</strong> <span style="color: #dc2626; font-weight: bold;">${daysOverdue} day(s)</span></p>
             </div>
-            <h3 style="color: #800020;">Recommended Actions</h3>
+            <h3 style="color: ${branding.primaryColor};">Recommended Actions</h3>
             <ol style="line-height: 1.8;">
               <li>Contact vendor to follow up on payment status</li>
               <li>Review payment proof if submitted</li>
@@ -190,7 +191,7 @@ async function sendOverdueEscalationToFinanceOfficers(
               <li>If no response after ${daysOverdue + 2} days, consider auction cancellation</li>
             </ol>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${appPath('/finance/payments?view=overdue')}" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">View Overdue Payments</a>
+              <a href="${appPath('/finance/payments?view=overdue')}" class="button" style="display: inline-block; padding: 14px 28px; background: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 700;">View Overdue Payments</a>
             </div>
           `,
           `Payment overdue ${daysOverdue} day(s) — finance review required`
@@ -230,11 +231,14 @@ async function sendOverdueReminderToVendor(
 ): Promise<void> {
   try {
     const assetDescription = `${caseData.assetType} - ${caseData.claimReference}`;
+    const branding = await getEmailBranding();
+    const supportPhone = getSupportPhone(branding);
+    const supportEmail = getSupportEmail(branding);
 
     // Send SMS reminder
     await smsService.sendSMS({
       to: user.phone,
-      message: `URGENT: Your payment of ₦${parseFloat(payment.amount).toLocaleString()} for ${assetDescription} is ${daysOverdue} day(s) overdue. Complete payment immediately to avoid auction cancellation. Contact: ${process.env.SUPPORT_PHONE || '234-02-014489560'}`,
+      message: `URGENT: Your payment of ₦${parseFloat(payment.amount).toLocaleString()} for ${assetDescription} is ${daysOverdue} day(s) overdue. Complete payment immediately to avoid auction cancellation. Contact: ${supportPhone}`,
       userId: user.id,
       category: 'routine',
     });
@@ -243,10 +247,10 @@ async function sendOverdueReminderToVendor(
     await emailService.sendEmail({
       to: user.email,
       subject: `URGENT: Payment Overdue - ${daysOverdue} Day(s)`,
-      html: wrapProfessionalEmail(
+      html: await wrapProfessionalEmail(
         'Payment Overdue - Immediate Action Required',
         `
-          <p style="font-size: 18px; color: #800020; font-weight: 600;">Dear ${user.fullName},</p>
+          <p style="font-size: 18px; color: ${branding.primaryColor}; font-weight: 600;">Dear ${user.fullName},</p>
           <p>Your payment for the auction you won is now <strong style="color: #dc2626;">${daysOverdue} day(s) overdue</strong>.</p>
           <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #991b1b;">Payment Details</h3>
@@ -255,12 +259,12 @@ async function sendOverdueReminderToVendor(
             <p><strong>Original Deadline:</strong> ${payment.paymentDeadline.toLocaleDateString('en-NG')}</p>
             <p><strong>Days Overdue:</strong> ${daysOverdue}</p>
           </div>
-          <h3 style="color: #800020;">Important Notice</h3>
+          <h3 style="color: ${branding.primaryColor};">Important Notice</h3>
           <p>If payment is not received within the next 2 days, your auction win may be cancelled and the item may be re-auctioned.</p>
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${appPath(`/vendor/payments/${payment.id}`)}" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">Complete Payment Now</a>
+            <a href="${appPath(`/vendor/payments/${payment.id}`)}" class="button" style="display: inline-block; padding: 14px 28px; background: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 700;">Complete Payment Now</a>
           </div>
-          <p>Support: ${process.env.SUPPORT_PHONE || '234-02-014489560'} | ${process.env.SUPPORT_EMAIL || 'nemsupport@nem-insurance.com'}</p>
+          <p>Support: ${supportPhone} | ${supportEmail}</p>
         `,
         `Your payment is ${daysOverdue} day(s) overdue`
       ),
@@ -312,6 +316,7 @@ export async function grantGracePeriod(
     }
 
     const { payment, vendor, user, auction, case: caseData } = paymentData;
+    const branding = await getEmailBranding();
 
     const config = await configService.getConfig();
     const extensionHours = config.graceExtensionDuration;
@@ -412,10 +417,10 @@ export async function grantGracePeriod(
     await emailService.sendEmail({
       to: user.email,
       subject: 'Grace Period Granted - Documents Re-enabled',
-      html: wrapProfessionalEmail(
+      html: await wrapProfessionalEmail(
         'Grace Period Granted',
         `
-          <p style="font-size: 18px; color: #800020; font-weight: 600;">Dear ${user.fullName},</p>
+          <p style="font-size: 18px; color: ${branding.primaryColor}; font-weight: 600;">Dear ${user.fullName},</p>
           <p>You have been granted a <strong>${extensionHours}-hour grace period</strong> for your payment.</p>
           <div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 16px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #065f46;">Updated Payment Details</h3>
@@ -427,7 +432,7 @@ export async function grantGracePeriod(
           </div>
           <p>Please complete payment before the new deadline. Required documents include Bill of Sale and Release and Waiver of Liability.</p>
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${appPath(`/vendor/auctions/${auction.id}`)}" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">Complete Payment Now</a>
+            <a href="${appPath(`/vendor/auctions/${auction.id}`)}" class="button" style="display: inline-block; padding: 14px 28px; background: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 700;">Complete Payment Now</a>
           </div>
           <p style="font-size: 14px; color: #666;">Grace period granted on ${new Date().toLocaleDateString('en-NG')}.</p>
         `,

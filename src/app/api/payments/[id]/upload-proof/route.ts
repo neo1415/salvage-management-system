@@ -9,6 +9,7 @@ import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/u
 import { emailService } from '@/features/notifications/services/email.service';
 import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
 import { appPath } from '@/features/notifications/templates/email-urls';
+import { brandLegalName, brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
 
 const MAX_FILE_SIZE_MB = 5;
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
@@ -229,6 +230,7 @@ async function notifyFinanceOfficers(
     }
 
     // Send email to each Finance Officer
+    const branding = await getEmailBranding();
     const emailPromises = financeOfficers.map(async (officer) => {
       const vendorInfo = await db
         .select()
@@ -267,7 +269,7 @@ async function notifyFinanceOfficers(
                 background-color: #ffffff;
               }
               .header {
-                background-color: #800020;
+                background-color: ${branding.primaryColor};
                 color: white;
                 padding: 30px 20px;
                 text-align: center;
@@ -285,14 +287,14 @@ async function notifyFinanceOfficers(
               }
               .payment-details {
                 background-color: #f9f9f9;
-                border-left: 4px solid #FFD700;
+                border-left: 4px solid ${branding.primaryColor};
                 padding: 15px 20px;
                 margin: 20px 0;
               }
               .payment-details h3 {
                 margin: 0 0 10px 0;
                 font-size: 16px;
-                color: #800020;
+                color: ${branding.primaryColor};
               }
               .payment-details ul {
                 list-style: none;
@@ -305,8 +307,8 @@ async function notifyFinanceOfficers(
               .button {
                 display: inline-block;
                 padding: 14px 28px;
-                background-color: #FFD700;
-                color: #800020;
+                background-color: ${branding.primaryColor};
+                color: #ffffff;
                 text-decoration: none;
                 border-radius: 6px;
                 font-weight: 600;
@@ -314,7 +316,7 @@ async function notifyFinanceOfficers(
                 text-align: center;
               }
               .button:hover {
-                background-color: #FFC700;
+                background-color: ${branding.primaryColor};
               }
               .button-container {
                 text-align: center;
@@ -368,19 +370,18 @@ async function notifyFinanceOfficers(
                 </div>
                 
                 <div class="alert">
-                  <strong>⚠️ Action Required:</strong> Please review and verify this payment within 4 hours to ensure timely processing.
+                  <strong>Action Required:</strong> Please review and verify this payment within 4 hours to ensure timely processing.
                 </div>
                 
                 <div class="button-container">
                   <a href="${appPath('/finance/payments')}" class="button">Review Payment</a>
                 </div>
                 
-                <p style="margin-top: 30px;">Best regards,<br><strong>NEM Salvage Management System</strong></p>
+                <p style="margin-top: 30px;">Best regards,<br><strong>${brandTeamName(branding)}</strong></p>
               </div>
               
               <div class="footer">
-                <p><strong>NEM Insurance Plc</strong></p>
-                <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
+                <p><strong>${brandLegalName(branding)}</strong></p>
                 <p style="margin-top: 15px;">This is an automated notification. Please do not reply to this message.</p>
               </div>
             </div>

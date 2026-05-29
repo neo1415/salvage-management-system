@@ -4,6 +4,14 @@ import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { eq } from 'drizzle-orm';
 import { registrationFeeService } from '@/features/vendors/services/registration-fee.service';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveRegistrationFeePaymentAccess,
+} from '@/features/business-policy';
+import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 
 /**
  * POST /api/vendors/registration-fee/initialize
@@ -48,8 +56,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const registrationFeeDecision = resolveRegistrationFeePaymentAccess(policy, {
+      tier: vendor.tier === 'tier2_full' ? 'tier2_full' : vendor.tier === 'tier1_bvn' ? 'tier1_bvn' : 'tier0',
+      bvnVerified: Boolean(vendor.bvnVerifiedAt),
+      registrationFeePaid: Boolean(vendor.registrationFeePaid),
+    });
+    const ipAddress = getIpAddress(request.headers);
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+
+    await logPolicyDecision({
+      userId,
+      entityType: AuditEntityType.PAYMENT,
+      entityId: vendor.id,
+      ipAddress,
+      userAgent,
+      deviceType: getDeviceTypeFromUserAgent(userAgent),
+      decision: registrationFeeDecision.decision,
+      context: {
+        source: 'api/vendors/registration-fee/initialize',
+        runtimeMode: getBusinessPolicyRuntimeMode(),
+      },
+    }).catch((error) => {
+      console.warn('[BusinessPolicy] Failed to audit registration fee payment decision', {
+        vendorId: vendor.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+
+    const policyEnforcementEnabled = isBusinessPolicyEnforcementEnabled();
+
+    if (!registrationFeeDecision.allowed && policyEnforcementEnabled) {
+      const status = registrationFeeDecision.value === 'already_paid' ? 400 : 403;
+      return NextResponse.json(
+        {
+          error: 'Registration fee payment unavailable',
+          message: registrationFeeDecision.message,
+          reason: registrationFeeDecision.value,
+        },
+        { status }
+      );
+    }
+
     // 3. Check if BVN is verified (Tier 1 KYC complete)
-    if (!vendor.bvnVerifiedAt) {
+    if (!vendor.bvnVerifiedAt && !(policyEnforcementEnabled && registrationFeeDecision.allowed)) {
       return NextResponse.json(
         { 
           error: 'BVN verification required',

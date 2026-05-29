@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Crown, ArrowRight, CheckCircle2, Clock, XCircle, AlertTriangle, RefreshCw, Shield } from 'lucide-react';
 import type { KYCStatus } from '@/features/kyc/types/kyc.types';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 
 export type VendorTier = 'tier1_bvn' | 'tier2_full';
 
@@ -15,6 +16,7 @@ interface KYCStatusCardProps {
 
 export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStatusCardProps) {
   const router = useRouter();
+  const { policy } = usePublicBusinessPolicy();
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,7 +35,12 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
   }, []);
 
   const handleUpgradeClick = () => {
-    // Check if registration fee is paid before allowing Tier 2 KYC
+    if (!policy?.onboarding.registrationFeeRequired) {
+      router.push('/vendor/kyc/tier2');
+      return;
+    }
+
+    // Check if registration fee is paid before allowing full verification.
     if (registrationFeePaid) {
       router.push('/vendor/kyc/tier2');
     } else {
@@ -57,7 +64,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
               <p className="font-semibold text-orange-900">Tier 2 Verification Expiring Soon</p>
               <p className="text-sm text-orange-700 mt-1">
                 Your verification expires in <strong>{daysLeft} days</strong> ({expiresAt.toLocaleDateString()}).
-                Renew now to keep unlimited bidding access.
+                Renew now to keep full bidding access.
               </p>
             </div>
             <button
@@ -87,7 +94,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
               </span>
             </p>
             <p className="text-sm text-green-700">
-              Unlimited bidding
+              Full bidding access
             </p>
           </div>
         </div>
@@ -109,7 +116,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
                 <CheckCircle2 className="w-3 h-3" /> Active
               </span>
             </p>
-            <p className="text-sm text-green-700">Unlimited bidding</p>
+            <p className="text-sm text-green-700">Full bidding access</p>
           </div>
         </div>
       </div>
@@ -127,7 +134,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
           <div>
             <p className="font-semibold text-yellow-900">Tier 2 Application Under Review</p>
             <p className="text-sm text-yellow-700 mt-1">
-              Our team is reviewing your application. You'll be notified within 24–48 hours.
+              Our team is reviewing your application. You'll be notified once the review is complete.
             </p>
           </div>
         </div>
@@ -166,9 +173,9 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
   // Tier 1 — show upgrade banner
   if (currentTier === 'tier1_bvn') {
     // If registration fee not paid, show payment prompt
-    if (registrationFeePaid === false) {
+    if (policy?.onboarding.registrationFeeRequired !== false && registrationFeePaid === false) {
       return (
-        <div className={`relative bg-gradient-to-r from-[#800020] to-[#FFD700] text-white rounded-lg shadow-lg overflow-hidden ${className}`}>
+        <div className={`relative bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] text-white rounded-lg shadow-lg overflow-hidden ${className}`}>
           <div className="absolute inset-0 opacity-10">
             <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2" />
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full translate-y-1/2 -translate-x-1/2" />
@@ -181,13 +188,13 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
               <div className="flex-1">
                 <h3 className="text-lg md:text-xl font-bold mb-1">Complete Your Registration</h3>
                 <p className="text-white/90 text-sm md:text-base">
-                  Pay the one-time registration fee to unlock Tier 2 KYC and unlimited bidding.
+                  Pay the one-time registration fee to continue to full verification.
                   {bidLimit ? ` Your current Tier 1 limit is ₦${bidLimit.toLocaleString()}.` : ''}
                 </p>
               </div>
               <button
                 onClick={handleUpgradeClick}
-                className="flex-shrink-0 px-6 py-3 bg-white text-[#800020] font-bold rounded-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2 whitespace-nowrap min-h-[44px]"
+                className="flex-shrink-0 px-6 py-3 bg-white text-[var(--brand-primary)] font-bold rounded-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2 whitespace-nowrap min-h-[44px]"
               >
                 Pay Now
                 <ArrowRight className="w-4 h-4" />
@@ -200,7 +207,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
 
     // If registration fee paid, show Tier 2 upgrade prompt
     return (
-      <div className={`relative bg-gradient-to-r from-[#800020] to-[#FFD700] text-white rounded-lg shadow-lg overflow-hidden ${className}`}>
+      <div className={`relative bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] text-white rounded-lg shadow-lg overflow-hidden ${className}`}>
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2" />
           <div className="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full translate-y-1/2 -translate-x-1/2" />
@@ -211,15 +218,15 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
               <Crown className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg md:text-xl font-bold mb-1">Unlock Premium Auctions — Upgrade to Tier 2</h3>
+              <h3 className="text-lg md:text-xl font-bold mb-1">Complete Full Verification</h3>
               <p className="text-white/90 text-sm md:text-base">
-                Get unlimited bidding on high-value auctions, priority support, and leaderboard access.
+                Complete the configured verification checks for higher auction access, priority support, and leaderboard eligibility.
                 {bidLimit ? ` Your current Tier 1 limit is ₦${bidLimit.toLocaleString()}.` : ''}
               </p>
             </div>
             <button
               onClick={handleUpgradeClick}
-              className="flex-shrink-0 px-6 py-3 bg-white text-[#800020] font-bold rounded-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2 whitespace-nowrap min-h-[44px]"
+              className="flex-shrink-0 px-6 py-3 bg-white text-[var(--brand-primary)] font-bold rounded-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2 whitespace-nowrap min-h-[44px]"
             >
               Upgrade Now
               <ArrowRight className="w-4 h-4" />

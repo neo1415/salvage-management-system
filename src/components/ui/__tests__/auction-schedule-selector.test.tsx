@@ -74,7 +74,7 @@ describe('AuctionScheduleSelector', () => {
     );
 
     const startNowButton = screen.getByText('Start Now').closest('button');
-    expect(startNowButton).toHaveClass('bg-[#800020]');
+    expect(startNowButton).toHaveClass('bg-[var(--brand-primary)]');
   });
 
   it('accepts custom className prop', () => {

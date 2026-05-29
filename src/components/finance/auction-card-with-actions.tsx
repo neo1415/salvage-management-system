@@ -151,7 +151,7 @@ export function AuctionCardWithActions({
             <div className="flex-1">
               <Link
                 href="/finance/payments"
-                className="text-lg font-semibold text-gray-900 hover:text-[#800020] transition-colors"
+                className="text-lg font-semibold text-gray-900 hover:text-[var(--brand-primary)] transition-colors"
               >
                 {auction.assetName}
               </Link>
@@ -276,7 +276,7 @@ export function AuctionCardWithActions({
                 value={extensionReason}
                 onChange={(e) => setExtensionReason(e.target.value)}
                 placeholder="Enter reason for extension..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent resize-none"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent resize-none"
                 rows={4}
               />
               <div className="flex gap-3 mt-6">

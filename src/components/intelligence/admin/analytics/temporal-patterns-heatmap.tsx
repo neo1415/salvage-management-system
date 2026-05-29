@@ -50,7 +50,7 @@ export function TemporalPatternsHeatmap({ data, loading }: TemporalPatternsHeatm
     
     const normalized = (score - minScore) / (maxScore - minScore);
     
-    if (normalized >= 0.8) return 'bg-[#800020]'; // Brand color - highest activity
+    if (normalized >= 0.8) return 'bg-[var(--brand-primary)]'; // Brand color - highest activity
     if (normalized >= 0.6) return 'bg-red-600';
     if (normalized >= 0.4) return 'bg-orange-500';
     if (normalized >= 0.2) return 'bg-yellow-500';
@@ -164,7 +164,7 @@ export function TemporalPatternsHeatmap({ data, loading }: TemporalPatternsHeatm
                   <span className="text-xs">High</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 bg-[#800020] border" />
+                  <div className="w-6 h-6 bg-[var(--brand-primary)] border" />
                   <span className="text-xs">Peak</span>
                 </div>
               </div>

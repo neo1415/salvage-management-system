@@ -157,7 +157,7 @@ export function ReleaseFormModal({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020]"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--brand-primary)]"></div>
               <span className="ml-3 text-gray-700">Loading document...</span>
             </div>
           </div>
@@ -247,7 +247,7 @@ export function ReleaseFormModal({
                     type="checkbox"
                     checked={hasAcceptedTerms}
                     onChange={(e) => setHasAcceptedTerms(e.target.checked)}
-                    className="mt-1 h-4 w-4 text-[#800020] border-gray-300 rounded focus:ring-[#800020]"
+                    className="mt-1 h-4 w-4 text-[var(--brand-primary)] border-gray-300 rounded focus:ring-[var(--brand-focus-ring)]"
                   />
                   <span className="text-sm text-gray-700">
                     I have read and agree to the terms and conditions stated above. I understand that this is a legally binding document and my digital signature has the same legal effect as a handwritten signature.
@@ -269,9 +269,16 @@ export function ReleaseFormModal({
             <button
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className="px-6 py-2 text-sm font-medium text-white bg-[#800020] rounded-md hover:bg-[#a00028] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-6 py-2 text-sm font-medium text-white bg-[var(--brand-primary)] rounded-md hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isSubmitting ? 'Signing...' : 'Sign Document'}
+              {isSubmitting ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  Signing...
+                </span>
+              ) : (
+                'Sign Document'
+              )}
             </button>
           </div>
         </div>

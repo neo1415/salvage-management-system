@@ -11,6 +11,8 @@ import { salvageCases } from '@/lib/db/schema/cases';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
+import { businessPolicyService } from '@/features/business-policy';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 export async function GET(
   request: NextRequest,
@@ -62,6 +64,11 @@ export async function GET(
     }
 
     const { auction, case: caseData, vendorUser } = auctionData;
+    const effectivePolicy = await businessPolicyService.getEffectivePolicy();
+    const { branding, legal, documents } = effectivePolicy;
+    const sellerName = escapeHtml(branding.legalName || branding.brandName);
+    const sellerAddress = escapeHtml([legal.addressLine1, legal.addressLine2].filter(Boolean).join(', ') || 'Configured pickup location');
+    const supportPhone = escapeHtml(branding.supportPhone || 'Contact support');
 
     // Extract asset details
     const assetDetails = caseData.assetDetails as {
@@ -71,7 +78,11 @@ export async function GET(
       vin?: string;
     };
 
-    const assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || caseData.assetType;
+    const assetDescription = formatAssetName(
+      caseData.assetType,
+      caseData.assetDetails as Record<string, unknown>,
+      caseData.claimReference
+    );
 
     // Generate document content based on type
     let title = '';
@@ -82,69 +93,13 @@ export async function GET(
         title = 'Release & Waiver of Liability';
         content = `
           <div class="document-content">
-            <p class="mb-4"><strong>I, ${vendorUser.fullName}, hereby acknowledge and agree:</strong></p>
-            
-            <div class="mb-6">
-              <h3 class="text-lg font-bold mb-2">1. AS-IS CONDITION</h3>
-              <p class="text-gray-700">
-                I am purchasing the salvage item(s) in "AS-IS, WHERE-IS" condition with ALL FAULTS and NO WARRANTIES, express or implied.
-              </p>
-            </div>
-
-            <div class="mb-6">
-              <h3 class="text-lg font-bold mb-2">2. INSPECTION OPPORTUNITY</h3>
-              <p class="text-gray-700">
-                I have had the opportunity to inspect the item(s) through photos, descriptions, and damage assessment provided by NEM Insurance.
-              </p>
-            </div>
-
-            <div class="mb-6">
-              <h3 class="text-lg font-bold mb-2">3. RELEASE OF LIABILITY</h3>
-              <p class="text-gray-700">
-                I hereby release, waive, and forever discharge NEM Insurance Plc, its officers, employees, and agents from any and all liability, 
-                claims, demands, or causes of action arising from:
-              </p>
-              <ul class="list-disc ml-6 mt-2 text-gray-700">
-                <li>Injuries or death resulting from use of the salvage item(s)</li>
-                <li>Property damage caused by the salvage item(s)</li>
-                <li>Defects, malfunctions, or failures of the salvage item(s)</li>
-                <li>Any misrepresentation or omission regarding the item's condition</li>
-              </ul>
-            </div>
-
-            <div class="mb-6">
-              <h3 class="text-lg font-bold mb-2">4. ASSUMPTION OF RISK</h3>
-              <p class="text-gray-700">
-                I understand and accept all risks associated with purchasing and using salvage property, including but not limited to:
-              </p>
-              <ul class="list-disc ml-6 mt-2 text-gray-700">
-                <li>Structural damage not visible in photos</li>
-                <li>Mechanical failures</li>
-                <li>Safety hazards</li>
-                <li>Environmental contamination</li>
-              </ul>
-            </div>
-
-            <div class="mb-6">
-              <h3 class="text-lg font-bold mb-2">5. INDEMNIFICATION</h3>
-              <p class="text-gray-700">
-                I agree to indemnify and hold harmless NEM Insurance Plc from any claims by third parties arising from my ownership or use of the salvage item(s).
-              </p>
-            </div>
-
-            <div class="mb-6">
-              <h3 class="text-lg font-bold mb-2">6. FINAL SALE</h3>
-              <p class="text-gray-700">
-                I understand this sale is FINAL and NON-REFUNDABLE.
-              </p>
-            </div>
-
-            <div class="mb-6">
-              <h3 class="text-lg font-bold mb-2">7. GOVERNING LAW</h3>
-              <p class="text-gray-700">
-                This agreement is governed by the laws of Nigeria.
-              </p>
-            </div>
+            <p class="mb-4"><strong>I, ${escapeHtml(vendorUser.fullName)}, hereby acknowledge and agree:</strong></p>
+            ${documents.liabilityWaiverClauses.map((clause, index) => `
+              <div class="mb-6">
+                <h3 class="text-lg font-bold mb-2">${index + 1}. ${escapeHtml(clause.title)}</h3>
+                <p class="text-gray-700">${escapeHtml(clause.body)}</p>
+              </div>
+            `).join('')}
 
             <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mt-6">
               <p class="text-sm text-yellow-800">
@@ -167,24 +122,24 @@ export async function GET(
 
             <div class="mb-6">
               <h3 class="text-lg font-bold mb-2">SELLER INFORMATION</h3>
-              <p class="text-gray-700">Name: NEM Insurance Plc</p>
-              <p class="text-gray-700">Address: 199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
-              <p class="text-gray-700">Contact: 234-02-014489560</p>
+              <p class="text-gray-700">Name: ${sellerName}</p>
+              <p class="text-gray-700">Address: ${sellerAddress}</p>
+              <p class="text-gray-700">Contact: ${supportPhone}</p>
             </div>
 
             <div class="mb-6">
               <h3 class="text-lg font-bold mb-2">BUYER INFORMATION</h3>
-              <p class="text-gray-700">Name: ${vendorUser.fullName}</p>
-              <p class="text-gray-700">Email: ${vendorUser.email}</p>
-              <p class="text-gray-700">Phone: ${vendorUser.phone}</p>
+              <p class="text-gray-700">Name: ${escapeHtml(vendorUser.fullName)}</p>
+              <p class="text-gray-700">Email: ${escapeHtml(vendorUser.email)}</p>
+              <p class="text-gray-700">Phone: ${escapeHtml(vendorUser.phone || '')}</p>
             </div>
 
             <div class="mb-6">
               <h3 class="text-lg font-bold mb-2">ASSET INFORMATION</h3>
-              <p class="text-gray-700">Type: ${caseData.assetType}</p>
-              <p class="text-gray-700">Description: ${assetDescription}</p>
-              <p class="text-gray-700">Condition: ${caseData.vehicleCondition || 'salvage'}</p>
-              ${assetDetails.vin ? `<p class="text-gray-700">VIN: ${assetDetails.vin}</p>` : ''}
+              <p class="text-gray-700">Type: ${escapeHtml(caseData.assetType)}</p>
+              <p class="text-gray-700">Description: ${escapeHtml(assetDescription)}</p>
+              <p class="text-gray-700">Condition: ${escapeHtml(caseData.vehicleCondition || 'salvage')}</p>
+              ${assetDetails.vin ? `<p class="text-gray-700">VIN: ${escapeHtml(assetDetails.vin)}</p>` : ''}
             </div>
 
             <div class="mb-6">
@@ -195,7 +150,7 @@ export async function GET(
 
             <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mt-6">
               <p class="text-sm text-yellow-800">
-                <strong>AS-IS, WHERE-IS SALE:</strong> This asset is sold "AS-IS, WHERE-IS" with NO WARRANTIES, express or implied. Buyer accepts all risks and responsibilities associated with this purchase.
+                <strong>${escapeHtml(documents.billOfSaleDisclaimerTitle)}:</strong> ${escapeHtml(documents.billOfSaleDisclaimerBody)}
               </p>
             </div>
           </div>
@@ -205,23 +160,23 @@ export async function GET(
       case 'pickup_authorization':
         title = 'Pickup Authorization';
         const authCode = `AUTH-${auctionId.substring(0, 8).toUpperCase()}`;
+        const pickupDeadlineHours = Math.max(1, effectivePolicy.auctions.documentValidityHours);
         content = `
           <div class="document-content">
-            <div class="mb-6 bg-[#FFD700] p-4 rounded-lg text-center">
-              <h3 class="text-2xl font-bold text-[#800020] mb-2">AUTHORIZATION CODE</h3>
-              <p class="text-3xl font-mono font-bold text-[#800020]">${authCode}</p>
+            <div class="mb-6 bg-[var(--brand-primary)] p-4 rounded-lg text-center">
+              <h3 class="text-2xl font-bold text-white mb-2">AUTHORIZATION CODE</h3>
+              <p class="text-3xl font-mono font-bold text-white">${authCode}</p>
             </div>
 
             <div class="mb-6">
               <h3 class="text-lg font-bold mb-2">AUTHORIZED VENDOR</h3>
-              <p class="text-gray-700">Name: ${vendorUser.fullName}</p>
-              <p class="text-gray-700">Phone: ${vendorUser.phone}</p>
+              <p class="text-gray-700">Name: ${escapeHtml(vendorUser.fullName)}</p>
+              <p class="text-gray-700">Phone: ${escapeHtml(vendorUser.phone || '')}</p>
             </div>
 
             <div class="mb-6">
               <h3 class="text-lg font-bold mb-2">ASSET INFORMATION</h3>
-              <p class="text-gray-700">Description: ${assetDescription}</p>
-              <p class="text-gray-700">Auction ID: ${auctionId}</p>
+              <p class="text-gray-700">Description: ${escapeHtml(assetDescription)}</p>
             </div>
 
             <div class="mb-6">
@@ -233,9 +188,9 @@ export async function GET(
 
             <div class="mb-6">
               <h3 class="text-lg font-bold mb-2">PICKUP DETAILS</h3>
-              <p class="text-gray-700">Location: ${caseData.locationName || 'NEM Insurance Salvage Yard'}</p>
-              <p class="text-gray-700">Contact: 234-02-014489560</p>
-              <p class="text-gray-700 font-bold">Deadline: ${new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG')}</p>
+              <p class="text-gray-700">Location: ${caseData.locationName || sellerAddress}</p>
+              <p class="text-gray-700">Contact: ${supportPhone}</p>
+              <p class="text-gray-700 font-bold">Deadline: ${new Date(Date.now() + pickupDeadlineHours * 60 * 60 * 1000).toLocaleDateString('en-NG')}</p>
             </div>
 
             <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mt-6">
@@ -276,4 +231,18 @@ export async function GET(
       { status: 500 }
     );
   }
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    const entities: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    };
+
+    return entities[char] ?? char;
+  });
 }

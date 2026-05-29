@@ -581,7 +581,7 @@ function AuctionBrowsingContent() {
             >
               <FilterIcon size={18} aria-hidden="true" />
               {activeFilterCount > 0 && (
-                <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-bold">
+                <span className="px-2 py-0.5 bg-[var(--brand-primary)] text-white rounded-full text-xs font-bold">
                   {activeFilterCount}
                 </span>
               )}
@@ -642,7 +642,7 @@ function AuctionBrowsingContent() {
             >
               <FilterIcon size={18} aria-hidden="true" />
               {activeFilterCount > 0 && (
-                <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-bold">
+                <span className="px-2 py-0.5 bg-[var(--brand-primary)] text-white rounded-full text-xs font-bold">
                   {activeFilterCount}
                 </span>
               )}
@@ -668,7 +668,7 @@ function AuctionBrowsingContent() {
               onClick={() => setActiveTab('active')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
                 activeTab === 'active'
-                  ? 'bg-[#800020] text-white shadow-md'
+                  ? 'bg-[var(--brand-primary)] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
             >
@@ -679,7 +679,7 @@ function AuctionBrowsingContent() {
               onClick={() => setActiveTab('for_you')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
                 activeTab === 'for_you'
-                  ? 'bg-[#800020] text-white shadow-md'
+                  ? 'bg-[var(--brand-primary)] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
             >
@@ -692,7 +692,7 @@ function AuctionBrowsingContent() {
               onClick={() => setActiveTab('my_bids')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
                 activeTab === 'my_bids'
-                  ? 'bg-[#800020] text-white shadow-md'
+                  ? 'bg-[var(--brand-primary)] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
             >
@@ -703,7 +703,7 @@ function AuctionBrowsingContent() {
               onClick={() => setActiveTab('won')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
                 activeTab === 'won'
-                  ? 'bg-[#800020] text-white shadow-md'
+                  ? 'bg-[var(--brand-primary)] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
             >
@@ -714,7 +714,7 @@ function AuctionBrowsingContent() {
               onClick={() => setActiveTab('scheduled')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition-all duration-200 text-sm ${
                 activeTab === 'scheduled'
-                  ? 'bg-[#800020] text-white shadow-md'
+                  ? 'bg-[var(--brand-primary)] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
               }`}
             >
@@ -859,7 +859,7 @@ function AuctionBrowsingContent() {
                         placeholder="0"
                         value={priceMin}
                         onChange={(e) => setPriceMin(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#800020] transition-all duration-200"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] transition-all duration-200"
                         style={{ minHeight: '48px' }}
                       />
                     </div>
@@ -870,7 +870,7 @@ function AuctionBrowsingContent() {
                         placeholder="No limit"
                         value={priceMax}
                         onChange={(e) => setPriceMax(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#800020] transition-all duration-200"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] transition-all duration-200"
                         style={{ minHeight: '48px' }}
                       />
                     </div>
@@ -920,7 +920,7 @@ function AuctionBrowsingContent() {
                       placeholder="0"
                       value={priceMin}
                       onChange={(e) => setPriceMin(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020]"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
                     />
                   </div>
                   <div>
@@ -930,7 +930,7 @@ function AuctionBrowsingContent() {
                       placeholder="No limit"
                       value={priceMax}
                       onChange={(e) => setPriceMax(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020]"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
                     />
                   </div>
                 </div>
@@ -1000,7 +1000,7 @@ function AuctionBrowsingContent() {
                 {hasActiveFilters && (
                   <button
                     onClick={clearAllFilters}
-                    className="px-6 py-3 bg-[#800020] text-white font-bold rounded-xl hover:bg-[#600018] transition-all duration-200 active:scale-96 shadow-md hover:shadow-lg"
+                    className="px-6 py-3 bg-[var(--brand-primary)] text-white font-bold rounded-xl hover:bg-[var(--brand-primary-hover)] transition-all duration-200 active:scale-96 shadow-md hover:shadow-lg"
                     style={{ minHeight: '48px' }}
                   >
                     Clear Filters
@@ -1290,7 +1290,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
 
         {/* Price - Moved to bottom */}
         <div className="mb-2">
-          <span className="text-lg font-bold text-[#800020]">
+          <span className="text-lg font-bold text-[var(--brand-primary)]">
             {formatCompactCurrency(displayPrice)}
           </span>
           <span className="text-xs text-gray-500 ml-1">
@@ -1318,7 +1318,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
 
           {/* High Demand Badge */}
           {auction.watchingCount > 5 && (
-            <span className="text-xs bg-[#800020]/10 text-[#800020] px-2 py-0.5 rounded-full font-bold">
+            <span className="text-xs bg-[var(--brand-primary-surface)] text-[var(--brand-primary)] px-2 py-0.5 rounded-full font-bold">
               High Demand
             </span>
           )}

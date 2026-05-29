@@ -79,9 +79,9 @@ export const VoiceNoteControls: React.FC<VoiceNoteControlsProps> = ({
         disabled={disabled}
         className={cn(
           'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-          'border-2 focus:outline-none focus:ring-2 focus:ring-[#800020]/20 focus:ring-offset-2',
+          'border-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:ring-offset-2',
           showTimestamps
-            ? 'bg-[#800020] text-white border-[#800020] hover:bg-[#600018]'
+            ? 'bg-[var(--brand-primary)] text-white border-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)]'
             : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50',
           disabled && 'opacity-50 cursor-not-allowed'
         )}

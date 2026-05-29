@@ -138,7 +138,7 @@ export function DocumentList({
                         e.stopPropagation();
                         onDocumentClick?.(doc);
                       }}
-                      className="px-4 py-2 text-sm font-medium text-white bg-[#800020] rounded-md hover:bg-[#a00028] transition-colors"
+                      className="px-4 py-2 text-sm font-medium text-white bg-[var(--brand-primary)] rounded-md hover:bg-[var(--brand-primary-hover)] transition-colors"
                     >
                       Sign Now
                     </button>

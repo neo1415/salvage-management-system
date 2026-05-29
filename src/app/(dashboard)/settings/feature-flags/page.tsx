@@ -14,7 +14,7 @@ export default function FeatureFlagsPage() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-[#800020] hover:text-[#600018] mb-6 transition-colors"
+          className="inline-flex items-center gap-2 text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)] mb-6 transition-colors"
         >
           <ArrowLeft size={20} />
           <span>Back to Dashboard</span>

@@ -3,7 +3,8 @@
  * Used for notifying vendors when their payment is confirmed and pickup authorization is issued
  */
 
-import { getBaseEmailTemplate } from './base.template';
+import { getPolicyAwareBaseEmailTemplate } from './base.template';
+import { brandTeamName, getEmailBranding } from './email-branding';
 import { getVendorDocumentsUrl } from './email-urls';
 
 export interface PaymentConfirmationTemplateData {
@@ -20,9 +21,10 @@ export interface PaymentConfirmationTemplateData {
   appUrl: string;
 }
 
-export function getPaymentConfirmationEmailTemplate(data: PaymentConfirmationTemplateData): string {
-  const { vendorName, auctionId, assetName, paymentAmount, paymentMethod, paymentReference, pickupAuthCode, pickupLocation, pickupDeadline } = data;
+export async function getPaymentConfirmationEmailTemplate(data: PaymentConfirmationTemplateData): Promise<string> {
+  const { vendorName, auctionId, assetName, paymentAmount, paymentMethod, pickupAuthCode, pickupLocation, pickupDeadline } = data;
   const documentsUrl = getVendorDocumentsUrl(auctionId);
+  const branding = await getEmailBranding();
   
   const content = `
     <p><strong>Dear ${vendorName},</strong></p>
@@ -34,29 +36,25 @@ export function getPaymentConfirmationEmailTemplate(data: PaymentConfirmationTem
     
     <p>Congratulations! Your payment for <strong>${assetName}</strong> has been successfully processed. You can now proceed to collect your salvage item.</p>
     
-    <div style="background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020; padding: 35px; text-align: center; border-radius: 8px; margin: 30px 0; box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);">
+    <div style="background: ${branding.primaryColor}; color: #ffffff; padding: 35px; text-align: center; border-radius: 8px; margin: 30px 0; box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);">
       <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Pickup Authorization Code</div>
       <div style="font-size: 48px; font-weight: 700; letter-spacing: 8px; margin: 15px 0; font-family: 'Courier New', monospace; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">${pickupAuthCode}</div>
       <div style="font-size: 13px; margin-top: 12px; opacity: 0.9;">Present this code at the pickup location</div>
     </div>
     
     <div style="background-color: #f9f9f9; padding: 25px; border-radius: 8px; margin: 25px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">Payment Details</h3>
+      <h3 style="margin: 0 0 15px 0; color: ${branding.primaryColor}; font-size: 18px;">Payment Details</h3>
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020; width: 40%;">Amount Paid:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: ${branding.primaryColor}; width: 40%;">Amount Paid:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;"><strong style="font-size: 18px; color: #28a745;">₦${paymentAmount.toLocaleString()}</strong></td>
         </tr>
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">Payment Method:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: ${branding.primaryColor};">Payment Method:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${paymentMethod}</td>
         </tr>
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">Reference:</td>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;"><code style="background-color: #e9ecef; padding: 4px 8px; border-radius: 4px; font-size: 13px;">${paymentReference}</code></td>
-        </tr>
-        <tr>
-          <td style="padding: 12px 0; font-weight: 600; color: #800020;">Item:</td>
+          <td style="padding: 12px 0; font-weight: 600; color: ${branding.primaryColor};">Item:</td>
           <td style="padding: 12px 0;">${assetName}</td>
         </tr>
       </table>
@@ -77,16 +75,16 @@ export function getPaymentConfirmationEmailTemplate(data: PaymentConfirmationTem
     </div>
     
     <div style="text-align: center; margin: 30px 0;">
-      <a href="${documentsUrl}" class="button" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 18px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">View Documents and Receipt</a>
+      <a href="${documentsUrl}" class="button" style="display: inline-block; padding: 16px 32px; background: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 18px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">View Documents and Receipt</a>
     </div>
     
     <div style="height: 1px; background: linear-gradient(to right, transparent, #e0e0e0, transparent); margin: 30px 0;"></div>
     
-    <p style="margin-top: 25px;">Thank you for using NEM Insurance Salvage Management System!</p>
-    <p><strong style="color: #800020;">The NEM Insurance Team</strong></p>
+    <p style="margin-top: 25px;">Thank you for using ${branding.brandName}.</p>
+    <p><strong style="color: ${branding.primaryColor};">${brandTeamName(branding)}</strong></p>
   `;
   
-  return getBaseEmailTemplate({
+  return getPolicyAwareBaseEmailTemplate({
     title: 'Payment Confirmed - Pickup Authorization',
     preheader: `Payment confirmed for ${assetName}. Your pickup code: ${pickupAuthCode}`,
     content

@@ -25,6 +25,7 @@ import {
 } from './pdf-generation.service';
 import { formatAssetName, type AssetNameDetails } from '@/lib/utils/asset-name';
 import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
+import { getEmailBranding } from '@/features/notifications/templates/email-branding';
 import { appPath, getAppUrl } from '@/features/notifications/templates/email-urls';
 import {
   businessPolicyService,
@@ -43,6 +44,17 @@ async function getEffectivePaymentDeadlineHours(legacyHours: number): Promise<nu
 
   const policy = await businessPolicyService.getEffectivePolicy();
   return resolvePaymentDeadlineHours(policy).value ?? legacyHours;
+}
+
+async function getRequiredAuctionDocumentTypes(): Promise<DocumentType[]> {
+  const legacyRequiredTypes: DocumentType[] = ['bill_of_sale', 'liability_waiver'];
+
+  if (!isBusinessPolicyEnforcementEnabled()) {
+    return legacyRequiredTypes;
+  }
+
+  const policy = await businessPolicyService.getEffectivePolicy();
+  return policy.documents.requiredAuctionDocuments;
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -124,6 +136,12 @@ export async function generateDocument(
     // Extract asset details from JSONB
     const assetDetails = normalizeAssetDetails(caseData.assetDetails);
 
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const sellerName = policy.branding.legalName;
+    const sellerContact = policy.branding.supportPhone || policy.branding.supportEmail;
+    const sellerAddress = [policy.legal.addressLine1, policy.legal.addressLine2].filter(Boolean).join(', ');
+    const pickupLocation = caseData.locationName || sellerAddress || `${policy.branding.brandName} pickup location`;
+
     // Prepare document data based on type
     let pdfBuffer: Buffer;
     let title: string;
@@ -135,9 +153,9 @@ export async function generateDocument(
       buyerEmail: vendorUser.email,
       buyerPhone: vendorUser.phone,
       buyerBvn: vendor.bvnEncrypted ? '****' : undefined,
-      sellerName: 'NEM Insurance Plc',
-      sellerAddress: '199 Ikorodu Road, Obanikoro, Lagos, Nigeria',
-      sellerContact: '234-02-014489560',
+      sellerName,
+      sellerAddress,
+      sellerContact,
       assetType: caseData.assetType,
       assetDescription,
       assetCondition: caseData.vehicleCondition || 'salvage',
@@ -149,7 +167,7 @@ export async function generateDocument(
       paymentMethod: 'To be determined',
       paymentReference: undefined,
       transactionDate: new Date().toLocaleDateString('en-NG'),
-      pickupLocation: caseData.locationName || 'NEM Insurance Salvage Yard',
+      pickupLocation,
       pickupDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG'),
       pickupAuthCode: undefined as string | undefined,
       qrCodeData: undefined as string | undefined,
@@ -166,9 +184,9 @@ export async function generateDocument(
           buyerEmail: vendorUser.email,
           buyerPhone: vendorUser.phone,
           buyerBvn: vendor.bvnEncrypted ? '****' : undefined,
-          sellerName: 'NEM Insurance Plc',
-          sellerAddress: '199 Ikorodu Road, Obanikoro, Lagos, Nigeria',
-          sellerContact: '234-02-014489560',
+          sellerName,
+          sellerAddress,
+          sellerContact,
           assetType: caseData.assetType,
           assetDescription,
           assetCondition: caseData.vehicleCondition || 'salvage',
@@ -178,7 +196,7 @@ export async function generateDocument(
           year: optionalNumber(assetDetails.year),
           salePrice: Number(auction.currentBid || 0),
           paymentMethod: 'To be determined',
-          pickupLocation: caseData.locationName || 'NEM Insurance Salvage Yard',
+          pickupLocation,
           pickupDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG'),
           verificationUrl,
         };
@@ -210,9 +228,9 @@ export async function generateDocument(
           vendorName: vendorUser.fullName,
           vendorPhone: vendorUser.phone,
           assetDescription,
-          pickupLocation: caseData.locationName || 'NEM Insurance Salvage Yard',
+          pickupLocation,
           pickupDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG'),
-          pickupContact: '234-02-014489560',
+          pickupContact: sellerContact,
           paymentAmount: Number(auction.currentBid || 0),
           paymentReference: 'To be updated',
           paymentDate: new Date().toLocaleDateString('en-NG'),
@@ -242,7 +260,7 @@ export async function generateDocument(
           damageAssessment: damageDescription,
           totalLossDeclaration: true,
           claimReference: caseData.claimReference || 'N/A',
-          insuranceCompany: 'NEM Insurance Plc',
+          insuranceCompany: sellerName,
           saleDate: new Date().toLocaleDateString('en-NG'),
           buyerName: vendorUser.fullName,
           verificationUrl,
@@ -315,6 +333,13 @@ export async function generateDocument(
       // Re-throw other errors
       throw insertError;
     }
+
+    await businessPolicyService.createCurrentPolicySnapshot({
+      entityType: 'document',
+      entityId: document.id,
+      actorId: generatedBy === 'system' ? undefined : generatedBy,
+      reason: `${documentType} generated for auction ${auctionId}.`,
+    });
 
     console.log(`✅ Document generated: ${documentType} for auction ${auctionId}`);
     console.log(`   - Document ID: ${document.id}`);
@@ -418,6 +443,9 @@ export async function signDocument(
 
         if (auctionData) {
           const { auction, case: caseData, vendor, vendorUser } = auctionData;
+          const policy = await businessPolicyService.getEffectivePolicy();
+          const sellerName = policy.branding.legalName;
+          const sellerContact = policy.branding.supportPhone || policy.branding.supportEmail;
           const assetDetails = normalizeAssetDetails(caseData.assetDetails);
           const assetDescription = formatAssetName(caseData.assetType, assetDetails, caseData.claimReference);
           
@@ -451,9 +479,9 @@ export async function signDocument(
               buyerEmail: vendorUser.email,
               buyerPhone: vendorUser.phone,
               buyerBvn: vendor.bvnEncrypted ? '****' : undefined,
-              sellerName: 'NEM Insurance Plc',
+              sellerName,
               sellerAddress: '199 Ikorodu Road, Obanikoro, Lagos, Nigeria',
-              sellerContact: '234-02-014489560',
+              sellerContact,
               assetType: caseData.assetType,
               assetDescription,
               assetCondition: caseData.vehicleCondition || 'salvage',
@@ -463,7 +491,7 @@ export async function signDocument(
               year: optionalNumber(assetDetails.year),
               salePrice: Number(auction.currentBid || 0),
               paymentMethod: 'Escrow Wallet',
-              pickupLocation: caseData.locationName || 'NEM Insurance Salvage Yard',
+              pickupLocation: caseData.locationName || 'Configured pickup location',
               pickupDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG'),
               signatureData, // Include the signature
               signedDate: new Date().toLocaleDateString('en-NG'),
@@ -538,11 +566,13 @@ export async function signDocument(
       if (vendor) {
         const [user] = await db.select().from(users).where(eq(users.id, vendor.userId)).limit(1);
         if (user) {
-          await sendDocumentSigningProgressNotifications(
+          void sendDocumentSigningProgressNotifications(
             signedDoc.auctionId,
             vendorId,
             user
-          );
+          ).catch((notificationError) => {
+            console.error('Error sending document signing progress notifications:', notificationError);
+          });
         }
       }
     } catch (error) {
@@ -847,7 +877,7 @@ export async function hasSignedLiabilityWaiver(
 
 /**
  * Check if all required documents are signed for an auction
- * Required documents: bill_of_sale, liability_waiver (2 documents)
+ * Required documents resolve from the published business policy.
  * 
  * SECURITY FIX: Removed pickup_authorization from required documents.
  * Pickup authorization is now generated and sent AFTER payment is complete,
@@ -889,7 +919,7 @@ export async function checkAllDocumentsSigned(
       return false;
     }
 
-    const requiredTypes: DocumentType[] = ['bill_of_sale', 'liability_waiver'];
+    const requiredTypes = await getRequiredAuctionDocumentTypes();
     const signedTypes = documents
       .filter(doc => doc.status === 'signed' && !doc.disabled)
       .map(doc => doc.documentType);
@@ -915,7 +945,7 @@ export async function checkAllDocumentsSigned(
  * Get document signing progress for an auction
  * Returns progress information including count and percentage
  * 
- * SECURITY FIX: Only 2 documents required for signing (bill_of_sale, liability_waiver).
+ * SECURITY FIX: Pickup authorization is excluded from the required signing set.
  * Pickup authorization is generated and sent AFTER payment is complete.
  */
 export async function getDocumentProgress(
@@ -945,17 +975,22 @@ export async function getDocumentProgress(
       )
       .orderBy(releaseForms.createdAt);
 
-    const totalDocuments = 2; // bill_of_sale, liability_waiver (pickup_authorization sent after payment)
-    const signedDocuments = documents.filter(doc => doc.status === 'signed').length;
+    const requiredTypes = await getRequiredAuctionDocumentTypes();
+    const signedDocuments = documents.filter(
+      doc => doc.status === 'signed' && requiredTypes.includes(doc.documentType)
+    ).length;
+    const totalDocuments = requiredTypes.length;
     const progress = Math.round((signedDocuments / totalDocuments) * 100);
     const allSigned = signedDocuments === totalDocuments;
 
-    const documentList = documents.map(doc => ({
-      id: doc.id,
-      type: doc.documentType,
-      status: doc.status as 'pending' | 'signed' | 'voided',
-      signedAt: doc.signedAt,
-    }));
+    const documentList = documents
+      .filter(doc => requiredTypes.includes(doc.documentType))
+      .map(doc => ({
+        id: doc.id,
+        type: doc.documentType,
+        status: doc.status as 'pending' | 'signed' | 'voided',
+        signedAt: doc.signedAt,
+      }));
 
     console.log(`Document progress for auction ${auctionId}:`, {
       totalDocuments,
@@ -979,10 +1014,10 @@ export async function getDocumentProgress(
 
 /**
  * Send document signing progress notifications
- * Sends push notification after first document signed (1/2)
- * Sends SMS and Email after all documents signed (2/2)
+ * Sends push notification after the first required document is signed.
+ * Sends SMS and Email after all required documents are signed.
  * 
- * SECURITY FIX: Only 2 documents required (bill_of_sale, liability_waiver).
+ * SECURITY FIX: Required documents resolve from the published business policy.
  * Pickup authorization sent AFTER payment complete.
  */
 async function sendDocumentSigningProgressNotifications(
@@ -1016,10 +1051,12 @@ async function sendDocumentSigningProgressNotifications(
       },
     });
 
-    // Send push notification for 1/2 progress
+    // Send push notification after the first required document is signed.
     if (progress.signedDocuments === 1) {
       const remaining = progress.totalDocuments - progress.signedDocuments;
       const { pushNotificationService } = await import('@/features/notifications/services/push.service');
+      const policy = await businessPolicyService.getPublicPolicy();
+      const notificationIcon = policy.branding.faviconPath || policy.branding.logoPath || '/icons/icon-192.png';
       
       await pushNotificationService.sendPushNotification(
         null, // No subscription needed - will use fallback
@@ -1027,8 +1064,8 @@ async function sendDocumentSigningProgressNotifications(
           userId: user.id,
           title: 'Document Signing Progress',
           body: `${progress.signedDocuments}/${progress.totalDocuments} documents signed. ${remaining} document remaining.`,
-          icon: '/icons/Nem-insurance-Logo.jpg',
-          badge: '/icons/Nem-insurance-Logo.jpg',
+          icon: notificationIcon,
+          badge: notificationIcon,
           tag: 'document-progress',
           data: {
             auctionId,
@@ -1046,7 +1083,7 @@ async function sendDocumentSigningProgressNotifications(
       console.log(`✅ Push notification sent: ${progress.signedDocuments}/${progress.totalDocuments} documents signed`);
     }
 
-    // Send SMS and Email after all documents signed (2/2)
+    // Send SMS and Email after all required documents are signed.
     if (progress.allSigned) {
       const { smsService } = await import('@/features/notifications/services/sms.service');
       const { createRoleNotifications } = await import('@/features/notifications/services/notification.service');
@@ -1084,14 +1121,14 @@ async function sendDocumentSigningProgressNotifications(
         };
         const assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || caseData.assetType;
         
-        const emailHtml = documentSignedTemplate({
+        const emailHtml = await documentSignedTemplate({
           vendorName: user.fullName,
           documentTitle: 'All Required Documents',
           signedAt: new Date().toLocaleString('en-NG', {
             dateStyle: 'full',
             timeStyle: 'short',
           }),
-          nextSteps: `All 2 required documents have been successfully signed! Your payment of ₦${parseFloat(auction.currentBid || '0').toLocaleString()} is now being processed. Once payment is verified, you will receive your pickup authorization code via SMS and email. You can then schedule a pickup time for your ${assetDescription}.`,
+          nextSteps: `All required documents have been successfully signed. Your payment of NGN ${parseFloat(auction.currentBid || '0').toLocaleString()} is now being processed. Once payment is verified, you will receive your pickup authorization code via SMS and email. You can then schedule a pickup time for your ${assetDescription}.`,
           downloadUrl: appPath(`/vendor/documents#auction-${auctionId}`),
         });
 
@@ -1208,6 +1245,13 @@ export async function triggerFundReleaseOnDocumentCompletion(
         .returning();
 
       payment = newPayment;
+
+      await businessPolicyService.createCurrentPolicySnapshot({
+        entityType: 'payment',
+        entityId: payment.id,
+        actorId: undefined,
+        reason: `Retroactive escrow wallet payment created after document signing for auction ${auctionId}.`,
+      });
 
       console.log(`✅ Payment record created retroactively:`);
       console.log(`   - Payment ID: ${payment.id}`);
@@ -1340,7 +1384,7 @@ export async function triggerFundReleaseOnDocumentCompletion(
           .where(eq(salvageCases.id, auction.caseId))
           .limit(1);
         
-        const pickupLocation = caseData?.locationName || 'NEM Insurance Salvage Yard';
+        const pickupLocation = caseData?.locationName || 'Configured pickup location';
         const pickupDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG');
 
         // Send SMS notification with pickup location and deadline
@@ -1474,12 +1518,13 @@ async function sendFundReleaseFailureAlert(
 
     // Send email to each Finance Officer
     const { emailService } = await import('@/features/notifications/services/email.service');
+    const branding = await getEmailBranding();
     
     for (const officer of financeOfficers) {
       await emailService.sendEmail({
         to: officer.email,
         subject: `Escrow Payment Failed - Action Required - Auction ${auctionId.substring(0, 8)}`,
-        html: wrapProfessionalEmail(
+        html: await wrapProfessionalEmail(
           'Automatic Fund Release Failed',
           `
             <p>Dear ${officer.fullName},</p>
@@ -1493,7 +1538,7 @@ async function sendFundReleaseFailureAlert(
             </div>
             <p>The vendor completed all required documents, but the Paystack transfer failed.</p>
             <p style="margin-top: 24px;">
-              <a href="${APP_URL}/finance/payments" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">View Payment Dashboard</a>
+              <a href="${APP_URL}/finance/payments" class="button" style="display: inline-block; padding: 14px 28px; background: ${branding.accentColor}; color: ${branding.primaryColor} !important; text-decoration: none; border-radius: 8px; font-weight: 700;">View Payment Dashboard</a>
             </p>
           `,
           'Escrow fund release failed — manual review required'
@@ -1569,16 +1614,17 @@ async function sendFundReleaseSuccessNotification(
 
     // Send email to each Finance Officer
     const { emailService } = await import('@/features/notifications/services/email.service');
+    const branding = await getEmailBranding();
     
     for (const officer of financeOfficers) {
       // Send email notification
       await emailService.sendEmail({
         to: officer.email,
         subject: `Escrow Payment Released - ${auctionId.substring(0, 8)}`,
-        html: wrapProfessionalEmail(
+        html: await wrapProfessionalEmail(
           'Automatic Fund Release Successful',
           `
-            <p style="font-size: 18px; color: #800020; font-weight: 600;">Dear ${officer.fullName},</p>
+            <p style="font-size: 18px; color: ${branding.primaryColor}; font-weight: 600;">Dear ${officer.fullName},</p>
             <p>An escrow wallet payment has been successfully released automatically.</p>
             <div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 16px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #065f46;">Payment Details</h3>
@@ -1588,10 +1634,10 @@ async function sendFundReleaseSuccessNotification(
               <p><strong>Asset:</strong> ${assetDescription}</p>
               <p><strong>Time:</strong> ${new Date().toLocaleString('en-NG')}</p>
             </div>
-            <h3 style="color: #800020;">Summary</h3>
+            <h3 style="color: ${branding.primaryColor};">Summary</h3>
             <p>The vendor completed all required documents and funds were released successfully. No further action is required.</p>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${APP_URL}/finance/payments" class="button" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700;">View Payment Dashboard</a>
+              <a href="${APP_URL}/finance/payments" class="button" style="display: inline-block; padding: 14px 28px; background: ${branding.accentColor}; color: ${branding.primaryColor} !important; text-decoration: none; border-radius: 8px; font-weight: 700;">View Payment Dashboard</a>
             </div>
           `,
           `Escrow payment of ₦${amount.toLocaleString()} released successfully`

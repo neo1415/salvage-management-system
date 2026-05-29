@@ -90,7 +90,7 @@ export async function notifyMatchingVendorsOfNewAuction(
           reservePrice: parseFloat(context.reservePrice),
           startTime: startLabel,
           endTime: endLabel,
-          location: context.locationName ?? 'NEM Salvage Yard',
+          location: context.locationName ?? 'Configured pickup location',
           appUrl: context.appUrl,
         });
       } catch (error) {

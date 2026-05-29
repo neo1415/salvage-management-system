@@ -7,7 +7,7 @@
  * Requirements: Phase 3 - Global Notification System
  */
 
-import { db } from '@/lib/db/drizzle';
+import { db, withRetry } from '@/lib/db/drizzle';
 import { notifications, NotificationType, NotificationData } from '@/lib/db/schema/notifications';
 import { notificationPreferences } from '@/lib/db/schema/push-subscriptions';
 import { users } from '@/lib/db/schema/users';
@@ -15,6 +15,7 @@ import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { sendNotificationToUser } from '@/lib/socket/server';
 import { sendPushToUser } from './push-subscription.service';
 import { isTestOrPlaceholderEmail } from '@/lib/utils/notification-recipients';
+import { businessPolicyService } from '@/features/business-policy';
 
 export interface CreateNotificationInput {
   userId: string;
@@ -32,6 +33,7 @@ export interface GetNotificationsOptions {
 
 type NotificationRole = 'vendor' | 'claims_adjuster' | 'salvage_manager' | 'finance_officer' | 'system_admin';
 type PreferenceToggle = 'bidAlerts' | 'auctionEnding' | 'paymentReminders' | 'leaderboardUpdates';
+const ROLE_FANOUT_BATCH_SIZE = 25;
 
 const DOCUMENT_SIGNING_TYPES = new Set<string>([
   'DOCUMENT_GENERATED',
@@ -86,6 +88,34 @@ function shouldSendBrowserPush(type: string): boolean {
   return !DOCUMENT_SIGNING_TYPES.has(type);
 }
 
+async function isPushEnabledByBusinessPolicy(): Promise<boolean> {
+  try {
+    const policy = await businessPolicyService.getEffectivePolicy();
+    return policy.notifications.pushEnabled;
+  } catch (error) {
+    console.warn('[Notifications] Business policy unavailable; allowing push fallback', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return true;
+  }
+}
+
+async function shouldBatchRoleFanout(): Promise<boolean> {
+  try {
+    const policy = await businessPolicyService.getEffectivePolicy();
+    return policy.notifications.roleFanoutShouldBeQueued;
+  } catch (error) {
+    console.warn('[Notifications] Business policy unavailable; batching role fanout by default', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return true;
+  }
+}
+
+function pauseFanoutBatch(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 25));
+}
+
 function notificationUrl(data?: NotificationData): string | undefined {
   const explicitUrl = data?.url;
   if (typeof explicitUrl === 'string' && explicitUrl.startsWith('/')) {
@@ -135,7 +165,7 @@ export async function createNotification(input: CreateNotificationInput) {
     // Send real-time notification via Socket.IO
     await sendNotificationToUser(input.userId, notification);
 
-    if (shouldSendBrowserPush(input.type)) {
+    if (shouldSendBrowserPush(input.type) && await isPushEnabledByBusinessPolicy()) {
       void sendPushToUser(input.userId, {
         title: input.title,
         body: input.message.length > 140 ? `${input.message.slice(0, 137)}...` : input.message,
@@ -181,18 +211,40 @@ export async function createRoleNotifications(
     ? activeRoleUsers.filter((user) => !isTestOrPlaceholderEmail(user.email))
     : activeRoleUsers;
 
-  const results = await Promise.allSettled(
-    recipients.map((user) =>
-      createNotification({
-        ...notification,
-        userId: user.id,
-      })
-    )
-  );
+  const batchFanout = await shouldBatchRoleFanout();
+  const results: PromiseSettledResult<unknown>[] = [];
+
+  if (batchFanout) {
+    for (let index = 0; index < recipients.length; index += ROLE_FANOUT_BATCH_SIZE) {
+      const batch = recipients.slice(index, index + ROLE_FANOUT_BATCH_SIZE);
+      results.push(...await Promise.allSettled(
+        batch.map((user) =>
+          createNotification({
+            ...notification,
+            userId: user.id,
+          })
+        )
+      ));
+
+      if (index + ROLE_FANOUT_BATCH_SIZE < recipients.length) {
+        await pauseFanoutBatch();
+      }
+    }
+  } else {
+    results.push(...await Promise.allSettled(
+      recipients.map((user) =>
+        createNotification({
+          ...notification,
+          userId: user.id,
+        })
+      )
+    ));
+  }
 
   const sentCount = results.filter((result) => result.status === 'fulfilled').length;
   console.log(
     `Created ${sentCount}/${recipients.length} role notifications for ${roles.join(', ')}` +
+      (batchFanout ? ` in batches of ${ROLE_FANOUT_BATCH_SIZE}` : '') +
       (activeRoleUsers.length < roleUsers.length
         ? ` (${roleUsers.length - activeRoleUsers.length} inactive accounts skipped)`
         : '') +
@@ -222,13 +274,13 @@ export async function getNotifications(
     }
 
     // Fetch notifications
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(notifications)
       .where(and(...conditions))
       .orderBy(desc(notifications.createdAt))
       .limit(limit)
-      .offset(offset);
+      .offset(offset), 2, 500);
 
     return results;
   } catch (error) {
@@ -242,7 +294,7 @@ export async function getNotifications(
  */
 export async function getUnreadCount(userId: string): Promise<number> {
   try {
-    const result = await db
+    const result = await withRetry(() => db
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
       .where(
@@ -250,7 +302,7 @@ export async function getUnreadCount(userId: string): Promise<number> {
           eq(notifications.userId, userId),
           eq(notifications.read, false)
         )
-      );
+      ), 2, 500);
 
     return result[0]?.count || 0;
   } catch (error) {

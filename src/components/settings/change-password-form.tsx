@@ -116,7 +116,7 @@ export default function ChangePasswordForm({
             type={showCurrentPassword ? 'text' : 'password'}
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent pr-10"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent pr-10"
             autoComplete="current-password"
           />
           <button
@@ -136,7 +136,7 @@ export default function ChangePasswordForm({
             type={showNewPassword ? 'text' : 'password'}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent pr-10"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent pr-10"
             autoComplete="new-password"
           />
           <button
@@ -170,7 +170,7 @@ export default function ChangePasswordForm({
             type={showConfirmPassword ? 'text' : 'password'}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent pr-10"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent pr-10"
             autoComplete="new-password"
           />
           <button
@@ -186,7 +186,7 @@ export default function ChangePasswordForm({
       <button
         type="submit"
         disabled={loading}
-        className="w-full sm:w-auto px-6 py-3 bg-[#800020] text-white rounded-lg hover:bg-[#600018] disabled:opacity-50 font-medium"
+        className="w-full sm:w-auto px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 font-medium"
       >
         {loading ? 'Updating…' : 'Update password'}
       </button>

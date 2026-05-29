@@ -254,7 +254,7 @@ export const TranscriptionOverlay: React.FC<TranscriptionOverlayProps> = ({
               'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600',
               'flex items-center justify-center transition-colors duration-200',
               'pointer-events-auto',
-              'focus:outline-none focus:ring-2 focus:ring-[#800020]/30'
+              'focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]'
             )}
             aria-label="Close transcription overlay"
           >

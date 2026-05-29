@@ -68,7 +68,7 @@ export function ConversionFunnelDiagram({ data, loading }: ConversionFunnelDiagr
       name: 'Wins',
       count: wins,
       percentage: bidToWinRate,
-      color: 'bg-[#800020]',
+      color: 'bg-[var(--brand-primary)]',
       dropOff: 100 - bidToWinRate,
     },
   ];
@@ -144,7 +144,7 @@ export function ConversionFunnelDiagram({ data, loading }: ConversionFunnelDiagr
           
           <div className="text-center">
             <p className="text-sm text-muted-foreground">Bid → Win</p>
-            <p className="text-2xl font-bold text-[#800020]">
+            <p className="text-2xl font-bold text-[var(--brand-primary)]">
               {bidToWinRate.toFixed(1)}%
             </p>
             <p className="text-xs text-muted-foreground mt-1">

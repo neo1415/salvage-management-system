@@ -5,6 +5,8 @@ import { users } from '@/lib/db/schema/users';
 import { eq, and } from 'drizzle-orm';
 import { kv } from '@vercel/kv';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
+import { brandLegalName, getEmailBranding } from '@/features/notifications/templates/email-branding';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY!;
 const WALLET_CACHE_TTL = 300; // 5 minutes in seconds
@@ -109,7 +111,7 @@ export async function fundWallet(
         email: user.email,
         amount: amountInKobo,
         reference,
-        callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/vendor/wallet?status=success`,
+        callback_url: appPath('/vendor/wallet?status=success'),
         metadata: {
           walletId: wallet.id,
           vendorId,
@@ -372,7 +374,7 @@ export async function freezeFunds(
 
 /**
  * Release funds after pickup confirmation
- * Debits frozen amount and transfers to NEM Insurance via Paystack Transfers API
+ * Debits frozen amount and transfers to the configured settlement recipient via Paystack Transfers API
  * 
  * CRITICAL: This operation is ATOMIC - it unfreezes AND debits in ONE transaction
  * to prevent the infinite money glitch where money exists in two places.
@@ -384,6 +386,9 @@ export async function releaseFunds(
   userId: string
 ): Promise<WalletBalance> {
   try {
+    const branding = await getEmailBranding();
+    const settlementRecipient = brandLegalName(branding);
+
     // Get wallet
     const wallet = await getOrCreateWallet(vendorId);
 
@@ -441,13 +446,13 @@ export async function releaseFunds(
     // Convert amount to kobo (Paystack uses kobo)
     const amountInKobo = Math.round(amount * 100);
 
-    // Get NEM Insurance transfer recipient code from environment
+    // Get settlement transfer recipient code from environment
     const nemRecipientCode = process.env.PAYSTACK_NEM_RECIPIENT_CODE;
 
     if (!nemRecipientCode) {
       console.warn('PAYSTACK_NEM_RECIPIENT_CODE not configured. Skipping actual transfer in development mode.');
     } else {
-      // Initiate transfer to NEM Insurance via Paystack Transfers API
+      // Initiate transfer to settlement recipient via Paystack Transfers API
       const transferResponse = await fetch('https://api.paystack.co/transfer', {
         method: 'POST',
         headers: {
@@ -494,7 +499,7 @@ export async function releaseFunds(
       amount: amount.toString(),
       balanceAfter: newBalance.toFixed(2),
       reference: transferReference,
-      description: `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to NEM Insurance via Paystack`,
+      description: `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to ${settlementRecipient} via Paystack`,
     });
 
     // Create unfreeze transaction record (for audit trail)
@@ -545,7 +550,7 @@ export async function releaseFunds(
         amount,
         auctionId,
         transferReference,
-        `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to NEM Insurance`
+        `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to ${settlementRecipient}`
       );
       console.log(`[Ledger] Recorded payment debit: ₦${amount.toLocaleString()}`);
     } catch (ledgerError) {

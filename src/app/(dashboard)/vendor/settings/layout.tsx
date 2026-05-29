@@ -76,7 +76,7 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
                     href={tab.href}
                     className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
                       isActive
-                        ? 'bg-[#800020] text-white'
+                        ? 'bg-[var(--brand-primary)] text-white'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
@@ -101,7 +101,7 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
                     href={tab.href}
                     className={`flex items-center px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
                       isActive
-                        ? 'bg-[#800020] text-white'
+                        ? 'bg-[var(--brand-primary)] text-white'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >

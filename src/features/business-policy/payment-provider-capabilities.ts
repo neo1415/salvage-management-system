@@ -14,7 +14,7 @@ export const PAYMENT_PROVIDER_CAPABILITIES: PaymentProviderCapability[] = [
     label: 'Paystack',
     policyFlag: 'paystackEnabled',
     executionStatus: 'wired',
-    note: 'Current NEM production checkout and webhook flow.',
+    note: 'Current online checkout and webhook flow.',
   },
   {
     provider: 'flutterwave',
@@ -28,7 +28,7 @@ export const PAYMENT_PROVIDER_CAPABILITIES: PaymentProviderCapability[] = [
     label: 'Manual review',
     policyFlag: 'manualPaymentEnabled',
     executionStatus: 'manual_review_required',
-    note: 'Useful for enterprise deployments that need offline finance review.',
+    note: 'Useful when finance teams need offline payment review.',
   },
 ];
 

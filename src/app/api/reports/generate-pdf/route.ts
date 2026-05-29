@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
+import { brandLegalName, getEmailBranding, getSupportPhone, type EmailBranding } from '@/features/notifications/templates/email-branding';
 
 /**
  * POST /api/reports/generate-pdf
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { reportType, data, title, dateRange } = body;
+    const branding = await getEmailBranding();
 
     if (!reportType || !data || !title) {
       return NextResponse.json(
@@ -57,13 +59,13 @@ export async function POST(request: NextRequest) {
 
     switch (reportType) {
       case 'recovery-summary':
-        htmlContent = generateRecoverySummaryHTML(data, title, dateRange);
+        htmlContent = generateRecoverySummaryHTML(data, title, dateRange, branding);
         break;
       case 'vendor-rankings':
-        htmlContent = generateVendorRankingsHTML(data, title, dateRange);
+        htmlContent = generateVendorRankingsHTML(data, title, dateRange, branding);
         break;
       case 'payment-aging':
-        htmlContent = generatePaymentAgingHTML(data, title, dateRange);
+        htmlContent = generatePaymentAgingHTML(data, title, dateRange, branding);
         break;
       default:
         return NextResponse.json(
@@ -129,7 +131,8 @@ function generateRecoverySummaryHTML(
     }>;
   },
   title: string,
-  dateRange: { start: string; end: string }
+  dateRange: { start: string; end: string },
+  branding: EmailBranding
 ): string {
   const { summary, byAssetType, trend } = data;
 
@@ -153,16 +156,16 @@ function generateRecoverySummaryHTML(
       font-size: 12px;
       line-height: 1.4;
     }
-    h1 { color: #800020; font-size: 20px; margin-bottom: 10px; }
-    h2 { color: #800020; font-size: 16px; margin-top: 20px; margin-bottom: 10px; }
-    .header { border-bottom: 2px solid #800020; padding-bottom: 10px; margin-bottom: 20px; }
+    h1 { color: ${branding.primaryColor}; font-size: 20px; margin-bottom: 10px; }
+    h2 { color: ${branding.primaryColor}; font-size: 16px; margin-top: 20px; margin-bottom: 10px; }
+    .header { border-bottom: 2px solid ${branding.primaryColor}; padding-bottom: 10px; margin-bottom: 20px; }
     .date-range { color: #666; font-size: 11px; }
     .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
     .summary-card { background: #f5f5f5; padding: 15px; border-radius: 5px; }
     .summary-label { font-size: 10px; color: #666; text-transform: uppercase; }
-    .summary-value { font-size: 18px; font-weight: bold; color: #800020; margin-top: 5px; }
+    .summary-value { font-size: 18px; font-weight: bold; color: ${branding.primaryColor}; margin-top: 5px; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
-    th { background: #800020; color: white; padding: 8px; text-align: left; }
+    th { background: ${branding.primaryColor}; color: white; padding: 8px; text-align: left; }
     td { padding: 8px; border-bottom: 1px solid #ddd; }
     tr:nth-child(even) { background: #f9f9f9; }
     .footer { margin-top: 30px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 10px; color: #666; text-align: center; }
@@ -260,8 +263,8 @@ function generateRecoverySummaryHTML(
   }
 
   <div class="footer">
-    <p>NEM Insurance Plc - Salvage Management System</p>
-    <p>199 Ikorodu Road, Obanikoro, Lagos | Phone: 234-02-014489560</p>
+    <p>${brandLegalName(branding)} - Salvage Management System</p>
+    <p>Phone: ${getSupportPhone(branding)}</p>
   </div>
 
   <script>
@@ -290,7 +293,8 @@ function generateVendorRankingsHTML(
     }>;
   },
   title: string,
-  dateRange: { start: string; end: string }
+  dateRange: { start: string; end: string },
+  branding: EmailBranding
 ): string {
   const { rankings } = data;
 
@@ -314,15 +318,15 @@ function generateVendorRankingsHTML(
       font-size: 12px;
       line-height: 1.4;
     }
-    h1 { color: #800020; font-size: 20px; margin-bottom: 10px; }
-    .header { border-bottom: 2px solid #800020; padding-bottom: 10px; margin-bottom: 20px; }
+    h1 { color: ${branding.primaryColor}; font-size: 20px; margin-bottom: 10px; }
+    .header { border-bottom: 2px solid ${branding.primaryColor}; padding-bottom: 10px; margin-bottom: 20px; }
     .date-range { color: #666; font-size: 11px; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
-    th { background: #800020; color: white; padding: 8px; text-align: left; font-size: 10px; }
+    th { background: ${branding.primaryColor}; color: white; padding: 8px; text-align: left; font-size: 10px; }
     td { padding: 8px; border-bottom: 1px solid #ddd; }
     tr:nth-child(even) { background: #f9f9f9; }
-    .rank { font-weight: bold; color: #800020; }
-    .top3 { background: #FFD700 !important; }
+    .rank { font-weight: bold; color: ${branding.primaryColor}; }
+    .top3 { background: ${branding.accentColor} !important; }
     .footer { margin-top: 30px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 10px; color: #666; text-align: center; }
   </style>
 </head>
@@ -377,8 +381,8 @@ function generateVendorRankingsHTML(
   </table>
 
   <div class="footer">
-    <p>NEM Insurance Plc - Salvage Management System</p>
-    <p>199 Ikorodu Road, Obanikoro, Lagos | Phone: 234-02-014489560</p>
+    <p>${brandLegalName(branding)} - Salvage Management System</p>
+    <p>Phone: ${getSupportPhone(branding)}</p>
   </div>
 </body>
 </html>
@@ -402,7 +406,8 @@ function generatePaymentAgingHTML(
     }>;
   },
   title: string,
-  dateRange: { start: string; end: string }
+  dateRange: { start: string; end: string },
+  branding: EmailBranding
 ): string {
   const { summary, payments } = data;
 
@@ -426,16 +431,16 @@ function generatePaymentAgingHTML(
       font-size: 12px;
       line-height: 1.4;
     }
-    h1 { color: #800020; font-size: 20px; margin-bottom: 10px; }
-    h2 { color: #800020; font-size: 16px; margin-top: 20px; margin-bottom: 10px; }
-    .header { border-bottom: 2px solid #800020; padding-bottom: 10px; margin-bottom: 20px; }
+    h1 { color: ${branding.primaryColor}; font-size: 20px; margin-bottom: 10px; }
+    h2 { color: ${branding.primaryColor}; font-size: 16px; margin-top: 20px; margin-bottom: 10px; }
+    .header { border-bottom: 2px solid ${branding.primaryColor}; padding-bottom: 10px; margin-bottom: 20px; }
     .date-range { color: #666; font-size: 11px; }
     .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
     .summary-card { background: #f5f5f5; padding: 15px; border-radius: 5px; }
     .summary-label { font-size: 10px; color: #666; text-transform: uppercase; }
-    .summary-value { font-size: 18px; font-weight: bold; color: #800020; margin-top: 5px; }
+    .summary-value { font-size: 18px; font-weight: bold; color: ${branding.primaryColor}; margin-top: 5px; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
-    th { background: #800020; color: white; padding: 8px; text-align: left; font-size: 10px; }
+    th { background: ${branding.primaryColor}; color: white; padding: 8px; text-align: left; font-size: 10px; }
     td { padding: 8px; border-bottom: 1px solid #ddd; }
     tr:nth-child(even) { background: #f9f9f9; }
     .status-verified { color: green; font-weight: bold; }
@@ -509,8 +514,8 @@ function generatePaymentAgingHTML(
   </table>
 
   <div class="footer">
-    <p>NEM Insurance Plc - Salvage Management System</p>
-    <p>199 Ikorodu Road, Obanikoro, Lagos | Phone: 234-02-014489560</p>
+    <p>${brandLegalName(branding)} - Salvage Management System</p>
+    <p>Phone: ${getSupportPhone(branding)}</p>
   </div>
 </body>
 </html>

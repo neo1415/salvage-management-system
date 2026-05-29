@@ -7,8 +7,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { createCase, ValidationError, type CreateCaseInput } from '@/features/cases/services/case.service';
-import { getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
+import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 import { createRoleNotifications } from '@/features/notifications/services/notification.service';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveCaseAssetTypeAllowed,
+} from '@/features/business-policy';
 
 /**
  * POST /api/cases
@@ -97,6 +104,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Extract audit information before policy and fraud gates.
+    const headers = request.headers;
+    const ipAddress = getIpAddress(headers);
+    const userAgent = headers.get('user-agent') || 'unknown';
+    const deviceType = getDeviceTypeFromUserAgent(userAgent);
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const assetTypeDecision = resolveCaseAssetTypeAllowed(policy, body.assetType);
+
+    await logPolicyDecision({
+      userId: session.user.id,
+      entityType: AuditEntityType.CASE,
+      entityId: body.claimReference,
+      ipAddress,
+      userAgent,
+      deviceType,
+      decision: assetTypeDecision.decision,
+      context: {
+        source: 'api/cases',
+        runtimeMode: getBusinessPolicyRuntimeMode(),
+      },
+    }).catch((policyAuditError) => {
+      console.warn('[BusinessPolicy] Failed to audit case asset type decision', {
+        claimReference: body.claimReference,
+        assetType: body.assetType,
+        error: policyAuditError instanceof Error ? policyAuditError.message : 'Unknown error',
+      });
+    });
+
+    if (!assetTypeDecision.allowed && isBusinessPolicyEnforcementEnabled()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Asset type is not enabled',
+          message: assetTypeDecision.message,
+        },
+        { status: 400 }
+      );
+    }
+
     // Convert base64 photos to buffers
     const photoBuffers: Buffer[] = [];
     for (const photo of body.photos) {
@@ -130,11 +177,6 @@ export async function POST(request: NextRequest) {
       
       if (duplicateCheck.isDuplicate) {
         console.log('🚨 DUPLICATE VEHICLE DETECTED - BLOCKING SUBMISSION');
-        
-        // Extract audit information for fraud logging
-        const headers = request.headers;
-        const ipAddress = getIpAddress(headers);
-        const userAgent = headers.get('user-agent') || 'unknown';
         
         // Log fraud attempt with full details
         await logFraudAttempt({
@@ -173,12 +215,6 @@ export async function POST(request: NextRequest) {
       
       console.log('✅ No duplicate detected - proceeding with case creation');
     }
-
-    // Extract audit information
-    const headers = request.headers;
-    const ipAddress = getIpAddress(headers);
-    const userAgent = headers.get('user-agent') || 'unknown';
-    const deviceType = getDeviceTypeFromUserAgent(userAgent);
 
     // Create case input
     const input: CreateCaseInput = {
@@ -222,8 +258,7 @@ export async function POST(request: NextRequest) {
     const result = await createCase(input, ipAddress, deviceType, userAgent);
 
     if (input.status === 'pending_approval') {
-      try {
-        await createRoleNotifications(['salvage_manager', 'system_admin'], {
+      void createRoleNotifications(['salvage_manager', 'system_admin'], {
           type: 'case_submitted',
           title: 'New Case Submitted',
           message: `${session.user.name || 'A claims adjuster'} submitted case ${input.claimReference} for approval.`,
@@ -231,10 +266,9 @@ export async function POST(request: NextRequest) {
             caseId: result.id,
             url: '/manager/approvals',
           },
-        });
-      } catch (notificationError) {
+        }).catch((notificationError) => {
         console.error('Failed to notify managers about submitted case:', notificationError);
-      }
+      });
     }
 
     return NextResponse.json(
@@ -291,7 +325,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Import database dependencies
-    const { db } = await import('@/lib/db/drizzle');
+    const { db, withRetry } = await import('@/lib/db/drizzle');
     const { salvageCases } = await import('@/lib/db/schema/cases');
     const { users } = await import('@/lib/db/schema/users');
     const { auctions } = await import('@/lib/db/schema/auctions');
@@ -419,7 +453,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Execute query
-    let cases = await query;
+    let cases = await withRetry(async () => await query);
 
     // Auction/payment joins can duplicate rows — keep one row per case
     if (cases.length > 0) {
@@ -445,7 +479,7 @@ export async function GET(request: NextRequest) {
       const normalizeCaseId = (id: string) => String(id).toLowerCase();
 
       // Include cancelled cases even when they fall outside the paginated list
-      const cancelledOnly = await db
+      const cancelledOnly = await withRetry(async () => await db
         .select({
           id: salvageCases.id,
           claimReference: salvageCases.claimReference,
@@ -482,7 +516,7 @@ export async function GET(request: NextRequest) {
             eqOp(salvageCases.createdBy, session.user.id),
             eqOp(salvageCases.status, 'cancelled')
           )
-        );
+        ));
 
       const casesById = new Map(cases.map((c) => [normalizeCaseId(c.id), c]));
       for (const row of cancelledOnly) {
@@ -496,7 +530,7 @@ export async function GET(request: NextRequest) {
       const rejectorUsers = alias(users, 'rejector_users');
 
       // All manager rejections for this adjuster (not only the current page of cases)
-      const rejectionRows = await db
+      const rejectionRows = await withRetry(async () => await db
         .select({
           entityId: auditLogs.entityId,
           rejectionReason: auditLogs.afterState,
@@ -519,7 +553,7 @@ export async function GET(request: NextRequest) {
             eqOp(salvageCases.createdBy, session.user.id)
           )
         )
-        .orderBy(desc(auditLogs.createdAt));
+        .orderBy(desc(auditLogs.createdAt)));
 
       const latestRejectionByCase = new Map<
         string,

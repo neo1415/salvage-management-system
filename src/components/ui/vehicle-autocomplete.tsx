@@ -295,7 +295,7 @@ export function VehicleAutocomplete({
           regex.test(part) ? (
             <mark
               key={index}
-              className="bg-[#800020] text-white font-semibold"
+              className="bg-[var(--brand-primary)] text-white font-semibold"
             >
               {part}
             </mark>
@@ -376,7 +376,7 @@ export function VehicleAutocomplete({
           autoComplete="off"
           className={`
             w-full px-4 py-3 pr-20 text-base border rounded-lg
-            focus:outline-none focus:ring-2 focus:ring-[#800020] focus:border-transparent
+            focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent
             disabled:bg-gray-100 disabled:cursor-not-allowed
             ${error ? 'border-red-500' : 'border-gray-300'}
             ${isMobile ? 'text-base' : 'text-sm'}
@@ -452,7 +452,7 @@ export function VehicleAutocomplete({
                 min-h-[44px] flex items-center
                 ${
                   index === selectedIndex
-                    ? 'bg-[#800020] text-white'
+                    ? 'bg-[var(--brand-primary)] text-white'
                     : 'hover:bg-gray-100'
                 }
               `}

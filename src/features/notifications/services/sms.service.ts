@@ -15,6 +15,7 @@
 
 import axios from 'axios';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
+import { businessPolicyService } from '@/features/business-policy';
 
 // Validate required environment variables
 if (!process.env.TERMII_API_KEY) {
@@ -28,7 +29,7 @@ if (!process.env.TERMII_SENDER_ID) {
 // Termii API configuration
 const TERMII_API_URL = 'https://api.ng.termii.com/api/sms/send';
 const TERMII_API_KEY = process.env.TERMII_API_KEY || '';
-const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || 'NEM Salvage';
+const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || 'Salvage';
 const TERMII_CHANNEL = process.env.TERMII_CHANNEL || 'generic';
 /** Termii requires dnd for OTP/transactional; generic is promotional-only. */
 const TERMII_TRANSACTIONAL_CHANNEL = process.env.TERMII_TRANSACTIONAL_CHANNEL || 'dnd';
@@ -49,7 +50,7 @@ const SMS_ENABLED_CATEGORIES = (process.env.SMS_ENABLED_CATEGORIES || 'otp,aucti
 const AFRICAS_TALKING_API_URL = 'https://api.africastalking.com/version1/messaging';
 const AFRICAS_TALKING_API_KEY = process.env.AFRICAS_TALKING_API_KEY || '';
 const AFRICAS_TALKING_USERNAME = process.env.AFRICAS_TALKING_USERNAME || 'sandbox';
-const AFRICAS_TALKING_SENDER_ID = process.env.AFRICAS_TALKING_SENDER_ID || 'NEM Salvage';
+const AFRICAS_TALKING_SENDER_ID = process.env.AFRICAS_TALKING_SENDER_ID || 'Salvage';
 
 // Verified phone numbers for testing (to avoid wasting money)
 const VERIFIED_TEST_NUMBERS = [
@@ -81,6 +82,15 @@ export interface SMSResult {
 export class SMSService {
   private readonly maxRetries: number = 2; // Reduced retries to save money
   private readonly retryDelay: number = 2000; // 2 seconds
+
+  private async getBrandName(): Promise<string> {
+    try {
+      const policy = await businessPolicyService.getPublicPolicy();
+      return policy.branding.brandName;
+    } catch {
+      return 'Salvage';
+    }
+  }
 
   /**
    * Normalize phone number to international format
@@ -148,6 +158,31 @@ export class SMSService {
       }
 
       const category = options.category || 'routine';
+      try {
+        const policy = await businessPolicyService.getEffectivePolicy();
+        if (!policy.notifications.smsEnabled) {
+          console.log(`[SMS SKIPPED] SMS disabled by business policy for ${normalizedPhone}`);
+          return {
+            success: true,
+            skipped: true,
+            messageId: 'policy-sms-disabled',
+          };
+        }
+
+        if (!policy.notifications.smsCategories.includes(category)) {
+          console.log(`[SMS SKIPPED] Category "${category}" disabled by business policy for ${normalizedPhone}`);
+          return {
+            success: true,
+            skipped: true,
+            messageId: `policy-category-skipped-${category}`,
+          };
+        }
+      } catch (policyError) {
+        console.warn('[SMS] Business policy unavailable; using environment SMS controls', {
+          error: policyError instanceof Error ? policyError.message : 'Unknown error',
+        });
+      }
+
       if (!SMS_ENABLED_CATEGORIES.includes(category)) {
         console.log(`[SMS SKIPPED] Category "${category}" disabled for ${normalizedPhone}`);
         console.log(`   Enabled categories: ${SMS_ENABLED_CATEGORIES.join(', ')}`);
@@ -428,7 +463,8 @@ export class SMSService {
    * @returns SMS result
    */
   async sendOTP(phone: string, otp: string, userId?: string): Promise<SMSResult> {
-    const message = `Your NEM Salvage verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`;
+    const brandName = await this.getBrandName();
+    const message = `Your ${brandName} verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`;
     return this.sendSMS({ to: phone, message, userId, category: 'otp' });
   }
 
@@ -513,7 +549,10 @@ export class SMSService {
    * @returns SMS result
    */
   async sendTier1ApprovalSMS(phone: string, fullName: string): Promise<SMSResult> {
-    const message = `Congratulations ${fullName}! Your Tier 1 verification is complete. You can now bid up to ₦500,000 on salvage items. Login to start bidding: ${process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com'}/login`;
+    const brandName = await this.getBrandName();
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+    const loginUrl = appUrl ? `${appUrl}/login` : 'your dashboard';
+    const message = `Congratulations ${fullName}! Your ${brandName} identity verification is complete. You can now bid on eligible salvage items. Login to start bidding: ${loginUrl}`;
     
     return this.sendSMS({
       to: phone,

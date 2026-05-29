@@ -24,9 +24,10 @@ describe('/api/business-policy/public', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(response.headers.get('x-business-policy-version')).toBe('nem-default-2026-05-23');
+    expect(response.headers.get('x-business-policy-version')).toBe('reclaim-default-2026-05-23');
     expect(payload.success).toBe(true);
-    expect(payload.policy.branding.brandName).toBe('NEM Salvage');
+    expect(payload.policy.branding.brandName).toBe('Reclaim');
+    expect(payload.policy.branding.homepageTemplate).toBe('reclaim_editorial');
     expect(payload.policy.onboarding.tier1BidLimit).toBe(500000);
     expect(payload.policy.payments).toEqual({
       walletEnabled: true,
@@ -34,6 +35,10 @@ describe('/api/business-policy/public', () => {
       flutterwaveEnabled: false,
       hybridPaymentEnabled: true,
       manualPaymentEnabled: false,
+      paymentDeadlineAfterSigningHours: 72,
+    });
+    expect(payload.policy.documents).toEqual({
+      requiredAuctionDocuments: ['bill_of_sale', 'liability_waiver'],
     });
     expect(payload.policy.fraud).toBeUndefined();
     expect(JSON.stringify(payload)).not.toMatch(/secret|apiKey|webhook|dojah/i);

@@ -10,6 +10,8 @@ import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/u
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { appPath } from '@/features/notifications/templates/email-urls';
+import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
+import { businessPolicyService, resolvePaymentDeadlineHours } from '@/features/business-policy';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY!;
 // Paystack uses the SECRET KEY for webhook signature verification
@@ -88,9 +90,12 @@ export async function initiatePayment(
       throw new Error('User not found');
     }
 
-    // Calculate payment deadline (24 hours from now)
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const paymentDeadlineDecision = resolvePaymentDeadlineHours(policy);
+
+    // Calculate payment deadline from active payment policy
     const paymentDeadline = new Date();
-    paymentDeadline.setHours(paymentDeadline.getHours() + 24);
+    paymentDeadline.setHours(paymentDeadline.getHours() + (paymentDeadlineDecision.value ?? policy.payments.paymentDeadlineAfterSigningHours));
 
     // Generate unique payment reference
     const reference = `PAY_${auctionId.substring(0, 8)}_${Date.now()}`;
@@ -470,6 +475,7 @@ async function processAuctionPayment(reference: string, amountInKobo: number): P
 
       // Generate pickup authorization code
       const pickupCode = generatePickupAuthorizationCode(payment.id);
+      const branding = await getEmailBranding();
 
       // Send SMS notification
       const smsMessage = `Payment confirmed! Your pickup authorization code is: ${pickupCode}. Amount: ₦${parseFloat(
@@ -488,7 +494,7 @@ async function processAuctionPayment(reference: string, amountInKobo: number): P
         <p>Dear ${user.fullName},</p>
         <p>Your payment of <strong>₦${parseFloat(payment.amount).toLocaleString()}</strong> has been confirmed.</p>
         <h3>Pickup Authorization Code</h3>
-        <p style="font-size: 24px; font-weight: bold; color: #800020;">${pickupCode}</p>
+        <p style="font-size: 24px; font-weight: bold; color: ${branding.primaryColor};">${pickupCode}</p>
         <p>Please present this code when collecting your salvage item.</p>
         <h3>Item Details</h3>
         <ul>
@@ -497,7 +503,8 @@ async function processAuctionPayment(reference: string, amountInKobo: number): P
           <li>Location: ${salvageCase.locationName}</li>
         </ul>
         <p>This authorization is valid for 7 days from the date of payment.</p>
-        <p>Thank you for using NEM Salvage Management System.</p>
+        <p>Thank you for using ${branding.brandName}.</p>
+        <p>Best regards,<br>${brandTeamName(branding)}</p>
       `;
 
       await emailService.sendEmail({
@@ -533,11 +540,11 @@ async function processAuctionPayment(reference: string, amountInKobo: number): P
 
 /**
  * Generate a pickup authorization code
- * Format: NEM-XXXX-XXXX
+ * Format: AUTH-XXXX-XXXX
  */
 function generatePickupAuthorizationCode(paymentId: string): string {
   const hash = crypto.createHash('sha256').update(paymentId).digest('hex');
   const code1 = hash.substring(0, 4).toUpperCase();
   const code2 = hash.substring(4, 8).toUpperCase();
-  return `NEM-${code1}-${code2}`;
+  return `AUTH-${code1}-${code2}`;
 }

@@ -18,8 +18,8 @@ export function ContactSection() {
     {
       icon: Phone,
       label: 'Phone',
-      value: branding.supportPhone || '234-02-014489560',
-      href: `tel:${branding.supportPhone || '+23402014489560'}`,
+      value: branding.supportPhone || 'Configured after enterprise setup',
+      href: branding.supportPhone ? `tel:${branding.supportPhone}` : `mailto:${branding.supportEmail}`,
     },
     {
       icon: Mail,
@@ -30,8 +30,8 @@ export function ContactSection() {
     {
       icon: MapPin,
       label: 'Address',
-      value: `${branding.legalName}, 199 Ikorodu Road, Obanikoro, Lagos`,
-      href: 'https://maps.google.com/?q=NEM+Insurance+Plc+199+Ikorodu+Road+Obanikoro+Lagos',
+      value: `${branding.legalName} service operations`,
+      href: '#contact',
     },
   ];
 
@@ -80,11 +80,14 @@ export function ContactSection() {
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
         >
-          <h2 className="text-4xl md:text-5xl font-black mb-4 bg-gradient-to-r from-burgundy-900 to-gold-600 bg-clip-text text-transparent">
-            Get In Touch
+          <h2
+            className="mb-4 bg-clip-text text-4xl font-black text-transparent md:text-5xl"
+            style={{ backgroundImage: getBrandGradient(branding) }}
+          >
+            {branding.homepageCopy.contactHeadline || 'Get in touch'}
           </h2>
           <p className="text-xl text-gray-600">
-            Have questions? We'd love to hear from you
+            {branding.homepageCopy.contactSubtitle || "Have questions? We'd love to hear from you."}
           </p>
         </motion.div>
 
@@ -124,24 +127,23 @@ export function ContactSection() {
               })}
             </div>
 
-            {/* Embedded Map */}
+            {/* Brand-safe operations summary */}
             <motion.div
-              className="rounded-xl overflow-hidden shadow-xl border-4 border-white"
+              className="rounded-xl overflow-hidden shadow-xl border border-gray-100 bg-white p-6"
               initial={{ opacity: 0, scale: 0.9 }}
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.3 }}
             >
-              <iframe
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3963.952912260219!2d3.3792!3d6.5244!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zNsKwMzEnMjcuOCJOIDPCsDIyJzQ1LjEiRQ!5e0!3m2!1sen!2sng!4v1234567890"
-                width="100%"
-                height="300"
-                style={{ border: 0 }}
-                allowFullScreen
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                title="NEM Insurance Location"
-              />
+              <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">Service operations</p>
+              <h3 className="mt-3 text-2xl font-bold text-gray-900">{branding.legalName}</h3>
+              <p className="mt-3 text-sm leading-7 text-gray-600">
+                Reach our team for help with registration, auctions, payments, documents, or account access.
+              </p>
+              <div className="mt-5 rounded-lg p-4 text-sm text-white" style={{ background: getBrandGradient(branding) }}>
+                <p className="font-semibold">{branding.supportEmail}</p>
+                <p className="mt-1 opacity-85">{branding.supportPhone || 'Support phone not added yet'}</p>
+              </div>
             </motion.div>
           </motion.div>
 
@@ -165,7 +167,7 @@ export function ContactSection() {
                     value={formData.name}
                     onChange={handleChange}
                     required
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-burgundy-600 focus:outline-none transition-colors"
+                    className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 transition-colors focus:border-[var(--brand-primary)] focus:outline-none"
                     placeholder="John Doe"
                   />
                 </div>
@@ -181,7 +183,7 @@ export function ContactSection() {
                     value={formData.email}
                     onChange={handleChange}
                     required
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-burgundy-600 focus:outline-none transition-colors"
+                    className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 transition-colors focus:border-[var(--brand-primary)] focus:outline-none"
                     placeholder="john@example.com"
                   />
                 </div>
@@ -196,7 +198,7 @@ export function ContactSection() {
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-burgundy-600 focus:outline-none transition-colors"
+                    className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 transition-colors focus:border-[var(--brand-primary)] focus:outline-none"
                     placeholder="+234 800 000 0000"
                   />
                 </div>
@@ -212,7 +214,7 @@ export function ContactSection() {
                     onChange={handleChange}
                     required
                     rows={5}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-burgundy-600 focus:outline-none transition-colors resize-none"
+                    className="w-full resize-none rounded-lg border-2 border-gray-200 px-4 py-3 transition-colors focus:border-[var(--brand-primary)] focus:outline-none"
                     placeholder="Tell us how we can help..."
                   />
                 </div>
@@ -232,7 +234,7 @@ export function ContactSection() {
                   whileTap={status === 'idle' ? { scale: 0.98 } : {}}
                 >
                   {status === 'loading' && 'Sending...'}
-                  {status === 'success' && '✓ Message Sent!'}
+                  {status === 'success' && 'Message sent'}
                   {status === 'idle' && (
                     <>
                       Send Message

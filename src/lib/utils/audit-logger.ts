@@ -1,6 +1,9 @@
-import { db } from '@/lib/db/drizzle';
+import { db, withRetry } from '@/lib/db/drizzle';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { sanitizeForAudit } from '@/lib/utils/audit-sanitizer';
+
+const SYSTEM_AUDIT_USER_ID = '00000000-0000-0000-0000-000000000001';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Device types for audit logging
@@ -236,8 +239,10 @@ export async function logAction(data: AuditLogData): Promise<void> {
     const sanitizedBeforeState = data.beforeState ? sanitizeForAudit(data.beforeState) : null;
     const sanitizedAfterState = data.afterState ? sanitizeForAudit(data.afterState) : null;
     
-    await db.insert(auditLogs).values({
-      userId: data.userId,
+    const userId = UUID_RE.test(data.userId) ? data.userId : SYSTEM_AUDIT_USER_ID;
+
+    await withRetry(() => db.insert(auditLogs).values({
+      userId,
       actionType: data.actionType,
       entityType: data.entityType,
       entityId: data.entityId,
@@ -246,7 +251,7 @@ export async function logAction(data: AuditLogData): Promise<void> {
       userAgent: data.userAgent,
       beforeState: sanitizedBeforeState,
       afterState: sanitizedAfterState,
-    });
+    }), 2, 500);
   } catch (error) {
     // Log error but don't throw to prevent audit logging from breaking application flow
     console.error('Failed to log audit action:', error);

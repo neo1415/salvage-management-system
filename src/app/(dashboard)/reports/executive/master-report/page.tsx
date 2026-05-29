@@ -221,7 +221,7 @@ export default function MasterReportPage() {
                       }}
                     />
                   </div>
-                  <Button onClick={() => fetchMasterReport()} className="w-full bg-[#800020] hover:bg-[#600018]">
+                  <Button onClick={() => fetchMasterReport()} className="w-full bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)]">
                     Apply Dates
                   </Button>
                   <Button

@@ -4,6 +4,7 @@ import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq } from 'drizzle-orm';
 import { smsService } from '@/features/notifications/services/sms.service';
+import { getEmailBranding } from '@/features/notifications/templates/email-branding';
 
 /**
  * OTP Service
@@ -137,7 +138,8 @@ export class OTPService {
       // This ensures OTP is available even if SMS sending fails
       await otpCache.set(normalizedPhone, otp);
 
-      const message = `Your NEM Salvage verification code is: ${otp}. Valid for 5 minutes. Do not share this code.`;
+      const branding = await getEmailBranding();
+      const message = `Your ${branding.brandName} verification code is: ${otp}. Valid for 5 minutes. Do not share this code.`;
 
       try {
         if (this.termiiApiKey) {

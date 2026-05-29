@@ -297,7 +297,7 @@ export default function ActionModal({ actionModal, selectedUser, onClose, onSucc
                 <select
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
                 >
                   <option value="">Select new role...</option>
                   <option value="vendor">Vendor</option>
@@ -317,7 +317,7 @@ export default function ActionModal({ actionModal, selectedUser, onClose, onSucc
                 </button>
                 <button
                   onClick={executeAction}
-                  className="flex-1 px-4 py-2 bg-burgundy-600 text-white font-semibold rounded-lg hover:bg-burgundy-700 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50"
                   disabled={actionLoading}
                 >
                   {actionLoading ? 'Changing...' : 'Change Role'}
@@ -353,7 +353,7 @@ export default function ActionModal({ actionModal, selectedUser, onClose, onSucc
                   id="suspensionReasonInput"
                   value={suspensionReason}
                   onChange={(e) => setSuspensionReason(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
                   rows={4}
                   placeholder="Enter reason for suspension (minimum 10 characters)..."
                   autoFocus
@@ -500,7 +500,7 @@ export default function ActionModal({ actionModal, selectedUser, onClose, onSucc
                     </button>
                     <button
                       onClick={executeAction}
-                      className="flex-1 px-4 py-2 bg-burgundy-600 text-white font-semibold rounded-lg hover:bg-burgundy-700 disabled:opacity-50"
+                      className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50"
                       disabled={actionLoading}
                     >
                       {actionLoading ? 'Resetting...' : 'Reset Password'}

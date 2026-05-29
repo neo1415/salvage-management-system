@@ -3,6 +3,7 @@ import {
   DEFAULT_BUSINESS_POLICY,
   resolveTier2Access,
   resolveTier2ReviewRequirement,
+  resolveRegistrationFeePaymentAccess,
   resolveVendorBidEligibility,
   resolveVendorBidLimit,
   resolveVendorBvnGate,
@@ -87,6 +88,50 @@ describe('onboarding policy decisions', () => {
     expect(result.value).toBe('registration_fee_required');
     expect(result.decision.rulePath).toBe('onboarding.registrationFeeRequired');
     expect(result.decision.resolvedValue).toBe(12500);
+  });
+
+  it('requires BVN before registration fee under the default NEM flow', () => {
+    const result = resolveRegistrationFeePaymentAccess(DEFAULT_BUSINESS_POLICY, {
+      tier: 'tier0',
+      bvnVerified: false,
+      registrationFeePaid: false,
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.value).toBe('bvn_required');
+    expect(result.decision.rulePath).toBe('kyc.tier1RequiresBvn');
+  });
+
+  it('allows registration fee before BVN when fee-before-tier1 is configured', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'fee_before_tier1';
+
+    const result = resolveRegistrationFeePaymentAccess(policy, {
+      tier: 'tier0',
+      bvnVerified: false,
+      registrationFeePaid: false,
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.value).toBe('payment_available');
+    expect(result.decision.resolvedValue).toBe(policy.onboarding.registrationFeeAmount);
+  });
+
+  it('marks registration fee payment unavailable when no fee is configured', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'no_registration_fee';
+    policy.onboarding.registrationFeeRequired = false;
+    policy.onboarding.registrationFeeAmount = 0;
+
+    const result = resolveRegistrationFeePaymentAccess(policy, {
+      tier: 'tier1_bvn',
+      bvnVerified: true,
+      registrationFeePaid: false,
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.value).toBe('fee_not_required');
+    expect(result.decision.outcome).toBe('not_applicable');
   });
 
   it('allows Tier 2 start after BVN and registration fee', () => {

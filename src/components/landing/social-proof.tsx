@@ -3,6 +3,7 @@
 import { motion, useInView, useMotionValue, useSpring } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { Star, Shield, Lock, CheckCircle } from 'lucide-react';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 
 const testimonials = [
   {
@@ -28,14 +29,14 @@ const testimonials = [
   },
 ];
 
-const trustBadges = [
-  { icon: Shield, text: 'Powered by NEM Insurance' },
-  { icon: Lock, text: 'Secure BVN Verification' },
-  { icon: CheckCircle, text: 'SSL Encrypted' },
-];
-
 export function SocialProofSection() {
   const [currentTestimonial, setCurrentTestimonial] = useState(0);
+  const { branding } = usePublicBranding();
+  const trustBadges = [
+    { icon: Shield, text: `Powered by ${branding.legalName || branding.brandName}` },
+    { icon: Lock, text: 'Secure identity verification' },
+    { icon: CheckCircle, text: 'Encrypted platform access' },
+  ];
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -49,8 +50,8 @@ export function SocialProofSection() {
     <section className="py-20 md:py-32 bg-gradient-to-b from-gray-50 to-white relative overflow-hidden">
       {/* Background decoration */}
       <div className="absolute inset-0 opacity-5">
-        <div className="absolute top-1/4 left-0 w-96 h-96 bg-burgundy-500 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-gold-500 rounded-full blur-3xl" />
+        <div className="absolute top-1/4 left-0 w-96 h-96 bg-[var(--brand-primary)] rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[var(--brand-accent)] rounded-full blur-3xl" />
       </div>
 
       <div className="container mx-auto px-4 relative z-10">
@@ -62,7 +63,7 @@ export function SocialProofSection() {
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.3 }}
         >
-          <h3 className="text-3xl font-bold text-center mb-12 text-burgundy-900">
+          <h3 className="text-3xl font-bold text-center mb-12 text-[var(--brand-primary)]">
             What Vendors Say
           </h3>
 
@@ -94,12 +95,12 @@ export function SocialProofSection() {
                   <div className="flex-1">
                     <div className="flex items-center gap-1 mb-3">
                       {[...Array(testimonial.rating)].map((_, i) => (
-                        <Star key={i} className="w-5 h-5 fill-gold-500 text-gold-500" />
+                        <Star key={i} className="w-5 h-5 fill-[var(--brand-accent)] text-[var(--brand-accent)]" />
                       ))}
                     </div>
                     <p className="text-lg text-gray-700 mb-4 italic">"{testimonial.text}"</p>
                     <div>
-                      <div className="font-bold text-burgundy-900">{testimonial.name}</div>
+                      <div className="font-bold text-[var(--brand-primary)]">{testimonial.name}</div>
                       <div className="text-gray-600">{testimonial.role}</div>
                     </div>
                   </div>
@@ -114,7 +115,7 @@ export function SocialProofSection() {
                   key={index}
                   className={`w-3 h-3 rounded-full transition-all ${
                     index === currentTestimonial
-                      ? 'bg-burgundy-600 w-8'
+                      ? 'bg-[var(--brand-primary)] w-8'
                       : 'bg-gray-300'
                   }`}
                   onClick={() => setCurrentTestimonial(index)}
@@ -142,7 +143,7 @@ export function SocialProofSection() {
                 whileHover={{ scale: 1.05, y: -5 }}
                 transition={{ type: 'spring', stiffness: 400 }}
               >
-                <Icon className="w-6 h-6 text-burgundy-600" />
+                <Icon className="w-6 h-6 text-[var(--brand-primary)]" />
                 <span className="font-semibold text-gray-700">{badge.text}</span>
               </motion.div>
             );

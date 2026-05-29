@@ -13,6 +13,8 @@ import {
   type BidAlertTemplateData,
   type PaymentConfirmationTemplateData,
 } from '../templates';
+import { businessPolicyService } from '@/features/business-policy';
+import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
 
 // Validate required environment variables
 if (!process.env.RESEND_API_KEY) {
@@ -20,7 +22,7 @@ if (!process.env.RESEND_API_KEY) {
 }
 
 if (!process.env.EMAIL_FROM) {
-  console.warn('EMAIL_FROM is not set. Using default sender address.');
+  console.warn('EMAIL_FROM is not set. Using support email as sender address.');
 }
 
 // Initialize Resend with a dummy key if not configured (for testing)
@@ -31,6 +33,7 @@ export interface EmailOptions {
   subject: string;
   html: string;
   replyTo?: string;
+  category?: 'auth' | 'notification' | 'system';
   attachments?: Array<{
     filename: string;
     content: string | Buffer;
@@ -43,6 +46,7 @@ export interface EmailResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  skipped?: boolean;
 }
 
 /**
@@ -53,10 +57,39 @@ export class EmailService {
   private readonly fromAddress: string;
   private readonly maxRetries: number = 3;
   private readonly retryDelay: number = 1000; // 1 second
-  private readonly supportEmail: string = 'nemsupport@nem-insurance.com';
 
   constructor() {
-    this.fromAddress = process.env.EMAIL_FROM || 'NEM Insurance <noreply@salvage.nem-insurance.com>';
+    const fallbackSender = process.env.SUPPORT_EMAIL || DEFAULT_BUSINESS_POLICY.branding.supportEmail;
+    this.fromAddress = process.env.EMAIL_FROM || `Salvage Portal <${fallbackSender}>`;
+  }
+
+  private async getSupportEmail(): Promise<string> {
+    try {
+      const policy = await businessPolicyService.getPublicPolicy();
+      return policy.branding.supportEmail;
+    } catch {
+      return process.env.SUPPORT_EMAIL || DEFAULT_BUSINESS_POLICY.branding.supportEmail;
+    }
+  }
+
+  private async canSendPolicyEmail(options: EmailOptions): Promise<boolean> {
+    if (options.category === 'auth') {
+      return true;
+    }
+
+    try {
+      const policy = await businessPolicyService.getEffectivePolicy();
+      if (!policy.notifications.emailEnabled) {
+        console.log(`[EMAIL SKIPPED] Email disabled by business policy for ${options.to}: ${options.subject}`);
+        return false;
+      }
+    } catch (error) {
+      console.warn('[Email] Business policy unavailable; allowing email send', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
+    return true;
   }
 
   /**
@@ -84,9 +117,8 @@ export class EmailService {
 
       const result = await this.sendEmailWithRetry({
         to: email,
-        subject: 'Welcome to NEM Insurance Salvage Management System',
-        html: getWelcomeEmailTemplate(templateData),
-        replyTo: this.supportEmail,
+        subject: 'Welcome to your salvage recovery account',
+        html: await getWelcomeEmailTemplate(templateData),
       });
 
       if (result.success) {
@@ -112,6 +144,14 @@ export class EmailService {
    * @returns Email result
    */
   private async sendEmailWithRetry(options: EmailOptions): Promise<EmailResult> {
+    if (!await this.canSendPolicyEmail(options)) {
+      return {
+        success: true,
+        messageId: 'policy-email-disabled',
+        skipped: true,
+      };
+    }
+
     // Check if API key is configured BEFORE retry loop
     if (!process.env.RESEND_API_KEY) {
       console.warn('Email not sent: RESEND_API_KEY not configured');
@@ -130,7 +170,7 @@ export class EmailService {
           to: options.to,
           subject: options.subject,
           html: options.html,
-          replyTo: options.replyTo,
+          replyTo: options.replyTo || await this.getSupportEmail(),
           attachments: options.attachments,
         });
 
@@ -258,8 +298,8 @@ export class EmailService {
       const result = await this.sendEmailWithRetry({
         to: email,
         subject: `Your OTP Verification Code: ${otpCode}`,
-        html: getOTPEmailTemplate(templateData),
-        replyTo: this.supportEmail,
+        html: await getOTPEmailTemplate(templateData),
+        category: 'auth',
       });
 
       if (result.success) {
@@ -316,8 +356,7 @@ export class EmailService {
       const result = await this.sendEmailWithRetry({
         to: email,
         subject,
-        html: getCaseApprovalEmailTemplate(safeData),
-        replyTo: this.supportEmail,
+        html: await getCaseApprovalEmailTemplate(safeData),
       });
 
       if (result.success) {
@@ -369,8 +408,7 @@ export class EmailService {
       const result = await this.sendEmailWithRetry({
         to: email,
         subject: `New Auction: ${data.assetName} - Starting at ₦${data.reservePrice.toLocaleString()}`,
-        html: getAuctionStartEmailTemplate(safeData),
-        replyTo: this.supportEmail,
+        html: await getAuctionStartEmailTemplate(safeData),
       });
 
       if (result.success) {
@@ -431,8 +469,7 @@ export class EmailService {
       const result = await this.sendEmailWithRetry({
         to: email,
         subject,
-        html: getBidAlertEmailTemplate(safeData),
-        replyTo: this.supportEmail,
+        html: await getBidAlertEmailTemplate(safeData),
       });
 
       if (result.success) {
@@ -487,8 +524,7 @@ export class EmailService {
       const result = await this.sendEmailWithRetry({
         to: email,
         subject: `Payment Confirmed - Pickup Authorization for ${data.assetName}`,
-        html: getPaymentConfirmationEmailTemplate(safeData),
-        replyTo: this.supportEmail,
+        html: await getPaymentConfirmationEmailTemplate(safeData),
       });
 
       if (result.success) {

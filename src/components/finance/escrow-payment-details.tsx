@@ -161,7 +161,7 @@ export function EscrowPaymentDetails({
           type="button"
           onClick={() => setIsModalOpen(true)}
           disabled={isReleasing || success}
-          className="w-full mt-6 bg-burgundy-900 text-white py-3 px-4 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+          className="w-full mt-6 bg-[var(--brand-primary)] text-white py-3 px-4 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
           aria-label="Manual release funds"
           data-testid="manual-release-button"
         >

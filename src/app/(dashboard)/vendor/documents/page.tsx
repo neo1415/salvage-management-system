@@ -347,7 +347,7 @@ export default function VendorDocumentsPage() {
         <div className="text-center">
           <div className="relative w-16 h-16 mx-auto mb-6">
             <div className="absolute inset-0 rounded-full border-4 border-gray-200"></div>
-            <div className="absolute inset-0 rounded-full border-4 border-[#800020] border-t-transparent animate-spin"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-[var(--brand-primary)] border-t-transparent animate-spin"></div>
           </div>
           <p className="text-lg font-medium text-gray-700">Loading documents...</p>
           <p className="text-sm text-gray-500 mt-2">Please wait</p>
@@ -369,7 +369,7 @@ export default function VendorDocumentsPage() {
           <p className="text-gray-600 mb-8 leading-relaxed">{cacheError.message}</p>
           <button
             onClick={() => refresh()}
-            className="px-8 py-3.5 bg-[#800020] text-white font-semibold rounded-xl hover:bg-[#600018] transition-all duration-200 shadow-lg shadow-[#800020]/20 hover:shadow-xl hover:shadow-[#800020]/30 hover:-translate-y-0.5"
+            className="px-8 py-3.5 bg-[var(--brand-primary)] text-white font-semibold rounded-xl hover:bg-[var(--brand-primary-hover)] transition-all duration-200 shadow-lg shadow-[var(--brand-shadow-color)] hover:shadow-xl hover:shadow-[var(--brand-shadow-color)] hover:-translate-y-0.5"
           >
             Try Again
           </button>
@@ -423,7 +423,7 @@ export default function VendorDocumentsPage() {
             </p>
             <button
               onClick={() => router.push('/vendor/auctions')}
-              className="px-8 py-3.5 bg-[#800020] text-white font-semibold rounded-xl hover:bg-[#600018] transition-all duration-200 shadow-lg shadow-[#800020]/20 hover:shadow-xl hover:shadow-[#800020]/30 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+              className="px-8 py-3.5 bg-[var(--brand-primary)] text-white font-semibold rounded-xl hover:bg-[var(--brand-primary-hover)] transition-all duration-200 shadow-lg shadow-[var(--brand-shadow-color)] hover:shadow-xl hover:shadow-[var(--brand-shadow-color)] hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
               disabled={isOffline}
             >
               Browse Auctions
@@ -453,11 +453,11 @@ export default function VendorDocumentsPage() {
             {auctionDocuments.length > 0 && (
               <div className="flex gap-3 sm:gap-4">
                 <div className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100">
-                  <div className="text-2xl font-bold text-[#800020]">{auctionDocuments.length}</div>
+                  <div className="text-2xl font-bold text-[var(--brand-primary)]">{auctionDocuments.length}</div>
                   <div className="text-xs text-gray-600 mt-0.5">Auctions</div>
                 </div>
                 <div className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100">
-                  <div className="text-2xl font-bold text-[#800020]">
+                  <div className="text-2xl font-bold text-[var(--brand-primary)]">
                     {auctionDocuments.reduce((sum, a) => sum + a.documents.filter(isVisibleDocument).length, 0)}
                   </div>
                   <div className="text-xs text-gray-600 mt-0.5">Documents</div>
@@ -571,7 +571,7 @@ function AuctionDocumentCard({ auction, onViewAuction, onDownload, onViewReceipt
       className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden scroll-mt-24 hover:shadow-md transition-shadow duration-300"
     >
       {/* Modern Auction Header with Gradient */}
-      <div className="relative bg-gradient-to-br from-[#800020] via-[#900025] to-[#a00028] text-white p-6 sm:p-8">
+      <div className="relative bg-gradient-to-br from-[var(--brand-primary)] via-[var(--brand-primary-hover)] to-[var(--brand-primary-active)] text-white p-6 sm:p-8">
         {/* Decorative background pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
@@ -711,7 +711,7 @@ function AuctionDocumentCard({ auction, onViewAuction, onDownload, onViewReceipt
               {doc.status === 'signed' && doc.isReceipt && doc.receiptUrl && (
                 <OfflineAwareButton
                   onClick={() => onViewReceipt(doc.receiptUrl!)}
-                  className="w-full px-4 py-3 bg-[#800020] hover:bg-[#600018] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[#800020]/20 hover:shadow-lg hover:shadow-[#800020]/30 hover:-translate-y-0.5"
+                  className="w-full px-4 py-3 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[var(--brand-shadow-color)] hover:shadow-lg hover:shadow-[var(--brand-shadow-color)] hover:-translate-y-0.5"
                   requiresOnline={true}
                   offlineTooltip="Receipt viewing requires an internet connection"
                 >
@@ -725,7 +725,7 @@ function AuctionDocumentCard({ auction, onViewAuction, onDownload, onViewReceipt
               {doc.status === 'signed' && !doc.isReceipt && (
                 <OfflineAwareButton
                   onClick={() => onDownload(doc.id, doc.title)}
-                  className="w-full px-4 py-3 bg-[#800020] hover:bg-[#600018] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[#800020]/20 hover:shadow-lg hover:shadow-[#800020]/30 hover:-translate-y-0.5"
+                  className="w-full px-4 py-3 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[var(--brand-shadow-color)] hover:shadow-lg hover:shadow-[var(--brand-shadow-color)] hover:-translate-y-0.5"
                   requiresOnline={true}
                   offlineTooltip="Document downloads require an internet connection"
                 >

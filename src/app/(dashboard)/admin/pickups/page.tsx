@@ -228,7 +228,7 @@ export default function AdminPickupsPage() {
                 placeholder="Search by claim ref, vendor, or asset..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               />
             </div>
 
@@ -241,7 +241,7 @@ export default function AdminPickupsPage() {
                 id="statusFilter"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as 'pending' | 'all')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               >
                 <option value="pending">Pending Only</option>
                 <option value="all">All Pickups</option>
@@ -257,7 +257,7 @@ export default function AdminPickupsPage() {
                 id="sortBy"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'confirmedAt' | 'amount' | 'claimRef')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               >
                 <option value="confirmedAt">Confirmation Date</option>
                 <option value="amount">Amount</option>
@@ -426,7 +426,7 @@ export default function AdminPickupsPage() {
                           setSelectedPickup(pickup);
                           setIsModalOpen(true);
                         }}
-                        className="w-full px-4 py-2 bg-burgundy-900 text-white rounded-lg font-semibold hover:bg-burgundy-800 transition-colors text-sm"
+                        className="w-full px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors text-sm"
                       >
                         Confirm Pickup
                       </button>

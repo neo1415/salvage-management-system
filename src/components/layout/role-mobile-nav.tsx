@@ -115,11 +115,11 @@ export function RoleMobileNav() {
               key={item.href}
               href={item.href}
               className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium transition-colors sm:text-xs ${
-                active ? 'text-[#800020]' : 'text-gray-500 hover:text-gray-800'
+                active ? 'text-[var(--brand-primary)]' : 'text-gray-500 hover:text-gray-800'
               }`}
             >
               <Icon
-                className={`h-5 w-5 shrink-0 ${active ? 'text-[#800020]' : ''}`}
+                className={`h-5 w-5 shrink-0 ${active ? 'text-[var(--brand-primary)]' : ''}`}
                 strokeWidth={active ? 2.25 : 2}
               />
               <span className="truncate max-w-[4.5rem]">{item.label}</span>

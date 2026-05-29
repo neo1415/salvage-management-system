@@ -1,13 +1,13 @@
 /**
- * Wraps arbitrary HTML body content in the standard NEM letterhead and footer
+ * Wraps arbitrary HTML body content in the configured brand letterhead and footer.
  */
 
-import { getBaseEmailTemplate } from './base.template';
+import { getPolicyAwareBaseEmailTemplate } from './base.template';
 
-export function wrapProfessionalEmail(
+export async function wrapProfessionalEmail(
   title: string,
   content: string,
   preheader?: string
-): string {
-  return getBaseEmailTemplate({ title, content, preheader });
+): Promise<string> {
+  return getPolicyAwareBaseEmailTemplate({ title, content, preheader });
 }

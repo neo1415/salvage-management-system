@@ -5,6 +5,9 @@ import { eq } from 'drizzle-orm';
 import { verifyBVN, encryptBVN } from '@/features/vendors/services/bvn-verification.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { smsService } from '@/features/notifications/services/sms.service';
+import { brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
+import { appPath } from '@/features/notifications/templates/email-urls';
 import { logAction, createAuditLogData, AuditActionType, AuditEntityType } from '@/lib/utils/audit-logger';
 import { auth } from '@/lib/auth/next-auth.config';
 import { normalizeDojahBVNResult } from '@/features/kyc/services/dojah-normalizer.service';
@@ -12,20 +15,21 @@ import { getProviderVerificationService } from '@/features/kyc/services/provider
 import { resolveUserLegalNamesForBvn } from '@/lib/utils/person-name';
 import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
 import { sanitizeVerificationUserMessage } from '@/lib/kyc/kyc-user-messages';
+import { businessPolicyService } from '@/features/business-policy/business-policy.service';
 
 /**
  * POST /api/vendors/verify-bvn
- * 
+ *
  * Tier 1 KYC Verification API
  * Verifies vendor BVN and auto-approves to Tier 1 on successful match
- * 
+ *
  * Requirements: 4, Enterprise Standards Section 6.1
  */
 export async function POST(request: NextRequest) {
   try {
     // 1. Authenticate user
     const session = await auth();
-    
+
     if (!session || !session.user) {
       return NextResponse.json(
         { error: 'Unauthorized. Please login to continue.' },
@@ -87,7 +91,7 @@ export async function POST(request: NextRequest) {
     // Check if user has date of birth
     if (!user.dateOfBirth) {
       return NextResponse.json(
-        { 
+        {
           error: 'Date of birth not found',
           message: 'Your account is missing date of birth information. Please contact support to update your profile.',
         },
@@ -122,7 +126,7 @@ export async function POST(request: NextRequest) {
           rating: '0.00',
         })
         .returning();
-      
+
       vendor = newVendor;
     }
 
@@ -240,7 +244,7 @@ export async function POST(request: NextRequest) {
           AuditEntityType.KYC,
           vendor.id,
           undefined,
-          { 
+          {
             error: verificationResult.error,
             bvn: `***${bvn.slice(-4)}`,
           }
@@ -284,7 +288,7 @@ export async function POST(request: NextRequest) {
           AuditEntityType.KYC,
           vendor.id,
           undefined,
-          { 
+          {
             matchScore: verificationResult.matchScore,
             mismatches: verificationResult.mismatches,
             bvn: `***${bvn.slice(-4)}`,
@@ -334,7 +338,7 @@ export async function POST(request: NextRequest) {
     // We must clear this cache so the next request gets fresh data with bvnVerified=true
     const { redis } = await import('@/lib/redis/client');
     const userCacheKey = `user:${userId}`;
-    
+
     try {
       await redis.del(userCacheKey);
       console.log('[BVN Verification] Cleared user cache:', userCacheKey);
@@ -368,7 +372,7 @@ export async function POST(request: NextRequest) {
         AuditEntityType.KYC,
         vendor.id,
         { tier: vendor.tier, status: vendor.status },
-        { 
+        {
           tier: 'tier1_bvn',
           status: 'approved',
           bvn: `***${bvn.slice(-4)}`,
@@ -387,22 +391,25 @@ export async function POST(request: NextRequest) {
     const emailResult = await emailService.sendEmail({
       to: user.email,
       subject: 'Congratulations! Tier 1 Verification Complete',
-      html: getTier1ApprovalEmailTemplate(user.fullName),
+      html: await getTier1ApprovalEmailTemplate(user.fullName),
     });
     if (!emailResult.success) {
       console.error('Failed to send Tier 1 approval email:', emailResult.error);
     }
 
+    const effectivePolicy = await businessPolicyService.getEffectivePolicy();
+    const maxBidAmount = effectivePolicy.onboarding.tier1BidLimit;
+
     // 15. Return success response
     return NextResponse.json(
       {
         success: true,
-        message: 'Congratulations! Your Tier 1 verification is complete. You can now bid up to ₦500,000.',
+        message: 'Congratulations! Your identity verification is complete. You can now bid within your current verification limits.',
         data: {
           tier: 'tier1_bvn',
           status: 'approved',
           bvnVerified: true,
-          maxBidAmount: 500000,
+          maxBidAmount,
         },
         // Signal to client to refresh session
         refreshSession: true,
@@ -416,9 +423,9 @@ export async function POST(request: NextRequest) {
       message: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : undefined,
     });
-    
+
     return NextResponse.json(
-      { 
+      {
         error: 'Internal server error',
         message: 'An unexpected error occurred. Please try again later.',
       },
@@ -430,186 +437,37 @@ export async function POST(request: NextRequest) {
 /**
  * Get Tier 1 approval email template
  */
-function getTier1ApprovalEmailTemplate(fullName: string): string {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
-  
-  return `
-    <!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Tier 1 Verification Complete</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            margin: 0;
-            padding: 0;
-            background-color: #f5f5f5;
-          }
-          .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background-color: #ffffff;
-          }
-          .header {
-            background-color: #800020;
-            color: white;
-            padding: 30px 20px;
-            text-align: center;
-          }
-          .header h1 {
-            margin: 0;
-            font-size: 24px;
-            font-weight: 600;
-          }
-          .badge {
-            display: inline-block;
-            background-color: #FFD700;
-            color: #800020;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: 600;
-            margin-top: 10px;
-          }
-          .content {
-            padding: 30px 20px;
-          }
-          .content p {
-            margin: 0 0 15px 0;
-          }
-          .success-icon {
-            text-align: center;
-            font-size: 64px;
-            margin: 20px 0;
-          }
-          .benefits {
-            background-color: #f9f9f9;
-            border-left: 4px solid #FFD700;
-            padding: 15px 20px;
-            margin: 20px 0;
-          }
-          .benefits h3 {
-            margin: 0 0 10px 0;
-            color: #800020;
-          }
-          .benefits ul {
-            margin: 10px 0;
-            padding-left: 20px;
-          }
-          .benefits li {
-            margin: 8px 0;
-          }
-          .button {
-            display: inline-block;
-            padding: 14px 28px;
-            background-color: #FFD700;
-            color: #800020;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: 600;
-            margin: 20px 0;
-            text-align: center;
-          }
-          .button:hover {
-            background-color: #FFC700;
-          }
-          .button-container {
-            text-align: center;
-            margin: 30px 0;
-          }
-          .upgrade-info {
-            background-color: #fff8e1;
-            border: 1px solid #FFD700;
-            padding: 20px;
-            border-radius: 6px;
-            margin: 20px 0;
-          }
-          .upgrade-info h3 {
-            margin: 0 0 10px 0;
-            color: #800020;
-          }
-          .footer {
-            text-align: center;
-            padding: 20px;
-            font-size: 12px;
-            color: #666;
-            background-color: #f5f5f5;
-            border-top: 1px solid #e0e0e0;
-          }
-          .footer p {
-            margin: 5px 0;
-          }
-          @media only screen and (max-width: 600px) {
-            .header h1 {
-              font-size: 20px;
-            }
-            .content {
-              padding: 20px 15px;
-            }
-            .button {
-              display: block;
-              width: 100%;
-              box-sizing: border-box;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>🎉 Congratulations!</h1>
-            <div class="badge">✓ Tier 1 Verified</div>
-          </div>
-          
-          <div class="content">
-            <div class="success-icon">✅</div>
-            
-            <p><strong>Dear ${escapeHtml(fullName)},</strong></p>
-            
-            <p>Your Tier 1 KYC verification is complete! Your BVN has been successfully verified and you are now approved to start bidding on salvage items.</p>
-            
-            <div class="benefits">
-              <h3>What You Can Do Now:</h3>
-              <ul>
-                <li><strong>Browse Auctions:</strong> View all available salvage items</li>
-                <li><strong>Place Bids:</strong> Bid up to ₦500,000 on any item</li>
-                <li><strong>Win Auctions:</strong> Secure salvage items at competitive prices</li>
-                <li><strong>Instant Payments:</strong> Pay securely via Paystack</li>
-              </ul>
-            </div>
-            
-            <div class="button-container">
-              <a href="${appUrl}/vendor/auctions" class="button">Browse Auctions Now</a>
-            </div>
-            
-            <div class="upgrade-info">
-              <h3>Want to Bid Higher?</h3>
-              <p>Upgrade to <strong>Tier 2</strong> to unlock unlimited bidding on high-value items above ₦500,000.</p>
-              <p>Tier 2 benefits include:</p>
-              <ul>
-                <li>Unlimited bidding amounts</li>
-                <li>Priority customer support</li>
-                <li>Leaderboard eligibility</li>
-                <li>Exclusive high-value auctions</li>
-              </ul>
-              <p><a href="${appUrl}/vendor/kyc/tier2" style="color: #800020; font-weight: 600;">Upgrade to Tier 2 →</a></p>
-            </div>
-            
-            <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Team</strong></p>
-          </div>
-          
-          <div class="footer">
-            <p><strong>NEM Insurance Plc</strong></p>
-            <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
-            <p>Phone: 234-02-014489560 | Email: nemsupport@nem-insurance.com</p>
-          </div>
-        </div>
-      </body>
-    </html>
-  `;
+async function getTier1ApprovalEmailTemplate(fullName: string): Promise<string> {
+  const branding = await getEmailBranding();
+  const supportEmail = getSupportEmail(branding);
+  const supportPhone = getSupportPhone(branding);
+
+  return wrapProfessionalEmail(
+    'Tier 1 Verification Complete',
+    `
+      <p><strong>Dear ${escapeHtml(fullName)},</strong></p>
+      <p>Your Tier 1 KYC verification is complete. Your identity has been verified and you are approved for eligible bidding.</p>
+      <div style="background-color: #f9f9f9; border-left: 4px solid ${branding.accentColor}; padding: 18px 20px; margin: 24px 0; border-radius: 8px;">
+        <h3 style="margin: 0 0 12px 0; color: ${branding.primaryColor};">What You Can Do Now</h3>
+        <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
+          <li><strong>Browse auctions:</strong> View available salvage items.</li>
+          <li><strong>Place eligible bids:</strong> Bid within your current verification limits.</li>
+          <li><strong>Complete full verification:</strong> Add business verification for higher-value auctions.</li>
+        </ul>
+      </div>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${appPath('/vendor/auctions')}" class="button" style="display: inline-block; padding: 14px 28px; background-color: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: 600;">Browse Auctions</a>
+      </div>
+      <div style="background-color: #fff8e1; border: 1px solid ${branding.accentColor}; padding: 20px; border-radius: 6px; margin: 20px 0;">
+        <h3 style="margin: 0 0 10px 0; color: ${branding.primaryColor};">Want to bid higher?</h3>
+        <p>Complete full verification to unlock higher bidding access and business verification benefits.</p>
+        <p><a href="${appPath('/vendor/kyc/tier2')}" style="color: ${branding.primaryColor}; font-weight: 600;">Continue Verification</a></p>
+      </div>
+      <p style="margin-top: 30px;">Best regards,<br><strong style="color: ${branding.primaryColor};">${brandTeamName(branding)}</strong></p>
+      <p style="font-size: 13px; color: #666;">Need help? ${supportPhone} | ${supportEmail}</p>
+    `,
+    `Your ${branding.brandName} Tier 1 verification is complete.`
+  );
 }
 
 /**

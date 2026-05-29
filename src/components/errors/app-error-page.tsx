@@ -79,7 +79,7 @@ export function AppErrorPage({ variant }: AppErrorPageProps) {
               unoptimized
             />
           </div>
-          <p className="text-sm font-semibold tracking-[0.25em] text-[#FFD700]/90 uppercase">
+          <p className="text-sm font-semibold tracking-[0.25em] uppercase" style={{ color: branding.accentColor }}>
             {branding.brandName}
           </p>
           <p className="mt-4 text-6xl font-bold tracking-tight">{config.code}</p>

@@ -17,6 +17,9 @@ import { users } from '@/lib/db/schema/users';
 import { eq, and, isNull } from 'drizzle-orm';
 import crypto from 'crypto';
 import { appPath } from '@/features/notifications/templates/email-urls';
+import { businessPolicyService } from '@/features/business-policy';
+import { brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 
 export interface InitializeRegistrationFeePaymentParams {
   vendorId: string;
@@ -41,12 +44,17 @@ export interface RegistrationFeeStatus {
 
 export class RegistrationFeeService {
   /**
-   * Get registration fee amount from system configuration
-   * Falls back to environment variable or default if not configured
-   * 
-   * @returns Registration fee amount in Naira
+   * Get registration fee amount from the active business policy.
+   * Falls back to legacy config/env/default so rollout remains backward-compatible.
    */
   private async getRegistrationFeeAmount(): Promise<number> {
+    try {
+      const policy = await businessPolicyService.getEffectivePolicy();
+      return policy.onboarding.registrationFeeAmount;
+    } catch (policyError) {
+      console.warn('[Registration Fee] Business policy unavailable, falling back to legacy config:', policyError);
+    }
+
     try {
       const { configService } = await import('@/features/auction-deposit/services/config.service');
       const config = await configService.getConfig();
@@ -107,7 +115,7 @@ export class RegistrationFeeService {
         paymentId: existingPayment.id,
         authorizationUrl: 'ALREADY_PENDING',
         accessCode: 'ALREADY_PENDING',
-        amount: feeAmount,
+        amount: parseFloat(existingPayment.amount),
         reference: existingPayment.paymentReference || '',
       };
     }
@@ -128,6 +136,13 @@ export class RegistrationFeeService {
         paymentDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       })
       .returning();
+
+    await businessPolicyService.createCurrentPolicySnapshot({
+      entityType: 'payment',
+      entityId: payment.id,
+      actorId: undefined,
+      reason: `Vendor registration fee payment created for vendor ${vendorId}.`,
+    });
 
     // 5. Initialize Paystack transaction
     const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
@@ -379,9 +394,10 @@ export class RegistrationFeeService {
       // Send SMS notification
       try {
         const { smsService } = await import('@/features/notifications/services/sms.service');
+        const branding = await getEmailBranding();
         await smsService.sendSMS({
           to: user.phone,
-          message: `NEM Salvage: Registration fee payment confirmed! You can now access Tier 2 KYC for unlimited bidding. Visit your dashboard to continue.`,
+          message: `${branding.brandName}: Registration fee payment confirmed. You can now continue to full verification from your dashboard.`,
         });
         console.log(`✅ Registration fee SMS sent to ${user.phone}`);
       } catch (smsError) {
@@ -393,8 +409,8 @@ export class RegistrationFeeService {
         const { emailService } = await import('@/features/notifications/services/email.service');
         await emailService.sendEmail({
           to: user.email,
-          subject: 'Registration Fee Payment Confirmed - NEM Salvage',
-          html: this.getPaymentConfirmationEmailTemplate(user.fullName, amount),
+          subject: 'Registration Fee Payment Confirmed',
+          html: await this.getPaymentConfirmationEmailTemplate(user.fullName, amount),
         });
         console.log(`✅ Registration fee email sent to ${user.email}`);
       } catch (emailError) {
@@ -415,148 +431,38 @@ export class RegistrationFeeService {
    * @param amount - Payment amount
    * @returns HTML email template
    */
-  private getPaymentConfirmationEmailTemplate(fullName: string, amount: number): string {
-    return `
-      <!DOCTYPE html>
-      <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Registration Fee Payment Confirmed</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-              line-height: 1.6;
-              color: #333;
-              margin: 0;
-              padding: 0;
-              background-color: #f5f5f5;
-            }
-            .container {
-              max-width: 600px;
-              margin: 0 auto;
-              background-color: #ffffff;
-            }
-            .header {
-              background-color: #800020;
-              color: white;
-              padding: 30px 20px;
-              text-align: center;
-            }
-            .header h1 {
-              margin: 0;
-              font-size: 24px;
-              font-weight: 600;
-            }
-            .content {
-              padding: 30px 20px;
-            }
-            .success-icon {
-              text-align: center;
-              font-size: 64px;
-              margin: 20px 0;
-            }
-            .amount-box {
-              background-color: #f9f9f9;
-              border: 2px solid #FFD700;
-              border-radius: 8px;
-              padding: 20px;
-              text-align: center;
-              margin: 20px 0;
-            }
-            .amount-box h2 {
-              margin: 0 0 10px 0;
-              color: #800020;
-              font-size: 32px;
-            }
-            .benefits {
-              background-color: #f9f9f9;
-              border-left: 4px solid #FFD700;
-              padding: 15px 20px;
-              margin: 20px 0;
-            }
-            .benefits h3 {
-              margin: 0 0 10px 0;
-              color: #800020;
-            }
-            .benefits ul {
-              margin: 10px 0;
-              padding-left: 20px;
-            }
-            .benefits li {
-              margin: 8px 0;
-            }
-            .button {
-              display: inline-block;
-              padding: 14px 28px;
-              background-color: #FFD700;
-              color: #800020;
-              text-decoration: none;
-              border-radius: 6px;
-              font-weight: 600;
-              margin: 20px 0;
-            }
-            .button-container {
-              text-align: center;
-              margin: 30px 0;
-            }
-            .footer {
-              text-align: center;
-              padding: 20px;
-              font-size: 12px;
-              color: #666;
-              background-color: #f5f5f5;
-              border-top: 1px solid #e0e0e0;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>✅ Payment Confirmed!</h1>
-            </div>
-            
-            <div class="content">
-              <div class="success-icon">🎉</div>
-              
-              <p><strong>Dear ${this.escapeHtml(fullName)},</strong></p>
-              
-              <p>Your registration fee payment has been successfully confirmed!</p>
-              
-              <div class="amount-box">
-                <p style="margin: 0; color: #666; font-size: 14px;">Amount Paid</p>
-                <h2>₦${amount.toLocaleString()}</h2>
-                <p style="margin: 0; color: #666; font-size: 14px;">One-time Registration Fee</p>
-              </div>
-              
-              <div class="benefits">
-                <h3>What's Next?</h3>
-                <ul>
-                  <li><strong>Access Tier 2 KYC:</strong> Complete full verification for unlimited bidding</li>
-                  <li><strong>Unlock High-Value Auctions:</strong> Bid on items above ₦500,000</li>
-                  <li><strong>Priority Support:</strong> Get faster assistance from our team</li>
-                  <li><strong>Leaderboard Eligibility:</strong> Compete for top vendor rankings</li>
-                </ul>
-              </div>
-              
-              <div class="button-container">
-                <a href="${appPath('/vendor/kyc/tier2')}" class="button">Complete Tier 2 KYC Now</a>
-              </div>
-              
-              <p>Thank you for choosing NEM Salvage Marketplace!</p>
-              
-              <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Team</strong></p>
-            </div>
-            
-            <div class="footer">
-              <p><strong>NEM Insurance Plc</strong></p>
-              <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
-              <p>Phone: 234-02-014489560 | Email: nemsupport@nem-insurance.com</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
+  private async getPaymentConfirmationEmailTemplate(fullName: string, amount: number): Promise<string> {
+    const branding = await getEmailBranding();
+    const supportEmail = getSupportEmail(branding);
+    const supportPhone = getSupportPhone(branding);
+
+    return wrapProfessionalEmail(
+      'Registration Fee Payment Confirmed',
+      `
+        <p><strong>Dear ${this.escapeHtml(fullName)},</strong></p>
+        <p>Your registration fee payment has been successfully confirmed.</p>
+        <div style="background-color: #f9f9f9; border: 2px solid ${branding.accentColor}; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
+          <p style="margin: 0; color: #666; font-size: 14px;">Amount Paid</p>
+          <h2 style="margin: 0 0 10px 0; color: ${branding.primaryColor}; font-size: 32px;">₦${amount.toLocaleString()}</h2>
+          <p style="margin: 0; color: #666; font-size: 14px;">One-time Registration Fee</p>
+        </div>
+        <div style="background-color: #f9f9f9; border-left: 4px solid ${branding.accentColor}; padding: 15px 20px; margin: 20px 0;">
+          <h3 style="margin: 0 0 10px 0; color: ${branding.primaryColor};">What's Next?</h3>
+          <ul style="margin: 10px 0; padding-left: 20px;">
+            <li><strong>Continue verification:</strong> Complete full business verification.</li>
+            <li><strong>Unlock high-value auctions:</strong> Bid according to your verified access level.</li>
+            <li><strong>Keep records current:</strong> Maintain accurate business and contact details.</li>
+          </ul>
+        </div>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${appPath('/vendor/kyc/tier2')}" class="button" style="display: inline-block; padding: 14px 28px; background-color: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: 600;">Continue Verification</a>
+        </div>
+        <p>Thank you for choosing ${branding.brandName}.</p>
+        <p style="margin-top: 30px;">Best regards,<br><strong style="color: ${branding.primaryColor};">${brandTeamName(branding)}</strong></p>
+        <p style="font-size: 13px; color: #666;">Need help? ${supportPhone} | ${supportEmail}</p>
+      `,
+      `Your ${branding.brandName} registration fee payment is confirmed.`
+    );
   }
 
   /**

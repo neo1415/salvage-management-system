@@ -200,7 +200,7 @@ export function DocumentSigning({
       <div className={`p-4 sm:p-6 border-b ${isExpired ? 'bg-red-50 border-red-200' : urgentDeadline ? 'bg-orange-50 border-orange-200' : 'border-gray-200'}`}>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
           <div className="flex items-start gap-3">
-            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isExpired ? 'bg-red-100' : urgentDeadline ? 'bg-orange-100' : 'bg-[#800020]'}`}>
+            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isExpired ? 'bg-red-100' : urgentDeadline ? 'bg-orange-100' : 'bg-[var(--brand-primary)]'}`}>
               {isExpired ? (
                 <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-red-600" />
               ) : (
@@ -291,7 +291,7 @@ export function DocumentSigning({
                   <button
                     onClick={() => handleSign(document.id)}
                     disabled={signing === document.id}
-                    className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-[#800020] rounded-lg hover:bg-[#600018] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-[var(--brand-primary)] rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {signing === document.id ? (
                       <>
@@ -322,7 +322,7 @@ export function DocumentSigning({
             </div>
             <button
               onClick={onAllSigned}
-              className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors text-sm sm:text-base"
+              className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors text-sm sm:text-base"
             >
               Proceed to Payment
             </button>

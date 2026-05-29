@@ -90,7 +90,7 @@ export function VirtualizedList<T>({
       
       {isLoading && (
         <div className="flex justify-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#800020]" aria-label="Loading more items"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--brand-primary)]" aria-label="Loading more items"></div>
         </div>
       )}
     </div>

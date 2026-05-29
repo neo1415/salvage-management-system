@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BUSINESS_POLICY,
   createPolicyDecisionRecord,
+  resolveAuthProviderAccess,
+  resolveCaseAssetTypeAllowed,
+  resolveEmailDomainAccess,
   toPublicBusinessPolicy,
   validateBusinessPolicy,
 } from '@/features/business-policy';
@@ -65,6 +68,23 @@ describe('business policy foundation', () => {
     );
   });
 
+  it('rejects enabled case asset types before the live case API supports them', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.cases.enabledAssetTypes.jewelry.enabled = true;
+
+    const result = validateBusinessPolicy(policy);
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'cases.enabledAssetTypes.jewelry.enabled',
+          severity: 'error',
+        }),
+      ])
+    );
+  });
+
   it('keeps public policy output intentionally narrow', () => {
     const publicPolicy = toPublicBusinessPolicy(DEFAULT_BUSINESS_POLICY);
     const serialized = JSON.stringify(publicPolicy).toLowerCase();
@@ -101,5 +121,38 @@ describe('business policy foundation', () => {
     expect(decision.resolvedValue).toBe(500000);
     expect(decision.inputs).toEqual({ tier: 'tier1' });
     expect(decision.createdAt).toEqual(expect.any(String));
+  });
+
+  it('resolves case asset type access with a versioned policy decision', () => {
+    const allowed = resolveCaseAssetTypeAllowed(DEFAULT_BUSINESS_POLICY, 'machinery');
+    const denied = resolveCaseAssetTypeAllowed(DEFAULT_BUSINESS_POLICY, 'jewelry');
+
+    expect(allowed.allowed).toBe(true);
+    expect(allowed.decision.decisionType).toBe('case_asset_type_allowed');
+    expect(allowed.decision.rulePath).toBe('cases.enabledAssetTypes.machinery.enabled');
+    expect(allowed.decision.policyVersion).toBe(DEFAULT_BUSINESS_POLICY.version);
+
+    expect(denied.allowed).toBe(false);
+    expect(denied.decision.decisionType).toBe('case_asset_type_denied');
+    expect(denied.decision.rulePath).toBe('cases.enabledAssetTypes.jewelry.enabled');
+  });
+
+  it('resolves auth provider and business email access from policy', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.auth.emailPasswordEnabled = false;
+    policy.auth.businessEmailOnly = true;
+    policy.auth.allowedEmailDomains = ['nemsalvage.com'];
+
+    const credentials = resolveAuthProviderAccess(policy, 'credentials');
+    const google = resolveAuthProviderAccess(policy, 'google');
+    const personalEmail = resolveEmailDomainAccess(policy, 'buyer@gmail.com');
+    const allowlistedEmail = resolveEmailDomainAccess(policy, 'buyer@nemsalvage.com');
+
+    expect(credentials.allowed).toBe(false);
+    expect(credentials.decision.rulePath).toBe('auth.emailPasswordEnabled');
+    expect(google.allowed).toBe(false);
+    expect(personalEmail.allowed).toBe(false);
+    expect(personalEmail.decision.decisionType).toBe('auth_email_domain_denied');
+    expect(allowlistedEmail.allowed).toBe(true);
   });
 });

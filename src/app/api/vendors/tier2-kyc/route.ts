@@ -5,7 +5,7 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { uploadFile } from '@/lib/storage/cloudinary';
-import { logAction } from '@/lib/utils/audit-logger';
+import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress, logAction } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { extractNINFromDocument } from '@/lib/integrations/google-document-ai';
@@ -13,11 +13,19 @@ import { verifyNIN } from '@/lib/integrations/nin-verification';
 import { verifyBankAccount } from '@/lib/integrations/paystack-bank-verification';
 import { z } from 'zod';
 import { appPath } from '@/features/notifications/templates/email-urls';
+import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveTier2Access,
+} from '@/features/business-policy';
 
 /**
  * Tier 2 KYC API
  * Handles full business documentation verification for vendors
- * 
+ *
  * Requirements:
  * - Accept document uploads (CAC certificate, bank statement, NIN card)
  * - Upload documents to Cloudinary with encryption
@@ -39,6 +47,11 @@ const tier2KYCSchema = z.object({
   bankCode: z.string().min(3, 'Bank code is required'),
   bankName: z.string().min(2, 'Bank name is required'),
 });
+
+function maskLast4(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  return `***${value.slice(-4)}`;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -81,7 +94,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (user.status !== 'verified_tier_1') {
+    const ipAddress = getIpAddress(request.headers);
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+    const deviceType = getDeviceTypeFromUserAgent(userAgent);
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const branding = await getEmailBranding();
+    const tier2AccessDecision = resolveTier2Access(policy, {
+      tier: vendor.tier === 'tier2_full' ? 'tier2_full' : vendor.tier === 'tier1_bvn' ? 'tier1_bvn' : 'tier0',
+      bvnVerified: Boolean(vendor.bvnVerifiedAt),
+      registrationFeePaid: Boolean(vendor.registrationFeePaid),
+    });
+
+    await logPolicyDecision({
+      userId,
+      entityType: AuditEntityType.KYC,
+      entityId: vendor.id,
+      ipAddress,
+      userAgent,
+      deviceType,
+      decision: tier2AccessDecision.decision,
+      context: {
+        source: 'api/vendors/tier2-kyc',
+        runtimeMode: getBusinessPolicyRuntimeMode(),
+      },
+    }).catch((error) => {
+      console.warn('[BusinessPolicy] Failed to audit legacy Tier 2 access decision', {
+        vendorId: vendor.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+
+    const policyEnforcementEnabled = isBusinessPolicyEnforcementEnabled();
+
+    if (!tier2AccessDecision.allowed && policyEnforcementEnabled) {
+      return NextResponse.json(
+        {
+          error: 'Tier 2 KYC is not available',
+          message: tier2AccessDecision.message,
+          reason: tier2AccessDecision.value,
+        },
+        { status: 403 }
+      );
+    }
+
+    if (user.status !== 'verified_tier_1' && !(policyEnforcementEnabled && tier2AccessDecision.allowed)) {
       return NextResponse.json(
         { error: 'You must complete Tier 1 KYC before applying for Tier 2' },
         { status: 400 }
@@ -90,14 +147,14 @@ export async function POST(request: NextRequest) {
 
     // Parse form data
     const formData = await request.formData();
-    
+
     const businessName = formData.get('businessName') as string;
     const cacNumber = formData.get('cacNumber') as string;
     const tin = formData.get('tin') as string | null;
     const bankAccountNumber = formData.get('bankAccountNumber') as string;
     const bankCode = formData.get('bankCode') as string;
     const bankName = formData.get('bankName') as string;
-    
+
     const cacCertificate = formData.get('cacCertificate') as File | null;
     const bankStatement = formData.get('bankStatement') as File | null;
     const ninCard = formData.get('ninCard') as File | null;
@@ -155,9 +212,9 @@ export async function POST(request: NextRequest) {
       actionType: 'tier2_kyc_initiated' as any,
       entityType: 'kyc' as any,
       entityId: vendor.id,
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-      deviceType: 'desktop' as any,
-      userAgent: request.headers.get('user-agent') || 'unknown',
+      ipAddress,
+      deviceType,
+      userAgent,
       afterState: { businessName, cacNumber },
     });
 
@@ -205,10 +262,10 @@ export async function POST(request: NextRequest) {
           actionType: (ninVerified ? 'nin_verified' : 'bvn_verification_failed') as any,
           entityType: 'kyc' as any,
           entityId: vendor.id,
-          ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-          deviceType: 'desktop' as any,
-          userAgent: request.headers.get('user-agent') || 'unknown',
-          afterState: { nin: extractedNIN, message: ninVerificationMessage },
+          ipAddress,
+          deviceType,
+          userAgent,
+          afterState: { nin: maskLast4(extractedNIN), message: ninVerificationMessage },
         });
       }
     } catch (error) {
@@ -223,7 +280,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const bankVerification = await verifyBankAccount(bankAccountNumber, bankCode);
-      
+
       bankAccountVerified = bankVerification.verified;
       bankAccountName = bankVerification.accountName;
       bankVerificationMessage = bankVerification.message;
@@ -232,8 +289,8 @@ export async function POST(request: NextRequest) {
       if (bankAccountVerified && bankAccountName) {
         const normalizedAccountName = bankAccountName.toLowerCase().replace(/[^a-z0-9]/g, '');
         const normalizedBusinessName = businessName.toLowerCase().replace(/[^a-z0-9]/g, '');
-        
-        if (!normalizedAccountName.includes(normalizedBusinessName) && 
+
+        if (!normalizedAccountName.includes(normalizedBusinessName) &&
             !normalizedBusinessName.includes(normalizedAccountName)) {
           bankVerificationMessage += ' Warning: Account name does not match business name.';
         }
@@ -244,13 +301,13 @@ export async function POST(request: NextRequest) {
         actionType: (bankAccountVerified ? 'bank_details_verified' : 'bvn_verification_failed') as any,
         entityType: 'kyc' as any,
         entityId: vendor.id,
-        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-        deviceType: 'desktop' as any,
-        userAgent: request.headers.get('user-agent') || 'unknown',
-        afterState: { 
-          accountNumber: bankAccountNumber, 
+        ipAddress,
+        deviceType,
+        userAgent,
+        afterState: {
+          accountNumber: maskLast4(bankAccountNumber),
           accountName: bankAccountName,
-          message: bankVerificationMessage 
+          message: bankVerificationMessage
         },
       });
     } catch (error) {
@@ -284,10 +341,10 @@ export async function POST(request: NextRequest) {
       actionType: 'cac_uploaded' as any,
       entityType: 'kyc' as any,
       entityId: vendor.id,
-      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-      deviceType: 'desktop' as any,
-      userAgent: request.headers.get('user-agent') || 'unknown',
-      afterState: { cacNumber, cacUrl },
+      ipAddress,
+      deviceType,
+      userAgent,
+      afterState: { cacNumber, documentUploaded: true },
     });
 
     // Log Tier 2 KYC submission
@@ -296,18 +353,18 @@ export async function POST(request: NextRequest) {
       actionType: 'tier2_kyc_submitted' as any,
       entityType: 'kyc' as any,
       entityId: vendor.id,
-      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-      deviceType: 'desktop' as any,
-      userAgent: request.headers.get('user-agent') || 'unknown',
+      ipAddress,
+      deviceType,
+      userAgent,
       afterState: {
         businessName,
         cacNumber,
         ninVerified,
         bankAccountVerified,
         documentsUploaded: {
-          cac: cacUrl,
-          bankStatement: bankStatementUrl,
-          ninCard: ninCardUrl,
+          cac: Boolean(cacUrl),
+          bankStatement: Boolean(bankStatementUrl),
+          ninCard: Boolean(ninCardUrl),
         },
       },
     });
@@ -316,7 +373,7 @@ export async function POST(request: NextRequest) {
     try {
       await smsService.sendSMS({
         to: user.phone,
-        message: 'Your Tier 2 application is under review. We\'ll notify you within 24 hours. - NEM Salvage',
+        message: `${branding.brandName}: Your verification application is under review. We'll notify you once it has been reviewed.`,
       });
     } catch (error) {
       console.error('Error sending SMS:', error);
@@ -326,11 +383,11 @@ export async function POST(request: NextRequest) {
     try {
       await emailService.sendEmail({
         to: user.email,
-        subject: 'Tier 2 KYC Application Submitted',
+        subject: 'Verification Application Submitted',
         html: `
-          <h2>Tier 2 KYC Application Submitted</h2>
+          <h2>Verification Application Submitted</h2>
           <p>Dear ${user.fullName},</p>
-          <p>Your Tier 2 KYC application has been submitted successfully and is now under review.</p>
+          <p>Your verification application has been submitted successfully and is now under review.</p>
           <h3>Verification Status:</h3>
           <ul>
             <li>BVN: ✓ Verified</li>
@@ -338,8 +395,8 @@ export async function POST(request: NextRequest) {
             <li>Bank Account: ${bankAccountVerified ? '✓ Verified' : '⏳ Pending Review'}</li>
             <li>CAC: ⏳ Pending Manual Review</li>
           </ul>
-          <p>Our team will review your application within 24 hours. You'll receive a notification once the review is complete.</p>
-          <p>Best regards,<br>NEM Salvage Management Team</p>
+          <p>Our team will review your application. You'll receive a notification once the review is complete.</p>
+          <p>Best regards,<br>${brandTeamName(branding)}</p>
         `,
       });
     } catch (error) {
@@ -360,7 +417,7 @@ export async function POST(request: NextRequest) {
         if (manager.phone) {
           await smsService.sendSMS({
             to: manager.phone,
-            message: `New Tier 2 KYC application from ${businessName} (${vendor.businessName || 'N/A'}). Please review in the admin panel.`,
+            message:`New verification application from ${businessName} (${vendor.businessName || 'N/A'}). Please review in the manager dashboard.`,
           });
         }
 
@@ -368,10 +425,10 @@ export async function POST(request: NextRequest) {
         if (manager.email) {
           await emailService.sendEmail({
             to: manager.email,
-            subject: 'New Tier 2 KYC Application - Action Required',
+            subject: 'New Verification Application - Action Required',
             html: `
-              <h2>New Tier 2 KYC Application</h2>
-              <p>A vendor has submitted a Tier 2 KYC application that requires your review.</p>
+              <h2>New Verification Application</h2>
+              <p>A vendor has submitted a verification application that requires your review.</p>
               <h3>Vendor Details:</h3>
               <ul>
                 <li><strong>Business Name:</strong> ${businessName}</li>
@@ -389,8 +446,8 @@ export async function POST(request: NextRequest) {
                 <li><strong>CAC:</strong> Pending Manual Review</li>
               </ul>
               <p>Please log in to the admin panel to review the application and uploaded documents.</p>
-              <p><a href="${appPath('/manager/vendors')}" style="background-color: #800020; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Review Application</a></p>
-              <p>Best regards,<br>NEM Salvage Management System</p>
+              <p><a href="${appPath('/manager/vendors')}" style="background-color: ${branding.primaryColor}; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Review Application</a></p>
+              <p>Best regards,<br>${brandTeamName(branding)}</p>
             `,
           });
         }
@@ -402,7 +459,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Tier 2 KYC application submitted successfully',
+      message: 'Verification application submitted successfully',
       data: {
         status: 'pending',
         verificationStatus: {

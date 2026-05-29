@@ -180,10 +180,13 @@ LEFT JOIN win_rate_agg wr ON wr.vendor_id = v.id
 LEFT JOIN top_makes_agg tm ON tm.vendor_id = v.id
 LEFT JOIN top_models_agg tmo ON tmo.vendor_id = v.id;
 
+--> statement-breakpoint
+
 CREATE UNIQUE INDEX idx_vendor_bidding_patterns_vendor_id ON vendor_bidding_patterns_mv(vendor_id);
 CREATE INDEX idx_vendor_bidding_patterns_segments ON vendor_bidding_patterns_mv(price_segment, category_segment, activity_segment);
 CREATE INDEX idx_vendor_bidding_patterns_last_updated ON vendor_bidding_patterns_mv(last_updated);
 
+--> statement-breakpoint
 
 -- ============================================================================
 -- MARKET CONDITIONS MATERIALIZED VIEW
@@ -254,5 +257,7 @@ SELECT
   END AS price_trend,
   NOW() AS last_updated
 FROM aggregated_metrics;
+
+--> statement-breakpoint
 
 CREATE INDEX idx_market_conditions_last_updated ON market_conditions_mv(last_updated);

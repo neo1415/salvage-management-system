@@ -1,13 +1,13 @@
 {
-  "name": "NEM Insurance Salvage Management",
-  "short_name": "NEM Salvage",
-  "description": "AI-Powered Salvage Auctions for Nigerian Vendors",
+  "name": "Salvage Management",
+  "short_name": "Salvage",
+  "description": "Salvage recovery and auction management",
   "id": "/launch",
   "start_url": "/launch",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#800020",
-  "theme_color": "#800020",
+  "background_color": "#0C0C0B",
+  "theme_color": "#0C0C0B",
   "orientation": "portrait-primary",
   "icons": [
     {

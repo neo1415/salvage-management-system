@@ -17,6 +17,7 @@ import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/u
 import { emailService } from '@/features/notifications/services/email.service';
 import { pushNotificationService } from '@/features/notifications/services/push.service';
 import { cache } from '@/lib/redis/client';
+import { getEmailBranding } from '@/features/notifications/templates/email-branding';
 
 /**
  * Fraud pattern types
@@ -366,6 +367,7 @@ export class FraudDetectionService {
     try {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
       const adminEmail = process.env.ADMIN_EMAIL || 'admin@nem-insurance.com';
+      const branding = await getEmailBranding();
 
       // Format evidence for email
       const evidenceList = details
@@ -375,7 +377,7 @@ export class FraudDetectionService {
       // Send email notification
       await emailService.sendEmail({
         to: adminEmail,
-        subject: '🚨 Fraud Alert: Suspicious Bidding Activity Detected',
+        subject: `Fraud Alert: Suspicious Bidding Activity Detected - ${branding.brandName}`,
         html: `
           <h2>Fraud Alert</h2>
           <p>Suspicious bidding activity has been detected and flagged for review.</p>
@@ -392,7 +394,7 @@ export class FraudDetectionService {
           <pre>${evidenceList}</pre>
           
           <p>
-            <a href="${appUrl}/admin/fraud" style="background-color: #800020; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+            <a href="${appUrl}/admin/fraud" style="background-color: ${branding.primaryColor}; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
               Review Fraud Alert
             </a>
           </p>

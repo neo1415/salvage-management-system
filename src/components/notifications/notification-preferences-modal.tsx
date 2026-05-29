@@ -116,7 +116,7 @@ export function NotificationPreferencesModal({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center gap-3">
-            <Bell className="h-6 w-6 text-[#800020]" />
+            <Bell className="h-6 w-6 text-[var(--brand-primary)]" />
             <h2 className="text-2xl font-bold text-gray-900">
               Notification Preferences
             </h2>
@@ -133,7 +133,7 @@ export function NotificationPreferencesModal({
         <div className="p-6 space-y-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-[#800020]" />
+              <Loader2 className="h-8 w-8 animate-spin text-[var(--brand-primary)]" />
             </div>
           ) : (
             <>
@@ -343,7 +343,7 @@ export function NotificationPreferencesModal({
             <Button
               onClick={handleSave}
               disabled={isSaving || isLoading}
-              className="bg-[#800020] hover:bg-[#600018]"
+              className="bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)]"
             >
               {isSaving ? (
                 <>

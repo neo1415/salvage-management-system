@@ -8,6 +8,7 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { formatAssetName } from '@/lib/utils/asset-name';
+import { brandLegalName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 
 function serializeDate(value: Date | string | null | undefined): string | null {
   if (!value) return null;
@@ -70,6 +71,8 @@ export async function GET(
         )
       : 'Vendor Registration Fee';
 
+    const branding = await getEmailBranding();
+
     // Format response
     const response = {
       id: payment.payment.id,
@@ -111,10 +114,10 @@ export async function GET(
         },
       } : null,
       nem: {
-        name: 'NEM Insurance Plc',
-        address: '199 Ikorodu Road, Obanikoro, Lagos, Nigeria',
-        email: 'noreply@nemsalvage.com',
-        phone: '234-02-014489560',
+        name: brandLegalName(branding),
+        address: '',
+        email: getSupportEmail(branding),
+        phone: getSupportPhone(branding),
       },
     };
 

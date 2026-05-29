@@ -228,7 +228,7 @@ function AdminDashboardContentInner() {
           {stats?.pendingPickupConfirmations ? (
             <Link
               href="/admin/pickups"
-              className="px-6 py-3 bg-[#800020] text-white rounded-lg font-medium hover:bg-[#600018] transition-colors"
+              className="px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg font-medium hover:bg-[var(--brand-primary-hover)] transition-colors"
             >
               Review Pickups
             </Link>
@@ -280,33 +280,33 @@ function AdminDashboardContentInner() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link
             href="/admin/users"
-            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
+            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
-            <Users className="w-8 h-8 mx-auto mb-2 text-[#800020]" />
+            <Users className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">Manage Users</p>
           </Link>
 
           <Link
             href="/admin/fraud"
-            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
+            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
-            <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-[#800020]" />
+            <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">Review Fraud</p>
           </Link>
 
           <Link
             href="/manager/vendors?tier=tier2&status=pending"
-            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
+            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
-            <Users className="w-8 h-8 mx-auto mb-2 text-[#800020]" />
+            <Users className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">KYC Approvals</p>
           </Link>
 
           <Link
             href="/admin/audit-logs"
-            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
+            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
-            <ClipboardList className="w-8 h-8 mx-auto mb-2 text-[#800020]" />
+            <ClipboardList className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">View Logs</p>
           </Link>
         </div>

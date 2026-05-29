@@ -19,6 +19,7 @@ import { eq, and, ne } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 
 /**
  * Suspension duration options
@@ -213,6 +214,7 @@ export async function POST(
     await logAction(auditData);
 
     // Send SMS notification to vendor
+    const branding = await getEmailBranding();
     const suspensionMessage = duration === 'permanent'
       ? 'Your account has been permanently suspended due to suspicious activity.'
       : `Your account has been suspended for ${duration} days due to suspicious activity.`;
@@ -230,7 +232,7 @@ export async function POST(
 
     await emailService.sendEmail({
       to: vendorUser.email,
-      subject: '⚠️ Account Suspended - NEM Salvage Management',
+      subject: `Account Suspended - ${branding.brandName}`,
       html: `
         <h2>Account Suspended</h2>
         <p>Dear ${vendorUser.fullName},</p>
@@ -252,9 +254,9 @@ export async function POST(
           <li>Your account access is restricted</li>
         </ul>
         
-        <p>If you believe this suspension is an error, please contact our support team at <a href="mailto:nemsupport@nem-insurance.com">nemsupport@nem-insurance.com</a> or call 234-02-014489560.</p>
+        <p>If you believe this suspension is an error, please contact our support team at <a href="mailto:${getSupportEmail(branding)}">${getSupportEmail(branding)}</a> or call ${getSupportPhone(branding)}.</p>
         
-        <p>Best regards,<br>NEM Insurance Salvage Management Team</p>
+        <p>Best regards,<br>${brandTeamName(branding)}</p>
       `,
     });
 

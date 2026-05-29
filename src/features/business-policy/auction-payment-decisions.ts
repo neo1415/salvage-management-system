@@ -1,6 +1,57 @@
 import type { BusinessPolicy, PolicyDecision } from './types';
 import { createPolicyDecisionRecord } from './policy-decisions';
 
+export type AuctionPaymentMethod = 'paystack' | 'wallet' | 'hybrid' | 'wallet_funding';
+
+export function resolveAuctionPaymentMethodAccess(
+  policy: BusinessPolicy,
+  method: AuctionPaymentMethod
+): PolicyDecision<AuctionPaymentMethod> {
+  const enabled =
+    method === 'paystack'
+      ? policy.payments.paystackEnabled && policy.payments.auctionPaymentProvider === 'paystack'
+      : method === 'wallet'
+        ? policy.payments.walletEnabled
+        : method === 'hybrid'
+          ? policy.payments.walletEnabled && policy.payments.paystackEnabled && policy.payments.hybridPaymentEnabled
+          : policy.payments.walletEnabled && policy.payments.paystackEnabled;
+
+  const rulePath =
+    method === 'paystack'
+      ? 'payments.paystackEnabled + payments.auctionPaymentProvider'
+      : method === 'wallet'
+        ? 'payments.walletEnabled'
+        : method === 'hybrid'
+          ? 'payments.hybridPaymentEnabled + payments.walletEnabled + payments.paystackEnabled'
+          : 'payments.walletEnabled + payments.paystackEnabled';
+
+  return {
+    allowed: enabled,
+    value: method,
+    message: enabled
+      ? `${method} payment is enabled by policy.`
+      : `${method} payment is not enabled for this workspace.`,
+    decision: createPolicyDecisionRecord({
+      policy,
+      decisionType: enabled ? 'payment_method_allowed' : 'payment_method_denied',
+      rulePath,
+      outcome: enabled ? 'allow' : 'deny',
+      entityType: 'payment',
+      reason: enabled
+        ? 'Payment method satisfies the active payment policy.'
+        : 'Payment method is disabled or not selected by the active payment policy.',
+      inputs: {
+        method,
+        auctionPaymentProvider: policy.payments.auctionPaymentProvider,
+        walletEnabled: policy.payments.walletEnabled,
+        paystackEnabled: policy.payments.paystackEnabled,
+        hybridPaymentEnabled: policy.payments.hybridPaymentEnabled,
+      },
+      resolvedValue: enabled,
+    }),
+  };
+}
+
 export function resolveDepositAmountRequired(
   policy: BusinessPolicy,
   bidAmount: number,

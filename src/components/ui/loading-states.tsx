@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Unified loading UI for Salvage (burgundy brand).
+ * Unified loading UI. Colors are provided by the active public brand policy.
  */
 
 import { useEffect, useState } from 'react';
@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 const BRAND_SPINNER =
-  'border-burgundy-800 border-t-transparent animate-spin rounded-full border-2';
+  'border-[var(--brand-primary)] border-t-transparent animate-spin rounded-full border-2';
 
 export type DataLoadingVariant = 'report' | 'page' | 'table' | 'minimal';
 
@@ -74,7 +74,7 @@ export function DataLoadingState({
 }) {
   if (variant === 'minimal') {
     return (
-      <div className={cn('flex items-center gap-2 text-burgundy-800', className)}>
+      <div className={cn('flex items-center gap-2 text-[var(--brand-primary)]', className)}>
         <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
         <span className="text-sm font-medium text-gray-700">{label}…</span>
       </div>
@@ -92,13 +92,13 @@ export function DataLoadingState({
   if (variant === 'table') {
     return (
       <div className={cn('rounded-lg border bg-white shadow-sm overflow-hidden', className)}>
-        <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-4 bg-burgundy-50/40">
-          <Loader2 className="h-5 w-5 animate-spin text-burgundy-800 shrink-0" />
+        <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-4 bg-[var(--brand-primary-surface)]">
+          <Loader2 className="h-5 w-5 animate-spin text-[var(--brand-primary)] shrink-0" />
           <span className="text-sm font-medium text-gray-800">{label}…</span>
         </div>
         <div className="space-y-3 p-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full bg-burgundy-100/30" />
+            <Skeleton key={i} className="h-10 w-full bg-[var(--brand-primary-surface)]" />
           ))}
         </div>
       </div>
@@ -107,8 +107,8 @@ export function DataLoadingState({
 
   return (
     <div className={cn('grid gap-4', className)} role="status" aria-live="polite">
-      <div className="flex items-center justify-center gap-3 rounded-lg border border-burgundy-100 bg-white py-8 shadow-sm">
-        <Loader2 className="h-6 w-6 animate-spin text-burgundy-800 shrink-0" />
+      <div className="flex items-center justify-center gap-3 rounded-lg border border-[var(--brand-primary-border)] bg-white py-8 shadow-sm">
+        <Loader2 className="h-6 w-6 animate-spin text-[var(--brand-primary)] shrink-0" />
         <div className="text-left">
           <p className="text-sm font-semibold text-gray-900">{label}</p>
           {description ? (
@@ -120,20 +120,20 @@ export function DataLoadingState({
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <Card key={index} className="min-w-0 overflow-hidden border-burgundy-50">
+          <Card key={index} className="min-w-0 overflow-hidden border-[var(--brand-primary-surface)]">
             <CardHeader className="space-y-2 pb-2">
-              <Skeleton className="h-4 w-28 bg-burgundy-100/40" />
+              <Skeleton className="h-4 w-28 bg-[var(--brand-primary-surface)]" />
             </CardHeader>
             <CardContent>
-              <Skeleton className="h-8 w-36 max-w-full bg-burgundy-100/50" />
+              <Skeleton className="h-8 w-36 max-w-full bg-[var(--brand-primary-surface)]" />
               <Skeleton className="mt-3 h-3 w-24 bg-gray-100" />
             </CardContent>
           </Card>
         ))}
       </div>
-      <Card className="border-burgundy-50">
+      <Card className="border-[var(--brand-primary-surface)]">
         <CardHeader>
-          <Skeleton className="h-5 w-40 bg-burgundy-100/40" />
+          <Skeleton className="h-5 w-40 bg-[var(--brand-primary-surface)]" />
         </CardHeader>
         <CardContent>
           <Skeleton className="h-64 w-full rounded-lg bg-gray-100" />
@@ -147,7 +147,7 @@ export function DataRefreshingHint({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'text-sm text-burgundy-800 mb-3 flex items-center gap-2 font-medium',
+        'text-sm text-[var(--brand-primary)] mb-3 flex items-center gap-2 font-medium',
         className
       )}
       role="status"
@@ -163,7 +163,7 @@ export function PageLoadingSkeleton({ className }: { className?: string }) {
   return (
     <div className={cn('mx-auto max-w-7xl space-y-6 animate-in fade-in duration-200', className)}>
       <div className="space-y-2">
-        <Skeleton className="h-8 w-56 bg-burgundy-100/50" />
+        <Skeleton className="h-8 w-56 bg-[var(--brand-primary-surface)]" />
         <Skeleton className="h-4 w-80 max-w-full bg-gray-100" />
       </div>
       <DataLoadingState label="Loading page" variant="report" />
@@ -188,7 +188,7 @@ export function NavigationProgressBar() {
       className="fixed left-0 right-0 top-16 z-[100] h-0.5 overflow-hidden lg:left-64"
       aria-hidden
     >
-      <div className="navigation-progress-bar h-full w-1/3 bg-burgundy-800 shadow-[0_0_8px_rgba(128,0,32,0.45)]" />
+      <div className="navigation-progress-bar h-full w-1/3 bg-[var(--brand-primary)] shadow-[0_0_8px_var(--brand-shadow-color)]" />
     </div>
   );
 }

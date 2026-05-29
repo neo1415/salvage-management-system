@@ -129,7 +129,7 @@ export function PickupConfirmation({
           onChange={(e) => handleCodeChange(e.target.value)}
           disabled={isConfirming || success}
           placeholder="Enter code (e.g., ABC123XYZ)"
-          className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg text-sm sm:text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-burgundy-900 disabled:opacity-50 disabled:cursor-not-allowed ${
+          className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg text-sm sm:text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] disabled:opacity-50 disabled:cursor-not-allowed ${
             codeError ? 'border-red-500' : 'border-gray-300'
           }`}
           aria-label="Pickup authorization code"
@@ -149,7 +149,7 @@ export function PickupConfirmation({
         type="button"
         onClick={handleOpenModal}
         disabled={isConfirming || success || !pickupCode.trim()}
-        className="w-full bg-burgundy-900 text-white py-3 sm:py-4 px-4 sm:px-6 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+        className="w-full bg-[var(--brand-primary)] text-white py-3 sm:py-4 px-4 sm:px-6 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
         aria-label="Confirm pickup"
         data-testid="confirm-button"
       >

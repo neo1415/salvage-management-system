@@ -18,6 +18,8 @@ import { eq, and, gte, sql } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { brandLegalName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 
 /**
  * Fraud auto-suspend result
@@ -298,12 +300,15 @@ export class FraudAutoSuspendService {
 
       const suspensionEndDate = new Date();
       suspensionEndDate.setDate(suspensionEndDate.getDate() + 30);
+      const branding = await getEmailBranding();
+      const supportEmail = getSupportEmail(branding);
+      const supportPhone = getSupportPhone(branding);
 
       // Send SMS notification
       try {
         await smsService.sendSMS({
           to: user.phone,
-          message: `Your account has been suspended due to suspicious activity (${vendor.performanceStats.fraudFlags} fraud flags). Contact support@nem-insurance.com if you believe this is an error. Suspension ends: ${suspensionEndDate.toLocaleDateString('en-NG')}`,
+          message: `Your account has been suspended due to suspicious activity (${vendor.performanceStats.fraudFlags} fraud flags). Contact ${supportEmail} if you believe this is an error. Suspension ends: ${suspensionEndDate.toLocaleDateString('en-NG')}`,
         });
         notificationsSent++;
         console.log(`✅ SMS sent to ${user.phone}`);
@@ -315,9 +320,10 @@ export class FraudAutoSuspendService {
       try {
         await emailService.sendEmail({
           to: user.email,
-          subject: '⚠️ Account Suspended - Suspicious Activity Detected',
-          html: `
-            <h2>Account Suspension Notice</h2>
+          subject: 'Account Suspended - Suspicious Activity Detected',
+          html: await wrapProfessionalEmail(
+            'Account Suspension Notice',
+            `
             <p>Dear ${user.fullName},</p>
             
             <p>Your account has been automatically suspended due to suspicious activity detected on our platform.</p>
@@ -344,8 +350,8 @@ export class FraudAutoSuspendService {
             <h3>Appeal Process:</h3>
             <p>If you believe this suspension is an error, please contact our support team:</p>
             <ul>
-              <li><strong>Email:</strong> support@nem-insurance.com</li>
-              <li><strong>Phone:</strong> 234-02-014489560</li>
+              <li><strong>Email:</strong> ${supportEmail}</li>
+              <li><strong>Phone:</strong> ${supportPhone}</li>
             </ul>
             
             <p>Our admin team will review your case and may reinstate your account if the fraud flags are determined to be false positives.</p>
@@ -354,11 +360,12 @@ export class FraudAutoSuspendService {
             
             <hr>
             <p style="font-size: 12px; color: #666;">
-              NEM Insurance Plc<br>
-              199 Ikorodu Road, Obanikoro, Lagos<br>
-              Phone: 234-02-014489560
+              ${brandLegalName(branding)}<br>
+              Phone: ${supportPhone}
             </p>
           `,
+            `Your ${branding.brandName} account has been suspended pending review.`
+          ),
         });
         notificationsSent++;
         console.log(`✅ Email sent to ${user.email}`);

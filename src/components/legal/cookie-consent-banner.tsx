@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { X, Cookie, Settings } from 'lucide-react';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 
 interface CookiePreferences {
   essential: boolean;
@@ -11,6 +12,7 @@ interface CookiePreferences {
 }
 
 export function CookieConsentBanner() {
+  const { branding } = usePublicBranding();
   const [isVisible, setIsVisible] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [preferences, setPreferences] = useState<CookiePreferences>({
@@ -22,7 +24,7 @@ export function CookieConsentBanner() {
   useEffect(() => {
     // Check if user has already consented in this session
     const hasConsented = sessionStorage.getItem('cookie-consent');
-    
+
     if (!hasConsented) {
       // Show banner after a short delay for better UX
       const timer = setTimeout(() => {
@@ -43,7 +45,7 @@ export function CookieConsentBanner() {
 
     // Store consent in sessionStorage (only for this session)
     sessionStorage.setItem('cookie-consent', JSON.stringify(consentData));
-    
+
     // Store in localStorage for persistent tracking (optional)
     localStorage.setItem('cookie-preferences', JSON.stringify(consentData));
 
@@ -93,8 +95,8 @@ export function CookieConsentBanner() {
               <div className="flex items-start gap-2">
                 {/* Cookie Icon */}
                 <div className="flex-shrink-0">
-                  <div className="w-6 h-6 bg-burgundy-100 rounded-full flex items-center justify-center">
-                    <Cookie className="w-3 h-3 text-burgundy-700" />
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center bg-[var(--brand-primary-surface)]">
+                    <Cookie className="w-3 h-3 text-[var(--brand-primary)]" />
                   </div>
                 </div>
 
@@ -104,8 +106,8 @@ export function CookieConsentBanner() {
                     Cookies
                   </h3>
                   <p className="text-[10px] text-gray-600 mb-2 leading-tight">
-                    We use cookies.{' '}
-                    <Link href="/cookies" className="text-burgundy-700 hover:underline">
+                    {branding.brandName} uses cookies.{' '}
+                    <Link href="/cookies" className="text-[var(--brand-primary)] hover:underline">
                       Learn more
                     </Link>
                   </p>
@@ -114,7 +116,7 @@ export function CookieConsentBanner() {
                   <div className="flex flex-wrap gap-1">
                     <button
                       onClick={handleAcceptAll}
-                      className="px-2 py-1 bg-burgundy-700 hover:bg-burgundy-800 text-white text-[10px] font-semibold rounded transition-colors"
+                      className="px-2 py-1 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-[var(--brand-primary-foreground)] text-[10px] font-semibold rounded transition-colors"
                     >
                       Accept
                     </button>
@@ -193,8 +195,8 @@ export function CookieConsentBanner() {
                       <button
                         onClick={() => setPreferences(prev => ({ ...prev, functional: !prev.functional }))}
                         className={`w-7 h-4 rounded-full flex items-center transition-colors ${
-                          preferences.functional 
-                            ? 'bg-burgundy-600 justify-end' 
+                          preferences.functional
+                            ? 'bg-[var(--brand-primary)] justify-end'
                             : 'bg-gray-300 justify-start'
                         } px-0.5`}
                         aria-label="Toggle functional cookies"
@@ -213,8 +215,8 @@ export function CookieConsentBanner() {
                       <button
                         onClick={() => setPreferences(prev => ({ ...prev, analytics: !prev.analytics }))}
                         className={`w-7 h-4 rounded-full flex items-center transition-colors ${
-                          preferences.analytics 
-                            ? 'bg-burgundy-600 justify-end' 
+                          preferences.analytics
+                            ? 'bg-[var(--brand-primary)] justify-end'
                             : 'bg-gray-300 justify-start'
                         } px-0.5`}
                         aria-label="Toggle analytics cookies"
@@ -229,7 +231,7 @@ export function CookieConsentBanner() {
                 <div className="flex flex-wrap gap-1">
                   <button
                     onClick={handleSavePreferences}
-                    className="px-2 py-1 bg-burgundy-700 hover:bg-burgundy-800 text-white text-[10px] font-semibold rounded transition-colors"
+                    className="px-2 py-1 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-[var(--brand-primary-foreground)] text-[10px] font-semibold rounded transition-colors"
                   >
                     Save
                   </button>

@@ -1,17 +1,17 @@
 /**
  * Fallback Chain Service
- * 
+ *
  * Handles automated fallback chain when auction winner fails to sign documents or pay.
  * Promotes next eligible bidder from top N bidders, skipping ineligible bidders.
- * 
+ *
  * Requirements: 9.1-9.7, 10.1-10.6, 30.1-30.5
  */
 
 import { db } from '@/lib/db/drizzle';
-import { 
-  auctionWinners, 
+import {
+  auctionWinners,
   systemConfig,
-  depositEvents 
+  depositEvents
 } from '@/lib/db/schema/auction-deposit';
 import { bids } from '@/lib/db/schema/bids';
 import { auctions } from '@/lib/db/schema/auctions';
@@ -23,6 +23,9 @@ import { users } from '@/lib/db/schema/users';
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { regenerateDocumentsForFallback } from './document-integration.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { getEmailBranding } from '@/features/notifications/templates/email-branding';
+import { appPath } from '@/features/notifications/templates/email-urls';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 
 /**
  * Get configuration value from system_config table
@@ -48,11 +51,11 @@ async function getConfigValue(parameter: string, defaultValue: number): Promise<
 
 /**
  * Check if bidder is eligible for promotion (Requirement 10.1, 10.2)
- * 
+ *
  * Eligibility criteria:
  * 1. Deposit is still frozen (not unfrozen)
  * 2. Vendor has sufficient balance to cover remaining payment
- * 
+ *
  * @param vendorId - Vendor ID
  * @param depositAmount - Deposit amount
  * @param finalBid - Final bid amount
@@ -110,7 +113,7 @@ export async function isEligibleForPromotion(
 
 /**
  * Unfreeze failed winner's deposit (Requirement 9.3)
- * 
+ *
  * @param vendorId - Vendor ID
  * @param auctionId - Auction ID
  * @param depositAmount - Deposit amount to unfreeze
@@ -161,11 +164,11 @@ async function unfreezeDeposit(
 
 /**
  * Trigger fallback chain (Requirement 9)
- * 
+ *
  * Called when:
  * - Winner fails to sign documents within validity period + buffer
  * - Winner signs documents but fails to pay within payment deadline + buffer
- * 
+ *
  * @param auctionId - Auction ID
  * @param failureReason - 'failed_to_sign' or 'failed_to_pay'
  * @param triggeredBy - User ID (system or admin)
@@ -393,26 +396,27 @@ async function notifyFallbackWinner(
 
     if (!vendorUser) return;
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
-    const auctionUrl = `${appUrl}/vendor/auctions/${auctionId}`;
+    const branding = await getEmailBranding();
+    const auctionUrl = appPath(`/vendor/auctions/${auctionId}`);
+    const emailHtml = await wrapProfessionalEmail(
+      'Auction Opportunity Available',
+      `
+        <p>The previous winner did not complete the required auction steps, so you are now eligible to complete this purchase.</p>
+        <p><strong>Your bid:</strong> ₦${bidAmount.toLocaleString()}</p>
+        <p>Please open the auction, sign the required documents, and complete payment before the deadline.</p>
+        <p>
+          <a href="${auctionUrl}" style="background-color: ${branding.primaryColor}; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">
+            Open Auction
+          </a>
+        </p>
+      `,
+      'You are now eligible to complete this auction.'
+    );
 
     await emailService.sendEmail({
       to: vendorUser.user.email,
       subject: 'You Are Now Eligible to Complete This Auction',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #800020;">Auction Opportunity Available</h2>
-          <p>Dear ${vendorUser.user.fullName},</p>
-          <p>The previous winner did not complete the required auction steps, so you are now eligible to complete this purchase.</p>
-          <p><strong>Your bid:</strong> ₦${bidAmount.toLocaleString()}</p>
-          <p>Please open the auction, sign the required documents, and complete payment before the deadline.</p>
-          <p>
-            <a href="${auctionUrl}" style="background-color: #800020; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">
-              Open Auction
-            </a>
-          </p>
-        </div>
-      `,
+      html: emailHtml,
     });
   } catch (error) {
     console.error('Failed to notify fallback winner:', error);
@@ -421,11 +425,11 @@ async function notifyFallbackWinner(
 
 /**
  * Check if fallback should be triggered (Requirement 9.1, 9.2)
- * 
+ *
  * Checks if:
  * - Document deadline has expired + buffer period has passed
  * - Payment deadline has expired + buffer period has passed
- * 
+ *
  * @param auctionId - Auction ID
  * @returns Whether fallback should be triggered and reason
  */

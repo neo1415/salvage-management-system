@@ -136,7 +136,7 @@ function formatEmbeddedCameraHelp(prefix: string) {
     'Camera access is requested inside the verification window, so allowing camera for this app may not be enough.',
     'Please allow camera access when the verification window asks.',
     'If it still fails, check your browser site settings for this app URL and the verification window.',
-    'For local testing, use an HTTPS ngrok or cloudflared URL if localhost blocks embedded camera access.',
+    'Use the secure HTTPS app address for verification.',
   ].join(' ');
 }
 
@@ -669,7 +669,7 @@ export default function Tier2KYCPage() {
               'Your browser may allow camera for localhost, but still block the embedded Dojah camera request from a plain HTTP page.',
               httpsUrl
                 ? `Open this page through your HTTPS app URL (${httpsUrl}) and start verification again.`
-                : 'Open this page through your HTTPS staging, production, ngrok, or cloudflared URL and start verification again.',
+                : 'Open this page through the secure HTTPS app address and start verification again.',
             ].join(' '),
             source: 'app',
           },

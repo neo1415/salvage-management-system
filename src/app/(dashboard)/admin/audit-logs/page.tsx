@@ -429,7 +429,7 @@ export default function AuditLogViewer() {
                 setUserIdFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
 
@@ -445,7 +445,7 @@ export default function AuditLogViewer() {
                 setActionTypeFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             >
               <option value="all">All Actions</option>
               <option value="login">Login</option>
@@ -475,7 +475,7 @@ export default function AuditLogViewer() {
                 setEntityTypeFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             >
               <option value="all">All Entities</option>
               <option value="user">User</option>
@@ -501,7 +501,7 @@ export default function AuditLogViewer() {
                 setStartDate(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
 
@@ -518,7 +518,7 @@ export default function AuditLogViewer() {
                 setEndDate(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
 
@@ -696,7 +696,7 @@ export default function AuditLogViewer() {
                             setSelectedLog(log);
                             setShowDetailModal(true);
                           }}
-                          className="text-burgundy-600 hover:text-burgundy-900 font-medium"
+                          className="text-[var(--brand-primary)] hover:text-[var(--brand-primary)] font-medium"
                         >
                           View Details
                         </button>
@@ -740,7 +740,7 @@ export default function AuditLogViewer() {
                         onClick={() => setCurrentPage(pageNum)}
                         className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                           pagination.page === pageNum
-                            ? 'bg-burgundy-600 text-white'
+                            ? 'bg-[var(--brand-primary)] text-white'
                             : 'text-gray-700 hover:bg-gray-100 border border-gray-300'
                         }`}
                       >
@@ -906,7 +906,7 @@ export default function AuditLogViewer() {
                     setShowDetailModal(false);
                     setSelectedLog(null);
                   }}
-                  className="w-full px-4 py-2 bg-burgundy-600 text-white font-semibold rounded-lg hover:bg-burgundy-700 transition-colors"
+                  className="w-full px-4 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
                 >
                   Close
                 </button>

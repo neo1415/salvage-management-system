@@ -189,7 +189,8 @@ export default function BidHistoryPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to end auction early');
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.error || errorBody?.message || 'Failed to end auction early');
       }
 
       // Refresh data
@@ -200,7 +201,10 @@ export default function BidHistoryPage() {
       toast.success('Auction Ended Successfully', 'The highest bidder has been declared the winner.');
     } catch (error) {
       console.error('Error ending auction:', error);
-      toast.error('Failed to End Auction', 'Please try again or contact support.');
+      toast.error(
+        'Failed to End Auction',
+        error instanceof Error ? error.message : 'Please try again or contact support.'
+      );
     } finally {
       setEndingAuction(null);
     }
@@ -323,7 +327,7 @@ export default function BidHistoryPage() {
           <p className="text-gray-600 mb-6">{error || cacheError?.message}</p>
           <button
             onClick={() => isOffline ? refresh() : router.push('/login')}
-            className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+            className="px-6 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
           >
             {isOffline ? 'Retry' : 'Go to Login'}
           </button>
@@ -367,7 +371,7 @@ export default function BidHistoryPage() {
             <button
               onClick={() => setShowExportDropdown(!showExportDropdown)}
               disabled={exporting || data.length === 0}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#800020] text-white font-medium rounded-lg hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--brand-primary)] text-white font-medium rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {exporting ? (
                 <>
@@ -440,7 +444,7 @@ export default function BidHistoryPage() {
                 }}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'active'
-                    ? 'border-[#800020] text-[#800020]'
+                    ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
@@ -453,7 +457,7 @@ export default function BidHistoryPage() {
                 }}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'completed'
-                    ? 'border-[#800020] text-[#800020]'
+                    ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
@@ -625,7 +629,7 @@ export default function BidHistoryPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
                       <div className="text-xs text-gray-500 mb-1">Current Bid</div>
-                      <div className="text-lg font-bold text-[#800020]">
+                      <div className="text-lg font-bold text-[var(--brand-primary)]">
                         {formatNaira(item.auction.currentBid)}
                       </div>
                     </div>
@@ -653,7 +657,7 @@ export default function BidHistoryPage() {
                   <div className="flex gap-2">
                     <Link
                       href={`/bid-history/${item.auction.id}`}
-                      className="flex-1 bg-[#800020] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#600018] transition-colors text-center"
+                      className="flex-1 bg-[var(--brand-primary)] text-white px-4 py-2 rounded-lg font-medium hover:bg-[var(--brand-primary-hover)] transition-colors text-center"
                     >
                       View Details
                     </Link>

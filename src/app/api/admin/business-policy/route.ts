@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
 import { businessPolicyService, validateBusinessPolicy } from '@/features/business-policy';
 import type { BusinessPolicy } from '@/features/business-policy/types';
@@ -132,6 +133,12 @@ export async function PATCH(request: NextRequest) {
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });
     }
+
+    revalidatePath('/', 'layout');
+    revalidatePath('/');
+    revalidatePath('/login');
+    revalidatePath('/register');
+    revalidatePath('/manifest.webmanifest');
 
     return NextResponse.json(result);
   } catch (error) {

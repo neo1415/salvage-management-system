@@ -108,7 +108,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
         <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Cases</CardTitle>
-            <FileText className="h-4 w-4 text-[#800020]" />
+            <FileText className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <MetricValue>{data.summary.totalCases}</MetricValue>
@@ -118,7 +118,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
         <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Avg Processing Time</CardTitle>
-            <Clock className="h-4 w-4 text-[#800020]" />
+            <Clock className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <MetricValue>
@@ -130,7 +130,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
         <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Approval Rate</CardTitle>
-            <CheckCircle className="h-4 w-4 text-[#800020]" />
+            <CheckCircle className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <MetricValue>
@@ -142,7 +142,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
         <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Market Value</CardTitle>
-            <FileText className="h-4 w-4 text-[#800020]" />
+            <FileText className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">

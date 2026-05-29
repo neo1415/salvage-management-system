@@ -470,6 +470,19 @@ export class PriceExtractionService {
     if (price.confidence < 30) {
       return false;
     }
+
+    if (options.mode === 'part') {
+      if (!this.isRelevantPartListing(price, options.partName)) {
+        console.log(`Rejecting part price ${price.price.toLocaleString()} - listing is not specific to "${options.partName || 'part'}"`);
+        return false;
+      }
+
+      const maxPartPrice = this.getMaximumPlausiblePartPrice(itemType, options.partName);
+      if (price.price > maxPartPrice) {
+        console.log(`Rejecting part price ${price.price.toLocaleString()} - above plausible maximum of ${maxPartPrice.toLocaleString()} for ${options.partName || itemType || 'part'}`);
+        return false;
+      }
+    }
     
     // CRITICAL FIX: Add minimum price thresholds by item type to filter out part prices
     const minPriceThresholds: Record<string, number> = {
@@ -508,6 +521,86 @@ export class PriceExtractionService {
     if (itemType === 'jewelry' || itemType === 'furniture') return 3000;
 
     return 2000;
+  }
+
+  private getMaximumPlausiblePartPrice(itemType?: ItemIdentifier['type'], partName?: string): number {
+    const normalizedPart = partName?.toLowerCase() || '';
+
+    if (itemType === 'vehicle') {
+      if (/(engine|transmission|gearbox)/.test(normalizedPart)) return 8000000;
+      if (/(body panel|quarter panel|panel|hood|bonnet|door|fender|bumper|windshield)/.test(normalizedPart)) return 4000000;
+      if (/(seat|interior|dashboard|airbag|mirror|headlight|taillight|wheel|tire|tyre)/.test(normalizedPart)) return 2500000;
+      return 5000000;
+    }
+
+    if (itemType === 'machinery') return 15000000;
+    if (itemType === 'property') return 50000000;
+    if (itemType === 'electronics' || itemType === 'appliance') return 5000000;
+    if (itemType === 'jewelry') return 20000000;
+    if (itemType === 'furniture') return 5000000;
+
+    return 5000000;
+  }
+
+  private isRelevantPartListing(price: ExtractedPrice, partName?: string): boolean {
+    const normalizedPart = (partName || '').toLowerCase().trim();
+    const text = `${price.title} ${price.snippet}`.toLowerCase();
+
+    const wholeAssetSignals = [
+      'cars for sale',
+      'car for sale',
+      'vehicles for sale',
+      'vehicle for sale',
+      'market range',
+      'current toyota',
+      'used models range',
+      'starting from',
+      'foreign used',
+      'tokunbo',
+      'available for n',
+      'available for ngn',
+    ];
+
+    const hasWholeAssetSignal = wholeAssetSignals.some((signal) => text.includes(signal));
+    const tokens = this.getPartTokens(normalizedPart);
+    const hasPartToken = tokens.some((token) => text.includes(token));
+
+    if (!hasPartToken) {
+      return false;
+    }
+
+    if (hasWholeAssetSignal) {
+      const strongPartPhrases = tokens.filter((token) => token.length > 3);
+      return strongPartPhrases.some((token) => text.includes(`${token} for`) || text.includes(`${token} available`) || text.includes(`${token}.`) || text.includes(`${token},`));
+    }
+
+    return true;
+  }
+
+  private getPartTokens(partName: string): string[] {
+    const baseTokens = partName
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length > 2);
+
+    const synonymMap: Record<string, string[]> = {
+      bumper: ['bumper', 'front bumper', 'rear bumper'],
+      'body panel': ['body panel', 'panel', 'quarter panel', 'fender', 'bonnet', 'hood'],
+      panel: ['panel', 'body panel', 'quarter panel', 'fender'],
+      hood: ['hood', 'bonnet'],
+      bonnet: ['bonnet', 'hood'],
+      door: ['door'],
+      fender: ['fender', 'wing'],
+      seat: ['seat', 'seat cover', 'interior seat'],
+      'engine parts': ['engine', 'alternator', 'compressor', 'radiator', 'starter'],
+      engine: ['engine', 'alternator', 'compressor', 'radiator', 'starter'],
+      mirror: ['mirror', 'side mirror'],
+      headlight: ['headlight', 'head lamp', 'lamp'],
+      taillight: ['taillight', 'tail light', 'lamp'],
+      windshield: ['windshield', 'windscreen', 'glass'],
+    };
+
+    const synonyms = synonymMap[partName] || [];
+    return Array.from(new Set([...baseTokens, ...synonyms]));
   }
 
   /**

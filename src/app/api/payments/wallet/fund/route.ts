@@ -5,6 +5,14 @@ import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { eq } from 'drizzle-orm';
 import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveAuctionPaymentMethodAccess,
+} from '@/features/business-policy';
+import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 
 /**
  * POST /api/payments/wallet/fund
@@ -28,6 +36,38 @@ export async function POST(request: NextRequest) {
 
     if (!vendor) {
       return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
+    }
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const walletFundingDecision = resolveAuctionPaymentMethodAccess(policy, 'wallet_funding');
+    const ipAddress = getIpAddress(request.headers);
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+
+    await logPolicyDecision({
+      userId: session.user.id,
+      entityType: AuditEntityType.PAYMENT,
+      entityId: vendor.id,
+      ipAddress,
+      userAgent,
+      deviceType: getDeviceTypeFromUserAgent(userAgent),
+      decision: walletFundingDecision.decision,
+      context: {
+        source: 'api/payments/wallet/fund',
+        runtimeMode: getBusinessPolicyRuntimeMode(),
+        vendorId: vendor.id,
+      },
+    }).catch((error) => {
+      console.warn('[BusinessPolicy] Failed to audit wallet funding decision', {
+        vendorId: vendor.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+
+    if (!walletFundingDecision.allowed && isBusinessPolicyEnforcementEnabled()) {
+      return NextResponse.json(
+        { error: 'Wallet funding is not enabled for this deployment.' },
+        { status: 403 }
+      );
     }
 
     const rateLimitResult = await rateLimit(request, {

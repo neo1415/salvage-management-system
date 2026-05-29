@@ -1,4 +1,4 @@
-import { eq, lte, and, isNotNull, isNull, sql, inArray, desc, or } from 'drizzle-orm';
+import { eq, lte, and, isNotNull, isNull, sql, inArray, desc } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
@@ -140,14 +140,7 @@ export class KYCRepository {
       status = v.tier2ExpiresAt && v.tier2ExpiresAt < now ? 'expired' : 'approved';
     } else if (v.tier2RejectionReason) {
       status = 'rejected';
-    } else if (
-      (v.tier2SubmittedAt && !v.tier2ApprovedAt) ||
-      (
-        latestTier2Provider &&
-        ['pending', 'review_required', 'passed', 'failed', 'provider_unavailable', 'completed', 'submitted', 'pending_review', 'under_review', 'manual_review']
-          .includes(latestTier2Provider.status)
-      )
-    ) {
+    } else if (v.tier2SubmittedAt && !v.tier2ApprovedAt) {
       status = 'pending_review';
     } else if (v.tier2SubmittedAt) {
       status = 'in_progress';
@@ -228,34 +221,7 @@ export class KYCRepository {
             and(
               isNull(vendors.tier2ApprovedAt),
               isNull(vendors.tier2RejectionReason),
-              or(
-                isNotNull(vendors.tier2SubmittedAt),
-                inArray(
-                  vendors.id,
-                  db
-                    .select({ vendorId: providerVerificationRecords.vendorId })
-                    .from(providerVerificationRecords)
-                    .where(
-                      and(
-                        eq(providerVerificationRecords.provider, 'dojah'),
-                        eq(providerVerificationRecords.verificationType, 'tier2'),
-                        inArray(providerVerificationRecords.status, [
-                          'pending',
-                          'review_required',
-                          'passed',
-                          'failed',
-                          'provider_unavailable',
-                          'completed',
-                          'submitted',
-                          'pending_review',
-                          'under_review',
-                          'manual_review',
-                        ]),
-                        isNotNull(providerVerificationRecords.vendorId)
-                      )
-                    )
-                )
-              )
+              isNotNull(vendors.tier2SubmittedAt)
             )
           )
           .orderBy(sql`COALESCE(${vendors.tier2SubmittedAt}, ${providerVerificationRecords.updatedAt}) DESC NULLS LAST`);

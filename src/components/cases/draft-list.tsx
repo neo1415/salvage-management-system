@@ -62,7 +62,7 @@ export function DraftList({ drafts, onResume, onDelete, className }: DraftListPr
         return (
           <div
             key={draft.id}
-            className="p-4 bg-white border border-gray-200 rounded-xl hover:border-[#800020]/30 hover:shadow-md transition-all duration-200"
+            className="p-4 bg-white border border-gray-200 rounded-xl hover:border-[var(--brand-primary-border)] hover:shadow-md transition-all duration-200"
           >
             <div className="flex items-start justify-between gap-3">
               {/* Draft Info */}
@@ -119,7 +119,7 @@ export function DraftList({ drafts, onResume, onDelete, className }: DraftListPr
                 <button
                   type="button"
                   onClick={() => onResume(draft)}
-                  className="px-4 py-2 bg-[#800020] text-white text-sm font-medium rounded-lg hover:bg-[#a0002a] transition-colors"
+                  className="px-4 py-2 bg-[var(--brand-primary)] text-white text-sm font-medium rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
                 >
                   Resume
                 </button>

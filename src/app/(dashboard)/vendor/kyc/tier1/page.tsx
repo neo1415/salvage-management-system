@@ -151,7 +151,7 @@ export default function Tier1KYCPage() {
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#800020] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[var(--brand-primary)] animate-spin" />
       </div>
     );
   }
@@ -166,8 +166,8 @@ export default function Tier1KYCPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 sm:p-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-[#800020]/10 rounded-full mb-4">
-            <Shield className="w-7 h-7 text-[#800020]" />
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-[var(--brand-primary-surface)] rounded-full mb-4">
+            <Shield className="w-7 h-7 text-[var(--brand-primary)]" />
           </div>
           <h1 className="text-2xl font-semibold text-gray-900">Identity verification</h1>
           <p className="text-sm text-gray-600 mt-2">
@@ -243,7 +243,7 @@ export default function Tier1KYCPage() {
                     value={bvn}
                     onChange={(e) => handleBvnChange(e.target.value)}
                     disabled={isVerifying}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020] focus:border-transparent text-lg tracking-wider disabled:opacity-50"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent text-lg tracking-wider disabled:opacity-50"
                     placeholder="11 digits"
                     maxLength={11}
                     inputMode="numeric"
@@ -257,7 +257,7 @@ export default function Tier1KYCPage() {
 
                 {isVerifying && (
                   <div className="flex items-center gap-3 p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
-                    <Loader2 className="w-5 h-5 animate-spin text-[#800020]" />
+                    <Loader2 className="w-5 h-5 animate-spin text-[var(--brand-primary)]" />
                     Verifying identity…
                   </div>
                 )}
@@ -265,7 +265,7 @@ export default function Tier1KYCPage() {
                 <button
                   type="submit"
                   disabled={isVerifying || bvn.length !== 11}
-                  className="w-full bg-[#800020] text-white font-medium py-3 px-4 rounded-lg hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full bg-[var(--brand-primary)] text-white font-medium py-3 px-4 rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isVerifying ? (
                     <>

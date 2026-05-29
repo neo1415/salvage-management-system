@@ -126,7 +126,7 @@ export function resolveVendorBidEligibility(
     return {
       allowed: false,
       value: { bidLimit },
-      message: 'Vendor must complete full Tier 2 KYC before bidding under the current onboarding policy.',
+      message: 'Vendor must complete full verification before bidding under the current onboarding policy.',
       decision: createPolicyDecisionRecord({
         policy,
         decisionType: 'vendor_bid_denied',
@@ -152,20 +152,111 @@ export function resolveVendorBidEligibility(
     value: { bidLimit },
     message: allowed
       ? 'Vendor can place this bid under the current onboarding policy.'
-      : `Bid exceeds the configured Tier 1 limit of ${bidLimit}.`,
+      : `Bid exceeds the configured initial verification limit of ${bidLimit}.`,
     decision: createPolicyDecisionRecord({
       policy,
       decisionType: allowed ? 'vendor_bid_allowed' : 'vendor_bid_denied',
       rulePath: bidLimit === null ? 'onboarding.requireTier2ForUnlimitedBidding' : 'onboarding.tier1BidLimit',
       outcome: allowed ? 'allow' : 'deny',
       entityType: 'vendor',
-      reason: allowed ? 'Bid is within configured eligibility.' : 'Bid exceeds configured Tier 1 limit.',
+      reason: allowed ? 'Bid is within configured eligibility.' : 'Bid exceeds configured initial verification limit.',
       inputs: {
         tier: vendor.tier,
         bvnVerified: vendor.bvnVerified,
         bidAmount,
       },
       resolvedValue: bidLimit,
+    }),
+  };
+}
+
+export function resolveRegistrationFeePaymentAccess(
+  policy: BusinessPolicy,
+  vendor: Pick<VendorPolicySnapshot, 'tier' | 'bvnVerified' | 'registrationFeePaid'>
+): PolicyDecision<'fee_not_required' | 'already_paid' | 'bvn_required' | 'payment_available'> {
+  if (!policy.onboarding.registrationFeeRequired || policy.onboarding.mode === 'no_registration_fee') {
+    return {
+      allowed: false,
+      value: 'fee_not_required',
+      message: 'Registration fee is not required under the current onboarding policy.',
+      decision: createPolicyDecisionRecord({
+        policy,
+        decisionType: 'registration_fee_payment_resolved',
+        rulePath: 'onboarding.registrationFeeRequired',
+        outcome: 'not_applicable',
+        entityType: 'payment',
+        reason: 'Registration fee payment is disabled or not required.',
+        inputs: {
+          registrationFeeRequired: policy.onboarding.registrationFeeRequired,
+          mode: policy.onboarding.mode,
+        },
+        resolvedValue: 0,
+      }),
+    };
+  }
+
+  if (vendor.registrationFeePaid) {
+    return {
+      allowed: false,
+      value: 'already_paid',
+      message: 'Registration fee has already been paid.',
+      decision: createPolicyDecisionRecord({
+        policy,
+        decisionType: 'registration_fee_payment_resolved',
+        rulePath: 'onboarding.registrationFeeRequired',
+        outcome: 'not_applicable',
+        entityType: 'payment',
+        reason: 'Vendor has already paid the registration fee.',
+        inputs: {
+          tier: vendor.tier,
+          registrationFeePaid: vendor.registrationFeePaid,
+        },
+        resolvedValue: policy.onboarding.registrationFeeAmount,
+      }),
+    };
+  }
+
+  const canPayBeforeBvn = policy.onboarding.mode === 'fee_before_tier1' || policy.onboarding.mode === 'single_full_kyc';
+  if (policy.kyc.tier1RequiresBvn && !canPayBeforeBvn && !vendor.bvnVerified) {
+    return {
+      allowed: false,
+      value: 'bvn_required',
+      message: 'Vendor must complete identity verification before paying the registration fee.',
+      decision: createPolicyDecisionRecord({
+        policy,
+        decisionType: 'registration_fee_payment_resolved',
+        rulePath: 'kyc.tier1RequiresBvn',
+        outcome: 'deny',
+        entityType: 'payment',
+        reason: 'Registration fee is configured after identity verification.',
+        inputs: {
+          tier: vendor.tier,
+          bvnVerified: vendor.bvnVerified,
+          mode: policy.onboarding.mode,
+        },
+        resolvedValue: policy.onboarding.registrationFeeAmount,
+      }),
+    };
+  }
+
+  return {
+    allowed: true,
+    value: 'payment_available',
+    message: 'Vendor may pay the registration fee under the current onboarding policy.',
+    decision: createPolicyDecisionRecord({
+      policy,
+      decisionType: 'registration_fee_payment_resolved',
+      rulePath: 'onboarding.registrationFeeRequired',
+      outcome: 'allow',
+      entityType: 'payment',
+      reason: 'Vendor satisfies the configured prerequisites for registration fee payment.',
+      inputs: {
+        tier: vendor.tier,
+        bvnVerified: vendor.bvnVerified,
+        registrationFeePaid: vendor.registrationFeePaid,
+        mode: policy.onboarding.mode,
+      },
+      resolvedValue: policy.onboarding.registrationFeeAmount,
     }),
   };
 }
@@ -178,14 +269,14 @@ export function resolveTier2Access(
     return {
       allowed: true,
       value: 'already_tier2',
-      message: 'Vendor already has Tier 2 access.',
+      message: 'Vendor already has full verification access.',
       decision: createPolicyDecisionRecord({
         policy,
         decisionType: 'tier2_access_resolved',
         rulePath: 'onboarding.requireTier2ForUnlimitedBidding',
         outcome: 'allow',
         entityType: 'vendor',
-        reason: 'Vendor is already Tier 2.',
+        reason: 'Vendor is already fully verified.',
         inputs: { tier: vendor.tier },
         resolvedValue: true,
       }),
@@ -196,14 +287,14 @@ export function resolveTier2Access(
     return {
       allowed: false,
       value: 'bvn_required',
-      message: 'Vendor must complete Tier 1 BVN verification before Tier 2.',
+      message: 'Vendor must complete identity verification before full verification.',
       decision: createPolicyDecisionRecord({
         policy,
         decisionType: 'tier2_access_resolved',
         rulePath: 'kyc.tier1RequiresBvn',
         outcome: 'deny',
         entityType: 'vendor',
-        reason: 'Tier 2 access requires Tier 1 BVN under current policy.',
+        reason: 'Full verification requires identity verification under current policy.',
         inputs: {
           tier: vendor.tier,
           bvnVerified: vendor.bvnVerified,
@@ -217,14 +308,14 @@ export function resolveTier2Access(
     return {
       allowed: false,
       value: 'registration_fee_required',
-      message: 'Vendor must pay the registration fee before Tier 2 verification.',
+      message: 'Vendor must pay the registration fee before full verification.',
       decision: createPolicyDecisionRecord({
         policy,
         decisionType: 'tier2_access_resolved',
         rulePath: 'onboarding.registrationFeeRequired',
         outcome: 'deny',
         entityType: 'vendor',
-        reason: 'Registration fee is required before Tier 2 under current policy.',
+        reason: 'Registration fee is required before full verification under current policy.',
         inputs: {
           registrationFeePaid: vendor.registrationFeePaid,
           registrationFeeRequired: policy.onboarding.registrationFeeRequired,
@@ -237,14 +328,14 @@ export function resolveTier2Access(
   return {
     allowed: true,
     value: 'tier2_available',
-    message: 'Vendor can start Tier 2 verification.',
+    message: 'Vendor can start full verification.',
     decision: createPolicyDecisionRecord({
       policy,
       decisionType: 'tier2_access_resolved',
       rulePath: 'onboarding.mode',
       outcome: 'allow',
       entityType: 'vendor',
-      reason: 'Vendor satisfies the configured prerequisites for Tier 2.',
+      reason: 'Vendor satisfies the configured prerequisites for full verification.',
       inputs: {
         tier: vendor.tier,
         bvnVerified: vendor.bvnVerified,

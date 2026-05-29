@@ -90,7 +90,7 @@ export function VerificationErrorDialog({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="w-full sm:w-auto bg-[#800020] text-white font-semibold py-2.5 px-6 rounded-lg hover:bg-[#600018] transition-colors"
+            className="w-full sm:w-auto bg-[var(--brand-primary)] text-white font-semibold py-2.5 px-6 rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
           >
             {confirmLabel}
           </button>

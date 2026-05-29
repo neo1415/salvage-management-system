@@ -105,7 +105,7 @@ export function WalletPaymentConfirmation({
         type="button"
         onClick={() => setIsModalOpen(true)}
         disabled={isConfirming || success}
-        className="w-full bg-burgundy-900 text-white py-3 sm:py-4 px-4 sm:px-6 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+        className="w-full bg-[var(--brand-primary)] text-white py-3 sm:py-4 px-4 sm:px-6 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
         aria-label="Confirm payment from wallet"
         data-testid="confirm-button"
       >

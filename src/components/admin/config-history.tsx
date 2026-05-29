@@ -98,7 +98,7 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
     <div className={`bg-white rounded-lg shadow-sm ${className}`}>
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#800020] rounded-full flex items-center justify-center">
+          <div className="w-10 h-10 bg-[var(--brand-primary)] rounded-full flex items-center justify-center">
             <History className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -126,7 +126,7 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
               value={filters.parameter}
               onChange={(e) => handleFilterChange('parameter', e.target.value)}
               placeholder="e.g., deposit_rate"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
           <div>
@@ -137,7 +137,7 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
               type="date"
               value={filters.startDate}
               onChange={(e) => handleFilterChange('startDate', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
           <div>
@@ -148,7 +148,7 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
               type="date"
               value={filters.endDate}
               onChange={(e) => handleFilterChange('endDate', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
           <div className="flex items-end">
@@ -238,7 +238,7 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
-                    className="px-4 py-2 text-sm font-medium text-white bg-[#800020] rounded-lg hover:bg-[#600018] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="px-4 py-2 text-sm font-medium text-white bg-[var(--brand-primary)] rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Next
                   </button>

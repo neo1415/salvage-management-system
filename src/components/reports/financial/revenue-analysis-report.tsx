@@ -178,7 +178,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <CardTitle className="text-sm font-medium text-gray-600">
               Total Revenue
             </CardTitle>
-            <Banknote className="h-4 w-4 text-[#800020]" />
+            <Banknote className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -202,7 +202,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <CardTitle className="text-sm font-medium text-gray-600">
               Salvage Recovered
             </CardTitle>
-            <Banknote className="h-4 w-4 text-[#800020]" />
+            <Banknote className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -219,7 +219,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <CardTitle className="text-sm font-medium text-gray-600">
               Registration Fees
             </CardTitle>
-            <Banknote className="h-4 w-4 text-[#800020]" />
+            <Banknote className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -236,7 +236,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <CardTitle className="text-sm font-medium text-gray-600">
               Recovery Rate
             </CardTitle>
-            <BarChart3 className="h-4 w-4 text-[#800020]" />
+            <BarChart3 className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -287,7 +287,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                     <p className="text-sm text-gray-600">{asset?.count || 0} cases</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-[#800020]">
+                    <p className="font-bold text-[var(--brand-primary)]">
                       ₦{(asset?.salvageRecovered || 0).toLocaleString()}
                     </p>
                     <p className="text-xs text-gray-600">
@@ -318,7 +318,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                   <p className="font-bold">₦{(region?.salvageRecovered || 0).toLocaleString()}</p>
                   <div className="w-32 bg-gray-200 rounded-full h-2 mt-1">
                     <div
-                      className="bg-[#800020] h-2 rounded-full"
+                      className="bg-[var(--brand-primary)] h-2 rounded-full"
                       style={{
                         width: `${safeData.summary.totalSalvageRecovered > 0 ? ((region?.salvageRecovered || 0) / safeData.summary.totalSalvageRecovered) * 100 : 0}%`,
                       }}

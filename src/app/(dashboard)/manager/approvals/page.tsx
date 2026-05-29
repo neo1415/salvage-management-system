@@ -647,7 +647,7 @@ export default function ApprovalsPage() {
     return (
       <div className="min-h-screen bg-gray-50 pb-32 overflow-y-auto">
         {/* Header */}
-        <div className="bg-[#800020] text-white p-4 sticky top-0 z-40 shadow-md">
+        <div className="bg-[var(--brand-primary)] text-white p-4 sticky top-0 z-40 shadow-md">
           <div className="flex items-center justify-between">
             <button
               onClick={() => setSelectedCase(null)}
@@ -761,7 +761,7 @@ export default function ApprovalsPage() {
                   key={index}
                   onClick={() => setCurrentPhotoIndex(index)}
                   className={`flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
-                    index === currentPhotoIndex ? 'ring-2 ring-[#800020] border-[#800020]' : 'border-gray-300'
+                    index === currentPhotoIndex ? 'ring-2 ring-[var(--brand-primary)] border-[var(--brand-primary)]' : 'border-gray-300'
                   }`}
                 >
                   {isValidPhotoUrl(photo) ? (
@@ -938,7 +938,7 @@ export default function ApprovalsPage() {
               {!isEditMode && !selectedCase.approvedBy && (
                 <button
                   onClick={handleEditModeToggle}
-                  className="text-sm text-[#800020] font-medium hover:text-[#600018]"
+                  className="text-sm text-[var(--brand-primary)] font-medium hover:text-[var(--brand-primary-hover)]"
                 >
                   ✏️ Edit Prices
                 </button>
@@ -992,7 +992,7 @@ export default function ApprovalsPage() {
                   onChange={(e) => setOverrideComment(e.target.value)}
                   placeholder="Explain why you're adjusting these prices (minimum 10 characters)..."
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 />
                 {overrideComment.trim().length > 0 && overrideComment.trim().length < 10 && (
                   <p className="text-xs text-red-600 mt-1">
@@ -1215,7 +1215,7 @@ export default function ApprovalsPage() {
                       : 'Optional comment'
                   }
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent text-sm"
                 />
               </div>
               
@@ -1282,7 +1282,7 @@ export default function ApprovalsPage() {
   return (
     <div className="min-h-screen bg-gray-50 overflow-y-auto">
       {/* Header */}
-      <div className="bg-[#800020] text-white p-4 sticky top-0 z-40 shadow-md">
+      <div className="bg-[var(--brand-primary)] text-white p-4 sticky top-0 z-40 shadow-md">
         <div className="flex items-center justify-between">
           <button
             onClick={() => router.back()}
@@ -1374,7 +1374,7 @@ export default function ApprovalsPage() {
             onClick={() => setActiveTab('pending')}
             className={`flex-1 min-w-[100px] px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'pending'
-                ? 'border-[#800020] text-[#800020]'
+                ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
             }`}
           >
@@ -1384,7 +1384,7 @@ export default function ApprovalsPage() {
             onClick={() => setActiveTab('approved')}
             className={`flex-1 min-w-[100px] px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'approved'
-                ? 'border-[#800020] text-[#800020]'
+                ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
             }`}
           >
@@ -1394,7 +1394,7 @@ export default function ApprovalsPage() {
             onClick={() => setActiveTab('rejected')}
             className={`flex-1 min-w-[100px] px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'rejected'
-                ? 'border-[#800020] text-[#800020]'
+                ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
             }`}
           >
@@ -1404,7 +1404,7 @@ export default function ApprovalsPage() {
             onClick={() => setActiveTab('all')}
             className={`flex-1 min-w-[100px] px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'all'
-                ? 'border-[#800020] text-[#800020]'
+                ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
             }`}
           >

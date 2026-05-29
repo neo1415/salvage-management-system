@@ -13,6 +13,7 @@ import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { bids } from '@/lib/db/schema/bids';
+import { auctionWinners } from '@/lib/db/schema/auction-deposit';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq, and, arrayContains } from 'drizzle-orm';
@@ -92,6 +93,30 @@ export async function POST(
     if (auction.status !== 'closed') {
       return NextResponse.json(
         { error: `Cannot restart auction with status: ${auction.status}. Only closed auctions can be restarted.` },
+        { status: 400 }
+      );
+    }
+
+    if (auction.currentBidder || auction.currentBid) {
+      return NextResponse.json(
+        {
+          error: 'This auction already has a winner and cannot be restarted. Use the fallback or payment follow-up workflow instead.',
+        },
+        { status: 400 }
+      );
+    }
+
+    const [winnerRecord] = await db
+      .select({ id: auctionWinners.id })
+      .from(auctionWinners)
+      .where(eq(auctionWinners.auctionId, auctionId))
+      .limit(1);
+
+    if (winnerRecord) {
+      return NextResponse.json(
+        {
+          error: 'This auction already has a winner record and cannot be restarted. Only auctions that ended without bids can be restarted.',
+        },
         { status: 400 }
       );
     }

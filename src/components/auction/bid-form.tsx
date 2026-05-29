@@ -129,7 +129,7 @@ export function BidForm({
     // Check tier limits
     const tierLimit = getTierLimit();
     if (tierLimit && numAmount > tierLimit) {
-      return `Tier ${vendorTier === 'tier1_bvn' ? '1' : '2'} limit: ₦${tierLimit.toLocaleString()}. Upgrade to bid higher.`;
+      return `Your current verification limit is ₦${tierLimit.toLocaleString()}. Complete full verification to bid higher.`;
     }
 
     return null;
@@ -388,7 +388,7 @@ export function BidForm({
               </div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-gray-600">Minimum Bid:</span>
-                <span className="text-lg font-bold text-burgundy-900">
+                <span className="text-lg font-bold text-[var(--brand-primary)]">
                   ₦{minimumBidAmount.toLocaleString()}
                 </span>
               </div>
@@ -427,7 +427,7 @@ export function BidForm({
                       className={`w-full pl-8 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
                         error
                           ? 'border-red-500 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-burgundy-500'
+                          : 'border-gray-300 focus:ring-[var(--brand-focus-ring)]'
                       }`}
                       disabled={isLoading}
                       autoFocus
@@ -440,10 +440,10 @@ export function BidForm({
                   )}
                   
                   {/* Tier upgrade prompt for errors */}
-                  {error && error.includes('Upgrade to bid higher') && (
+                  {error && error.includes('Complete full verification') && (
                     <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
                       <p className="text-sm text-orange-800 mb-2">
-                        💡 Want to bid higher? Upgrade to Tier 2 for unlimited bidding!
+                        Want to bid higher? Complete full verification for higher bidding access.
                       </p>
                       <button
                         onClick={() => {
@@ -452,9 +452,9 @@ export function BidForm({
                             checkAuctionAccess(numAmount);
                           }
                         }}
-                        className="text-sm text-[#800020] font-medium hover:text-[#600018] underline"
+                        className="text-sm text-[var(--brand-primary)] font-medium hover:text-[var(--brand-primary-hover)] underline"
                       >
-                        Learn More About Tier 2
+                        Learn more
                       </button>
                     </div>
                   )}
@@ -463,7 +463,7 @@ export function BidForm({
                 <button
                   onClick={handleConfirmBid}
                   disabled={isLoading || !!error || !bidAmount}
-                  className="w-full bg-burgundy-900 text-white py-3 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  className="w-full bg-[var(--brand-primary)] text-white py-3 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
                   {isLoading ? 'Sending OTP...' : 'Confirm Bid'}
                 </button>
@@ -504,7 +504,7 @@ export function BidForm({
                     className={`w-full px-4 py-3 border rounded-lg text-center text-2xl font-mono tracking-widest focus:outline-none focus:ring-2 transition-colors ${
                       error
                         ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-300 focus:ring-burgundy-500'
+                        : 'border-gray-300 focus:ring-[var(--brand-focus-ring)]'
                     }`}
                     disabled={isLoading}
                     autoFocus
@@ -536,7 +536,7 @@ export function BidForm({
                   <button
                     onClick={() => handleSubmitBid()}
                     disabled={isLoading || otp.length !== 6 || otpTimer === 0}
-                    className="w-full bg-burgundy-900 text-white py-3 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    className="w-full bg-[var(--brand-primary)] text-white py-3 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
                   >
                     {isLoading ? 'Verifying...' : 'Submit Bid'}
                   </button>
@@ -544,7 +544,7 @@ export function BidForm({
                   <button
                     onClick={handleResendOtp}
                     disabled={isLoading || otpTimer > 0}
-                    className="w-full bg-white text-burgundy-900 py-3 rounded-lg font-semibold border-2 border-burgundy-900 hover:bg-burgundy-50 transition-colors disabled:border-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    className="w-full bg-white text-[var(--brand-primary)] py-3 rounded-lg font-semibold border-2 border-[var(--brand-primary)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_8%,white)] transition-colors disabled:border-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed"
                   >
                     Resend OTP
                   </button>

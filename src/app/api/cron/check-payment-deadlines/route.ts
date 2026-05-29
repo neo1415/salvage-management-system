@@ -103,11 +103,8 @@ export async function GET(request: NextRequest) {
     console.log(`[Payment Deadline Cron] Buffer period: ${effectiveBufferHours} hours ${testingMode ? '(TESTING MODE)' : ''}`);
     const systemActorId = await getSystemActorId();
 
-    // Calculate cutoff time (now - buffer period)
-    const cutoffTime = new Date(now.getTime() - (effectiveBufferHours * 60 * 60 * 1000));
-
-    // Find auctions with expired payment deadlines (past cutoff).
-    // Release forms carry the configured payment deadline after signing.
+    // Find auctions with expired payment deadlines. Each candidate is then
+    // checked against its own policy snapshot before forfeiture/fallback.
     const expiredAuctions = await db
       .select({
         auction: auctions,
@@ -127,7 +124,7 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(auctions.status, 'awaiting_payment'),
-          lte(releaseForms.paymentDeadline, cutoffTime),
+          lte(releaseForms.paymentDeadline, now),
           isNotNull(releaseForms.signedAt)
         )
       );
@@ -160,10 +157,29 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
+        let candidateBufferHours = effectiveBufferHours;
+        let candidateBufferDecision = fallbackBufferDecision;
+        let candidateForfeitureDecision = forfeitureDecision;
+        if (!testingMode && isBusinessPolicyEnforcementEnabled()) {
+          const documentPolicy = await businessPolicyService.getPolicyForEntity('document', document.id);
+          candidateBufferDecision = resolveFallbackBufferHours(documentPolicy);
+          candidateForfeitureDecision = resolveForfeiturePercentage(documentPolicy);
+          candidateBufferHours = candidateBufferDecision.value ?? candidateBufferHours;
+        }
+        const candidateForfeiturePercentage = isBusinessPolicyEnforcementEnabled()
+          ? candidateForfeitureDecision.value ?? config.forfeiturePercentage
+          : config.forfeiturePercentage;
+        const cutoffTime = new Date(now.getTime() - (candidateBufferHours * 60 * 60 * 1000));
+
+        if (document.paymentDeadline && document.paymentDeadline > cutoffTime) {
+          console.log(`[Payment Deadline Cron] Auction ${auction.id} payment deadline expired, waiting for ${candidateBufferHours}-hour buffer.`);
+          continue;
+        }
+
         console.log(`[Payment Deadline Cron] Processing auction ${auction.id}, winner ${winner.vendorId}`);
         console.log(`  - Payment deadline: ${document.paymentDeadline?.toISOString()}`);
         console.log(`  - Cutoff time: ${cutoffTime.toISOString()}`);
-        console.log(`  - Buffer period elapsed: ${effectiveBufferHours} hours`);
+        console.log(`  - Buffer period elapsed: ${candidateBufferHours} hours`);
 
         await logPolicyDecision({
           userId: systemActorId,
@@ -172,7 +188,7 @@ export async function GET(request: NextRequest) {
           ipAddress: 'system',
           deviceType: DeviceType.DESKTOP,
           userAgent: 'cron:check-payment-deadlines',
-          decision: fallbackBufferDecision.decision,
+          decision: candidateBufferDecision.decision,
           context: {
             mode: getBusinessPolicyRuntimeMode(),
             cron: 'check-payment-deadlines',
@@ -180,7 +196,8 @@ export async function GET(request: NextRequest) {
             paymentDeadline: document.paymentDeadline?.toISOString() ?? null,
             cutoffTime: cutoffTime.toISOString(),
             legacyEffectiveBufferHours: effectiveBufferHours,
-            policyBufferHours: fallbackBufferDecision.value,
+            effectiveBufferHours: candidateBufferHours,
+            policyBufferHours: candidateBufferDecision.value,
             testingMode,
           },
         });
@@ -192,15 +209,15 @@ export async function GET(request: NextRequest) {
           ipAddress: 'system',
           deviceType: DeviceType.DESKTOP,
           userAgent: 'cron:check-payment-deadlines',
-          decision: forfeitureDecision.decision,
+          decision: candidateForfeitureDecision.decision,
           context: {
             mode: getBusinessPolicyRuntimeMode(),
             cron: 'check-payment-deadlines',
             winnerId: winner.vendorId,
             depositAmount: winner.depositAmount,
             legacyForfeiturePercentage: config.forfeiturePercentage,
-            policyForfeiturePercentage: forfeitureDecision.value,
-            effectiveForfeiturePercentage,
+            policyForfeiturePercentage: candidateForfeitureDecision.value,
+            effectiveForfeiturePercentage: candidateForfeiturePercentage,
           },
         });
 
@@ -211,7 +228,7 @@ export async function GET(request: NextRequest) {
           vendorId: winner.vendorId,
           depositAmount: parseFloat(winner.depositAmount),
           reason: 'payment_deadline_expired',
-          forfeiturePercentage: effectiveForfeiturePercentage,
+          forfeiturePercentage: candidateForfeiturePercentage,
         });
 
         console.log(`[Payment Deadline Cron] ✅ Deposit forfeited: ₦${forfeitureResult.forfeitedAmount?.toLocaleString()}`);

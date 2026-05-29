@@ -26,8 +26,8 @@ function Toggle({
       type="button"
       onClick={onToggle}
       disabled={disabled}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2 ${
-        on ? 'bg-[#800020]' : 'bg-gray-300'
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:ring-offset-2 ${
+        on ? 'bg-[var(--brand-primary)]' : 'bg-gray-300'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
       <span
@@ -115,7 +115,7 @@ export function NotificationPreferencesPanel({
         <button
           type="button"
           onClick={fetchPreferences}
-          className="mt-4 px-4 py-2 bg-[#800020] text-white rounded-lg"
+          className="mt-4 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg"
         >
           Retry
         </button>

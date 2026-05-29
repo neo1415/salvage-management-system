@@ -198,7 +198,7 @@ export default function EscrowPerformanceReportPage() {
           <button
             onClick={exportToPDF}
             disabled={exporting}
-            className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50"
           >
             📄 Export PDF
           </button>
@@ -225,7 +225,7 @@ export default function EscrowPerformanceReportPage() {
               id="date-from"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
           <div>
@@ -237,13 +237,13 @@ export default function EscrowPerformanceReportPage() {
               id="date-to"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
           <div className="flex items-end">
             <button
               onClick={fetchReport}
-              className="w-full px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors"
+              className="w-full px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
             >
               Apply Filter
             </button>
@@ -419,7 +419,7 @@ export default function EscrowPerformanceReportPage() {
                   <div key={index} className="flex-1 flex flex-col items-center">
                     <div className="w-full flex flex-col items-center">
                       <div
-                        className="w-full bg-[#800020] rounded-t hover:bg-[#600018] transition-colors cursor-pointer relative group"
+                        className="w-full bg-[var(--brand-primary)] rounded-t hover:bg-[var(--brand-primary-hover)] transition-colors cursor-pointer relative group"
                         style={{ height: `${height}%`, minHeight: data.count > 0 ? '20px' : '0' }}
                         title={`${data.date}: ${data.count} payments, ₦${data.amount.toLocaleString()}`}
                       >

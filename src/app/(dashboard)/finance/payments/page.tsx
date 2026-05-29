@@ -532,7 +532,7 @@ export default function FinancePaymentsPage() {
       const result = await response.json();
 
       // Show success modal
-      setSuccessMessage(`Funds released successfully! ₦${parseFloat(selectedPayment.amount).toLocaleString()} transferred to NEM Insurance.`);
+      setSuccessMessage(`Funds released successfully! ₦${parseFloat(selectedPayment.amount).toLocaleString()} transferred to the configured settlement account.`);
       setShowSuccessModal(true);
       
       await invalidateAndRefreshPayments();
@@ -1145,7 +1145,7 @@ export default function FinancePaymentsPage() {
               }}
               className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors flex items-center gap-2 ${
                 activeTab === 'all'
-                  ? 'bg-[#800020] text-white'
+                  ? 'bg-[var(--brand-primary)] text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -1161,7 +1161,7 @@ export default function FinancePaymentsPage() {
               }}
               className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors ${
                 activeTab === 'today'
-                  ? 'bg-[#800020] text-white'
+                  ? 'bg-[var(--brand-primary)] text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -1176,7 +1176,7 @@ export default function FinancePaymentsPage() {
               }}
               className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors ${
                 activeTab === 'pending'
-                  ? 'bg-[#800020] text-white'
+                  ? 'bg-[var(--brand-primary)] text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -1191,7 +1191,7 @@ export default function FinancePaymentsPage() {
               }}
               className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors ${
                 activeTab === 'overdue'
-                  ? 'bg-[#800020] text-white'
+                  ? 'bg-[var(--brand-primary)] text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -1211,7 +1211,7 @@ export default function FinancePaymentsPage() {
                   e.preventDefault();
                   clearFilters();
                 }}
-                className="text-sm text-[#800020] hover:text-[#600018] font-medium"
+                className="text-sm text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)] font-medium"
               >
                 Clear All Filters
               </button>
@@ -1227,7 +1227,7 @@ export default function FinancePaymentsPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Vendor name, claim reference, or date (e.g. 2026-05-20)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -1240,7 +1240,7 @@ export default function FinancePaymentsPage() {
                 id="status-filter"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               >
                 <option value="">All Statuses</option>
                 <option value="pending">Pending</option>
@@ -1259,7 +1259,7 @@ export default function FinancePaymentsPage() {
                 id="method-filter"
                 value={methodFilter}
                 onChange={(e) => setMethodFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               >
                 <option value="">All Methods</option>
                 <option value="paystack">Paystack</option>
@@ -1278,7 +1278,7 @@ export default function FinancePaymentsPage() {
                 id="payment-type-filter"
                 value={paymentTypeFilter}
                 onChange={(e) => setPaymentTypeFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               >
                 <option value="">All Types</option>
                 <option value="auction">Auction Payments</option>
@@ -1296,7 +1296,7 @@ export default function FinancePaymentsPage() {
                 id="date-from"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               />
             </div>
 
@@ -1310,7 +1310,7 @@ export default function FinancePaymentsPage() {
                 id="date-to"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               />
             </div>
           </div>
@@ -1686,7 +1686,7 @@ export default function FinancePaymentsPage() {
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="Explain why this payment is being rejected (minimum 10 characters)"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     required
                   />
                   <p className="mt-1 text-xs text-gray-500">
@@ -1771,7 +1771,7 @@ export default function FinancePaymentsPage() {
               {/* Payment Information */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 mr-2 text-[var(--brand-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
                   Payment Information
@@ -1779,7 +1779,7 @@ export default function FinancePaymentsPage() {
                 <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Amount</p>
-                    <p className="text-lg font-bold text-[#800020]">
+                    <p className="text-lg font-bold text-[var(--brand-primary)]">
                       ₦{parseFloat(selectedPayment.amount).toLocaleString()}
                     </p>
                   </div>
@@ -1853,7 +1853,7 @@ export default function FinancePaymentsPage() {
               {/* Vendor Information */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 mr-2 text-[var(--brand-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
                   Vendor Information
@@ -1946,7 +1946,7 @@ export default function FinancePaymentsPage() {
               {/* Case Information */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 mr-2 text-[var(--brand-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   {selectedPayment.case ? 'Case Information' : 'Registration Information'}
@@ -2008,7 +2008,7 @@ export default function FinancePaymentsPage() {
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="text-sm font-semibold text-gray-900 flex items-center">
-                        <svg className="w-5 h-5 mr-2 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 mr-2 text-[var(--brand-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         Audit Trail
@@ -2030,7 +2030,7 @@ export default function FinancePaymentsPage() {
                     
                     {loadingAuditLogs ? (
                       <div className="bg-white rounded-lg shadow-md p-6 text-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#800020] mx-auto"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--brand-primary)] mx-auto"></div>
                         <p className="mt-2 text-sm text-gray-600">Loading audit trail...</p>
                       </div>
                     ) : (

@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { signIn } from '@/lib/auth/next-auth.config';
 import { Ratelimit } from '@upstash/ratelimit';
 import { redis } from '@/lib/redis/client';
+import {
+  businessPolicyService,
+  isBusinessPolicyEnforcementEnabled,
+  resolveAuthProviderAccess,
+} from '@/features/business-policy';
 
 // SECURITY: Rate limiting for login endpoint
 // Prevents brute force attacks and credential enumeration
@@ -68,6 +73,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Email/Phone and password are required' },
         { status: 400 }
+      );
+    }
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const credentialsDecision = resolveAuthProviderAccess(policy, 'credentials');
+    if (!credentialsDecision.allowed && isBusinessPolicyEnforcementEnabled()) {
+      return NextResponse.json(
+        { error: 'Email/password login is disabled for this deployment.' },
+        { status: 403 }
       );
     }
 

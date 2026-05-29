@@ -24,6 +24,7 @@ export function toPublicBusinessPolicy(policy: BusinessPolicy): PublicBusinessPo
       flutterwaveEnabled: policy.payments.flutterwaveEnabled,
       hybridPaymentEnabled: policy.payments.hybridPaymentEnabled,
       manualPaymentEnabled: policy.payments.manualPaymentEnabled,
+      paymentDeadlineAfterSigningHours: policy.payments.paymentDeadlineAfterSigningHours,
     },
     auctions: {
       minimumBidIncrement: policy.auctions.minimumBidIncrement,
@@ -31,6 +32,9 @@ export function toPublicBusinessPolicy(policy: BusinessPolicy): PublicBusinessPo
     cases: {
       enabledAssetTypes: policy.cases.enabledAssetTypes,
       voiceNotesEnabled: policy.cases.voiceNotesEnabled,
+    },
+    documents: {
+      requiredAuctionDocuments: policy.documents.requiredAuctionDocuments,
     },
   };
 }

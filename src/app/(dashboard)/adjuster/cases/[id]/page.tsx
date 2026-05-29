@@ -134,7 +134,7 @@ export default function CaseDetailsPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <div className="bg-[#800020] text-white p-4 sticky top-0 z-10 shadow-md">
+        <div className="bg-[var(--brand-primary)] text-white p-4 sticky top-0 z-10 shadow-md">
           <div className="flex items-center">
             <button onClick={() => router.back()} className="mr-3">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,7 +145,7 @@ export default function CaseDetailsPage() {
           </div>
         </div>
         <div className="text-center py-12">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#800020]"></div>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--brand-primary)]"></div>
           <p className="mt-4 text-gray-600">Loading case details...</p>
         </div>
       </div>
@@ -155,7 +155,7 @@ export default function CaseDetailsPage() {
   if (error || !caseData) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <div className="bg-[#800020] text-white p-4 sticky top-0 z-10 shadow-md">
+        <div className="bg-[var(--brand-primary)] text-white p-4 sticky top-0 z-10 shadow-md">
           <div className="flex items-center">
             <button onClick={() => router.back()} className="mr-3">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -184,7 +184,7 @@ export default function CaseDetailsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-[#800020] text-white p-4 sticky top-0 z-10 shadow-md">
+      <div className="bg-[var(--brand-primary)] text-white p-4 sticky top-0 z-10 shadow-md">
         <div className="flex items-center">
           <button onClick={() => router.back()} className="mr-3">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,7 +241,7 @@ export default function CaseDetailsPage() {
                       key={index}
                       onClick={() => setSelectedPhotoIndex(index)}
                       className={`flex-shrink-0 ${
-                        selectedPhotoIndex === index ? 'ring-2 ring-[#800020]' : ''
+                        selectedPhotoIndex === index ? 'ring-2 ring-[var(--brand-primary)]' : ''
                       }`}
                     >
                       <Image
@@ -402,7 +402,7 @@ export default function CaseDetailsPage() {
         {caseData.voiceNotes && Array.isArray(caseData.voiceNotes) && caseData.voiceNotes.length > 0 && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <h3 className="font-bold text-gray-900 mb-3 flex items-center">
-              <svg className="w-5 h-5 mr-2 text-[#800020]" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-5 h-5 mr-2 text-[var(--brand-primary)]" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
               </svg>
               Voice Notes
@@ -530,7 +530,7 @@ export default function CaseDetailsPage() {
                     }
                   }
                 }}
-                className="flex-1 px-4 py-2 bg-[#800020] text-white rounded-lg font-medium hover:bg-[#600018] transition-colors"
+                className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg font-medium hover:bg-[var(--brand-primary-hover)] transition-colors"
               >
                 ✓ Submit for Approval
               </button>

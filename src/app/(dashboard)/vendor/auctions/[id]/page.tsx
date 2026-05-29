@@ -1,10 +1,10 @@
 /**
  * Auction Details Page
- * 
+ *
  * Requirements:
  * - Requirement 16-22: Mobile Auction Browsing, Countdown Timers, Bid Placement, etc.
  * - NFR5.3: User Experience
- * 
+ *
  * Features:
  * - Display full asset details and photos (swipeable gallery)
  * - Display AI assessment results
@@ -35,6 +35,17 @@ import { formatConditionForDisplay, type QualityTier } from '@/features/valuatio
 import { useToast } from '@/components/ui/toast';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 import { PredictionCard } from '@/components/intelligence/prediction-card';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import type { DocumentType } from '@/lib/db/schema/release-forms';
+
+const DEFAULT_AUCTION_DOCUMENTS: DocumentType[] = ['bill_of_sale', 'liability_waiver'];
+
+function getDocumentLabel(documentType: string): string {
+  return documentType
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
 
 const PaymentUnlockedModal = dynamic(
   () => import('@/components/modals/payment-unlocked-modal'),
@@ -140,7 +151,10 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const toast = useToast();
-  
+  const { policy: publicPolicy } = usePublicBusinessPolicy();
+  const requiredAuctionDocuments = publicPolicy?.documents.requiredAuctionDocuments ?? DEFAULT_AUCTION_DOCUMENTS;
+  const paymentDeadlineHours = publicPolicy?.payments.paymentDeadlineAfterSigningHours ?? 72;
+
   // State
   const [auction, setAuction] = useState<AuctionDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -150,11 +164,11 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   const [isWatching, setIsWatching] = useState(false);
   const [isWatchLoading, setIsWatchLoading] = useState(false);
   const [vendorTier, setVendorTier] = useState<VendorTier>('tier1_bvn'); // Track vendor tier
-  
+
   // Real-time UI feedback state
   const [showNewBidAnimation, setShowNewBidAnimation] = useState(false);
   const [showExtensionNotification, setShowExtensionNotification] = useState(false);
-  
+
   // Document state
   const [documents, setDocuments] = useState<Array<{
     id: string;
@@ -164,6 +178,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     signedAt: Date | null;
   }>>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [downloadingDocumentId, setDownloadingDocumentId] = useState<string | null>(null);
   const [selectedDocumentType, setSelectedDocumentType] = useState<'bill_of_sale' | 'liability_waiver' | 'pickup_authorization' | null>(null);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
 
@@ -179,17 +194,17 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     pickupLocation: string;
     pickupDeadline: string;
   } | null>(null);
-  
+
   // Track if payment processing has been attempted to prevent duplicate calls
   const paymentProcessingAttemptedRef = useRef(false);
-  
+
   // Track document count to prevent infinite polling loop
   const documentCountRef = useRef(0);
 
   // Track if verified payment exists (to hide "Pay Now" button)
   const [hasVerifiedPayment, setHasVerifiedPayment] = useState(false);
 
-  // Verify payment button state (show after 2 minutes if payment still pending)
+  // Payment retry state (shown after the normal confirmation window)
   const [showVerifyButton, setShowVerifyButton] = useState(false);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   const [paystackReturnStatus, setPaystackReturnStatus] = useState<'idle' | 'verifying' | 'verified' | 'pending' | 'error'>('idle');
@@ -209,9 +224,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   // Real-time updates via Socket.io
   const { watchingCount } = useAuctionWatch(resolvedParams.id);
-  const { 
-    auction: realtimeAuction, 
-    latestBid, 
+  const {
+    auction: realtimeAuction,
+    latestBid,
     usingPolling,
     isClosing,
     documentsGenerating,
@@ -225,7 +240,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       hasField: realtimeAuction && 'hasVerifiedPayment' in realtimeAuction,
       value: realtimeAuction?.hasVerifiedPayment,
     });
-    
+
     if (realtimeAuction && 'hasVerifiedPayment' in realtimeAuction) {
       const newValue = realtimeAuction.hasVerifiedPayment || false;
       console.log(`📡 Updating hasVerifiedPayment from realtime data: ${newValue}`);
@@ -235,17 +250,16 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     }
   }, [realtimeAuction]); // ✅ FIXED: Depend on entire object, not just one field
 
-  // Show "Verify Payment" button after 2 minutes if payment still pending
+  // Show payment recovery only after the normal confirmation window has passed.
   useEffect(() => {
     if (auction?.status === 'awaiting_payment' && !hasVerifiedPayment) {
-      console.log('⏱️  Starting 2-minute timer for verify payment button');
-      
-      // Show verify button after 2 minutes
+      console.log('Starting 10-minute timer for payment retry button');
+
       const timer = setTimeout(() => {
-        console.log('✅ 2 minutes elapsed - showing verify payment button');
+        console.log('Payment retry window elapsed - showing retry button');
         setShowVerifyButton(true);
-      }, 2 * 60 * 1000); // 2 minutes
-      
+      }, 10 * 60 * 1000);
+
       return () => {
         console.log('🧹 Cleaning up verify payment timer');
         clearTimeout(timer);
@@ -259,27 +273,31 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Handler for manual payment verification
   const handleVerifyPayment = async () => {
     if (!auction) return;
-    
+
     setIsVerifyingPayment(true);
     console.log('🔍 Manual payment verification requested');
     console.log(`   - Auction ID: ${auction.id}`);
-    
+
     try {
       const response = await fetch(`/api/auctions/${auction.id}/payment/verify`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ source: 'manual_retry' }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         console.log('✅ Payment verified successfully!');
         console.log(`   - Processing time: ${data.processingTime}ms`);
-        
+
         toast.success(
           'Payment Verified!',
           'Your payment has been confirmed. Refreshing page...'
         );
-        
+
         // Refresh the page to show updated status
         setTimeout(() => {
           window.location.reload();
@@ -287,8 +305,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       } else {
         console.log('⚠️  Payment verification failed:', data.message);
         toast.error(
-          'Verification Failed',
-          data.message || 'Unable to verify payment. Please try again.'
+          'Payment Not Confirmed',
+          data.message || 'We could not confirm this payment yet.'
         );
       }
     } catch (error) {
@@ -320,6 +338,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     }
 
     paystackReturnHandledRef.current = true;
+    const paystackReference = searchParams.get('reference') || searchParams.get('trxref');
     searchParams.delete('payment');
     const nextSearch = searchParams.toString();
     window.history.replaceState(
@@ -336,6 +355,13 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       try {
         const response = await fetch(`/api/auctions/${auction.id}/payment/verify`, {
           method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            source: 'paystack_return',
+            reference: paystackReference,
+          }),
         });
         const data = await response.json().catch(() => ({}));
 
@@ -352,7 +378,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           return;
         }
 
-        const message = data.message || data.error || 'Payment confirmation is still pending. You can retry verification in a moment.';
+        const message = response.ok
+          ? data.message || 'Payment confirmation is still pending. You can retry in a moment.'
+          : data.message || 'We could not confirm this payment yet. If Paystack debited you, wait a few minutes and use Retry. You do not need to start a new payment while this reference is pending.';
         setPaystackReturnStatus(response.ok ? 'pending' : 'error');
         setPaystackReturnMessage(message);
         setShowVerifyButton(true);
@@ -371,17 +399,17 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
     verifyReturnedPayment();
   }, [auction?.id, session?.user?.vendorId, toast]);
-  
+
   // Real-time notification listener for PAYMENT_UNLOCKED
   const { newNotification } = useRealtimeNotifications();
 
   // Handle PAYMENT_UNLOCKED notification in real-time
   useEffect(() => {
     if (!newNotification || !auction) return;
-    
+
     // Check if this is a PAYMENT_UNLOCKED notification for this auction
     if (
-      newNotification.type === 'PAYMENT_UNLOCKED' && 
+      newNotification.type === 'PAYMENT_UNLOCKED' &&
       newNotification.data?.auctionId === auction.id &&
       session?.user?.vendorId &&
       auction.currentBidder === session.user.vendorId
@@ -390,7 +418,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       console.log('   - Auction ID:', newNotification.data.auctionId);
       console.log('   - Payment ID:', newNotification.data.paymentId);
       console.log('   - Pickup Code:', newNotification.data.pickupAuthCode);
-      
+
       // Check if payment page has been visited
       const paymentId = newNotification.data.paymentId;
       if (paymentId) {
@@ -400,11 +428,11 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           return;
         }
       }
-      
+
       // Get asset description
       const assetDetails = auction.case.assetDetails as { make?: string; model?: string; year?: number };
       const assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || auction.case.assetType;
-      
+
       // Show modal immediately
       setPaymentUnlockedData({
         paymentId: newNotification.data.paymentId,
@@ -412,7 +440,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         assetDescription,
         winningBid: parseFloat(auction.currentBid || '0'),
         pickupAuthCode: newNotification.data.pickupAuthCode || 'N/A',
-        pickupLocation: newNotification.data.pickupLocation || 'NEM Insurance Salvage Yard',
+        pickupLocation: newNotification.data.pickupLocation || 'Configured pickup location',
         pickupDeadline: newNotification.data.pickupDeadline || 'TBD',
       });
       setShowPaymentUnlockedModal(true);
@@ -424,11 +452,11 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   useEffect(() => {
     // CRITICAL FIX: Timer should work for BOTH 'active' AND 'extended' statuses
     if (!auction || (auction.status !== 'active' && auction.status !== 'extended')) return;
-    
+
     const endTime = new Date(auction.endTime);
     const now = new Date();
     const timeUntilEnd = endTime.getTime() - now.getTime();
-    
+
     console.log(`⏰ Setting up auction close timer:`, {
       auctionId: auction.id,
       status: auction.status,
@@ -436,7 +464,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       now: now.toISOString(),
       timeUntilEnd: `${Math.round(timeUntilEnd / 1000)}s`,
     });
-    
+
     if (timeUntilEnd <= 0) {
       // Already expired - close immediately
       console.log(`🎯 Auction already expired, closing now`);
@@ -447,7 +475,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         console.log(`⏰ Timer fired! Closing auction ${auction.id}`);
         handleAuctionClose();
       }, timeUntilEnd);
-      
+
       return () => {
         console.log(`🧹 Clearing timer for auction ${auction.id}`);
         clearTimeout(timer);
@@ -457,15 +485,15 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   const handleAuctionClose = async () => {
     if (!auction) return;
-    
+
     try {
       console.log(`🎯 Closing auction ${auction.id}...`);
       toast.info('Closing Auction', 'Auction time has expired');
-      
+
       const response = await fetch(`/api/auctions/${auction.id}/close`, {
         method: 'POST',
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         console.log(`✅ Auction closure initiated:`, data);
@@ -483,7 +511,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
   // Use ref to track if we've already shown notification for this bid
   const lastNotifiedBidRef = useRef<string | null>(null);
-  
+
   // Track previous currentBidder to detect who was outbid
   const previousCurrentBidderRef = useRef<string | null>(null);
 
@@ -492,22 +520,22 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     if (latestBid && auction && latestBid.id !== lastNotifiedBidRef.current) {
       // Mark this bid as notified
       lastNotifiedBidRef.current = latestBid.id;
-      
+
       // Trigger visual animation for new bid
       setShowNewBidAnimation(true);
       setTimeout(() => setShowNewBidAnimation(false), 2000);
-      
+
       // Check if the current user was the previous highest bidder AND someone else just outbid them
       const currentUserVendorId = session?.user?.vendorId;
-      const wasCurrentUserHighestBidder = currentUserVendorId && 
-                                          previousCurrentBidderRef.current === currentUserVendorId && 
+      const wasCurrentUserHighestBidder = currentUserVendorId &&
+                                          previousCurrentBidderRef.current === currentUserVendorId &&
                                           latestBid.vendorId !== currentUserVendorId;
-      
+
       if (wasCurrentUserHighestBidder) {
         // Show outbid notification ONLY to the user who was outbid
         toast.warning(
           'You\'ve been outbid!',
-          `New bid: ₦${Number(latestBid.amount).toLocaleString()}. Place a higher bid to stay in the lead.`
+`New bid: ₦${Number(latestBid.amount).toLocaleString()}. Place a higher bid to stay in the lead.`
         );
       } else if (latestBid.vendorId !== currentUserVendorId) {
         // Show general bid notification to other users (not the bidder themselves)
@@ -516,16 +544,16 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           `Current bid: ₦${Number(latestBid.amount).toLocaleString()}`
         );
       }
-      
+
       // Update previousCurrentBidderRef to the new current bidder for next comparison
       previousCurrentBidderRef.current = auction.currentBidder;
     }
   }, [latestBid?.id, auction?.currentBidder, session?.user?.vendorId, toast]); // Add stable dependencies
-  
+
   // Show extension notification
   const lastExtensionCountRef = useRef<number>(0);
   const lastAuctionStatusRef = useRef<string>('');
-  
+
   useEffect(() => {
     // Hide extension notification if auction is closed or awaiting payment
     if (auction && (auction.status === 'closed' || auction.status === 'awaiting_payment')) {
@@ -538,13 +566,13 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       lastExtensionCountRef.current = auction.extensionCount;
       setShowExtensionNotification(true);
       setTimeout(() => setShowExtensionNotification(false), 5000);
-      
+
       toast.info(
         '⏰ Auction Extended',
         'Auction extended by 2 minutes due to last-minute bid'
       );
     }
-    
+
     if (auction) {
       lastAuctionStatusRef.current = auction.status;
     }
@@ -558,9 +586,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         setIsLoadingDocuments(true);
       }
       console.log(`📄 Fetching documents for auction ${auctionId}, vendor ${vendorId}`);
-      
+
       const response = await fetch(`/api/auctions/${auctionId}/documents`);
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.status === 'success' && data.data.documents) {
@@ -571,15 +599,15 @@ export default function AuctionDetailsPage({ params }: PageProps) {
             status: doc.status,
             signedAt: doc.signedAt ? new Date(doc.signedAt) : null,
           }));
-          
+
           setDocuments(docs);
-          
+
           // Update ref with count of expected documents (bill_of_sale and liability_waiver)
-          const expectedDocs = docs.filter((d: any) => 
+          const expectedDocs = docs.filter((d: any) =>
             d.documentType === 'bill_of_sale' || d.documentType === 'liability_waiver'
           );
           documentCountRef.current = expectedDocs.length;
-          
+
           console.log(`✅ Loaded ${docs.length} documents (${expectedDocs.length} expected)`);
         } else {
           console.log(`⚠️  No documents found in response`);
@@ -621,10 +649,10 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         if (auctionResponse.status === 'fulfilled' && auctionResponse.value.ok) {
           const data = await auctionResponse.value.json();
           setAuction(data.auction);
-          
+
           // Initialize previousCurrentBidderRef with the initial currentBidder
           previousCurrentBidderRef.current = data.auction.currentBidder;
-          
+
           // Handle watching count
           if (watchingResponse.status === 'fulfilled' && watchingResponse.value.ok) {
             const watchingData = await watchingResponse.value.json();
@@ -632,13 +660,13 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               setAuction(prev => prev ? { ...prev, watchingCount: watchingData.watchingCount } : null);
             }
           }
-          
+
           // Handle watch status
           if (watchStatusResponse.status === 'fulfilled' && watchStatusResponse.value.ok) {
             const watchData = await watchStatusResponse.value.json();
             setIsWatching(watchData.isWatching || false);
           }
-          
+
           // Handle vendor profile (to get tier)
           if (vendorProfileResponse.status === 'fulfilled' && vendorProfileResponse.value.ok) {
             const profileData = await vendorProfileResponse.value.json();
@@ -671,19 +699,19 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     // 4. User has a vendor ID
     // 5. User is the winner
     if (
-      auction && 
-      auction.status === 'closed' && 
-      session?.user?.vendorId && 
+      auction &&
+      auction.status === 'closed' &&
+      session?.user?.vendorId &&
       auction.currentBidder === session.user.vendorId
     ) {
       console.log(`🔄 Starting document polling for closed auction ${auction.id}`);
-      
+
       // Store vendorId to avoid type issues in callbacks
       const vendorId = session.user.vendorId;
-      
+
       // Fetch immediately
       fetchDocuments(auction.id, vendorId);
-      
+
       // Poll every 3s until expected documents exist (generation can be async)
       const pollInterval = setInterval(() => {
         if (documentCountRef.current > 0) {
@@ -710,7 +738,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         setPrediction(null);
         return;
       }
-      
+
       try {
         setPredictionLoading(true);
         const response = await fetch(`/api/auctions/${auction.id}/prediction`);
@@ -771,7 +799,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
         if (paymentUnlockedNotification) {
           console.log(`✅ Payment unlocked notification found`);
-          
+
           // Check if payment page has been visited
           const paymentId = paymentUnlockedNotification.data?.paymentId;
           if (paymentId) {
@@ -791,7 +819,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               assetDescription,
               winningBid: parseFloat(auction.currentBid || '0'),
               pickupAuthCode: paymentUnlockedNotification.data?.pickupAuthCode || 'N/A',
-              pickupLocation: paymentUnlockedNotification.data?.pickupLocation || 'NEM Insurance Salvage Yard',
+              pickupLocation: paymentUnlockedNotification.data?.pickupLocation || 'Configured pickup location',
               pickupDeadline: paymentUnlockedNotification.data?.pickupDeadline || 'TBD',
             });
             setShowPaymentUnlockedModal(true);
@@ -816,7 +844,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Update auction with real-time data - CRITICAL FIX for real-time UI updates
   useEffect(() => {
     if (!realtimeAuction) return;
-    
+
     console.log(`📡 Real-time auction update received:`, {
       currentBid: realtimeAuction.currentBid,
       currentBidder: realtimeAuction.currentBidder,
@@ -824,13 +852,13 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       endTime: realtimeAuction.endTime,
       extensionCount: realtimeAuction.extensionCount,
     });
-    
+
     setAuction(prev => {
       if (!prev) {
         console.log(`⚠️  No previous auction state, skipping update`);
         return null;
       }
-      
+
       // Merge realtime updates into existing auction object
       // This ensures we don't lose any fields and always update when Socket.IO sends data
       const updated = {
@@ -841,14 +869,14 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         ...(realtimeAuction.endTime !== undefined && { endTime: realtimeAuction.endTime }),
         ...(realtimeAuction.extensionCount !== undefined && { extensionCount: realtimeAuction.extensionCount }),
       };
-      
+
       console.log(`✅ Auction state updated:`, {
         oldStatus: prev.status,
         newStatus: updated.status,
         oldBid: prev.currentBid,
         newBid: updated.currentBid,
       });
-      
+
       return updated;
     });
   }, [realtimeAuction]); // Depend on the entire object, not individual fields
@@ -868,7 +896,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     if (latestBid) {
       setAuction(prev => {
         if (!prev) return null;
-        
+
         // Check if bid already exists
         const bidExists = prev.bids.some(b => b.id === latestBid.id);
         if (bidExists) return prev;
@@ -890,7 +918,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Handle watch/unwatch - wrapped in useCallback to prevent recreation
   const handleToggleWatch = useCallback(async () => {
     if (isWatchLoading) return;
-    
+
     try {
       setIsWatchLoading(true);
       const response = await fetch(`/api/auctions/${resolvedParams.id}/watch`, {
@@ -900,25 +928,25 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       if (response.ok) {
         const data = await response.json();
         setIsWatching(!isWatching);
-        
+
         // Update watching count immediately for better UX
         if (data.watchingCount !== undefined) {
           setAuction(prev => prev ? { ...prev, watchingCount: data.watchingCount } : null);
         }
-        
+
         // Show success toast
         toast.success(
           isWatching ? 'Stopped watching' : 'Now watching',
-          isWatching 
-            ? 'You will no longer receive updates for this auction' 
+          isWatching
+            ? 'You will no longer receive updates for this auction'
             : 'You will receive real-time updates for this auction'
         );
-        
+
         console.log(`✅ Watch toggled: ${!isWatching ? 'watching' : 'not watching'} auction ${resolvedParams.id}`);
       } else {
         const errorData = await response.json();
         console.error('Watch toggle failed:', errorData.error);
-        
+
         // Show error toast instead of alert
         toast.error(
           'Failed to update watch status',
@@ -927,7 +955,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       }
     } catch (err) {
       console.error('Error toggling watch:', err);
-      
+
       // Show error toast instead of alert
       toast.error(
         'Failed to update watch status',
@@ -941,14 +969,14 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Photo navigation - wrapped in useCallback
   const handlePrevPhoto = useCallback(() => {
     if (!auction) return;
-    setCurrentPhotoIndex(prev => 
+    setCurrentPhotoIndex(prev =>
       prev === 0 ? auction.case.photos.length - 1 : prev - 1
     );
   }, [auction?.case.photos.length]);
 
   const handleNextPhoto = useCallback(() => {
     if (!auction) return;
-    setCurrentPhotoIndex(prev => 
+    setCurrentPhotoIndex(prev =>
       prev === auction.case.photos.length - 1 ? 0 : prev + 1
     );
   }, [auction?.case.photos.length]);
@@ -975,7 +1003,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Prepare bid history chart data - wrapped in useCallback
   const getBidHistoryData = useCallback(() => {
     if (!auction) return [];
-    
+
     return auction.bids.map((bid, index) => ({
       index: index + 1,
       amount: Number(bid.amount),
@@ -1002,7 +1030,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           <p className="text-gray-600 mb-6">{error || 'The auction you are looking for does not exist.'}</p>
           <button
             onClick={() => router.push('/vendor/auctions')}
-            className="px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+            className="px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
           >
             Back to Auctions
           </button>
@@ -1016,12 +1044,12 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Fallback increment (only used if polling data not available yet)
   // The actual increment comes from the polling endpoint which uses the configured value
   const minimumIncrement = 50000; // Default ₦50,000 minimum increment (fallback only)
-  
+
   // Calculate minimum bid: use realtime data if available, otherwise calculate from current bid
-  const minimumBid = latestBid?.minimumBid 
-    ? latestBid.minimumBid 
+  const minimumBid = latestBid?.minimumBid
+    ? latestBid.minimumBid
     : (currentBid ? currentBid + minimumIncrement : reservePrice);
-  
+
   const bidHistoryData = getBidHistoryData();
 
   // DEBUG: Log render-time state values
@@ -1031,12 +1059,12 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     realtimeAuctionHasVerifiedPayment: realtimeAuction?.hasVerifiedPayment,
     currentBidder: auction.currentBidder,
     sessionVendorId: session?.user?.vendorId,
-    shouldShowPaymentVerified: auction.status === 'awaiting_payment' && 
-                                session?.user?.vendorId && 
+    shouldShowPaymentVerified: auction.status === 'awaiting_payment' &&
+                                session?.user?.vendorId &&
                                 auction.currentBidder === session.user.vendorId &&
                                 hasVerifiedPayment,
-    shouldShowPayNow: auction.status === 'awaiting_payment' && 
-                      session?.user?.vendorId && 
+    shouldShowPayNow: auction.status === 'awaiting_payment' &&
+                      session?.user?.vendorId &&
                       auction.currentBidder === session.user.vendorId &&
                       !hasVerifiedPayment,
   });
@@ -1117,7 +1145,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
             </div>
           </div>
         )}
-        
+
         {/* Document Generation Loading State */}
         {isClosing && (
           <div className="bg-blue-50 border-2 border-blue-400 rounded-lg shadow-lg p-6 mb-6">
@@ -1132,10 +1160,10 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 {documentsGenerating && (
                   <>
                     <p className="text-blue-700 mb-3">
-                      Generating your documents: {generatedDocuments.length}/2
+                      Generating your documents: {generatedDocuments.length}/{requiredAuctionDocuments.length}
                     </p>
                     <div className="space-y-2">
-                      {['bill_of_sale', 'liability_waiver'].map(docType => {
+                      {requiredAuctionDocuments.map(docType => {
                         const isGenerated = generatedDocuments.includes(docType);
                         return (
                           <div key={docType} className="flex items-center gap-2">
@@ -1147,7 +1175,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                               <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
                             )}
                             <span className={isGenerated ? 'text-green-700 font-medium' : 'text-blue-700'}>
-                              {docType === 'bill_of_sale' ? 'Bill of Sale' : 'Liability Waiver'}
+                              {getDocumentLabel(docType)}
                             </span>
                           </div>
                         );
@@ -1155,7 +1183,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     </div>
                   </>
                 )}
-                {!documentsGenerating && generatedDocuments.length === 2 && (
+                {!documentsGenerating && generatedDocuments.length === requiredAuctionDocuments.length && (
                   <p className="text-green-700 font-semibold">
                     ✅ All documents ready! Finalizing closure...
                   </p>
@@ -1166,8 +1194,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         )}
 
         {/* Document Signing Section (if won but not all signed) - RESPONSIVE */}
-        {auction.status === 'closed' && 
-         session?.user?.vendorId && 
+        {auction.status === 'closed' &&
+         session?.user?.vendorId &&
          auction.currentBidder === session.user.vendorId && (
           <div className="bg-white border-2 border-yellow-400 rounded-lg shadow-lg p-4 sm:p-6 mb-6" id={`auction-${auction.id}-documents`}>
             <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
@@ -1183,7 +1211,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                   </h3>
                   <a
                     href={`/vendor/documents#auction-${auction.id}`}
-                    className="text-xs sm:text-sm text-[#800020] hover:text-[#600018] font-medium flex items-center gap-1 self-start"
+                    className="text-xs sm:text-sm text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)] font-medium flex items-center gap-1 self-start"
                   >
                     <span className="whitespace-nowrap">View All Documents</span>
                     <svg className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1191,15 +1219,15 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     </svg>
                   </a>
                 </div>
-                
+
                 {/* Show loading state while documents are being fetched */}
                 {isLoadingDocuments && documents.length === 0 && (
                   <div className="flex items-center gap-3 py-4">
-                    <div className="animate-spin rounded-full h-5 w-5 sm:h-6 sm:w-6 border-b-2 border-[#800020]"></div>
+                    <div className="animate-spin rounded-full h-5 w-5 sm:h-6 sm:w-6 border-b-2 border-[var(--brand-primary)]"></div>
                     <p className="text-sm sm:text-base text-gray-600">Loading your documents...</p>
                   </div>
                 )}
-                
+
                 {/* Show message if no documents found with refresh button */}
                 {!isLoadingDocuments && documents.length === 0 && (
                   <div className="py-4">
@@ -1212,7 +1240,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                           fetchDocuments(auction.id, session.user.vendorId);
                         }
                       }}
-                      className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors flex items-center gap-2 text-sm sm:text-base"
+                      className="px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors flex items-center gap-2 text-sm sm:text-base"
                     >
                       <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -1221,26 +1249,26 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     </button>
                   </div>
                 )}
-                
+
                 {/* Show documents if available */}
                 {documents.length > 0 && (
                   <>
                     <p className="text-xs sm:text-sm text-gray-700 mb-4">
-                      Before payment can be processed, you must sign all required documents. 
+                      Before payment can be processed, you must sign all required documents.
                       Progress: <strong>{documents.filter(d => d.status === 'signed' && d.documentType !== 'pickup_authorization').length}/{documents.filter(d => d.documentType !== 'pickup_authorization').length} documents signed</strong>
                     </p>
-                
+
                 {/* RESPONSIVE: Document Cards - Stack on mobile, 2 cols on tablet, 3 cols on desktop */}
                 {/* Filter out pending pickup_authorization - it's generated AFTER payment, never shown as pending */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
                   {documents
                     .filter(doc => !(doc.documentType === 'pickup_authorization' && doc.status === 'pending'))
                     .map((doc) => (
-                    <div 
+                    <div
                       key={doc.id}
                       className={`flex flex-col p-3 sm:p-4 rounded-lg border-2 transition-all ${
-                        doc.status === 'signed' 
-                          ? 'bg-green-50 border-green-300 shadow-sm' 
+                        doc.status === 'signed'
+                          ? 'bg-green-50 border-green-300 shadow-sm'
                           : 'bg-yellow-50 border-yellow-300 shadow-md hover:shadow-lg'
                       }`}
                     >
@@ -1269,7 +1297,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                           )}
                         </div>
                       </div>
-                      
+
                       {/* Card Action Button */}
                       <div className="mt-auto">
                         {doc.status === 'pending' && (
@@ -1287,9 +1315,10 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                           <button
                             onClick={async () => {
                               try {
+                                setDownloadingDocumentId(doc.id);
                                 const response = await fetch(`/api/documents/${doc.id}/download`);
                                 if (!response.ok) throw new Error('Download failed');
-                                
+
                                 const blob = await response.blob();
                                 const url = window.URL.createObjectURL(blob);
                                 const a = document.createElement('a');
@@ -1299,19 +1328,31 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                                 a.click();
                                 window.URL.revokeObjectURL(url);
                                 document.body.removeChild(a);
-                                
+
                                 toast.success('Download Started', 'Your document is downloading');
                               } catch (error) {
                                 console.error('Download error:', error);
                                 toast.error('Download Failed', 'Please try again');
+                              } finally {
+                                setDownloadingDocumentId(null);
                               }
                             }}
+                            disabled={downloadingDocumentId === doc.id}
                             className="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md font-medium transition-colors flex items-center justify-center gap-2 text-xs sm:text-sm"
                           >
-                            <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            Download
+                            {downloadingDocumentId === doc.id ? (
+                              <>
+                                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                                Downloading
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Download
+                              </>
+                            )}
                           </button>
                         )}
                       </div>
@@ -1326,7 +1367,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     <span>{Math.round((documents.filter(d => d.status === 'signed').length / documents.length) * 100)}%</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-3">
-                    <div 
+                    <div
                       className="bg-green-600 h-3 rounded-full transition-all duration-500"
                       style={{ width: `${(documents.filter(d => d.status === 'signed').length / documents.length) * 100}%` }}
                     />
@@ -1341,8 +1382,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         )}
 
         {/* Payment Verified Banner (show when payment is verified) - RESPONSIVE */}
-        {auction.status === 'awaiting_payment' && 
-         session?.user?.vendorId && 
+        {auction.status === 'awaiting_payment' &&
+         session?.user?.vendorId &&
          auction.currentBidder === session.user.vendorId &&
          hasVerifiedPayment && (
           <div className="bg-gradient-to-r from-green-500 to-emerald-600 border-2 border-green-700 rounded-lg shadow-lg p-4 sm:p-6 mb-6">
@@ -1378,13 +1419,13 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         )}
 
         {/* Payment Method Selection Section (after documents signed) - RESPONSIVE */}
-        {auction.status === 'awaiting_payment' && 
-         session?.user?.vendorId && 
+        {auction.status === 'awaiting_payment' &&
+         session?.user?.vendorId &&
          auction.currentBidder === session.user.vendorId &&
          !hasVerifiedPayment && (
           <div className="mb-6" id={`auction-${auction.id}-payment`}>
             {/* Prominent Pay Now Banner */}
-            <div className="bg-gradient-to-r from-[#800020] to-[#600018] border-2 border-[#800020] rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+            <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] border-2 border-[var(--brand-primary)] rounded-lg shadow-lg p-4 sm:p-6 mb-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
                   <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-full flex items-center justify-center">
@@ -1411,8 +1452,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </a>
-                  
-                  {/* Show Verify Payment button if payment pending for > 2 minutes */}
+
+                  {/* Show Retry button if payment is still pending after the guard window */}
                   {showVerifyButton && (
                     <button
                       onClick={handleVerifyPayment}
@@ -1432,15 +1473,15 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                           <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <span className="whitespace-nowrap">Verify Payment</span>
+                          <span className="whitespace-nowrap">Retry</span>
                         </>
                       )}
                     </button>
                   )}
-                  
+
                   <button
                     onClick={() => setShowPaymentModal(true)}
-                    className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-[#800020] font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-md flex items-center justify-center gap-2 text-sm sm:text-base"
+                    className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-[var(--brand-primary)] font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-md flex items-center justify-center gap-2 text-sm sm:text-base"
                   >
                     <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -1466,7 +1507,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
             }}
           />
         )}
-        
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Photos and Details */}
           <div className="lg:col-span-2 space-y-6">
@@ -1523,7 +1564,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                       onClick={() => setCurrentPhotoIndex(index)}
                       className={`relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
                         index === currentPhotoIndex
-                          ? 'border-[#800020] ring-2 ring-[#800020]/30'
+                          ? 'border-[var(--brand-primary)] ring-2 ring-[var(--brand-focus-ring)]'
                           : 'border-gray-300 hover:border-gray-400'
                       }`}
                     >
@@ -1543,7 +1584,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
             {/* Asset Details */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">{getAssetName()}</h2>
-              
+
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Asset Type</p>
@@ -1618,7 +1659,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 showTitle={true}
                 assetType={auction.case.assetType}
               />
-              
+
               {/* Fallback: Damage Labels (for Vision API or old data) */}
               {(!auction.case.aiAssessment.damagedParts || auction.case.aiAssessment.damagedParts.length === 0) && (
                 <div>
@@ -1641,9 +1682,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
             {/* GPS Location */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h3 className="text-xl font-bold text-gray-900 mb-4">Location</h3>
-              
+
               <div className="flex items-start gap-3 mb-4">
-                <svg className="w-6 h-6 text-[#800020] flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-6 h-6 text-[var(--brand-primary)] flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
@@ -1714,7 +1755,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                           href={`https://www.google.com/maps?q=${auction.case.gpsLocation.y},${auction.case.gpsLocation.x}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[#800020] hover:underline font-medium"
+                          className="text-[var(--brand-primary)] hover:underline font-medium"
                         >
                           View on Google Maps
                         </a>
@@ -1723,7 +1764,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                           href={`https://www.google.com/maps/search/${encodeURIComponent(auction.case.locationName)}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[#800020] hover:underline font-medium"
+                          className="text-[var(--brand-primary)] hover:underline font-medium"
                         >
                           Search on Google Maps
                         </a>
@@ -1755,31 +1796,31 @@ export default function AuctionDetailsPage({ params }: PageProps) {
             {bidHistoryData.length > 0 && (
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h3 className="text-xl font-bold text-gray-900 mb-4">Bid History</h3>
-                
+
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={bidHistoryData}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="time" 
+                      <XAxis
+                        dataKey="time"
                         tick={{ fontSize: 12 }}
                         label={{ value: 'Time', position: 'insideBottom', offset: -5 }}
                       />
-                      <YAxis 
+                      <YAxis
                         tick={{ fontSize: 12 }}
                         label={{ value: 'Bid Amount (₦)', angle: -90, position: 'insideLeft' }}
                         tickFormatter={(value) => `₦${(value / 1000).toFixed(0)}k`}
                       />
-                      <Tooltip 
+                      <Tooltip
                         formatter={(value: number | undefined) => value !== undefined ? [`₦${value.toLocaleString()}`, 'Bid Amount'] : ['N/A', 'Bid Amount']}
                         labelFormatter={(label) => `Time: ${label}`}
                       />
-                      <Line 
-                        type="monotone" 
-                        dataKey="amount" 
-                        stroke="#800020" 
+                      <Line
+                        type="monotone"
+                        dataKey="amount"
+                        stroke="var(--brand-primary)"
                         strokeWidth={2}
-                        dot={{ fill: '#800020', r: 4 }}
+                        dot={{ fill: 'var(--brand-primary)', r: 4 }}
                         activeDot={{ r: 6 }}
                       />
                     </LineChart>
@@ -1867,14 +1908,14 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     {currentBid ? 'Current Bid' : 'Starting Bid (Reserve Price)'}
                   </p>
                   <div className={`transition-all duration-500 ${showNewBidAnimation ? 'scale-110 bg-yellow-100 rounded-lg p-2' : ''}`}>
-                    <p className="text-3xl font-bold text-[#800020] mb-4">
+                    <p className="text-3xl font-bold text-[var(--brand-primary)] mb-4">
                       ₦{(currentBid || reservePrice).toLocaleString()}
                     </p>
                   </div>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-[var(--brand-primary)] font-semibold">
                     Minimum Bid: ₦{minimumBid.toLocaleString()}
                   </p>
-                  
+
                   {/* Show vendor's own current bid if they have one */}
                   {session?.user?.vendorId && auction.bids.length > 0 && (() => {
                     const vendorBids = auction.bids.filter(b => b.vendorId === session.user.vendorId);
@@ -1905,7 +1946,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     }
                     return null;
                   })()}
-                  
+
                   {showNewBidAnimation && (
                     <div className="mt-2 flex items-center justify-center gap-2 text-green-600 animate-bounce">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1935,7 +1976,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     </span>
                   )}
                 </div>
-                
+
                 {/* Real-time Updates Indicator - Only show for active/extended auctions */}
                 {(auction.status === 'active' || auction.status === 'extended') && !usingPolling && (
                   <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 px-3 py-2 rounded-lg">
@@ -1951,21 +1992,21 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 {(auction.status === 'active' || auction.status === 'extended') && (
                   <button
                     onClick={() => setShowBidForm(true)}
-                    className="w-full bg-[#FFD700] text-[#800020] py-4 rounded-lg font-bold text-lg hover:bg-[#FFC700] transition-colors shadow-md hover:shadow-lg"
+                    className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] py-4 rounded-lg font-bold text-lg hover:bg-[var(--brand-accent-hover)] transition-colors shadow-md hover:shadow-lg"
                   >
                     Place Bid
                   </button>
                 )}
 
-                {auction.status === 'closed' && 
+                {auction.status === 'closed' &&
                  !(session?.user?.vendorId && auction.currentBidder === session.user.vendorId) && (
                   <div className="bg-gray-100 text-gray-600 py-4 rounded-lg font-bold text-lg text-center">
                     Auction Closed
                   </div>
                 )}
 
-                {auction.status === 'awaiting_payment' && 
-                 session?.user?.vendorId && 
+                {auction.status === 'awaiting_payment' &&
+                 session?.user?.vendorId &&
                  auction.currentBidder === session.user.vendorId && (
                   <a
                     href={`/vendor/documents#auction-${auction.id}`}
@@ -1998,8 +2039,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                     disabled={isWatchLoading}
                     className={`w-full py-3 rounded-lg font-semibold transition-colors border-2 group ${
                       isWatching
-                        ? 'bg-[#800020] text-white border-[#800020] hover:bg-[#600018]'
-                        : 'bg-white text-[#800020] border-[#800020] hover:bg-gray-50'
+                        ? 'bg-[var(--brand-primary)] text-white border-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)]'
+                        : 'bg-white text-[var(--brand-primary)] border-[var(--brand-primary)] hover:bg-gray-50'
                     } ${isWatchLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {isWatchLoading ? (
@@ -2044,7 +2085,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                   <strong>Note:</strong> Bids placed in the last 5 minutes will extend the auction by 2 minutes.
                 </p>
                 <p className="mb-2">
-                  Payment must be completed within 24 hours of winning the auction.
+                  Payment must be completed within {paymentDeadlineHours} hours after signing the required documents.
                 </p>
                 <p>
                   <strong>Watching:</strong> Get real-time notifications for new bids, auction extensions, and when the auction ends.
@@ -2091,12 +2132,12 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           onSigned={async () => {
             setShowDocumentModal(false);
             setSelectedDocumentType(null);
-            
+
             // Refresh documents
             if (session?.user?.vendorId) {
               await fetchDocuments(auction.id, session.user.vendorId);
             }
-            
+
             // CRITICAL FIX: Refresh auction data to get updated status (awaiting_payment)
             try {
               const response = await fetch(`/api/auctions/${auction.id}`);
@@ -2108,7 +2149,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
             } catch (error) {
               console.error('Failed to refresh auction data:', error);
             }
-            
+
             toast.success(
               'Document Signed Successfully',
               'Your signature has been recorded'
@@ -2121,7 +2162,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       {paystackReturnStatus !== 'idle' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="bg-gradient-to-r from-[#800020] to-[#600018] px-6 py-5 text-white">
+            <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] px-6 py-5 text-white">
               <div className="flex items-center gap-3">
               {paystackReturnStatus === 'verifying' ? (
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
@@ -2170,7 +2211,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               {paystackReturnStatus !== 'verifying' && (
                 <button
                   onClick={() => setPaystackReturnStatus('idle')}
-                  className="flex-1 rounded-lg bg-[#800020] px-4 py-3 font-semibold text-white transition-colors hover:bg-[#600018]"
+                  className="flex-1 rounded-lg bg-[var(--brand-primary)] px-4 py-3 font-semibold text-white transition-colors hover:bg-[var(--brand-primary-hover)]"
                 >
                   Continue
                 </button>
@@ -2179,9 +2220,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                 <button
                   onClick={handleVerifyPayment}
                   disabled={isVerifyingPayment}
-                  className="flex-1 rounded-lg border-2 border-[#800020] px-4 py-3 font-semibold text-[#800020] transition-colors hover:bg-[#800020] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex-1 rounded-lg border-2 border-[var(--brand-primary)] px-4 py-3 font-semibold text-[var(--brand-primary)] transition-colors hover:bg-[var(--brand-primary)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isVerifyingPayment ? 'Checking...' : 'Retry Check'}
+                  {isVerifyingPayment ? 'Checking...' : 'Retry'}
                 </button>
               )}
             </div>

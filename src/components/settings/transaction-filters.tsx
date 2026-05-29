@@ -109,7 +109,7 @@ export default function TransactionFilters({
                 dateRange: { ...localFilters.dateRange, startDate: e.target.value },
               })
             }
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
           />
         </div>
 
@@ -127,7 +127,7 @@ export default function TransactionFilters({
                 dateRange: { ...localFilters.dateRange, endDate: e.target.value },
               })
             }
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
           />
         </div>
       </div>
@@ -146,7 +146,7 @@ export default function TransactionFilters({
               status: e.target.value || undefined,
             })
           }
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
         >
           <option value="">All Statuses</option>
           {statusOptions[transactionType].map((status) => (
@@ -161,7 +161,7 @@ export default function TransactionFilters({
       <div className="flex gap-3">
         <button
           onClick={handleApply}
-          className="flex-1 px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors"
+          className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
         >
           Apply Filters
         </button>

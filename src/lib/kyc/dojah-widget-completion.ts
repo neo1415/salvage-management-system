@@ -61,19 +61,17 @@ export function isDojahWidgetFinalSuccess(response?: DojahWidgetCallbackResponse
     statusText.includes('complete') ||
     statusText.includes('success') ||
     statusText.includes('passed') ||
-    statusText.includes('approved') ||
-    statusText.includes('pending') ||
-    statusText.includes('review') ||
-    statusText.includes('submitted')
+    statusText.includes('approved')
   ) {
     return true;
   }
 
   const messageText = (response.message ?? '').toLowerCase();
   if (
-    messageText.includes('review') ||
-    messageText.includes('submitted') ||
-    messageText.includes('received')
+    messageText.includes('complete') ||
+    messageText.includes('success') ||
+    messageText.includes('passed') ||
+    messageText.includes('approved')
   ) {
     return true;
   }

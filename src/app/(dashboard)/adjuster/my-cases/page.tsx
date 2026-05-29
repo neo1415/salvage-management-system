@@ -601,7 +601,7 @@ export default function AdjusterMyCasesPage() {
           
           <Link
             href="/adjuster/cases/new"
-            className="px-6 py-3 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors font-medium"
+            className="px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors font-medium"
           >
             Create New Case
           </Link>
@@ -618,7 +618,7 @@ export default function AdjusterMyCasesPage() {
               placeholder="Search by claim reference, asset type, or location..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
         </div>
@@ -642,7 +642,7 @@ export default function AdjusterMyCasesPage() {
                 onClick={() => setStatusFilter(tab.key as StatusFilter)}
                 className={`px-6 py-4 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   statusFilter === tab.key
-                    ? 'border-[#800020] text-[#800020]'
+                    ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                     : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
                 }`}
               >
@@ -673,7 +673,7 @@ export default function AdjusterMyCasesPage() {
                 </p>
                 <Link
                   href="/adjuster/cases/new"
-                  className="inline-flex items-center px-6 py-3 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors font-medium"
+                  className="inline-flex items-center px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors font-medium"
                 >
                   Create New Case
                 </Link>
@@ -703,7 +703,7 @@ export default function AdjusterMyCasesPage() {
               {statusFilter === 'all' && !searchQuery && (
                 <Link
                   href="/adjuster/cases/new"
-                  className="inline-flex items-center px-6 py-3 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors font-medium"
+                  className="inline-flex items-center px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors font-medium"
                 >
                   Create Your First Case
                 </Link>
@@ -809,7 +809,7 @@ function DraftCard({ draft, onDelete }: DraftCardProps) {
             <Banknote className="w-4 h-4 text-gray-400 flex-shrink-0" />
             <div className="min-w-0">
               <p className="text-xs text-gray-500">Value</p>
-              <p className="font-medium text-[#800020]">
+              <p className="font-medium text-[var(--brand-primary)]">
                 {formatCompactCurrency(draft.marketValue.toString())}
               </p>
             </div>
@@ -840,7 +840,7 @@ function DraftCard({ draft, onDelete }: DraftCardProps) {
       <div className="flex gap-2 pt-3 border-t border-gray-100">
         <button
           onClick={handleResume}
-          className="flex-1 px-4 py-2 bg-[#800020] text-white text-sm font-medium rounded-lg hover:bg-[#600018] transition-colors"
+          className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white text-sm font-medium rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
         >
           Resume Editing
         </button>
@@ -939,7 +939,7 @@ function CaseCard({
             <Banknote className="w-4 h-4 text-gray-400 flex-shrink-0" aria-hidden="true" />
             <div className="min-w-0">
               <p className="text-xs text-gray-500">Value</p>
-              <p className="font-medium text-[#800020]">
+              <p className="font-medium text-[var(--brand-primary)]">
                 {formatCompactCurrency(caseItem.estimatedValue)}
               </p>
             </div>

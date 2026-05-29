@@ -291,8 +291,8 @@ export default function VendorLeaderboardPage() {
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        <Target className="w-4 h-4 text-[#800020]" />
-                        <p className="text-lg font-bold text-[#800020]">
+                        <Target className="w-4 h-4 text-[var(--brand-primary)]" />
+                        <p className="text-lg font-bold text-[var(--brand-primary)]">
                           {(entry.winRate || 0).toFixed(1)}%
                         </p>
                       </div>
@@ -378,8 +378,8 @@ export default function VendorLeaderboardPage() {
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-1">Win Rate</p>
                   <div className="flex items-center gap-1">
-                    <Target className="w-4 h-4 text-[#800020]" />
-                    <p className="text-xl font-bold text-[#800020]">
+                    <Target className="w-4 h-4 text-[var(--brand-primary)]" />
+                    <p className="text-xl font-bold text-[var(--brand-primary)]">
                       {(entry.winRate || 0).toFixed(1)}%
                     </p>
                   </div>
@@ -423,7 +423,7 @@ export default function VendorLeaderboardPage() {
             </p>
             <button
               onClick={() => router.push('/vendor/auctions')}
-              className="px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+              className="px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
             >
               Browse Auctions
             </button>

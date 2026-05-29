@@ -3,13 +3,14 @@
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { useRef } from 'react';
 import { UserPlus, Search, Gavel, CreditCard, Package } from 'lucide-react';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 
 const steps = [
   {
     number: 1,
     icon: UserPlus,
     title: 'Register & Verify',
-    description: 'Sign up in minutes and complete business verification for unlimited bidding.',
+    description: 'Sign up in minutes and complete the configured verification steps for auction access.',
     image: '📝',
   },
   {
@@ -30,7 +31,7 @@ const steps = [
     number: 4,
     icon: CreditCard,
     title: 'Pay Instantly',
-    description: 'Win an auction? Pay securely within 24 hours. Funds held in escrow until pickup confirmation.',
+    description: 'Win an auction? Complete payment within the configured deadline after signing the required documents.',
     image: '💳',
   },
   {
@@ -44,6 +45,34 @@ const steps = [
 
 export function HowItWorksSection() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { policy } = usePublicBusinessPolicy();
+  const paymentDeadlineHours = policy?.payments.paymentDeadlineAfterSigningHours ?? 72;
+  const tier1BidLimit = policy?.onboarding.tier1BidLimit ?? 500000;
+  const tier1LimitText = new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(tier1BidLimit);
+  const policyAwareSteps = steps.map((step) => {
+    if (step.number === 1) {
+      return {
+        ...step,
+        description: policy?.onboarding.requireTier2ForUnlimitedBidding
+          ? `Sign up and complete verification. Tier 1 access supports bidding up to ${tier1LimitText}; full verification unlocks higher limits.`
+          : 'Sign up and complete the configured verification steps for auction access.',
+      };
+    }
+
+    if (step.number === 4) {
+      return {
+        ...step,
+        title: 'Pay Securely',
+        description: `Win an auction? Complete payment within ${paymentDeadlineHours} hours after signing the required documents.`,
+      };
+    }
+
+    return step;
+  });
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ['start end', 'end start'],
@@ -65,7 +94,7 @@ export function HowItWorksSection() {
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
         >
-          <h2 className="text-4xl md:text-6xl font-black mb-4 bg-gradient-to-r from-burgundy-900 via-burgundy-700 to-gold-600 bg-clip-text text-transparent">
+          <h2 className="text-4xl md:text-6xl font-black mb-4 bg-gradient-to-r from-[var(--brand-primary)] via-[var(--brand-primary-hover)] to-[var(--brand-accent)] bg-clip-text text-transparent">
             How It Works
           </h2>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
@@ -77,14 +106,14 @@ export function HowItWorksSection() {
           {/* Progress line */}
           <div className="absolute left-8 md:left-1/2 top-0 bottom-0 w-1 bg-gray-200 hidden md:block">
             <motion.div
-              className="w-full bg-gradient-to-b from-burgundy-600 to-gold-500"
+              className="w-full bg-gradient-to-b from-[var(--brand-primary)] to-[var(--brand-accent)]"
               style={{ height: progressHeight }}
             />
           </div>
 
           {/* Steps */}
           <div className="space-y-16">
-            {steps.map((step, index) => {
+            {policyAwareSteps.map((step, index) => {
               const Icon = step.icon;
               const isEven = index % 2 === 0;
 
@@ -108,13 +137,13 @@ export function HowItWorksSection() {
                     >
                       <div className={`flex items-center gap-4 mb-4 ${isEven ? 'md:justify-end' : 'md:justify-start'}`}>
                         <motion.div
-                          className="w-12 h-12 rounded-xl bg-gradient-to-r from-burgundy-600 to-burgundy-800 flex items-center justify-center"
+                          className="w-12 h-12 rounded-xl bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center"
                           whileHover={{ rotate: 360 }}
                           transition={{ duration: 0.6 }}
                         >
                           <Icon className="w-6 h-6 text-white" />
                         </motion.div>
-                        <h3 className="text-2xl font-bold text-burgundy-900">{step.title}</h3>
+                        <h3 className="text-2xl font-bold text-[var(--brand-primary)]">{step.title}</h3>
                       </div>
                       <p className="text-gray-600 leading-relaxed">{step.description}</p>
                     </motion.div>
@@ -129,7 +158,7 @@ export function HowItWorksSection() {
                     transition={{ delay: index * 0.1 + 0.3, type: 'spring', stiffness: 200 }}
                   >
                     <motion.div
-                      className="w-20 h-20 rounded-full bg-gradient-to-br from-burgundy-600 to-burgundy-800 flex items-center justify-center shadow-xl border-4 border-white"
+                      className="w-20 h-20 rounded-full bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center shadow-xl border-4 border-white"
                       whileHover={{ scale: 1.1, rotate: 5 }}
                       transition={{ type: 'spring', stiffness: 400 }}
                     >
@@ -138,7 +167,7 @@ export function HowItWorksSection() {
 
                     {/* Pulse effect */}
                     <motion.div
-                      className="absolute inset-0 rounded-full bg-burgundy-600"
+                      className="absolute inset-0 rounded-full bg-[var(--brand-primary)]"
                       animate={{
                         scale: [1, 1.3, 1],
                         opacity: [0.5, 0, 0.5],
@@ -182,7 +211,7 @@ export function HowItWorksSection() {
             Ready to start your salvage journey?
           </p>
           <motion.button
-            className="px-10 py-4 bg-gradient-to-r from-gold-500 to-gold-600 text-burgundy-900 font-bold rounded-lg shadow-xl text-lg"
+            className="px-10 py-4 bg-gradient-to-r from-[var(--brand-accent)] to-[var(--brand-accent)] text-[var(--brand-primary)] font-bold rounded-lg shadow-xl text-lg"
             whileHover={{ scale: 1.05, boxShadow: '0 20px 40px rgba(255, 215, 0, 0.4)' }}
             whileTap={{ scale: 0.95 }}
           >

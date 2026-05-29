@@ -103,7 +103,7 @@ export function DocumentSigningProgress({ progress, documents }: DocumentSigning
         <div className="w-full bg-gray-200 rounded-full h-3" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${signedDocuments} of ${totalDocuments} documents signed`}>
           <div
             className={`h-3 rounded-full transition-all duration-500 ${
-              allSigned ? 'bg-green-500' : 'bg-burgundy-900'
+              allSigned ? 'bg-green-500' : 'bg-[var(--brand-primary)]'
             }`}
             style={{ width: `${pct}%` }}
             data-testid="progress-bar"

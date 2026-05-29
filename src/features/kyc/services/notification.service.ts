@@ -1,5 +1,6 @@
 import { SMSService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
 import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 import { appPath } from '@/features/notifications/templates/email-urls';
 import { createKYCUpdateNotification } from '@/features/notifications/services/notification.service';
@@ -43,10 +44,11 @@ export class KYCNotificationService {
 
   /** Vendor submitted Tier 2 application */
   async sendKYCSubmissionConfirmation(vendor: VendorNotificationTarget): Promise<void> {
+    const branding = await getEmailBranding();
     await Promise.allSettled([
       this.sendSMSWithRetry(
         vendor.phone,
-        `Hi ${vendor.fullName}, your Tier 2 KYC application has been received. We'll review it within 24-48 hours and notify you of the outcome.`
+        `Hi ${vendor.fullName}, your verification application has been received. Our team will review it and notify you of the outcome.`
       ),
       this.sendEmailNotification(
         vendor.email,
@@ -54,22 +56,22 @@ export class KYCNotificationService {
         `
           <h2>KYC Application Received</h2>
           <p>Hi ${vendor.fullName},</p>
-          <p>Your Tier 2 KYC application has been successfully received and is now under review.</p>
+          <p>Your verification application has been successfully received and is now under review.</p>
           <p><strong>What happens next:</strong></p>
           <ul>
-            <li>Our team will review your documents within 24-48 hours</li>
+            <li>Our team will review your submitted documents and checks</li>
             <li>You'll receive an SMS and email notification once the review is complete</li>
-            <li>If approved, you'll gain unlimited bidding access immediately</li>
+            <li>If approved, your account access will follow the active verification rules</li>
           </ul>
           <p>Thank you for your patience!</p>
-          <p>Best regards,<br>NEM Insurance Salvage Team</p>
+          <p>Best regards,<br>${brandTeamName(branding)}</p>
         `
       ),
       createKYCUpdateNotification(
         vendor.userId,
         'tier2',
         'pending',
-        'Your Tier 2 KYC application has been received and is under review.'
+        'Your verification application has been received and is under review.'
       ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
@@ -78,22 +80,23 @@ export class KYCNotificationService {
 
   /** Vendor auto-approved (Low AML risk, all scores pass) */
   async sendKYCApprovalNotification(vendor: VendorNotificationTarget): Promise<KYCEmailResult> {
+    const branding = await getEmailBranding();
     const email = await this.sendEmailWithResult(
       vendor.email,
       'Your Tier 2 verification has been approved',
-      tier2ApprovalEmail(vendor.fullName)
+      tier2ApprovalEmail(vendor.fullName, branding)
     );
 
     await Promise.allSettled([
       this.sendSMSWithRetry(
         vendor.phone,
-        `Congratulations ${vendor.fullName}! Your Tier 2 KYC has been approved. You can now bid on unlimited high-value auctions. Login to your dashboard to get started.`
+        `Congratulations ${vendor.fullName}! Your full verification has been approved. Sign in to your dashboard to continue.`
       ),
       createKYCUpdateNotification(
         vendor.userId,
         'tier2',
         'approved',
-        'Congratulations! Your Tier 2 KYC has been approved. You now have unlimited bidding access.'
+        'Congratulations! Your full verification has been approved. Your access has been updated.'
       ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
@@ -104,10 +107,11 @@ export class KYCNotificationService {
 
   /** Vendor flagged for manual review */
   async sendKYCUnderReviewNotification(vendor: VendorNotificationTarget): Promise<void> {
+    const branding = await getEmailBranding();
     await Promise.allSettled([
       this.sendSMSWithRetry(
         vendor.phone,
-        `Hi ${vendor.fullName}, your Tier 2 KYC application is under review. Our team will complete the review within 24-48 hours. You'll be notified of the outcome.`
+        `Hi ${vendor.fullName}, your verification application is under review. You'll be notified of the outcome.`
       ),
       this.sendEmailNotification(
         vendor.email,
@@ -115,22 +119,22 @@ export class KYCNotificationService {
         `
           <h2>KYC Application Under Review</h2>
           <p>Hi ${vendor.fullName},</p>
-          <p>Your Tier 2 KYC application is currently under review by our team.</p>
-          <p><strong>Review Timeline:</strong></p>
+          <p>Your verification application is currently under review by our team.</p>
+          <p><strong>What happens next:</strong></p>
           <ul>
-            <li>Our team will complete the review within 24-48 hours</li>
+            <li>Our team will review the submitted checks and documents</li>
             <li>You'll receive an SMS and email notification once the review is complete</li>
             <li>If you have any questions, please contact our support team</li>
           </ul>
           <p>Thank you for your patience!</p>
-          <p>Best regards,<br>NEM Insurance Salvage Team</p>
+          <p>Best regards,<br>${brandTeamName(branding)}</p>
         `
       ),
       createKYCUpdateNotification(
         vendor.userId,
         'tier2',
         'pending',
-        'Your Tier 2 KYC application is under review by our team. You will be notified within 24-48 hours.'
+        'Your verification application is under review by our team. You will be notified once it is complete.'
       ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
@@ -158,13 +162,13 @@ export class KYCNotificationService {
     await Promise.allSettled([
       this.sendSMSWithRetry(
         vendor.phone,
-        `Hi ${vendor.fullName}, your Tier 2 KYC application needs correction. Reason: ${safeSmsReason}. Please sign in to resubmit.`
+        `Hi ${vendor.fullName}, your verification application needs correction. Reason: ${safeSmsReason}. Please sign in to resubmit.`
       ),
       createKYCUpdateNotification(
         vendor.userId,
         'tier2',
         'rejected',
-        `Your Tier 2 KYC application needs correction. Please review the requested sections and resubmit.`
+        `Your verification application needs correction. Please review the requested sections and resubmit.`
       ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
@@ -179,11 +183,12 @@ export class KYCNotificationService {
     vendor: VendorNotificationTarget,
     riskLevel: AMLRiskLevel
   ): Promise<void> {
+    const branding = await getEmailBranding();
     await Promise.allSettled(
       managers.map((m) =>
         this.sendSMSWithRetry(
           m.phone,
-          `[NEM Salvage Alert] Tier 2 KYC application from ${vendor.fullName} flagged with ${riskLevel} AML risk. Please review in the manager dashboard.`
+          `[${branding.brandName} Alert] Tier 2 KYC application from ${vendor.fullName} flagged with ${riskLevel} AML risk. Please review in the manager dashboard.`
         )
       )
     );
@@ -206,10 +211,11 @@ export class KYCNotificationService {
       .from(users)
       .where(eq(users.role, 'salvage_manager'));
 
+    const branding = await getEmailBranding();
     const subject = input.outcome === 'auto_approved'
-      ? 'Tier 2 KYC Auto-Approved - NEM Salvage'
-      : 'Tier 2 KYC Ready for Review - NEM Salvage';
-    const html = tier2ManagerSubmissionEmail(input);
+      ? `Tier 2 KYC Auto-Approved - ${branding.brandName}`
+      : `Tier 2 KYC Ready for Review - ${branding.brandName}`;
+    const html = tier2ManagerSubmissionEmail(input, branding);
 
     await Promise.allSettled(
       managers
@@ -226,13 +232,13 @@ export class KYCNotificationService {
     await Promise.allSettled([
       this.sendSMSWithRetry(
         vendor.phone,
-        `Hi ${vendor.fullName}, your Tier 2 KYC verification expires in ${daysUntilExpiry} days. Please renew to maintain unlimited bidding access.`
+        `Hi ${vendor.fullName}, your verification expires in ${daysUntilExpiry} days. Please renew to maintain your approved access.`
       ),
       createKYCUpdateNotification(
         vendor.userId,
         'tier2',
         'pending',
-        `Your Tier 2 KYC verification expires in ${daysUntilExpiry} days. Please renew to maintain unlimited bidding access.`
+        `Your verification expires in ${daysUntilExpiry} days. Please renew to maintain your approved access.`
       ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
@@ -244,13 +250,13 @@ export class KYCNotificationService {
     await Promise.allSettled([
       this.sendSMSWithRetry(
         vendor.phone,
-        `Hi ${vendor.fullName}, your Tier 2 KYC verification has expired. You have been downgraded to Tier 1. Please re-verify to restore unlimited bidding access.`
+        `Hi ${vendor.fullName}, your verification has expired. Your account access has been adjusted. Please re-verify to restore full access.`
       ),
       createKYCUpdateNotification(
         vendor.userId,
         'tier2',
         'rejected',
-        'Your Tier 2 KYC verification has expired. You have been downgraded to Tier 1. Please re-verify to restore unlimited bidding access.'
+        'Your verification has expired. Your account access has been adjusted. Please re-verify to restore full access.'
       ).catch((e) =>
         console.error('[KYCNotification] in-app notification failed', e)
       ),
@@ -282,7 +288,7 @@ export class KYCNotificationService {
       const result = await emailService.sendEmail({
         to: email,
         subject,
-        html: wrapProfessionalEmail(subject, html),
+        html: await wrapProfessionalEmail(subject, html),
       });
       
       if (!result.success) {
@@ -298,7 +304,7 @@ export class KYCNotificationService {
       return await emailService.sendEmail({
         to: email,
         subject,
-        html: wrapProfessionalEmail(subject, html),
+        html: await wrapProfessionalEmail(subject, html),
       });
     } catch (e) {
       return {
@@ -319,15 +325,15 @@ function escapeHtml(text: string): string {
   }[char] ?? char));
 }
 
-function tier2ApprovalEmail(fullName: string): string {
+function tier2ApprovalEmail(fullName: string, branding: Awaited<ReturnType<typeof getEmailBranding>>): string {
   return `
     <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-      <h2 style="color: #800020;">Tier 2 Verification Approved</h2>
+      <h2 style="color: ${branding.primaryColor};">Tier 2 Verification Approved</h2>
       <p>Hi ${escapeHtml(fullName)},</p>
-      <p>Your Tier 2 verification has been approved by NEM Salvage.</p>
+      <p>Your Tier 2 verification has been approved by ${escapeHtml(branding.brandName)}.</p>
       <p>You now have Tier 2 access, including the bidding privileges available to verified Tier 2 vendors.</p>
       <p>No sensitive identity, document, or provider data is included in this email for your security.</p>
-      <p>Best regards,<br>NEM Salvage Team</p>
+      <p>Best regards,<br>${brandTeamName(branding)}</p>
     </div>
   `;
 }
@@ -339,7 +345,7 @@ function tier2RejectionEmail(fullName: string, reason: string, rejectedSections:
 
   return `
     <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-      <h2 style="color: #800020;">Action Required on Your Tier 2 Verification</h2>
+      <h2>Action Required on Your Tier 2 Verification</h2>
       <p>Hi ${escapeHtml(fullName)},</p>
       <p>Your Tier 2 verification could not be approved based on the submitted information.</p>
       <p><strong>Manager reason:</strong> ${escapeHtml(reason)}</p>
@@ -348,7 +354,7 @@ function tier2RejectionEmail(fullName: string, reason: string, rejectedSections:
       <p>Please sign in and return to your Tier 2 verification page to correct the requested items and resubmit:</p>
       <p><a href="${appPath('/vendor/kyc/tier2')}">Open Tier 2 verification</a></p>
       <p>For your security, this email does not include BVN, NIN, raw document links, raw provider payloads, or sensitive fraud/AML details.</p>
-      <p>Best regards,<br>NEM Salvage Team</p>
+      <p>Best regards,<br>Support Team</p>
     </div>
   `;
 }
@@ -360,7 +366,7 @@ function tier2ManagerSubmissionEmail(input: {
   reviewUrl: string;
   outcome: 'pending_review' | 'auto_approved';
   reason?: string;
-}): string {
+}, branding: Awaited<ReturnType<typeof getEmailBranding>>): string {
   const heading = input.outcome === 'auto_approved'
     ? 'Tier 2 Verification Auto-Approved'
     : 'Tier 2 Verification Ready for Review';
@@ -370,7 +376,7 @@ function tier2ManagerSubmissionEmail(input: {
 
   return `
     <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-      <h2 style="color: #800020;">${heading}</h2>
+      <h2 style="color: ${branding.primaryColor};">${heading}</h2>
       <p>Hi {{managerName}},</p>
       <p>${summary}</p>
       <ul>
@@ -379,8 +385,8 @@ function tier2ManagerSubmissionEmail(input: {
         <li><strong>Risk level:</strong> ${escapeHtml(input.riskLevel || 'Low')}</li>
         ${input.reason ? `<li><strong>Reason:</strong> ${escapeHtml(input.reason)}</li>` : ''}
       </ul>
-      <p><a href="${escapeHtml(input.reviewUrl)}" style="background-color:#800020;color:#ffffff;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block;">Open KYC Review</a></p>
-      <p>Best regards,<br>NEM Salvage Team</p>
+      <p><a href="${escapeHtml(input.reviewUrl)}" style="background-color:${branding.primaryColor};color:#ffffff;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block;">Open KYC Review</a></p>
+      <p>Best regards,<br>${brandTeamName(branding)}</p>
     </div>
   `;
 }

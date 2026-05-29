@@ -4,6 +4,8 @@
  */
 
 import { getAppUrl } from './email-urls';
+import { businessPolicyService } from '@/features/business-policy';
+import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
 
 export interface BaseTemplateProps {
   title: string;
@@ -12,9 +14,24 @@ export interface BaseTemplateProps {
 }
 
 export function getBaseEmailTemplate(props: BaseTemplateProps): string {
+  return renderBaseEmailTemplate(props, DEFAULT_BUSINESS_POLICY.branding);
+}
+
+export async function getPolicyAwareBaseEmailTemplate(props: BaseTemplateProps): Promise<string> {
+  const policy = await businessPolicyService.getPublicPolicy();
+  return renderBaseEmailTemplate(props, policy.branding);
+}
+
+function renderBaseEmailTemplate(
+  props: BaseTemplateProps,
+  branding: typeof DEFAULT_BUSINESS_POLICY.branding
+): string {
   const { title, preheader, content } = props;
   const appUrl = getAppUrl();
-  const logoUrl = `${appUrl}/icons/icon-192.png`;
+  const logoPath = branding.logoPath || DEFAULT_BUSINESS_POLICY.branding.logoPath;
+  const logoUrl = /^https?:\/\//i.test(logoPath) ? logoPath : `${appUrl}${logoPath}`;
+  const primaryColor = branding.primaryColor;
+  const accentColor = branding.accentColor;
   
   return `
     <!DOCTYPE html>
@@ -67,7 +84,7 @@ export function getBaseEmailTemplate(props: BaseTemplateProps): string {
             background-color: #ffffff;
           }
           .header {
-            background: linear-gradient(135deg, #800020 0%, #a00028 100%);
+            background: ${primaryColor};
             padding: 30px 20px;
             text-align: center;
           }
@@ -100,13 +117,13 @@ export function getBaseEmailTemplate(props: BaseTemplateProps): string {
             line-height: 1.6;
           }
           .content strong {
-            color: #800020;
+            color: ${primaryColor};
           }
           .button {
             display: inline-block;
             padding: 16px 32px;
-            background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%);
-            color: #800020 !important;
+            background: ${accentColor};
+            color: ${primaryColor} !important;
             text-decoration: none;
             border-radius: 8px;
             font-weight: 700;
@@ -128,7 +145,7 @@ export function getBaseEmailTemplate(props: BaseTemplateProps): string {
             background-color: #f9f9f9;
             padding: 30px 20px;
             text-align: center;
-            border-top: 3px solid #FFD700;
+            border-top: 3px solid ${accentColor};
           }
           .footer-logo {
             max-width: 120px;
@@ -141,7 +158,7 @@ export function getBaseEmailTemplate(props: BaseTemplateProps): string {
             margin: 8px 0;
           }
           .footer-link {
-            color: #800020;
+            color: ${primaryColor};
             text-decoration: none;
             font-weight: 600;
           }
@@ -154,7 +171,7 @@ export function getBaseEmailTemplate(props: BaseTemplateProps): string {
           .social-link {
             display: inline-block;
             margin: 0 8px;
-            color: #800020;
+            color: ${primaryColor};
             text-decoration: none;
             font-size: 14px;
           }
@@ -191,7 +208,7 @@ export function getBaseEmailTemplate(props: BaseTemplateProps): string {
                 <tr>
                   <td class="header">
                     <div class="logo-container">
-                      <img src="${logoUrl}" alt="NEM Insurance" class="logo" />
+                      <img src="${logoUrl}" alt="${branding.brandName}" class="logo" />
                     </div>
                     <h1 class="header-title">${title}</h1>
                   </td>
@@ -207,20 +224,19 @@ export function getBaseEmailTemplate(props: BaseTemplateProps): string {
                 <!-- Footer -->
                 <tr>
                   <td class="footer">
-                    <img src="${logoUrl}" alt="NEM Insurance" class="footer-logo" />
-                    <p class="footer-text"><strong>NEM Insurance Plc</strong></p>
-                    <p class="footer-text">199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
+                    <img src="${logoUrl}" alt="${branding.brandName}" class="footer-logo" />
+                    <p class="footer-text"><strong>${branding.legalName}</strong></p>
                     <p class="footer-text">
-                      Phone: <a href="tel:+2340201448956" class="footer-link">234-02-014489560</a> |
-                      Email: <a href="mailto:nemsupport@nem-insurance.com" class="footer-link">nemsupport@nem-insurance.com</a>
+                      ${branding.supportPhone ? `Phone: <a href="tel:${branding.supportPhone}" class="footer-link">${branding.supportPhone}</a> |` : ''}
+                      Email: <a href="mailto:${branding.supportEmail}" class="footer-link">${branding.supportEmail}</a>
                     </p>
                     <div class="divider"></div>
                     <p class="footer-text" style="font-size: 12px; color: #999999;">
-                      This is an automated email from NEM Insurance Salvage Management System.<br>
+                      This is an automated email from ${branding.brandName}.<br>
                       Please do not reply to this message.
                     </p>
                     <p class="footer-text" style="font-size: 11px; color: #999999; margin-top: 15px;">
-                      © ${new Date().getFullYear()} NEM Insurance Plc. All rights reserved.
+                      &copy; ${new Date().getFullYear()} ${branding.legalName}. All rights reserved.
                     </p>
                   </td>
                 </tr>

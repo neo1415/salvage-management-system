@@ -143,7 +143,7 @@ export function ReportFiltersComponent({
         <Filter className="mr-2 h-4 w-4" />
         {showFilters ? 'Hide' : 'Show'} Advanced Filters
         {hasActiveFilters && (
-          <span className="ml-2 bg-[#800020] text-white text-xs px-2 py-0.5 rounded-full">
+          <span className="ml-2 bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)] text-xs px-2 py-0.5 rounded-full">
             {(filters.assetTypes?.length || 0) + (filters.regions?.length || 0) + (filters.status?.length || 0)}
           </span>
         )}
@@ -165,7 +165,7 @@ export function ReportFiltersComponent({
                     onClick={() => toggleArrayFilter('assetTypes', type)}
                     className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       filters.assetTypes?.includes(type)
-                        ? 'bg-[#800020] text-white'
+                        ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)]'
                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
                     }`}
                   >
@@ -189,7 +189,7 @@ export function ReportFiltersComponent({
                     onClick={() => toggleArrayFilter('regions', region)}
                     className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       filters.regions?.includes(region)
-                        ? 'bg-[#800020] text-white'
+                        ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)]'
                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
                     }`}
                   >
@@ -213,7 +213,7 @@ export function ReportFiltersComponent({
                     onClick={() => toggleArrayFilter('status', status)}
                     className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       filters.status?.includes(status)
-                        ? 'bg-[#800020] text-white'
+                        ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)]'
                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
                     }`}
                   >
@@ -237,7 +237,7 @@ export function ReportFiltersComponent({
                     onClick={() => onFiltersChange({ ...filters, groupBy: option.value })}
                     className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       filters.groupBy === option.value
-                        ? 'bg-[#800020] text-white'
+                        ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)]'
                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
                     }`}
                   >
@@ -250,7 +250,7 @@ export function ReportFiltersComponent({
 
           {/* Filter Actions */}
           <div className="flex gap-2 pt-2">
-            <Button onClick={onApply} className="flex-1 bg-[#800020] hover:bg-[#600018]">
+            <Button onClick={onApply} className="flex-1 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)]">
               Apply Filters
             </Button>
             <Button onClick={onReset} variant="outline" className="flex-1">

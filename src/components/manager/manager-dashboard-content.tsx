@@ -96,8 +96,8 @@ interface DashboardData {
 
 // Colors for charts
 const COLORS = {
-  primary: '#800020', // Burgundy
-  secondary: '#FFD700', // Gold
+  primary: 'var(--brand-primary)',
+  secondary: 'var(--brand-accent)',
   success: '#10B981',
   warning: '#F59E0B',
   danger: '#EF4444',
@@ -259,7 +259,7 @@ function ManagerDashboardContentInner() {
           <p className="text-gray-600 mb-6">{error}</p>
           <button
             onClick={() => router.push('/login')}
-            className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+            className="px-6 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
           >
             Go to Login
           </button>
@@ -312,7 +312,7 @@ function ManagerDashboardContentInner() {
                 id="dateRange"
                 value={dateRange}
                 onChange={(e) => handleDateRangeChange(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               >
                 <option value="7">Last 7 days</option>
                 <option value="30">Last 30 days</option>
@@ -330,7 +330,7 @@ function ManagerDashboardContentInner() {
                 id="assetType"
                 value={assetType}
                 onChange={(e) => handleAssetTypeChange(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               >
                 <option value="">All Types</option>
                 <option value="vehicle">Vehicle</option>
@@ -346,7 +346,7 @@ function ManagerDashboardContentInner() {
                   void fetchDashboardData();
                 }}
                 disabled={isLoadingData || isRefreshing}
-                className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-6 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <svg 
                   className={`w-5 h-5 ${isLoadingData || isRefreshing ? 'animate-spin' : ''}`} 
@@ -587,7 +587,7 @@ function ManagerDashboardContentInner() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button
               onClick={() => router.push('/manager/approvals')}
-              className="px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors flex items-center justify-center gap-2"
+              className="px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors flex items-center justify-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />

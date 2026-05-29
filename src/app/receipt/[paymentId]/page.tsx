@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 
 interface PaymentDetails {
   id: string;
@@ -48,6 +49,7 @@ interface PaymentDetails {
 export default function PublicReceiptPage() {
   const params = useParams();
   const router = useRouter();
+  const { branding } = usePublicBranding();
   const [payment, setPayment] = useState<PaymentDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +92,7 @@ export default function PublicReceiptPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy-900 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--brand-primary)] mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading payment receipt...</p>
         </div>
       </div>
@@ -107,7 +109,7 @@ export default function PublicReceiptPage() {
             <p className="text-gray-600 mb-4">{error}</p>
             <button
               onClick={() => router.push('/login')}
-              className="px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800"
+              className="px-4 py-2 bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)] rounded-lg hover:bg-[var(--brand-primary-hover)]"
             >
               Sign In to View Receipt
             </button>
@@ -157,7 +159,7 @@ export default function PublicReceiptPage() {
         <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-md p-6">
           <div className="text-center mb-6">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Receipt</h1>
-            <p className="text-gray-600">NEM Insurance Salvage Management System</p>
+            <p className="text-gray-600">{branding.brandName} Salvage Management System</p>
           </div>
           <div className={`rounded-lg p-4 mb-6 ${getStatusColor(payment.status)}`}>
             <p className="text-center font-semibold text-lg">{getStatusText(payment.status)}</p>
@@ -229,7 +231,7 @@ export default function PublicReceiptPage() {
           {/* Header */}
           <div className="mb-6 text-center">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Receipt</h1>
-            <p className="text-gray-600">NEM Insurance Salvage Management System</p>
+            <p className="text-gray-600">{branding.brandName} Salvage Management System</p>
           </div>
 
           {/* Payment Status Banner */}
@@ -406,7 +408,7 @@ export default function PublicReceiptPage() {
 
             {payment.nem && (
               <div className="mt-6 pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">NEM Details</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">{branding.brandName} Details</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-gray-600">Company</p>
@@ -432,7 +434,7 @@ export default function PublicReceiptPage() {
             <div className="mt-6 pt-6 border-t border-gray-200 no-print">
               <button
                 onClick={() => window.print()}
-                className="w-full bg-burgundy-900 text-white py-3 px-6 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)] py-3 px-6 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors flex items-center justify-center gap-2"
               >
                 <span>📄</span>
                 Print/Download Receipt
@@ -445,8 +447,8 @@ export default function PublicReceiptPage() {
 
           {/* Footer */}
           <div className="text-center text-gray-600 text-sm mt-8">
-            <p>© {new Date().getFullYear()} NEM Insurance Plc. All rights reserved.</p>
-            <p className="mt-2">For inquiries, contact: support@nemsalvage.com</p>
+            <p>© {new Date().getFullYear()} {branding.legalName || branding.brandName}. All rights reserved.</p>
+            <p className="mt-2">For inquiries, contact: {branding.supportEmail}</p>
           </div>
         </div>
       </div>

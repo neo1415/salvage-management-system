@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { auth } from '@/lib/auth/next-auth.config';
+import { businessPolicyService, isBusinessPolicyEnforcementEnabled } from '@/features/business-policy';
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const MAX_TRANSCRIPT_LENGTH = 10_000;
 
 /**
  * POST /api/voice-notes/cleanup
@@ -15,11 +18,31 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    if (!policy.cases.voiceNotesEnabled && isBusinessPolicyEnforcementEnabled()) {
+      return NextResponse.json(
+        { error: 'Voice notes are disabled for this deployment.' },
+        { status: 403 }
+      );
+    }
+
     const { text } = await request.json();
 
     if (!text || typeof text !== 'string') {
       return NextResponse.json(
         { error: 'Text is required' },
+        { status: 400 }
+      );
+    }
+
+    if (text.length > MAX_TRANSCRIPT_LENGTH) {
+      return NextResponse.json(
+        { error: `Text must be ${MAX_TRANSCRIPT_LENGTH.toLocaleString()} characters or fewer` },
         { status: 400 }
       );
     }

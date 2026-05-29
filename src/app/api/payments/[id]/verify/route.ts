@@ -13,6 +13,8 @@ import { Ratelimit } from '@upstash/ratelimit';
 import { redis } from '@/lib/redis/client';
 import DOMPurify from 'isomorphic-dompurify';
 import { formatAssetName } from '@/lib/utils/asset-name';
+import { brandLegalName, brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
+import { businessPolicyService } from '@/features/business-policy';
 
 // SECURITY: Rate limiting for payment verification endpoint
 // Prevents notification spam and abuse
@@ -291,6 +293,7 @@ export async function POST(
       const { generateDocument } = await import('@/features/documents/services/document.service');
       const { notifyPickupAuthReady } = await import('@/features/notifications/services/notification.service');
       const { documentReadyTemplate } = await import('@/features/notifications/templates/document-ready.template');
+      const branding = await getEmailBranding();
       
       try {
         const pickupAuthDocument = await generateDocument(
@@ -306,8 +309,8 @@ export async function POST(
         // Send email with pickup authorization
         await emailService.sendEmail({
           to: vendorUser.email,
-          subject: 'Pickup Authorization Ready - NEM Insurance',
-          html: documentReadyTemplate({
+          subject: `Pickup Authorization Ready - ${branding.brandName}`,
+          html: await documentReadyTemplate({
             vendorName: vendorUser.fullName,
             documentType: 'Pickup Authorization',
             documentTitle: 'Vehicle Pickup Authorization',
@@ -393,7 +396,9 @@ export async function POST(
         paymentReference: payment.paymentReference || payment.id,
         pickupAuthCode: pickupAuthCode,
         pickupLocation: caseDetails.locationName,
-        pickupDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
+        pickupDeadline: new Date(
+          Date.now() + (await businessPolicyService.getEffectivePolicy()).auctions.documentValidityHours * 60 * 60 * 1000
+        ).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
         appUrl: (await import('@/features/notifications/templates/email-urls')).getAppUrl(),
       });
 
@@ -444,7 +449,8 @@ export async function POST(
         .returning();
 
       // Send SMS notification
-      const smsMessage = `Payment rejected. Reason: ${comment}. Please resubmit correct payment proof or contact support at ${process.env.SUPPORT_PHONE || '234-02-014489560'}.`;
+      const branding = await getEmailBranding();
+      const smsMessage = `Payment rejected. Reason: ${comment}. Please resubmit correct payment proof or contact support at ${getSupportPhone(branding)}.`;
       
       await smsService.sendSMS({
         to: vendorUser.phone,
@@ -507,13 +513,13 @@ export async function POST(
 
 /**
  * Generate pickup authorization code
- * Format: NEM-XXXX-XXXX (e.g., NEM-A7B2-C9D4)
+ * Format: AUTH-XXXX-XXXX
  */
 function generatePickupAuthorizationCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude similar-looking characters
   const part1 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
   const part2 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  return `NEM-${part1}-${part2}`;
+  return `AUTH-${part1}-${part2}`;
 }
 
 /**
@@ -552,6 +558,7 @@ async function sendRejectionEmail(
     );
 
     const { appPath } = await import('@/features/notifications/templates/email-urls');
+    const branding = await getEmailBranding();
     const resubmitUrl = appPath(`/vendor/payments/${payment.id}`);
     
     const emailSubject = 'Payment Verification Failed - Action Required';
@@ -602,7 +609,7 @@ async function sendRejectionEmail(
             .payment-details h3 {
               margin: 0 0 10px 0;
               font-size: 16px;
-              color: #800020;
+              color: ${branding.primaryColor};
             }
             .payment-details ul {
               list-style: none;
@@ -630,8 +637,8 @@ async function sendRejectionEmail(
             .button {
               display: inline-block;
               padding: 14px 28px;
-              background-color: #FFD700;
-              color: #800020;
+              background-color: ${branding.primaryColor};
+              color: #ffffff;
               text-decoration: none;
               border-radius: 6px;
               font-weight: 600;
@@ -639,7 +646,7 @@ async function sendRejectionEmail(
               text-align: center;
             }
             .button:hover {
-              background-color: #FFC700;
+              background-color: ${branding.primaryColor};
             }
             .button-container {
               text-align: center;
@@ -677,7 +684,6 @@ async function sendRejectionEmail(
               <div class="payment-details">
                 <h3>Payment Details</h3>
                 <ul>
-                  <li><strong>Payment ID:</strong> ${payment.id}</li>
                   <li><strong>Amount:</strong> ₦${parseFloat(payment.amount).toLocaleString()}</li>
                   <li><strong>Item:</strong> ${assetName}</li>
                   <li><strong>Claim Reference:</strong> ${caseDetails.claimReference}</li>
@@ -692,16 +698,15 @@ async function sendRejectionEmail(
               
               <p style="margin-top: 30px;">If you believe this is an error or need assistance, please contact our support team:</p>
               <ul>
-                <li>Phone: ${process.env.SUPPORT_PHONE || '234-02-014489560'}</li>
-                <li>Email: ${process.env.SUPPORT_EMAIL || 'nemsupport@nem-insurance.com'}</li>
+                <li>Phone: ${getSupportPhone(branding)}</li>
+                <li>Email: ${getSupportEmail(branding)}</li>
               </ul>
               
-              <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Finance Team</strong></p>
+              <p style="margin-top: 30px;">Best regards,<br><strong>${brandTeamName(branding)}</strong></p>
             </div>
             
             <div class="footer">
-              <p><strong>NEM Insurance Plc</strong></p>
-              <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
+              <p><strong>${brandLegalName(branding)}</strong></p>
               <p style="margin-top: 15px;">This is an automated notification. Please do not reply to this message.</p>
             </div>
           </div>

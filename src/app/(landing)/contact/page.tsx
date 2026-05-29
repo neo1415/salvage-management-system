@@ -1,9 +1,14 @@
 import { ContactSection } from '@/components/landing/contact-section';
+import { businessPolicyService } from '@/features/business-policy';
 
-export const metadata = {
-  title: 'Contact | NEM Salvage',
-  description: 'Contact NEM Salvage support',
-};
+export async function generateMetadata() {
+  const policy = await businessPolicyService.getPublicPolicy();
+
+  return {
+    title: `Contact | ${policy.branding.brandName}`,
+    description: `Contact ${policy.branding.brandName} support`,
+  };
+}
 
 export default function ContactPage() {
   return <ContactSection />;

@@ -283,7 +283,7 @@ export function AnalyticsDashboardContent() {
                 variant="outline"
                 size="sm"
                 disabled={exporting}
-                className="bg-[#800020] text-white hover:bg-[#600018]"
+                className="bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary-hover)]"
               >
                 <Download className="mr-2 h-4 w-4" />
                 {exporting ? 'Exporting...' : 'Export All'}

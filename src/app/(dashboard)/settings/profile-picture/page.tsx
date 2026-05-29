@@ -206,7 +206,7 @@ export default function ProfilePicturePage() {
                 <button
                   onClick={handleUpload}
                   disabled={isUploading}
-                  className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   <Upload className="w-4 h-4" />
                   {isUploading ? 'Uploading...' : (currentProfilePicture ? 'Replace Picture' : 'Upload Picture')}
@@ -231,7 +231,7 @@ export default function ProfilePicturePage() {
                   onChange={handleFileSelect}
                   className="hidden"
                 />
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-[#800020] transition-colors">
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-[var(--brand-primary)] transition-colors">
                   <Camera className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                   <p className="text-sm text-gray-600 mb-1">
                     Click to select an image

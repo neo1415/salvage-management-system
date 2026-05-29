@@ -37,6 +37,8 @@ export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: Bi
     const width = rect.width;
     const height = rect.height;
     const padding = 40;
+    const styles = getComputedStyle(document.documentElement);
+    const brandPrimary = styles.getPropertyValue('--brand-primary').trim() || '#800020';
 
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
@@ -106,7 +108,7 @@ export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: Bi
 
     // Draw bid line
     if (sortedBids.length > 1) {
-      ctx.strokeStyle = '#800020';
+      ctx.strokeStyle = brandPrimary;
       ctx.lineWidth = 3;
       ctx.beginPath();
       
@@ -130,7 +132,7 @@ export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: Bi
       const y = getY(parseFloat(bid.amount));
       
       // Point circle
-      ctx.fillStyle = '#800020';
+      ctx.fillStyle = brandPrimary;
       ctx.beginPath();
       ctx.arc(x, y, 4, 0, 2 * Math.PI);
       ctx.fill();
@@ -178,7 +180,7 @@ export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: Bi
         <h4 className="font-semibold text-gray-900">Bid Progression</h4>
         <div className="flex items-center gap-4 text-sm">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-[#800020] rounded-full"></div>
+            <div className="w-3 h-3 bg-[var(--brand-primary)] rounded-full"></div>
             <span className="text-gray-600">Bids</span>
           </div>
           {reservePrice && (
@@ -203,7 +205,7 @@ export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: Bi
         </div>
         <div className="text-center">
           <div className="text-gray-500">Highest Bid</div>
-          <div className="font-bold text-lg text-[#800020]">
+          <div className="font-bold text-lg text-[var(--brand-primary)]">
             ₦{Math.max(...bidHistory.map(b => parseFloat(b.amount))).toLocaleString()}
           </div>
         </div>

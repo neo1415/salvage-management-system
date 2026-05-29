@@ -16,6 +16,14 @@ import { db } from '@/lib/db/drizzle';
 import { vendors, auctionWinners, auctions, releaseForms } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveAuctionPaymentMethodAccess,
+} from '@/features/business-policy';
+import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 
 /**
  * POST /api/auctions/[id]/payment/paystack
@@ -45,6 +53,39 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: 'Vendor profile not found' },
         { status: 404 }
+      );
+    }
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const paymentMethodDecision = resolveAuctionPaymentMethodAccess(policy, 'paystack');
+    const ipAddress = getIpAddress(request.headers);
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+
+    await logPolicyDecision({
+      userId: session.user.id,
+      entityType: AuditEntityType.PAYMENT,
+      entityId: auctionId,
+      ipAddress,
+      userAgent,
+      deviceType: getDeviceTypeFromUserAgent(userAgent),
+      decision: paymentMethodDecision.decision,
+      context: {
+        source: 'api/auctions/[id]/payment/paystack',
+        runtimeMode: getBusinessPolicyRuntimeMode(),
+        vendorId: vendor.id,
+      },
+    }).catch((error) => {
+      console.warn('[BusinessPolicy] Failed to audit Paystack payment method decision', {
+        auctionId,
+        vendorId: vendor.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+
+    if (!paymentMethodDecision.allowed && isBusinessPolicyEnforcementEnabled()) {
+      return NextResponse.json(
+        { success: false, error: 'Paystack payment is not enabled for this deployment.' },
+        { status: 403 }
       );
     }
 

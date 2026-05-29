@@ -39,5 +39,5 @@ export function formatAssetName(
     if (label) return label;
   }
 
-  return 'Salvage Item';
+  return 'Auction item';
 }

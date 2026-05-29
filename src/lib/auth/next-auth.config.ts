@@ -16,13 +16,19 @@ import {
 } from '@/lib/utils/phone';
 import { kv } from '@vercel/kv';
 import { redis } from '@/lib/redis/client';
-import { isPersonalEmail, getPersonalEmailErrorMessage } from '@/lib/utils/email-validation';
+import { isPersonalEmail } from '@/lib/utils/email-validation';
 import {
   isMfaRequiredForUser,
   sendLoginMfaCode,
   verifyLoginMfaCode,
 } from '@/lib/auth/mfa';
 import { AuditActionType } from '@/lib/utils/audit-logger';
+import {
+  businessPolicyService,
+  isBusinessPolicyEnforcementEnabled,
+  resolveAuthProviderAccess,
+  resolveEmailDomainAccess,
+} from '@/features/business-policy';
 
 // SECURITY: Validate E2E testing mode is not enabled in production
 if (process.env.NODE_ENV === 'production' && process.env.E2E_TESTING === 'true') {
@@ -168,6 +174,12 @@ export const authConfig: NextAuthConfig = {
         const ipAddress = (credentials.ipAddress as string) || 'unknown';
         const userAgent = (credentials.userAgent as string) || '';
         const deviceType = getDeviceType(userAgent);
+
+        const policy = await businessPolicyService.getEffectivePolicy();
+        const credentialsDecision = resolveAuthProviderAccess(policy, 'credentials');
+        if (!credentialsDecision.allowed && isBusinessPolicyEnforcementEnabled()) {
+          throw new Error('Email/password login is disabled for this deployment.');
+        }
 
         // Check account lockout
         const lockoutStatus = await checkAccountLockout(emailOrPhone);
@@ -403,10 +415,21 @@ export const authConfig: NextAuthConfig = {
           return false;
         }
 
+        const policy = await businessPolicyService.getEffectivePolicy();
+        const providerDecision = resolveAuthProviderAccess(
+          policy,
+          account.provider === 'google' ? 'google' : 'facebook'
+        );
+
+        if (!providerDecision.allowed && isBusinessPolicyEnforcementEnabled()) {
+          return `/auth/error?error=ProviderDisabled`;
+        }
+
         // Check if user exists
         // Validate business email for OAuth sign-ins
         // Reject personal email providers (Gmail, Yahoo, Hotmail, etc.)
-        if (isPersonalEmail(email)) {
+        const emailDecision = resolveEmailDomainAccess(policy, email);
+        if (isBusinessPolicyEnforcementEnabled() ? !emailDecision.allowed : isPersonalEmail(email)) {
           console.log(`❌ OAuth sign-in rejected: Personal email not allowed - ${email}`);
           // Redirect to error page with specific message
           return `/auth/error?error=BusinessEmailRequired&email=${encodeURIComponent(email)}`;

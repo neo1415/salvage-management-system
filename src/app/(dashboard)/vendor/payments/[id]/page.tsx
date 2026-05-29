@@ -331,7 +331,7 @@ export default function PaymentPage() {
             <p className="text-gray-600 mb-4">{error}</p>
             <button
               onClick={() => router.back()}
-              className="px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800"
+              className="px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)]"
             >
               Go Back
             </button>
@@ -435,7 +435,7 @@ export default function PaymentPage() {
           <div className="mb-6 no-print">
             <button
               onClick={() => router.back()}
-              className="text-burgundy-900 hover:text-burgundy-700 flex items-center gap-2 mb-4"
+              className="text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)] flex items-center gap-2 mb-4"
             >
               ← Back
             </button>
@@ -711,7 +711,7 @@ export default function PaymentPage() {
 
           {payment.nem && (
             <div className="mt-6 pt-6 border-t border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">NEM Details</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Company Details</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-600">Company</p>
@@ -737,7 +737,7 @@ export default function PaymentPage() {
           <div className="mt-6 pt-6 border-t border-gray-200">
             <button
               onClick={() => window.print()}
-              className="w-full bg-burgundy-900 text-white py-3 px-6 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-[var(--brand-primary)] text-white py-3 px-6 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors flex items-center justify-center gap-2"
             >
               <span>📄</span>
               Print/Download Receipt
@@ -778,7 +778,7 @@ export default function PaymentPage() {
                 <div className="mb-6">
                   <button
                     onClick={handlePayWithPaystack}
-                    className="w-full bg-burgundy-900 text-white py-4 px-6 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors flex items-center justify-center gap-2"
+                    className="w-full bg-[var(--brand-primary)] text-white py-4 px-6 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors flex items-center justify-center gap-2"
                   >
                     <span>💳</span>
                     Pay Now with Paystack
@@ -813,7 +813,7 @@ export default function PaymentPage() {
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Account Name</p>
-                        <p className="font-semibold text-gray-900">NEM Insurance Plc - Salvage</p>
+                        <p className="font-semibold text-gray-900">{payment.nem?.name || 'Configured company account'}</p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Reference</p>
@@ -826,12 +826,12 @@ export default function PaymentPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Upload Payment Proof (Receipt/Screenshot)
                     </label>
-                    <input type="file" accept="image/jpeg,image/jpg,image/png,application/pdf" onChange={handleProofUpload} disabled={uploadingProof} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-burgundy-50 file:text-burgundy-900 hover:file:bg-burgundy-100 disabled:opacity-50 disabled:cursor-not-allowed" />
+                    <input type="file" accept="image/jpeg,image/jpg,image/png,application/pdf" onChange={handleProofUpload} disabled={uploadingProof} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[color-mix(in_srgb,var(--brand-primary)_8%,white)] file:text-[var(--brand-primary)] hover:file:bg-[color-mix(in_srgb,var(--brand-primary)_14%,white)] disabled:opacity-50 disabled:cursor-not-allowed" />
                     <p className="text-xs text-gray-500 mt-1">
                       JPG, PNG, or PDF • Max 5MB • Verification within 4 hours
                     </p>
                     {uploadingProof && (
-                      <p className="text-sm text-burgundy-900 mt-2">Uploading...</p>
+                      <p className="text-sm text-[var(--brand-primary)] mt-2">Uploading...</p>
                     )}
                   </div>
                 </div>
@@ -854,7 +854,7 @@ export default function PaymentPage() {
               href={payment.paymentProofUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-burgundy-900 hover:text-burgundy-700 underline"
+              className="text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)] underline"
             >
               View uploaded proof →
             </a>

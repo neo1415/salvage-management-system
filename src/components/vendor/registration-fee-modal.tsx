@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Loader2, CheckCircle2, Crown, Shield, Trophy, Headphones, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 
 interface RegistrationFeeModalProps {
   onClose: () => void;
@@ -10,6 +11,7 @@ interface RegistrationFeeModalProps {
 }
 
 export function RegistrationFeeModal({ onClose, showCloseButton = true }: RegistrationFeeModalProps) {
+  const { policy } = usePublicBusinessPolicy();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -83,7 +85,7 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
         <div style={{ pointerEvents: 'auto' }} onClick={(e) => e.stopPropagation()}>
           <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden">
             {/* Header */}
-            <div className="bg-gradient-to-r from-[#800020] to-[#FFD700] p-6 text-white relative">
+            <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] p-6 text-white relative">
               {showCloseButton && (
                 <button
                   onClick={onClose}
@@ -126,7 +128,7 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
               </div>
 
               {/* Amount Display */}
-              <div className="bg-gradient-to-br from-[#800020] to-[#600018] rounded-xl p-6 text-white mb-6 text-center">
+              <div className="bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-xl p-6 text-white mb-6 text-center">
                 <p className="text-sm opacity-90 mb-1">One-Time Registration Fee</p>
                 <p className="text-4xl font-bold mb-1">
                   {loadingFee ? (
@@ -137,7 +139,7 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
                     `₦${feeAmount.toLocaleString()}`
                   )}
                 </p>
-                <p className="text-xs opacity-75">Secure payment via Paystack</p>
+                <p className="text-xs opacity-75">Secure registration payment</p>
               </div>
 
               {/* Benefits */}
@@ -149,11 +151,14 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
                 <ul className="space-y-2">
                   <li className="flex items-start gap-2 text-sm text-blue-800">
                     <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                    <span><strong>Access Tier 2 KYC</strong> - Complete full verification</span>
+                    <span><strong>Access full verification</strong> - Complete the required business checks</span>
                   </li>
                   <li className="flex items-start gap-2 text-sm text-blue-800">
                     <Trophy className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                    <span><strong>Unlimited Bidding</strong> - No restrictions on high-value items</span>
+                    <span>
+                      <strong>{policy?.onboarding.requireTier2ForUnlimitedBidding ? 'Higher bidding access' : 'Configured auction access'}</strong>
+                      {' '} - Access rules follow the active verification policy
+                    </span>
                   </li>
                   <li className="flex items-start gap-2 text-sm text-blue-800">
                     <Crown className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
@@ -190,7 +195,7 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
                 <button
                   onClick={handlePayNow}
                   disabled={isLoading || loadingFee}
-                  className={`${showCloseButton ? 'flex-1' : 'w-full'} px-4 py-3 bg-gradient-to-r from-[#FFD700] to-[#FFC700] text-[#800020] font-bold rounded-lg hover:shadow-lg disabled:opacity-50 transition-all flex items-center justify-center gap-2`}
+                  className={`${showCloseButton ? 'flex-1' : 'w-full'} px-4 py-3 bg-gradient-to-r from-[var(--brand-accent)] to-[var(--brand-accent-hover)] text-[var(--brand-primary)] font-bold rounded-lg hover:shadow-lg disabled:opacity-50 transition-all flex items-center justify-center gap-2`}
                 >
                   {isLoading ? (
                     <>
@@ -212,7 +217,7 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
               </div>
 
               <p className="text-xs text-gray-500 text-center mt-4">
-                Secure payment powered by Paystack. Your data is encrypted and protected.
+                Secure payment processing. Your data is encrypted and protected.
               </p>
             </div>
           </div>

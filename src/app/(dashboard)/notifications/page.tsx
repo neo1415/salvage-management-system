@@ -239,7 +239,7 @@ export default function NotificationsPage() {
           {unreadCount > 0 && (
             <button
               onClick={handleMarkAllRead}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#800020] bg-white border border-[#800020] rounded-lg hover:bg-[#800020] hover:text-white transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[var(--brand-primary)] bg-white border border-[var(--brand-primary)] rounded-lg hover:bg-[var(--brand-primary)] hover:text-white transition-colors"
             >
               <CheckCheck className="w-4 h-4" />
               Mark all read
@@ -252,7 +252,7 @@ export default function NotificationsPage() {
             onClick={() => setActiveTab('all')}
             className={`pb-3 px-1 text-sm font-medium transition-colors ${
               activeTab === 'all'
-                ? 'text-[#800020] border-b-2 border-[#800020]'
+                ? 'text-[var(--brand-primary)] border-b-2 border-[var(--brand-primary)]'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
@@ -262,7 +262,7 @@ export default function NotificationsPage() {
             onClick={() => setActiveTab('unread')}
             className={`pb-3 px-1 text-sm font-medium transition-colors ${
               activeTab === 'unread'
-                ? 'text-[#800020] border-b-2 border-[#800020]'
+                ? 'text-[var(--brand-primary)] border-b-2 border-[var(--brand-primary)]'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
@@ -302,7 +302,7 @@ export default function NotificationsPage() {
                   <button
                     onClick={handleLoadMore}
                     disabled={isRefreshing}
-                    className="text-sm text-[#800020] hover:underline font-medium disabled:opacity-50"
+                    className="text-sm text-[var(--brand-primary)] hover:underline font-medium disabled:opacity-50"
                   >
                     Load more
                   </button>

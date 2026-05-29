@@ -47,6 +47,14 @@ export function resolveCaseDisplayStatus(input: CaseLifecycleInput): CaseDisplay
   const caseStatus = resolveCaseStatus(input);
   const { auctionId, auctionStatus, auctionEndTime, paymentId, paymentStatus } = input;
 
+  if (paymentId && !isPaymentVerified(paymentStatus)) {
+    return 'awaiting_payment';
+  }
+
+  if (auctionStatus === 'awaiting_payment' && !isPaymentVerified(paymentStatus)) {
+    return 'awaiting_payment';
+  }
+
   if (caseStatus === 'sold' || isPaymentVerified(paymentStatus)) {
     return 'sold';
   }
@@ -74,13 +82,5 @@ export function resolveCaseDisplayStatus(input: CaseLifecycleInput): CaseDisplay
   }
 
   // Auction ended (closed / awaiting_payment / forfeited / past endTime): payment path vs no winner
-  if (paymentId && !isPaymentVerified(paymentStatus)) {
-    return 'awaiting_payment';
-  }
-
-  if (auctionStatus === 'awaiting_payment' && !isPaymentVerified(paymentStatus)) {
-    return 'awaiting_payment';
-  }
-
   return 'closed';
 }

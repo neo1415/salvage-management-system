@@ -12,8 +12,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { auctions, vendors, escrowWallets, auctionWinners, releaseForms } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { auctions, vendors, escrowWallets, auctionWinners, releaseForms, payments } from '@/lib/db/schema';
+import { eq, and, desc } from 'drizzle-orm';
+import { businessPolicyService, resolveAuctionPaymentMethodAccess } from '@/features/business-policy';
 
 /**
  * GET /api/auctions/[id]/payment/calculate
@@ -134,6 +135,40 @@ export async function GET(
     const canPayWithWalletOnly = availableBalance >= remainingAmount;
     const walletPortion = Math.min(availableBalance, remainingAmount);
     const paystackPortion = Math.max(0, remainingAmount - availableBalance);
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const paymentMethods = {
+      paystack: resolveAuctionPaymentMethodAccess(policy, 'paystack').allowed,
+      wallet: resolveAuctionPaymentMethodAccess(policy, 'wallet').allowed,
+      hybrid: resolveAuctionPaymentMethodAccess(policy, 'hybrid').allowed,
+    };
+
+    const [pendingPaystackPayment] = await db
+      .select({
+        id: payments.id,
+        paymentMethod: payments.paymentMethod,
+        paymentReference: payments.paymentReference,
+        createdAt: payments.createdAt,
+        updatedAt: payments.updatedAt,
+      })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.auctionId, auctionId),
+          eq(payments.vendorId, vendor.id),
+          eq(payments.status, 'pending'),
+          eq(payments.paymentMethod, 'paystack')
+        )
+      )
+      .orderBy(desc(payments.createdAt))
+      .limit(1);
+
+    const retryDelayMs = 10 * 60 * 1000;
+    const retryAvailableAt = pendingPaystackPayment
+      ? new Date(pendingPaystackPayment.createdAt.getTime() + retryDelayMs)
+      : null;
+    const waitMs = retryAvailableAt
+      ? Math.max(0, retryAvailableAt.getTime() - Date.now())
+      : 0;
 
     return NextResponse.json({
       success: true,
@@ -143,18 +178,30 @@ export async function GET(
         remainingAmount,
         walletBalance: availableBalance, // Frontend expects walletBalance
         canPayWithWallet: canPayWithWalletOnly,
+        walletPortion,
+        paystackPortion,
+        methods: paymentMethods,
+        pendingPayment: pendingPaystackPayment
+          ? {
+              method: pendingPaystackPayment.paymentMethod,
+              createdAt: pendingPaystackPayment.createdAt.toISOString(),
+              retryAvailableAt: retryAvailableAt?.toISOString(),
+              canRetry: waitMs <= 0,
+              waitMinutes: Math.ceil(waitMs / 60000),
+            }
+          : null,
       },
       paymentOptions: {
         walletOnly: {
-          available: canPayWithWalletOnly,
+          available: paymentMethods.wallet && canPayWithWalletOnly,
           amount: remainingAmount,
         },
         paystackOnly: {
-          available: true,
+          available: paymentMethods.paystack,
           amount: remainingAmount,
         },
         hybrid: {
-          available: availableBalance > 0 && remainingAmount > availableBalance,
+          available: paymentMethods.hybrid && availableBalance > 0 && remainingAmount > availableBalance,
           walletPortion,
           paystackPortion,
         },

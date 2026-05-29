@@ -27,7 +27,7 @@ export function ProductShowcase() {
   return (
     <section ref={containerRef} className="py-20 md:py-32 bg-white relative overflow-hidden">
       {/* Background decoration */}
-      <div className="absolute inset-0 bg-gradient-to-br from-burgundy-50 to-gold-50 opacity-30" />
+      <div className="absolute inset-0 bg-gradient-to-br from-[color-mix(in_srgb,var(--brand-primary)_8%,white)] to-[color-mix(in_srgb,var(--brand-accent)_10%,white)] opacity-30" />
 
       <div className="container mx-auto px-4 relative z-10">
         {/* First Row - Text Left, Visual Right */}
@@ -38,9 +38,9 @@ export function ProductShowcase() {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            <h2 className="text-4xl md:text-5xl font-black mb-6 text-burgundy-900">
+            <h2 className="text-4xl md:text-5xl font-black mb-6 text-[var(--brand-primary)]">
               Powerful Dashboard
-              <span className="block bg-gradient-to-r from-burgundy-700 to-gold-600 bg-clip-text text-transparent">
+              <span className="block bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] bg-clip-text text-transparent">
                 At Your Fingertips
               </span>
             </h2>
@@ -58,7 +58,7 @@ export function ProductShowcase() {
                   viewport={{ once: true }}
                   transition={{ delay: index * 0.1, duration: 0.4 }}
                 >
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-r from-burgundy-600 to-burgundy-800 flex items-center justify-center flex-shrink-0">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center flex-shrink-0">
                     <Check className="w-4 h-4 text-white" />
                   </div>
                   <span className="text-gray-700 font-medium">{feature}</span>
@@ -82,13 +82,13 @@ export function ProductShowcase() {
                 {/* Screen content */}
                 <div className="bg-white rounded-lg p-4 mb-4">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="h-3 w-24 bg-burgundy-600 rounded" />
-                    <div className="h-3 w-16 bg-gold-500 rounded" />
+                    <div className="h-3 w-24 bg-[var(--brand-primary)] rounded" />
+                    <div className="h-3 w-16 bg-[var(--brand-accent)] rounded" />
                   </div>
                   <div className="space-y-3">
-                    <div className="h-20 bg-gradient-to-r from-burgundy-100 to-gold-100 rounded-lg" />
-                    <div className="h-20 bg-gradient-to-r from-burgundy-100 to-gold-100 rounded-lg" />
-                    <div className="h-20 bg-gradient-to-r from-burgundy-100 to-gold-100 rounded-lg" />
+                    <div className="h-20 bg-gradient-to-r from-[color-mix(in_srgb,var(--brand-primary)_14%,white)] to-[color-mix(in_srgb,var(--brand-accent)_18%,white)] rounded-lg" />
+                    <div className="h-20 bg-gradient-to-r from-[color-mix(in_srgb,var(--brand-primary)_14%,white)] to-[color-mix(in_srgb,var(--brand-accent)_18%,white)] rounded-lg" />
+                    <div className="h-20 bg-gradient-to-r from-[color-mix(in_srgb,var(--brand-primary)_14%,white)] to-[color-mix(in_srgb,var(--brand-accent)_18%,white)] rounded-lg" />
                   </div>
                 </div>
                 <div className="flex space-x-2">
@@ -100,7 +100,7 @@ export function ProductShowcase() {
 
               {/* Floating elements */}
               <motion.div
-                className="absolute -top-6 -right-6 bg-gold-500 text-burgundy-900 px-4 py-2 rounded-lg shadow-lg font-bold"
+                className="absolute -top-6 -right-6 bg-[var(--brand-accent)] text-[var(--brand-primary)] px-4 py-2 rounded-lg shadow-lg font-bold"
                 animate={{ y: [0, -10, 0] }}
                 transition={{ duration: 2, repeat: Infinity }}
               >
@@ -108,7 +108,7 @@ export function ProductShowcase() {
               </motion.div>
 
               <motion.div
-                className="absolute -bottom-6 -left-6 bg-burgundy-800 text-white px-4 py-2 rounded-lg shadow-lg font-bold"
+                className="absolute -bottom-6 -left-6 bg-[var(--brand-primary)] text-white px-4 py-2 rounded-lg shadow-lg font-bold"
                 animate={{ y: [0, 10, 0] }}
                 transition={{ duration: 2.5, repeat: Infinity }}
               >
@@ -137,7 +137,7 @@ export function ProductShowcase() {
                 {/* Screen */}
                 <div className="bg-white rounded-[2.5rem] overflow-hidden">
                   <div className="p-4 space-y-3">
-                    <div className="h-12 bg-gradient-to-r from-burgundy-600 to-burgundy-800 rounded-lg flex items-center justify-center text-white font-bold">
+                    <div className="h-12 bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-lg flex items-center justify-center text-white font-bold">
                       Salvage Auctions
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -145,7 +145,7 @@ export function ProductShowcase() {
                         <div key={i} className="h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg" />
                       ))}
                     </div>
-                    <div className="h-16 bg-gold-500 rounded-lg flex items-center justify-center text-burgundy-900 font-bold">
+                    <div className="h-16 bg-[var(--brand-accent)] rounded-lg flex items-center justify-center text-[var(--brand-primary)] font-bold">
                       Place Bid
                     </div>
                   </div>
@@ -173,9 +173,9 @@ export function ProductShowcase() {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            <h2 className="text-4xl md:text-5xl font-black mb-6 text-burgundy-900">
+            <h2 className="text-4xl md:text-5xl font-black mb-6 text-[var(--brand-primary)]">
               Mobile-First
-              <span className="block bg-gradient-to-r from-burgundy-700 to-gold-600 bg-clip-text text-transparent">
+              <span className="block bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] bg-clip-text text-transparent">
                 PWA Experience
               </span>
             </h2>
@@ -193,8 +193,8 @@ export function ProductShowcase() {
                   viewport={{ once: true }}
                   transition={{ delay: index * 0.1, duration: 0.4 }}
                 >
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-r from-gold-500 to-gold-600 flex items-center justify-center flex-shrink-0">
-                    <Check className="w-4 h-4 text-burgundy-900" />
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-r from-[var(--brand-accent)] to-[var(--brand-accent)] flex items-center justify-center flex-shrink-0">
+                    <Check className="w-4 h-4 text-[var(--brand-primary)]" />
                   </div>
                   <span className="text-gray-700 font-medium">{feature}</span>
                 </motion.div>

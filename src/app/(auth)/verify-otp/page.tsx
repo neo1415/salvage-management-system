@@ -235,7 +235,7 @@ function VerifyOTPForm() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Back Button */}
         <button
@@ -249,13 +249,13 @@ function VerifyOTPForm() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full mb-4">
-            <Phone className="w-8 h-8 text-[#800020]" />
+            <Phone className="w-8 h-8 text-[var(--brand-primary)]" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Verify Your Phone</h1>
           <p className="text-gray-200">
             We sent a 6-digit code to
           </p>
-          <p className="text-[#FFD700] font-semibold mt-1">
+          <p className="text-[var(--brand-accent)] font-semibold mt-1">
             {phone || 'your phone number'}
           </p>
         </div>
@@ -324,8 +324,8 @@ function VerifyOTPForm() {
                       error
                         ? 'border-red-500 focus:ring-red-500'
                         : digit
-                        ? 'border-[#800020] focus:ring-[#800020]'
-                        : 'border-gray-300 focus:ring-[#800020]'
+                        ? 'border-[var(--brand-primary)] focus:ring-[var(--brand-primary)]'
+                        : 'border-gray-300 focus:ring-[var(--brand-primary)]'
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                   />
                 ))}
@@ -356,7 +356,7 @@ function VerifyOTPForm() {
             <button
               type="submit"
               disabled={isVerifying || success || otp.some((digit) => !digit)}
-              className="w-full bg-[#FFD700] text-[#800020] font-bold py-3 px-4 rounded-lg hover:bg-[#FFC700] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mb-4"
+              className="w-full bg-[var(--brand-accent)] text-[var(--brand-accent-foreground)] font-bold py-3 px-4 rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mb-4"
             >
               {isVerifying ? (
                 <>
@@ -373,7 +373,7 @@ function VerifyOTPForm() {
               type="button"
               onClick={handleResendOtp}
               disabled={!canResend || isResending || success}
-              className="w-full text-[#800020] font-medium py-2 px-4 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full text-[var(--brand-primary)] font-medium py-2 px-4 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isResending ? (
                 <>
@@ -400,7 +400,7 @@ function VerifyOTPForm() {
         <div className="mt-8 text-center">
           <p className="text-sm text-gray-300">
             Need help?{' '}
-            <a href="/contact" className="text-[#FFD700] hover:underline">
+            <a href="/contact" className="text-[var(--brand-accent)] hover:underline">
               Contact Support
             </a>
           </p>
@@ -417,7 +417,7 @@ function VerifyOTPForm() {
 export default function VerifyOTPPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-white animate-spin" />
       </div>
     }>

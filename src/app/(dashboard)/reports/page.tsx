@@ -258,7 +258,7 @@ export default function ReportsHubPage() {
                   className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <report.icon className="h-5 w-5 text-[#800020]" />
+                    <report.icon className="h-5 w-5 text-[var(--brand-primary)]" />
                     <div className="text-left">
                       <p className="font-medium">{report.name}</p>
                       <p className="text-sm text-gray-600">{report.generatedAt}</p>
@@ -278,7 +278,7 @@ export default function ReportsHubPage() {
           <Card key={category.id}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <category.icon className="h-5 w-5 text-[#800020]" />
+                <category.icon className="h-5 w-5 text-[var(--brand-primary)]" />
                 {category.name}
               </CardTitle>
               <CardDescription>{category.description}</CardDescription>
@@ -290,9 +290,9 @@ export default function ReportsHubPage() {
                     key={report.id}
                     href={report.path}
                     prefetch
-                    className="flex items-start gap-3 p-4 border rounded-lg hover:border-[#800020] hover:bg-[#800020]/5 transition-all text-left"
+                    className="flex items-start gap-3 p-4 border rounded-lg hover:border-[var(--brand-primary)] hover:bg-[var(--brand-primary-surface)] transition-all text-left"
                   >
-                    <report.icon className="h-5 w-5 text-[#800020] flex-shrink-0 mt-0.5" />
+                    <report.icon className="h-5 w-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium">{report.name}</p>
                       <p className="text-sm text-gray-600 mt-1">{report.description}</p>

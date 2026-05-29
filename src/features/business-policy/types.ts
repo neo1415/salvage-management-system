@@ -29,14 +29,73 @@ export type BrandingPolicy = {
   primaryColor: string;
   accentColor: string;
   logoPath: string;
+  faviconPath: string;
   homepageMode: 'landing' | 'login_first';
-  homepageTemplate: 'salvage_showcase' | 'minimal_private' | 'auction_marketplace';
+  homepageTemplate:
+    | 'reclaim_editorial'
+    | 'nem_salvage'
+    | 'recovery_command'
+    | 'claims_orbit'
+    | 'executive_terminal'
+    // Backward-compatible aliases for already-saved draft policies.
+    | 'salvage_showcase'
+    | 'minimal_private'
+    | 'auction_marketplace';
+  homepageTheme: 'day' | 'night' | 'auto';
+  splashEnabled: boolean;
   homepageCopy: {
     heroTitle: string;
     heroSubtitle: string;
     supportingText: string;
     primaryCtaLabel: string;
     secondaryCtaLabel?: string;
+    eyebrow?: string;
+    trustLine?: string;
+    statOneLabel?: string;
+    statOneValue?: string;
+    statTwoLabel?: string;
+    statTwoValue?: string;
+    statThreeLabel?: string;
+    statThreeValue?: string;
+    authHeadline?: string;
+    authSubtitle?: string;
+    workflowTitle?: string;
+    workflowSubtitle?: string;
+    workflowStepOneTitle?: string;
+    workflowStepOneBody?: string;
+    workflowStepTwoTitle?: string;
+    workflowStepTwoBody?: string;
+    workflowStepThreeTitle?: string;
+    workflowStepThreeBody?: string;
+    workflowStepFourTitle?: string;
+    workflowStepFourBody?: string;
+    auctionSectionEyebrow?: string;
+    auctionSectionTitle?: string;
+    auctionSectionButtonLabel?: string;
+    operationsSectionEyebrow?: string;
+    operationsSectionTitle?: string;
+    operationsSectionSubtitle?: string;
+    operationsCardOneTitle?: string;
+    operationsCardOneBody?: string;
+    operationsCardTwoTitle?: string;
+    operationsCardTwoBody?: string;
+    operationsCardThreeTitle?: string;
+    operationsCardThreeBody?: string;
+    proofSectionTitle?: string;
+    proofSectionSubtitle?: string;
+    proofCardOneTitle?: string;
+    proofCardOneBody?: string;
+    proofCardTwoTitle?: string;
+    proofCardTwoBody?: string;
+    proofCardThreeTitle?: string;
+    proofCardThreeBody?: string;
+    proofCardFourTitle?: string;
+    proofCardFourBody?: string;
+    proofContactLabel?: string;
+    recoveryBriefTitle?: string;
+    recoveryBriefBody?: string;
+    contactHeadline?: string;
+    contactSubtitle?: string;
   };
 };
 
@@ -133,6 +192,22 @@ export type DocumentPolicy = {
   requiredAuctionDocuments: Array<'bill_of_sale' | 'liability_waiver'>;
   attachPaymentReceiptToAuctionDocuments: boolean;
   useBrandLetterhead: boolean;
+  billOfSaleDisclaimerTitle: string;
+  billOfSaleDisclaimerBody: string;
+  liabilityWaiverClauses: Array<{
+    title: string;
+    body: string;
+  }>;
+};
+
+export type LegalPolicy = {
+  registrationNumber: string;
+  addressLine1: string;
+  addressLine2: string;
+  privacyEmail: string;
+  dpoEmail: string;
+  legalEmail: string;
+  legalLastUpdated: string;
 };
 
 export type FraudPolicy = {
@@ -153,6 +228,13 @@ export type PolicyDecisionType =
   | 'vendor_bid_denied'
   | 'vendor_bid_limit_resolved'
   | 'vendor_bvn_gate_resolved'
+  | 'auth_provider_allowed'
+  | 'auth_provider_denied'
+  | 'auth_email_domain_allowed'
+  | 'auth_email_domain_denied'
+  | 'registration_fee_payment_resolved'
+  | 'payment_method_allowed'
+  | 'payment_method_denied'
   | 'tier2_access_resolved'
   | 'tier2_review_requirement_resolved'
   | 'deposit_amount_required'
@@ -165,7 +247,9 @@ export type PolicyDecisionType =
   | 'forfeiture_percentage_resolved'
   | 'kyc_approval_requirement_resolved'
   | 'fraud_risk_gate_applied'
-  | 'reserve_price_rule_applied';
+  | 'reserve_price_rule_applied'
+  | 'case_asset_type_allowed'
+  | 'case_asset_type_denied';
 
 export type PolicyDecisionRecord = {
   policyVersion: string;
@@ -220,6 +304,7 @@ export type BusinessPolicy = {
   aiValuation: AiValuationPolicy;
   notifications: NotificationPolicy;
   documents: DocumentPolicy;
+  legal: LegalPolicy;
   fraud: FraudPolicy;
   reports: ReportPolicy;
 };
@@ -238,7 +323,16 @@ export type PublicBusinessPolicy = Pick<BusinessPolicy, 'version' | 'branding'> 
     | 'allowBidAfterTier1'
     | 'requireTier2ForUnlimitedBidding'
   >;
-  payments: Pick<PaymentPolicy, 'walletEnabled' | 'paystackEnabled' | 'flutterwaveEnabled' | 'hybridPaymentEnabled' | 'manualPaymentEnabled'>;
+  payments: Pick<
+    PaymentPolicy,
+    | 'walletEnabled'
+    | 'paystackEnabled'
+    | 'flutterwaveEnabled'
+    | 'hybridPaymentEnabled'
+    | 'manualPaymentEnabled'
+    | 'paymentDeadlineAfterSigningHours'
+  >;
   auctions: Pick<AuctionPolicy, 'minimumBidIncrement'>;
   cases: Pick<CasePolicy, 'enabledAssetTypes' | 'voiceNotesEnabled'>;
+  documents: Pick<DocumentPolicy, 'requiredAuctionDocuments'>;
 };

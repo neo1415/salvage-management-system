@@ -49,6 +49,10 @@ export async function POST(request: NextRequest) {
       await db
         .update(pushSubscriptions)
         .set({
+          userId: session.user.id,
+          p256dh: keys.p256dh,
+          auth: keys.auth,
+          userAgent: userAgent || request.headers.get('user-agent') || undefined,
           active: true,
           updatedAt: new Date(),
           lastUsedAt: new Date(),

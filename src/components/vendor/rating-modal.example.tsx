@@ -151,7 +151,7 @@ export function PickupConfirmationExample() {
       <button
         onClick={handleConfirmPickup}
         disabled={isConfirming}
-        className="w-full px-6 py-3 bg-burgundy-900 text-white font-semibold rounded-lg hover:bg-burgundy-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isConfirming ? 'Confirming...' : 'Confirm Pickup'}
       </button>
@@ -189,7 +189,7 @@ export function ProgrammaticRatingExample() {
       
       <button
         onClick={() => setShowRatingModal(true)}
-        className="px-6 py-3 bg-burgundy-900 text-white font-semibold rounded-lg hover:bg-burgundy-800 transition-colors"
+        className="px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
       >
         Rate Vendor
       </button>
@@ -254,7 +254,7 @@ export function CustomSuccessHandlerExample() {
     <div className="p-6">
       <button
         onClick={() => setShowRatingModal(true)}
-        className="px-6 py-3 bg-burgundy-900 text-white font-semibold rounded-lg hover:bg-burgundy-800 transition-colors"
+        className="px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
       >
         Rate Vendor
       </button>

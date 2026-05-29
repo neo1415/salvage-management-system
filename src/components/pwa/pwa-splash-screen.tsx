@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import {
   getPwaSplashDurationMs,
   isStandalonePwa,
@@ -100,21 +99,17 @@ export function PwaSplashScreen() {
       role="presentation"
     >
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-[#FFD700]/10 blur-3xl" />
+        <div className="absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-[var(--brand-primary-surface)] blur-3xl" />
       </div>
 
       <div className="relative flex flex-col items-center px-8">
         <div className="relative mb-8 rounded-2xl bg-white p-4 shadow-2xl shadow-black/25">
-          <Image
+          <img
             src={branding.logoPath || '/icons/icon-192.png'}
             alt={branding.brandName}
-            width={96}
-            height={96}
-            priority
-            unoptimized
             className="h-24 w-24 object-contain"
           />
-          <div className="absolute -inset-1 rounded-2xl ring-2 ring-[#FFD700]/40" />
+          <div className="absolute -inset-1 rounded-2xl ring-2 ring-[var(--brand-accent)]" />
         </div>
 
         <h1 className="font-display text-center text-3xl font-semibold tracking-wide text-white sm:text-4xl">
@@ -129,7 +124,7 @@ export function PwaSplashScreen() {
           {[0, 1, 2].map((i) => (
             <span
               key={i}
-              className="h-2 w-2 rounded-full bg-[#FFD700] animate-pulse"
+              className="h-2 w-2 rounded-full bg-[var(--brand-accent)] animate-pulse"
               style={{ animationDelay: `${i * 180}ms` }}
             />
           ))}

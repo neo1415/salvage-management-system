@@ -97,7 +97,7 @@ export function PaymentVerificationModal({
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="Explain why this payment is being rejected (minimum 10 characters)"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 required
               />
               <p className="mt-1 text-xs text-gray-500">

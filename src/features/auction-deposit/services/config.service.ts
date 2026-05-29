@@ -8,7 +8,7 @@
  * - Requirement 20: Configuration Change Audit Trail
  */
 
-import { db } from '@/lib/db/drizzle';
+import { db, withRetry } from '@/lib/db/drizzle';
 import { systemConfig, configChangeHistory } from '@/lib/db/schema/auction-deposit';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 
@@ -89,9 +89,9 @@ export class ConfigService {
       return { ...this.configCache.value };
     }
 
-    const configRecords = await db
+    const configRecords = await withRetry(() => db
       .select()
-      .from(systemConfig);
+      .from(systemConfig), 2, 500);
 
     // Start with defaults
     const config: SystemConfiguration = { ...this.DEFAULT_CONFIG };
@@ -123,11 +123,11 @@ export class ConfigService {
    */
   async isDepositSystemEnabled(): Promise<boolean> {
     try {
-      const [featureFlag] = await db
+      const [featureFlag] = await withRetry(() => db
         .select()
         .from(systemConfig)
         .where(eq(systemConfig.parameter, 'deposit_system_enabled'))
-        .limit(1);
+        .limit(1), 2, 500);
 
       // Default to true if not configured
       return featureFlag ? featureFlag.value === 'true' : true;

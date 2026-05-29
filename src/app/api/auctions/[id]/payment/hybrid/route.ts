@@ -16,6 +16,14 @@ import { db } from '@/lib/db/drizzle';
 import { vendors, auctionWinners, users, auctions, escrowWallets, releaseForms } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
+import {
+  businessPolicyService,
+  getBusinessPolicyRuntimeMode,
+  isBusinessPolicyEnforcementEnabled,
+  logPolicyDecision,
+  resolveAuctionPaymentMethodAccess,
+} from '@/features/business-policy';
+import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 
 /**
  * POST /api/auctions/[id]/payment/hybrid
@@ -45,6 +53,39 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: 'Vendor profile not found' },
         { status: 404 }
+      );
+    }
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const paymentMethodDecision = resolveAuctionPaymentMethodAccess(policy, 'hybrid');
+    const ipAddress = getIpAddress(request.headers);
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+
+    await logPolicyDecision({
+      userId: session.user.id,
+      entityType: AuditEntityType.PAYMENT,
+      entityId: auctionId,
+      ipAddress,
+      userAgent,
+      deviceType: getDeviceTypeFromUserAgent(userAgent),
+      decision: paymentMethodDecision.decision,
+      context: {
+        source: 'api/auctions/[id]/payment/hybrid',
+        runtimeMode: getBusinessPolicyRuntimeMode(),
+        vendorId: vendor.id,
+      },
+    }).catch((error) => {
+      console.warn('[BusinessPolicy] Failed to audit hybrid payment method decision', {
+        auctionId,
+        vendorId: vendor.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+
+    if (!paymentMethodDecision.allowed && isBusinessPolicyEnforcementEnabled()) {
+      return NextResponse.json(
+        { success: false, error: 'Hybrid wallet and Paystack payment is not enabled for this deployment.' },
+        { status: 403 }
       );
     }
 
@@ -187,7 +228,7 @@ export async function POST(
     console.log('[Hybrid Payment] Processing payment with reference:', paymentReference);
 
     // Process hybrid payment
-    const result = await paymentService.processHybridPayment({
+    const result = await paymentService.processHybridAuctionPayment({
       auctionId,
       vendorId: vendor.id,
       finalBid,
@@ -198,6 +239,18 @@ export async function POST(
 
     console.log('[Hybrid Payment] Payment processed successfully:', result);
 
+    if (result.authorizationUrl === 'ALREADY_PENDING') {
+      return NextResponse.json({
+        success: true,
+        walletAmount: result.walletAmount,
+        paystackAmount: result.paystackAmount,
+        authorization_url: 'ALREADY_PENDING',
+        access_code: 'ALREADY_PENDING',
+        reference: result.paystackReference,
+        message: 'A payment is already being processed. Please retry the payment check or refresh this auction shortly.',
+      });
+    }
+
     return NextResponse.json({
       success: true,
       walletAmount: result.walletAmount,
@@ -205,7 +258,7 @@ export async function POST(
       authorization_url: result.authorizationUrl,
       access_code: result.accessCode,
       reference: result.paystackReference,
-      message: `Wallet portion (₦${result.walletAmount?.toLocaleString()}) deducted. Complete payment via Paystack (₦${result.paystackAmount?.toLocaleString()}). If Paystack fails, wallet amount will be refunded automatically.`,
+      message: `Wallet portion reserved. Complete online checkout for ₦${result.paystackAmount?.toLocaleString()}. If checkout fails, only that reserved wallet portion is released back to your wallet.`,
     });
   } catch (error) {
     console.error('Hybrid payment error:', error);

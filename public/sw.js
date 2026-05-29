@@ -2,10 +2,16 @@
 // Implements offline-first caching strategies with Workbox
 // Version: 1.0.2 - Vendor dashboard: removed duplicate sticky Auctions/Wallet bar
 
-// Import Workbox from CDN (for runtime service worker)
-importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js');
+// Import Workbox from CDN for runtime caching. Push notification handlers must
+// still load if the CDN is temporarily unreachable on a mobile device.
+try {
+  importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js');
+} catch (error) {
+  console.warn('Workbox failed to load; push notifications remain enabled.', error);
+}
 
-if (workbox) {
+if (self.workbox) {
+  const workbox = self.workbox;
   console.log('Workbox loaded successfully');
 
   // Enable debug mode in development (check hostname instead of process.env)
@@ -212,7 +218,7 @@ if (workbox) {
 
   // Offline fallback page
   const FALLBACK_HTML_URL = '/offline.html';
-  const FALLBACK_IMAGE_URL = '/icons/Nem-insurance-Logo.jpg';
+  const FALLBACK_IMAGE_URL = '/icons/icon-192.png';
 
   // Cache fallback resources on install
   self.addEventListener('install', (event) => {
@@ -260,8 +266,8 @@ self.addEventListener('push', (event) => {
 
     const options = {
       body: data.body || 'You have a new notification',
-      icon: data.icon || '/icons/Nem-insurance-Logo.jpg',
-      badge: data.badge || '/icons/Nem-insurance-Logo.jpg',
+      icon: data.icon || '/icons/icon-192.png',
+      badge: data.badge || '/icons/icon-192.png',
       data: data.data || {},
       tag: data.tag || 'default',
       requireInteraction: data.requireInteraction || false,
@@ -271,17 +277,17 @@ self.addEventListener('push', (event) => {
     };
 
     event.waitUntil(
-      self.registration.showNotification(data.title || 'NEM Insurance', options)
+      self.registration.showNotification(data.title || 'Salvage Management', options)
     );
   } catch (error) {
     console.error('Error handling push notification:', error);
     
     // Fallback notification
     event.waitUntil(
-      self.registration.showNotification('NEM Insurance', {
+      self.registration.showNotification('Salvage Management', {
         body: 'You have a new notification',
-        icon: '/icons/Nem-insurance-Logo.jpg',
-        badge: '/icons/Nem-insurance-Logo.jpg',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
       })
     );
   }

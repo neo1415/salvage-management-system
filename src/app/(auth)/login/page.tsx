@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { AlertCircle, Eye, EyeOff, Loader2, Lock } from 'lucide-react';
 import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
+import { getAuthSurfaceCopy, normalizeHomepageTemplate, resolveTemplateTheme } from '@/components/landing/template-config';
 
 /**
  * Login validation schema
@@ -33,6 +34,10 @@ type LoginInput = z.infer<typeof loginSchema>;
 function LoginForm() {
   const searchParams = useSearchParams();
   const { branding } = usePublicBranding();
+  const authCopy = getAuthSurfaceCopy(branding);
+  const template = normalizeHomepageTemplate(branding.homepageTemplate);
+  const theme = resolveTemplateTheme(branding);
+  const isNight = theme === 'night' || template === 'nem_salvage';
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,6 +57,39 @@ function LoginForm() {
     const base = url.split('?')[0];
     if (BLOCKED_CALLBACK_PATHS.has(base)) return null;
     return url;
+  };
+
+  const formatLoginError = (rawError: string | null | undefined): string => {
+    const normalized = (rawError || '').toLowerCase();
+
+    if (!rawError) {
+      return 'Login could not be completed. Please try again.';
+    }
+
+    if (rawError === 'MFA_UNAVAILABLE') {
+      return 'We could not send your verification code. Please try again or contact support.';
+    }
+
+    if (rawError === 'MFA_REQUIRED') {
+      return 'Enter the verification code sent to your account.';
+    }
+
+    if (
+      normalized.includes('configuration') ||
+      normalized.includes('callbackrouteerror') ||
+      normalized.includes('credentialssignin') ||
+      normalized.includes('accessdenied')
+    ) {
+      return mfaRequired
+        ? 'The verification code could not be confirmed. Check the 6-digit code or request a new one.'
+        : 'Email/phone or password is incorrect, or this account cannot sign in with password.';
+    }
+
+    if (normalized.includes('invalid credentials')) {
+      return 'Email/phone or password is incorrect. Please check your details and try again.';
+    }
+
+    return rawError;
   };
 
   const buildPostLoginRedirect = (): string => {
@@ -100,7 +138,7 @@ function LoginForm() {
           return;
         }
 
-        if (!mfaResponse.ok && mfaJson.required) {
+        if (!mfaResponse.ok) {
           setError(mfaJson.error || 'Verification code could not be sent. Please try again.');
           setIsSubmitting(false);
           return;
@@ -130,28 +168,44 @@ function LoginForm() {
           setIsSubmitting(false);
           return;
         }
-        setError(result.error);
+        setError(formatLoginError(result.error));
         setIsSubmitting(false);
         return;
       }
 
       window.location.assign(result?.url || buildPostLoginRedirect());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      setError(formatLoginError(err instanceof Error ? err.message : null));
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: getBrandGradient(branding) }}>
-      <div className="w-full max-w-md">
+    <div
+      className={`min-h-screen p-4 ${theme === 'night' ? 'bg-[#0C0C0B]' : 'bg-slate-50'}`}
+      style={template === 'nem_salvage' ? { background: getBrandGradient(branding) } : undefined}
+    >
+      <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-6xl items-center gap-8 lg:grid-cols-[1fr_440px]">
+        <aside className={`hidden rounded-3xl border p-8 lg:block ${theme === 'night' ? 'border-white/10 bg-white/[0.04] text-white' : 'border-slate-200 bg-white text-slate-950'}`}>
+          <p className="font-mono text-xs uppercase tracking-[0.22em]" style={{ color: branding.accentColor }}>{authCopy.tone}</p>
+          <h2 className="mt-6 text-5xl font-black leading-none tracking-[-0.06em]">{authCopy.headline}</h2>
+          <p className={`mt-5 max-w-md leading-8 ${theme === 'night' ? 'text-white/60' : 'text-slate-600'}`}>{authCopy.subtitle}</p>
+          <div className="mt-10 grid gap-3">
+            {['Secure access', 'Policy-driven onboarding', 'Auditable recovery workflows'].map((item) => (
+              <div key={item} className={`rounded-xl border px-4 py-3 text-sm font-semibold ${theme === 'night' ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-slate-50'}`}>
+                {item}
+              </div>
+            ))}
+          </div>
+        </aside>
+        <div className="w-full max-w-md justify-self-center">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full mb-4">
             <Lock className="w-8 h-8" style={{ color: branding.primaryColor }} />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Welcome Back</h1>
-          <p className="text-gray-200">
+          <h1 className={`text-3xl font-bold mb-2 ${isNight ? 'text-white' : 'text-slate-950'}`}>Welcome Back</h1>
+          <p className={isNight ? 'text-gray-200' : 'text-slate-600'}>
             Sign in to access your {branding.brandName} account
           </p>
         </div>
@@ -196,7 +250,7 @@ function LoginForm() {
                 className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
                   errors.emailOrPhone
                     ? 'border-red-500 focus:ring-red-500'
-                    : 'border-gray-300 focus:ring-[#800020]'
+                    : 'border-gray-300 focus:ring-[var(--brand-primary)]'
                 }`}
                 placeholder="your.email@example.com or +234XXXXXXXXXX"
               />
@@ -221,7 +275,7 @@ function LoginForm() {
                   className={`w-full px-4 py-3 pr-12 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
                     errors.password
                       ? 'border-red-500 focus:ring-red-500'
-                      : 'border-gray-300 focus:ring-[#800020]'
+                      : 'border-gray-300 focus:ring-[var(--brand-primary)]'
                   }`}
                   placeholder="Enter your password"
                 />
@@ -252,7 +306,7 @@ function LoginForm() {
                   inputMode="numeric"
                   maxLength={6}
                   id="mfaCode"
-                  className="w-full px-4 py-3 border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800020] bg-white"
+                  className="w-full px-4 py-3 border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)] bg-white"
                   placeholder="Enter 6-digit code"
                 />
                 <p className="mt-2 text-sm text-amber-900">
@@ -267,7 +321,7 @@ function LoginForm() {
               <input
                 {...register('rememberMe')}
                 type="checkbox"
-                className="w-4 h-4 border-gray-300 rounded focus:ring-[#800020]"
+                className="w-4 h-4 border-gray-300 rounded focus:ring-[var(--brand-primary)]"
                 style={{ accentColor: branding.primaryColor }}
               />
                 <span className="text-sm text-gray-700">Remember me</span>
@@ -286,7 +340,7 @@ function LoginForm() {
               type="submit"
               disabled={isSubmitting}
               className="w-full font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 hover:opacity-90"
-              style={{ backgroundColor: branding.accentColor, color: branding.primaryColor }}
+              style={{ backgroundColor: 'var(--brand-primary)', color: 'var(--brand-primary-foreground)' }}
             >
               {isSubmitting ? (
                 <>
@@ -310,14 +364,21 @@ function LoginForm() {
 
         {/* Help Text */}
         <div className="mt-8 text-center">
-          <p className="text-sm text-gray-300">
+          <p className={`text-sm ${isNight ? 'text-gray-300' : 'text-slate-600'}`}>
             Need help?{' '}
             <a href="/contact" className="hover:underline" style={{ color: branding.accentColor }}>
               Contact Support
             </a>
           </p>
+          <div className={`mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs ${isNight ? 'text-gray-300' : 'text-slate-500'}`}>
+            <a href="/privacy" className="hover:underline">Privacy</a>
+            <a href="/cookies" className="hover:underline">Cookies</a>
+            <a href="/terms" className="hover:underline">Terms</a>
+            <a href="/ndpr" className="hover:underline">NDPR</a>
+          </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }
@@ -329,8 +390,8 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-white animate-spin" />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--brand-primary)' }}>
+        <Loader2 className="w-8 h-8 animate-spin text-[var(--brand-primary-foreground)]" />
       </div>
     }>
       <LoginForm />

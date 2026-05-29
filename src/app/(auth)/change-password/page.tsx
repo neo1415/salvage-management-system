@@ -138,7 +138,7 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-4">
@@ -169,7 +169,7 @@ export default function ChangePasswordPage() {
                 id="currentPassword"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-primary)] focus:border-transparent"
                 placeholder="Enter your temporary password"
                 required
                 disabled={loading}
@@ -204,7 +204,7 @@ export default function ChangePasswordPage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 onBlur={() => setNewPasswordTouched(true)}
-                className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-primary)] focus:border-transparent"
                 placeholder="Enter new password"
                 required
                 disabled={loading}
@@ -278,7 +278,7 @@ export default function ChangePasswordPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 onBlur={() => setConfirmTouched(true)}
-                className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent ${
+                className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-[var(--brand-primary)] focus:border-transparent ${
                   confirmTouched && passwordsDontMatch ? 'border-red-500' : 'border-gray-300'
                 }`}
                 placeholder="Confirm new password"
@@ -328,7 +328,7 @@ export default function ChangePasswordPage() {
           <button
             type="submit"
             disabled={loading || !passwordMeetsRequirements || !passwordsMatch}
-            className="w-full bg-[#800020] text-white py-3 px-4 rounded-lg font-semibold hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)] py-3 px-4 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Changing Password...' : 'Change Password'}
           </button>

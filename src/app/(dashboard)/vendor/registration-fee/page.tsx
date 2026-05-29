@@ -14,10 +14,10 @@ function RegistrationFeePageContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // If coming back from Paystack with success
+    // If coming back from online checkout with success
     if (paymentStatus === 'success') {
       setStatus('success');
-      // Redirect to Tier 2 KYC after 3 seconds
+      // Redirect to full verification after 3 seconds
       setTimeout(() => {
         router.push('/vendor/kyc/tier2');
       }, 3000);
@@ -41,7 +41,7 @@ function RegistrationFeePageContent() {
       
       if (result.data?.paid) {
         setStatus('paid');
-        // Redirect to Tier 2 KYC after 2 seconds
+        // Redirect to full verification after 2 seconds
         setTimeout(() => {
           router.push('/vendor/kyc/tier2');
         }, 2000);
@@ -58,7 +58,7 @@ function RegistrationFeePageContent() {
   // Loading state
   if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
         <div className="text-center text-white">
           <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4" />
           <p className="text-lg">Checking payment status...</p>
@@ -70,7 +70,7 @@ function RegistrationFeePageContent() {
   // Payment success state
   if (status === 'success' || status === 'paid') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 className="w-12 h-12 text-green-600" />
@@ -79,18 +79,18 @@ function RegistrationFeePageContent() {
             Payment Confirmed!
           </h1>
           <p className="text-gray-700 mb-6">
-            Your registration fee has been successfully processed. You can now access Tier 2 KYC verification.
+            Your registration fee has been successfully processed. You can now continue to full verification.
           </p>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
             <p className="text-sm text-blue-800">
-              Redirecting you to Tier 2 KYC verification...
+              Redirecting you to verification...
             </p>
           </div>
           <button
             onClick={() => router.push('/vendor/kyc/tier2')}
-            className="w-full px-6 py-3 bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-bold rounded-lg hover:shadow-lg transition-all"
+            className="w-full px-6 py-3 bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] text-white font-bold rounded-lg hover:shadow-lg transition-all"
           >
-            Continue to Tier 2 KYC
+            Continue Verification
           </button>
         </div>
       </div>
@@ -100,7 +100,7 @@ function RegistrationFeePageContent() {
   // Payment failed state
   if (status === 'failed') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
           <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <XCircle className="w-12 h-12 text-red-600" />
@@ -120,7 +120,7 @@ function RegistrationFeePageContent() {
             </button>
             <button
               onClick={() => setStatus('unpaid')}
-              className="flex-1 px-6 py-3 bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-bold rounded-lg hover:shadow-lg transition-all"
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] text-white font-bold rounded-lg hover:shadow-lg transition-all"
             >
               Try Again
             </button>
@@ -132,7 +132,7 @@ function RegistrationFeePageContent() {
 
   // Unpaid state - show modal
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
       {error && (
         <div className="absolute top-4 left-4 right-4 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700 max-w-md mx-auto">
           {error}
@@ -149,7 +149,7 @@ function RegistrationFeePageContent() {
 export default function RegistrationFeePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center">
         <Loader2 className="w-12 h-12 animate-spin text-white" />
       </div>
     }>

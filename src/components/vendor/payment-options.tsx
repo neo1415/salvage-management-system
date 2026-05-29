@@ -12,6 +12,18 @@ interface PaymentBreakdown {
   canPayWithWallet: boolean;
   walletPortion?: number;
   paystackPortion?: number;
+  methods?: {
+    paystack: boolean;
+    wallet: boolean;
+    hybrid: boolean;
+  };
+  pendingPayment?: {
+    method: string;
+    createdAt: string;
+    retryAvailableAt?: string;
+    canRetry: boolean;
+    waitMinutes: number;
+  } | null;
 }
 
 interface PaymentOptionsProps {
@@ -35,8 +47,6 @@ export function PaymentOptions({
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
-  const [showPaystackModal, setShowPaystackModal] = useState(false);
-  const [paystackUrl, setPaystackUrl] = useState('');
   const [mounted, setMounted] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successData, setSuccessData] = useState<{
@@ -45,6 +55,7 @@ export function PaymentOptions({
     depositAmount: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   const formatAmount = (value: number | null | undefined) =>
     Number(value || 0).toLocaleString();
@@ -142,7 +153,8 @@ export function PaymentOptions({
         
         // Check if payment already pending
         if (data.authorization_url === 'ALREADY_PENDING') {
-          setError('A payment is already being processed. Please wait for the payment confirmation email, or refresh the page to check your payment status.');
+          await fetchPaymentBreakdown();
+          setError('Payment is still being confirmed. Please wait before trying again.');
           return;
         }
         
@@ -171,8 +183,18 @@ export function PaymentOptions({
       const data = await response.json();
 
       if (response.ok) {
-        setPaystackUrl(data.authorization_url);
-        setShowPaystackModal(true);
+        if (data.authorization_url === 'ALREADY_PENDING') {
+          await fetchPaymentBreakdown();
+          setError('Payment is still being confirmed. Please wait before trying again.');
+          return;
+        }
+
+        if (!data.authorization_url) {
+          setError('Payment initialization failed: No authorization URL received');
+          return;
+        }
+
+        window.location.href = data.authorization_url;
       } else {
         setError(data.error || data.message || 'Failed to initialize payment. Please try again.');
       }
@@ -197,6 +219,46 @@ export function PaymentOptions({
       case 'hybrid':
         handleHybridPayment();
         break;
+    }
+  };
+
+  const handleRetryPayment = async () => {
+    try {
+      setRetrying(true);
+      setError(null);
+
+      const response = await fetch(`/api/auctions/${auctionId}/payment/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ source: 'manual_retry' }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && data.success) {
+        setSuccessData({
+          totalPaid: breakdown?.finalBid || 0,
+          paystackAmount: breakdown?.paystackPortion || breakdown?.remainingAmount || 0,
+          depositAmount: breakdown?.depositAmount || 0,
+        });
+        setShowSuccessModal(true);
+        onPaymentSuccess?.();
+        return;
+      }
+
+      if (data.code === 'PAYMENT_STILL_PROCESSING') {
+        setError(data.message || `Payment is still being confirmed. Please wait ${data.waitMinutes || 1} minute(s).`);
+      } else {
+        setError(data.message || data.error || 'We could not confirm this payment yet. Please try again later.');
+      }
+
+      await fetchPaymentBreakdown();
+    } catch (error) {
+      console.error('Payment retry failed:', error);
+      setError('We could not check the payment right now. Please try again later.');
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -263,7 +325,7 @@ export function PaymentOptions({
               </div>
               <div className="border-t border-gray-300 pt-2 flex justify-between items-center">
                 <span className="text-base font-semibold text-gray-900">Remaining</span>
-                <span className="text-xl font-bold text-[#800020]">
+                <span className="text-xl font-bold text-[var(--brand-primary)]">
                   ₦{(breakdown.remainingAmount || 0).toLocaleString()}
                 </span>
               </div>
@@ -297,21 +359,19 @@ export function PaymentOptions({
             )}
             
             <div className="space-y-2">
-            {/* Wallet Only - TEMPORARILY DISABLED */}
-            {/* REASON: Wallet payment has issues with balance validation and transaction history */}
-            {/* TODO: Fix wallet payment flow before re-enabling */}
-            {/* <button
+            {breakdown.methods?.wallet && (
+            <button
               onClick={() => setSelectedMethod('wallet')}
               disabled={!breakdown.canPayWithWallet}
               className={`w-full p-3 border-2 rounded-lg text-left transition-all ${
                 selectedMethod === 'wallet'
-                  ? 'border-[#800020] bg-[#800020]/5'
+                  ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)]'
                   : 'border-gray-200 hover:border-gray-300'
               } ${!breakdown.canPayWithWallet ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             >
               <div className="flex items-center gap-3">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  selectedMethod === 'wallet' ? 'bg-[#800020]' : 'bg-gray-100'
+                  selectedMethod === 'wallet' ? 'bg-[var(--brand-primary)]' : 'bg-gray-100'
                 }`}>
                   <Wallet className={`w-4 h-4 ${selectedMethod === 'wallet' ? 'text-white' : 'text-gray-600'}`} />
                 </div>
@@ -335,28 +395,58 @@ export function PaymentOptions({
                   )}
                 </div>
                 {selectedMethod === 'wallet' && (
-                  <CheckCircle2 className="w-5 h-5 text-[#800020] flex-shrink-0" />
+                  <CheckCircle2 className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0" />
                 )}
               </div>
-            </button> */}
+            </button>
+            )}
 
-            {/* Paystack Only */}
+            {breakdown.pendingPayment && (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-amber-900">
+                      Payment is still being confirmed
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-amber-800">
+                      {breakdown.pendingPayment.canRetry
+                        ? 'If you were debited and this has not updated, retry the confirmation.'
+                        : `Please wait ${breakdown.pendingPayment.waitMinutes || 1} minute(s) before retrying.`}
+                    </p>
+                  </div>
+                  {breakdown.pendingPayment.canRetry && (
+                    <button
+                      type="button"
+                      onClick={handleRetryPayment}
+                      disabled={retrying}
+                      className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--brand-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {retrying ? 'Checking...' : 'Retry'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Online checkout */}
+            {breakdown.methods?.paystack !== false && (
             <button
               onClick={() => setSelectedMethod('paystack')}
               className={`w-full p-3 border-2 rounded-lg text-left transition-all cursor-pointer ${
                 selectedMethod === 'paystack'
-                  ? 'border-[#800020] bg-[#800020]/5'
+                  ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)]'
                   : 'border-gray-200 hover:border-gray-300'
               }`}
             >
               <div className="flex items-center gap-3">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  selectedMethod === 'paystack' ? 'bg-[#800020]' : 'bg-gray-100'
+                  selectedMethod === 'paystack' ? 'bg-[var(--brand-primary)]' : 'bg-gray-100'
                 }`}>
                   <CreditCard className={`w-4 h-4 ${selectedMethod === 'paystack' ? 'text-white' : 'text-gray-600'}`} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-semibold text-gray-900 mb-0.5">Paystack</h4>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-0.5">Online Checkout</h4>
                   <p className="text-xs text-gray-600">
                     Card or bank transfer
                   </p>
@@ -365,26 +455,24 @@ export function PaymentOptions({
                   </p>
                 </div>
                 {selectedMethod === 'paystack' && (
-                  <CheckCircle2 className="w-5 h-5 text-[#800020] flex-shrink-0" />
+                  <CheckCircle2 className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0" />
                 )}
               </div>
             </button>
+            )}
 
-            {/* Hybrid Payment - TEMPORARILY DISABLED */}
-            {/* TODO: Hybrid payment needs redesign to include auction-specific frozen deposit */}
-            {/* See conversation summary for details on architectural changes needed */}
-            {/* {breakdown.walletBalance > 0 && breakdown.walletBalance < breakdown.remainingAmount && (
+            {breakdown.methods?.hybrid && breakdown.walletBalance > 0 && breakdown.walletBalance < breakdown.remainingAmount && (
               <button
                 onClick={() => setSelectedMethod('hybrid')}
                 className={`w-full p-3 border-2 rounded-lg text-left transition-all cursor-pointer ${
                   selectedMethod === 'hybrid'
-                    ? 'border-[#800020] bg-[#800020]/5'
+                    ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)]'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    selectedMethod === 'hybrid' ? 'bg-[#800020]' : 'bg-gray-100'
+                    selectedMethod === 'hybrid' ? 'bg-[var(--brand-primary)]' : 'bg-gray-100'
                   }`}>
                     <Zap className={`w-4 h-4 ${selectedMethod === 'hybrid' ? 'text-white' : 'text-gray-600'}`} />
                   </div>
@@ -396,7 +484,7 @@ export function PaymentOptions({
                       </span>
                     </div>
                     <p className="text-xs text-gray-600 mb-1.5">
-                      Wallet + Paystack
+                      Wallet + online checkout
                     </p>
                     <div className="text-xs space-y-0.5 bg-white p-1.5 rounded border border-gray-200">
                       <div className="flex justify-between">
@@ -406,7 +494,7 @@ export function PaymentOptions({
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Paystack:</span>
+                        <span className="text-gray-600">Online:</span>
                         <span className="font-medium text-gray-900">
                           ₦{((breakdown.remainingAmount || 0) - (breakdown.walletBalance || 0)).toLocaleString()}
                         </span>
@@ -414,11 +502,11 @@ export function PaymentOptions({
                     </div>
                   </div>
                   {selectedMethod === 'hybrid' && (
-                    <CheckCircle2 className="w-5 h-5 text-[#800020] flex-shrink-0" />
+                    <CheckCircle2 className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0" />
                   )}
                 </div>
               </button>
-            )} */}
+            )}
           </div>
 
           {/* Info Box */}
@@ -436,7 +524,7 @@ export function PaymentOptions({
           <button
             onClick={handlePayment}
             disabled={!selectedMethod || processing}
-            className="w-full px-4 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            className="w-full px-4 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {processing ? (
               <>
@@ -447,42 +535,14 @@ export function PaymentOptions({
               <>
                 <CheckCircle2 className="w-4 h-4" />
                 {selectedMethod === 'wallet' && 'Pay with Wallet'}
-                {selectedMethod === 'paystack' && 'Pay with Paystack'}
-                {selectedMethod === 'hybrid' && 'Proceed to Hybrid'}
+                {selectedMethod === 'paystack' && 'Pay Online'}
+                {selectedMethod === 'hybrid' && 'Pay with Wallet + Online'}
                 {!selectedMethod && 'Select Payment Method'}
               </>
             )}
           </button>
         </div>
       </div>
-
-      {/* Paystack Modal */}
-      {showPaystackModal && paystackUrl && mounted && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0" style={{ zIndex: 999999 }}>
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowPaystackModal(false)} />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg max-w-4xl w-full h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Complete Payment</h3>
-                <button
-                  onClick={() => setShowPaystackModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <iframe
-                src={paystackUrl}
-                className="flex-1 w-full"
-                title="Paystack Payment"
-              />
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* Success Modal */}
       {showSuccessModal && successData && mounted && typeof document !== 'undefined' && createPortal(
@@ -515,7 +575,7 @@ export function PaymentOptions({
                 <div className="border-t border-gray-300 pt-3 space-y-2">
                   {successData.paystackAmount > 0 && (
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Via Paystack:</span>
+                      <span className="text-gray-600">Online checkout:</span>
                       <span className="font-semibold text-gray-900">
                         ₦{formatAmount(successData.paystackAmount)}
                       </span>
@@ -544,7 +604,7 @@ export function PaymentOptions({
                   // Refresh page to show pickup authorization modal
                   window.location.reload();
                 }}
-                className="w-full px-6 py-3 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+                className="w-full px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
               >
                 Continue
               </button>

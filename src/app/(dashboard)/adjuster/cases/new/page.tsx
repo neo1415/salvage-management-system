@@ -37,6 +37,7 @@ import { useDraftAutoSave } from '@/hooks/use-draft-auto-save';
 import { DraftList } from '@/components/cases/draft-list';
 import { AIAnalysisStatusBadge } from '@/components/cases/ai-analysis-status-badge';
 import { compressImage } from '@/utils/image-compression';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 
 /**
  * Web Speech API types (not fully supported in TypeScript)
@@ -375,7 +376,8 @@ function NewCasePageContent() {
   // Rate limiting state for AI assessment
   const [lastAnalysisTimes, setLastAnalysisTimes] = useState<number[]>([]);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
-  const [enabledAssetTypesPolicy, setEnabledAssetTypesPolicy] = useState<PublicAssetTypePolicy | null>(null);
+  const { policy: publicPolicy } = usePublicBusinessPolicy();
+  const enabledAssetTypesPolicy = publicPolicy?.cases.enabledAssetTypes as PublicAssetTypePolicy | undefined;
   
   // Search progress state
   const {
@@ -464,28 +466,6 @@ function NewCasePageContent() {
   useEffect(() => {
     captureGPSLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch('/api/business-policy/public')
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        const enabledAssetTypes = data?.policy?.cases?.enabledAssetTypes;
-        if (!cancelled && enabledAssetTypes && typeof enabledAssetTypes === 'object') {
-          setEnabledAssetTypesPolicy(enabledAssetTypes);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setEnabledAssetTypesPolicy(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   /**
@@ -1522,6 +1502,11 @@ function NewCasePageContent() {
       // When offline, GPS is optional - allow submission without it
       if (!gpsLocation && !isOffline) {
         toast.error('GPS location required', 'Please allow location access or go offline to skip GPS.');
+        if (isDraft) {
+          setIsSavingDraft(false);
+        } else {
+          setIsSubmittingForApproval(false);
+        }
         return;
       }
 
@@ -1585,6 +1570,13 @@ function NewCasePageContent() {
         };
       }
 
+      const finalVoiceContent = (
+        data.unifiedVoiceContent ||
+        voiceContent ||
+        watch('unifiedVoiceContent') ||
+        ''
+      ).trim();
+
       const caseData = {
         claimReference: data.claimReference,
         assetType: data.assetType,
@@ -1593,8 +1585,8 @@ function NewCasePageContent() {
         photos: data.photos,
         gpsLocation: gpsLocation || undefined, // Optional when offline
         locationName: data.locationName || (isOffline ? 'Location unavailable (offline)' : 'Unknown location'),
-        // FIXED: Convert unified voice content to voiceNotes array for backend
-        voiceNotes: data.unifiedVoiceContent ? [data.unifiedVoiceContent] : [],
+        // Convert unified voice content to voiceNotes array for backend.
+        voiceNotes: finalVoiceContent ? [finalVoiceContent] : [],
         status: isDraft ? 'draft' as const : 'pending_approval' as const,
         // CRITICAL FIX: Pass COMPLETE AI assessment results from frontend to backend
         aiAssessmentResult: aiAssessment ? {
@@ -1712,7 +1704,7 @@ function NewCasePageContent() {
       className="min-h-screen"
     >
       {/* Modern Header with Glassmorphism - Fixed positioning */}
-      <div className="bg-gradient-to-r from-[#800020] via-[#a0002a] to-[#800020] text-white sticky top-0 z-20 backdrop-blur-lg shadow-2xl shadow-[#800020]/20 border-b border-white/10">
+      <div className="bg-gradient-to-r from-[var(--brand-primary)] via-[var(--brand-primary-hover)] to-[var(--brand-primary)] text-white sticky top-0 z-20 backdrop-blur-lg shadow-2xl shadow-[var(--brand-shadow-color)] border-b border-white/10">
         <div className="px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between max-w-7xl mx-auto">
             <ModernButton
@@ -1918,12 +1910,12 @@ function NewCasePageContent() {
                       className={cn(
                         'relative p-4 rounded-2xl border-2 transition-all duration-300 ease-out',
                         'hover:scale-105 hover:shadow-lg active:scale-95',
-                        'focus:outline-none focus:ring-4 focus:ring-[#800020]/20',
+                        'focus:outline-none focus:ring-4 focus:ring-[var(--brand-focus-ring)]',
                         'group cursor-pointer',
                         field.value === type.value ? [
-                          'border-[#800020] bg-gradient-to-br from-[#800020]/5 to-[#800020]/10',
-                          'shadow-lg shadow-[#800020]/20',
-                          'ring-2 ring-[#800020]/30',
+                          'border-[var(--brand-primary)] bg-gradient-to-br from-[var(--brand-primary-surface)] to-[var(--brand-primary-surface)]',
+                          'shadow-lg shadow-[var(--brand-shadow-color)]',
+                          'ring-2 ring-[var(--brand-focus-ring)]',
                         ] : [
                           'border-gray-200 bg-white hover:border-gray-300',
                           'hover:bg-gray-50',
@@ -1936,7 +1928,7 @@ function NewCasePageContent() {
                         </div>
                         <div className={cn(
                           'font-medium text-sm',
-                          field.value === type.value ? 'text-[#800020]' : 'text-gray-700'
+                          field.value === type.value ? 'text-[var(--brand-primary)]' : 'text-gray-700'
                         )}>
                           {type.label}
                         </div>
@@ -1944,7 +1936,7 @@ function NewCasePageContent() {
                       
                       {/* Selection indicator */}
                       {field.value === type.value && (
-                        <div className="absolute -top-2 -right-2 w-6 h-6 bg-[#800020] rounded-full flex items-center justify-center shadow-lg">
+                        <div className="absolute -top-2 -right-2 w-6 h-6 bg-[var(--brand-primary)] rounded-full flex items-center justify-center shadow-lg">
                           <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           </svg>
@@ -2047,7 +2039,7 @@ function NewCasePageContent() {
                   render={({ field }) => (
                     <select
                       {...field}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent bg-white"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent bg-white"
                     >
                       <option value="">Select condition</option>
                       {getQualityTiers().map((condition) => (
@@ -2085,7 +2077,7 @@ function NewCasePageContent() {
                   rows={3}
                   className={cn(
                     'w-full px-4 py-3 border-transparent bg-gray-100 text-gray-900 rounded-xl',
-                    'hover:bg-gray-200 focus:bg-white focus:border-[#800020] focus:ring-2 focus:ring-[#800020]/30',
+                    'hover:bg-gray-200 focus:bg-white focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-focus-ring)]',
                     'transition-all duration-200 ease-out resize-none',
                     'placeholder:text-gray-600'
                   )}
@@ -2108,7 +2100,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('electronicsBrand')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Samsung, Apple, Sony"
               />
             </div>
@@ -2120,7 +2112,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('electronicsModel')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., iPhone 13, Galaxy S21"
               />
             </div>
@@ -2132,7 +2124,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('electronicsStorage')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., 128GB, 256GB"
               />
             </div>
@@ -2144,7 +2136,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('electronicsColor')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Black, White, Gold"
               />
             </div>
@@ -2156,7 +2148,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('electronicsSerialNumber')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="Serial number"
               />
             </div>
@@ -2175,7 +2167,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('applianceBrand')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., LG, Samsung, Whirlpool"
               />
             </div>
@@ -2187,7 +2179,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('applianceModel')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., WM-1234, RF-5678"
               />
             </div>
@@ -2199,7 +2191,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('applianceType')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Refrigerator, Washing Machine"
               />
             </div>
@@ -2211,7 +2203,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('applianceSize')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., 7kg, 500L, 1.5HP"
               />
             </div>
@@ -2230,7 +2222,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('jewelryType')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Watch, Ring, Necklace, Bracelet"
               />
             </div>
@@ -2242,7 +2234,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('jewelryBrand')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Rolex, Cartier, Tiffany"
               />
             </div>
@@ -2254,7 +2246,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('jewelryMaterial')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Gold, Silver, Platinum, Diamond"
               />
             </div>
@@ -2266,7 +2258,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('jewelryWeight')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., 18k, 2 carats, Size 7"
               />
             </div>
@@ -2285,7 +2277,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('furnitureType')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Sofa, Dining Table, Wardrobe"
               />
             </div>
@@ -2297,7 +2289,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('furnitureBrand')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., IKEA, Ashley, West Elm"
               />
             </div>
@@ -2309,7 +2301,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('furnitureMaterial')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Leather, Wood, Fabric"
               />
             </div>
@@ -2321,7 +2313,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('furnitureSize')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., 3-seater, King size, 6-person"
               />
             </div>
@@ -2340,7 +2332,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('machineryBrand')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Caterpillar, John Deere, Komatsu"
               />
             </div>
@@ -2352,7 +2344,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('machineryType')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., Excavator, Generator, Tractor"
               />
             </div>
@@ -2364,7 +2356,7 @@ function NewCasePageContent() {
               <input
                 type="text"
                 {...register('machineryModel')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., CAT-320, JD-5075E"
               />
             </div>
@@ -2376,7 +2368,7 @@ function NewCasePageContent() {
               <input
                 type="number"
                 {...register('machineryYear', { valueAsNumber: true })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder="e.g., 2020"
                 min="1990"
                 max={new Date().getFullYear()}
@@ -2404,7 +2396,7 @@ function NewCasePageContent() {
               render={({ field }) => (
                 <select
                   {...field}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 >
                   <option value="">Select condition</option>
                   <option value="Brand New">Brand New</option>
@@ -2436,7 +2428,7 @@ function NewCasePageContent() {
               {...register('marketValue', { 
                 setValueAs: (v) => v === '' || v === null ? undefined : parseFloat(v)
               })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent bg-gray-50"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent bg-gray-50"
               placeholder="AI will estimate from photos"
               readOnly={!aiAssessment}
             />
@@ -2447,7 +2439,7 @@ function NewCasePageContent() {
                   const newValue = prompt('Enter market value:', watch('marketValue')?.toString());
                   if (newValue) setValue('marketValue', parseFloat(newValue));
                 }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[#800020] hover:underline"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-primary)] hover:underline"
               >
                 Edit
               </button>
@@ -2486,7 +2478,7 @@ function NewCasePageContent() {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessingAI || searchProgress.stage !== 'idle'}
-            className="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-[#800020] hover:text-[#800020] transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)] transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isProcessingAI || searchProgress.stage !== 'idle' 
               ? '🔄 Processing...' 
@@ -2726,7 +2718,7 @@ function NewCasePageContent() {
               </div>
               <div className="flex justify-between items-center gap-2 p-3 bg-white rounded-lg overflow-hidden">
                 <span className="text-sm md:text-base text-gray-700 font-medium truncate">Reserve Price:</span>
-                <span className="text-base md:text-lg font-bold text-[#800020] whitespace-nowrap flex-shrink-0">₦{aiAssessment.reservePrice.toLocaleString()}</span>
+                <span className="text-base md:text-lg font-bold text-[var(--brand-primary)] whitespace-nowrap flex-shrink-0">₦{aiAssessment.reservePrice.toLocaleString()}</span>
               </div>
               
               {/* NEW: Detailed Item Identification (from Gemini) */}
@@ -2833,14 +2825,14 @@ function NewCasePageContent() {
             <input
               type="text"
               {...register('locationName')}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               placeholder="Enter location or use GPS"
             />
             <button
               type="button"
               onClick={captureGPSLocation}
               disabled={isCapturingGPS}
-              className="px-4 py-3 bg-[#800020] text-white rounded-lg hover:bg-[#600018] disabled:bg-gray-400 flex-shrink-0"
+              className="px-4 py-3 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:bg-gray-400 flex-shrink-0"
               title="Capture GPS location"
             >
               {isCapturingGPS ? '📍...' : '📍'}
@@ -2983,9 +2975,9 @@ function NewCasePageContent() {
               loading={isSavingDraft}
               className={cn(
                 "flex-1 sm:flex-none sm:min-w-[140px] relative overflow-hidden",
-                "bg-white hover:bg-[#800020]/5",
-                "text-[#800020] font-medium shadow-md hover:shadow-lg",
-                "border-2 border-[#800020] hover:border-[#a0002a]",
+                "bg-white hover:bg-[var(--brand-primary-surface)]",
+                "text-[var(--brand-primary)] font-medium shadow-md hover:shadow-lg",
+                "border-2 border-[var(--brand-primary)] hover:border-[var(--brand-primary-hover)]",
                 "transform transition-all duration-200 ease-out",
                 "hover:scale-[1.02] active:scale-[0.98]",
                 "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
@@ -3014,10 +3006,10 @@ function NewCasePageContent() {
               loading={isSubmittingForApproval}
               className={cn(
                 "flex-1 sm:flex-none sm:min-w-[160px] relative overflow-hidden group",
-                "bg-gradient-to-r from-[#800020] via-[#a0002a] to-[#c0003a]",
+                "bg-gradient-to-r from-[var(--brand-primary)] via-[var(--brand-primary-hover)] to-[var(--brand-primary-active)]",
                 "hover:from-[#900025] hover:via-[#b0002f] hover:to-[#d0003f]",
-                "text-white font-semibold shadow-lg hover:shadow-xl hover:shadow-[#800020]/30",
-                "border border-[#800020]/30 hover:border-[#800020]/50",
+                "text-white font-semibold shadow-lg hover:shadow-xl hover:shadow-[var(--brand-shadow-color)]",
+                "border border-[var(--brand-primary-border)] hover:border-[var(--brand-primary-border)]",
                 "transform transition-all duration-200 ease-out",
                 "hover:scale-[1.02] active:scale-[0.98]",
                 "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
@@ -3058,7 +3050,7 @@ export default function NewCasePage() {
     <Suspense fallback={
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800020] mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--brand-primary)] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading case creation form...</p>
         </div>
       </div>

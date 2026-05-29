@@ -3,7 +3,9 @@
  * Used for notifying vendors when they are outbid or when their bid is successful
  */
 
-import { getBaseEmailTemplate } from './base.template';
+import { getEmailBranding, brandTeamName } from './email-branding';
+import { getPolicyAwareBaseEmailTemplate } from './base.template';
+import { businessPolicyService, resolvePaymentDeadlineHours } from '@/features/business-policy';
 
 export interface BidAlertTemplateData {
   vendorName: string;
@@ -17,14 +19,18 @@ export interface BidAlertTemplateData {
   appUrl: string;
 }
 
-export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
+export async function getBidAlertEmailTemplate(data: BidAlertTemplateData): Promise<string> {
   const { vendorName, auctionId, assetName, alertType, yourBid, currentBid, timeRemaining, appUrl } = data;
+  const branding = await getEmailBranding();
+  const policy = await businessPolicyService.getEffectivePolicy();
+  const paymentDeadlineDecision = resolvePaymentDeadlineHours(policy);
+  const paymentDeadlineHours = paymentDeadlineDecision.value ?? policy.payments.paymentDeadlineAfterSigningHours;
   
   let statusIcon = '';
   let statusTitle = 'Bid Alert';
   let statusMessage = '';
   let actionButton = '';
-  let alertColor = '#800020';
+  let alertColor = branding.primaryColor;
   let alertBg = '#f9f9f9';
   
   if (alertType === 'outbid') {
@@ -42,7 +48,7 @@ export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
     statusMessage = `Congratulations! Your bid of <strong>₦${yourBid.toLocaleString()}</strong> is currently the highest for <strong>${assetName}</strong>.`;
     actionButton = 'View Auction';
   } else if (alertType === 'won') {
-    alertColor = '#FFD700';
+    alertColor = branding.accentColor;
     alertBg = '#fff9e6';
     statusIcon = '';
     statusTitle = 'You Won the Auction!';
@@ -59,25 +65,25 @@ export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
     </div>
     
     <div style="background-color: #f9f9f9; padding: 25px; border-radius: 8px; margin: 25px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #800020; font-size: 18px;">Bid Details</h3>
+      <h3 style="margin: 0 0 15px 0; color: ${branding.primaryColor}; font-size: 18px;">Bid Details</h3>
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020; width: 45%;">Auction:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: ${branding.primaryColor}; width: 45%;">Auction:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${assetName}</td>
         </tr>
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">Your Bid:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: ${branding.primaryColor};">Your Bid:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;"><strong>₦${yourBid.toLocaleString()}</strong></td>
         </tr>
         ${currentBid ? `
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #800020;">Current Highest Bid:</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: ${branding.primaryColor};">Current Highest Bid:</td>
           <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;"><strong style="color: #dc3545;">₦${currentBid.toLocaleString()}</strong></td>
         </tr>
         ` : ''}
         ${timeRemaining ? `
         <tr>
-          <td style="padding: 12px 0; font-weight: 600; color: #800020;">Time Remaining:</td>
+          <td style="padding: 12px 0; font-weight: 600; color: ${branding.primaryColor};">Time Remaining:</td>
           <td style="padding: 12px 0;"><strong>${timeRemaining}</strong></td>
         </tr>
         ` : ''}
@@ -100,7 +106,7 @@ export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
     <div style="background-color: #e7f3ff; border-left: 4px solid #0066cc; padding: 20px; margin: 25px 0; border-radius: 4px;">
       <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #0066cc;">Next Steps:</h3>
       <ul style="margin: 10px 0; padding-left: 20px; color: #333;">
-        <li style="margin: 8px 0;">Complete payment within 24 hours to secure your purchase</li>
+        <li style="margin: 8px 0;">Complete payment within ${paymentDeadlineHours} hours after signing the required documents</li>
         <li style="margin: 8px 0;">Choose your payment method: Paystack, Flutterwave, or Bank Transfer</li>
         <li style="margin: 8px 0;">After payment verification, you'll receive pickup authorization</li>
         <li style="margin: 8px 0;">Collect the salvage item within the specified timeframe</li>
@@ -109,13 +115,13 @@ export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
     ` : ''}
     
     <div style="text-align: center; margin: 30px 0;">
-      <a href="${appUrl}/vendor/auctions/${auctionId}" class="button" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 18px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">${actionButton}</a>
+      <a href="${appUrl}/vendor/auctions/${auctionId}" class="button" style="display: inline-block; padding: 16px 32px; background: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 18px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">${actionButton}</a>
     </div>
     
     <div style="height: 1px; background: linear-gradient(to right, transparent, #e0e0e0, transparent); margin: 30px 0;"></div>
     
     <p style="margin-top: 25px;">Best regards,</p>
-    <p><strong style="color: #800020;">The NEM Insurance Team</strong></p>
+    <p><strong style="color: ${branding.primaryColor};">${brandTeamName(branding)}</strong></p>
   `;
   
   let preheader = '';
@@ -127,7 +133,7 @@ export function getBidAlertEmailTemplate(data: BidAlertTemplateData): string {
     preheader = `Congratulations! You won ${assetName} for ₦${yourBid.toLocaleString()}`;
   }
   
-  return getBaseEmailTemplate({
+  return getPolicyAwareBaseEmailTemplate({
     title: statusTitle,
     preheader,
     content

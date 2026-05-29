@@ -1403,6 +1403,10 @@ function classifyError(error: any, requestId: string): ErrorType {
     errorMessage.includes('authentication') ||
     errorMessage.includes('unauthorized') ||
     errorMessage.includes('401') ||
+    errorMessage.includes('403') ||
+    errorMessage.includes('Forbidden') ||
+    errorMessage.includes('reported as leaked') ||
+    errorMessage.toLowerCase().includes('leaked') ||
     errorString.includes('API_KEY_INVALID')
   ) {
     console.error(
@@ -1548,6 +1552,16 @@ async function callGeminiAPIWithRetry(
 
     // Only retry for transient errors (5xx)
     if (errorType !== ErrorType.TRANSIENT) {
+      if (errorType === ErrorType.AUTHENTICATION) {
+        serviceConfig.enabled = false;
+        geminiModel = null;
+        geminiClient = null;
+        console.error(
+          `[Gemini Service] Disabled Gemini for this process after authentication failure. ` +
+          `Rotate GEMINI_API_KEY before re-enabling. Request ID: ${requestId}`
+        );
+      }
+
       console.error(
         `[Gemini Service] Error type is ${errorType}. No retry will be attempted. ` +
         `Request ID: ${requestId}`

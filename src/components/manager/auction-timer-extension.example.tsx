@@ -90,7 +90,7 @@ export function AuctionCardWithExtension() {
           <div className="flex justify-between items-center">
             <div>
               <p className="text-sm text-gray-600">Current Bid</p>
-              <p className="text-2xl font-bold text-[#800020]">
+              <p className="text-2xl font-bold text-[var(--brand-primary)]">
                 ₦{auction.currentBid.toLocaleString()}
               </p>
             </div>
@@ -233,7 +233,7 @@ export function MultipleAuctionsExample() {
                     selectedAuctionId === auction.id ? null : auction.id
                   )
                 }
-                className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors"
+                className="px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
               >
                 {selectedAuctionId === auction.id ? 'Cancel' : 'Extend'}
               </button>
@@ -283,7 +283,7 @@ export function WithPermissionCheck() {
             onClick={() => setUserRole('manager')}
             className={`px-4 py-2 rounded ${
               userRole === 'manager'
-                ? 'bg-[#800020] text-white'
+                ? 'bg-[var(--brand-primary)] text-white'
                 : 'bg-white text-gray-700'
             }`}
           >
@@ -293,7 +293,7 @@ export function WithPermissionCheck() {
             onClick={() => setUserRole('viewer')}
             className={`px-4 py-2 rounded ${
               userRole === 'viewer'
-                ? 'bg-[#800020] text-white'
+                ? 'bg-[var(--brand-primary)] text-white'
                 : 'bg-white text-gray-700'
             }`}
           >

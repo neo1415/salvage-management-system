@@ -54,9 +54,9 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
     <div className="space-y-8">
       {/* EXECUTIVE SUMMARY - Top 7 KPIs */}
       <section>
-        <h2 className="text-2xl font-bold mb-4 text-[#800020]">Executive Summary</h2>
+        <h2 className="text-2xl font-bold mb-4 text-[var(--brand-primary)]">Executive Summary</h2>
         <MetricGrid>
-          <Card className="border-l-4 border-l-[#800020] min-w-0">
+          <Card className="border-l-4 border-l-[var(--brand-primary)] min-w-0">
             <CardContent className="pt-6">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -73,7 +73,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                     </span>
                   </div>
                 </div>
-                <Banknote className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
+                <Banknote className="h-8 w-8 shrink-0 text-[var(--brand-primary)] opacity-20" />
               </div>
             </CardContent>
           </Card>
@@ -95,7 +95,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                     </span>
                   </div>
                 </div>
-                <FileText className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
+                <FileText className="h-8 w-8 shrink-0 text-[var(--brand-primary)] opacity-20" />
               </div>
             </CardContent>
           </Card>
@@ -108,7 +108,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   <MetricValue>{formatPercent(data.executiveSummary.auctionSuccessRate)}</MetricValue>
                   <p className="text-xs text-gray-500 mt-1">Verified payment</p>
                 </div>
-                <CheckCircle className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
+                <CheckCircle className="h-8 w-8 shrink-0 text-[var(--brand-primary)] opacity-20" />
               </div>
             </CardContent>
           </Card>
@@ -121,7 +121,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   <MetricValue>{data.executiveSummary.avgProcessingTime.toFixed(1)}</MetricValue>
                   <p className="text-xs text-gray-500 mt-1">days</p>
                 </div>
-                <Clock className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
+                <Clock className="h-8 w-8 shrink-0 text-[var(--brand-primary)] opacity-20" />
               </div>
             </CardContent>
           </Card>
@@ -147,7 +147,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   <MetricValue>{data.performance.teamMetrics.totalAdjusters}</MetricValue>
                   <p className="text-xs text-gray-500 mt-1">adjusters</p>
                 </div>
-                <Users className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
+                <Users className="h-8 w-8 shrink-0 text-[var(--brand-primary)] opacity-20" />
               </div>
             </CardContent>
           </Card>
@@ -160,7 +160,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   <MetricValue>{data.performance.teamMetrics.avgQualityScore.toFixed(1)}</MetricValue>
                   <p className="text-xs text-gray-500 mt-1">average</p>
                 </div>
-                <Award className="h-8 w-8 shrink-0 text-[#800020] opacity-20" />
+                <Award className="h-8 w-8 shrink-0 text-[var(--brand-primary)] opacity-20" />
               </div>
             </CardContent>
           </Card>
@@ -169,7 +169,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
 
       {/* FINANCIAL SECTION */}
       <section>
-        <h2 className="text-2xl font-bold mb-4 text-[#800020]">Financial Performance</h2>
+        <h2 className="text-2xl font-bold mb-4 text-[var(--brand-primary)]">Financial Performance</h2>
         
         <div className="grid gap-4 md:grid-cols-3 mb-4">
           <Card>
@@ -346,7 +346,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
 
       {/* OPERATIONAL SECTION */}
       <section>
-        <h2 className="text-2xl font-bold mb-4 text-[#800020]">Operational Performance</h2>
+        <h2 className="text-2xl font-bold mb-4 text-[var(--brand-primary)]">Operational Performance</h2>
         
         <div className="grid min-w-0 gap-4 md:grid-cols-3 mb-4">
           <Card className="min-w-0 overflow-hidden">
@@ -501,7 +501,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
 
       {/* PERFORMANCE SECTION */}
       <section>
-        <h2 className="text-2xl font-bold mb-4 text-[#800020]">Team Performance</h2>
+        <h2 className="text-2xl font-bold mb-4 text-[var(--brand-primary)]">Team Performance</h2>
         
         <MetricGrid className="mb-4">
           <Card>
@@ -626,7 +626,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
 
       {/* AUCTION INTELLIGENCE SECTION */}
       <section>
-        <h2 className="text-2xl font-bold mb-4 text-[#800020]">Auction Intelligence</h2>
+        <h2 className="text-2xl font-bold mb-4 text-[var(--brand-primary)]">Auction Intelligence</h2>
         
         <div className="grid min-w-0 gap-4 md:grid-cols-3 mb-4">
           <Card className="min-w-0 overflow-hidden">
@@ -732,7 +732,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
 
       {/* SYSTEM HEALTH SECTION */}
       <section>
-        <h2 className="text-2xl font-bold mb-4 text-[#800020]">System Health & Compliance</h2>
+        <h2 className="text-2xl font-bold mb-4 text-[var(--brand-primary)]">System Health & Compliance</h2>
         
         <div className="grid gap-4 md:grid-cols-3">
           <Card>

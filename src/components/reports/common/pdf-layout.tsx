@@ -1,10 +1,12 @@
+'use client';
+
 /**
  * PDF Layout Component
- * Provides professional letterhead and footer for PDF exports
+ * Provides brand-aware letterhead and footer for PDF exports.
  */
 
 import React from 'react';
-import Image from 'next/image';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 
 interface PDFLayoutProps {
   children: React.ReactNode;
@@ -13,96 +15,114 @@ interface PDFLayoutProps {
   generatedDate?: Date;
 }
 
-export function PDFLayout({ 
-  children, 
-  reportTitle, 
+export function PDFLayout({
+  children,
+  reportTitle,
   reportSubtitle,
-  generatedDate = new Date() 
+  generatedDate = new Date(),
 }: PDFLayoutProps) {
+  const { branding } = usePublicBranding();
+  const organizationName = branding.legalName || branding.brandName;
+  const logoSrc = branding.logoPath || branding.faviconPath || '/icons/icon-192.png';
+
   return (
-    <div className="pdf-container" style={{ 
-      maxWidth: '210mm', 
-      margin: '0 auto', 
-      background: 'white',
-      minHeight: '100vh'
-    }}>
+    <div
+      className="pdf-container"
+      style={{
+        maxWidth: '210mm',
+        margin: '0 auto',
+        background: 'white',
+        minHeight: '100vh',
+      }}
+    >
       {/* Letterhead */}
-      <header className="pdf-header" style={{
-        padding: '20mm 15mm',
-        borderBottom: '1px solid #e5e7eb'
-      }}>
+      <header
+        className="pdf-header"
+        style={{
+          padding: '20mm 15mm',
+          borderBottom: '1px solid #e5e7eb',
+        }}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Image 
-              src="/icons/Nem-insurance-Logo.jpg" 
-              alt="NEM Insurance Logo" 
-              width={80} 
+            <img
+              src={logoSrc}
+              alt={`${branding.brandName} logo`}
+              width={80}
               height={80}
               className="object-contain"
             />
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">NEM Insurance</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{organizationName}</h1>
               <p className="text-sm text-gray-600">Salvage Management System</p>
             </div>
           </div>
           <div className="text-right text-sm text-gray-600">
-            <p>Generated: {generatedDate.toLocaleDateString('en-NG', { 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}</p>
-            <p>{generatedDate.toLocaleTimeString('en-NG', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            })}</p>
+            <p>
+              Generated:{' '}
+              {generatedDate.toLocaleDateString('en-NG', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </p>
+            <p>
+              {generatedDate.toLocaleTimeString('en-NG', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </p>
           </div>
         </div>
-        <div className="mt-4 border-t-2 border-blue-600 pt-4">
+        <div className="mt-4 border-t-2 pt-4" style={{ borderColor: branding.primaryColor }}>
           <h2 className="text-xl font-semibold text-gray-900">{reportTitle}</h2>
-          {reportSubtitle && (
-            <p className="text-sm text-gray-600 mt-1">{reportSubtitle}</p>
-          )}
+          {reportSubtitle && <p className="mt-1 text-sm text-gray-600">{reportSubtitle}</p>}
         </div>
       </header>
 
       {/* Report Content */}
-      <main className="pdf-content" style={{
-        padding: '15mm',
-        minHeight: '200mm'
-      }}>
+      <main
+        className="pdf-content"
+        style={{
+          padding: '15mm',
+          minHeight: '200mm',
+        }}
+      >
         {children}
       </main>
 
       {/* Footer */}
-      <footer className="pdf-footer" style={{
-        padding: '15mm',
-        borderTop: '1px solid #e5e7eb',
-        background: '#f9fafb'
-      }}>
-        <div className="border-t-2 border-blue-600 pt-4">
+      <footer
+        className="pdf-footer"
+        style={{
+          padding: '15mm',
+          borderTop: '1px solid #e5e7eb',
+          background: '#f9fafb',
+        }}
+      >
+        <div className="border-t-2 pt-4" style={{ borderColor: branding.primaryColor }}>
           <div className="grid grid-cols-3 gap-4 text-xs text-gray-600">
             <div>
-              <p className="font-semibold text-gray-900 mb-2">Head Office</p>
-              <p>NEM Insurance Plc</p>
-              <p>274 Ikorodu Road, Obanikoro</p>
-              <p>Lagos, Nigeria</p>
+              <p className="mb-2 font-semibold text-gray-900">Organization</p>
+              <p>{organizationName}</p>
+              <p>{branding.brandName} Salvage Management</p>
             </div>
             <div>
-              <p className="font-semibold text-gray-900 mb-2">Contact</p>
-              <p>Phone: +234 1 271 6820</p>
-              <p>Email: info@neminsurance.com.ng</p>
-              <p>Website: www.neminsurance.com.ng</p>
+              <p className="mb-2 font-semibold text-gray-900">Contact</p>
+              {branding.supportPhone && <p>Phone: {branding.supportPhone}</p>}
+              <p>Email: {branding.supportEmail}</p>
             </div>
             <div>
-              <p className="font-semibold text-gray-900 mb-2">Regional Offices</p>
-              <p>Abuja • Port Harcourt • Kano</p>
-              <p>Ibadan • Enugu • Kaduna</p>
-              <p className="mt-2 text-gray-500">RC: 2739 • Licensed by NAICOM</p>
+              <p className="mb-2 font-semibold text-gray-900">Document Control</p>
+              <p>Generated report package</p>
+              <p>For authorized internal review only</p>
             </div>
           </div>
           <div className="mt-4 text-center text-xs text-gray-500">
             <p>This is a computer-generated document. No signature is required.</p>
-            <p className="mt-1">© {new Date().getFullYear()} NEM Insurance Plc. All rights reserved.</p>
+            <p className="mt-1">
+              © {new Date().getFullYear()} {organizationName}. All rights reserved.
+            </p>
           </div>
         </div>
       </footer>
@@ -110,7 +130,6 @@ export function PDFLayout({
       {/* Print-specific styles */}
       <style jsx global>{`
         @media print {
-          /* Hide everything except PDF container */
           body > *:not(.pdf-container) {
             display: none !important;
           }
@@ -122,45 +141,40 @@ export function PDFLayout({
             padding: 0;
           }
 
-          /* Ensure letterhead appears on every page */
           .pdf-header {
             position: running(header);
           }
 
-          /* Ensure footer appears on every page */
           .pdf-footer {
             position: running(footer);
           }
 
           @page {
             margin: 2cm 1.5cm;
-            
+
             @top-center {
               content: element(header);
             }
-            
+
             @bottom-center {
               content: element(footer);
             }
           }
 
-          /* Prevent page breaks inside important elements */
           .pdf-no-break {
             page-break-inside: avoid;
             break-inside: avoid;
           }
 
-          /* Force page breaks where needed */
           .pdf-page-break {
             page-break-before: always;
             break-before: always;
           }
         }
 
-        /* Screen styles for PDF preview */
         @media screen {
           .pdf-container {
-            max-width: 210mm; /* A4 width */
+            max-width: 210mm;
             margin: 0 auto;
             background: white;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
@@ -173,7 +187,7 @@ export function PDFLayout({
 
           .pdf-content {
             padding: 15mm;
-            min-height: 200mm; /* Approximate A4 height minus header/footer */
+            min-height: 200mm;
           }
 
           .pdf-footer {

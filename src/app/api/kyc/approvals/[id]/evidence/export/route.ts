@@ -8,6 +8,7 @@ import { fraudAlerts } from '@/lib/db/schema/intelligence';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { ExportService } from '@/features/export/services/export.service';
+import { getEmailBranding } from '@/features/notifications/templates/email-branding';
 import {
   AuditActionType,
   AuditEntityType,
@@ -61,6 +62,7 @@ export async function GET(
   }
 
   const { id: vendorId } = await params;
+  const branding = await getEmailBranding();
 
   const [vendor] = await db
     .select()
@@ -170,7 +172,7 @@ export async function GET(
   }));
 
   const csvParts = [
-    'NEM Salvage Vendor Verification Evidence Packet',
+    `${branding.brandName} Vendor Verification Evidence Packet`,
     section('Vendor Identity Summary', [
       { field: 'Vendor ID', value: vendor.id },
       { field: 'User ID', value: vendor.userId },

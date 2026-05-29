@@ -70,7 +70,7 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
   }, [auction]);
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 border-2 border-gray-200 hover:border-burgundy-500 transition-all">
+    <div className="bg-white rounded-lg shadow-md p-6 border-2 border-gray-200 hover:border-[var(--brand-primary)] transition-all">
       {/* Extension Alert */}
       {isExtended && (
         <div className="mb-4 p-3 bg-orange-100 border border-orange-400 rounded-md animate-pulse">
@@ -94,7 +94,7 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
         {/* Current Bid */}
         <div>
           <p className="text-sm text-gray-600">Current Bid</p>
-          <p className="text-2xl font-bold text-burgundy-900">
+          <p className="text-2xl font-bold text-[var(--brand-primary)]">
             ₦{currentBid.toLocaleString()}
           </p>
           {latestBid && (
@@ -138,7 +138,7 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
         {status === 'active' || status === 'extended' ? (
           <button 
             onClick={() => setShowBidForm(true)}
-            className="w-full bg-burgundy-900 text-white py-3 rounded-lg font-semibold hover:bg-burgundy-800 transition-colors"
+            className="w-full bg-[var(--brand-primary)] text-white py-3 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors"
           >
             Place Bid
           </button>

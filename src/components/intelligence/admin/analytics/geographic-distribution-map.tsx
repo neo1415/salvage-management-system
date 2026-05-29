@@ -100,7 +100,7 @@ export function GeographicDistributionMap({ data, loading }: GeographicDistribut
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3 flex-1">
                     <div className="mt-1">
-                      <MapPin className="h-5 w-5 text-[#800020]" />
+                      <MapPin className="h-5 w-5 text-[var(--brand-primary)]" />
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
@@ -143,7 +143,7 @@ export function GeographicDistributionMap({ data, loading }: GeographicDistribut
                   
                   <div className="text-right ml-4">
                     <p className="text-xs text-muted-foreground">Rank</p>
-                    <p className="text-2xl font-bold text-[#800020]">#{index + 1}</p>
+                    <p className="text-2xl font-bold text-[var(--brand-primary)]">#{index + 1}</p>
                   </div>
                 </div>
               </div>

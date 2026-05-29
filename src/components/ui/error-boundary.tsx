@@ -135,7 +135,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <div className="space-y-3">
               <button
                 onClick={this.handleReset}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
               >
                 <RefreshCw size={18} />
                 Try Again

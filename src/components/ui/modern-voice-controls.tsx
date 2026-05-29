@@ -164,7 +164,7 @@ export const ModernVoiceControls: React.FC<VoiceControlsProps> = ({
           {Array.from({ length: 16 }, (_, i) => (
             <div
               key={i}
-              className="audio-bar bg-gradient-to-t from-[#800020] via-red-400 to-pink-300 rounded-full transition-all duration-75 ease-out shadow-sm"
+              className="audio-bar bg-gradient-to-t from-[var(--brand-primary)] via-red-400 to-pink-300 rounded-full transition-all duration-75 ease-out shadow-sm"
               style={{
                 width: '2.5px',
                 height: `${Math.max(3, Math.min(36, (audioLevel * 40 * (1 + Math.sin(i * 0.4 + Date.now() * 0.001) * 0.4))))}px`,
@@ -204,8 +204,8 @@ export const ModernVoiceControls: React.FC<VoiceControlsProps> = ({
               !reducedMotion && 'animate-pulse scale-110',
               'ring-4 ring-red-400/30',
             ] : [
-              'from-[#800020] via-[#a0002a] to-[#c0003a] text-white',
-              'shadow-[#800020]/40 hover:shadow-[#800020]/60',
+              'from-[var(--brand-primary)] via-[var(--brand-primary-hover)] to-[var(--brand-primary-active)] text-white',
+              'shadow-[var(--brand-shadow-color)] hover:shadow-[var(--brand-shadow-color)]',
               !reducedMotion && 'hover:scale-110 active:scale-105',
               !reducedMotion && 'hover:rotate-3 active:rotate-1',
             ],
@@ -218,8 +218,8 @@ export const ModernVoiceControls: React.FC<VoiceControlsProps> = ({
             
             // Enhanced keyboard focus state with better visibility
             (keyboardFocused || recordButtonAccessibility.isFocused) && [
-              'ring-4 ring-[#800020]/50 ring-offset-4 ring-offset-white dark:ring-offset-gray-900',
-              'shadow-2xl shadow-[#800020]/30',
+              'ring-4 ring-[var(--brand-focus-ring)] ring-offset-4 ring-offset-white dark:ring-offset-gray-900',
+              'shadow-2xl shadow-[var(--brand-shadow-color)]',
               'scale-105'
             ],
           )}

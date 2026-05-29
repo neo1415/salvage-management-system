@@ -149,6 +149,25 @@ export interface SignedUploadParams {
   transformation?: string;
 }
 
+type CloudinaryTransformationPreset =
+  typeof TRANSFORMATION_PRESETS[keyof typeof TRANSFORMATION_PRESETS] |
+  typeof PROFILE_PICTURE_PRESETS[keyof typeof PROFILE_PICTURE_PRESETS];
+
+function serializeTransformation(transformation: CloudinaryTransformationPreset): string {
+  const parts: string[] = [];
+
+  if ('width' in transformation && transformation.width) parts.push(`w_${transformation.width}`);
+  if ('height' in transformation && transformation.height) parts.push(`h_${transformation.height}`);
+  if ('crop' in transformation && transformation.crop) parts.push(`c_${transformation.crop}`);
+  if ('gravity' in transformation && transformation.gravity) parts.push(`g_${transformation.gravity}`);
+  if ('radius' in transformation && transformation.radius) parts.push(`r_${transformation.radius}`);
+  if ('quality' in transformation && transformation.quality) parts.push(`q_${transformation.quality}`);
+  if ('fetch_format' in transformation && transformation.fetch_format) parts.push(`f_${transformation.fetch_format}`);
+  if ('flags' in transformation && transformation.flags) parts.push(`fl_${transformation.flags}`);
+
+  return parts.join(',');
+}
+
 /**
  * Upload a file to Cloudinary
  * 
@@ -308,6 +327,7 @@ export function generateSignedUploadParams(
   transformation?: typeof TRANSFORMATION_PRESETS[keyof typeof TRANSFORMATION_PRESETS]
 ): SignedUploadParams {
   const timestamp = Math.round(Date.now() / 1000);
+  const serializedTransformation = transformation ? serializeTransformation(transformation) : undefined;
   
   const params: Record<string, string | number> = {
     timestamp,
@@ -318,8 +338,8 @@ export function generateSignedUploadParams(
     params.public_id = publicId;
   }
 
-  if (transformation) {
-    params.transformation = JSON.stringify(transformation);
+  if (serializedTransformation) {
+    params.transformation = serializedTransformation;
   }
 
   // Generate signature
@@ -335,7 +355,7 @@ export function generateSignedUploadParams(
     apiKey: process.env.CLOUDINARY_API_KEY!,
     folder,
     publicId,
-    transformation: transformation ? JSON.stringify(transformation) : undefined,
+    transformation: serializedTransformation,
   };
 }
 

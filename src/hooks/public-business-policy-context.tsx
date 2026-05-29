@@ -1,0 +1,114 @@
+'use client';
+
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import type { PublicBusinessPolicy } from '@/features/business-policy/types';
+import { getBrandCssVariables } from '@/features/branding/brand-colors';
+
+type PublicPolicyState = {
+  policy: PublicBusinessPolicy | null;
+  loading: boolean;
+};
+
+const PublicBusinessPolicyContext = createContext<PublicPolicyState>({
+  policy: null,
+  loading: true,
+});
+
+function getBootPolicy(): PublicBusinessPolicy | null {
+  if (typeof window === 'undefined') return null;
+  return window.__PUBLIC_BUSINESS_POLICY__ ?? null;
+}
+
+type PublicBusinessPolicyProviderProps = {
+  initialPolicy: PublicBusinessPolicy | null;
+  children: ReactNode;
+};
+
+export function PublicBusinessPolicyProvider({
+  initialPolicy,
+  children,
+}: PublicBusinessPolicyProviderProps) {
+  const bootPolicy = initialPolicy ?? getBootPolicy();
+  const [state, setState] = useState<PublicPolicyState>({
+    policy: bootPolicy,
+    loading: !bootPolicy,
+  });
+
+  useEffect(() => {
+    const nextInitialPolicy = initialPolicy ?? getBootPolicy();
+
+    if (nextInitialPolicy) {
+      setState((current) => ({
+        policy: !current.policy || current.policy.version !== nextInitialPolicy.version
+          ? nextInitialPolicy
+          : current.policy,
+        loading: false,
+      }));
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch('/api/business-policy/public', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        setState({
+          policy: data?.policy ?? nextInitialPolicy ?? null,
+          loading: false,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setState({
+          policy: nextInitialPolicy ?? null,
+          loading: false,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialPolicy]);
+
+  useEffect(() => {
+    if (!state.policy?.branding || typeof document === 'undefined') return;
+
+    const variables = getBrandCssVariables(state.policy.branding);
+    Object.entries(variables).forEach(([name, value]) => {
+      document.documentElement.style.setProperty(name, String(value));
+    });
+
+    document.title = `${state.policy.branding.brandName} - Salvage Recovery And Auction Management`;
+    upsertIconLink('icon', state.policy.branding.faviconPath || state.policy.branding.logoPath || '/icons/icon-192.png', state.policy.version);
+    upsertIconLink('apple-touch-icon', state.policy.branding.faviconPath || state.policy.branding.logoPath || '/icons/icon-192.png', state.policy.version);
+  }, [state.policy]);
+
+  const value = useMemo(() => state, [state]);
+
+  return (
+    <PublicBusinessPolicyContext.Provider value={value}>
+      {children}
+    </PublicBusinessPolicyContext.Provider>
+  );
+}
+
+export function usePublicBusinessPolicyContext(): PublicPolicyState {
+  return useContext(PublicBusinessPolicyContext);
+}
+
+function upsertIconLink(rel: string, href: string, version: string) {
+  if (!href) return;
+
+  const selector = `link[rel="${rel}"]`;
+  let link = document.head.querySelector<HTMLLinkElement>(selector);
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = rel;
+    document.head.appendChild(link);
+  }
+
+  const separator = href.includes('?') ? '&' : '?';
+  link.href = `${href}${separator}v=${encodeURIComponent(version)}`;
+}

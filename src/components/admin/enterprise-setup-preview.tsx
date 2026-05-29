@@ -30,7 +30,7 @@ type EnterpriseSetupPreviewProps = {
 const formatter = new Intl.NumberFormat('en-NG');
 
 function money(value: number) {
-  return `₦${formatter.format(value)}`;
+  return `\u20A6${formatter.format(value)}`;
 }
 
 function boolLabel(value: boolean) {
@@ -51,7 +51,7 @@ function PolicyCard({
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#800020]/10 text-[#800020]">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-primary-surface)] text-[var(--brand-primary)]">
           {icon}
         </div>
         <div>
@@ -104,9 +104,9 @@ function ValidationPanel({ validation }: { validation: PolicyValidationResult })
             {validation.valid ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Policy Validation</h2>
+            <h2 className="text-lg font-bold text-gray-900">Setup Check</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Publish checks are previewed here and enforced before drafts can become active.
+              We check for missing or conflicting settings before changes are published.
             </p>
           </div>
         </div>
@@ -126,7 +126,7 @@ function ValidationPanel({ validation }: { validation: PolicyValidationResult })
         </div>
       ) : (
         <p className="mt-4 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-          Current NEM policy passes the first validation layer.
+          Everything looks ready.
         </p>
       )}
     </section>
@@ -149,23 +149,23 @@ function VersionPanel({
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#800020]/10 text-[#800020]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--brand-primary-surface)] text-[var(--brand-primary)]">
           <FileText className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-gray-900">Policy Versioning</h2>
+          <h2 className="text-lg font-bold text-gray-900">Current Setup</h2>
           <p className="mt-1 text-sm text-gray-600">
-            Published policies will become the source of truth after validation. Until then, NEM defaults and legacy config remain active.
+            This is the setup currently controlling the live workspace.
           </p>
         </div>
       </div>
       <div className="mt-4">
         <DefinitionList
           rows={[
-            ['Active source', isPublished ? 'Published policy' : 'Runtime NEM defaults + legacy config'],
-            ['Effective version', policy.version],
-            ['Published version', publishedVersion || 'None'],
-            ['Stored versions', versionCount ?? 0],
+            ['Status', isPublished ? 'Published' : 'Default setup'],
+            ['Current version', policy.version],
+            ['Latest published version', publishedVersion || 'None yet'],
+            ['Saved versions', versionCount ?? 0],
           ]}
         />
       </div>
@@ -210,7 +210,7 @@ function VendorJourney({ policy }: { policy: BusinessPolicy }) {
       decision: 'onboarding.registrationFeeRequired',
     },
     {
-      title: 'Complete Tier 2 KYC',
+      title: 'Complete full verification',
       detail: tier2Review.value === 'manual_review'
         ? 'Dojah evidence goes to manual review'
         : 'Provider pass can unlock next step',
@@ -228,7 +228,7 @@ function VendorJourney({ policy }: { policy: BusinessPolicy }) {
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
       <div className="mb-5 flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#800020]/10 text-[#800020]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--brand-primary-surface)] text-[var(--brand-primary)]">
           <ClipboardCheck className="h-5 w-5" />
         </div>
         <div>
@@ -239,7 +239,7 @@ function VendorJourney({ policy }: { policy: BusinessPolicy }) {
       <ol className="grid gap-3 lg:grid-cols-3">
         {steps.map((step, index) => (
           <li key={step.title} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <div className="mb-3 flex h-7 w-7 items-center justify-center rounded-full bg-[#800020] text-sm font-bold text-white">
+            <div className="mb-3 flex h-7 w-7 items-center justify-center rounded-full bg-[var(--brand-primary)] text-sm font-bold text-white">
               {index + 1}
             </div>
             <h3 className="font-semibold text-gray-900">{step.title}</h3>
@@ -265,17 +265,17 @@ export function EnterpriseSetupPreview({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-[#800020]/20 bg-[#800020] p-6 text-white shadow-sm">
+      <section className="rounded-lg border border-[var(--brand-primary-border)] bg-[var(--brand-primary)] p-6 text-white shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-white/70">Effective policy preview</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-white/70">Current setup preview</p>
             <h1 className="mt-2 text-3xl font-bold">Enterprise Setup</h1>
             <p className="mt-2 max-w-3xl text-white/80">
-              Review the currently effective business policy. Draft edits above only affect behavior after a valid policy is published.
+              Review the settings currently shaping onboarding, auctions, documents, notifications, and review controls.
             </p>
           </div>
           <div className="rounded-lg bg-white/10 p-4">
-            <p className="text-xs uppercase tracking-wide text-white/60">Policy version</p>
+            <p className="text-xs uppercase tracking-wide text-white/60">Current version</p>
             <p className="mt-1 font-semibold">{policy.version}</p>
           </div>
         </div>
@@ -292,7 +292,7 @@ export function EnterpriseSetupPreview({
       <VendorJourney policy={policy} />
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <PolicyCard title="Brand And Access" description="Client-facing identity, login, and MFA behavior." icon={<Building2 className="h-5 w-5" />}>
+        <PolicyCard title="Brand And Access" description="Business identity, login, and account protection." icon={<Building2 className="h-5 w-5" />}>
           <DefinitionList
             rows={[
               ['Brand', policy.branding.brandName],
@@ -325,14 +325,10 @@ export function EnterpriseSetupPreview({
           />
         </PolicyCard>
 
-        <PolicyCard title="Payments And Escrow" description="Provider, wallet, deposit, and forfeiture rules." icon={<Wallet className="h-5 w-5" />}>
+        <PolicyCard title="Payments And Deposits" description="Wallet, deposit, deadline, and payment rules." icon={<Wallet className="h-5 w-5" />}>
           <DefinitionList
             rows={[
-              ['Default provider', policy.payments.defaultProvider],
               ['Wallet', boolLabel(policy.payments.walletEnabled)],
-              ['Paystack', boolLabel(policy.payments.paystackEnabled)],
-              ['Flutterwave', boolLabel(policy.payments.flutterwaveEnabled)],
-              ['Manual payments', boolLabel(policy.payments.manualPaymentEnabled)],
               ['Hybrid payment', boolLabel(policy.payments.hybridPaymentEnabled)],
               ['Payment deadline', `${policy.payments.paymentDeadlineAfterSigningHours} hours after signing`],
               ['Deposit system', boolLabel(policy.escrow.depositSystemEnabled)],
@@ -365,7 +361,7 @@ export function EnterpriseSetupPreview({
               ['Voice notes', boolLabel(policy.cases.voiceNotesEnabled)],
               ['Transcript review', boolLabel(policy.cases.salvageManagerTranscriptReviewRequired)],
               ['AI valuation', boolLabel(policy.aiValuation.enabled)],
-              ['Provider order', policy.aiValuation.providerPriority.join(' → ')],
+              ['Provider order', policy.aiValuation.providerPriority.join(' -> ')],
               ['Market search', boolLabel(policy.aiValuation.marketSearchEnabled)],
               ['Repair vs replace', boolLabel(policy.aiValuation.repairVsReplaceEnabled)],
               ['Show cost breakdown', boolLabel(policy.aiValuation.showDamageCostBreakdownToVendors)],
@@ -391,13 +387,13 @@ export function EnterpriseSetupPreview({
 
       <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-700">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--brand-primary-surface)] text-[var(--brand-primary)]">
             <Lock className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Protected Implementation Standard</h2>
+            <h2 className="text-lg font-bold text-gray-900">Ready For Review</h2>
             <p className="mt-1 text-sm text-gray-600">
-              The editor intentionally excludes provider keys, webhook secrets, raw fraud thresholds, and sensitive internal controls. Those remain private environment or admin-only settings.
+              Save a draft when you are still editing. Publish only when the setup matches the way the team should operate.
             </p>
           </div>
         </div>

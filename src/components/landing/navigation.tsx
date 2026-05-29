@@ -6,6 +6,8 @@ import Image from 'next/image';
 import { Menu, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { usePublicBranding } from '@/hooks/use-public-branding';
+import { getReadableTextColor } from '@/features/branding/brand-colors';
+import { normalizeHomepageTemplate, resolveTemplateTheme } from './template-config';
 
 export function Navigation() {
   const { branding } = usePublicBranding();
@@ -26,6 +28,18 @@ export function Navigation() {
     { name: 'How It Works', href: '#how-it-works' },
     { name: 'Contact', href: '#contact' },
   ];
+  const template = normalizeHomepageTemplate(branding.homepageTemplate);
+  const resolvedTheme = resolveTemplateTheme(branding);
+  const darkHeroTemplates = new Set(['nem_salvage', 'reclaim_editorial', 'claims_orbit']);
+  const darkHero = resolvedTheme === 'night' || darkHeroTemplates.has(template);
+  const transparentOnDark = !isScrolled && darkHero;
+  const primaryText = getReadableTextColor(branding.primaryColor);
+  const loginBorderColor = primaryText === '#0F172A' ? '#CBD5E1' : branding.primaryColor;
+  const accentText = getReadableTextColor(branding.accentColor);
+  const registerStyle = {
+    backgroundColor: branding.accentColor,
+    color: accentText,
+  };
 
   const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
     e.preventDefault();
@@ -51,17 +65,18 @@ export function Navigation() {
         <div className="flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center space-x-3">
-            <Image 
-              src={branding.logoPath || '/icons/Nem-insurance-Logo.jpg'} 
-              alt={`${branding.brandName} logo`} 
+            <Image
+              src={branding.logoPath || '/icons/icon-192.png'}
+              alt={`${branding.brandName} logo`}
               width={40}
               height={40}
               className="object-contain rounded"
               priority
             />
-            <span className={`font-bold text-lg transition-colors ${
-              isScrolled ? 'text-burgundy-800' : 'text-white'
-            }`}>
+            <span
+              className={`font-bold text-lg transition-colors ${transparentOnDark ? 'text-white' : ''}`}
+              style={transparentOnDark ? undefined : { color: branding.primaryColor }}
+            >
               {branding.brandName}
             </span>
           </Link>
@@ -73,8 +88,8 @@ export function Navigation() {
                 key={link.name}
                 href={link.href}
                 onClick={(e) => scrollToSection(e, link.href)}
-                className={`font-medium transition-colors hover:text-gold-500 ${
-                  isScrolled ? 'text-gray-700' : 'text-white'
+                className={`font-medium transition-colors ${
+                  transparentOnDark ? 'text-white/90 hover:text-white' : 'text-gray-700 hover:text-[var(--brand-primary)]'
                 }`}
               >
                 {link.name}
@@ -83,18 +98,18 @@ export function Navigation() {
             <Link
               href="/login"
               className={`px-4 py-2 rounded-lg border-2 transition-all ${
-                isScrolled
+                !transparentOnDark
                   ? 'hover:text-white'
-                  : 'border-white text-white hover:bg-white hover:text-burgundy-800'
+                  : 'border-white text-white hover:bg-white hover:text-slate-950'
               }`}
-              style={isScrolled ? { borderColor: branding.primaryColor, color: branding.primaryColor } : undefined}
+              style={!transparentOnDark ? { borderColor: loginBorderColor, color: primaryText === '#0F172A' ? '#0F172A' : branding.primaryColor } : undefined}
             >
               Login
             </Link>
             <Link
               href="/register"
               className="px-6 py-2 font-bold rounded-lg transition-all hover:scale-105 hover:shadow-lg"
-              style={{ backgroundColor: branding.accentColor, color: branding.primaryColor }}
+              style={registerStyle}
             >
               Sign Up
             </Link>
@@ -102,9 +117,8 @@ export function Navigation() {
 
           {/* Mobile Menu Button */}
           <button
-            className={`md:hidden p-2 rounded-lg transition-colors ${
-              isScrolled ? 'text-burgundy-800' : 'text-white'
-            }`}
+            className={`md:hidden p-2 rounded-lg transition-colors ${transparentOnDark ? 'text-white' : ''}`}
+            style={transparentOnDark ? undefined : { color: branding.primaryColor }}
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="Toggle menu"
           >
@@ -121,7 +135,7 @@ export function Navigation() {
                   key={link.name}
                   href={link.href}
                   onClick={(e) => scrollToSection(e, link.href)}
-                  className="text-gray-700 font-medium hover:text-gold-500 transition-colors py-2"
+                  className="text-gray-700 font-medium hover:text-[var(--brand-accent)] transition-colors py-2"
                 >
                   {link.name}
                 </a>
@@ -130,7 +144,7 @@ export function Navigation() {
                 href="/login"
                 prefetch
                 className="px-4 py-2 text-center border-2 rounded-lg hover:text-white transition-all"
-                style={{ borderColor: branding.primaryColor, color: branding.primaryColor }}
+                style={{ borderColor: loginBorderColor, color: primaryText === '#0F172A' ? '#0F172A' : branding.primaryColor }}
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 Login
@@ -138,7 +152,7 @@ export function Navigation() {
               <Link
                 href="/register"
                 className="px-6 py-2 text-center font-bold rounded-lg transition-all hover:opacity-90"
-                style={{ backgroundColor: branding.accentColor, color: branding.primaryColor }}
+                style={registerStyle}
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 Sign Up

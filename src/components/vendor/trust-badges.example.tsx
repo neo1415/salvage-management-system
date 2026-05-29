@@ -241,7 +241,7 @@ export function Example8_MobileCard() {
         size="sm"
       />
       <div className="mt-4 flex gap-2">
-        <button className="flex-1 px-4 py-2 bg-burgundy-600 text-white rounded-lg text-sm font-medium">
+        <button className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg text-sm font-medium">
           View Profile
         </button>
         <button className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium">
@@ -281,16 +281,16 @@ export function Example9_AuctionWinner() {
  */
 export function Example10_ProfileHeader() {
   return (
-    <div className="bg-gradient-to-r from-burgundy-600 to-burgundy-800 text-white p-8 rounded-lg">
+    <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] text-white p-8 rounded-lg">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-3xl font-bold mb-2">Premium Salvage Ltd.</h1>
-            <p className="text-burgundy-100">Verified Business • Member since Jan 2024</p>
+            <p className="text-white/70">Verified Business • Member since Jan 2024</p>
           </div>
           <div className="text-right">
             <p className="text-4xl font-bold">4.9★</p>
-            <p className="text-sm text-burgundy-100">45 reviews</p>
+            <p className="text-sm text-white/70">45 reviews</p>
           </div>
         </div>
         <TrustBadges

@@ -191,8 +191,8 @@ function FinanceDashboardContentInner() {
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
-            <div className="p-3 bg-[#800020] bg-opacity-10 rounded-lg">
-              <Wallet className="w-8 h-8 text-[#800020]" />
+            <div className="p-3 bg-[var(--brand-primary)] bg-opacity-10 rounded-lg">
+              <Wallet className="w-8 h-8 text-[var(--brand-primary)]" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900">Escrow Wallet Payments</h2>
@@ -215,18 +215,18 @@ function FinanceDashboardContentInner() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Link
             href="/finance/payments"
-            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
+            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
-            <CreditCard className="w-12 h-12 mx-auto mb-3 text-[#800020]" />
+            <CreditCard className="w-12 h-12 mx-auto mb-3 text-[var(--brand-primary)]" />
             <p className="font-medium text-lg">View All Payments</p>
             <p className="text-sm text-gray-600 mt-1">Manage payment verifications</p>
           </Link>
 
           <button
             onClick={fetchDashboardStats}
-            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
+            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
-            <Clock className="w-12 h-12 mx-auto mb-3 text-[#800020]" />
+            <Clock className="w-12 h-12 mx-auto mb-3 text-[var(--brand-primary)]" />
             <p className="font-medium text-lg">Pending Verifications</p>
             <p className="text-sm text-gray-600 mt-1">{stats?.pendingVerification || 0} awaiting review</p>
           </button>

@@ -40,7 +40,7 @@ function FeatureFlagItem({ flag, userId }: FeatureFlagItemProps) {
             <div className="font-medium text-gray-900">{config.description}</div>
             <div className="text-sm text-gray-500">
               {hasOverride ? (
-                <span className="text-[#800020] font-medium">
+                <span className="text-[var(--brand-primary)] font-medium">
                   User override: {overrideValue ? 'Enabled' : 'Disabled'}
                 </span>
               ) : (
@@ -72,7 +72,7 @@ function FeatureFlagItem({ flag, userId }: FeatureFlagItemProps) {
               {hasOverride && (
                 <div className="mb-2">
                   <span className="font-medium">Override:</span>{' '}
-                  <span className="text-[#800020]">
+                  <span className="text-[var(--brand-primary)]">
                     {overrideValue ? 'Opted In' : 'Opted Out'}
                   </span>
                 </div>

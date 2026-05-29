@@ -17,6 +17,8 @@ import { eq, and } from 'drizzle-orm';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
+import { brandLegalName, brandTeamName, getEmailBranding, type EmailBranding } from '@/features/notifications/templates/email-branding';
+import { formatAssetName as formatCaseAssetName } from '@/lib/utils/asset-name';
 
 /**
  * Auction creation data
@@ -260,6 +262,7 @@ export class AuctionService {
     try {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
       const auctionUrl = `${appUrl}/vendor/auctions/${auctionId}`;
+      const branding = await getEmailBranding();
 
       // Format asset name
       const assetName = this.formatAssetName(salvageCase);
@@ -278,7 +281,8 @@ export class AuctionService {
         vendor.fullName,
         assetName,
         salvageCase,
-        auctionUrl
+        auctionUrl,
+        branding
       );
 
       await emailService.sendEmail({
@@ -301,21 +305,11 @@ export class AuctionService {
    * @returns Formatted asset name
    */
   private formatAssetName(salvageCase: typeof salvageCases.$inferSelect): string {
-    const details = salvageCase.assetDetails as Record<string, unknown>;
-    
-    switch (salvageCase.assetType) {
-      case 'vehicle':
-        return `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim() || 'Vehicle';
-      case 'property':
-        return `${details.propertyType || 'Property'}`;
-      case 'electronics':
-        return `${details.brand || ''} ${details.serialNumber || 'Electronics'}`.trim();
-      case 'machinery':
-        const machineryName = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
-        return machineryName || (details.machineryType ? String(details.machineryType) : 'Machinery');
-      default:
-        return 'Salvage Item';
-    }
+    return formatCaseAssetName(
+      salvageCase.assetType,
+      salvageCase.assetDetails as Record<string, unknown>,
+      salvageCase.claimReference
+    );
   }
 
   /**
@@ -331,7 +325,8 @@ export class AuctionService {
     fullName: string,
     assetName: string,
     salvageCase: typeof salvageCases.$inferSelect,
-    auctionUrl: string
+    auctionUrl: string,
+    branding: EmailBranding
   ): string {
     const reservePrice = Number(salvageCase.reservePrice).toLocaleString();
     const estimatedValue = Number(salvageCase.estimatedSalvageValue).toLocaleString();
@@ -358,7 +353,7 @@ export class AuctionService {
               background-color: #ffffff;
             }
             .header {
-              background-color: #800020;
+              background-color: ${branding.primaryColor};
               color: white;
               padding: 30px 20px;
               text-align: center;
@@ -373,13 +368,13 @@ export class AuctionService {
             }
             .auction-details {
               background-color: #f9f9f9;
-              border-left: 4px solid #FFD700;
+              border-left: 4px solid ${branding.accentColor};
               padding: 20px;
               margin: 20px 0;
             }
             .auction-details h3 {
               margin: 0 0 15px 0;
-              color: #800020;
+              color: ${branding.primaryColor};
               font-size: 20px;
             }
             .detail-row {
@@ -400,8 +395,8 @@ export class AuctionService {
             .button {
               display: inline-block;
               padding: 14px 28px;
-              background-color: #FFD700;
-              color: #800020;
+              background-color: ${branding.accentColor};
+              color: ${branding.primaryColor};
               text-decoration: none;
               border-radius: 6px;
               font-weight: 600;
@@ -425,7 +420,7 @@ export class AuctionService {
         <body>
           <div class="container">
             <div class="header">
-              <h1>🔔 New Auction Available</h1>
+              <h1>New Auction Available</h1>
             </div>
             
             <div class="content">
@@ -475,12 +470,11 @@ export class AuctionService {
                 <strong>⏰ Act Fast!</strong> This auction will close in 5 days. Don't miss your chance to bid on this salvage item.
               </p>
               
-              <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Team</strong></p>
+              <p style="margin-top: 30px;">Best regards,<br><strong>${brandTeamName(branding)}</strong></p>
             </div>
             
             <div class="footer">
-              <p><strong>NEM Insurance Plc</strong></p>
-              <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
+              <p><strong>${brandLegalName(branding)}</strong></p>
               <p style="margin-top: 15px;">This is an automated notification. Please do not reply to this message.</p>
             </div>
           </div>

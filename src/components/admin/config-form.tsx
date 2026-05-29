@@ -241,7 +241,7 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
     <div className={`bg-white rounded-lg shadow-sm ${className}`}>
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#800020] rounded-full flex items-center justify-center">
+          <div className="w-10 h-10 bg-[var(--brand-primary)] rounded-full flex items-center justify-center">
             <Settings className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -301,7 +301,7 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
                       min={param.min}
                       max={param.max}
                       step={param.step}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent ${
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent ${
                         validationError ? 'border-red-300' : 'border-gray-300'
                       }`}
                     />
@@ -316,7 +316,7 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
                 <button
                   onClick={() => handleSave(param.key, currentValue)}
                   disabled={saving || !!validationError || !hasChanged}
-                  className="px-4 py-2 bg-[#800020] text-white font-medium rounded-lg hover:bg-[#600018] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 min-w-[100px]"
+                  className="px-4 py-2 bg-[var(--brand-primary)] text-white font-medium rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 min-w-[100px]"
                 >
                   <Save className="w-4 h-4" />
                   {saving ? 'Saving...' : 'Save'}
@@ -335,7 +335,7 @@ export function ConfigForm({ onSaveSuccess, className = '' }: ConfigFormProps) {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Provide a reason for this configuration change..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent resize-none"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent resize-none"
             rows={3}
           />
           <div className="flex items-start gap-2 mt-2">

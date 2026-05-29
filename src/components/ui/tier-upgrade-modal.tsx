@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { X, Crown, Zap, TrendingUp, Award } from 'lucide-react';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 
 interface TierUpgradeModalProps {
   isOpen: boolean;
@@ -14,6 +15,8 @@ interface TierUpgradeModalProps {
 
 export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeModalProps) {
   const router = useRouter();
+  const { policy } = usePublicBusinessPolicy();
+  const tierLimit = policy?.onboarding.tier1BidLimit ?? 500000;
 
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -49,7 +52,7 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
           onClick={(e) => e.stopPropagation()}
         >
         {/* Header with gradient */}
-        <div className="bg-gradient-to-r from-[#800020] to-[#FFD700] p-6 text-white">
+        <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] p-6 text-white">
           <button
             onClick={onClose}
             className="absolute top-4 right-4 p-2 rounded-full hover:bg-white/20 transition-colors"
@@ -60,12 +63,12 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
           
           <div className="flex items-center gap-3 mb-2">
             <Crown className="w-8 h-8" />
-            <h2 className="text-2xl font-bold">Upgrade to Tier 2</h2>
+            <h2 className="text-2xl font-bold">Complete Full Verification</h2>
           </div>
           
           {auctionValue && (
             <p className="text-white/90 text-sm">
-              This auction (₦{auctionValue.toLocaleString()}) requires Tier 2 verification
+              This auction (₦{auctionValue.toLocaleString()}) requires full verification
             </p>
           )}
         </div>
@@ -80,20 +83,20 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
             {/* Benefits list */}
             <div className="space-y-3">
               <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                <div className="flex-shrink-0 w-10 h-10 bg-[#FFD700] rounded-full flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-[#800020]" />
+                <div className="flex-shrink-0 w-10 h-10 bg-[var(--brand-accent)] rounded-full flex items-center justify-center">
+                  <Zap className="w-5 h-5 text-[var(--brand-primary)]" />
                 </div>
                 <div>
-                  <h4 className="font-semibold text-gray-900">Unlimited Bidding</h4>
+                  <h4 className="font-semibold text-gray-900">Higher Bidding Access</h4>
                   <p className="text-sm text-gray-600">
-                    Bid on high-value auctions above ₦500,000 with no limits
+                    Bid above ₦{tierLimit.toLocaleString()} once the required verification is approved
                   </p>
                 </div>
               </div>
 
               <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                <div className="flex-shrink-0 w-10 h-10 bg-[#FFD700] rounded-full flex items-center justify-center">
-                  <Award className="w-5 h-5 text-[#800020]" />
+                <div className="flex-shrink-0 w-10 h-10 bg-[var(--brand-accent)] rounded-full flex items-center justify-center">
+                  <Award className="w-5 h-5 text-[var(--brand-primary)]" />
                 </div>
                 <div>
                   <h4 className="font-semibold text-gray-900">Priority Support</h4>
@@ -104,8 +107,8 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
               </div>
 
               <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                <div className="flex-shrink-0 w-10 h-10 bg-[#FFD700] rounded-full flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-[#800020]" />
+                <div className="flex-shrink-0 w-10 h-10 bg-[var(--brand-accent)] rounded-full flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5 text-[var(--brand-primary)]" />
                 </div>
                 <div>
                   <h4 className="font-semibold text-gray-900">Leaderboard Eligibility</h4>
@@ -127,7 +130,7 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
               <li>• Bank Account Details</li>
             </ul>
             <p className="text-xs text-blue-700 mt-2">
-              Verification typically completed within 24 hours
+              Verification is reviewed by the operations team after submission
             </p>
           </div>
 
@@ -141,7 +144,7 @@ export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeM
             </button>
             <button
               onClick={handleUpgradeClick}
-              className="flex-1 px-6 py-3 bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-bold rounded-lg hover:shadow-lg transition-all transform hover:scale-105"
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] text-white font-bold rounded-lg hover:shadow-lg transition-all transform hover:scale-105"
             >
               Upgrade Now
             </button>

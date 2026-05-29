@@ -86,7 +86,7 @@ const BADGE_CONFIGS: Record<BadgeType, Omit<BadgeConfig, 'type'>> = {
     icon: <Building2 className="w-full h-full" />,
     color: 'text-blue-600',
     bgColor: 'bg-blue-50',
-    tooltip: 'This vendor has completed full business verification with CAC, NIN, and bank account verification',
+    tooltip: 'This vendor has completed the configured full business verification checks',
   },
   top_rated: {
     label: 'Top Rated',

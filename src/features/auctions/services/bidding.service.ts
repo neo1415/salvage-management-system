@@ -35,6 +35,7 @@ import {
   resolveVendorBidEligibility,
   type VendorPolicySnapshot,
 } from '@/features/business-policy';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 /**
  * Bid placement data
@@ -247,6 +248,10 @@ export class BiddingService {
             throw new Error('Auction not found or locked');
           }
 
+          if (lockedAuction.endTime.getTime() <= Date.now()) {
+            throw new Error('This auction has ended. Please refresh the page.');
+          }
+
           // Re-validate bid amount against locked auction state
           // This prevents race condition where two bids arrive simultaneously
           const currentBidAmount = lockedAuction.currentBid ? Number(lockedAuction.currentBid) : null;
@@ -410,7 +415,9 @@ export class BiddingService {
         };
       }
 
-      // Unfreeze deposit for previous bidder if exists and is different (Requirement 4.1: Unfreeze on outbid)
+      // Deposit-system auctions keep prior top bidders frozen for fallback until the auction is paid.
+      // Lower-ranked bidders are released at auction closure once the final top-N set is known.
+      /*
       if (previousBidderId && previousBidderId !== data.vendorId) {
         try {
           // Get previous bid amount
@@ -469,6 +476,7 @@ export class BiddingService {
           // Don't fail the bid placement if unfreezing fails - log for manual review
         }
       }
+      */
 
       // SCALABILITY: Invalidate cache for this auction
       // This ensures users see the latest bid immediately
@@ -691,14 +699,14 @@ export class BiddingService {
       if (!decision.allowed) {
         const bidLimit = decision.value?.bidLimit;
         if (typeof bidLimit === 'number' && bidLimit > 0) {
-          errors.push(`Bid exceeds your Tier 1 limit of NGN ${bidLimit.toLocaleString()}. Upgrade to Tier 2 for unlimited bidding and access to premium auctions.`);
+          errors.push(`Bid exceeds your current verification limit of NGN ${bidLimit.toLocaleString()}. Complete full verification for higher bidding access.`);
         } else {
           errors.push(decision.message);
         }
       }
     } else if (bidAmount > config.tier1Limit && vendorTier === 'tier1_bvn') {
       // Shadow mode preserves the legacy NEM rule while policy decisions are audited separately.
-      errors.push(`Bid exceeds your Tier 1 limit of NGN ${config.tier1Limit.toLocaleString()}. Upgrade to Tier 2 for unlimited bidding and access to premium auctions.`);
+      errors.push(`Bid exceeds your current verification limit of NGN ${config.tier1Limit.toLocaleString()}. Complete full verification for higher bidding access.`);
     }
 
     // Check for existing bid from this vendor (for incremental deposit calculation)
@@ -906,7 +914,7 @@ export class BiddingService {
             .limit(1);
 
           // Get case details for asset name
-          let assetName = 'Salvage Item';
+          let assetName = 'the auction item';
           if (auction) {
             const [caseDetails] = await db
               .select()
@@ -915,7 +923,11 @@ export class BiddingService {
               .limit(1);
             
             if (caseDetails) {
-              assetName = `${caseDetails.assetType.toUpperCase()} - ${caseDetails.claimReference}`;
+              assetName = formatAssetName(
+                caseDetails.assetType,
+                caseDetails.assetDetails as Record<string, unknown>,
+                caseDetails.claimReference
+              );
             }
           }
 

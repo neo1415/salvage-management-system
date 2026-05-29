@@ -138,7 +138,7 @@ export function LocationMap({
               href={externalLinkUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[#800020] hover:underline font-medium text-sm inline-flex items-center gap-1"
+              className="text-[var(--brand-primary)] hover:underline font-medium text-sm inline-flex items-center gap-1"
             >
               View on Google Maps
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

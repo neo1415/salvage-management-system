@@ -14,9 +14,12 @@ import { notifyDocumentSigned } from '@/features/notifications/services/notifica
 import { emailService } from '@/features/notifications/services/email.service';
 import { documentReadyTemplate } from '@/features/notifications/templates/document-ready.template';
 import { db } from '@/lib/db/drizzle';
+import { auctions } from '@/lib/db/schema/auctions';
+import { salvageCases } from '@/lib/db/schema/cases';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 export async function POST(
   request: NextRequest,
@@ -100,6 +103,25 @@ export async function POST(
       .where(eq(vendors.id, vendorId))
       .limit(1);
 
+    const [auctionCase] = await db
+      .select({
+        assetType: salvageCases.assetType,
+        assetDetails: salvageCases.assetDetails,
+        claimReference: salvageCases.claimReference,
+      })
+      .from(auctions)
+      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+      .where(eq(auctions.id, auctionId))
+      .limit(1);
+
+    const assetDescription = auctionCase
+      ? formatAssetName(
+          auctionCase.assetType,
+          auctionCase.assetDetails as Record<string, unknown>,
+          auctionCase.claimReference
+        )
+      : 'the auction item';
+
     // Audit log (keep synchronous for compliance)
     await logAction({
       userId: session.user.id,
@@ -120,12 +142,12 @@ export async function POST(
           await emailService.sendEmail({
             to: vendor.user.email,
             subject: `Document Signed: ${signedDocument.title}`,
-            html: documentReadyTemplate({
+            html: await documentReadyTemplate({
               vendorName: vendor.user.fullName,
               documentType: signedDocument.documentType,
               documentTitle: signedDocument.title,
               auctionId,
-              assetDescription: 'Salvage Item',
+              assetDescription,
               downloadUrl: `${process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL}/vendor/documents#auction-${auctionId}`,
             }),
           });

@@ -2,7 +2,7 @@ import { configService } from '@/features/auction-deposit/services/config.servic
 import { db } from '@/lib/db/drizzle';
 import { businessPolicySnapshots, businessPolicyVersions } from '@/lib/db/schema/business-policies';
 import { AuditActionType, AuditEntityType, DeviceType, logAction } from '@/lib/utils/audit-logger';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { DEFAULT_BUSINESS_POLICY } from './default-policy';
 import { toPublicBusinessPolicy } from './public-policy';
 import { validateBusinessPolicy } from './policy-validation';
@@ -34,6 +34,8 @@ export type CreatePolicySnapshotInput = {
   actorId?: string;
   reason: string;
 };
+
+export type CreateCurrentPolicySnapshotInput = Omit<CreatePolicySnapshotInput, 'policy'>;
 
 export class BusinessPolicyService {
   async getEffectivePolicy(): Promise<BusinessPolicy> {
@@ -266,6 +268,53 @@ export class BusinessPolicyService {
       });
       return null;
     }
+  }
+
+  async createCurrentPolicySnapshot(input: CreateCurrentPolicySnapshotInput): Promise<BusinessPolicySnapshotRecord | null> {
+    const policy = await this.getEffectivePolicy();
+    return this.createPolicySnapshot({
+      ...input,
+      policy,
+    });
+  }
+
+  async getPolicyForEntity(
+    entityType: CreatePolicySnapshotInput['entityType'],
+    entityId: string
+  ): Promise<BusinessPolicy> {
+    try {
+      const [snapshot] = await db
+        .select()
+        .from(businessPolicySnapshots)
+        .where(and(
+          eq(businessPolicySnapshots.entityType, entityType),
+          eq(businessPolicySnapshots.entityId, entityId)
+        ))
+        .orderBy(desc(businessPolicySnapshots.createdAt))
+        .limit(1);
+
+      if (snapshot) {
+        const validation = validateBusinessPolicy(snapshot.policy);
+        if (validation.valid) {
+          return snapshot.policy;
+        }
+
+        console.warn('[BusinessPolicy] Snapshot policy is invalid; using effective policy', {
+          entityType,
+          entityId,
+          policyVersion: snapshot.policyVersion,
+          issues: validation.issues,
+        });
+      }
+    } catch (error) {
+      console.warn('[BusinessPolicy] Policy snapshot lookup unavailable; using effective policy', {
+        entityType,
+        entityId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
+    return this.getEffectivePolicy();
   }
 
   toPublicPolicy(policy: BusinessPolicy): PublicBusinessPolicy {

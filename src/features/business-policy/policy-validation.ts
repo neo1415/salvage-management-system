@@ -8,6 +8,8 @@ function issue(path: string, message: string, severity: PolicyValidationIssue['s
   return { path, message, severity };
 }
 
+const LIVE_CASE_ASSET_TYPES = new Set(['vehicle', 'property', 'electronics', 'machinery']);
+
 export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidationResult {
   const issues: PolicyValidationIssue[] = [];
 
@@ -31,6 +33,10 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     issues.push(issue('branding.logoPath', 'Logo path must be an app-relative path or HTTPS URL.'));
   }
 
+  if (!policy.branding.faviconPath.startsWith('/') && !policy.branding.faviconPath.startsWith('https://')) {
+    issues.push(issue('branding.faviconPath', 'Favicon path must be an app-relative path or HTTPS URL.'));
+  }
+
   if (!policy.branding.homepageCopy.heroTitle.trim()) {
     issues.push(issue('branding.homepageCopy.heroTitle', 'Homepage hero title is required.'));
   }
@@ -43,12 +49,42 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     issues.push(issue('branding.homepageCopy.primaryCtaLabel', 'Primary call-to-action label is required.'));
   }
 
+  if (policy.branding.splashEnabled && policy.branding.homepageMode === 'login_first') {
+    issues.push(
+      issue(
+        'branding.splashEnabled',
+        'Splash screens are only shown on public landing pages. Login-first mode will skip the splash.',
+        'warning'
+      )
+    );
+  }
+
   if (policy.branding.homepageCopy.heroTitle.length > 70) {
     issues.push(issue('branding.homepageCopy.heroTitle', 'Hero title is long and may wrap awkwardly on mobile.', 'warning'));
   }
 
   if (policy.branding.homepageCopy.heroSubtitle.length > 150) {
     issues.push(issue('branding.homepageCopy.heroSubtitle', 'Hero subtitle is long and may reduce mobile readability.', 'warning'));
+  }
+
+  if ((policy.branding.homepageCopy.authHeadline?.length ?? 0) > 90) {
+    issues.push(issue('branding.homepageCopy.authHeadline', 'Auth headline is long and may wrap awkwardly beside the login form.', 'warning'));
+  }
+
+  if ((policy.branding.homepageCopy.workflowTitle?.length ?? 0) > 70) {
+    issues.push(issue('branding.homepageCopy.workflowTitle', 'Workflow title is long and may wrap awkwardly on mobile.', 'warning'));
+  }
+
+  if ((policy.branding.homepageCopy.auctionSectionTitle?.length ?? 0) > 70) {
+    issues.push(issue('branding.homepageCopy.auctionSectionTitle', 'Auction section title is long and may wrap awkwardly on mobile.', 'warning'));
+  }
+
+  if ((policy.branding.homepageCopy.operationsSectionTitle?.length ?? 0) > 90) {
+    issues.push(issue('branding.homepageCopy.operationsSectionTitle', 'Middle section headline is long and may crowd smaller screens.', 'warning'));
+  }
+
+  if ((policy.branding.homepageCopy.proofSectionTitle?.length ?? 0) > 90) {
+    issues.push(issue('branding.homepageCopy.proofSectionTitle', 'Assurance section headline is long and may crowd smaller screens.', 'warning'));
   }
 
   if (!/^#[0-9A-Fa-f]{6}$/.test(policy.branding.primaryColor)) {
@@ -111,7 +147,7 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     issues.push(
       issue(
         'onboarding.requireTier2ForUnlimitedBidding',
-        'Tier 1 bid cap is configured, but Tier 2 is not required for unlimited bidding.',
+        'Initial bid cap is configured, but full verification is not required for higher bidding access.',
         'warning'
       )
     );
@@ -197,6 +233,15 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
   }
 
   for (const [assetType, config] of enabledAssetTypes) {
+    if (!LIVE_CASE_ASSET_TYPES.has(assetType)) {
+      issues.push(
+        issue(
+          `cases.enabledAssetTypes.${assetType}.enabled`,
+          `Asset type "${assetType}" is not yet supported by the live case database/API. Keep it disabled until implementation support is complete.`
+        )
+      );
+    }
+
     if (!config.label.trim()) {
       issues.push(issue(`cases.enabledAssetTypes.${assetType}.label`, `Asset type "${assetType}" needs a display label.`));
     }
@@ -234,6 +279,52 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
 
   if (policy.documents.requiredAuctionDocuments.length === 0) {
     issues.push(issue('documents.requiredAuctionDocuments', 'At least one auction document type must be required.'));
+  }
+
+  if (!policy.documents.billOfSaleDisclaimerTitle.trim()) {
+    issues.push(issue('documents.billOfSaleDisclaimerTitle', 'Bill of Sale disclaimer title is required.'));
+  }
+
+  if (!policy.documents.billOfSaleDisclaimerBody.trim()) {
+    issues.push(issue('documents.billOfSaleDisclaimerBody', 'Bill of Sale disclaimer body is required.'));
+  }
+
+  if (policy.documents.billOfSaleDisclaimerBody.length > 700) {
+    issues.push(issue('documents.billOfSaleDisclaimerBody', 'Bill of Sale disclaimer is long and may need a second page.', 'warning'));
+  }
+
+  if (policy.documents.liabilityWaiverClauses.length === 0) {
+    issues.push(issue('documents.liabilityWaiverClauses', 'At least one liability waiver clause is required.'));
+  }
+
+  policy.documents.liabilityWaiverClauses.forEach((clause, index) => {
+    if (!clause.title.trim()) {
+      issues.push(issue(`documents.liabilityWaiverClauses.${index}.title`, 'Each liability waiver clause needs a title.'));
+    }
+    if (!clause.body.trim()) {
+      issues.push(issue(`documents.liabilityWaiverClauses.${index}.body`, 'Each liability waiver clause needs body text.'));
+    }
+    if (clause.body.length > 900) {
+      issues.push(issue(`documents.liabilityWaiverClauses.${index}.body`, 'Clause is long and may require document layout review.', 'warning'));
+    }
+  });
+
+  if (!policy.legal.registrationNumber.trim()) {
+    issues.push(issue('legal.registrationNumber', 'Legal registration details are recommended for legal pages.', 'warning'));
+  }
+
+  if (!policy.legal.addressLine1.trim() || !policy.legal.addressLine2.trim()) {
+    issues.push(issue('legal.address', 'Legal address is required for privacy, terms, and NDPR pages.', 'warning'));
+  }
+
+  for (const [path, email] of [
+    ['legal.privacyEmail', policy.legal.privacyEmail],
+    ['legal.dpoEmail', policy.legal.dpoEmail],
+    ['legal.legalEmail', policy.legal.legalEmail],
+  ] as const) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      issues.push(issue(path, 'Enter a valid legal contact email address.'));
+    }
   }
 
   const selectedProviders = [

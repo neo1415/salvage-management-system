@@ -112,7 +112,7 @@ export default function SettingsTransactionsPage() {
             type="button"
             onClick={() => setShowExportMenu(!showExportMenu)}
             disabled={exporting}
-            className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+            className="px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
           >
             {exporting ? (
               <>
@@ -164,7 +164,7 @@ export default function SettingsTransactionsPage() {
                 onClick={() => setActiveTab(id)}
                 className={`flex items-center px-6 py-4 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === id
-                    ? 'border-[#800020] text-[#800020]'
+                    ? 'border-[var(--brand-primary)] text-[var(--brand-primary)]'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >

@@ -8,18 +8,16 @@
  * - Salvage Certificate
  * 
  * Uses jsPDF for client-side PDF generation with QR codes for verification.
- * Features NEM Insurance branding with logo, burgundy (#800020), and gold (#FFD700) colors.
+ * Uses the active business policy branding for logo, colors, and letterhead.
  * 
  * Requirements: 21.1, 21.2, 21.5, 21.6
  */
 
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
+import { businessPolicyService } from '@/features/business-policy';
 import { PDFTemplateService } from './pdf-template.service';
 
-// NEM Insurance Brand Colors
-const NEM_BURGUNDY = '#800020';
-const NEM_GOLD = '#FFD700';
 const CONTENT_MARGIN_X = 20;
 const SIGNATURE_WIDTH = 65;
 const SIGNATURE_HEIGHT = 28;
@@ -31,10 +29,24 @@ function addWrappedText(doc: jsPDF, text: string, x: number, y: number, maxWidth
 }
 
 async function moveToNewDocumentPage(doc: jsPDF, title: string): Promise<number> {
-  PDFTemplateService.addFooter(doc);
+  await PDFTemplateService.addFooter(doc);
   doc.addPage();
   await PDFTemplateService.addLetterhead(doc, title);
   return 60;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const normalized = /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex.slice(1) : '111827';
+  return [
+    Number.parseInt(normalized.slice(0, 2), 16),
+    Number.parseInt(normalized.slice(2, 4), 16),
+    Number.parseInt(normalized.slice(4, 6), 16),
+  ];
+}
+
+function readableTextColor([r, g, b]: [number, number, number]): [number, number, number] {
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.58 ? [17, 24, 39] : [255, 255, 255];
 }
 
 export interface BillOfSaleData {
@@ -77,6 +89,8 @@ export interface BillOfSaleData {
   
   // Verification
   verificationUrl: string;
+  disclaimerTitle?: string;
+  disclaimerBody?: string;
 }
 
 export interface LiabilityWaiverData {
@@ -100,6 +114,10 @@ export interface LiabilityWaiverData {
   
   // Verification
   verificationUrl: string;
+  clauses?: Array<{
+    title: string;
+    body: string;
+  }>;
 }
 
 export interface PickupAuthorizationData {
@@ -157,6 +175,9 @@ export interface SalvageCertificateData {
 export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffer> {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
+  const policy = await businessPolicyService.getEffectivePolicy();
+  const disclaimerTitle = data.disclaimerTitle || policy.documents.billOfSaleDisclaimerTitle;
+  const disclaimerBody = data.disclaimerBody || policy.documents.billOfSaleDisclaimerBody;
   
   // Add professional letterhead with logo using PDFTemplateService
   await PDFTemplateService.addLetterhead(doc, 'BILL OF SALE');
@@ -257,19 +278,19 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
   yPos += 6;
   doc.text(`Deadline: ${data.pickupDeadline}`, 20, yPos);
   
-  // AS-IS disclaimer
+  // Configurable sale disclaimer
   yPos += 15;
   doc.setFillColor(255, 243, 205); // Light yellow
-  doc.rect(15, yPos - 5, pageWidth - 30, 20, 'F');
+  const disclaimerLines = doc.splitTextToSize(disclaimerBody, pageWidth - 40);
+  doc.rect(15, yPos - 5, pageWidth - 30, Math.max(20, disclaimerLines.length * 5 + 11), 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('AS-IS, WHERE-IS SALE', 20, yPos);
+  doc.text(disclaimerTitle.toUpperCase(), 20, yPos);
   yPos += 6;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text('This asset is sold "AS-IS, WHERE-IS" with NO WARRANTIES, express or implied.', 20, yPos);
-  yPos += 5;
-  doc.text('Buyer accepts all risks and responsibilities associated with this purchase.', 20, yPos);
+  doc.text(disclaimerLines, 20, yPos);
+  yPos += disclaimerLines.length * 5;
   
   // Get max content Y to avoid footer overlap using PDFTemplateService
   const maxContentY = PDFTemplateService.getMaxContentY(doc);
@@ -311,7 +332,7 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
   }
   
   // Add professional footer using PDFTemplateService (anchored at bottom)
-  PDFTemplateService.addFooter(doc);
+  await PDFTemplateService.addFooter(doc);
   
   // Convert to buffer
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
@@ -325,6 +346,8 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const textWidth = pageWidth - CONTENT_MARGIN_X * 2;
+  const policy = await businessPolicyService.getEffectivePolicy();
+  const clauses = data.clauses?.length ? data.clauses : policy.documents.liabilityWaiverClauses;
   
   // Add professional letterhead with logo using PDFTemplateService
   await PDFTemplateService.addLetterhead(doc, 'RELEASE & WAIVER OF LIABILITY');
@@ -336,85 +359,21 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   doc.setTextColor(0, 0, 0);
   doc.text(`I, ${data.vendorName}, hereby acknowledge and agree:`, CONTENT_MARGIN_X, yPos);
   
-  // Waiver clauses
   yPos += 15;
-  doc.setFont('helvetica', 'bold');
-  doc.text('1. AS-IS CONDITION', CONTENT_MARGIN_X, yPos);
-  yPos += 6;
-  doc.setFont('helvetica', 'normal');
-  yPos = addWrappedText(
-    doc,
-    'I am purchasing the salvage item(s) in "AS-IS, WHERE-IS" condition with ALL FAULTS and NO WARRANTIES, express or implied.',
-    CONTENT_MARGIN_X,
-    yPos,
-    textWidth
-  );
-  
-  yPos += 10;
-  doc.setFont('helvetica', 'bold');
-  doc.text('2. INSPECTION OPPORTUNITY', CONTENT_MARGIN_X, yPos);
-  yPos += 6;
-  doc.setFont('helvetica', 'normal');
-  yPos = addWrappedText(
-    doc,
-    'I have had the opportunity to inspect the item(s) through photos, descriptions, and damage assessment provided by NEM Insurance.',
-    CONTENT_MARGIN_X,
-    yPos,
-    textWidth
-  );
-  
-  yPos += 10;
-  doc.setFont('helvetica', 'bold');
-  doc.text('3. RELEASE OF LIABILITY', CONTENT_MARGIN_X, yPos);
-  yPos += 6;
-  doc.setFont('helvetica', 'normal');
-  yPos = addWrappedText(
-    doc,
-    'I hereby release, waive, and forever discharge NEM Insurance Plc, its officers, employees, and agents from any and all liability, claims, demands, or causes of action arising from: (a) Injuries or death resulting from use of the salvage item(s); (b) Property damage caused by the salvage item(s); (c) Defects, malfunctions, or failures of the salvage item(s); (d) Any misrepresentation or omission regarding the item\'s condition.',
-    CONTENT_MARGIN_X,
-    yPos,
-    textWidth
-  );
-  
-  yPos += 10;
-  doc.setFont('helvetica', 'bold');
-  doc.text('4. ASSUMPTION OF RISK', CONTENT_MARGIN_X, yPos);
-  yPos += 6;
-  doc.setFont('helvetica', 'normal');
-  yPos = addWrappedText(
-    doc,
-    'I understand and accept all risks associated with purchasing and using salvage property, including but not limited to: structural damage not visible in photos, mechanical failures, safety hazards, and environmental contamination.',
-    CONTENT_MARGIN_X,
-    yPos,
-    textWidth
-  );
-  
-  yPos += 10;
-  doc.setFont('helvetica', 'bold');
-  doc.text('5. INDEMNIFICATION', CONTENT_MARGIN_X, yPos);
-  yPos += 6;
-  doc.setFont('helvetica', 'normal');
-  yPos = addWrappedText(
-    doc,
-    'I agree to indemnify and hold harmless NEM Insurance Plc from any claims by third parties arising from my ownership or use of the salvage item(s).',
-    CONTENT_MARGIN_X,
-    yPos,
-    textWidth
-  );
-  
-  yPos += 10;
-  doc.setFont('helvetica', 'bold');
-  doc.text('6. FINAL SALE', CONTENT_MARGIN_X, yPos);
-  yPos += 6;
-  doc.setFont('helvetica', 'normal');
-  doc.text('I understand this sale is FINAL and NON-REFUNDABLE.', CONTENT_MARGIN_X, yPos);
-  
-  yPos += 15;
-  doc.setFont('helvetica', 'bold');
-  doc.text('7. GOVERNING LAW', CONTENT_MARGIN_X, yPos);
-  yPos += 6;
-  doc.setFont('helvetica', 'normal');
-  doc.text('This agreement is governed by the laws of Nigeria.', CONTENT_MARGIN_X, yPos);
+  for (const [index, clause] of clauses.entries()) {
+    const bodyLines = doc.splitTextToSize(clause.body, textWidth);
+    const neededSpace = 6 + bodyLines.length * 5 + 10;
+    if (yPos + neededSpace > PDFTemplateService.getMaxContentY(doc)) {
+      yPos = await moveToNewDocumentPage(doc, 'RELEASE & WAIVER OF LIABILITY');
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${index + 1}. ${clause.title.toUpperCase()}`, CONTENT_MARGIN_X, yPos);
+    yPos += 6;
+    doc.setFont('helvetica', 'normal');
+    yPos = addWrappedText(doc, clause.body, CONTENT_MARGIN_X, yPos, textWidth);
+    yPos += 10;
+  }
   
   // Get max content Y to avoid footer overlap using PDFTemplateService
   const maxContentY = PDFTemplateService.getMaxContentY(doc);
@@ -483,7 +442,7 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   }
   
   // Add professional footer using PDFTemplateService (anchored at bottom)
-  PDFTemplateService.addFooter(doc);
+  await PDFTemplateService.addFooter(doc);
   
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
   return pdfBuffer;
@@ -495,17 +454,20 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
 export async function generatePickupAuthorizationPDF(data: PickupAuthorizationData): Promise<Buffer> {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
+  const policy = await businessPolicyService.getPublicPolicy();
+  const primary = hexToRgb(policy.branding.primaryColor);
+  const primaryText = readableTextColor(primary);
   
   // Add professional letterhead with logo using PDFTemplateService
   await PDFTemplateService.addLetterhead(doc, 'PICKUP AUTHORIZATION');
   
-  // Authorization code (prominent with gold background)
+  // Authorization code (prominent with active brand background)
   let yPos = 65;
-  doc.setFillColor(255, 215, 0); // Gold
+  doc.setFillColor(primary[0], primary[1], primary[2]);
   doc.rect(15, yPos - 10, pageWidth - 30, 25, 'F');
   doc.setFontSize(20);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(128, 0, 32); // Burgundy text on gold background
+  doc.setTextColor(primaryText[0], primaryText[1], primaryText[2]);
   doc.text(`Authorization Code: ${data.authorizationCode}`, pageWidth / 2, yPos, { align: 'center' });
   
   // Reset text color
@@ -610,7 +572,7 @@ export async function generatePickupAuthorizationPDF(data: PickupAuthorizationDa
   doc.addImage(qrCodeDataUrl, 'PNG', pageWidth / 2 - 15, yPos + 8, 30, 30);
   
   // Add professional footer using PDFTemplateService
-  PDFTemplateService.addFooter(doc);
+  await PDFTemplateService.addFooter(doc);
   
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
   return pdfBuffer;
@@ -733,7 +695,7 @@ export async function generateSalvageCertificatePDF(data: SalvageCertificateData
   doc.addImage(qrCodeDataUrl, 'PNG', pageWidth - 50, yPos + 8, 30, 30);
   
   // Add professional footer using PDFTemplateService
-  PDFTemplateService.addFooter(doc);
+  await PDFTemplateService.addFooter(doc);
   
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
   return pdfBuffer;

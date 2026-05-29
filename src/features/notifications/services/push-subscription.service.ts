@@ -11,7 +11,7 @@ import webpush from 'web-push';
 // Configure VAPID details
 if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:nemsupport@nem-insurance.com',
+    process.env.VAPID_SUBJECT || `mailto:${process.env.SUPPORT_EMAIL || 'support@example.com'}`,
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );
@@ -129,7 +129,7 @@ export async function sendPushToUser(
     const subscriptions = await getUserPushSubscriptions(userId);
 
     if (subscriptions.length === 0) {
-      console.log(`No push subscriptions found for user ${userId}`);
+      console.debug(`No push subscriptions found for user ${userId}`);
       return { success: false, sentCount: 0, errors: ['No subscriptions'] };
     }
 
@@ -162,8 +162,8 @@ export async function sendPushToUser(
           JSON.stringify({
             title: payload.title,
             body: payload.body,
-            icon: payload.icon || '/icons/Nem-insurance-Logo.jpg',
-            badge: payload.badge || '/icons/Nem-insurance-Logo.jpg',
+            icon: payload.icon || '/icons/icon-192.png',
+            badge: payload.badge || '/icons/icon-192.png',
             data: payload.data || {},
             tag: payload.tag || 'default',
             requireInteraction: payload.requireInteraction || false,

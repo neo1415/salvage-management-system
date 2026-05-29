@@ -20,10 +20,16 @@ const VERIFICATION_PROVIDERS: VerificationProvider[] = ['dojah'];
 const AI_PROVIDERS: AiProvider[] = ['gemini', 'claude', 'serper'];
 const HOMEPAGE_MODES: BusinessPolicy['branding']['homepageMode'][] = ['landing', 'login_first'];
 const HOMEPAGE_TEMPLATES: BusinessPolicy['branding']['homepageTemplate'][] = [
+  'reclaim_editorial',
+  'nem_salvage',
+  'recovery_command',
+  'claims_orbit',
+  'executive_terminal',
   'salvage_showcase',
   'minimal_private',
   'auction_marketplace',
 ];
+const HOMEPAGE_THEMES: BusinessPolicy['branding']['homepageTheme'][] = ['day', 'night', 'auto'];
 const TIER2_DECISIONS: BusinessPolicy['onboarding']['finalTier2Decision'][] = ['manual_review'];
 const RESERVE_STRATEGIES: BusinessPolicy['auctions']['reserveValueStrategy'][] = ['percentage_of_salvage_value'];
 const SOCKET_MODES: BusinessPolicy['auctions']['socketMode'][] = [
@@ -66,6 +72,25 @@ function stringArrayValue(value: unknown, fallback: string[]): string[] {
   return value.filter((item): item is string => typeof item === 'string');
 }
 
+function documentClauseArrayValue(
+  value: unknown,
+  fallback: BusinessPolicy['documents']['liabilityWaiverClauses']
+): BusinessPolicy['documents']['liabilityWaiverClauses'] {
+  if (!Array.isArray(value)) return fallback;
+
+  const clauses = value
+    .map((item) => {
+      const clause = asRecord(item);
+      return {
+        title: stringValue(clause.title, '').trim(),
+        body: stringValue(clause.body, '').trim(),
+      };
+    })
+    .filter((clause) => clause.title && clause.body);
+
+  return clauses.length > 0 ? clauses : fallback;
+}
+
 function enumValue<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === 'string' && allowed.includes(value as T) ? value as T : fallback;
 }
@@ -96,6 +121,7 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
   const aiValuation = asRecord(source.aiValuation);
   const notifications = asRecord(source.notifications);
   const documents = asRecord(source.documents);
+  const legal = asRecord(source.legal);
   const fraud = asRecord(source.fraud);
   const reports = asRecord(source.reports);
   const homepageCopy = asRecord(branding.homepageCopy);
@@ -139,14 +165,64 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       primaryColor: stringValue(branding.primaryColor, fallback.branding.primaryColor),
       accentColor: stringValue(branding.accentColor, fallback.branding.accentColor),
       logoPath: stringValue(branding.logoPath, fallback.branding.logoPath),
+      faviconPath: stringValue(branding.faviconPath, fallback.branding.faviconPath),
       homepageMode: enumValue(branding.homepageMode, HOMEPAGE_MODES, fallback.branding.homepageMode),
       homepageTemplate: enumValue(branding.homepageTemplate, HOMEPAGE_TEMPLATES, fallback.branding.homepageTemplate),
+      homepageTheme: enumValue(branding.homepageTheme, HOMEPAGE_THEMES, fallback.branding.homepageTheme),
+      splashEnabled: booleanValue(branding.splashEnabled, fallback.branding.splashEnabled),
       homepageCopy: {
         heroTitle: stringValue(homepageCopy.heroTitle, fallback.branding.homepageCopy.heroTitle),
         heroSubtitle: stringValue(homepageCopy.heroSubtitle, fallback.branding.homepageCopy.heroSubtitle),
         supportingText: stringValue(homepageCopy.supportingText, fallback.branding.homepageCopy.supportingText),
         primaryCtaLabel: stringValue(homepageCopy.primaryCtaLabel, fallback.branding.homepageCopy.primaryCtaLabel),
         secondaryCtaLabel: optionalStringValue(homepageCopy.secondaryCtaLabel, fallback.branding.homepageCopy.secondaryCtaLabel),
+        eyebrow: optionalStringValue(homepageCopy.eyebrow, fallback.branding.homepageCopy.eyebrow),
+        trustLine: optionalStringValue(homepageCopy.trustLine, fallback.branding.homepageCopy.trustLine),
+        statOneLabel: optionalStringValue(homepageCopy.statOneLabel, fallback.branding.homepageCopy.statOneLabel),
+        statOneValue: optionalStringValue(homepageCopy.statOneValue, fallback.branding.homepageCopy.statOneValue),
+        statTwoLabel: optionalStringValue(homepageCopy.statTwoLabel, fallback.branding.homepageCopy.statTwoLabel),
+        statTwoValue: optionalStringValue(homepageCopy.statTwoValue, fallback.branding.homepageCopy.statTwoValue),
+        statThreeLabel: optionalStringValue(homepageCopy.statThreeLabel, fallback.branding.homepageCopy.statThreeLabel),
+        statThreeValue: optionalStringValue(homepageCopy.statThreeValue, fallback.branding.homepageCopy.statThreeValue),
+        authHeadline: optionalStringValue(homepageCopy.authHeadline, fallback.branding.homepageCopy.authHeadline),
+        authSubtitle: optionalStringValue(homepageCopy.authSubtitle, fallback.branding.homepageCopy.authSubtitle),
+        workflowTitle: optionalStringValue(homepageCopy.workflowTitle, fallback.branding.homepageCopy.workflowTitle),
+        workflowSubtitle: optionalStringValue(homepageCopy.workflowSubtitle, fallback.branding.homepageCopy.workflowSubtitle),
+        workflowStepOneTitle: optionalStringValue(homepageCopy.workflowStepOneTitle, fallback.branding.homepageCopy.workflowStepOneTitle),
+        workflowStepOneBody: optionalStringValue(homepageCopy.workflowStepOneBody, fallback.branding.homepageCopy.workflowStepOneBody),
+        workflowStepTwoTitle: optionalStringValue(homepageCopy.workflowStepTwoTitle, fallback.branding.homepageCopy.workflowStepTwoTitle),
+        workflowStepTwoBody: optionalStringValue(homepageCopy.workflowStepTwoBody, fallback.branding.homepageCopy.workflowStepTwoBody),
+        workflowStepThreeTitle: optionalStringValue(homepageCopy.workflowStepThreeTitle, fallback.branding.homepageCopy.workflowStepThreeTitle),
+        workflowStepThreeBody: optionalStringValue(homepageCopy.workflowStepThreeBody, fallback.branding.homepageCopy.workflowStepThreeBody),
+        workflowStepFourTitle: optionalStringValue(homepageCopy.workflowStepFourTitle, fallback.branding.homepageCopy.workflowStepFourTitle),
+        workflowStepFourBody: optionalStringValue(homepageCopy.workflowStepFourBody, fallback.branding.homepageCopy.workflowStepFourBody),
+        auctionSectionEyebrow: optionalStringValue(homepageCopy.auctionSectionEyebrow, fallback.branding.homepageCopy.auctionSectionEyebrow),
+        auctionSectionTitle: optionalStringValue(homepageCopy.auctionSectionTitle, fallback.branding.homepageCopy.auctionSectionTitle),
+        auctionSectionButtonLabel: optionalStringValue(homepageCopy.auctionSectionButtonLabel, fallback.branding.homepageCopy.auctionSectionButtonLabel),
+        operationsSectionEyebrow: optionalStringValue(homepageCopy.operationsSectionEyebrow, fallback.branding.homepageCopy.operationsSectionEyebrow),
+        operationsSectionTitle: optionalStringValue(homepageCopy.operationsSectionTitle, fallback.branding.homepageCopy.operationsSectionTitle),
+        operationsSectionSubtitle: optionalStringValue(homepageCopy.operationsSectionSubtitle, fallback.branding.homepageCopy.operationsSectionSubtitle),
+        operationsCardOneTitle: optionalStringValue(homepageCopy.operationsCardOneTitle, fallback.branding.homepageCopy.operationsCardOneTitle),
+        operationsCardOneBody: optionalStringValue(homepageCopy.operationsCardOneBody, fallback.branding.homepageCopy.operationsCardOneBody),
+        operationsCardTwoTitle: optionalStringValue(homepageCopy.operationsCardTwoTitle, fallback.branding.homepageCopy.operationsCardTwoTitle),
+        operationsCardTwoBody: optionalStringValue(homepageCopy.operationsCardTwoBody, fallback.branding.homepageCopy.operationsCardTwoBody),
+        operationsCardThreeTitle: optionalStringValue(homepageCopy.operationsCardThreeTitle, fallback.branding.homepageCopy.operationsCardThreeTitle),
+        operationsCardThreeBody: optionalStringValue(homepageCopy.operationsCardThreeBody, fallback.branding.homepageCopy.operationsCardThreeBody),
+        proofSectionTitle: optionalStringValue(homepageCopy.proofSectionTitle, fallback.branding.homepageCopy.proofSectionTitle),
+        proofSectionSubtitle: optionalStringValue(homepageCopy.proofSectionSubtitle, fallback.branding.homepageCopy.proofSectionSubtitle),
+        proofCardOneTitle: optionalStringValue(homepageCopy.proofCardOneTitle, fallback.branding.homepageCopy.proofCardOneTitle),
+        proofCardOneBody: optionalStringValue(homepageCopy.proofCardOneBody, fallback.branding.homepageCopy.proofCardOneBody),
+        proofCardTwoTitle: optionalStringValue(homepageCopy.proofCardTwoTitle, fallback.branding.homepageCopy.proofCardTwoTitle),
+        proofCardTwoBody: optionalStringValue(homepageCopy.proofCardTwoBody, fallback.branding.homepageCopy.proofCardTwoBody),
+        proofCardThreeTitle: optionalStringValue(homepageCopy.proofCardThreeTitle, fallback.branding.homepageCopy.proofCardThreeTitle),
+        proofCardThreeBody: optionalStringValue(homepageCopy.proofCardThreeBody, fallback.branding.homepageCopy.proofCardThreeBody),
+        proofCardFourTitle: optionalStringValue(homepageCopy.proofCardFourTitle, fallback.branding.homepageCopy.proofCardFourTitle),
+        proofCardFourBody: optionalStringValue(homepageCopy.proofCardFourBody, fallback.branding.homepageCopy.proofCardFourBody),
+        proofContactLabel: optionalStringValue(homepageCopy.proofContactLabel, fallback.branding.homepageCopy.proofContactLabel),
+        recoveryBriefTitle: optionalStringValue(homepageCopy.recoveryBriefTitle, fallback.branding.homepageCopy.recoveryBriefTitle),
+        recoveryBriefBody: optionalStringValue(homepageCopy.recoveryBriefBody, fallback.branding.homepageCopy.recoveryBriefBody),
+        contactHeadline: optionalStringValue(homepageCopy.contactHeadline, fallback.branding.homepageCopy.contactHeadline),
+        contactSubtitle: optionalStringValue(homepageCopy.contactSubtitle, fallback.branding.homepageCopy.contactSubtitle),
       },
     },
     auth: {
@@ -233,6 +309,18 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       requiredAuctionDocuments: enumArrayValue(documents.requiredAuctionDocuments, DOCUMENT_TYPES, fallback.documents.requiredAuctionDocuments),
       attachPaymentReceiptToAuctionDocuments: booleanValue(documents.attachPaymentReceiptToAuctionDocuments, fallback.documents.attachPaymentReceiptToAuctionDocuments),
       useBrandLetterhead: booleanValue(documents.useBrandLetterhead, fallback.documents.useBrandLetterhead),
+      billOfSaleDisclaimerTitle: stringValue(documents.billOfSaleDisclaimerTitle, fallback.documents.billOfSaleDisclaimerTitle),
+      billOfSaleDisclaimerBody: stringValue(documents.billOfSaleDisclaimerBody, fallback.documents.billOfSaleDisclaimerBody),
+      liabilityWaiverClauses: documentClauseArrayValue(documents.liabilityWaiverClauses, fallback.documents.liabilityWaiverClauses),
+    },
+    legal: {
+      registrationNumber: stringValue(legal.registrationNumber, fallback.legal.registrationNumber),
+      addressLine1: stringValue(legal.addressLine1, fallback.legal.addressLine1),
+      addressLine2: stringValue(legal.addressLine2, fallback.legal.addressLine2),
+      privacyEmail: stringValue(legal.privacyEmail, fallback.legal.privacyEmail),
+      dpoEmail: stringValue(legal.dpoEmail, fallback.legal.dpoEmail),
+      legalEmail: stringValue(legal.legalEmail, fallback.legal.legalEmail),
+      legalLastUpdated: stringValue(legal.legalLastUpdated, fallback.legal.legalLastUpdated),
     },
     fraud: {
       dojahRiskAlertsEnabled: booleanValue(fraud.dojahRiskAlertsEnabled, fallback.fraud.dojahRiskAlertsEnabled),

@@ -184,7 +184,7 @@ export function ProfileSettingsPanel() {
         <button
           type="button"
           onClick={load}
-          className="mt-4 px-4 py-2 bg-[#800020] text-white rounded-lg"
+          className="mt-4 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg"
         >
           Retry
         </button>
@@ -228,14 +228,14 @@ export function ProfileSettingsPanel() {
               setPhoneDraft(e.target.value);
               setCodeSent(false);
             }}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020]"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
             placeholder="+2348012345678"
           />
           <button
             type="button"
             onClick={requestPhoneCode}
             disabled={phoneBusy || phoneDraft.trim() === user.phone}
-            className="px-4 py-2 border border-[#800020] text-[#800020] rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium whitespace-nowrap"
+            className="px-4 py-2 border border-[var(--brand-primary)] text-[var(--brand-primary)] rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium whitespace-nowrap"
           >
             {phoneBusy ? 'Sending...' : 'Send code'}
           </button>
@@ -249,13 +249,13 @@ export function ProfileSettingsPanel() {
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
               placeholder="6-digit code"
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020]"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
             />
             <button
               type="button"
               onClick={verifyPhoneCode}
               disabled={phoneBusy || otp.length !== 6}
-              className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] disabled:opacity-50 font-medium"
+              className="px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 font-medium"
             >
               Confirm phone
             </button>

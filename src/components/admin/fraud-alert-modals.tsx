@@ -86,7 +86,7 @@ export function FraudAlertDismissModal({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Explain why this alert is being dismissed (minimum 10 characters)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               required
             />
             <p className="mt-1 text-xs text-gray-500">
@@ -113,7 +113,7 @@ export function FraudAlertDismissModal({
               type="button"
               onClick={handleDismiss}
               disabled={processing || reason.trim().length < 10}
-              className="flex-1 px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50"
             >
               {processing ? 'Dismissing...' : 'Dismiss Alert'}
             </button>
@@ -205,7 +205,7 @@ export function FraudAlertSuspendModal({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Explain why this vendor is being suspended (minimum 10 characters)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               required
             />
             <p className="mt-1 text-xs text-gray-500">

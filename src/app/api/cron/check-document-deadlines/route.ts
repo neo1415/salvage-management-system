@@ -94,11 +94,8 @@ export async function GET(request: NextRequest) {
     console.log(`[Document Deadline Cron] Buffer period: ${effectiveBufferHours} hours ${testingMode ? '(TESTING MODE)' : ''}`);
     const systemActorId = await getSystemActorId();
 
-    // Calculate cutoff time (now - buffer period)
-    const cutoffTime = new Date(now.getTime() - (effectiveBufferHours * 60 * 60 * 1000));
-
-    // Find auctions with expired document deadlines (past cutoff)
-    // Status should be 'awaiting_documents' and validityDeadline < cutoffTime
+    // Find auctions with expired document deadlines. Each candidate is then
+    // checked against its own policy snapshot before fallback is triggered.
     const expiredAuctions = await db
       .select({
         auction: auctions,
@@ -118,7 +115,7 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(auctions.status, 'closed'),
-          lte(releaseForms.validityDeadline, cutoffTime),
+          lte(releaseForms.validityDeadline, now),
           isNull(releaseForms.signedAt)
         )
       );
@@ -134,10 +131,29 @@ export async function GET(request: NextRequest) {
         if (processedAuctions.has(auction.id)) continue;
         processedAuctions.add(auction.id);
 
+        if (!document.validityDeadline) {
+          console.warn(`[Document Deadline Cron] Document ${document.id} has no validity deadline. Skipping.`);
+          continue;
+        }
+
+        let candidateBufferHours = effectiveBufferHours;
+        let candidateBufferDecision = fallbackBufferDecision;
+        if (!testingMode && isBusinessPolicyEnforcementEnabled()) {
+          const documentPolicy = await businessPolicyService.getPolicyForEntity('document', document.id);
+          candidateBufferDecision = resolveFallbackBufferHours(documentPolicy);
+          candidateBufferHours = candidateBufferDecision.value ?? candidateBufferHours;
+        }
+        const cutoffTime = new Date(now.getTime() - (candidateBufferHours * 60 * 60 * 1000));
+
+        if (document.validityDeadline > cutoffTime) {
+          console.log(`[Document Deadline Cron] Auction ${auction.id} document deadline expired, waiting for ${candidateBufferHours}-hour buffer.`);
+          continue;
+        }
+
         console.log(`[Document Deadline Cron] Processing auction ${auction.id}, winner ${winner.vendorId}`);
         console.log(`  - Document deadline: ${document.validityDeadline?.toISOString()}`);
         console.log(`  - Cutoff time: ${cutoffTime.toISOString()}`);
-        console.log(`  - Buffer period elapsed: ${effectiveBufferHours} hours`);
+        console.log(`  - Buffer period elapsed: ${candidateBufferHours} hours`);
 
         await logPolicyDecision({
           userId: systemActorId,
@@ -146,7 +162,7 @@ export async function GET(request: NextRequest) {
           ipAddress: 'system',
           deviceType: DeviceType.DESKTOP,
           userAgent: 'cron:check-document-deadlines',
-          decision: fallbackBufferDecision.decision,
+          decision: candidateBufferDecision.decision,
           context: {
             mode: getBusinessPolicyRuntimeMode(),
             cron: 'check-document-deadlines',
@@ -154,7 +170,8 @@ export async function GET(request: NextRequest) {
             documentDeadline: document.validityDeadline?.toISOString() ?? null,
             cutoffTime: cutoffTime.toISOString(),
             legacyEffectiveBufferHours: effectiveBufferHours,
-            policyBufferHours: fallbackBufferDecision.value,
+            effectiveBufferHours: candidateBufferHours,
+            policyBufferHours: candidateBufferDecision.value,
             testingMode,
           },
         });

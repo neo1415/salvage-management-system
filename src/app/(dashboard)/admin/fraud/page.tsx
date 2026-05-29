@@ -577,7 +577,7 @@ export default function FraudAlertDashboard() {
             onClick={toggleIPFraudDetection}
             disabled={settingsLoading}
             className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-60 ${
-              ipFraudEnabled ? 'bg-burgundy-900' : 'bg-gray-300'
+              ipFraudEnabled ? 'bg-[var(--brand-primary)]' : 'bg-gray-300'
             }`}
             aria-pressed={ipFraudEnabled}
           >
@@ -638,7 +638,7 @@ export default function FraudAlertDashboard() {
               onClick={() => setFraudListTab(tab)}
               className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                 fraudListTab === tab
-                  ? 'bg-[#800020] text-white shadow'
+                  ? 'bg-[var(--brand-primary)] text-white shadow'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -688,7 +688,7 @@ export default function FraudAlertDashboard() {
                   key={`${alert.alertSource}-${alert.id}`}
                   type="button"
                   onClick={() => openDetailModal(alert)}
-                  className="flex w-full items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-[#800020]/40 hover:bg-gray-50 md:p-4"
+                  className="flex w-full items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-[var(--brand-primary-border)] hover:bg-gray-50 md:p-4"
                 >
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -816,7 +816,7 @@ export default function FraudAlertDashboard() {
                     {selectedAlert.relatedLinks?.kycReview && (
                       <button
                         onClick={() => router.push(selectedAlert.relatedLinks?.kycReview || '/manager/kyc-approvals')}
-                        className="mt-4 w-full px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800"
+                        className="mt-4 w-full px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)]"
                       >
                         Open KYC Review
                       </button>
@@ -876,7 +876,7 @@ export default function FraudAlertDashboard() {
                     {selectedAlert.reviewHistory?.length ? (
                       <div className="space-y-3">
                         {selectedAlert.reviewHistory.map((item, idx) => (
-                          <div key={`${item.createdAt}-${idx}`} className="border-l-2 border-burgundy-900 pl-3">
+                          <div key={`${item.createdAt}-${idx}`} className="border-l-2 border-[var(--brand-primary)] pl-3">
                             <div className="text-sm font-medium text-gray-900">{item.action.replace(/_/g, ' ')}</div>
                             <div className="text-xs text-gray-500">{item.actorName || 'System'} - {formatDate(item.createdAt)}</div>
                             {item.reason && <div className="text-sm text-gray-700 mt-1">{item.reason}</div>}
@@ -969,7 +969,7 @@ export default function FraudAlertDashboard() {
                 value={actionReason}
                 onChange={(e) => setActionReason(e.target.value)}
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 placeholder={pendingAction === 'resolve' ? 'Explain why this alert is resolved...' : 'Add a note for the investigation...'}
               />
               <div className="flex gap-3 mt-5">
@@ -979,7 +979,7 @@ export default function FraudAlertDashboard() {
                 <button
                   onClick={handleIntelligenceAction}
                   disabled={actionLoading || (pendingAction === 'resolve' && actionReason.trim().length < 10)}
-                  className="flex-1 px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50"
                 >
                   {actionLoading ? 'Saving...' : 'Save'}
                 </button>
@@ -1015,7 +1015,7 @@ export default function FraudAlertDashboard() {
                 <textarea
                   value={dismissComment}
                   onChange={(e) => setDismissComment(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                   rows={4}
                   placeholder="Explain why this is a false positive..."
                 />
@@ -1032,7 +1032,7 @@ export default function FraudAlertDashboard() {
                 <button
                   onClick={handleDismissFlag}
                   disabled={actionLoading || dismissComment.trim().length < 10}
-                  className="flex-1 px-4 py-2 bg-burgundy-900 text-white rounded-lg hover:bg-burgundy-800 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50"
                 >
                   {actionLoading ? 'Dismissing...' : 'Dismiss Flag'}
                 </button>
@@ -1068,7 +1068,7 @@ export default function FraudAlertDashboard() {
                 <select
                   value={suspendDuration}
                   onChange={(e) => setSuspendDuration(e.target.value as typeof suspendDuration)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 >
                   <option value="7">7 days</option>
                   <option value="30">30 days</option>
@@ -1084,7 +1084,7 @@ export default function FraudAlertDashboard() {
                 <textarea
                   value={suspendReason}
                   onChange={(e) => setSuspendReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                   rows={4}
                   placeholder="Explain the reason for suspension..."
                 />

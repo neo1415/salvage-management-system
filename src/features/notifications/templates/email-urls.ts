@@ -3,8 +3,6 @@
  * Never falls back to localhost outside development.
  */
 
-const PRODUCTION_APP_URL = 'https://salvage.nem-insurance.com';
-
 export function getAppUrl(): string {
   const fromEnv =
     process.env.NEXT_PUBLIC_APP_URL?.trim() ||
@@ -19,7 +17,7 @@ export function getAppUrl(): string {
     return 'http://localhost:3000';
   }
 
-  return PRODUCTION_APP_URL;
+  throw new Error('Application URL is not configured. Set NEXT_PUBLIC_APP_URL or NEXTAUTH_URL.');
 }
 
 /** Deep link to vendor documents for a specific auction */

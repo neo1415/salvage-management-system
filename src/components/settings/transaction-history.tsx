@@ -166,7 +166,7 @@ export default function TransactionHistory({
         <p className="text-gray-600 mb-4">{error}</p>
         <button
           onClick={fetchTransactions}
-          className="px-4 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018] transition-colors"
+          className="px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
         >
           Retry
         </button>
@@ -268,7 +268,7 @@ export default function TransactionHistory({
                     onClick={() => setPage(pageNum)}
                     className={`w-10 h-10 rounded-lg transition-colors ${
                       page === pageNum
-                        ? 'bg-[#800020] text-white'
+                        ? 'bg-[var(--brand-primary)] text-white'
                         : 'border border-gray-300 hover:bg-gray-50'
                     }`}
                   >

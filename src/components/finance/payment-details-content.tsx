@@ -138,7 +138,7 @@ export function PaymentDetailsContent({ auctionId }: PaymentDetailsContentProps)
         <p className="text-gray-600 text-lg">Auction not found</p>
         <Link
           href="/finance/payments"
-          className="inline-block mt-4 text-[#800020] hover:underline"
+          className="inline-block mt-4 text-[var(--brand-primary)] hover:underline"
         >
           Back to Payments
         </Link>

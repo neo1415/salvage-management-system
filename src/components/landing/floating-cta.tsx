@@ -65,7 +65,7 @@ export function FloatingCTA() {
             >
               {/* Glow effect */}
               <motion.div
-                className="absolute inset-0 bg-gold-500 rounded-full blur-xl opacity-50"
+                className="absolute inset-0 bg-[var(--brand-accent)] rounded-full blur-xl opacity-50"
                 animate={{
                   scale: [1, 1.2, 1],
                   opacity: [0.5, 0.7, 0.5],
@@ -78,7 +78,7 @@ export function FloatingCTA() {
 
               {/* Button */}
               <motion.button
-                className="relative px-8 py-4 bg-gradient-to-r from-gold-500 to-gold-600 text-burgundy-900 font-bold rounded-full shadow-2xl flex items-center gap-3 group overflow-hidden"
+                className="relative px-8 py-4 bg-gradient-to-r from-[var(--brand-accent)] to-[var(--brand-accent)] text-[var(--brand-primary)] font-bold rounded-full shadow-2xl flex items-center gap-3 group overflow-hidden"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -129,7 +129,7 @@ export function FloatingCTA() {
                 transition={{ delay: 0.3 }}
               >
                 <motion.div
-                  className="h-full bg-gradient-to-r from-burgundy-600 to-burgundy-800 rounded-full"
+                  className="h-full bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-full"
                   style={{ scaleX: scrollYProgress, transformOrigin: 'left' }}
                 />
               </motion.div>
@@ -138,12 +138,12 @@ export function FloatingCTA() {
 
           {/* Tooltip */}
           <motion.div
-            className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-burgundy-900 text-white px-4 py-2 rounded-lg text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+            className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-[var(--brand-primary)] text-white px-4 py-2 rounded-lg text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
             initial={{ opacity: 0, y: 10 }}
             whileHover={{ opacity: 1, y: 0 }}
           >
             Click to register
-            <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-burgundy-900" />
+            <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-[var(--brand-primary)]" />
           </motion.div>
         </motion.div>
       )}

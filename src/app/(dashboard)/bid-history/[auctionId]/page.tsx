@@ -205,7 +205,8 @@ export default function AuctionDetailPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to end auction early');
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.error || errorBody?.message || 'Failed to end auction early');
       }
 
       // Refresh data
@@ -215,7 +216,10 @@ export default function AuctionDetailPage() {
       toast.success('Auction Ended Successfully', 'The highest bidder has been declared the winner.');
     } catch (error) {
       console.error('Error ending auction:', error);
-      toast.error('Failed to End Auction', 'Please try again or contact support.');
+      toast.error(
+        'Failed to End Auction',
+        error instanceof Error ? error.message : 'Please try again or contact support.'
+      );
     } finally {
       setEndingAuction(false);
     }
@@ -293,7 +297,7 @@ export default function AuctionDetailPage() {
     } catch (error) {
       console.error('Error restarting auction:', error);
       setShowRestartModal(false);
-      setErrorMessage('Failed to Restart Auction');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to restart auction');
       setErrorDetails(error instanceof Error ? error.message : 'Please try again or contact support.');
       setShowErrorModal(true);
     } finally {
@@ -419,7 +423,7 @@ export default function AuctionDetailPage() {
           <p className="text-gray-600 mb-6">{error}</p>
           <Link
             href="/bid-history"
-            className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+            className="px-6 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
           >
             Back to Bid History
           </Link>
@@ -571,7 +575,7 @@ export default function AuctionDetailPage() {
                             key={index}
                             onClick={() => setSelectedImageIndex(index)}
                             className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors bg-gray-200 flex items-center justify-center ${
-                              selectedImageIndex === index ? 'border-[#800020]' : 'border-gray-200'
+                              selectedImageIndex === index ? 'border-[var(--brand-primary)]' : 'border-gray-200'
                             }`}
                           >
                             <ImageIcon className="w-6 h-6 text-gray-400" />
@@ -584,7 +588,7 @@ export default function AuctionDetailPage() {
                           key={index}
                           onClick={() => setSelectedImageIndex(index)}
                           className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${
-                            selectedImageIndex === index ? 'border-[#800020]' : 'border-gray-200'
+                            selectedImageIndex === index ? 'border-[var(--brand-primary)]' : 'border-gray-200'
                           }`}
                         >
                           <Image
@@ -732,7 +736,7 @@ export default function AuctionDetailPage() {
                       href={`https://www.google.com/maps?q=${data.case.gpsLocation.y},${data.case.gpsLocation.x}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-[#800020] hover:underline font-medium"
+                      className="flex items-center gap-2 text-[var(--brand-primary)] hover:underline font-medium"
                     >
                       <ExternalLink className="w-4 h-4" />
                       View on Google Maps
@@ -742,7 +746,7 @@ export default function AuctionDetailPage() {
                       href={`https://www.google.com/maps/search/${encodeURIComponent(data.case.locationName)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-[#800020] hover:underline font-medium"
+                      className="flex items-center gap-2 text-[var(--brand-primary)] hover:underline font-medium"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Search on Google Maps
@@ -781,7 +785,7 @@ export default function AuctionDetailPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-gray-50 rounded-lg p-3">
                     <div className="text-xs text-gray-500 mb-1">Current Bid</div>
-                    <div className="text-xl font-bold text-[#800020]">
+                    <div className="text-xl font-bold text-[var(--brand-primary)]">
                       {formatNaira(data.auction.currentBid)}
                     </div>
                   </div>
@@ -949,7 +953,7 @@ export default function AuctionDetailPage() {
             {user?.role === 'salvage_manager' && data.auction.status === 'closed' && (
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-[var(--brand-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                   Restart Auction
@@ -960,7 +964,7 @@ export default function AuctionDetailPage() {
                 <button
                   onClick={handleRestartAuction}
                   disabled={restartingAuction}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#800020] text-white rounded-lg font-medium hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[var(--brand-primary)] text-white rounded-lg font-medium hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ minHeight: '44px' }}
                 >
                   {restartingAuction ? (
@@ -1001,7 +1005,7 @@ export default function AuctionDetailPage() {
             <div className="space-y-4">
               {data.bidHistory.map((bid, index) => (
                 <div key={bid.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 bg-[#800020] rounded-full flex items-center justify-center text-white text-xs sm:text-sm font-bold">
+                  <div className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 bg-[var(--brand-primary)] rounded-full flex items-center justify-center text-white text-xs sm:text-sm font-bold">
                     {index + 1}
                   </div>
                   
@@ -1032,7 +1036,7 @@ export default function AuctionDetailPage() {
                       
                       {/* Price - separate line on mobile */}
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                        <div className="text-lg sm:text-xl font-bold text-[#800020]">
+                        <div className="text-lg sm:text-xl font-bold text-[var(--brand-primary)]">
                           {formatNaira(bid.amount)}
                         </div>
                         <div className="text-xs sm:text-sm text-gray-600">

@@ -36,7 +36,7 @@ import {
 } from '@/lib/storage/cloudinary';
 
 const uploadSignSchema = z.object({
-  entityType: z.enum(['salvage-case', 'kyc-document']),
+  entityType: z.enum(['salvage-case', 'kyc-document', 'brand-asset']),
   entityId: z
     .string()
     .min(1)
@@ -47,6 +47,7 @@ const uploadSignSchema = z.object({
 
 const SALVAGE_UPLOAD_ROLES = new Set(['claims_adjuster', 'salvage_manager', 'system_admin']);
 const KYC_UPLOAD_ROLES = new Set(['vendor', 'salvage_manager', 'system_admin']);
+const BRAND_UPLOAD_ROLES = new Set(['system_admin']);
 
 export async function POST(request: NextRequest) {
   try {
@@ -95,12 +96,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (entityType === 'brand-asset' && !BRAND_UPLOAD_ROLES.has(role)) {
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
     // Determine folder based on entity type
     let folder: string;
     if (entityType === 'salvage-case') {
       folder = getSalvageCaseFolder(entityId);
-    } else {
+    } else if (entityType === 'kyc-document') {
       folder = getKycDocumentFolder(entityId);
+    } else {
+      folder = `brand-assets/${entityId}`;
     }
 
     // Get transformation preset if specified

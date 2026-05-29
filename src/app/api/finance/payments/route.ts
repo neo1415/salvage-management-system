@@ -8,6 +8,7 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { escrowWallets } from '@/lib/db/schema/escrow';
 import { releaseForms } from '@/lib/db/schema/release-forms';
+import { businessPolicyService } from '@/features/business-policy';
 import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
 
 // Force dynamic rendering - never cache this route
@@ -48,6 +49,8 @@ export async function GET(request: NextRequest) {
     const view = searchParams.get('view') || 'all';
     const statusFilter = searchParams.get('status');
     const paymentMethodFilter = searchParams.get('paymentMethod');
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const requiredAuctionDocuments = policy.documents.requiredAuctionDocuments;
     const paymentTypeFilter = searchParams.get('paymentType'); // NEW: 'auction' | 'registration_fee'
     const dateFrom = searchParams.get('dateFrom');
     const dateTo = searchParams.get('dateTo');
@@ -250,8 +253,11 @@ export async function GET(request: NextRequest) {
       const documents = payment.auctionId ? documentMap.get(payment.auctionId) || [] : [];
       
       // Calculate document progress locally (same logic as getDocumentProgress)
-      const totalDocuments = 2; // bill_of_sale, liability_waiver (pickup_authorization sent after payment)
-      const signedDocuments = documents.filter(doc => doc.status === 'signed').length;
+      const totalDocuments = requiredAuctionDocuments.length;
+      const signedDocuments = documents.filter(doc =>
+        requiredAuctionDocuments.includes(doc.documentType as typeof requiredAuctionDocuments[number]) &&
+        doc.status === 'signed'
+      ).length;
       const progress = totalDocuments > 0 ? Math.round((signedDocuments / totalDocuments) * 100) : 0;
       const allSigned = signedDocuments === totalDocuments;
 

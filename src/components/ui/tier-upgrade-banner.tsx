@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Crown, ArrowRight } from 'lucide-react';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 
 interface TierUpgradeBannerProps {
   highValueAuctionCount?: number;
@@ -14,6 +15,7 @@ const DISMISS_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
 export function TierUpgradeBanner({ highValueAuctionCount = 0 }: TierUpgradeBannerProps) {
   const [isVisible, setIsVisible] = useState(false);
   const router = useRouter();
+  const { policy } = usePublicBusinessPolicy();
 
   useEffect(() => {
     // Check if banner was dismissed and if 3 days have passed
@@ -47,7 +49,7 @@ export function TierUpgradeBanner({ highValueAuctionCount = 0 }: TierUpgradeBann
   if (!isVisible) return null;
 
   return (
-    <div className="relative bg-gradient-to-r from-[#800020] to-[#FFD700] text-white rounded-lg shadow-lg overflow-hidden mb-6">
+    <div className="relative bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] text-white rounded-lg shadow-lg overflow-hidden mb-6">
       {/* Decorative pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2" />
@@ -73,17 +75,19 @@ export function TierUpgradeBanner({ highValueAuctionCount = 0 }: TierUpgradeBann
           {/* Text content */}
           <div className="flex-1">
             <h3 className="text-lg md:text-xl font-bold mb-1">
-              Unlock Premium Auctions - Upgrade to Tier 2
+              Complete Full Verification
             </h3>
             <p className="text-white/90 text-sm md:text-base">
               {highValueAuctionCount > 0 ? (
                 <>
                   <span className="font-semibold">{highValueAuctionCount}</span> high-value auction
                   {highValueAuctionCount !== 1 ? 's' : ''} available. 
-                  Get unlimited bidding, priority support, and leaderboard access.
+                  Get higher bidding access, priority support, and leaderboard eligibility.
                 </>
               ) : (
-                'Get unlimited bidding on high-value auctions, priority support, and leaderboard access.'
+                policy?.onboarding.requireTier2ForUnlimitedBidding
+                  ? 'Complete full verification for higher-value auctions, priority support, and leaderboard eligibility.'
+                  : 'Complete the configured verification checks for full platform access.'
               )}
             </p>
           </div>
@@ -91,7 +95,7 @@ export function TierUpgradeBanner({ highValueAuctionCount = 0 }: TierUpgradeBann
           {/* CTA Button */}
           <button
             onClick={handleUpgradeClick}
-            className="flex-shrink-0 px-6 py-3 bg-white text-[#800020] font-bold rounded-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2 whitespace-nowrap"
+            className="flex-shrink-0 px-6 py-3 bg-white text-[var(--brand-primary)] font-bold rounded-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2 whitespace-nowrap"
           >
             Upgrade Now
             <ArrowRight className="w-4 h-4" />

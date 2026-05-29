@@ -9,6 +9,7 @@ import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, FileText, Clock, Award } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -58,6 +59,7 @@ interface MyPerformanceReportProps {
 
 export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
   const isManagerView = !!data.teamBreakdown;
+  const { branding } = usePublicBranding();
 
   // Memoize chart data to prevent recreation on every render
   const trendChartData = useMemo(() => ({
@@ -66,17 +68,17 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
       {
         label: 'Cases Processed',
         data: data.trends.map(t => t.cases),
-        borderColor: '#800020',
+        borderColor: branding.primaryColor,
         yAxisID: 'y',
       },
       {
         label: 'Quality Score',
         data: data.trends.map(t => t.quality),
-        borderColor: '#FFD700',
+        borderColor: branding.accentColor,
         yAxisID: 'y1',
       },
     ],
-  }), [data.trends]);
+  }), [data.trends, branding.accentColor, branding.primaryColor]);
 
   const chartOptions = useMemo(() => ({
     responsive: true,
@@ -107,7 +109,7 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
             <CardTitle className="text-sm font-medium text-gray-600">
               {isManagerView ? 'Team Cases' : 'Cases Processed'}
             </CardTitle>
-            <FileText className="h-4 w-4 text-[#800020]" />
+            <FileText className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data.casesProcessed}</div>
@@ -117,7 +119,7 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Avg Processing Time</CardTitle>
-            <Clock className="h-4 w-4 text-[#800020]" />
+            <Clock className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data.avgProcessingTime.toFixed(1)} days</div>
@@ -129,7 +131,7 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
             <CardTitle className="text-sm font-medium text-gray-600">
               {isManagerView ? 'Team Approval Rate' : 'Approval Rate'}
             </CardTitle>
-            <TrendingUp className="h-4 w-4 text-[#800020]" />
+            <TrendingUp className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data.approvalRate.toFixed(1)}%</div>
@@ -139,7 +141,7 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Quality Score</CardTitle>
-            <Award className="h-4 w-4 text-[#800020]" />
+            <Award className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data.qualityScore.toFixed(1)}/100</div>
@@ -204,7 +206,7 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
           <CardTitle>Revenue Contribution</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-bold text-[#800020]">
+          <div className="text-3xl font-bold text-[var(--brand-primary)]">
             ₦{data.revenueContribution.toLocaleString()}
           </div>
           <p className="text-sm text-gray-600 mt-2">

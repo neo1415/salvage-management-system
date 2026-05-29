@@ -27,7 +27,7 @@ interface VendorSegmentsChartProps {
 
 const SEGMENT_COLORS: Record<string, string> = {
   'bargain_hunter': '#10b981',
-  'premium_buyer': '#800020',
+  'premium_buyer': 'var(--brand-primary)',
   'specialist': '#3b82f6',
   'opportunist': '#f59e0b',
   'inactive': '#6b7280',

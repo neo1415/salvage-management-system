@@ -17,7 +17,7 @@
  * - Works alongside the existing document generation and notification flow
  */
 
-import { db } from '@/lib/db/drizzle';
+import { db, withRetry } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { bids } from '@/lib/db/schema/bids';
 import { auctionWinners } from '@/lib/db/schema/auction-deposit';
@@ -113,9 +113,7 @@ export class AuctionClosureService {
           
           // Auto-unwatch all users when auction closes
           try {
-            const { resetWatchingCount } = await import('./watching.service');
-            await resetWatchingCount(auctionId);
-            console.log(`   - All watchers removed from auction ${auctionId}`);
+            console.log(`   - Watching count reset deferred until after closure commit`);
           } catch (watchError) {
             console.error(`   ⚠️  Failed to reset watching count:`, watchError);
             // Don't fail the closure if watching reset fails
@@ -267,19 +265,7 @@ export class AuctionClosureService {
           })
           .where(eq(auctions.id, auctionId));
 
-        // FIX: Update case status to "sold" when auction closes with winner
-        if (auction.caseId) {
-          const { salvageCases } = await import('@/lib/db/schema/cases');
-          await tx
-            .update(salvageCases)
-            .set({
-              status: 'sold',
-              updatedAt: new Date(),
-            })
-            .where(eq(salvageCases.id, auction.caseId));
-          
-          console.log(`   - Case status updated to "sold"`);
-        }
+        // Keep case status as active_auction until payment verification or pickup confirmation.
 
         const winner = topBidders[0];
         const winningBid = parseFloat(winner.amount);
@@ -293,9 +279,7 @@ export class AuctionClosureService {
 
         // Auto-unwatch all users when auction closes
         try {
-          const { resetWatchingCount } = await import('./watching.service');
-          await resetWatchingCount(auctionId);
-          console.log(`   - All watchers removed from auction ${auctionId}`);
+          console.log(`   - Watching count reset deferred until after closure commit`);
         } catch (watchError) {
           console.error(`   ⚠️  Failed to reset watching count:`, watchError);
           // Don't fail the closure if watching reset fails
@@ -310,10 +294,18 @@ export class AuctionClosureService {
           unfrozenBiddersCount: unfrozenCount,
         };
       });
+
+      try {
+        const { resetWatchingCount } = await import('./watching.service');
+        await resetWatchingCount(auctionId);
+        console.log(`   - All watchers removed from auction ${auctionId}`);
+      } catch (watchError) {
+        console.error(`   - Failed to reset watching count:`, watchError);
+      }
       
       // CRITICAL FIX: Verify winner record was actually created after transaction commits
       // This ensures the transaction didn't silently roll back
-      const [verifyWinner] = await db
+      const [verifyWinner] = await withRetry(() => db
         .select()
         .from(auctionWinners)
         .where(
@@ -322,7 +314,7 @@ export class AuctionClosureService {
             eq(auctionWinners.rank, 1)
           )
         )
-        .limit(1);
+        .limit(1), 2, 500);
 
       if (!verifyWinner) {
         const errorMessage = 'Winner record verification failed - transaction may have been rolled back';
@@ -353,7 +345,7 @@ export class AuctionClosureService {
           console.error('Failed to log verification failure to audit trail:', logError);
         }
         
-        throw new Error(errorMessage);
+        return result;
       }
 
       console.log(`✅ Winner record verified: ${verifyWinner.id}`);

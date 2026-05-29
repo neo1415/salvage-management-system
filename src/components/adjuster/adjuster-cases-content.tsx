@@ -364,7 +364,7 @@ function AdjusterCasesContentInner() {
               )}
             </button>
           )}
-          <span className="text-[#800020] font-medium">View Details →</span>
+          <span className="text-[var(--brand-primary)] font-medium">View Details →</span>
         </div>
       </div>
     </div>
@@ -373,7 +373,7 @@ function AdjusterCasesContentInner() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-[#800020] text-white p-4 sticky top-0 z-10 shadow-md">
+      <div className="bg-[var(--brand-primary)] text-white p-4 sticky top-0 z-10 shadow-md">
         <h1 className="text-xl font-bold">My Cases</h1>
       </div>
       
@@ -415,7 +415,7 @@ function AdjusterCasesContentInner() {
             <FilterIcon size={18} aria-hidden="true" />
             <span className="text-sm font-medium">Filters</span>
             {activeFilterCount > 0 && (
-              <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-medium">
+              <span className="px-2 py-0.5 bg-[var(--brand-primary)] text-white rounded-full text-xs font-medium">
                 {activeFilterCount}
               </span>
             )}

@@ -150,7 +150,7 @@ export function PriceField({
             value={inputValue}
             onChange={handleInputChange}
             onBlur={handleBlur}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent text-lg font-semibold"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent text-lg font-semibold"
             style={{ minHeight: '44px' }} // Mobile touch target
             placeholder="Enter amount"
             min="0"

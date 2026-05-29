@@ -22,12 +22,21 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
-import { db } from '@/lib/db/drizzle';
+import { db, withRetry } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { payments } from '@/lib/db/schema/payments';
 import { auctions } from '@/lib/db/schema/auctions';
+import { auctionWinners } from '@/lib/db/schema/auction-deposit';
+import { walletTransactions } from '@/lib/db/schema/escrow';
 import { eq, and } from 'drizzle-orm';
 import { paymentService } from '@/features/auction-deposit/services/payment.service';
+
+const MANUAL_RETRY_DELAY_MS = 10 * 60 * 1000;
+
+type VerifyBody = {
+  source?: 'manual_retry' | 'paystack_return';
+  reference?: string | null;
+};
 
 export async function POST(
   request: NextRequest,
@@ -37,6 +46,7 @@ export async function POST(
   
   try {
     const { id: auctionId } = await params;
+    const body = (await request.json().catch(() => ({}))) as VerifyBody;
     
     console.log('🔍 Manual payment verification requested');
     console.log(`   - Auction ID: ${auctionId}`);
@@ -52,11 +62,11 @@ export async function POST(
     }
     
     // Get vendor ID
-    const [vendor] = await db
+    const [vendor] = await withRetry(() => db
       .select()
       .from(vendors)
       .where(eq(vendors.userId, session.user.id))
-      .limit(1);
+      .limit(1), 2, 500);
     
     if (!vendor) {
       return NextResponse.json(
@@ -68,11 +78,11 @@ export async function POST(
     console.log(`   - Vendor ID: ${vendor.id}`);
     
     // Verify auction exists and vendor is the winner
-    const [auction] = await db
+    const [auction] = await withRetry(() => db
       .select()
       .from(auctions)
       .where(eq(auctions.id, auctionId))
-      .limit(1);
+      .limit(1), 2, 500);
     
     if (!auction) {
       return NextResponse.json(
@@ -91,7 +101,7 @@ export async function POST(
     console.log(`   - Auction status: ${auction.status}`);
     
     // Check if payment already verified
-    const [existingVerifiedPayment] = await db
+    const [existingVerifiedPayment] = await withRetry(() => db
       .select()
       .from(payments)
       .where(
@@ -101,7 +111,7 @@ export async function POST(
           eq(payments.status, 'verified')
         )
       )
-      .limit(1);
+      .limit(1), 2, 500);
     
     if (existingVerifiedPayment) {
       console.log(`✅ Payment already verified: ${existingVerifiedPayment.id}`);
@@ -114,7 +124,7 @@ export async function POST(
     }
     
     // Find pending payment
-    const [payment] = await db
+    const [payment] = await withRetry(() => db
       .select()
       .from(payments)
       .where(
@@ -124,7 +134,7 @@ export async function POST(
           eq(payments.status, 'pending')
         )
       )
-      .limit(1);
+      .limit(1), 2, 500);
     
     if (!payment) {
       return NextResponse.json(
@@ -160,6 +170,31 @@ export async function POST(
         { status: 400 }
       );
     }
+    const paymentReference = payment.paymentReference;
+
+    const isTrustedPaystackReturn =
+      body.source === 'paystack_return' &&
+      typeof body.reference === 'string' &&
+      body.reference === paymentReference;
+
+    if (!isTrustedPaystackReturn) {
+      const retryAvailableAt = new Date(payment.createdAt.getTime() + MANUAL_RETRY_DELAY_MS);
+      const waitMs = retryAvailableAt.getTime() - Date.now();
+
+      if (waitMs > 0) {
+        const waitMinutes = Math.ceil(waitMs / 60000);
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'PAYMENT_STILL_PROCESSING',
+            message: `Payment is still being confirmed. Please wait ${waitMinutes} minute(s), then retry if it has not updated.`,
+            retryAvailableAt: retryAvailableAt.toISOString(),
+            waitMinutes,
+          },
+          { status: 409 }
+        );
+      }
+    }
 
     // Verify payment with Paystack API
     console.log('🔍 Verifying payment with Paystack API...');
@@ -170,7 +205,7 @@ export async function POST(
     }
     
     const paystackResponse = await fetch(
-      `https://api.paystack.co/transaction/verify/${payment.paymentReference}`,
+      `https://api.paystack.co/transaction/verify/${paymentReference}`,
       {
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
@@ -195,6 +230,78 @@ export async function POST(
       amount: paystackData.data.amount,
       reference: paystackData.data.reference,
     });
+    if (paystackData.data.reference !== paymentReference) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Payment reference mismatch',
+          message: 'This payment could not be matched to the current auction.',
+        },
+        { status: 409 }
+      );
+    }
+
+    const metadata = paystackData.data.metadata || {};
+    if (
+      (metadata.auctionId && metadata.auctionId !== auctionId) ||
+      (metadata.vendorId && metadata.vendorId !== vendor.id) ||
+      (metadata.paymentId && metadata.paymentId !== payment.id)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Payment metadata mismatch',
+          message: 'This payment could not be matched to the current auction.',
+        },
+        { status: 409 }
+      );
+    }
+
+    const [winner] = await withRetry(() => db
+      .select()
+      .from(auctionWinners)
+      .where(
+        and(
+          eq(auctionWinners.auctionId, auctionId),
+          eq(auctionWinners.vendorId, vendor.id),
+          eq(auctionWinners.status, 'active')
+        )
+      )
+      .limit(1), 2, 500);
+
+    if (!winner) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Winner record not found',
+          message: 'This auction payment cannot be confirmed automatically. Please contact support.',
+        },
+        { status: 409 }
+      );
+    }
+
+    const [hybridFreeze] = await withRetry(() => db
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.reference, `HYBRID_FREEZE_${payment.id}`))
+      .limit(1), 2, 500);
+
+    const finalBid = parseFloat(winner.bidAmount);
+    const depositAmount = parseFloat(winner.depositAmount);
+    const hybridWalletAmount = hybridFreeze ? parseFloat(hybridFreeze.amount) : 0;
+    const expectedPaystackAmount = Math.max(0, finalBid - depositAmount - hybridWalletAmount);
+    const receivedPaystackAmount = Number(paystackData.data.amount || 0) / 100;
+
+    if (Math.abs(receivedPaystackAmount - expectedPaystackAmount) > 1) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Payment amount mismatch',
+          message: 'This payment amount does not match the current auction balance. Please contact support.',
+        },
+        { status: 409 }
+      );
+    }
     
     // Check payment status
     if (paystackData.data.status !== 'success') {
@@ -210,7 +317,7 @@ export async function POST(
     console.log('✅ Payment verified with Paystack - processing manually...');
     const processingStartTime = Date.now();
     
-    await paymentService.handlePaystackWebhook(payment.paymentReference, true);
+    await withRetry(() => paymentService.handlePaystackWebhook(paymentReference, true), 2, 750);
     
     const processingDuration = Date.now() - processingStartTime;
     const totalDuration = Date.now() - verificationStartTime;
@@ -234,7 +341,7 @@ export async function POST(
     return NextResponse.json(
       {
         error: 'Payment verification failed',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: 'We could not confirm this payment yet. If Paystack debited you, please retry verification in a moment or contact support.',
         failedAfter: totalDuration,
       },
       { status: 500 }

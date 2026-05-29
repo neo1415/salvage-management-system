@@ -10,6 +10,17 @@ import { useCachedAuctions } from '@/hooks/use-cached-auctions';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { RefreshCw, WifiOff } from 'lucide-react';
 import { formatRelativeDate } from '@/utils/format-utils';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import type { DocumentType } from '@/lib/db/schema/release-forms';
+
+const DEFAULT_AUCTION_DOCUMENTS: DocumentType[] = ['bill_of_sale', 'liability_waiver'];
+
+function getDocumentLabel(documentType: string): string {
+  return documentType
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
 
 interface AuctionWithStatus {
   id: string;
@@ -61,6 +72,8 @@ interface ModalConfig {
 export default function AdminAuctionsPage() {
   const { data: session } = useSession();
   const router = useRouter();
+  const { policy: publicPolicy } = usePublicBusinessPolicy();
+  const requiredAuctionDocuments = publicPolicy?.documents.requiredAuctionDocuments ?? DEFAULT_AUCTION_DOCUMENTS;
   const [auctions, setAuctions] = useState<AuctionWithStatus[]>([]);
   const [isGeneratingDocs, setIsGeneratingDocs] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -177,11 +190,8 @@ export default function AdminAuctionsPage() {
   }
 
   const getDocumentStatus = (auction: AuctionWithStatus) => {
-    // Only require bill_of_sale and liability_waiver initially
-    // pickup_authorization is generated AFTER payment verification
-    const requiredDocs = ['bill_of_sale', 'liability_waiver'];
     const existingDocs = auction.documents.map((d) => d.documentType);
-    const missingDocs = requiredDocs.filter((doc) => !existingDocs.includes(doc));
+    const missingDocs = requiredAuctionDocuments.filter((doc) => !existingDocs.includes(doc));
 
     // Check if pickup_authorization exists (generated after payment)
     const hasPickupAuth = existingDocs.includes('pickup_authorization');
@@ -191,13 +201,13 @@ export default function AdminAuctionsPage() {
         return { status: 'complete', color: 'text-green-600', text: '✓ All documents generated (including pickup authorization)' };
       }
       return { status: 'complete', color: 'text-green-600', text: '✓ Initial documents generated' };
-    } else if (missingDocs.length === requiredDocs.length) {
+    } else if (missingDocs.length === requiredAuctionDocuments.length) {
       return { status: 'missing', color: 'text-red-600', text: '✗ No documents generated' };
     } else {
       return {
         status: 'partial',
         color: 'text-yellow-600',
-        text: `⚠ Missing: ${missingDocs.join(', ')}`,
+        text: `⚠ Missing: ${missingDocs.map(getDocumentLabel).join(', ')}`,
       };
     }
   };
@@ -256,7 +266,7 @@ export default function AdminAuctionsPage() {
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
               isOffline
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-burgundy-900 text-white hover:bg-burgundy-800'
+                : 'bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary-hover)]'
             }`}
             title={isOffline ? 'Cannot refresh while offline' : 'Refresh auctions'}
           >
@@ -289,6 +299,7 @@ export default function AdminAuctionsPage() {
                     <div className="pb-4">
                       <AuctionManagementCard
                         auction={auction}
+                        requiredDocuments={requiredAuctionDocuments}
                         isGenerating={isGeneratingDocs === auction.id}
                         onGenerateDocuments={handleGenerateDocuments}
                       />
@@ -304,6 +315,7 @@ export default function AdminAuctionsPage() {
                   <AuctionManagementCard
                     key={auction.id}
                     auction={auction}
+                    requiredDocuments={requiredAuctionDocuments}
                     isGenerating={isGeneratingDocs === auction.id}
                     onGenerateDocuments={handleGenerateDocuments}
                   />
@@ -333,21 +345,20 @@ export default function AdminAuctionsPage() {
 // Auction Management Card Component
 interface AuctionManagementCardProps {
   auction: AuctionWithStatus;
+  requiredDocuments: DocumentType[];
   isGenerating: boolean;
   onGenerateDocuments: (auctionId: string) => void;
 }
 
 function AuctionManagementCard({
   auction,
+  requiredDocuments,
   isGenerating,
   onGenerateDocuments,
 }: AuctionManagementCardProps) {
   const getDocumentStatus = (auction: AuctionWithStatus) => {
-    // Only require bill_of_sale and liability_waiver initially
-    // pickup_authorization is generated AFTER payment verification
-    const requiredDocs = ['bill_of_sale', 'liability_waiver'];
     const existingDocs = auction.documents.map((d) => d.documentType);
-    const missingDocs = requiredDocs.filter((doc) => !existingDocs.includes(doc));
+    const missingDocs = requiredDocuments.filter((doc) => !existingDocs.includes(doc));
 
     // Check if pickup_authorization exists (generated after payment)
     const hasPickupAuth = existingDocs.includes('pickup_authorization');
@@ -357,13 +368,13 @@ function AuctionManagementCard({
         return { status: 'complete', color: 'text-green-600', text: '✓ All documents generated (including pickup authorization)' };
       }
       return { status: 'complete', color: 'text-green-600', text: '✓ Initial documents generated' };
-    } else if (missingDocs.length === requiredDocs.length) {
+    } else if (missingDocs.length === requiredDocuments.length) {
       return { status: 'missing', color: 'text-red-600', text: '✗ No documents generated' };
     } else {
       return {
         status: 'partial',
         color: 'text-yellow-600',
-        text: `⚠ Missing: ${missingDocs.join(', ')}`,
+        text: `⚠ Missing: ${missingDocs.map(getDocumentLabel).join(', ')}`,
       };
     }
   };
@@ -498,7 +509,7 @@ function AuctionManagementCard({
                     className={`w-full px-4 py-2 rounded-lg text-sm font-medium ${
                       auction.documentGenerationFailed
                         ? 'bg-red-600 hover:bg-red-700 text-white'
-                        : 'bg-burgundy-900 hover:bg-burgundy-800 text-white'
+                        : 'bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-white'
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
                     {isGenerating ? (

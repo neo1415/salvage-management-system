@@ -1,9 +1,10 @@
 /**
  * Case Approval Email Template
- * Professional case approval/rejection notification with NEM Insurance branding
+ * Professional case approval/rejection notification with policy-aware branding
  */
 
-import { getBaseEmailTemplate } from './base.template';
+import { getEmailBranding, brandTeamName } from './email-branding';
+import { getPolicyAwareBaseEmailTemplate } from './base.template';
 import { appPath } from './email-urls';
 
 export interface CaseApprovalTemplateData {
@@ -23,8 +24,9 @@ export interface CaseApprovalTemplateData {
   };
 }
 
-export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): string {
+export async function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): Promise<string> {
   const { adjusterName, caseId, claimReference, assetType, status, comment, managerName, appUrl, priceAdjustments } = data;
+  const branding = await getEmailBranding();
   
   const isApproved = status === 'approved';
   const statusColor = isApproved ? '#28a745' : '#dc3545';
@@ -36,7 +38,7 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
   };
   
   const content = `
-    <p style="font-size: 18px; color: #800020; font-weight: 600; margin-bottom: 20px;">
+    <p style="font-size: 18px; color: ${branding.primaryColor}; font-weight: 600; margin-bottom: 20px;">
       Dear ${adjusterName},
     </p>
     
@@ -53,23 +55,23 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
       </div>
     </div>
     
-    <div style="background-color: #f9f9f9; padding: 25px; border-radius: 8px; margin: 30px 0; border-left: 4px solid #FFD700;">
-      <h3 style="margin: 0 0 20px 0; color: #800020; font-size: 18px;">Case Details</h3>
+    <div style="background-color: #f9f9f9; padding: 25px; border-radius: 8px; margin: 30px 0; border-left: 4px solid ${branding.accentColor};">
+      <h3 style="margin: 0 0 20px 0; color: ${branding.primaryColor}; font-size: 18px;">Case Details</h3>
       <table style="width: 100%; border-collapse: collapse;">
         <tr style="border-bottom: 1px solid #e0e0e0;">
-          <td style="padding: 12px 0; font-weight: 600; color: #800020; width: 40%;">Case ID:</td>
+          <td style="padding: 12px 0; font-weight: 600; color: ${branding.primaryColor}; width: 40%;">Case ID:</td>
           <td style="padding: 12px 0;">${caseId}</td>
         </tr>
         <tr style="border-bottom: 1px solid #e0e0e0;">
-          <td style="padding: 12px 0; font-weight: 600; color: #800020;">Claim Reference:</td>
+          <td style="padding: 12px 0; font-weight: 600; color: ${branding.primaryColor};">Claim Reference:</td>
           <td style="padding: 12px 0;">${claimReference}</td>
         </tr>
         <tr style="border-bottom: 1px solid #e0e0e0;">
-          <td style="padding: 12px 0; font-weight: 600; color: #800020;">Asset Type:</td>
+          <td style="padding: 12px 0; font-weight: 600; color: ${branding.primaryColor};">Asset Type:</td>
           <td style="padding: 12px 0;">${assetType}</td>
         </tr>
         <tr>
-          <td style="padding: 12px 0; font-weight: 600; color: #800020;">Reviewed By:</td>
+          <td style="padding: 12px 0; font-weight: 600; color: ${branding.primaryColor};">Reviewed By:</td>
           <td style="padding: 12px 0;">${managerName}</td>
         </tr>
       </table>
@@ -155,7 +157,7 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     `}
     
     <div style="text-align: center; margin: 35px 0;">
-      <a href="${appPath(`/adjuster/cases/${caseId}`)}" class="button" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+      <a href="${appPath(`/adjuster/cases/${caseId}`)}" class="button" style="display: inline-block; padding: 16px 32px; background: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
         View Case Details
       </a>
     </div>
@@ -164,11 +166,11 @@ export function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): st
     
     <p style="margin-top: 30px;">
       Best regards,<br>
-      <strong style="color: #800020;">The NEM Insurance Team</strong>
+      <strong style="color: ${branding.primaryColor};">${brandTeamName(branding)}</strong>
     </p>
   `;
   
-  return getBaseEmailTemplate({
+  return getPolicyAwareBaseEmailTemplate({
     title: `Case ${statusText}`,
     preheader: `Your salvage case ${claimReference} has been ${status} by ${managerName}`,
     content,

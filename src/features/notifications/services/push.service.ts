@@ -16,6 +16,8 @@
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { smsService } from './sms.service';
 import { emailService } from './email.service';
+import { getEmailBranding, getSupportEmail, getSupportPhone } from '../templates/email-branding';
+import { wrapProfessionalEmail } from '../templates/wrap-professional-email';
 
 // Validate required environment variables
 if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
@@ -200,7 +202,28 @@ export class PushNotificationService {
 
       // Check if subscription exists
       if (!subscription) {
-        console.log(`📱 No push subscription for user ${options.userId}, using fallback`);
+        if (typeof window === 'undefined') {
+          const { sendPushToUser } = await import('./push-subscription.service');
+          const fanoutResult = await sendPushToUser(options.userId, {
+            title: options.title,
+            body: options.body,
+            icon: options.icon,
+            badge: options.badge,
+            data: options.data,
+            tag: options.tag,
+            requireInteraction: options.requireInteraction,
+            actions: options.actions,
+          });
+
+          if (fanoutResult.success) {
+            return {
+              success: true,
+              messageId: `push-fanout-${Date.now()}`,
+            };
+          }
+        }
+
+        console.log(`No active push subscription for user ${options.userId}, using fallback`);
         return await this.sendFallbackNotification(options, fallbackContact, preferences);
       }
 
@@ -299,8 +322,8 @@ export class PushNotificationService {
         const payload = JSON.stringify({
           title: options.title,
           body: options.body,
-          icon: options.icon || '/icons/Nem-insurance-Logo.jpg',
-          badge: options.badge || '/icons/Nem-insurance-Logo.jpg',
+          icon: options.icon || '/icons/icon-192.png',
+          badge: options.badge || '/icons/icon-192.png',
           data: options.data || {},
           tag: options.tag,
           requireInteraction: options.requireInteraction || false,
@@ -316,7 +339,7 @@ export class PushNotificationService {
           
           // Configure VAPID details
           webpush.setVapidDetails(
-            process.env.VAPID_SUBJECT || 'mailto:nemsupport@nem-insurance.com',
+            process.env.VAPID_SUBJECT || `mailto:${process.env.SUPPORT_EMAIL || 'support@example.com'}`,
             this.vapidPublicKey,
             this.vapidPrivateKey
           );
@@ -423,21 +446,28 @@ export class PushNotificationService {
     // Try Email if SMS failed or not available
     if (fallbackContact.email && (!preferences || preferences.emailEnabled)) {
       try {
+        const branding = await getEmailBranding();
+        const supportEmail = getSupportEmail(branding);
+        const supportPhone = getSupportPhone(branding);
         const emailResult = await emailService.sendEmail({
           to: fallbackContact.email,
           subject: title,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #800020;">${title}</h2>
+          html: await wrapProfessionalEmail(
+            title,
+            `
+            <div>
+              <h2 style="color: ${branding.primaryColor};">${title}</h2>
               <p>${body}</p>
               <hr style="border: 1px solid #eee; margin: 20px 0;">
               <p style="color: #666; font-size: 12px;">
-                This is a notification from NEM Insurance Salvage Management System.
+                This is a notification from ${branding.brandName}.
                 <br>
-                If you have questions, contact us at nemsupport@nem-insurance.com or 234-02-014489560.
+                If you have questions, contact us at ${supportEmail} or ${supportPhone}.
               </p>
             </div>
           `,
+            `Notification from ${branding.brandName}`
+          ),
         });
 
         if (emailResult.success) {
@@ -491,8 +521,8 @@ export class PushNotificationService {
         userId,
         title: "You've Been Outbid!",
         body: `${auctionTitle} - New bid: ${newBidAmount}. ${timeRemaining} remaining.`,
-        icon: '/icons/Nem-insurance-Logo.jpg',
-        badge: '/icons/Nem-insurance-Logo.jpg',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
         tag: 'outbid-alert',
         requireInteraction: true,
         data: {
@@ -547,8 +577,8 @@ export class PushNotificationService {
         userId,
         title: '⏰ Auction Ending Soon!',
         body: `${auctionTitle} ends in ${timeRemaining}. Place your bid now!`,
-        icon: '/icons/Nem-insurance-Logo.jpg',
-        badge: '/icons/Nem-insurance-Logo.jpg',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
         tag: 'auction-ending',
         requireInteraction: true,
         data: {
@@ -600,8 +630,8 @@ export class PushNotificationService {
         userId,
         title: '✅ Payment Confirmed!',
         body: `${amount} payment confirmed for ${auctionTitle}. Pickup code: ${pickupAuthCode}`,
-        icon: '/icons/Nem-insurance-Logo.jpg',
-        badge: '/icons/Nem-insurance-Logo.jpg',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
         tag: 'payment-confirmation',
         requireInteraction: false,
         data: {
@@ -652,8 +682,8 @@ export class PushNotificationService {
         userId,
         title: '🏆 Leaderboard Update!',
         body: `You're now #${position} on the leaderboard (${change})!`,
-        icon: '/icons/Nem-insurance-Logo.jpg',
-        badge: '/icons/Nem-insurance-Logo.jpg',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
         tag: 'leaderboard-update',
         requireInteraction: false,
         data: {

@@ -174,7 +174,7 @@ export default function NotificationDropdown({
           {notifications.some((n) => !n.read) && (
             <button
               onClick={handleMarkAllRead}
-              className="text-xs text-[#800020] hover:underline"
+              className="text-xs text-[var(--brand-primary)] hover:underline"
             >
               Mark all read
             </button>
@@ -220,7 +220,7 @@ export default function NotificationDropdown({
         <div className="px-4 py-3 border-t border-gray-200">
           <button
             onClick={handleViewAll}
-            className="w-full text-sm text-center text-[#800020] hover:underline font-medium"
+            className="w-full text-sm text-center text-[var(--brand-primary)] hover:underline font-medium"
           >
             View all notifications
           </button>

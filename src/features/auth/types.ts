@@ -44,7 +44,12 @@ export interface RegistrationInput {
   email: string;
   phone: string;
   password: string;
+  /** What the user typed (also stored on users.full_name) */
   fullName: string;
+  /** Parsed from fullName at registration — used for BVN only; optional on row for legacy users */
+  firstName: string;
+  middleName?: string;
+  lastName: string;
   dateOfBirth: Date;
   termsAccepted: boolean;
 }

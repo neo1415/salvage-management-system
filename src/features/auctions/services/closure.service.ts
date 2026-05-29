@@ -33,6 +33,8 @@ import {
   isBusinessPolicyEnforcementEnabled,
   resolveDocumentDeadlineHours,
 } from '@/features/business-policy';
+import { formatAssetName as formatCaseAssetName } from '@/lib/utils/asset-name';
+import { brandLegalName, brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone, type EmailBranding } from '@/features/notifications/templates/email-branding';
 
 /**
  * Auction closure result
@@ -312,6 +314,13 @@ export class AuctionClosureService {
         console.log(`✅ Payment record created for auction ${auctionId}`);
         console.log(`   - Payment ID: ${payment.id}`);
         console.log(`   - Reference: ${reference}`);
+
+        await businessPolicyService.createCurrentPolicySnapshot({
+          entityType: 'payment',
+          entityId: payment.id,
+          actorId: undefined,
+          reason: `Auction winner payment obligation created for auction ${auctionId}.`,
+        });
       }
 
       // STEP 1: Broadcast closing event (before any status changes)
@@ -878,6 +887,7 @@ export class AuctionClosureService {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
       // FIXED: Link to auction details page where documents can be signed
       const auctionDetailsUrl = `${appUrl}/vendor/auctions/${auction.id}`;
+      const branding = await getEmailBranding();
 
       const winningBid = parseFloat(auction.currentBid!);
       const formattedAmount = winningBid.toLocaleString();
@@ -886,7 +896,7 @@ export class AuctionClosureService {
       const assetName = this.formatAssetName(salvageCase);
 
       // Send SMS notification with link to sign documents
-      const smsMessage = `🎉 Congratulations! You won ${assetName} for ₦${formattedAmount}. Sign 3 documents to complete payment: ${auctionDetailsUrl}`;
+      const smsMessage = `Congratulations. You won ${assetName} for ₦${formattedAmount}. Sign the required documents to complete payment: ${auctionDetailsUrl}`;
 
       await smsService.sendSMS({
         to: user.phone,
@@ -895,14 +905,15 @@ export class AuctionClosureService {
       });
 
       // Send Email notification with link to sign documents
-      const emailSubject = `🎉 You Won! Sign Documents to Complete Payment - ${assetName}`;
+      const emailSubject = `Auction Won: Sign Documents to Complete Payment - ${assetName}`;
       const emailHtml = this.getWinnerNotificationEmailTemplate(
         user.fullName,
         assetName,
         salvageCase,
         winningBid,
         paymentDeadline,
-        auctionDetailsUrl
+        auctionDetailsUrl,
+        branding
       );
 
       await emailService.sendEmail({
@@ -956,21 +967,11 @@ export class AuctionClosureService {
    * @returns Formatted asset name
    */
   private formatAssetName(salvageCase: typeof salvageCases.$inferSelect): string {
-    const details = salvageCase.assetDetails as Record<string, unknown>;
-
-    switch (salvageCase.assetType) {
-      case 'vehicle':
-        return `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim() || 'Vehicle';
-      case 'property':
-        return `${details.propertyType || 'Property'}`;
-      case 'electronics':
-        return `${details.brand || ''} ${details.serialNumber || 'Electronics'}`.trim();
-      case 'machinery':
-        const machineryName = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
-        return machineryName || (details.machineryType ? String(details.machineryType) : 'Machinery');
-      default:
-        return 'Salvage Item';
-    }
+    return formatCaseAssetName(
+      salvageCase.assetType,
+      salvageCase.assetDetails as Record<string, unknown>,
+      salvageCase.claimReference
+    );
   }
 
   /**
@@ -990,7 +991,8 @@ export class AuctionClosureService {
     salvageCase: typeof salvageCases.$inferSelect,
     winningBid: number,
     paymentDeadline: Date,
-    auctionDetailsUrl: string
+    auctionDetailsUrl: string,
+    branding: EmailBranding
   ): string {
     const formattedAmount = winningBid.toLocaleString();
     const deadlineHours = Math.max(
@@ -1029,7 +1031,7 @@ export class AuctionClosureService {
               background-color: #ffffff;
             }
             .header {
-              background: linear-gradient(135deg, #800020 0%, #a00028 100%);
+              background: ${branding.primaryColor};
               color: white;
               padding: 40px 20px;
               text-align: center;
@@ -1047,8 +1049,8 @@ export class AuctionClosureService {
               padding: 30px 20px;
             }
             .winning-details {
-              background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
-              color: #800020;
+              background: ${branding.accentColor};
+              color: ${branding.primaryColor};
               border-radius: 12px;
               padding: 25px;
               margin: 25px 0;
@@ -1068,13 +1070,13 @@ export class AuctionClosureService {
             }
             .item-details {
               background-color: #f9f9f9;
-              border-left: 4px solid #800020;
+              border-left: 4px solid ${branding.primaryColor};
               padding: 20px;
               margin: 20px 0;
             }
             .item-details h3 {
               margin: 0 0 15px 0;
-              color: #800020;
+              color: ${branding.primaryColor};
               font-size: 20px;
             }
             .detail-row {
@@ -1114,8 +1116,8 @@ export class AuctionClosureService {
             .button {
               display: inline-block;
               padding: 16px 32px;
-              background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
-              color: #800020;
+              background: ${branding.accentColor};
+              color: ${branding.primaryColor};
               text-decoration: none;
               border-radius: 8px;
               font-weight: 700;
@@ -1154,7 +1156,6 @@ export class AuctionClosureService {
         <body>
           <div class="container">
             <div class="header">
-              <div class="trophy">🏆</div>
               <h1>Congratulations!</h1>
               <p style="font-size: 18px; margin: 0;">You Won the Auction</p>
             </div>
@@ -1162,7 +1163,7 @@ export class AuctionClosureService {
             <div class="content">
               <p><strong>Dear ${this.escapeHtml(fullName)},</strong></p>
               
-              <p>🎉 Congratulations! You are the winning bidder for the following salvage item:</p>
+              <p>Congratulations. You are the winning bidder for the following salvage item:</p>
               
               <div class="winning-details">
                 <h2>Your Winning Bid</h2>
@@ -1195,7 +1196,7 @@ export class AuctionClosureService {
               </div>
               
               <div class="deadline-warning">
-                <h3>📝 Next Steps: Sign Documents</h3>
+                <h3>Next Steps: Sign Documents</h3>
                 <p style="margin: 5px 0;">Before payment can be processed, you must sign 2 required documents:</p>
                 <ul style="text-align: left; margin: 15px auto; max-width: 400px; color: #856404;">
                   <li><strong>Bill of Sale</strong></li>
@@ -1211,11 +1212,11 @@ export class AuctionClosureService {
               </div>
               
               <div class="important-note">
-                <strong>⚠️ Important:</strong> Failure to sign all documents within ${deadlineHours} hours will result in:
+                <strong>Important:</strong> Failure to sign all documents within ${deadlineHours} hours will result in:
                 <ul style="margin: 10px 0 0 0; padding-left: 20px;">
-                  <li>Forfeiture of your winning bid</li>
+                  <li>Forfeiture may apply under the auction rules</li>
                   <li>Item will be re-listed for auction</li>
-                  <li>Your account may be suspended for 7 days</li>
+                  <li>Your vendor account may be reviewed</li>
                 </ul>
               </div>
               
@@ -1233,13 +1234,12 @@ export class AuctionClosureService {
                 Click the button above to view the auction details and sign all required documents.
               </p>
               
-              <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Team</strong></p>
+              <p style="margin-top: 30px;">Best regards,<br><strong>${brandTeamName(branding)}</strong></p>
             </div>
             
             <div class="footer">
-              <p><strong>NEM Insurance Plc</strong></p>
-              <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
-              <p>Phone: 234-02-014489560 | Email: nemsupport@nem-insurance.com</p>
+              <p><strong>${brandLegalName(branding)}</strong></p>
+              <p>Phone: ${getSupportPhone(branding)} | Email: ${getSupportEmail(branding)}</p>
               <p style="margin-top: 15px;">This is an automated notification. Please do not reply to this message.</p>
             </div>
           </div>

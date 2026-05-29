@@ -22,6 +22,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:apply-mfa-columns": "tsx scripts/apply-mfa-columns.ts",
+    "db:apply-legal-names": "tsx scripts/apply-legal-name-columns.ts",
     "db:bootstrap-staging": "tsx scripts/bootstrap-staging-database.ts",
     "db:apply-optimized-indexes": "tsx scripts/apply-optimized-indexes.ts",
     "db:check-index-usage": "tsx scripts/check-index-usage.ts",

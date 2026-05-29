@@ -6,6 +6,8 @@ import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { emailService } from '@/features/notifications/services/email.service';
 import { smsService } from '@/features/notifications/services/sms.service';
+import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 
 /**
  * Vendor Approval/Rejection API
@@ -65,6 +67,7 @@ export async function POST(
     // Parse request body
     const body = await request.json();
     const { action, comment } = body;
+    const branding = await getEmailBranding();
 
     console.log('📦 [VENDOR APPROVAL] Request body:', { action, hasComment: !!comment });
 
@@ -200,18 +203,21 @@ export async function POST(
       try {
         await emailService.sendEmail({
           to: vendorUser.email,
-          subject: 'KYC Application Approved - NEM Insurance Salvage Platform',
-          html: `
-            <h2>Congratulations! Your KYC Application Has Been Approved</h2>
+          subject: 'KYC Application Approved',
+          html: await wrapProfessionalEmail(
+            'KYC Application Approved',
+            `
             <p>Dear ${vendorUser.fullName},</p>
             <p>We are pleased to inform you that your KYC application for <strong>${vendor.businessName || 'your vendor account'}</strong> has been approved.</p>
             <p><strong>Tier:</strong> ${tierDisplayText}</p>
             ${comment ? `<p><strong>Manager's Note:</strong> ${comment}</p>` : ''}
             <p>You can now participate in auctions and bid on salvage assets.</p>
             ${isTier2Approval ? '<p><strong>Tier 2 Benefits:</strong> Unlimited bidding, leaderboard access, and priority support.</p>' : ''}
-            <p>Thank you for choosing NEM Insurance Salvage Platform.</p>
-            <p>Best regards,<br>NEM Insurance Team</p>
+            <p>Thank you for choosing ${branding.brandName}.</p>
+            <p>Best regards,<br>${brandTeamName(branding)}</p>
           `,
+            `Your ${branding.brandName} KYC application has been approved.`
+          ),
         });
         console.log('✅ [VENDOR APPROVAL] Approval email sent successfully');
       } catch (emailError) {
@@ -225,7 +231,7 @@ export async function POST(
       try {
         await smsService.sendSMS({
           to: vendorUser.phone,
-          message: `NEM Insurance: Your KYC application has been approved! You can now participate in auctions. Welcome aboard!`,
+          message: `${branding.brandName}: Your KYC application has been approved. You can now participate in eligible auctions.`,
         });
         console.log('✅ [VENDOR APPROVAL] Approval SMS sent successfully');
       } catch (smsError) {
@@ -278,9 +284,10 @@ export async function POST(
       try {
         await emailService.sendEmail({
           to: vendorUser.email,
-          subject: 'KYC Application Requires Attention - NEM Insurance Salvage Platform',
-          html: `
-            <h2>KYC Application Update Required</h2>
+          subject: 'KYC Application Requires Attention',
+          html: await wrapProfessionalEmail(
+            'KYC Application Update Required',
+            `
             <p>Dear ${vendorUser.fullName},</p>
             <p>Thank you for submitting your KYC application for <strong>${vendor.businessName || 'your vendor account'}</strong>.</p>
             <p>Unfortunately, we need you to update your application before we can proceed with approval.</p>
@@ -294,8 +301,10 @@ export async function POST(
               <li>Resubmit your application</li>
             </ul>
             <p>If you have any questions, please contact our support team.</p>
-            <p>Best regards,<br>NEM Insurance Team</p>
+            <p>Best regards,<br>${brandTeamName(branding)}</p>
           `,
+            `Your ${branding.brandName} KYC application needs updates.`
+          ),
         });
         console.log('✅ [VENDOR APPROVAL] Rejection email sent successfully');
       } catch (emailError) {
@@ -309,7 +318,7 @@ export async function POST(
       try {
         await smsService.sendSMS({
           to: vendorUser.phone,
-          message: `NEM Insurance: Your KYC application needs updates. Reason: ${comment.substring(0, 100)}${comment.length > 100 ? '...' : ''}. Please check your email for details.`,
+          message: `${branding.brandName}: Your KYC application needs updates. Reason: ${comment.substring(0, 100)}${comment.length > 100 ? '...' : ''}. Please check your email for details.`,
         });
         console.log('✅ [VENDOR APPROVAL] Rejection SMS sent successfully');
       } catch (smsError) {

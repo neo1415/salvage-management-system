@@ -24,7 +24,7 @@ export function DashboardTopBar() {
         
         <Link 
           href="/settings/profile-picture"
-          className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 hover:border-[#800020] transition-colors"
+          className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 hover:border-[var(--brand-primary)] transition-colors"
         >
           {session?.user?.profilePictureUrl ? (
             <Image
@@ -35,8 +35,8 @@ export function DashboardTopBar() {
               sizes="40px"
             />
           ) : (
-            <div className="w-full h-full bg-[#800020] flex items-center justify-center rounded-full">
-              <UserIcon className="w-5 h-5 text-white" />
+            <div className="w-full h-full bg-[var(--brand-primary)] flex items-center justify-center rounded-full">
+              <UserIcon className="w-5 h-5 text-[var(--brand-primary-foreground)]" />
             </div>
           )}
         </Link>

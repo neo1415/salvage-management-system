@@ -17,6 +17,7 @@ import { users } from '@/lib/db/schema/users';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { eq, and, lte, gte, isNull } from 'drizzle-orm';
 import { smsService } from '@/features/notifications/services/sms.service';
+import { businessPolicyService } from '@/features/business-policy';
 
 export interface PickupReminderResults {
   remindersSent: number;
@@ -39,6 +40,10 @@ export async function sendPickupReminders(): Promise<PickupReminderResults> {
     // Get document validity period from config (default 48 hours)
     const { configService } = await import('@/features/auction-deposit/services/config.service');
     const config = await configService.getConfig();
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const fallbackPickupLocation = [policy.legal.addressLine1, policy.legal.addressLine2]
+      .filter(Boolean)
+      .join(', ') || 'Configured salvage pickup location';
     const documentValidityHours = config.documentValidityPeriod;
     
     // Calculate time window: remind at halfway point (e.g., 24 hours for 48-hour deadline)
@@ -89,7 +94,7 @@ export async function sendPickupReminders(): Promise<PickupReminderResults> {
         const pickupAuthCode = payment.paymentReference || 'AUTH-PENDING';
 
         // Get pickup location
-        const pickupLocation = salvageCase.locationName || 'NEM Insurance Salvage Yard';
+        const pickupLocation = salvageCase.locationName || fallbackPickupLocation;
 
         // Send reminder SMS
         await smsService.sendSMS({

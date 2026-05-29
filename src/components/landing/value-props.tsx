@@ -35,8 +35,8 @@ export function ValuePropsSection() {
     <section className="py-20 md:py-32 bg-gradient-to-b from-gray-50 to-white relative overflow-hidden">
       {/* Background decoration */}
       <div className="absolute inset-0 opacity-5">
-        <div className="absolute top-0 left-0 w-96 h-96 bg-burgundy-500 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-gold-500 rounded-full blur-3xl" />
+        <div className="absolute top-0 left-0 w-96 h-96 bg-[var(--brand-primary)] rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-[var(--brand-accent)] rounded-full blur-3xl" />
       </div>
 
       <div className="container mx-auto px-4 relative z-10">
@@ -48,7 +48,7 @@ export function ValuePropsSection() {
           transition={{ duration: 0.6 }}
         >
           <motion.h2
-            className="text-4xl md:text-6xl font-black mb-4 bg-gradient-to-r from-burgundy-900 via-burgundy-700 to-gold-600 bg-clip-text text-transparent"
+            className="text-4xl md:text-6xl font-black mb-4 bg-gradient-to-r from-[var(--brand-primary)] via-[var(--brand-primary-hover)] to-[var(--brand-accent)] bg-clip-text text-transparent"
             initial={{ opacity: 0, scale: 0.9 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
@@ -108,7 +108,7 @@ export function ValuePropsSection() {
                   </motion.div>
 
                   {/* Content */}
-                  <h3 className="text-xl font-bold mb-3 text-burgundy-900 group-hover:text-burgundy-700 transition-colors">
+                  <h3 className="text-xl font-bold mb-3 text-[var(--brand-primary)] group-hover:text-[var(--brand-primary-hover)] transition-colors">
                     {prop.title}
                   </h3>
                   <p className="text-gray-600 leading-relaxed">
@@ -134,7 +134,7 @@ export function ValuePropsSection() {
             Join hundreds of vendors already transforming their salvage business
           </p>
           <motion.button
-            className="px-8 py-4 bg-gradient-to-r from-burgundy-800 to-burgundy-600 text-white font-bold rounded-lg shadow-lg"
+            className="px-8 py-4 bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] text-white font-bold rounded-lg shadow-lg"
             whileHover={{ scale: 1.05, boxShadow: '0 20px 40px rgba(128, 0, 32, 0.3)' }}
             whileTap={{ scale: 0.95 }}
           >

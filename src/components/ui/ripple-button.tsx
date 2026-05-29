@@ -74,7 +74,7 @@ export function RippleButton({
 
   // Variant styles
   const variantStyles = {
-    primary: 'bg-[#800020] text-white hover:bg-[#600018] active:bg-[#500015]',
+    primary: 'bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary-hover)] active:bg-[var(--brand-primary-active)]',
     secondary: 'bg-white text-gray-700 border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-100',
     ghost: 'bg-transparent text-gray-700 hover:bg-gray-100 active:bg-gray-200',
   };
@@ -92,7 +92,7 @@ export function RippleButton({
       className={`
         relative overflow-hidden rounded-lg font-semibold
         transition-colors duration-200
-        focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2
+        focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:ring-offset-2
         disabled:opacity-50 disabled:cursor-not-allowed
         ${variantStyles[variant]}
         ${sizeStyles[size]}

@@ -50,7 +50,7 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
   if (status === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-[#800020]" />
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--brand-primary)]" />
       </div>
     );
   }
@@ -59,7 +59,7 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
     if (!onTier1) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <Loader2 className="h-8 w-8 animate-spin text-[#800020]" />
+          <Loader2 className="h-8 w-8 animate-spin text-[var(--brand-primary)]" />
         </div>
       );
     }

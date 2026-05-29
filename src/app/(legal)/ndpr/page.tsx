@@ -1,20 +1,23 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
+import { getLegalBranding } from '../legal-branding';
 
 export const metadata: Metadata = {
-  title: 'NDPR Compliance | NEM Insurance Salvage Auction Platform',
+  title: 'NDPR Compliance | Salvage Auction Platform',
   description: 'Nigeria Data Protection Regulation (NDPR) Compliance Statement',
 };
 
-export default function NDPRCompliancePage() {
+export default async function NDPRCompliancePage() {
+  const legal = await getLegalBranding();
+
   return (
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="container mx-auto px-4 max-w-4xl">
         <div className="bg-white rounded-lg shadow-lg p-8 md:p-12">
           {/* Header */}
           <div className="mb-8 pb-6 border-b border-gray-200">
-            <h1 className="text-4xl font-bold text-burgundy-900 mb-2">NDPR Compliance Statement</h1>
-            <p className="text-gray-600">Last Updated: April 27, 2026</p>
+            <h1 className="text-4xl font-bold text-[var(--brand-primary)] mb-2">NDPR Compliance Statement</h1>
+            <p className="text-gray-600">Last Updated: {legal.legalLastUpdated}</p>
             <p className="text-sm text-gray-500 mt-2">
               Nigeria Data Protection Act 2023 (NDPA 2023) & Nigeria Data Protection Regulation (NDPR) Compliant
             </p>
@@ -23,26 +26,26 @@ export default function NDPRCompliancePage() {
           {/* Compliance Badge */}
           <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-8">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center text-white text-3xl font-bold">
-                ✓
+              <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center text-white text-xl font-bold">
+                OK
               </div>
               <div>
                 <h2 className="text-2xl font-bold text-green-900 mb-1">Fully Compliant</h2>
                 <p className="text-green-800">
-                  NEM Insurance Salvage Auction Platform is fully compliant with NDPA 2023 and NDPR requirements
+                  {legal.platformName} is fully compliant with NDPA 2023 and NDPR requirements
                 </p>
               </div>
             </div>
           </div>
 
           {/* Content */}
-          <div className="prose prose-burgundy max-w-none">
+          <div className="prose prose-slate max-w-none">
             {/* Section 1 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">1. Our Commitment to Data Protection</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">1. Our Commitment to Data Protection</h2>
               <p className="text-gray-700 mb-4">
-                NEM Insurance Plc ("we", "us", or "our") is committed to protecting the privacy and personal data of all 
-                users of our Salvage Auction Platform. We comply with:
+                {legal.legalName} ("we", "us", or "our") is committed to protecting the privacy and personal data of all
+                users of {legal.platformName}. We comply with:
               </p>
               <ul className="list-disc pl-6 space-y-2 text-gray-700">
                 <li><strong>Nigeria Data Protection Act 2023 (NDPA 2023)</strong> - The primary data protection law in Nigeria</li>
@@ -54,64 +57,64 @@ export default function NDPRCompliancePage() {
 
             {/* Section 2 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">2. Data Protection Principles</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">2. Data Protection Principles</h2>
               <p className="text-gray-700 mb-4">
                 We adhere to the following data protection principles as required by NDPA 2023:
               </p>
-              
+
               <div className="space-y-4">
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-burgundy-800 mb-2">2.1 Lawfulness, Fairness, and Transparency</h3>
+                  <h3 className="font-semibold text-[var(--brand-primary)] mb-2">2.1 Lawfulness, Fairness, and Transparency</h3>
                   <p className="text-gray-700 text-sm">
-                    We process personal data lawfully, fairly, and in a transparent manner. We clearly communicate how 
+                    We process personal data lawfully, fairly, and in a transparent manner. We clearly communicate how
                     we collect, use, and protect your data.
                   </p>
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-burgundy-800 mb-2">2.2 Purpose Limitation</h3>
+                  <h3 className="font-semibold text-[var(--brand-primary)] mb-2">2.2 Purpose Limitation</h3>
                   <p className="text-gray-700 text-sm">
-                    We collect personal data for specified, explicit, and legitimate purposes only. We do not process 
+                    We collect personal data for specified, explicit, and legitimate purposes only. We do not process
                     data in a manner incompatible with those purposes.
                   </p>
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-burgundy-800 mb-2">2.3 Data Minimization</h3>
+                  <h3 className="font-semibold text-[var(--brand-primary)] mb-2">2.3 Data Minimization</h3>
                   <p className="text-gray-700 text-sm">
-                    We collect only the personal data that is adequate, relevant, and limited to what is necessary for 
+                    We collect only the personal data that is adequate, relevant, and limited to what is necessary for
                     the purposes for which it is processed.
                   </p>
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-burgundy-800 mb-2">2.4 Accuracy</h3>
+                  <h3 className="font-semibold text-[var(--brand-primary)] mb-2">2.4 Accuracy</h3>
                   <p className="text-gray-700 text-sm">
-                    We take reasonable steps to ensure personal data is accurate and kept up to date. Inaccurate data 
+                    We take reasonable steps to ensure personal data is accurate and kept up to date. Inaccurate data
                     is erased or rectified without delay.
                   </p>
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-burgundy-800 mb-2">2.5 Storage Limitation</h3>
+                  <h3 className="font-semibold text-[var(--brand-primary)] mb-2">2.5 Storage Limitation</h3>
                   <p className="text-gray-700 text-sm">
-                    We retain personal data only for as long as necessary for the purposes for which it was collected, 
+                    We retain personal data only for as long as necessary for the purposes for which it was collected,
                     or as required by law (7 years for financial records, 5 years for KYC data).
                   </p>
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-burgundy-800 mb-2">2.6 Integrity and Confidentiality</h3>
+                  <h3 className="font-semibold text-[var(--brand-primary)] mb-2">2.6 Integrity and Confidentiality</h3>
                   <p className="text-gray-700 text-sm">
-                    We implement appropriate technical and organizational measures to ensure data security, including 
+                    We implement appropriate technical and organizational measures to ensure data security, including
                     protection against unauthorized or unlawful processing and accidental loss, destruction, or damage.
                   </p>
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-burgundy-800 mb-2">2.7 Accountability</h3>
+                  <h3 className="font-semibold text-[var(--brand-primary)] mb-2">2.7 Accountability</h3>
                   <p className="text-gray-700 text-sm">
-                    We are responsible for and can demonstrate compliance with all data protection principles through 
+                    We are responsible for and can demonstrate compliance with all data protection principles through
                     documentation, policies, and regular audits.
                   </p>
                 </div>
@@ -120,11 +123,11 @@ export default function NDPRCompliancePage() {
 
             {/* Section 3 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">3. Legal Basis for Processing</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">3. Legal Basis for Processing</h2>
               <p className="text-gray-700 mb-4">
                 We process personal data based on the following lawful grounds under NDPA 2023:
               </p>
-              
+
               <ul className="list-disc pl-6 space-y-3 text-gray-700">
                 <li>
                   <strong>Consent:</strong> You provide explicit consent when creating an account and accepting our Terms of Service
@@ -143,14 +146,14 @@ export default function NDPRCompliancePage() {
 
             {/* Section 4 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">4. Data Subject Rights</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">4. Data Subject Rights</h2>
               <p className="text-gray-700 mb-4">
                 Under NDPA 2023, you have the following rights regarding your personal data:
               </p>
-              
-              <div className="bg-burgundy-50 border-l-4 border-burgundy-600 p-6 mb-4">
-                <h3 className="font-bold text-burgundy-900 mb-3">Your Rights:</h3>
-                <ul className="space-y-2 text-burgundy-800">
+
+              <div className="bg-[var(--brand-primary-surface)] border-l-4 border-[var(--brand-primary)] p-6 mb-4">
+                <h3 className="font-bold text-[var(--brand-primary)] mb-3">Your Rights:</h3>
+                <ul className="space-y-2 text-[var(--brand-primary)]">
                   <li>✓ <strong>Right to Access:</strong> Request copies of your personal data</li>
                   <li>✓ <strong>Right to Rectification:</strong> Correct inaccurate or incomplete data</li>
                   <li>✓ <strong>Right to Erasure:</strong> Request deletion of your data (subject to legal obligations)</li>
@@ -164,8 +167,8 @@ export default function NDPRCompliancePage() {
 
               <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
                 <p className="text-sm text-yellow-800">
-                  <strong>How to Exercise Your Rights:</strong> Contact our Data Protection Officer at 
-                  <a href="mailto:dpo@neminsurance.com" className="underline ml-1">dpo@neminsurance.com</a>. 
+                  <strong>How to Exercise Your Rights:</strong> Contact our Data Protection Officer at
+                  <a href={`mailto:${legal.dpoEmail}`} className="underline ml-1">{legal.dpoEmail}</a>.
                   We will respond within 30 days as required by NDPA 2023.
                 </p>
               </div>
@@ -173,14 +176,14 @@ export default function NDPRCompliancePage() {
 
             {/* Section 5 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">5. Data Security Measures</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">5. Data Security Measures</h2>
               <p className="text-gray-700 mb-4">
                 We implement comprehensive technical and organizational security measures:
               </p>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-burgundy-800 mb-2">Technical Measures</h3>
+                  <h3 className="font-semibold text-[var(--brand-primary)] mb-2">Technical Measures</h3>
                   <ul className="text-sm text-gray-700 space-y-1">
                     <li>• TLS/SSL encryption in transit</li>
                     <li>• AES-256 encryption at rest</li>
@@ -192,7 +195,7 @@ export default function NDPRCompliancePage() {
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-burgundy-800 mb-2">Organizational Measures</h3>
+                  <h3 className="font-semibold text-[var(--brand-primary)] mb-2">Organizational Measures</h3>
                   <ul className="text-sm text-gray-700 space-y-1">
                     <li>• Access control policies</li>
                     <li>• Employee training programs</li>
@@ -207,11 +210,11 @@ export default function NDPRCompliancePage() {
 
             {/* Section 6 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">6. Data Breach Notification</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">6. Data Breach Notification</h2>
               <p className="text-gray-700 mb-4">
                 In compliance with NDPA 2023 Section 41, we have established procedures for data breach management:
               </p>
-              
+
               <div className="bg-red-50 border-l-4 border-red-400 p-4">
                 <h3 className="font-semibold text-red-900 mb-2">72-Hour Notification Requirement</h3>
                 <p className="text-sm text-red-800 mb-2">
@@ -228,11 +231,11 @@ export default function NDPRCompliancePage() {
 
             {/* Section 7 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">7. International Data Transfers</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">7. International Data Transfers</h2>
               <p className="text-gray-700 mb-4">
                 Some of our service providers process data outside Nigeria. We ensure adequate protection through:
               </p>
-              
+
               <ul className="list-disc pl-6 space-y-2 text-gray-700">
                 <li><strong>Standard Contractual Clauses:</strong> Approved by NDPC for international transfers</li>
                 <li><strong>Adequacy Decisions:</strong> Transfers to countries with adequate data protection laws</li>
@@ -242,7 +245,7 @@ export default function NDPRCompliancePage() {
 
               <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mt-4">
                 <p className="text-sm text-blue-800">
-                  <strong>Our International Partners:</strong> Google Cloud (USA - adequacy decision), 
+                  <strong>Our International Partners:</strong> Google Cloud (USA - adequacy decision),
                   Paystack (Nigeria), Dojah (Nigeria), Vercel (USA - standard contractual clauses)
                 </p>
               </div>
@@ -250,11 +253,11 @@ export default function NDPRCompliancePage() {
 
             {/* Section 8 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">8. Data Protection Officer (DPO)</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">8. Data Protection Officer (DPO)</h2>
               <p className="text-gray-700 mb-4">
                 As required by NDPA 2023, we have appointed a Data Protection Officer responsible for:
               </p>
-              
+
               <ul className="list-disc pl-6 space-y-2 text-gray-700 mb-4">
                 <li>Monitoring compliance with NDPA 2023 and NDPR</li>
                 <li>Advising on data protection impact assessments</li>
@@ -264,27 +267,27 @@ export default function NDPRCompliancePage() {
               </ul>
 
               <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="font-bold text-burgundy-900 mb-3">Contact Our DPO:</h3>
-                <p className="text-gray-700 mb-2"><strong>Email:</strong> dpo@neminsurance.com</p>
+                <h3 className="font-bold text-[var(--brand-primary)] mb-3">Contact Our DPO:</h3>
+                <p className="text-gray-700 mb-2"><strong>Email:</strong> {legal.dpoEmail}</p>
                 <p className="text-gray-700 mb-2"><strong>Phone:</strong> +234 (0) 1 234 5678</p>
-                <p className="text-gray-700"><strong>Address:</strong> 199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
+                <p className="text-gray-700"><strong>Address:</strong> {legal.addressLine1}, {legal.addressLine2}</p>
               </div>
             </section>
 
             {/* Section 9 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">9. Third-Party Data Processors</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">9. Third-Party Data Processors</h2>
               <p className="text-gray-700 mb-4">
                 We engage the following third-party processors, all of whom are contractually bound to NDPA 2023 requirements:
               </p>
-              
+
               <div className="overflow-x-auto">
                 <table className="min-w-full bg-white border border-gray-200">
-                  <thead className="bg-burgundy-50">
+                  <thead className="bg-[var(--brand-primary-surface)]">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-burgundy-900 border-b">Processor</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-burgundy-900 border-b">Purpose</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-burgundy-900 border-b">Location</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-[var(--brand-primary)] border-b">Processor</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-[var(--brand-primary)] border-b">Purpose</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-[var(--brand-primary)] border-b">Location</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm text-gray-700">
@@ -315,11 +318,11 @@ export default function NDPRCompliancePage() {
 
             {/* Section 10 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">10. Compliance Monitoring & Audits</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">10. Compliance Monitoring & Audits</h2>
               <p className="text-gray-700 mb-4">
                 We conduct regular compliance monitoring activities:
               </p>
-              
+
               <ul className="list-disc pl-6 space-y-2 text-gray-700">
                 <li><strong>Quarterly Internal Audits:</strong> Review of data processing activities</li>
                 <li><strong>Annual External Audits:</strong> Independent assessment by certified auditors</li>
@@ -331,15 +334,15 @@ export default function NDPRCompliancePage() {
 
             {/* Section 11 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">11. Filing a Complaint with NDPC</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">11. Filing a Complaint with NDPC</h2>
               <p className="text-gray-700 mb-4">
-                If you believe we have not adequately addressed your data protection concerns, you have the right to 
+                If you believe we have not adequately addressed your data protection concerns, you have the right to
                 lodge a complaint with the Nigeria Data Protection Commission:
               </p>
-              
+
               <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="font-bold text-burgundy-900 mb-3">Nigeria Data Protection Commission (NDPC)</h3>
-                <p className="text-gray-700 mb-2"><strong>Website:</strong> <a href="https://ndpc.gov.ng" target="_blank" rel="noopener noreferrer" className="text-burgundy-700 hover:text-burgundy-900 underline">www.ndpc.gov.ng</a></p>
+                <h3 className="font-bold text-[var(--brand-primary)] mb-3">Nigeria Data Protection Commission (NDPC)</h3>
+                <p className="text-gray-700 mb-2"><strong>Website:</strong> <a href="https://ndpc.gov.ng" target="_blank" rel="noopener noreferrer" className="text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)] underline">www.ndpc.gov.ng</a></p>
                 <p className="text-gray-700 mb-2"><strong>Email:</strong> info@ndpc.gov.ng</p>
                 <p className="text-gray-700 mb-2"><strong>Phone:</strong> +234 (0) 9 461 4000</p>
                 <p className="text-gray-700"><strong>Address:</strong> National Information Technology Development Agency (NITDA) Complex, Abuja, Nigeria</p>
@@ -348,10 +351,10 @@ export default function NDPRCompliancePage() {
 
             {/* Section 12 */}
             <section className="mb-8">
-              <h2 className="text-2xl font-bold text-burgundy-900 mb-4">12. Updates to This Statement</h2>
+              <h2 className="text-2xl font-bold text-[var(--brand-primary)] mb-4">12. Updates to This Statement</h2>
               <p className="text-gray-700">
-                We review and update this NDPR Compliance Statement annually or when there are material changes to our 
-                data processing activities or applicable laws. The "Last Updated" date at the top of this page indicates 
+                We review and update this NDPR Compliance Statement annually or when there are material changes to our
+                data processing activities or applicable laws. The "Last Updated" date at the top of this page indicates
                 when this statement was last revised.
               </p>
             </section>
@@ -360,8 +363,8 @@ export default function NDPRCompliancePage() {
             <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mt-8">
               <h3 className="text-xl font-bold text-green-900 mb-3">Compliance Certification</h3>
               <p className="text-green-800 mb-2">
-                This NDPR Compliance Statement was prepared in accordance with the Nigeria Data Protection Act 2023 
-                and the Nigeria Data Protection Regulation. NEM Insurance Plc certifies that:
+                This NDPR Compliance Statement was prepared in accordance with the Nigeria Data Protection Act 2023
+                and the Nigeria Data Protection Regulation. {legal.legalName} certifies that:
               </p>
               <ul className="text-sm text-green-800 space-y-1 ml-4">
                 <li>✓ We have implemented all required technical and organizational measures</li>
@@ -372,34 +375,34 @@ export default function NDPRCompliancePage() {
                 <li>✓ We respect and facilitate the exercise of data subject rights</li>
               </ul>
               <p className="text-sm text-green-700 mt-4 italic">
-                Signed: Data Protection Officer, NEM Insurance Plc | Date: April 27, 2026
+                Signed: Data Protection Officer, {legal.legalName} | Date: {legal.legalLastUpdated}
               </p>
             </div>
           </div>
 
           {/* Related Documents */}
           <div className="mt-8 pt-6 border-t border-gray-200">
-            <h3 className="font-bold text-burgundy-900 mb-4">Related Documents</h3>
+            <h3 className="font-bold text-[var(--brand-primary)] mb-4">Related Documents</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Link 
-                href="/privacy" 
-                className="block bg-burgundy-50 hover:bg-burgundy-100 rounded-lg p-4 transition-colors"
+              <Link
+                href="/privacy"
+                className="block bg-[var(--brand-primary-surface)] hover:bg-[var(--brand-primary-surface)] rounded-lg p-4 transition-colors"
               >
-                <h4 className="font-semibold text-burgundy-900 mb-1">Privacy Policy</h4>
+                <h4 className="font-semibold text-[var(--brand-primary)] mb-1">Privacy Policy</h4>
                 <p className="text-sm text-gray-600">How we collect and use your data</p>
               </Link>
-              <Link 
-                href="/terms" 
-                className="block bg-burgundy-50 hover:bg-burgundy-100 rounded-lg p-4 transition-colors"
+              <Link
+                href="/terms"
+                className="block bg-[var(--brand-primary-surface)] hover:bg-[var(--brand-primary-surface)] rounded-lg p-4 transition-colors"
               >
-                <h4 className="font-semibold text-burgundy-900 mb-1">Terms of Service</h4>
+                <h4 className="font-semibold text-[var(--brand-primary)] mb-1">Terms of Service</h4>
                 <p className="text-sm text-gray-600">Platform usage terms and conditions</p>
               </Link>
-              <Link 
-                href="/cookies" 
-                className="block bg-burgundy-50 hover:bg-burgundy-100 rounded-lg p-4 transition-colors"
+              <Link
+                href="/cookies"
+                className="block bg-[var(--brand-primary-surface)] hover:bg-[var(--brand-primary-surface)] rounded-lg p-4 transition-colors"
               >
-                <h4 className="font-semibold text-burgundy-900 mb-1">Cookie Policy</h4>
+                <h4 className="font-semibold text-[var(--brand-primary)] mb-1">Cookie Policy</h4>
                 <p className="text-sm text-gray-600">How we use cookies and tracking</p>
               </Link>
             </div>
@@ -407,9 +410,9 @@ export default function NDPRCompliancePage() {
 
           {/* Back to Home */}
           <div className="mt-8 pt-6 border-t border-gray-200 text-center">
-            <Link 
-              href="/" 
-              className="inline-block bg-burgundy-700 hover:bg-burgundy-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
+            <Link
+              href="/"
+              className="inline-block bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-[var(--brand-primary-foreground)] font-semibold px-6 py-3 rounded-lg transition-colors"
             >
               Back to Home
             </Link>

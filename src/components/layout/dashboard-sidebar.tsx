@@ -30,6 +30,7 @@ import {
   Building2,
 } from 'lucide-react';
 import NotificationBell from '@/components/notifications/notification-bell';
+import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 
 interface SubMenuItem {
@@ -247,8 +248,9 @@ export default function DashboardSidebar() {
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
   const userRole = session?.user?.role || 'vendor';
-  const brandName = publicPolicy?.branding.brandName || 'NEM Salvage';
-  const primaryColor = publicPolicy?.branding.primaryColor || '#800020';
+  const fallbackBranding = DEFAULT_BUSINESS_POLICY.branding;
+  const brandName = publicPolicy?.branding.brandName || fallbackBranding.brandName;
+  const primaryColor = publicPolicy?.branding.primaryColor || fallbackBranding.primaryColor;
 
   // Filter navigation items based on user role
   const roleNavItems = navigationItems.filter((item) =>

@@ -120,28 +120,28 @@ export function AuctionDurationSelector({ value, onChange, disabled = false }: A
             disabled={disabled}
             className={`relative p-4 border-2 rounded-lg text-left transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
               value === option.value
-                ? 'border-[#800020] bg-[#800020]/5 ring-2 ring-[#800020]/20'
+                ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)] ring-2 ring-[var(--brand-focus-ring)]'
                 : 'border-gray-200 hover:border-gray-300'
             }`}
           >
             {option.recommended && (
-              <div className="absolute -top-2 -right-2 bg-[#FFD700] text-[#800020] text-xs font-bold px-2 py-1 rounded-full">
+              <div className="absolute -top-2 -right-2 bg-[var(--brand-accent)] text-[var(--brand-primary)] text-xs font-bold px-2 py-1 rounded-full">
                 Recommended
               </div>
             )}
-            
+
             <div className="flex items-start gap-3">
               <div className={`p-2 rounded-lg ${
-                value === option.value 
-                  ? 'bg-[#800020] text-white' 
+                value === option.value
+                  ? 'bg-[var(--brand-primary)] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}>
                 {option.icon}
               </div>
-              
+
               <div className="flex-1 min-w-0">
                 <h3 className={`font-semibold text-sm ${
-                  value === option.value ? 'text-[#800020]' : 'text-gray-900'
+                  value === option.value ? 'text-[var(--brand-primary)]' : 'text-gray-900'
                 }`}>
                   {option.label}
                 </h3>
@@ -161,7 +161,7 @@ export function AuctionDurationSelector({ value, onChange, disabled = false }: A
             type="button"
             onClick={() => setShowCustomInput(true)}
             disabled={disabled}
-            className="text-sm text-[#800020] hover:text-[#600018] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-sm text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             + Set Custom Duration
           </button>
@@ -181,20 +181,20 @@ export function AuctionDurationSelector({ value, onChange, disabled = false }: A
                   value={customDuration}
                   onChange={(e) => setCustomDuration(e.target.value)}
                   placeholder="e.g., 12 for 12 hours"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent text-sm"
                   disabled={disabled}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Min: 30 minutes (0.5), Max: 7 days (168)
                 </p>
               </div>
-              
+
               <div className="flex gap-2 pt-5">
                 <button
                   type="button"
                   onClick={handleCustomDurationSubmit}
                   disabled={!customDuration || parseFloat(customDuration) <= 0 || parseFloat(customDuration) > 168 || disabled}
-                  className="px-3 py-2 bg-[#800020] text-white text-sm font-medium rounded-lg hover:bg-[#600018] disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  className="px-3 py-2 bg-[var(--brand-primary)] text-white text-sm font-medium rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
                   Set
                 </button>
@@ -211,7 +211,7 @@ export function AuctionDurationSelector({ value, onChange, disabled = false }: A
                 </button>
               </div>
             </div>
-            
+
             {customDuration && parseFloat(customDuration) > 0 && parseFloat(customDuration) <= 168 && (
               <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
                 Preview: Auction will run for {formatDuration(parseFloat(customDuration))} and end on {getEndTime(parseFloat(customDuration))}

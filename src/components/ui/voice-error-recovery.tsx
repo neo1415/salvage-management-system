@@ -254,7 +254,7 @@ export const VoiceErrorRecovery: React.FC<VoiceErrorRecoveryProps> = ({
             disabled={isRetrying}
             className={cn(
               'flex-1 px-4 py-2 rounded-xl font-medium transition-all duration-200',
-              'bg-[#800020] text-white hover:bg-[#a0002a] focus:ring-4 focus:ring-[#800020]/30',
+              'bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary-hover)] focus:ring-4 focus:ring-[var(--brand-focus-ring)]',
               'disabled:opacity-50 disabled:cursor-not-allowed',
               'flex items-center justify-center space-x-2'
             )}

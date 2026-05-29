@@ -264,9 +264,9 @@ export function AuctionScheduleSelector({
             onClick={() => handleModeChange('now')}
             className={cn(
               'px-4 py-3 rounded-lg border-2 font-medium text-sm transition-all',
-              'focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2',
+              'focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:ring-offset-2',
               value.mode === 'now'
-                ? 'border-[#800020] bg-[#800020] text-white'
+                ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white'
                 : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
             )}
           >
@@ -280,9 +280,9 @@ export function AuctionScheduleSelector({
             onClick={() => handleModeChange('scheduled')}
             className={cn(
               'px-4 py-3 rounded-lg border-2 font-medium text-sm transition-all',
-              'focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2',
+              'focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:ring-offset-2',
               value.mode === 'scheduled'
-                ? 'border-[#800020] bg-[#800020] text-white'
+                ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white'
                 : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
             )}
           >
@@ -310,7 +310,7 @@ export function AuctionScheduleSelector({
               onChange={handleDurationValueChange}
               className={cn(
                 'w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white',
-                'text-sm focus:outline-none focus:ring-2 focus:ring-[#800020] focus:border-[#800020]',
+                'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]',
                 'disabled:cursor-not-allowed disabled:opacity-50'
               )}
             />
@@ -322,7 +322,7 @@ export function AuctionScheduleSelector({
               onChange={handleDurationUnitChange}
               className={cn(
                 'w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white',
-                'text-sm focus:outline-none focus:ring-2 focus:ring-[#800020] focus:border-[#800020]',
+                'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]',
                 'disabled:cursor-not-allowed disabled:opacity-50'
               )}
             >
@@ -382,7 +382,7 @@ export function AuctionScheduleSelector({
                   onChange={handleHourChange}
                   className={cn(
                     'w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white',
-                    'text-sm focus:outline-none focus:ring-2 focus:ring-[#800020] focus:border-[#800020]',
+                    'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]',
                     'disabled:cursor-not-allowed disabled:opacity-50'
                   )}
                 >
@@ -400,7 +400,7 @@ export function AuctionScheduleSelector({
                   onChange={handleMinuteChange}
                   className={cn(
                     'w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white',
-                    'text-sm focus:outline-none focus:ring-2 focus:ring-[#800020] focus:border-[#800020]',
+                    'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]',
                     'disabled:cursor-not-allowed disabled:opacity-50'
                   )}
                 >

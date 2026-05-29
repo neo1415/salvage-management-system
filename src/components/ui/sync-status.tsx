@@ -191,7 +191,7 @@ export function SyncStatus({ className = '', showDetails = true }: SyncStatusPro
 
         {/* Pending Count Badge */}
         {syncStatus.pendingCount > 0 && (
-          <span className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-medium">
+          <span className="px-2 py-0.5 bg-[var(--brand-primary)] text-white rounded-full text-xs font-medium">
             {syncStatus.pendingCount}
           </span>
         )}
@@ -226,7 +226,7 @@ export function SyncStatus({ className = '', showDetails = true }: SyncStatusPro
             {/* Progress Bar */}
             <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
               <div
-                className="bg-[#800020] h-full transition-all duration-300 ease-out"
+                className="bg-[var(--brand-primary)] h-full transition-all duration-300 ease-out"
                 style={{ width: `${syncPercentage}%` }}
                 role="progressbar"
                 aria-valuenow={syncPercentage}
@@ -292,7 +292,7 @@ export function SyncStatus({ className = '', showDetails = true }: SyncStatusPro
             {isOnline && syncStatus.pendingCount > 0 && !isSyncing && (
               <button
                 onClick={handleManualSync}
-                className="w-full mt-2 px-3 py-2 bg-[#800020] text-white rounded-lg text-sm font-medium hover:bg-[#600018] transition-colors flex items-center justify-center gap-2"
+                className="w-full mt-2 px-3 py-2 bg-[var(--brand-primary)] text-white rounded-lg text-sm font-medium hover:bg-[var(--brand-primary-hover)] transition-colors flex items-center justify-center gap-2"
               >
                 <RefreshCw size={14} />
                 Sync Now

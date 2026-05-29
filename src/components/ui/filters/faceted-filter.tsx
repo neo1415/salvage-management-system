@@ -63,7 +63,7 @@ export function FacetedFilter({
     <div className={`relative ${className}`} ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-[#800020] focus:ring-offset-2"
+        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:ring-offset-2"
         aria-expanded={isOpen}
         aria-haspopup="true"
         type="button"
@@ -71,7 +71,7 @@ export function FacetedFilter({
         <span className="text-sm font-medium text-gray-700">{title}</span>
         {selected.length > 0 && (
           <span 
-            className="px-2 py-0.5 bg-[#800020] text-white rounded-full text-xs font-medium"
+            className="px-2 py-0.5 bg-[var(--brand-primary)] text-white rounded-full text-xs font-medium"
             aria-label={`${selected.length} filters selected`}
           >
             {selected.length}
@@ -107,7 +107,7 @@ export function FacetedFilter({
                     type="checkbox"
                     checked={selected.includes(option.value)}
                     onChange={() => toggleOption(option.value)}
-                    className="rounded border-gray-300 text-[#800020] focus:ring-[#800020]"
+                    className="rounded border-gray-300 text-[var(--brand-primary)] focus:ring-[var(--brand-focus-ring)]"
                     aria-label={option.label}
                   />
                   <span className="flex-1 text-sm text-gray-700">{option.label}</span>

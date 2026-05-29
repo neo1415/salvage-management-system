@@ -137,7 +137,7 @@ export const UnifiedVoiceField: React.FC<UnifiedVoiceFieldProps> = ({
           
           // Focus state with brand color and enhanced shadow
           isFocused && [
-            'border-[#800020]/30 shadow-xl shadow-[#800020]/10',
+            'border-[var(--brand-primary-border)] shadow-xl shadow-[var(--brand-shadow-color)]',
             'transform -translate-y-1 scale-[1.01]'
           ],
           
@@ -222,7 +222,7 @@ export const UnifiedVoiceField: React.FC<UnifiedVoiceFieldProps> = ({
         <div
           className={cn(
             'absolute inset-0 rounded-2xl pointer-events-none transition-opacity duration-300',
-            'ring-2 ring-[#800020]/20 ring-offset-2 ring-offset-transparent',
+            'ring-2 ring-[var(--brand-focus-ring)] ring-offset-2 ring-offset-transparent',
             getFocusRingStyles().replace('focus:', ''),
             (isFocused || textAreaAccessibility.isFocused) ? 'opacity-100' : 'opacity-0'
           )}

@@ -64,9 +64,9 @@ export function RestartAuctionModal({
         >
           {/* Icon */}
           <div className="flex items-center justify-center mb-4">
-            <div className="w-16 h-16 bg-[#800020]/10 rounded-full flex items-center justify-center">
+            <div className="w-16 h-16 bg-[var(--brand-primary-surface)] rounded-full flex items-center justify-center">
               <svg
-                className="w-10 h-10 text-[#800020]"
+                className="w-10 h-10 text-[var(--brand-primary)]"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -111,7 +111,7 @@ export function RestartAuctionModal({
             <button
               onClick={onConfirm}
               disabled={isRestarting}
-              className="flex-1 px-4 py-3 bg-[#800020] text-white rounded-lg font-medium hover:bg-[#600018] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-3 bg-[var(--brand-primary)] text-white rounded-lg font-medium hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isRestarting ? (
                 <span className="flex items-center justify-center gap-2">

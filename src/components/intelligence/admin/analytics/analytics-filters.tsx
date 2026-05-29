@@ -143,7 +143,7 @@ export function AnalyticsFiltersComponent({ filters, onFiltersChange, onApply, o
       </Select>
 
       {/* Apply Button */}
-      <Button onClick={onApply} className="bg-[#800020] hover:bg-[#600018]">
+      <Button onClick={onApply} className="bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)]">
         <Filter className="mr-2 h-4 w-4" />
         Apply Filters
       </Button>

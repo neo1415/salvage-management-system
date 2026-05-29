@@ -207,7 +207,7 @@ export default function Tier2ManualKYCPage() {
 
   if (authStatus === 'loading' || pageState === 'loading') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center">
         <div className="text-center text-white">
           <Loader2 className="w-10 h-10 animate-spin mx-auto mb-3" />
           <p>Loading...</p>
@@ -217,7 +217,7 @@ export default function Tier2ManualKYCPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#800020] to-[#600018] py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] py-8 px-4">
       <div className="w-full max-w-4xl mx-auto">
         <button
           onClick={() => router.back()}
@@ -229,10 +229,10 @@ export default function Tier2ManualKYCPage() {
 
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full mb-4">
-            <Award className="w-8 h-8 text-[#800020]" />
+            <Award className="w-8 h-8 text-[var(--brand-primary)]" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Tier 2 Verification</h1>
-          <p className="text-gray-200">Complete identity verification to unlock unlimited bidding</p>
+          <p className="text-gray-200">Complete identity verification for higher bidding access</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
@@ -243,11 +243,11 @@ export default function Tier2ManualKYCPage() {
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Under Review</h2>
               <p className="text-gray-600 mb-6">
-                Your application is being reviewed by our team. You'll receive an SMS and email notification within 24–48 hours.
+                Your application is being reviewed by our team. You'll receive an SMS and email notification once the review is complete.
               </p>
               <button
                 onClick={() => router.push('/vendor/dashboard')}
-                className="w-full bg-[#FFD700] text-[#800020] font-bold py-3 rounded-lg hover:bg-[#FFC700] transition-colors"
+                className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] font-bold py-3 rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors"
               >
                 Back to Dashboard
               </button>
@@ -261,11 +261,11 @@ export default function Tier2ManualKYCPage() {
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Approved!</h2>
               <p className="text-gray-600 mb-6">
-                Your Tier 2 KYC has been approved. You now have unlimited bidding access.
+                Your full verification has been approved. Your account access has been updated.
               </p>
               <button
                 onClick={() => router.push('/vendor/dashboard')}
-                className="w-full bg-[#FFD700] text-[#800020] font-bold py-3 rounded-lg hover:bg-[#FFC700] transition-colors"
+                className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] font-bold py-3 rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors"
               >
                 Back to Dashboard
               </button>
@@ -283,7 +283,7 @@ export default function Tier2ManualKYCPage() {
               </p>
               <button
                 onClick={() => router.push('/vendor/dashboard')}
-                className="w-full bg-[#FFD700] text-[#800020] font-bold py-3 rounded-lg hover:bg-[#FFC700] transition-colors"
+                className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] font-bold py-3 rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors"
               >
                 Back to Dashboard
               </button>
@@ -320,13 +320,13 @@ export default function Tier2ManualKYCPage() {
 
           {pageState === 'idle' && (
             <form onSubmit={handleSubmit} className="p-6 sm:p-8">
-              <div className="bg-gradient-to-r from-[#800020] to-[#600018] rounded-xl p-5 text-white mb-6">
+              <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-xl p-5 text-white mb-6">
                 <h2 className="text-lg font-bold mb-3">Tier 2 Benefits</h2>
                 <ul className="space-y-2 text-sm text-gray-200">
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[#FFD700]" /> Unlimited bidding on all auctions</li>
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[#FFD700]" /> Leaderboard eligibility</li>
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[#FFD700]" /> Tier 2 Verified badge</li>
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[#FFD700]" /> Priority support</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Higher bidding access when approved</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Leaderboard eligibility</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Tier 2 Verified badge</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Priority support</li>
                 </ul>
               </div>
 
@@ -351,7 +351,7 @@ export default function Tier2ManualKYCPage() {
                       required
                       value={formData.businessName}
                       onChange={(e) => handleInputChange('businessName', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -360,7 +360,7 @@ export default function Tier2ManualKYCPage() {
                       required
                       value={formData.businessType}
                       onChange={(e) => handleInputChange('businessType', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     >
                       <option value="individual">Individual</option>
                       <option value="sole_proprietor">Sole Proprietor</option>
@@ -373,7 +373,7 @@ export default function Tier2ManualKYCPage() {
                       type="text"
                       value={formData.cacNumber}
                       onChange={(e) => handleInputChange('cacNumber', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -382,7 +382,7 @@ export default function Tier2ManualKYCPage() {
                       type="text"
                       value={formData.tin}
                       onChange={(e) => handleInputChange('tin', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     />
                   </div>
                 </div>
@@ -402,7 +402,7 @@ export default function Tier2ManualKYCPage() {
                       required
                       value={formData.address}
                       onChange={(e) => handleInputChange('address', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -413,7 +413,7 @@ export default function Tier2ManualKYCPage() {
                         required
                         value={formData.city}
                         onChange={(e) => handleInputChange('city', e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                       />
                     </div>
                     <div>
@@ -423,7 +423,7 @@ export default function Tier2ManualKYCPage() {
                         required
                         value={formData.state}
                         onChange={(e) => handleInputChange('state', e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                       />
                     </div>
                   </div>
@@ -445,7 +445,7 @@ export default function Tier2ManualKYCPage() {
                       maxLength={11}
                       value={formData.nin}
                       onChange={(e) => handleInputChange('nin', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -456,7 +456,7 @@ export default function Tier2ManualKYCPage() {
                       maxLength={11}
                       value={formData.bvn}
                       onChange={(e) => handleInputChange('bvn', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     />
                   </div>
                 </div>
@@ -483,7 +483,7 @@ export default function Tier2ManualKYCPage() {
                       value={formData.bankName}
                       onChange={(e) => handleInputChange('bankName', e.target.value)}
                       placeholder="e.g., Access Bank"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -494,7 +494,7 @@ export default function Tier2ManualKYCPage() {
                       value={formData.accountName}
                       onChange={(e) => handleInputChange('accountName', e.target.value)}
                       placeholder="As shown on bank statement"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     />
                   </div>
                   <div className="md:col-span-2">
@@ -506,7 +506,7 @@ export default function Tier2ManualKYCPage() {
                       value={formData.accountNumber}
                       onChange={(e) => handleInputChange('accountNumber', e.target.value)}
                       placeholder="10-digit account number"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     />
                   </div>
                 </div>
@@ -535,7 +535,7 @@ export default function Tier2ManualKYCPage() {
                         required={required}
                         accept="image/*,application/pdf"
                         onChange={(e) => handleFileChange(key as keyof FormData, e.target.files?.[0] || null)}
-                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#800020] file:text-white hover:file:bg-[#600018]"
+                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[var(--brand-primary)] file:text-white hover:file:bg-[var(--brand-primary-hover)]"
                       />
                       {formData[key as keyof FormData] && (
                         <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
@@ -551,7 +551,7 @@ export default function Tier2ManualKYCPage() {
               <button
                 type="submit"
                 disabled={isSubmittingKyc}
-                className="w-full bg-gradient-to-r from-[#800020] to-[#FFD700] text-white font-bold py-4 rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
+                className="w-full bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] text-white font-bold py-4 rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
               >
                 {isSubmittingKyc ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> Submitting...</>
@@ -561,7 +561,7 @@ export default function Tier2ManualKYCPage() {
               </button>
 
               <p className="text-xs text-gray-500 text-center mt-3">
-                Your data is encrypted and processed securely. Review typically takes 24-48 hours.
+                Your data is encrypted and processed securely. Review starts after submission.
               </p>
             </form>
           )}

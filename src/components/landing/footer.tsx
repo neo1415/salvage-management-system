@@ -3,16 +3,16 @@
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Facebook, Twitter, Linkedin, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
 
 const footerLinks = {
   company: [
-    { name: 'About Us', href: '/about' },
+    { name: 'About Us', href: '#platform' },
     { name: 'How It Works', href: '#how-it-works' },
-    { name: 'Careers', href: '/careers' },
-    { name: 'Blog', href: '/blog' },
+    { name: 'Auctions', href: '#auctions' },
+    { name: 'Contact', href: '#contact' },
   ],
   legal: [
     { name: 'Privacy Policy', href: '/privacy' },
@@ -21,188 +21,124 @@ const footerLinks = {
     { name: 'NDPR Compliance', href: '/ndpr' },
   ],
   support: [
-    { name: 'Help Center', href: '/help' },
+    { name: 'Help Center', href: '#faq' },
     { name: 'Contact Us', href: '#contact' },
     { name: 'FAQs', href: '#faq' },
-    { name: 'Vendor Guide', href: '/guide' },
+    { name: 'Vendor Access', href: '/register' },
   ],
 };
-
-const socialLinks = [
-  { icon: Facebook, href: 'https://facebook.com/neminsurance', label: 'Facebook' },
-  { icon: Twitter, href: 'https://twitter.com/neminsurance', label: 'Twitter' },
-  { icon: Linkedin, href: 'https://linkedin.com/company/neminsurance', label: 'LinkedIn' },
-];
 
 export function Footer() {
   const { branding } = usePublicBranding();
   const [email, setEmail] = useState('');
   const [subscribeStatus, setSubscribeStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
-  const handleSubscribe = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubscribe = (event: React.FormEvent) => {
+    event.preventDefault();
     setSubscribeStatus('loading');
 
-    // Simulate subscription
     setTimeout(() => {
       setSubscribeStatus('success');
       setEmail('');
       setTimeout(() => setSubscribeStatus('idle'), 3000);
-    }, 1500);
+    }, 900);
   };
 
   return (
-    <footer className="text-white pt-20 pb-8" style={{ background: getBrandGradient(branding) }}>
+    <footer className="pt-20 pb-8 text-white" style={{ background: getBrandGradient(branding) }}>
       <div className="container mx-auto px-4">
-        {/* Main Footer Content */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-12 mb-16">
-          {/* Brand Column */}
+        <div className="mb-16 grid grid-cols-1 gap-12 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
-            <Link href="/" className="flex items-center space-x-3 mb-6">
-              <Image 
-                src={branding.logoPath || '/icons/Nem-insurance-Logo.jpg'} 
-                alt={`${branding.brandName} logo`} 
+            <Link href="/" className="mb-6 flex items-center space-x-3">
+              <Image
+                src={branding.logoPath || '/icons/icon-192.png'}
+                alt={`${branding.brandName} logo`}
                 width={48}
                 height={48}
-                className="object-contain rounded-lg"
+                className="rounded-lg object-contain"
+                unoptimized
               />
-              <span className="font-bold text-xl">{branding.brandName}</span>
+              <span className="text-xl font-bold">{branding.brandName}</span>
             </Link>
 
-            <p className="text-gray-300 mb-6 leading-relaxed">
-              {branding.legalName} salvage management platform. Empowering vendors with AI-powered auctions, instant payments, and mobile-first technology.
+            <p className="mb-6 leading-relaxed text-white/70">
+              {branding.legalName} salvage management platform. Vendor onboarding, auctions, payments, documents, and recovery workflows under one controlled brand.
             </p>
 
-            {/* Newsletter */}
             <div>
-              <h4 className="font-bold mb-3">Subscribe to our newsletter</h4>
+              <h4 className="mb-3 font-bold">Get platform updates</h4>
               <form onSubmit={handleSubscribe} className="flex gap-2">
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(event) => setEmail(event.target.value)}
                   placeholder="Enter your email"
                   required
-                  className="flex-1 px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:border-gold-500 focus:outline-none transition-colors text-white placeholder-gray-400"
+                  className="flex-1 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-white placeholder-white/45 outline-none transition focus:border-white/60"
                 />
                 <motion.button
                   type="submit"
                   disabled={subscribeStatus === 'loading'}
-                  className={`px-4 py-2 rounded-lg font-semibold flex items-center gap-2 ${
-                    subscribeStatus === 'success'
-                      ? 'bg-green-600'
-                      : ''
-                  }`}
-                  style={subscribeStatus === 'success' ? undefined : { backgroundColor: branding.accentColor, color: branding.primaryColor }}
+                  className="flex items-center gap-2 rounded-lg px-4 py-2 font-semibold disabled:opacity-60"
+                  style={subscribeStatus === 'success' ? { backgroundColor: '#16a34a', color: '#ffffff' } : { backgroundColor: branding.accentColor, color: branding.primaryColor }}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  {subscribeStatus === 'success' ? '✓' : <ArrowRight className="w-5 h-5" />}
+                  {subscribeStatus === 'success' ? 'Done' : <ArrowRight className="h-5 w-5" />}
                 </motion.button>
               </form>
-              {subscribeStatus === 'success' && (
+              {subscribeStatus === 'success' ? (
                 <motion.p
-                  className="text-green-400 text-sm mt-2"
+                  className="mt-2 text-sm text-green-300"
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                 >
-                  Thanks for subscribing!
+                  Thanks for subscribing.
                 </motion.p>
-              )}
+              ) : null}
             </div>
           </div>
 
-          {/* Company Links */}
-          <div>
-            <h4 className="font-bold mb-4 text-gold-400">Company</h4>
-            <ul className="space-y-3">
-              {footerLinks.company.map((link) => (
-                <li key={link.name}>
-                  <Link
-                    href={link.href}
-                    className="text-gray-300 hover:text-gold-400 transition-colors inline-block hover:translate-x-1 transform duration-200"
-                  >
-                    {link.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Legal Links */}
-          <div>
-            <h4 className="font-bold mb-4 text-gold-400">Legal</h4>
-            <ul className="space-y-3">
-              {footerLinks.legal.map((link) => (
-                <li key={link.name}>
-                  <Link
-                    href={link.href}
-                    className="text-gray-300 hover:text-gold-400 transition-colors inline-block hover:translate-x-1 transform duration-200"
-                  >
-                    {link.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Support Links */}
-          <div>
-            <h4 className="font-bold mb-4 text-gold-400">Support</h4>
-            <ul className="space-y-3">
-              {footerLinks.support.map((link) => (
-                <li key={link.name}>
-                  <Link
-                    href={link.href}
-                    className="text-gray-300 hover:text-gold-400 transition-colors inline-block hover:translate-x-1 transform duration-200"
-                  >
-                    {link.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {Object.entries(footerLinks).map(([group, links]) => (
+            <div key={group}>
+              <h4 className="mb-4 font-bold capitalize" style={{ color: branding.accentColor }}>
+                {group}
+              </h4>
+              <ul className="space-y-3">
+                {links.map((link) => (
+                  <li key={link.name}>
+                    <Link
+                      href={link.href}
+                      className="inline-block text-white/70 transition duration-200 hover:translate-x-1 hover:text-white"
+                    >
+                      {link.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
 
-        {/* Divider */}
-        <div className="border-t border-white/10 mb-8" />
+        <div className="mb-8 border-t border-white/10" />
 
-        {/* Bottom Footer */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          {/* Copyright */}
-          <div className="text-gray-400 text-sm text-center md:text-left">
+        <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
+          <div className="text-center text-sm text-white/55 md:text-left">
             © {new Date().getFullYear()} {branding.legalName}. All rights reserved.
             <br className="md:hidden" />
             <span className="hidden md:inline"> | </span>
-            199 Ikorodu Road, Obanikoro, Lagos, Nigeria
+            {branding.supportEmail}
           </div>
 
-          {/* Social Links */}
-          <div className="flex items-center gap-4">
-            {socialLinks.map((social) => {
-              const Icon = social.icon;
-              return (
-                <motion.a
-                  key={social.label}
-                  href={social.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={social.label}
-                  className="w-10 h-10 rounded-full bg-white/10 hover:bg-gold-500 flex items-center justify-center transition-colors group"
-                  whileHover={{ scale: 1.1, rotate: 5 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <Icon className="w-5 h-5 text-gray-300 group-hover:text-burgundy-900 transition-colors" />
-                </motion.a>
-              );
-            })}
-          </div>
+          <a href={`mailto:${branding.supportEmail}`} className="rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white/85 transition hover:bg-white/20">
+            Contact support
+          </a>
         </div>
 
-        {/* Back to Top Button */}
         <motion.button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-8 left-8 w-12 h-12 bg-burgundy-700 hover:bg-burgundy-600 rounded-full flex items-center justify-center shadow-xl z-40 hidden md:flex"
+          className="fixed bottom-8 left-8 z-40 hidden h-12 w-12 items-center justify-center rounded-full shadow-xl md:flex"
+          style={{ backgroundColor: branding.primaryColor, color: 'var(--brand-primary-foreground)' }}
           whileHover={{ scale: 1.1, y: -5 }}
           whileTap={{ scale: 0.9 }}
           initial={{ opacity: 0 }}

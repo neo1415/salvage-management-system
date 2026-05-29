@@ -202,7 +202,7 @@ export function CaseFormExample() {
             
             <button
               type="submit"
-              className="px-6 py-2 bg-[#800020] text-white rounded-lg hover:bg-[#600018]"
+              className="px-6 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)]"
             >
               Create Case
             </button>
@@ -328,9 +328,9 @@ export function CustomStyledExample() {
   return (
     <div className="p-6">
       {/* Custom container with brand colors */}
-      <div className="bg-gradient-to-r from-[#800020] to-[#600018] rounded-lg p-1">
+      <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-lg p-1">
         <div className="bg-white rounded-lg p-4">
-          <SyncStatus className="[&_.text-gray-700]:text-[#800020]" />
+          <SyncStatus className="[&_.text-gray-700]:text-[var(--brand-primary)]" />
         </div>
       </div>
     </div>

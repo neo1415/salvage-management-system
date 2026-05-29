@@ -151,7 +151,7 @@ export function CacheStatus({
     return (
       <div className={`bg-white rounded-lg shadow-sm border border-gray-200 p-4 ${className}`}>
         <div className="flex items-center justify-center">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#800020]"></div>
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--brand-primary)]"></div>
           <span className="ml-2 text-sm text-gray-600">Loading cache stats...</span>
         </div>
       </div>
@@ -177,7 +177,7 @@ export function CacheStatus({
               <button
                 onClick={handleRefresh}
                 disabled={isRefreshing}
-                className="p-1.5 text-gray-600 hover:text-[#800020] hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+                className="p-1.5 text-gray-600 hover:text-[var(--brand-primary)] hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
                 title="Refresh stats"
               >
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -204,7 +204,7 @@ export function CacheStatus({
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <HardDrive className="w-5 h-5 text-[#800020]" />
+            <HardDrive className="w-5 h-5 text-[var(--brand-primary)]" />
             <h3 className="text-lg font-semibold text-gray-900">Cache Storage</h3>
           </div>
           {showActions && (
@@ -235,7 +235,7 @@ export function CacheStatus({
         {/* Total Size */}
         <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
           <span className="text-sm font-medium text-gray-700">Total Storage Used</span>
-          <span className="text-lg font-bold text-[#800020]">{formatBytes(stats.totalSize)}</span>
+          <span className="text-lg font-bold text-[var(--brand-primary)]">{formatBytes(stats.totalSize)}</span>
         </div>
 
         {/* Item Counts */}

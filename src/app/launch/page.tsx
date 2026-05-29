@@ -80,6 +80,6 @@ export default function LaunchPage() {
   }, [router, session, status]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#800020] via-[#6b001a] to-[#4a0012]" aria-hidden />
+    <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] via-[var(--brand-primary-hover)] to-[var(--brand-primary-active)]" aria-hidden />
   );
 }

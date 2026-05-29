@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
-import { db } from '@/lib/db/drizzle';
+import { db, withRetry } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { payments } from '@/lib/db/schema/payments';
 import { eq, and } from 'drizzle-orm';
@@ -76,7 +76,7 @@ export async function GET(
     await redis.set(rateLimitKey, Date.now().toString(), { ex: 3 }); // Expire after 3 seconds
 
     // Fetch auction data
-    const [auction] = await db
+    const [auction] = await withRetry(() => db
       .select({
         id: auctions.id,
         currentBid: auctions.currentBid,
@@ -87,7 +87,7 @@ export async function GET(
       })
       .from(auctions)
       .where(eq(auctions.id, auctionId))
-      .limit(1);
+      .limit(1), 2, 500);
 
     if (!auction) {
       return NextResponse.json(
@@ -99,7 +99,7 @@ export async function GET(
     // Check if payment is verified (for awaiting_payment status)
     let hasVerifiedPayment = false;
     if (auction.status === 'awaiting_payment') {
-      const [payment] = await db
+      const [payment] = await withRetry(() => db
         .select()
         .from(payments)
         .where(
@@ -108,7 +108,7 @@ export async function GET(
             eq(payments.status, 'verified')
           )
         )
-        .limit(1);
+        .limit(1), 2, 500);
       hasVerifiedPayment = !!payment;
     }
 

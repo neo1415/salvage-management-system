@@ -349,7 +349,7 @@ export const FormField: React.FC<FormFieldProps> = ({
         // Larger touch targets on mobile
         'touch-manipulation',
         // Enhanced focus visibility
-        'focus-within:ring-2 focus-within:ring-[#800020]/20 focus-within:ring-offset-2',
+        'focus-within:ring-2 focus-within:ring-[var(--brand-focus-ring)] focus-within:ring-offset-2',
         'rounded-lg transition-all duration-200',
       ],
       className
@@ -430,7 +430,7 @@ export const ModernInput: React.FC<ModernInputProps> = ({
       className={cn(
         // Base input styles with modern design
         'w-full border rounded-xl transition-all duration-200 ease-out',
-        'focus:outline-none focus:ring-2 focus:ring-[#800020]/30',
+        'focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         
         // Enhanced mobile touch optimization
@@ -450,19 +450,19 @@ export const ModernInput: React.FC<ModernInputProps> = ({
         // Style variants with enhanced modern design - FORCE LIGHT MODE
         variant === 'default' && [
           'border-gray-300 !bg-white !text-gray-900',
-          'hover:border-gray-400 focus:border-[#800020]',
+          'hover:border-gray-400 focus:border-[var(--brand-primary)]',
           'placeholder:text-gray-500',
         ],
         
         variant === 'filled' && [
           'border-transparent !bg-gray-100 !text-gray-900',
-          'hover:bg-gray-200 focus:bg-white focus:border-[#800020]',
+          'hover:bg-gray-200 focus:bg-white focus:border-[var(--brand-primary)]',
           'placeholder:text-gray-600',
         ],
         
         variant === 'outlined' && [
           'border-2 border-gray-300 !bg-transparent !text-gray-900',
-          'hover:border-gray-400 focus:border-[#800020]',
+          'hover:border-gray-400 focus:border-[var(--brand-primary)]',
           'placeholder:text-gray-500',
         ],
         
@@ -527,10 +527,10 @@ export const ModernButton: React.FC<ModernButtonProps> = ({
         
         // Style variants with enhanced modern design
         variant === 'primary' && [
-          'bg-gradient-to-r from-[#800020] to-[#a0002a] text-white',
-          'hover:from-[#600018] hover:to-[#800020] hover:shadow-lg hover:shadow-[#800020]/25',
-          'focus:ring-[#800020]/30 active:scale-95',
-          'shadow-md shadow-[#800020]/20',
+          'bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] text-white',
+          'hover:from-[var(--brand-primary-hover)] hover:to-[var(--brand-primary)] hover:shadow-lg hover:shadow-[var(--brand-shadow-color)]',
+          'focus:ring-[var(--brand-focus-ring)] active:scale-95',
+          'shadow-md shadow-[var(--brand-shadow-color)]',
         ],
         
         variant === 'secondary' && [
@@ -540,9 +540,9 @@ export const ModernButton: React.FC<ModernButtonProps> = ({
         ],
         
         variant === 'outline' && [
-          'border-2 border-[#800020] text-[#800020] bg-transparent',
-          'hover:bg-[#800020] hover:text-white hover:shadow-lg hover:shadow-[#800020]/25',
-          'focus:ring-[#800020]/30 active:scale-95',
+          'border-2 border-[var(--brand-primary)] text-[var(--brand-primary)] bg-transparent',
+          'hover:bg-[var(--brand-primary)] hover:text-white hover:shadow-lg hover:shadow-[var(--brand-shadow-color)]',
+          'focus:ring-[var(--brand-focus-ring)] active:scale-95',
         ],
         
         variant === 'ghost' && [

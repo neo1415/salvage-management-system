@@ -16,7 +16,7 @@ const AdjusterCasesContent = dynamic(
   {
     loading: () => (
       <div className="min-h-screen bg-gray-50">
-        <div className="bg-[#800020] text-white p-4 sticky top-0 z-10 shadow-md">
+        <div className="bg-[var(--brand-primary)] text-white p-4 sticky top-0 z-10 shadow-md">
           <h1 className="text-xl font-bold">My Cases</h1>
         </div>
         <div className="p-4 space-y-4">

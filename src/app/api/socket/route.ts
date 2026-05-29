@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSocketServer } from '@/lib/socket/server';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 /**
  * GET /api/socket
@@ -42,7 +43,7 @@ export async function GET(_request: NextRequest) {
       data: {
         initialized: true,
         connectedUsers,
-        endpoint: process.env.NEXT_PUBLIC_SOCKET_URL || 'ws://localhost:3000',
+        endpoint: process.env.NEXT_PUBLIC_SOCKET_URL || getAppUrl().replace(/^http/, 'ws'),
         transports: ['websocket', 'polling'],
       },
     });

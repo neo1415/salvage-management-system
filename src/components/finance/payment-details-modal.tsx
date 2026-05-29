@@ -63,7 +63,7 @@ export function PaymentDetailsModal({
             {/* Payment Information */}
             <div>
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                <svg className="w-5 h-5 mr-2 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 mr-2 text-[var(--brand-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
                 Payment Information
@@ -71,7 +71,7 @@ export function PaymentDetailsModal({
               <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
                 <div>
                   <p className="text-xs text-gray-500 mb-1">Amount</p>
-                  <p className="text-lg font-bold text-[#800020]">
+                  <p className="text-lg font-bold text-[var(--brand-primary)]">
                     ₦{parseFloat(payment.amount).toLocaleString()}
                   </p>
                 </div>
@@ -100,7 +100,7 @@ export function PaymentDetailsModal({
             {/* Vendor Information */}
             <div>
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                <svg className="w-5 h-5 mr-2 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 mr-2 text-[var(--brand-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
                 Vendor Information
@@ -115,7 +115,7 @@ export function PaymentDetailsModal({
             {/* Timeline */}
             <div>
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                <svg className="w-5 h-5 mr-2 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 mr-2 text-[var(--brand-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 Timeline

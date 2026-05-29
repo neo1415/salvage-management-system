@@ -52,7 +52,7 @@ export const ProgressiveDisclosure: React.FC<ProgressiveDisclosureProps> = ({
           'disclosure-trigger cursor-pointer select-none',
           'p-4 rounded-xl transition-all duration-200',
           'hover:bg-gray-50 dark:hover:bg-gray-800',
-          'focus:outline-none focus:ring-2 focus:ring-[#800020]/30',
+          'focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]',
           disabled && 'opacity-50 cursor-not-allowed hover:bg-transparent',
         )}
         role="button"
@@ -325,7 +325,7 @@ export const MicroInteraction: React.FC<MicroInteractionProps> = ({
       case 'click-bounce':
         return 'active:scale-95 transition-transform duration-100';
       case 'focus-glow':
-        return 'focus-within:ring-4 focus-within:ring-[#800020]/20 transition-all duration-200';
+        return 'focus-within:ring-4 focus-within:ring-[var(--brand-focus-ring)] transition-all duration-200';
       default:
         return '';
     }
@@ -369,7 +369,7 @@ export const FormProgress: React.FC<FormProgressProps> = ({
       <div className="relative mb-8">
         <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-[#800020] to-[#a0002a] transition-all duration-500 ease-out"
+            className="h-full bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] transition-all duration-500 ease-out"
             style={{ width: `${progressPercentage}%` }}
           />
         </div>
@@ -387,9 +387,9 @@ export const FormProgress: React.FC<FormProgressProps> = ({
                 className={cn(
                   'w-4 h-4 rounded-full border-2 transition-all duration-300',
                   isCompleted || isPast
-                    ? 'bg-[#800020] border-[#800020]'
+                    ? 'bg-[var(--brand-primary)] border-[var(--brand-primary)]'
                     : isCurrent
-                    ? 'bg-white border-[#800020] ring-4 ring-[#800020]/20'
+                    ? 'bg-white border-[var(--brand-primary)] ring-4 ring-[var(--brand-focus-ring)]'
                     : 'bg-white border-gray-300'
                 )}
               />
@@ -411,7 +411,7 @@ export const FormProgress: React.FC<FormProgressProps> = ({
               className={cn(
                 'text-center max-w-[100px]',
                 isCurrent
-                  ? 'text-[#800020] font-semibold'
+                  ? 'text-[var(--brand-primary)] font-semibold'
                   : isCompleted || isPast
                   ? 'text-gray-700 dark:text-gray-300'
                   : 'text-gray-400 dark:text-gray-500'

@@ -45,7 +45,9 @@ import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
 import { appPath, getAppUrl } from '@/features/notifications/templates/email-urls';
+import { businessPolicyService, resolvePaymentDeadlineHours } from '@/features/business-policy';
 
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY!;
 const FLUTTERWAVE_WEBHOOK_SECRET = process.env.FLUTTERWAVE_WEBHOOK_SECRET!;
@@ -193,9 +195,17 @@ export async function initiatePayment(
       throw new Error('User not found');
     }
 
-    // Calculate payment deadline (24 hours from now)
+    const branding = await getEmailBranding();
+    const checkoutLogo = branding.logoPath?.startsWith('http')
+      ? branding.logoPath
+      : `${getAppUrl()}${branding.logoPath || '/icons/icon-512.png'}`;
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const paymentDeadlineDecision = resolvePaymentDeadlineHours(policy);
+
+    // Calculate payment deadline from active payment policy
     const paymentDeadline = new Date();
-    paymentDeadline.setHours(paymentDeadline.getHours() + 24);
+    paymentDeadline.setHours(paymentDeadline.getHours() + (paymentDeadlineDecision.value ?? policy.payments.paymentDeadlineAfterSigningHours));
 
     // Generate unique payment reference
     const reference = `FLW_${auctionId.substring(0, 8)}_${Date.now()}`;
@@ -226,9 +236,9 @@ export async function initiatePayment(
         name: user.fullName,
       },
       customizations: {
-        title: 'NEM Salvage Payment',
+        title: `${branding.brandName} Payment`,
         description: `Payment for auction ${auctionId}`,
-        logo: `${getAppUrl()}/icons/Nem-insurance-Logo.jpg`,
+        logo: checkoutLogo,
       },
       meta: {
         paymentId: payment.id,
@@ -598,6 +608,7 @@ export async function processFlutterwaveWebhook(
 
     // Generate pickup authorization code
     const pickupCode = generatePickupAuthorizationCode(payment.id);
+    const branding = await getEmailBranding();
 
     // Send SMS notification
     const smsMessage = `Payment confirmed! Your pickup authorization code is: ${pickupCode}. Amount: ₦${parseFloat(
@@ -616,7 +627,7 @@ export async function processFlutterwaveWebhook(
       <p>Dear ${user.fullName},</p>
       <p>Your payment of <strong>₦${parseFloat(payment.amount).toLocaleString()}</strong> has been confirmed via Flutterwave.</p>
       <h3>Pickup Authorization Code</h3>
-      <p style="font-size: 24px; font-weight: bold; color: #800020;">${pickupCode}</p>
+      <p style="font-size: 24px; font-weight: bold; color: ${branding.primaryColor};">${pickupCode}</p>
       <p>Please present this code when collecting your salvage item.</p>
       <h3>Item Details</h3>
       <ul>
@@ -625,7 +636,8 @@ export async function processFlutterwaveWebhook(
         <li>Location: ${salvageCase.locationName}</li>
       </ul>
       <p>This authorization is valid for 7 days from the date of payment.</p>
-      <p>Thank you for using NEM Salvage Management System.</p>
+      <p>Thank you for using ${branding.brandName}.</p>
+      <p>Best regards,<br>${brandTeamName(branding)}</p>
     `;
 
     await emailService.sendEmail({
@@ -662,17 +674,17 @@ export async function processFlutterwaveWebhook(
  * Generate a pickup authorization code
  * 
  * Creates a unique, secure pickup authorization code using SHA-256 hashing
- * of the payment ID. The code format is NEM-XXXX-XXXX where X represents
+ * of the payment ID. The code format is AUTH-XXXX-XXXX where X represents
  * uppercase hexadecimal characters.
  * 
  * @function generatePickupAuthorizationCode
  * @param {string} paymentId - UUID of the payment record
- * @returns {string} Pickup authorization code in format NEM-XXXX-XXXX
+ * @returns {string} Pickup authorization code in format AUTH-XXXX-XXXX
  * 
  * @example
  * ```typescript
  * const code = generatePickupAuthorizationCode('123e4567-e89b-12d3-a456-426614174000');
- * console.log(code); // "NEM-A1B2-C3D4"
+ * console.log(code); // "AUTH-A1B2-C3D4"
  * ```
  * 
  * @security
@@ -682,14 +694,14 @@ export async function processFlutterwaveWebhook(
  * - Cannot be reverse-engineered to obtain payment ID
  * 
  * @format
- * - Prefix: NEM (NEM Insurance branding)
+ * - Prefix: AUTH
  * - Code 1: First 4 hex characters (uppercase)
  * - Code 2: Next 4 hex characters (uppercase)
- * - Example: NEM-0738-85FE
+ * - Example: AUTH-0738-85FE
  */
 function generatePickupAuthorizationCode(paymentId: string): string {
   const hash = crypto.createHash('sha256').update(paymentId).digest('hex');
   const code1 = hash.substring(0, 4).toUpperCase();
   const code2 = hash.substring(4, 8).toUpperCase();
-  return `NEM-${code1}-${code2}`;
+  return `AUTH-${code1}-${code2}`;
 }

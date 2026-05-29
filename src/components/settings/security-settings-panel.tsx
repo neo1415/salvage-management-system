@@ -111,7 +111,7 @@ export function SecuritySettingsPanel() {
         <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
         <label
           className={`flex items-start gap-3 p-4 border rounded-lg cursor-pointer ${
-            mfaEnabled ? 'border-[#800020] bg-red-50/50' : 'border-gray-200 hover:bg-gray-50'
+            mfaEnabled ? 'border-[var(--brand-primary)] bg-red-50/50' : 'border-gray-200 hover:bg-gray-50'
           }`}
         >
           <input
@@ -148,7 +148,7 @@ export function SecuritySettingsPanel() {
               key={value}
               className={`flex items-start gap-3 p-4 border rounded-lg cursor-pointer ${
                 mfaChannel === value
-                  ? 'border-[#800020] bg-red-50/50'
+                  ? 'border-[var(--brand-primary)] bg-red-50/50'
                   : 'border-gray-200 hover:bg-gray-50'
               }`}
             >
@@ -179,7 +179,7 @@ export function SecuritySettingsPanel() {
               value={mfaPhone}
               onChange={(e) => setMfaPhone(e.target.value)}
               placeholder={data?.phone || '+234…'}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020]"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
             />
             <p className="text-xs text-gray-500 mt-1">
               Leave blank to use your profile phone ({data?.phone}).
@@ -203,7 +203,7 @@ export function SecuritySettingsPanel() {
           type="button"
           onClick={save}
           disabled={saving}
-          className="px-6 py-2.5 bg-[#800020] text-white rounded-lg hover:bg-[#600018] disabled:opacity-50 font-medium"
+          className="px-6 py-2.5 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 font-medium"
         >
           {saving ? 'Saving…' : 'Save preferences'}
         </button>

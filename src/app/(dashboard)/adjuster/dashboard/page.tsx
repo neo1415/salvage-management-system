@@ -180,27 +180,27 @@ export default function AdjusterDashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Link
             href="/adjuster/cases/new"
-            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center"
+            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
-            <FileText className="w-12 h-12 mx-auto mb-3 text-[#800020]" />
+            <FileText className="w-12 h-12 mx-auto mb-3 text-[var(--brand-primary)]" />
             <p className="font-medium text-lg">Create New Case</p>
             <p className="text-sm text-gray-600 mt-1">Submit a new salvage case</p>
           </Link>
 
           <Link
             href="/adjuster/my-cases"
-            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center block"
+            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center block"
           >
-            <Clock className="w-12 h-12 mx-auto mb-3 text-[#800020]" />
+            <Clock className="w-12 h-12 mx-auto mb-3 text-[var(--brand-primary)]" />
             <p className="font-medium text-lg">My Cases</p>
             <p className="text-sm text-gray-600 mt-1">View all your cases</p>
           </Link>
 
           <Link
             href="/adjuster/cases"
-            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[#800020] transition-colors text-center block"
+            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center block"
           >
-            <CheckCircle className="w-12 h-12 mx-auto mb-3 text-[#800020]" />
+            <CheckCircle className="w-12 h-12 mx-auto mb-3 text-[var(--brand-primary)]" />
             <p className="font-medium text-lg">All Cases</p>
             <p className="text-sm text-gray-600 mt-1">{stats?.pendingApproval || 0} awaiting approval</p>
           </Link>

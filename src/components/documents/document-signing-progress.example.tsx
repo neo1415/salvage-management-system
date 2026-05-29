@@ -93,7 +93,7 @@ export function DocumentSigningProgressExample() {
                 onClick={() => setProgressState(state)}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                   progressState === state
-                    ? 'bg-burgundy-900 text-white'
+                    ? 'bg-[var(--brand-primary)] text-white'
                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 }`}
               >

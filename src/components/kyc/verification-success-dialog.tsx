@@ -67,7 +67,7 @@ export function VerificationSuccessDialog({
         <button
           type="button"
           onClick={onRedirect}
-          className="w-full bg-[#800020] text-white font-semibold py-3 rounded-lg hover:bg-[#600018] transition-colors"
+          className="w-full bg-[var(--brand-primary)] text-white font-semibold py-3 rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
         >
           Go to dashboard now
         </button>

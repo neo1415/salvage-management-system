@@ -6,6 +6,18 @@
   --burgundy: #800020;
   --gold: #FFD700;
   --white: #FFFFFF;
+  --brand-primary: #800020;
+  --brand-primary-hover: #600018;
+  --brand-primary-active: #500015;
+  --brand-primary-surface: #f5ebee;
+  --brand-primary-muted: #e6cbd3;
+  --brand-primary-border: #c999a8;
+  --brand-primary-foreground: #FFFFFF;
+  --brand-accent: #D97706;
+  --brand-accent-hover: #bb6505;
+  --brand-accent-foreground: #FFFFFF;
+  --brand-focus-ring: rgba(128, 0, 32, 0.28);
+  --brand-shadow-color: rgba(128, 0, 32, 0.24);
 }
 
 /* Smooth scrolling optimizations for mobile */
@@ -287,7 +299,12 @@ img {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #800020 0%, #6b001a 50%, #4a0012 100%);
+  background: linear-gradient(
+    135deg,
+    var(--brand-primary, #111827) 0%,
+    var(--brand-primary-hover, #1f2937) 52%,
+    var(--brand-primary-active, #030712) 100%
+  );
   color: #fff;
   font-family: var(--font-display, system-ui), sans-serif;
   pointer-events: none;

@@ -6,6 +6,12 @@ import { otpService } from '@/features/auth/services/otp.service';
 import { ZodError } from 'zod';
 import { Ratelimit } from '@upstash/ratelimit';
 import { redis } from '@/lib/redis/client';
+import {
+  businessPolicyService,
+  isBusinessPolicyEnforcementEnabled,
+  resolveAuthProviderAccess,
+  resolveEmailDomainAccess,
+} from '@/features/business-policy';
 
 // SECURITY: Rate limiting for registration endpoint
 // Prevents spam registrations and abuse
@@ -70,6 +76,26 @@ export async function POST(request: NextRequest) {
 
     // Validate input
     const validatedInput = registrationSchema.parse(body);
+
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const credentialsDecision = resolveAuthProviderAccess(policy, 'credentials');
+    const emailDecision = resolveEmailDomainAccess(policy, validatedInput.email);
+
+    if (isBusinessPolicyEnforcementEnabled()) {
+      if (!credentialsDecision.allowed) {
+        return NextResponse.json(
+          { error: 'Email/password registration is disabled for this deployment.' },
+          { status: 403 }
+        );
+      }
+
+      if (!emailDecision.allowed) {
+        return NextResponse.json(
+          { error: emailDecision.message },
+          { status: 400 }
+        );
+      }
+    }
 
     // Get device type
     const userAgent = request.headers.get('user-agent') || '';

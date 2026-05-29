@@ -91,11 +91,24 @@ export async function withRetry<T>(
       
       // Check if it's a connection error
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isConnectionError = 
-        errorMessage.includes('FATAL') ||
-        errorMessage.includes('XX000') ||
-        errorMessage.includes('connection') ||
-        errorMessage.includes('timeout');
+      const normalizedError = errorMessage.toLowerCase();
+      const errorCode = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code).toLowerCase()
+        : '';
+      const isConnectionError =
+        normalizedError.includes('fatal') ||
+        normalizedError.includes('xx000') ||
+        normalizedError.includes('connection') ||
+        normalizedError.includes('timeout') ||
+        normalizedError.includes('connection_closed') ||
+        normalizedError.includes('connection terminated') ||
+        normalizedError.includes('server closed the connection') ||
+        normalizedError.includes('terminating connection') ||
+        normalizedError.includes('pooler') ||
+        errorCode === 'connection_closed' ||
+        errorCode === 'econnreset' ||
+        errorCode === 'econnrefused' ||
+        errorCode === 'etimedout';
       
       if (!isConnectionError || attempt === maxRetries) {
         throw error;

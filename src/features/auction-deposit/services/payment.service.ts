@@ -12,7 +12,7 @@
  */
 
 import { db } from '@/lib/db/drizzle';
-import { escrowWallets } from '@/lib/db/schema/escrow';
+import { escrowWallets, walletTransactions } from '@/lib/db/schema/escrow';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { bids } from '@/lib/db/schema/bids';
@@ -27,6 +27,9 @@ import { emailService } from '@/features/notifications/services/email.service';
 import { pushNotificationService } from '@/features/notifications/services/push.service';
 import { createNotification, createRoleNotifications } from '@/features/notifications/services/notification.service';
 import { formatAssetName } from '@/lib/utils/asset-name';
+import { getEmailBranding } from '@/features/notifications/templates/email-branding';
+import { businessPolicyService } from '@/features/business-policy';
+import { appPath } from '@/features/notifications/templates/email-urls';
 
 export interface PaymentBreakdown {
   finalBid: number;
@@ -80,6 +83,18 @@ export interface PaymentResult {
  * Handles payment processing for auction deposit system
  */
 export class PaymentService {
+  private walletSettlementReference(paymentId: string): string {
+    return `AUCTION_SETTLEMENT_${paymentId}`;
+  }
+
+  private hybridFreezeReference(paymentId: string): string {
+    return `HYBRID_FREEZE_${paymentId}`;
+  }
+
+  private hybridRollbackReference(paymentId: string): string {
+    return `HYBRID_ROLLBACK_${paymentId}`;
+  }
+
   /**
    * Calculate payment breakdown for vendor
    * Requirement 21.4: For legacy auctions, process full amount without deposit deduction
@@ -143,6 +158,360 @@ export class PaymentService {
       paystackPortion,
       canUseWalletOnly,
     };
+  }
+
+  private async createPaystackTransfer(params: {
+    amount: number;
+    auctionId: string;
+    paymentId: string;
+    reason: string;
+  }): Promise<string | null> {
+    const recipientCode = process.env.PAYSTACK_NEM_RECIPIENT_CODE;
+
+    if (!recipientCode) {
+      console.warn('[Auction Payment] PAYSTACK_NEM_RECIPIENT_CODE not configured; wallet settlement recorded without transfer.');
+      return null;
+    }
+
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    if (!secretKey) {
+      throw new Error('PAYSTACK_SECRET_KEY not configured for settlement transfer');
+    }
+
+    const transferReference = `TRANSFER_${params.paymentId.substring(0, 8)}_${Date.now()}`;
+    const response = await fetch('https://api.paystack.co/transfer', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        source: 'balance',
+        amount: Math.round(params.amount * 100),
+        recipient: recipientCode,
+        reason: params.reason,
+        reference: transferReference,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(`Paystack transfer failed: ${error.message || response.statusText}`);
+    }
+
+    return transferReference;
+  }
+
+  private async getHybridFrozenWalletPortion(paymentId: string): Promise<number> {
+    const [freezeTx] = await db
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.reference, this.hybridFreezeReference(paymentId)))
+      .limit(1);
+
+    return freezeTx ? parseFloat(freezeTx.amount) : 0;
+  }
+
+  private async freezeHybridWalletPortion(params: {
+    paymentId: string;
+    vendorId: string;
+    auctionId: string;
+    amount: number;
+  }): Promise<void> {
+    if (params.amount <= 0) return;
+
+    await db.transaction(async (tx) => {
+      const [wallet] = await tx
+        .select()
+        .from(escrowWallets)
+        .where(eq(escrowWallets.vendorId, params.vendorId))
+        .for('update')
+        .limit(1);
+
+      if (!wallet) {
+        throw new Error(`Wallet not found for vendor ${params.vendorId}`);
+      }
+
+      const reference = this.hybridFreezeReference(params.paymentId);
+      const [existingFreeze] = await tx
+        .select()
+        .from(walletTransactions)
+        .where(and(eq(walletTransactions.walletId, wallet.id), eq(walletTransactions.reference, reference)))
+        .limit(1);
+
+      if (existingFreeze) {
+        return;
+      }
+
+      const currentBalance = parseFloat(wallet.balance);
+      const currentAvailable = parseFloat(wallet.availableBalance);
+      const currentFrozen = parseFloat(wallet.frozenAmount);
+      const currentForfeited = parseFloat(wallet.forfeitedAmount || '0');
+
+      if (currentAvailable < params.amount) {
+        throw new Error(
+          `Insufficient available balance. Required: ₦${params.amount.toFixed(2)}, Available: ₦${currentAvailable.toFixed(2)}`
+        );
+      }
+
+      const newAvailable = currentAvailable - params.amount;
+      const newFrozen = currentFrozen + params.amount;
+      const expectedBalance = newAvailable + newFrozen + currentForfeited;
+
+      if (Math.abs(expectedBalance - currentBalance) > 0.01) {
+        throw new Error(
+          `Wallet invariant violation during hybrid freeze. Balance: ${currentBalance}, Expected: ${expectedBalance}`
+        );
+      }
+
+      await tx
+        .update(escrowWallets)
+        .set({
+          availableBalance: newAvailable.toFixed(2),
+          frozenAmount: newFrozen.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(escrowWallets.id, wallet.id));
+
+      await tx.insert(walletTransactions).values({
+        walletId: wallet.id,
+        type: 'freeze',
+        amount: params.amount.toFixed(2),
+        balanceAfter: currentBalance.toFixed(2),
+        reference,
+        description: `Hybrid payment wallet portion frozen for auction ${params.auctionId}`,
+      });
+
+      await tx.insert(depositEvents).values({
+        vendorId: params.vendorId,
+        auctionId: params.auctionId,
+        eventType: 'freeze',
+        amount: params.amount.toFixed(2),
+        balanceBefore: currentBalance.toFixed(2),
+        balanceAfter: currentBalance.toFixed(2),
+        frozenBefore: currentFrozen.toFixed(2),
+        frozenAfter: newFrozen.toFixed(2),
+        availableBefore: currentAvailable.toFixed(2),
+        availableAfter: newAvailable.toFixed(2),
+        description: `Hybrid payment wallet portion reserved for this auction`,
+      });
+
+      await this.verifyInvariantInTransaction(tx, params.vendorId);
+    });
+  }
+
+  private async rollbackHybridWalletPortion(params: {
+    paymentId: string;
+    vendorId: string;
+    auctionId: string;
+  }): Promise<void> {
+    const amount = await this.getHybridFrozenWalletPortion(params.paymentId);
+    if (amount <= 0) return;
+
+    await db.transaction(async (tx) => {
+      const [wallet] = await tx
+        .select()
+        .from(escrowWallets)
+        .where(eq(escrowWallets.vendorId, params.vendorId))
+        .for('update')
+        .limit(1);
+
+      if (!wallet) {
+        throw new Error(`Wallet not found for vendor ${params.vendorId}`);
+      }
+
+      const rollbackReference = this.hybridRollbackReference(params.paymentId);
+      const [existingRollback] = await tx
+        .select()
+        .from(walletTransactions)
+        .where(and(eq(walletTransactions.walletId, wallet.id), eq(walletTransactions.reference, rollbackReference)))
+        .limit(1);
+
+      if (existingRollback) {
+        return;
+      }
+
+      const currentBalance = parseFloat(wallet.balance);
+      const currentAvailable = parseFloat(wallet.availableBalance);
+      const currentFrozen = parseFloat(wallet.frozenAmount);
+
+      if (currentFrozen < amount) {
+        throw new Error(
+          `Insufficient frozen balance for hybrid rollback. Required: ₦${amount.toFixed(2)}, Frozen: ₦${currentFrozen.toFixed(2)}`
+        );
+      }
+
+      const newAvailable = currentAvailable + amount;
+      const newFrozen = currentFrozen - amount;
+
+      await tx
+        .update(escrowWallets)
+        .set({
+          availableBalance: newAvailable.toFixed(2),
+          frozenAmount: newFrozen.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(escrowWallets.id, wallet.id));
+
+      await tx.insert(walletTransactions).values({
+        walletId: wallet.id,
+        type: 'unfreeze',
+        amount: amount.toFixed(2),
+        balanceAfter: currentBalance.toFixed(2),
+        reference: rollbackReference,
+        description: `Hybrid payment wallet portion released after failed online payment for auction ${params.auctionId}`,
+      });
+
+      await tx.insert(depositEvents).values({
+        vendorId: params.vendorId,
+        auctionId: params.auctionId,
+        eventType: 'unfreeze',
+        amount: amount.toFixed(2),
+        balanceBefore: currentBalance.toFixed(2),
+        balanceAfter: currentBalance.toFixed(2),
+        frozenBefore: currentFrozen.toFixed(2),
+        frozenAfter: newFrozen.toFixed(2),
+        availableBefore: currentAvailable.toFixed(2),
+        availableAfter: newAvailable.toFixed(2),
+        description: `Hybrid payment wallet portion returned after online payment failed`,
+      });
+
+      await this.verifyInvariantInTransaction(tx, params.vendorId);
+    });
+  }
+
+  private async settleAuctionWalletFunds(params: {
+    paymentId: string;
+    vendorId: string;
+    auctionId: string;
+    availableAmount: number;
+    frozenAmount: number;
+    totalAmount: number;
+    reason: string;
+  }): Promise<void> {
+    if (params.totalAmount <= 0) return;
+
+    const [wallet] = await db
+      .select()
+      .from(escrowWallets)
+      .where(eq(escrowWallets.vendorId, params.vendorId))
+      .limit(1);
+
+    if (!wallet) {
+      throw new Error(`Wallet not found for vendor ${params.vendorId}`);
+    }
+
+    const settlementReference = this.walletSettlementReference(params.paymentId);
+    const [existingSettlement] = await db
+      .select()
+      .from(walletTransactions)
+      .where(and(eq(walletTransactions.walletId, wallet.id), eq(walletTransactions.reference, settlementReference)))
+      .limit(1);
+
+    if (existingSettlement) {
+      console.log(`[Auction Payment] Wallet settlement already recorded for payment ${params.paymentId}`);
+      return;
+    }
+
+    const transferReference = await this.createPaystackTransfer({
+      amount: params.totalAmount,
+      auctionId: params.auctionId,
+      paymentId: params.paymentId,
+      reason: params.reason,
+    });
+
+    await db.transaction(async (tx) => {
+      const [lockedWallet] = await tx
+        .select()
+        .from(escrowWallets)
+        .where(eq(escrowWallets.vendorId, params.vendorId))
+        .for('update')
+        .limit(1);
+
+      if (!lockedWallet) {
+        throw new Error(`Wallet not found for vendor ${params.vendorId}`);
+      }
+
+      const [existingAfterLock] = await tx
+        .select()
+        .from(walletTransactions)
+        .where(and(eq(walletTransactions.walletId, lockedWallet.id), eq(walletTransactions.reference, settlementReference)))
+        .limit(1);
+
+      if (existingAfterLock) {
+        return;
+      }
+
+      const currentBalance = parseFloat(lockedWallet.balance);
+      const currentAvailable = parseFloat(lockedWallet.availableBalance);
+      const currentFrozen = parseFloat(lockedWallet.frozenAmount);
+      const currentForfeited = parseFloat(lockedWallet.forfeitedAmount || '0');
+
+      if (currentAvailable < params.availableAmount) {
+        throw new Error(
+          `Insufficient available balance. Required: ₦${params.availableAmount.toFixed(2)}, Available: ₦${currentAvailable.toFixed(2)}`
+        );
+      }
+
+      if (currentFrozen < params.frozenAmount) {
+        throw new Error(
+          `Insufficient frozen balance. Required: ₦${params.frozenAmount.toFixed(2)}, Frozen: ₦${currentFrozen.toFixed(2)}`
+        );
+      }
+
+      const newBalance = currentBalance - params.totalAmount;
+      const newAvailable = currentAvailable - params.availableAmount;
+      const newFrozen = currentFrozen - params.frozenAmount;
+      const expectedBalance = newAvailable + newFrozen + currentForfeited;
+
+      if (Math.abs(expectedBalance - newBalance) > 0.01) {
+        throw new Error(
+          `Wallet invariant violation during settlement. Balance: ${newBalance}, Expected: ${expectedBalance}`
+        );
+      }
+
+      await tx
+        .update(escrowWallets)
+        .set({
+          balance: newBalance.toFixed(2),
+          availableBalance: newAvailable.toFixed(2),
+          frozenAmount: newFrozen.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(escrowWallets.id, lockedWallet.id));
+
+      await tx.insert(walletTransactions).values({
+        walletId: lockedWallet.id,
+        type: 'debit',
+        amount: params.totalAmount.toFixed(2),
+        balanceAfter: newBalance.toFixed(2),
+        reference: settlementReference,
+        description: transferReference
+          ? `${params.reason}. Transfer reference: ${transferReference}`
+          : params.reason,
+      });
+
+      if (params.frozenAmount > 0) {
+        await tx.insert(depositEvents).values({
+          vendorId: params.vendorId,
+          auctionId: params.auctionId,
+          eventType: 'unfreeze',
+          amount: params.frozenAmount.toFixed(2),
+          balanceBefore: currentBalance.toFixed(2),
+          balanceAfter: newBalance.toFixed(2),
+          frozenBefore: currentFrozen.toFixed(2),
+          frozenAfter: newFrozen.toFixed(2),
+          availableBefore: currentAvailable.toFixed(2),
+          availableAfter: newAvailable.toFixed(2),
+          description: `Auction-specific frozen funds settled after payment confirmation`,
+        });
+      }
+
+      await this.verifyInvariantInTransaction(tx, params.vendorId);
+    });
+
+    const { cache } = await import('@/lib/redis/client');
+    await cache.del(`wallet:${wallet.id}`).catch(() => undefined);
   }
 
   /**
@@ -311,7 +680,7 @@ export class PaymentService {
     console.log(`   - ₦${depositAmount.toLocaleString()} transferred to finance`);
     console.log(`   - Debit transaction created in walletTransactions`);
     console.log(`   - Unfreeze transaction created in walletTransactions`);
-    console.log(`   - Money transferred to NEM Insurance via Paystack Transfers API`);
+    console.log(`   - Money transferred to the configured company settlement account via Paystack Transfers API`);
 
     // Keep auction status as 'awaiting_payment' (DO NOT change to 'closed')
     // CRITICAL: The auction status must remain 'awaiting_payment' so that:
@@ -346,6 +715,122 @@ export class PaymentService {
     console.log(`✅ Auction cache invalidated`);
 
     return result;
+  }
+
+  async processWalletAuctionPayment(
+    params: ProcessWalletPaymentParams
+  ): Promise<PaymentResult> {
+    const { auctionId, vendorId, finalBid, depositAmount, idempotencyKey } = params;
+    const remainingAmount = finalBid - depositAmount;
+
+    const existingPayment = await this.checkIdempotency(auctionId, idempotencyKey);
+    if (existingPayment) return existingPayment;
+
+    const [wallet] = await db
+      .select()
+      .from(escrowWallets)
+      .where(eq(escrowWallets.vendorId, vendorId))
+      .limit(1);
+
+    if (!wallet) {
+      throw new Error(`Wallet not found for vendor ${vendorId}`);
+    }
+
+    const availableBalance = parseFloat(wallet.availableBalance);
+    const frozenBalance = parseFloat(wallet.frozenAmount);
+
+    if (availableBalance < remainingAmount) {
+      throw new Error(
+        `Insufficient available balance. Required: ₦${remainingAmount.toFixed(2)}, Available: ₦${availableBalance.toFixed(2)}`
+      );
+    }
+
+    if (frozenBalance < depositAmount) {
+      throw new Error(
+        `Insufficient frozen balance for this auction deposit. Required: ₦${depositAmount.toFixed(2)}, Frozen: ₦${frozenBalance.toFixed(2)}`
+      );
+    }
+
+    const [existingVerified] = await db
+      .select()
+      .from(payments)
+      .where(and(eq(payments.auctionId, auctionId), eq(payments.vendorId, vendorId), eq(payments.status, 'verified')))
+      .limit(1);
+
+    if (existingVerified) {
+      return {
+        paymentId: existingVerified.id,
+        type: 'wallet',
+        amount: parseFloat(existingVerified.amount),
+        status: 'completed',
+      };
+    }
+
+    let [payment] = await db
+      .select()
+      .from(payments)
+      .where(and(eq(payments.auctionId, auctionId), eq(payments.vendorId, vendorId), eq(payments.status, 'pending')))
+      .limit(1);
+
+    if (payment) {
+      [payment] = await db
+        .update(payments)
+        .set({
+          amount: finalBid.toFixed(2),
+          paymentMethod: 'escrow_wallet',
+          paymentReference: idempotencyKey,
+          updatedAt: new Date(),
+        })
+        .where(eq(payments.id, payment.id))
+        .returning();
+    } else {
+      [payment] = await db
+        .insert(payments)
+        .values({
+          auctionId,
+          vendorId,
+          amount: finalBid.toFixed(2),
+          paymentMethod: 'escrow_wallet',
+          paymentReference: idempotencyKey,
+          status: 'pending',
+          paymentDeadline: new Date(),
+        })
+        .returning();
+    }
+
+    await this.settleAuctionWalletFunds({
+      paymentId: payment.id,
+      vendorId,
+      auctionId,
+      availableAmount: remainingAmount,
+      frozenAmount: depositAmount,
+      totalAmount: finalBid,
+      reason: `Wallet auction payment settlement for auction ${auctionId}`,
+    });
+
+    await db
+      .update(payments)
+      .set({
+        status: 'verified',
+        autoVerified: true,
+        verifiedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, payment.id));
+
+    await this.unfreezeNonWinnerDeposits(auctionId, vendorId);
+    await depositNotificationService.sendPaymentConfirmationNotification({ vendorId, auctionId, amount: finalBid });
+    await this.generatePickupAuthorization({ vendorId, auctionId, amount: finalBid });
+
+    const { cache } = await import('@/lib/redis/client');
+    await cache.del(`auction:details:${auctionId}`);
+
+    return {
+      paymentId: payment.id,
+      type: 'wallet',
+      amount: finalBid,
+      status: 'completed',
+    };
   }
 
   /**
@@ -530,6 +1015,13 @@ export class PaymentService {
       throw new Error('Invalid response from Paystack: missing authorization_url');
     }
 
+    await businessPolicyService.createCurrentPolicySnapshot({
+      entityType: 'payment',
+      entityId: payment.id,
+      actorId: undefined,
+      reason: `Paystack auction payment initialized for auction ${auctionId}.`,
+    });
+
     return {
       paymentId: payment.id,
       type: 'paystack',
@@ -573,6 +1065,14 @@ export class PaymentService {
     }
 
     if (!success) {
+      if (payment.auctionId) {
+        await this.rollbackHybridWalletPortion({
+          paymentId: payment.id,
+          vendorId: payment.vendorId,
+          auctionId: payment.auctionId,
+        });
+      }
+
       // Mark payment as rejected, allow retry
       await db
         .update(payments)
@@ -669,23 +1169,27 @@ export class PaymentService {
         }
       });
 
-      // Step 2: Release funds (unfreeze + debit + transfer)
-      // This MUST succeed or we rollback payment verification
-      console.log(`💰 Releasing deposit funds to finance...`);
-      const { escrowService } = await import('@/features/payments/services/escrow.service');
-      
-      await escrowService.releaseFunds(
+      // Step 2: Settle auction-specific frozen wallet funds.
+      // Paystack-only settles the winner deposit. Hybrid settles the winner
+      // deposit plus the wallet portion reserved for this payment.
+      const hybridWalletPortion = await this.getHybridFrozenWalletPortion(payment.id);
+      const walletSettlementAmount = depositAmount + hybridWalletPortion;
+
+      await this.settleAuctionWalletFunds({
+        paymentId: payment.id,
         vendorId,
-        depositAmount,
         auctionId,
-        'system' // userId for audit trail
-      );
-      
-      console.log(`✅ Deposit funds released successfully`);
-      console.log(`   - ₦${depositAmount.toLocaleString()} transferred to finance`);
-      console.log(`   - Debit transaction created in walletTransactions`);
-      console.log(`   - Unfreeze transaction created in walletTransactions`);
-      console.log(`   - Money transferred to NEM Insurance via Paystack Transfers API`);
+        availableAmount: 0,
+        frozenAmount: walletSettlementAmount,
+        totalAmount: walletSettlementAmount,
+        reason: hybridWalletPortion > 0
+          ? `Hybrid auction wallet settlement for auction ${auctionId}`
+          : `Paystack auction deposit settlement for auction ${auctionId}`,
+      });
+
+      console.log(`Auction wallet funds settled successfully for payment ${payment.id}`);
+      console.log(`   - Deposit: ?${depositAmount.toLocaleString()}`);
+      console.log(`   - Hybrid wallet portion: ?${hybridWalletPortion.toLocaleString()}`);
 
       // Step 3: Unfreeze all non-winner deposits (fallback chain complete)
       console.log(`🔓 Unfreezing all non-winner deposits for auction ${auctionId}`);
@@ -854,13 +1358,17 @@ export class PaymentService {
           )
         : 'auction item';
       const locationName = auction?.locationName || 'TBD';
+      const policy = await businessPolicyService.getEffectivePolicy();
+      const pickupDeadlineHours = Math.max(1, policy.auctions.documentValidityHours);
+      const pickupDeadline = new Date(Date.now() + pickupDeadlineHours * 60 * 60 * 1000);
       
       // Send SMS with pickup code (wrapped in try-catch to prevent blocking)
       try {
         if (user.phone) {
+          const branding = await getEmailBranding();
           await smsService.sendSMS({
             to: user.phone,
-            message: `NEM Salvage: Payment confirmed! Pickup code: ${pickupAuthCode}. Location: ${locationName}. Deadline: 48 hours. Bring valid ID.`,
+            message: `${branding.brandName}: Payment confirmed. Pickup code: ${pickupAuthCode}. Location: ${locationName}. Deadline: ${pickupDeadlineHours} hours. Bring valid ID.`,
             category: 'pickup_code',
           });
           console.log(`✅ Pickup authorization SMS sent to ${user.phone}`);
@@ -882,10 +1390,10 @@ export class PaymentService {
             assetName,
             paymentAmount: paymentInfo.amount,
             paymentMethod: 'Wallet/Paystack',
-            paymentReference: pickupAuthCode,
+            paymentReference: '',
             pickupAuthCode,
             pickupLocation: locationName,
-            pickupDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleString(),
+            pickupDeadline: pickupDeadline.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
             appUrl,
           });
           console.log(`✅ Pickup authorization email sent to ${user.email}`);
@@ -901,7 +1409,7 @@ export class PaymentService {
           {
             userId: user.id,
             title: '🎫 Pickup Authorization Ready',
-            body: `Code: ${pickupAuthCode}. Collect ${assetName} within 48 hours.`,
+            body: `Code: ${pickupAuthCode}. Collect ${assetName} within ${pickupDeadlineHours} hours.`,
             data: {
               auctionId: paymentInfo.auctionId,
               type: 'pickup_authorization',
@@ -920,7 +1428,7 @@ export class PaymentService {
           userId: user.id,
           type: 'payment_success',
           title: 'Pickup Authorization Ready',
-          message: `Your pickup code is ${pickupAuthCode}. Collect ${assetName} within 48 hours.`,
+          message: `Your pickup code is ${pickupAuthCode}. Collect ${assetName} within ${pickupDeadlineHours} hours.`,
           data: {
             auctionId: paymentInfo.auctionId,
             pickupAuthCode,
@@ -1147,6 +1655,7 @@ export class PaymentService {
       .limit(1);
 
     let payment;
+    let createdNewPaymentRecord = false;
     if (existingPaymentRecord) {
       // Update existing payment record
       console.log(`✅ Updating existing payment record: ${existingPaymentRecord.id}`);
@@ -1175,6 +1684,7 @@ export class PaymentService {
           paymentDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours (fallback buffer period)
         })
         .returning();
+      createdNewPaymentRecord = true;
     }
 
     // Step 3: Initialize Paystack transaction with FIXED amount (paystackPortion only)
@@ -1188,7 +1698,7 @@ export class PaymentService {
         email: vendorEmail,
         amount: Math.round(paystackPortion * 100), // Convert to kobo, FIXED amount
         reference: payment.id,
-        callback_url: `${process.env.NEXTAUTH_URL}/vendor/auctions/${auctionId}?payment=success`,
+        callback_url: appPath(`/vendor/auctions/${auctionId}?payment=success`),
         metadata: {
           auctionId,
           vendorId,
@@ -1197,11 +1707,6 @@ export class PaymentService {
           paystackPortion: paystackPortion.toFixed(2),
           paymentType: 'hybrid',
           custom_fields: [
-            {
-              display_name: 'Auction ID',
-              variable_name: 'auction_id',
-              value: auctionId,
-            },
             {
               display_name: 'Payment Type',
               variable_name: 'payment_type',
@@ -1277,6 +1782,178 @@ export class PaymentService {
         paymentReference: paystackData.data.reference,
       })
       .where(eq(payments.id, payment.id));
+
+    if (createdNewPaymentRecord) {
+      await businessPolicyService.createCurrentPolicySnapshot({
+        entityType: 'payment',
+        entityId: payment.id,
+        actorId: undefined,
+        reason: `Hybrid auction payment initialized for auction ${auctionId}.`,
+      });
+    }
+
+    return {
+      paymentId: payment.id,
+      type: 'hybrid',
+      amount: finalBid,
+      status: 'pending',
+      paystackReference: paystackData.data.reference,
+      authorizationUrl: paystackData.data.authorization_url,
+      accessCode: paystackData.data.access_code,
+      walletAmount: walletPortion,
+      paystackAmount: paystackPortion,
+    };
+  }
+
+  async processHybridAuctionPayment(
+    params: ProcessHybridPaymentParams
+  ): Promise<PaymentResult> {
+    const { auctionId, vendorId, finalBid, depositAmount, idempotencyKey, vendorEmail } = params;
+    const remainingAmount = finalBid - depositAmount;
+
+    const existingPayment = await this.checkIdempotency(auctionId, idempotencyKey);
+    if (existingPayment) return existingPayment;
+
+    const [existingPending] = await db
+      .select()
+      .from(payments)
+      .where(
+        and(
+          eq(payments.auctionId, auctionId),
+          eq(payments.vendorId, vendorId),
+          eq(payments.status, 'pending'),
+          eq(payments.paymentMethod, 'paystack')
+        )
+      )
+      .limit(1);
+
+    if (existingPending) {
+      return {
+        paymentId: existingPending.id,
+        type: (await this.getHybridFrozenWalletPortion(existingPending.id)) > 0 ? 'hybrid' : 'paystack',
+        amount: parseFloat(existingPending.amount),
+        status: 'pending',
+        paystackReference: existingPending.paymentReference || idempotencyKey,
+        authorizationUrl: 'ALREADY_PENDING',
+        accessCode: 'ALREADY_PENDING',
+      };
+    }
+
+    const [wallet] = await db
+      .select()
+      .from(escrowWallets)
+      .where(eq(escrowWallets.vendorId, vendorId))
+      .limit(1);
+
+    if (!wallet) {
+      throw new Error(`Wallet not found for vendor ${vendorId}`);
+    }
+
+    const availableBalance = parseFloat(wallet.availableBalance);
+    const walletPortion = Math.min(availableBalance, remainingAmount);
+    const paystackPortion = remainingAmount - walletPortion;
+
+    if (walletPortion <= 0) {
+      throw new Error('Hybrid payment requires wallet balance. Use online checkout instead.');
+    }
+
+    if (paystackPortion <= 0) {
+      throw new Error('Hybrid payment requires an online checkout balance. Use wallet payment instead.');
+    }
+
+    let [payment] = await db
+      .select()
+      .from(payments)
+      .where(and(eq(payments.auctionId, auctionId), eq(payments.vendorId, vendorId), eq(payments.status, 'pending')))
+      .limit(1);
+
+    if (payment) {
+      [payment] = await db
+        .update(payments)
+        .set({
+          amount: finalBid.toFixed(2),
+          paymentMethod: 'paystack',
+          paymentReference: idempotencyKey,
+          updatedAt: new Date(),
+        })
+        .where(eq(payments.id, payment.id))
+        .returning();
+    } else {
+      [payment] = await db
+        .insert(payments)
+        .values({
+          auctionId,
+          vendorId,
+          amount: finalBid.toFixed(2),
+          paymentMethod: 'paystack',
+          paymentReference: idempotencyKey,
+          status: 'pending',
+          paymentDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        })
+        .returning();
+    }
+
+    await this.freezeHybridWalletPortion({
+      paymentId: payment.id,
+      vendorId,
+      auctionId,
+      amount: walletPortion,
+    });
+
+    const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
+    if (!paystackSecretKey) {
+      await this.rollbackHybridWalletPortion({ paymentId: payment.id, vendorId, auctionId });
+      await db.delete(payments).where(eq(payments.id, payment.id));
+      throw new Error('PAYSTACK_SECRET_KEY not configured');
+    }
+
+    const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${paystackSecretKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: vendorEmail,
+        amount: Math.round(paystackPortion * 100),
+        reference: payment.id,
+        callback_url: appPath(`/vendor/auctions/${auctionId}?payment=success`),
+        metadata: {
+          auctionId,
+          vendorId,
+          paymentId: payment.id,
+          finalBid: finalBid.toFixed(2),
+          depositAmount: depositAmount.toFixed(2),
+          walletPortion: walletPortion.toFixed(2),
+          paystackPortion: paystackPortion.toFixed(2),
+          paymentType: 'hybrid',
+        },
+      }),
+    });
+
+    if (!paystackResponse.ok) {
+      await this.rollbackHybridWalletPortion({ paymentId: payment.id, vendorId, auctionId });
+      await db.delete(payments).where(eq(payments.id, payment.id));
+      const error = await paystackResponse.json().catch(() => ({}));
+      throw new Error(`Failed to initialize online checkout: ${error.message || paystackResponse.statusText}`);
+    }
+
+    const paystackData = await paystackResponse.json();
+
+    await db
+      .update(payments)
+      .set({
+        paymentReference: paystackData.data.reference,
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, payment.id));
+
+    await businessPolicyService.createCurrentPolicySnapshot({
+      entityType: 'payment',
+      entityId: payment.id,
+      actorId: undefined,
+      reason: `Hybrid auction payment initialized for auction ${auctionId}.`,
+    });
 
     return {
       paymentId: payment.id,

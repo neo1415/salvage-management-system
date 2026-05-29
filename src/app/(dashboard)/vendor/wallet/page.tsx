@@ -50,19 +50,23 @@ export default function WalletPage() {
 
   // Fetch function for useCachedWallet hook
   const fetchWalletData = useCallback(async () => {
-    // Fetch balance
-    const balanceResponse = await fetch('/api/payments/wallet/balance');
+    const [balanceResponse, transactionsResponse] = await Promise.all([
+      fetch('/api/payments/wallet/balance'),
+      fetch('/api/payments/wallet/transactions?page=1&limit=20'),
+    ]);
+
     if (!balanceResponse.ok) {
       throw new Error('Failed to fetch wallet balance');
     }
-    const balanceData = await balanceResponse.json();
 
-    // Fetch transactions (get more for caching)
-    const transactionsResponse = await fetch('/api/payments/wallet/transactions?page=1&limit=20');
     if (!transactionsResponse.ok) {
       throw new Error('Failed to fetch transactions');
     }
-    const transactionsData = await transactionsResponse.json();
+
+    const [balanceData, transactionsData] = await Promise.all([
+      balanceResponse.json(),
+      transactionsResponse.json(),
+    ]);
 
     return {
       balance: balanceData.balance,
@@ -419,7 +423,7 @@ export default function WalletPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                <Wallet className="w-8 h-8 text-[#800020]" />
+                <Wallet className="w-8 h-8 text-[var(--brand-primary)]" />
                 Escrow Wallet
               </h1>
               <p className="mt-2 text-gray-600">
@@ -482,7 +486,7 @@ export default function WalletPage() {
         {/* Balance Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           {/* Total Balance */}
-          <div className="bg-gradient-to-br from-[#800020] to-[#600018] rounded-xl shadow-lg p-6 text-white">
+          <div className="bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-xl shadow-lg p-6 text-white">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium opacity-90">Total Balance</h3>
               <Wallet className="w-6 h-6 opacity-80" />
@@ -527,7 +531,7 @@ export default function WalletPage() {
         {/* Add Funds Section */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
           <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <Plus className="w-6 h-6 text-[#800020]" />
+            <Plus className="w-6 h-6 text-[var(--brand-primary)]" />
             Add Funds
           </h2>
           <div className="flex flex-col sm:flex-row gap-4">
@@ -544,7 +548,7 @@ export default function WalletPage() {
                 min="50000"
                 max="5000000"
                 step="1000"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#800020] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 disabled={isFunding}
               />
             </div>
@@ -552,12 +556,12 @@ export default function WalletPage() {
               <button
                 onClick={handleAddFunds}
                 disabled={isFunding || !fundingAmount || !isOnline}
-                className="w-full sm:w-auto px-8 py-3 bg-[#FFD700] text-[#800020] font-bold rounded-lg hover:bg-[#FFC700] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-8 py-3 bg-[var(--brand-accent)] text-[var(--brand-primary)] font-bold rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 title={!isOnline ? 'Adding funds is not available offline' : 'Add funds via Paystack'}
               >
                 {isFunding ? (
                   <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#800020]"></div>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[var(--brand-primary)]"></div>
                     Processing...
                   </>
                 ) : !isOnline ? (
@@ -732,7 +736,7 @@ export default function WalletPage() {
                         onClick={() => handlePageClick(pageNum)}
                         className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                           pagination.page === pageNum
-                            ? 'bg-[#800020] text-white'
+                            ? 'bg-[var(--brand-primary)] text-white'
                             : 'text-gray-700 hover:bg-gray-100'
                         }`}
                       >

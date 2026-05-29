@@ -114,7 +114,7 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
                   ? 'border-red-500 focus:ring-red-500'
                   : touchedFields.fullName
                   ? 'border-green-500 focus:ring-green-500'
-                  : 'border-gray-300 focus:ring-[#800020]'
+                  : 'border-gray-300 focus:ring-[var(--brand-focus-ring)]'
               }`}
               placeholder={`e.g. ${GENERIC_NAME_BVN_ORDER_EXAMPLE}`}
             />
@@ -151,7 +151,7 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
                   ? 'border-red-500 focus:ring-red-500'
                   : touchedFields.email
                   ? 'border-green-500 focus:ring-green-500'
-                  : 'border-gray-300 focus:ring-[#800020]'
+                  : 'border-gray-300 focus:ring-[var(--brand-focus-ring)]'
               }`}
               placeholder="your.email@example.com"
             />
@@ -185,7 +185,7 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
                   ? 'border-red-500 focus:ring-red-500'
                   : touchedFields.phone
                   ? 'border-green-500 focus:ring-green-500'
-                  : 'border-gray-300 focus:ring-[#800020]'
+                  : 'border-gray-300 focus:ring-[var(--brand-focus-ring)]'
               }`}
               placeholder="+234 XXX XXX XXXX"
             />
@@ -223,7 +223,7 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
                   ? 'border-red-500 focus:ring-red-500'
                   : touchedFields.dateOfBirth
                   ? 'border-green-500 focus:ring-green-500'
-                  : 'border-gray-300 focus:ring-[#800020]'
+                  : 'border-gray-300 focus:ring-[var(--brand-focus-ring)]'
               }`}
             />
             {getFieldStatus('dateOfBirth') === 'success' && (
@@ -259,7 +259,7 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
                   ? 'border-red-500 focus:ring-red-500'
                   : touchedFields.password
                   ? 'border-green-500 focus:ring-green-500'
-                  : 'border-gray-300 focus:ring-[#800020]'
+                  : 'border-gray-300 focus:ring-[var(--brand-focus-ring)]'
               }`}
               placeholder="Create a strong password"
             />
@@ -300,15 +300,15 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
             <input
               {...register('termsAccepted')}
               type="checkbox"
-              className="mt-1 w-4 h-4 text-[#800020] border-gray-300 rounded focus:ring-[#800020]"
+              className="mt-1 w-4 h-4 text-[var(--brand-primary)] border-gray-300 rounded focus:ring-[var(--brand-focus-ring)]"
             />
             <span className="text-sm text-gray-700">
               I accept the{' '}
-              <a href="/terms" className="text-[#800020] hover:underline">
+              <a href="/terms" className="text-[var(--brand-primary)] hover:underline">
                 Terms and Conditions
               </a>{' '}
               and{' '}
-              <a href="/privacy" className="text-[#800020] hover:underline">
+              <a href="/privacy" className="text-[var(--brand-primary)] hover:underline">
                 Privacy Policy
               </a>
               <span className="text-red-500"> *</span>
@@ -326,7 +326,7 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full bg-[#FFD700] text-[#800020] font-bold py-3 px-4 rounded-lg hover:bg-[#FFC700] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] font-bold py-3 px-4 rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {isSubmitting ? (
             <>
@@ -342,7 +342,7 @@ export function VendorRegistrationForm({ onSubmit }: VendorRegistrationFormProps
       {/* Login Link */}
       <p className="mt-6 text-center text-sm text-gray-600">
         Already have an account?{' '}
-        <a href="/login" className="text-[#800020] font-medium hover:underline">
+        <a href="/login" className="text-[var(--brand-primary)] font-medium hover:underline">
           Sign in
         </a>
       </p>

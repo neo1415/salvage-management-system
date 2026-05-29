@@ -89,8 +89,9 @@ export class AutoExtendService {
       // Calculate time remaining
       const timeRemainingMs = auction.endTime.getTime() - currentTime.getTime();
 
-      // Check if time remaining is less than 5 minutes
-      if (timeRemainingMs < this.EXTENSION_THRESHOLD_MS) {
+      // Only extend live auctions. A bid request that crosses the end boundary
+      // must not resurrect an expired auction back into "extended".
+      if (timeRemainingMs > 0 && timeRemainingMs < this.EXTENSION_THRESHOLD_MS) {
         // Calculate new end time (current end time + 2 minutes)
         const newEndTime = new Date(auction.endTime.getTime() + this.EXTENSION_DURATION_MS);
         const newExtensionCount = auction.extensionCount + 1;

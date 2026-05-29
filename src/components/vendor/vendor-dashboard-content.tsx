@@ -139,7 +139,7 @@ function VendorDashboardContentInner() {
           <p className="text-gray-600 mb-6">{error}</p>
           <button
             onClick={() => router.push('/login')}
-            className="px-6 py-2 bg-[#800020] text-white font-semibold rounded-lg hover:bg-[#600018] transition-colors"
+            className="px-6 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
           >
             Go to Login
           </button>
@@ -332,7 +332,7 @@ function VendorDashboardContentInner() {
         </div>
 
         {/* Leaderboard Position */}
-        <div className="bg-gradient-to-r from-[#800020] to-[#600018] rounded-lg shadow-lg p-6 mb-8 text-white">
+        <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-lg shadow-lg p-6 mb-8 text-white">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold mb-2">Leaderboard Position</h2>
@@ -393,7 +393,7 @@ function VendorDashboardContentInner() {
                   key={badge.id}
                   className={`p-4 rounded-lg border-2 text-center transition-all ${
                     badge.earned
-                      ? 'border-[#FFD700] bg-yellow-50 shadow-md'
+                      ? 'border-[var(--brand-accent)] bg-yellow-50 shadow-md'
                       : 'border-gray-200 bg-gray-50 opacity-50'
                   }`}
                   title={badge.description}

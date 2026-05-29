@@ -183,7 +183,7 @@ export function TopPerformersSection({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-[#800020]" />
+            <Star className="h-5 w-5 text-[var(--brand-primary)]" />
             Top Makes
           </CardTitle>
           <CardDescription>Most popular brands</CardDescription>

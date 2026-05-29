@@ -3,7 +3,8 @@
  * Sent when a vendor successfully signs a document
  */
 
-import { getBaseEmailTemplate } from './base.template';
+import { getPolicyAwareBaseEmailTemplate } from './base.template';
+import { brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from './email-branding';
 
 export interface DocumentSignedTemplateData {
   vendorName: string;
@@ -14,7 +15,7 @@ export interface DocumentSignedTemplateData {
   pickupAuthCode?: string;
 }
 
-export function documentSignedTemplate(data: DocumentSignedTemplateData): string {
+export async function documentSignedTemplate(data: DocumentSignedTemplateData): Promise<string> {
   const {
     vendorName,
     documentTitle,
@@ -23,6 +24,10 @@ export function documentSignedTemplate(data: DocumentSignedTemplateData): string
     downloadUrl,
     pickupAuthCode,
   } = data;
+
+  const branding = await getEmailBranding();
+  const supportEmail = getSupportEmail(branding);
+  const supportPhone = getSupportPhone(branding);
 
   const content = `
     <div style="text-align: center; margin-bottom: 30px;">
@@ -74,7 +79,7 @@ export function documentSignedTemplate(data: DocumentSignedTemplateData): string
     
     <div class="divider"></div>
     
-    <h3 style="color: #800020; font-size: 18px; margin: 25px 0 15px 0;">Next Steps</h3>
+    <h3 style="color: ${branding.primaryColor}; font-size: 18px; margin: 25px 0 15px 0;">Next Steps</h3>
     <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; margin: 20px 0; border-radius: 6px;">
       <p style="margin: 0; color: #856404; font-size: 15px; line-height: 1.8;">
         ${nextSteps}
@@ -83,7 +88,7 @@ export function documentSignedTemplate(data: DocumentSignedTemplateData): string
     
     <div style="text-align: center; margin: 35px 0;">
       <a href="${downloadUrl}" 
-         style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #FFD700 0%, #FFC700 100%); color: #800020 !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+         style="display: inline-block; padding: 16px 40px; background: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
         Download Signed Document
       </a>
     </div>
@@ -100,14 +105,14 @@ export function documentSignedTemplate(data: DocumentSignedTemplateData): string
     
     <p style="margin-top: 30px;">If you have any questions or concerns, please contact our support team:</p>
     <ul style="color: #333; font-size: 15px; line-height: 1.8;">
-      <li>Phone: <a href="tel:+2340201448956" style="color: #800020; text-decoration: none; font-weight: 600;">234-02-014489560</a></li>
-      <li>Email: <a href="mailto:nemsupport@nem-insurance.com" style="color: #800020; text-decoration: none; font-weight: 600;">nemsupport@nem-insurance.com</a></li>
+      <li>Phone: <a href="tel:${supportPhone}" style="color: ${branding.primaryColor}; text-decoration: none; font-weight: 600;">${supportPhone}</a></li>
+      <li>Email: <a href="mailto:${supportEmail}" style="color: ${branding.primaryColor}; text-decoration: none; font-weight: 600;">${supportEmail}</a></li>
     </ul>
     
-    <p style="margin-top: 30px;">Thank you for your business!<br><strong>NEM Insurance Team</strong></p>
+    <p style="margin-top: 30px;">Thank you for your business.<br><strong>${brandTeamName(branding)}</strong></p>
   `;
 
-  return getBaseEmailTemplate({
+  return getPolicyAwareBaseEmailTemplate({
     title: 'Document Signed Successfully',
     preheader: `Your ${documentTitle} has been signed and is now legally binding`,
     content,

@@ -6,6 +6,8 @@
  */
 
 import { emailService } from '@/features/notifications/services/email.service';
+import { getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 import { ExportFormat } from '../../types';
 
 export interface ReportDelivery {
@@ -67,7 +69,7 @@ export class ReportDistributionService {
     mimeType: string
   ): Promise<void> {
     const subject = this.generateEmailSubject(delivery);
-    const body = this.generateEmailBody(delivery);
+    const body = await this.generateEmailBody(delivery);
 
     // Convert Buffer to base64 for email attachment
     const attachmentContent = delivery.reportData.toString('base64');
@@ -103,83 +105,27 @@ export class ReportDistributionService {
   /**
    * Generate email body HTML
    */
-  private static generateEmailBody(delivery: ReportDelivery): string {
+  private static async generateEmailBody(delivery: ReportDelivery): Promise<string> {
+    const branding = await getEmailBranding();
+    const supportEmail = getSupportEmail(branding);
+    const supportPhone = getSupportPhone(branding);
     const periodText = delivery.period
       ? `<p><strong>Period:</strong> ${new Date(delivery.period.startDate).toLocaleDateString('en-NG')} to ${new Date(delivery.period.endDate).toLocaleDateString('en-NG')}</p>`
       : '';
 
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-          }
-          .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-          }
-          .header {
-            background-color: #0066cc;
-            color: white;
-            padding: 20px;
-            text-align: center;
-            border-radius: 5px 5px 0 0;
-          }
-          .content {
-            background-color: #f9f9f9;
-            padding: 30px;
-            border: 1px solid #ddd;
-            border-top: none;
-            border-radius: 0 0 5px 5px;
-          }
-          .footer {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-            font-size: 12px;
-            color: #666;
-            text-align: center;
-          }
-          .button {
-            display: inline-block;
-            padding: 10px 20px;
-            background-color: #0066cc;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            margin-top: 15px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>NEM Insurance Salvage Report</h1>
-          </div>
-          <div class="content">
-            <h2>${delivery.reportName}</h2>
-            <p>Your scheduled report has been generated and is attached to this email.</p>
-            ${periodText}
-            <p><strong>Generated:</strong> ${delivery.generatedAt.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}</p>
-            <p><strong>Format:</strong> ${delivery.format.toUpperCase()}</p>
-            <p>Please find the report attached to this email. If you have any questions or need assistance, please contact our support team.</p>
-          </div>
-          <div class="footer">
-            <p>NEM Insurance Plc<br>
-            199 Ikorodu Road, Obanikoro, Lagos<br>
-            Phone: 234-02-014489560</p>
-            <p>This is an automated email. Please do not reply to this message.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+    return wrapProfessionalEmail(
+      `${delivery.reportName} Generated`,
+      `
+        <h2 style="color: ${branding.primaryColor};">${delivery.reportName}</h2>
+        <p>Your scheduled report has been generated and is attached to this email.</p>
+        ${periodText}
+        <p><strong>Generated:</strong> ${delivery.generatedAt.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}</p>
+        <p><strong>Format:</strong> ${delivery.format.toUpperCase()}</p>
+        <p>Please find the report attached to this email. If you have any questions or need assistance, contact ${supportEmail}${supportPhone ? ` or ${supportPhone}` : ''}.</p>
+        <p style="font-size: 12px; color: #666;">This is an automated email from ${branding.brandName}. Please do not reply to this message.</p>
+      `,
+      `${delivery.reportName} from ${branding.brandName}`
+    );
   }
 
   /**

@@ -283,7 +283,7 @@ export function RatingModal({
               disabled={isSubmitting}
               maxLength={500}
               rows={4}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               placeholder="Share your experience with this vendor (optional, max 500 characters)"
             />
             <p className="text-xs text-gray-500 text-right">
@@ -304,7 +304,7 @@ export function RatingModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 px-6 py-3 bg-burgundy-900 text-white font-semibold rounded-lg hover:bg-burgundy-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? 'Submitting...' : 'Submit Rating'}
             </button>

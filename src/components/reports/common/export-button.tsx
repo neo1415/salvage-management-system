@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Download, FileText, FileCode } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -24,6 +25,7 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
   const [isExporting, setIsExporting] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const { error: showError, success: showSuccess } = useToast();
+  const { branding } = usePublicBranding();
 
   const handleExport = async (format: 'pdf' | 'csv') => {
     setIsExporting(true);
@@ -105,7 +107,14 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
 
       // Create PDF
       const imgData = canvas.toDataURL('image/png');
-      const logoData = await loadImageAsDataUrl('/icons/Nem-insurance-Logo.jpg');
+      const logoData = await loadImageAsDataUrl(branding.logoPath || branding.faviconPath || '/icons/icon-192.png');
+      const logoFormat = getImageFormat(logoData);
+      const primaryRgb = hexToRgb(branding.primaryColor);
+      const organizationName = branding.legalName || branding.brandName;
+      const contactLine = [
+        branding.supportPhone ? `Call Us: ${branding.supportPhone}` : null,
+        `E-mail: ${branding.supportEmail}`,
+      ].filter(Boolean).join(' | ');
       
       // A4 dimensions in mm
       const pdfWidth = 210;
@@ -166,24 +175,23 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
         }
         
         // Add letterhead on every page
-        // Burgundy header bar
-        pdf.setFillColor(128, 0, 32); // #800020
+        pdf.setFillColor(...primaryRgb);
         pdf.rect(0, 0, pdfWidth, letterheadHeight, 'F');
         
         // Company name (centered)
         pdf.setTextColor(255, 255, 255);
         pdf.setFontSize(20);
         pdf.setFont('helvetica', 'bold');
-        pdf.text('NEM Insurance Plc', pdfWidth / 2, 12, { align: 'center' });
+        pdf.text(organizationName, pdfWidth / 2, 12, { align: 'center' });
         
         // Company address (centered)
         pdf.setFontSize(9);
         pdf.setFont('helvetica', 'normal');
-        pdf.text('199, Ikorodu Road, Obanikoro Lagos', pdfWidth / 2, 20, { align: 'center' });
+        pdf.text(`${branding.brandName} Salvage Management`, pdfWidth / 2, 20, { align: 'center' });
         
         // Contact details (centered)
         pdf.setFontSize(8);
-        pdf.text('Call Us: 234-02-014489560 | E-mail: nemsupport@nem-insurance.com', pdfWidth / 2, 27, { align: 'center' });
+        pdf.text(contactLine, pdfWidth / 2, 27, { align: 'center' });
         
         // Report title and date (on first page only, below letterhead)
         if (pageNum === 1) {
@@ -224,24 +232,24 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
         pdf.rect(0, 0, pdfWidth, contentTop, 'F');
         pdf.rect(0, pdfHeight - footerHeight, pdfWidth, footerHeight, 'F');
 
-        pdf.setFillColor(128, 0, 32);
+        pdf.setFillColor(...primaryRgb);
         pdf.rect(0, 0, pdfWidth, letterheadHeight, 'F');
 
-        if (logoData) {
-          pdf.addImage(logoData, 'JPEG', marginLeft, 6, 18, 18);
+        if (logoData && logoFormat) {
+          pdf.addImage(logoData, logoFormat, marginLeft, 6, 18, 18);
         }
 
         pdf.setTextColor(255, 255, 255);
         pdf.setFontSize(20);
         pdf.setFont('helvetica', 'bold');
-        pdf.text('NEM Insurance Plc', pdfWidth / 2, 12, { align: 'center' });
+        pdf.text(organizationName, pdfWidth / 2, 12, { align: 'center' });
 
         pdf.setFontSize(9);
         pdf.setFont('helvetica', 'normal');
-        pdf.text('199, Ikorodu Road, Obanikoro Lagos', pdfWidth / 2, 20, { align: 'center' });
+        pdf.text(`${branding.brandName} Salvage Management`, pdfWidth / 2, 20, { align: 'center' });
 
         pdf.setFontSize(8);
-        pdf.text('Call Us: 234-02-014489560 | E-mail: nemsupport@nem-insurance.com', pdfWidth / 2, 27, { align: 'center' });
+        pdf.text(contactLine, pdfWidth / 2, 27, { align: 'center' });
 
         if (pageNum === 1) {
           pdf.setTextColor(0, 0, 0);
@@ -301,6 +309,26 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
     }
   };
 
+  const hexToRgb = (hex: string): [number, number, number] => {
+    const normalized = hex.replace('#', '').trim();
+    if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+      return [128, 0, 32];
+    }
+
+    return [
+      parseInt(normalized.slice(0, 2), 16),
+      parseInt(normalized.slice(2, 4), 16),
+      parseInt(normalized.slice(4, 6), 16),
+    ];
+  };
+
+  const getImageFormat = (dataUrl: string | null): 'PNG' | 'JPEG' | undefined => {
+    if (!dataUrl) return undefined;
+    if (dataUrl.startsWith('data:image/png')) return 'PNG';
+    if (dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg')) return 'JPEG';
+    return undefined;
+  };
+
   return (
     <div className="relative">
       <Button
@@ -308,7 +336,7 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
         disabled={disabled || isExporting}
         variant="outline"
         size="sm"
-        className="bg-[#800020] text-white hover:bg-[#600018]"
+        className="bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)] hover:bg-[var(--brand-primary-hover)]"
       >
         <Download className="mr-2 h-4 w-4" />
         {isExporting ? 'Exporting...' : 'Export'}
@@ -321,7 +349,7 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
               onClick={() => handleExport('pdf')}
               className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
             >
-              <FileText className="h-4 w-4 text-[#800020]" />
+              <FileText className="h-4 w-4 text-[var(--brand-primary)]" />
               <div>
                 <div className="font-medium">Export as PDF</div>
                 <div className="text-xs text-gray-500">Professional format with letterhead</div>

@@ -18,14 +18,14 @@ interface FilterChipProps {
 export function FilterChip({ label, onRemove, className = '' }: FilterChipProps) {
   return (
     <div 
-      className={`inline-flex items-center gap-1 px-3 py-1 bg-[#800020] text-white rounded-full text-sm ${className}`}
+      className={`inline-flex items-center gap-1 px-3 py-1 bg-[var(--brand-primary)] text-white rounded-full text-sm ${className}`}
       role="status"
       aria-label={`Active filter: ${label}`}
     >
       <span>{label}</span>
       <button
         onClick={onRemove}
-        className="hover:bg-white/20 rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-[#800020]"
+        className="hover:bg-white/20 rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-[var(--brand-primary)]"
         aria-label={`Remove ${label} filter`}
         type="button"
       >

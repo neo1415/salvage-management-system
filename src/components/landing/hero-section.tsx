@@ -49,13 +49,13 @@ export function HeroSection() {
     <section id="home" className="relative min-h-screen flex items-center overflow-hidden pt-20" style={{ background: getBrandGradient(branding) }}>
       {/* Background shapes */}
       <motion.div
-        className="absolute top-20 right-20 w-96 h-96 bg-gold-500 rounded-full blur-3xl opacity-20"
+        className="absolute top-20 right-20 w-96 h-96 bg-[var(--brand-accent)] rounded-full blur-3xl opacity-20"
         animate={{ scale: [1, 1.2, 1] }}
         transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut' }}
       />
 
       <motion.div
-        className="absolute bottom-20 left-20 w-80 h-80 bg-burgundy-500 blur-3xl opacity-20"
+        className="absolute bottom-20 left-20 w-80 h-80 bg-[var(--brand-primary)] blur-3xl opacity-20"
         animate={{ scale: [1, 1.1, 1] }}
         transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
       />
@@ -78,7 +78,7 @@ export function HeroSection() {
                 transition={{ duration: 0.8, ease: 'easeInOut' }}
                 className="mb-6"
               >
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-black leading-tight mb-4 bg-gradient-to-r from-white via-gold-200 to-gold-400 bg-clip-text text-transparent">
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-black leading-tight mb-4 bg-gradient-to-r from-white via-[var(--brand-accent)] to-[var(--brand-accent)] bg-clip-text text-transparent">
                   {slides[currentSlide].title}
                 </h1>
                 <p className="text-lg md:text-xl text-gray-200 max-w-xl">
@@ -170,12 +170,12 @@ export function HeroSection() {
                       sizes="(max-width: 1024px) 100vw, 50vw"
                     />
                     {/* Overlay gradient */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-burgundy-900/20 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[var(--brand-primary)]/20 to-transparent" />
                   </div>
 
                   {/* Floating badge */}
                   <motion.div
-                    className="absolute -bottom-6 -left-6 bg-gold-500 text-burgundy-900 px-6 py-3 rounded-xl shadow-xl font-bold text-lg"
+                    className="absolute -bottom-6 -left-6 bg-[var(--brand-accent)] text-[var(--brand-primary)] px-6 py-3 rounded-xl shadow-xl font-bold text-lg"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.5 }}
@@ -215,7 +215,7 @@ export function HeroSection() {
                       priority={currentSlide === 0}
                       sizes="100vw"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-burgundy-900/20 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[var(--brand-primary)]/20 to-transparent" />
                   </div>
                 </motion.div>
               </AnimatePresence>

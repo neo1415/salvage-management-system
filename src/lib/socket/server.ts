@@ -21,6 +21,7 @@ import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { redis } from '@/lib/redis/client';
 import { configService } from '@/features/auction-deposit/services/config.service';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 // Socket.io event types
 export interface ServerToClientEvents {
@@ -180,6 +181,8 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
     return io;
   }
 
+  const socketOrigin = process.env.NEXT_PUBLIC_APP_URL || getAppUrl();
+
   io = new SocketIOServer<
     ClientToServerEvents,
     ServerToClientEvents,
@@ -187,7 +190,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
     SocketData
   >(httpServer, {
     cors: {
-      origin: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+      origin: socketOrigin,
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -232,7 +235,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
   io.on('connection', handleConnection);
 
   console.log('✅ Socket.io server initialized successfully');
-  console.log(`   - CORS origin: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}`);
+  console.log(`   - CORS origin: ${socketOrigin}`);
   console.log(`   - Transports: websocket, polling`);
   console.log(`   - Server instance created and ready`);
   console.log(`   - Stored in global.__socketIOServer for cross-module access`);

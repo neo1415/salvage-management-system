@@ -300,7 +300,7 @@ export default function AdminUserManagement() {
               placeholder="Search by name, email, or phone..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             />
           </div>
 
@@ -313,7 +313,7 @@ export default function AdminUserManagement() {
               id="roleFilter"
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             >
               <option value="all">All Roles</option>
               <option value="vendor">Vendor</option>
@@ -333,7 +333,7 @@ export default function AdminUserManagement() {
               id="statusFilter"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
             >
               <option value="all">All Statuses</option>
               <option value="unverified_tier_0">Unverified</option>
@@ -350,7 +350,7 @@ export default function AdminUserManagement() {
         <div className="flex justify-end">
           <button
             onClick={() => setShowAddUserModal(true)}
-            className="px-6 py-2 bg-burgundy-600 text-white font-semibold rounded-lg hover:bg-burgundy-700 transition-colors"
+            className="px-6 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
           >
             + Add New User
           </button>
@@ -484,7 +484,7 @@ export default function AdminUserManagement() {
                           <div className="relative inline-block text-left">
                             <button
                               onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
-                              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-burgundy-500"
+                              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--brand-focus-ring)]"
                             >
                               Actions
                               <svg className="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -642,7 +642,7 @@ export default function AdminUserManagement() {
                           onClick={() => setCurrentPage(page as number)}
                           className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
                             currentPage === page
-                              ? 'z-10 bg-burgundy-50 border-burgundy-500 text-burgundy-600'
+                              ? 'z-10 bg-[color-mix(in_srgb,var(--brand-primary)_8%,white)] border-[var(--brand-primary)] text-[var(--brand-primary)]'
                               : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
                           }`}
                         >
@@ -761,7 +761,7 @@ export default function AdminUserManagement() {
                       id="fullName"
                       value={formData.fullName}
                       onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent ${
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent ${
                         formErrors.fullName ? 'border-red-500' : 'border-gray-300'
                       }`}
                       placeholder="John Doe"
@@ -781,7 +781,7 @@ export default function AdminUserManagement() {
                       id="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent ${
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent ${
                         formErrors.email ? 'border-red-500' : 'border-gray-300'
                       }`}
                       placeholder="john.doe@nem-insurance.com"
@@ -801,7 +801,7 @@ export default function AdminUserManagement() {
                       id="phone"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent ${
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent ${
                         formErrors.phone ? 'border-red-500' : 'border-gray-300'
                       }`}
                       placeholder="+2348012345678"
@@ -820,7 +820,7 @@ export default function AdminUserManagement() {
                       id="role"
                       value={formData.role}
                       onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-transparent"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     >
                       <option value="claims_adjuster">Claims Adjuster</option>
                       <option value="salvage_manager">Salvage Manager</option>
@@ -854,7 +854,7 @@ export default function AdminUserManagement() {
                     </button>
                     <button
                       type="submit"
-                      className="flex-1 px-4 py-2 bg-burgundy-600 text-white font-semibold rounded-lg hover:bg-burgundy-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 px-4 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={submitting}
                     >
                       {submitting ? 'Creating...' : 'Create User'}
@@ -955,7 +955,7 @@ function UserRow({
           <div className="relative inline-block text-left">
             <button
               onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-burgundy-500"
+              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--brand-focus-ring)]"
             >
               Actions
               <svg className="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">

@@ -1,10 +1,10 @@
 /**
  * Deposit Notification Service
  * Centralized notification management for auction deposit events
- * 
+ *
  * Requirements:
  * - Requirement 24: Notification System for Deposit Events
- * 
+ *
  * PERFORMANCE: Async queue-based delivery, batch processing, deduplication
  * RELIABILITY: Multi-channel delivery (email + SMS + push + in-app), automatic fallback
  */
@@ -18,6 +18,8 @@ import { users, vendors, auctions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { redis } from '@/lib/redis/client';
 import { appPath } from '@/features/notifications/templates/email-urls';
+import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
+import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 
 export interface DepositNotificationContext {
   vendorId: string;
@@ -36,10 +38,19 @@ export class DepositNotificationService {
   private readonly DEDUP_TTL = 300; // 5 minutes deduplication window
   private readonly DEDUP_PREFIX = 'notif:dedup:';
 
+  private async getBrandName(): Promise<string> {
+    try {
+      const branding = await getEmailBranding();
+      return branding.brandName;
+    } catch {
+      return 'Salvage Portal';
+    }
+  }
+
   /**
    * Send deposit freeze notification
    * "Deposit of ₦{amount} frozen for auction {asset_name}"
-   * 
+   *
    * @param context - Notification context
    */
   async sendDepositFrozenNotification(context: DepositNotificationContext): Promise<void> {
@@ -57,6 +68,7 @@ export class DepositNotificationService {
 
     const asset = assetName || auction?.assetName || 'auction';
     const formattedAmount = amount.toLocaleString();
+    const brandName = await this.getBrandName();
 
     // Send multi-channel notifications (async, non-blocking)
     Promise.all([
@@ -77,7 +89,7 @@ export class DepositNotificationService {
       // SMS notification (high priority)
       smsService.sendSMS({
         to: user.phone,
-        message: `NEM Salvage: Deposit of ₦${formattedAmount} frozen for ${asset}. Good luck!`,
+        message: `${brandName}: Deposit of ₦${formattedAmount} frozen for ${asset}. Good luck!`,
         userId: user.id,
         category: 'routine',
       }),
@@ -92,7 +104,7 @@ export class DepositNotificationService {
   /**
    * Send deposit unfreeze notification (outbid)
    * "Deposit of ₦{amount} unfrozen - you were outbid on {asset_name}"
-   * 
+   *
    * @param context - Notification context
    */
   async sendDepositUnfrozenNotification(context: DepositNotificationContext): Promise<void> {
@@ -110,6 +122,7 @@ export class DepositNotificationService {
 
     const asset = assetName || auction?.assetName || 'auction';
     const formattedAmount = amount.toLocaleString();
+    const brandName = await this.getBrandName();
 
     // Send multi-channel notifications
     Promise.all([
@@ -130,7 +143,7 @@ export class DepositNotificationService {
       // SMS notification
       smsService.sendSMS({
         to: user.phone,
-        message: `NEM Salvage: You were outbid on ${asset}. Deposit of ₦${formattedAmount} unfrozen. Bid again to win!`,
+        message: `${brandName}: You were outbid on ${asset}. Deposit of ₦${formattedAmount} unfrozen. Bid again to win!`,
         userId: user.id,
         category: 'routine',
       }),
@@ -144,7 +157,7 @@ export class DepositNotificationService {
   /**
    * Send auction won notification with document deadline
    * "Congratulations! You won {asset_name}. Please sign documents within {hours} hours"
-   * 
+   *
    * @param context - Notification context
    */
   async sendAuctionWonNotification(context: DepositNotificationContext): Promise<void> {
@@ -157,6 +170,7 @@ export class DepositNotificationService {
     const asset = assetName || auction?.assetName || 'auction';
     const formattedAmount = amount.toLocaleString();
     const hours = deadline ? Math.round((deadline.getTime() - Date.now()) / (1000 * 60 * 60)) : 48;
+    const brandName = await this.getBrandName();
 
     // Send multi-channel notifications
     Promise.all([
@@ -181,7 +195,7 @@ export class DepositNotificationService {
       // SMS notification
       smsService.sendSMS({
         to: user.phone,
-        message: `NEM Salvage: Congratulations! You won ${asset} for ₦${formattedAmount}. Sign documents within ${hours} hours.`,
+        message: `${brandName}: Congratulations! You won ${asset} for ₦${formattedAmount}. Sign documents within ${hours} hours.`,
         userId: user.id,
         category: 'auction_won',
       }),
@@ -193,7 +207,7 @@ export class DepositNotificationService {
   /**
    * Send document deadline reminder
    * Sent 6 hours before deadline expires
-   * 
+   *
    * @param context - Notification context
    */
   async sendDocumentDeadlineReminder(context: DepositNotificationContext): Promise<void> {
@@ -205,6 +219,7 @@ export class DepositNotificationService {
 
     const asset = assetName || auction?.assetName || 'auction';
     const hours = deadline ? Math.round((deadline.getTime() - Date.now()) / (1000 * 60 * 60)) : 6;
+    const brandName = await this.getBrandName();
 
     // Send multi-channel notifications
     Promise.all([
@@ -225,7 +240,7 @@ export class DepositNotificationService {
       // SMS notification (urgent)
       smsService.sendSMS({
         to: user.phone,
-        message: `NEM Salvage URGENT: Sign documents for ${asset} within ${hours} hours or lose your deposit!`,
+        message: `${brandName} URGENT: Sign documents for ${asset} within ${hours} hours or lose your deposit!`,
         userId: user.id,
         category: 'routine',
       }),
@@ -237,7 +252,7 @@ export class DepositNotificationService {
   /**
    * Send grace extension notification
    * "Extension granted: New deadline is {new_deadline}"
-   * 
+   *
    * @param context - Notification context
    */
   async sendGraceExtensionNotification(context: DepositNotificationContext): Promise<void> {
@@ -249,6 +264,26 @@ export class DepositNotificationService {
 
     const asset = assetName || auction?.assetName || 'auction';
     const newDeadline = deadline?.toLocaleString() || 'TBD';
+    const branding = await getEmailBranding();
+    const graceExtensionEmail = await wrapProfessionalEmail(
+      'Grace Extension Granted',
+      `
+        <p>A grace extension has been granted for <strong>${asset}</strong>.</p>
+        <div style="background-color: #f8fafc; border-left: 4px solid ${branding.primaryColor}; padding: 16px; margin: 20px 0;">
+          <p><strong>New deadline:</strong> ${newDeadline}</p>
+          ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}
+        </div>
+        <p>Please complete the required action before the new deadline to avoid forfeiture.</p>
+        <p style="margin-top: 24px;">
+          <a href="${appPath('/vendor/documents')}"
+             style="background-color: ${branding.primaryColor}; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">
+            View Documents
+          </a>
+        </p>
+        <p style="margin-top: 24px;">Best regards,<br><strong>${brandTeamName(branding)}</strong></p>
+      `,
+      `A grace extension has been granted for ${asset}.`
+    );
 
     // Send multi-channel notifications
     Promise.all([
@@ -270,7 +305,7 @@ export class DepositNotificationService {
       // SMS notification
       smsService.sendSMS({
         to: user.phone,
-        message: `NEM Salvage: Extension granted for ${asset}. New deadline: ${newDeadline}`,
+        message: `${branding.brandName}: Extension granted for ${asset}. New deadline: ${newDeadline}`,
         userId: user.id,
         category: 'grace_period',
       }),
@@ -279,24 +314,7 @@ export class DepositNotificationService {
       emailService.sendEmail({
         to: user.email,
         subject: `Grace Extension Granted - ${asset}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #800020;">Grace Extension Granted</h2>
-            <p>Dear ${user.fullName},</p>
-            <p>A grace extension has been granted for <strong>${asset}</strong>.</p>
-            <div style="background-color: #f8fafc; border-left: 4px solid #800020; padding: 16px; margin: 20px 0;">
-              <p><strong>New deadline:</strong> ${newDeadline}</p>
-              ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}
-            </div>
-            <p>Please complete the required action before the new deadline to avoid forfeiture.</p>
-            <p style="margin-top: 24px;">
-              <a href="${appPath('/vendor/documents')}"
-                 style="background-color: #800020; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                View Documents
-              </a>
-            </p>
-          </div>
-        `,
+        html: graceExtensionEmail,
       }),
     ]).catch(error => {
       console.error('Error sending grace extension notifications:', error);
@@ -306,7 +324,7 @@ export class DepositNotificationService {
   /**
    * Send deposit forfeiture notification
    * "Deposit of ₦{amount} forfeited due to payment failure on {asset_name}"
-   * 
+   *
    * @param context - Notification context
    */
   async sendDepositForfeitureNotification(context: DepositNotificationContext): Promise<void> {
@@ -318,6 +336,17 @@ export class DepositNotificationService {
 
     const asset = assetName || auction?.assetName || 'auction';
     const formattedAmount = amount.toLocaleString();
+    const branding = await getEmailBranding();
+    const forfeitureEmail = await wrapProfessionalEmail(
+      'Deposit Forfeited',
+      `
+        <p>Your deposit of <strong>₦${formattedAmount}</strong> has been forfeited for ${asset}.</p>
+        <p><strong>Reason:</strong> ${reason || 'Payment deadline expired'}</p>
+        <p>Please ensure timely payment in future auctions to avoid forfeiture.</p>
+        <p>Best regards,<br><strong>${brandTeamName(branding)}</strong></p>
+      `,
+      `Your deposit has been forfeited for ${asset}.`
+    );
 
     // Send multi-channel notifications
     Promise.all([
@@ -339,21 +368,14 @@ export class DepositNotificationService {
       // Email notification (detailed explanation)
       emailService.sendEmail({
         to: user.email,
-        subject: 'Deposit Forfeited - NEM Salvage',
-        html: `
-          <h2>Deposit Forfeited</h2>
-          <p>Dear ${vendor.businessName},</p>
-          <p>Your deposit of <strong>₦${formattedAmount}</strong> has been forfeited for ${asset}.</p>
-          <p><strong>Reason:</strong> ${reason || 'Payment deadline expired'}</p>
-          <p>Please ensure timely payment in future auctions to avoid forfeiture.</p>
-          <p>Best regards,<br>NEM Salvage Team</p>
-        `,
+        subject: `Deposit Forfeited - ${branding.brandName}`,
+        html: forfeitureEmail,
       }),
 
       // SMS notification
       smsService.sendSMS({
         to: user.phone,
-        message: `NEM Salvage: Deposit of ₦${formattedAmount} forfeited for ${asset} due to payment failure.`,
+        message: `${branding.brandName}: Deposit of ₦${formattedAmount} forfeited for ${asset} due to payment failure.`,
         userId: user.id,
         category: 'forfeiture',
       }),
@@ -365,7 +387,7 @@ export class DepositNotificationService {
   /**
    * Send payment confirmation notification
    * "Payment confirmed. Pickup code: {code}"
-   * 
+   *
    * @param context - Notification context (amount should be FULL finalBid including deposit)
    */
   async sendPaymentConfirmationNotification(context: DepositNotificationContext): Promise<void> {
@@ -377,6 +399,7 @@ export class DepositNotificationService {
 
     const asset = assetName || auction?.assetName || 'auction';
     const formattedAmount = amount.toLocaleString(); // This is the FULL amount (₦120k)
+    const brandName = await this.getBrandName();
 
     // Send multi-channel notifications - ALL wrapped in try-catch to prevent blocking
     try {
@@ -410,7 +433,7 @@ export class DepositNotificationService {
       if (user.phone) {
         await smsService.sendSMS({
           to: user.phone,
-          message: `NEM Salvage: Payment of ₦${formattedAmount} confirmed for ${asset}. Pickup authorization ready.`,
+          message: `${brandName}: Payment of ₦${formattedAmount} confirmed for ${asset}. Pickup authorization ready.`,
           category: 'routine',
         });
       }
@@ -430,7 +453,7 @@ export class DepositNotificationService {
   /**
    * Get notification data (user, vendor, auction)
    * Cached for performance
-   * 
+   *
    * @param vendorId - Vendor ID
    * @param auctionId - Auction ID
    * @returns Notification data
@@ -438,7 +461,7 @@ export class DepositNotificationService {
   private async getNotificationData(vendorId: string, auctionId: string) {
     try {
       // Try cache first
-      const cacheKey = `notif:data:${vendorId}:${auctionId}`;
+      const cacheKey =`notif:data:${vendorId}:${auctionId}`;
       const cached = await redis.get(cacheKey);
       if (cached) {
         return JSON.parse(cached as string);
@@ -476,7 +499,7 @@ export class DepositNotificationService {
 
   /**
    * Check if notification is duplicate (within 5-minute window)
-   * 
+   *
    * @param type - Notification type
    * @param vendorId - Vendor ID
    * @param auctionId - Auction ID
@@ -490,7 +513,7 @@ export class DepositNotificationService {
 
   /**
    * Mark notification as sent (for deduplication)
-   * 
+   *
    * @param type - Notification type
    * @param vendorId - Vendor ID
    * @param auctionId - Auction ID

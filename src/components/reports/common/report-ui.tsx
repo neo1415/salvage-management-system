@@ -80,7 +80,7 @@ export function ChartFrame({
 }
 
 export const REPORT_CHART_COLORS = [
-  '#800020',
+  'var(--brand-primary)',
   '#0F766E',
   '#2563EB',
   '#D97706',

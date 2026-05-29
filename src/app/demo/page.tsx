@@ -153,12 +153,12 @@ export default function DemoPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Header */}
-      <div className="bg-[#800020] text-white py-8 px-4 shadow-lg">
+      <div className="bg-[var(--brand-primary)] text-white py-8 px-4 shadow-lg">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-[#FFD700] rounded-lg flex items-center justify-center">
-                <FileText className="w-6 h-6 text-[#800020]" />
+              <div className="w-12 h-12 bg-[var(--brand-accent)] rounded-lg flex items-center justify-center">
+                <FileText className="w-6 h-6 text-[var(--brand-primary)]" />
               </div>
               <div>
                 <h1 className="text-3xl font-bold">Salvage Management System</h1>
@@ -249,7 +249,7 @@ export default function DemoPage() {
         {categories.map((category) => (
           <div key={category} className="mb-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <div className="w-1 h-8 bg-[#800020] rounded"></div>
+              <div className="w-1 h-8 bg-[var(--brand-primary)] rounded"></div>
               {category}
             </h2>
             
@@ -260,12 +260,12 @@ export default function DemoPage() {
                   <Link
                     key={link.path}
                     href={link.path}
-                    className="group bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border-2 border-transparent hover:border-[#800020]"
+                    className="group bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border-2 border-transparent hover:border-[var(--brand-primary)]"
                   >
                     <div className="p-6">
                       {/* Icon & Status */}
                       <div className="flex items-start justify-between mb-4">
-                        <div className="w-12 h-12 bg-[#800020]/10 rounded-lg flex items-center justify-center text-[#800020] group-hover:bg-[#800020] group-hover:text-white transition-colors">
+                        <div className="w-12 h-12 bg-[var(--brand-primary-surface)] rounded-lg flex items-center justify-center text-[var(--brand-primary)] group-hover:bg-[var(--brand-primary)] group-hover:text-white transition-colors">
                           {link.icon}
                         </div>
                         <span
@@ -279,7 +279,7 @@ export default function DemoPage() {
                       </div>
 
                       {/* Title */}
-                      <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-[#800020] transition-colors">
+                      <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-[var(--brand-primary)] transition-colors">
                         {link.title}
                       </h3>
 
@@ -289,7 +289,7 @@ export default function DemoPage() {
                       </p>
 
                       {/* Link */}
-                      <div className="flex items-center gap-2 text-[#800020] font-medium text-sm group-hover:gap-3 transition-all">
+                      <div className="flex items-center gap-2 text-[var(--brand-primary)] font-medium text-sm group-hover:gap-3 transition-all">
                         <span>View Page</span>
                         <ExternalLink className="w-4 h-4" />
                       </div>
@@ -301,7 +301,7 @@ export default function DemoPage() {
         ))}
 
         {/* Footer Note */}
-        <div className="mt-12 bg-white rounded-xl shadow-md p-6 border-l-4 border-[#800020]">
+        <div className="mt-12 bg-white rounded-xl shadow-md p-6 border-l-4 border-[var(--brand-primary)]">
           <h3 className="text-lg font-bold text-gray-900 mb-2">📝 Implementation Notes</h3>
           <ul className="text-sm text-gray-600 space-y-2">
             <li>• All pages are mobile-responsive and follow the design system</li>

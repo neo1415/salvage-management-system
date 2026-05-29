@@ -89,6 +89,20 @@ export class BidService {
           throw new Error('Auction not found');
         }
 
+        if (auction.status !== 'active' && auction.status !== 'extended') {
+          return {
+            success: false,
+            error: `Auction is no longer active (status: ${auction.status})`,
+          };
+        }
+
+        if (auction.endTime.getTime() <= Date.now()) {
+          return {
+            success: false,
+            error: 'This auction has ended. Please refresh the page.',
+          };
+        }
+
         // Check timeout
         if (Date.now() - startTime > TIMEOUT_MS) {
           throw new Error('Bid placement timeout - please retry');
@@ -255,7 +269,9 @@ export class BidService {
           })
           .where(eq(auctions.id, params.auctionId));
 
-        // Requirement 4.1-4.2: Unfreeze previous bidder's deposit
+        // Deposit-system auctions keep prior top bidders frozen for fallback until payment is completed.
+        // The closure service releases bidders outside the configured top-N set.
+        /*
         if (previousBidderId && previousBidderId !== params.vendorId) {
           try {
             // Get previous bidder's last bid
@@ -297,6 +313,7 @@ export class BidService {
             // This will be handled manually if needed
           }
         }
+        */
 
         // Requirement 27.5: Release locks after bid processing completes
         const elapsedTime = Date.now() - startTime;

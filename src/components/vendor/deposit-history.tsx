@@ -169,7 +169,7 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
       {/* Wallet Balance Summary */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-[#800020] rounded-full flex items-center justify-center">
+          <div className="w-10 h-10 bg-[var(--brand-primary)] rounded-full flex items-center justify-center">
             <Wallet className="w-5 h-5 text-white" />
           </div>
           <h2 className="text-xl font-bold text-gray-900">Wallet & Deposits</h2>
@@ -219,7 +219,7 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
                 className="flex items-center justify-between p-4 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors group"
               >
                 <div className="flex-1">
-                  <p className="font-semibold text-gray-900 group-hover:text-[#800020] transition-colors">
+                  <p className="font-semibold text-gray-900 group-hover:text-[var(--brand-primary)] transition-colors">
                     {deposit.assetName}
                   </p>
                   <p className="text-sm text-gray-600 mt-1">
@@ -234,7 +234,7 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
                     {new Date(deposit.createdAt).toLocaleDateString()}
                   </p>
                 </div>
-                <ExternalLink className="w-4 h-4 text-gray-400 ml-3 group-hover:text-[#800020] transition-colors" />
+                <ExternalLink className="w-4 h-4 text-gray-400 ml-3 group-hover:text-[var(--brand-primary)] transition-colors" />
               </Link>
             ))}
           </div>
@@ -294,7 +294,7 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
                         {event.auction ? (
                           <Link
                             href={`/vendor/auctions/${event.auctionId}`}
-                            className="text-sm text-[#800020] hover:underline font-medium"
+                            className="text-sm text-[var(--brand-primary)] hover:underline font-medium"
                           >
                             {event.auction.assetName}
                           </Link>
@@ -361,7 +361,7 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
-                    className="px-4 py-2 text-sm font-medium text-white bg-[#800020] rounded-lg hover:bg-[#600018] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="px-4 py-2 text-sm font-medium text-white bg-[var(--brand-primary)] rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Next
                   </button>

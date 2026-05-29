@@ -6,6 +6,8 @@ import { eq } from 'drizzle-orm';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { createAuctionWonNotification } from '@/features/notifications/services/notification.service';
+import { brandLegalName, brandTeamName, getEmailBranding, type EmailBranding } from '@/features/notifications/templates/email-branding';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 /**
  * Admin Manual Notification Sending API
@@ -95,29 +97,13 @@ export async function POST(
     const paymentUrl = `${appUrl}/vendor/payments/${payment.id}`;
     const winningBid = parseFloat(auction.currentBid!);
     const formattedAmount = winningBid.toLocaleString();
+    const branding = await getEmailBranding();
 
-    // Format asset name
-    const assetDetails = salvageCase.assetDetails as Record<string, string>;
-    let assetName = '';
-    switch (salvageCase.assetType) {
-      case 'vehicle':
-        assetName = `${assetDetails.year || ''} ${assetDetails.make || ''} ${assetDetails.model || ''}`.trim() || 'Vehicle';
-        break;
-      case 'property':
-        assetName = `${assetDetails.propertyType || 'Property'}`;
-        break;
-      case 'electronics':
-        assetName = `${assetDetails.brand || ''} ${assetDetails.serialNumber || 'Electronics'}`.trim();
-        break;
-      case 'machinery':
-        assetName = `${assetDetails.brand || ''} ${assetDetails.model || ''} ${assetDetails.machineryType || ''}`.trim();
-        if (!assetName) {
-          assetName = assetDetails.machineryType || 'Machinery';
-        }
-        break;
-      default:
-        assetName = 'Salvage Item';
-    }
+    const assetName = formatAssetName(
+      salvageCase.assetType,
+      salvageCase.assetDetails as Record<string, unknown>,
+      salvageCase.claimReference
+    );
 
     const results = {
       sms: { success: false, error: '' },
@@ -146,14 +132,15 @@ export async function POST(
 
     // Send Email notification
     try {
-      const emailSubject = `🎉 You Won! Pay Within 24 Hours - ${assetName}`;
+      const emailSubject = `You Won: Complete Payment - ${assetName}`;
       const emailHtml = getWinnerNotificationEmailTemplate(
         user.fullName,
         assetName,
         salvageCase,
         winningBid,
         paymentDeadline,
-        paymentUrl
+        paymentUrl,
+        branding
       );
 
       await emailService.sendEmail({
@@ -217,7 +204,8 @@ function getWinnerNotificationEmailTemplate(
   salvageCase: typeof salvageCases.$inferSelect,
   winningBid: number,
   paymentDeadline: Date,
-  paymentUrl: string
+  paymentUrl: string,
+  branding: EmailBranding
 ): string {
   const formattedAmount = winningBid.toLocaleString();
   const deadlineFormatted = paymentDeadline.toLocaleString('en-NG', {
@@ -240,8 +228,7 @@ function getWinnerNotificationEmailTemplate(
       </head>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5;">
         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-          <div style="background: linear-gradient(135deg, #800020 0%, #a00028 100%); color: white; padding: 40px 20px; text-align: center;">
-            <div style="font-size: 64px; margin-bottom: 10px;">🏆</div>
+          <div style="background: ${branding.primaryColor}; color: white; padding: 40px 20px; text-align: center;">
             <h1 style="margin: 0 0 10px 0; font-size: 32px; font-weight: 700;">Congratulations!</h1>
             <p style="font-size: 18px; margin: 0;">You Won the Auction</p>
           </div>
@@ -251,28 +238,27 @@ function getWinnerNotificationEmailTemplate(
             
             <p>Great news! You are the winning bidder for the following salvage item:</p>
             
-            <div style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #800020; border-radius: 12px; padding: 25px; margin: 25px 0; text-align: center;">
+            <div style="background: ${branding.accentColor}; color: ${branding.primaryColor}; border-radius: 12px; padding: 25px; margin: 25px 0; text-align: center;">
               <h2 style="margin: 0 0 10px 0; font-size: 18px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Your Winning Bid</h2>
               <div style="font-size: 42px; font-weight: 800; margin: 10px 0;">₦${formattedAmount}</div>
               <p style="margin: 5px 0 0 0; font-weight: 600;">${escapeHtml(assetName)}</p>
             </div>
             
             <div style="background-color: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; padding: 20px; margin: 25px 0; text-align: center;">
-              <h3 style="margin: 0 0 10px 0; color: #856404; font-size: 20px;">⏰ Payment Deadline</h3>
+              <h3 style="margin: 0 0 10px 0; color: #856404; font-size: 20px;">Payment Deadline</h3>
               <p style="margin: 5px 0;">You must complete payment by:</p>
               <div style="font-size: 24px; font-weight: 700; color: #d32f2f; margin: 10px 0;">${deadlineFormatted}</div>
             </div>
             
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${paymentUrl}" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #800020; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 18px;">Pay Now with Paystack</a>
+              <a href="${paymentUrl}" style="display: inline-block; padding: 16px 32px; background: ${branding.accentColor}; color: ${branding.primaryColor}; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 18px;">Complete Payment</a>
             </div>
             
-            <p style="margin-top: 30px;">Best regards,<br><strong>NEM Insurance Team</strong></p>
+            <p style="margin-top: 30px;">Best regards,<br><strong>${brandTeamName(branding)}</strong></p>
           </div>
           
           <div style="text-align: center; padding: 20px; font-size: 12px; color: #666; background-color: #f5f5f5; border-top: 1px solid #e0e0e0;">
-            <p><strong>NEM Insurance Plc</strong></p>
-            <p>199 Ikorodu Road, Obanikoro, Lagos, Nigeria</p>
+            <p><strong>${brandLegalName(branding)}</strong></p>
           </div>
         </div>
       </body>
