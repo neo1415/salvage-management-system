@@ -115,6 +115,53 @@ function recoveryCommandCopy(copy: BrandingPolicy['homepageCopy']) {
     trustLine: isGenericRecoveryCommandCopy(copy.trustLine)
       ? 'Verified salvage auctions, secure deposits, signed documents, and clear pickup steps.'
       : copy.trustLine,
+    workflowTitle: isGenericRecoveryCommandCopy(copy.workflowTitle) ? 'How buying works' : copy.workflowTitle,
+    workflowSubtitle: isGenericRecoveryCommandCopy(copy.workflowSubtitle)
+      ? 'A clear path from account setup to pickup release.'
+      : copy.workflowSubtitle,
+    workflowSteps: [
+      [
+        copy.workflowStepOneTitle && !isGenericRecoveryCommandCopy(copy.workflowStepOneTitle) ? copy.workflowStepOneTitle : 'Verify access',
+        copy.workflowStepOneBody && !isGenericRecoveryCommandCopy(copy.workflowStepOneBody) ? copy.workflowStepOneBody : 'Create your vendor profile and complete the checks required for auction access.',
+      ],
+      [
+        copy.workflowStepTwoTitle && !isGenericRecoveryCommandCopy(copy.workflowStepTwoTitle) ? copy.workflowStepTwoTitle : 'Review lots',
+        copy.workflowStepTwoBody && !isGenericRecoveryCommandCopy(copy.workflowStepTwoBody) ? copy.workflowStepTwoBody : 'Inspect photos, condition notes, reserve cues, and document requirements before bidding.',
+      ],
+      [
+        copy.workflowStepThreeTitle && !isGenericRecoveryCommandCopy(copy.workflowStepThreeTitle) ? copy.workflowStepThreeTitle : 'Bid securely',
+        copy.workflowStepThreeBody && !isGenericRecoveryCommandCopy(copy.workflowStepThreeBody) ? copy.workflowStepThreeBody : 'Place bids with clear increments, deposit rules, and verified bidder controls.',
+      ],
+      [
+        copy.workflowStepFourTitle && !isGenericRecoveryCommandCopy(copy.workflowStepFourTitle) ? copy.workflowStepFourTitle : 'Pay and pickup',
+        copy.workflowStepFourBody && !isGenericRecoveryCommandCopy(copy.workflowStepFourBody) ? copy.workflowStepFourBody : 'Sign documents, complete payment, and follow the pickup release steps.',
+      ],
+    ] as Array<[string, string]>,
+    controlsLabel: isGenericRecoveryCommandCopy(copy.operationsSectionEyebrow) ? 'Buyer controls' : copy.operationsSectionEyebrow,
+    controlsTitle: isGenericRecoveryCommandCopy(copy.operationsSectionTitle)
+      ? 'Bid with the important steps already visible.'
+      : copy.operationsSectionTitle,
+    controlsText: isGenericRecoveryCommandCopy(copy.operationsSectionSubtitle)
+      ? 'The public page should make vendors feel oriented before they enter the auction: what is verified, what is required, and what happens after a winning bid.'
+      : copy.operationsSectionSubtitle,
+    controlsCards: [
+      [
+        copy.operationsCardOneTitle && !isGenericRecoveryCommandCopy(copy.operationsCardOneTitle) ? copy.operationsCardOneTitle : 'Review the lot',
+        copy.operationsCardOneBody && !isGenericRecoveryCommandCopy(copy.operationsCardOneBody) ? copy.operationsCardOneBody : 'Review visual evidence and condition notes before you commit to a bid.',
+      ],
+      [
+        copy.operationsCardTwoTitle && !isGenericRecoveryCommandCopy(copy.operationsCardTwoTitle) ? copy.operationsCardTwoTitle : 'Track next steps',
+        copy.operationsCardTwoBody && !isGenericRecoveryCommandCopy(copy.operationsCardTwoBody) ? copy.operationsCardTwoBody : 'After winning, documents, payment, and pickup status stay visible in one place.',
+      ],
+    ] as Array<[string, string]>,
+    buyerTitle: isGenericRecoveryCommandCopy(copy.proofSectionTitle) ? 'A clearer way to buy salvage assets.' : copy.proofSectionTitle,
+    buyerText: isGenericRecoveryCommandCopy(copy.proofSectionSubtitle)
+      ? 'Verified vendors can review salvage lots, bid securely, complete documents, pay the balance, and prepare for pickup.'
+      : copy.proofSectionSubtitle,
+    contactHeadline: isGenericRecoveryCommandCopy(copy.contactHeadline) ? 'Need help before you bid?' : copy.contactHeadline,
+    contactSubtitle: isGenericRecoveryCommandCopy(copy.contactSubtitle)
+      ? 'Ask about vendor verification, lot access, deposits, documents, payment, or pickup requirements before joining an auction.'
+      : copy.contactSubtitle,
   };
 }
 
@@ -445,10 +492,10 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
         </div>
       </section>
 
-      <RecoveryWorkflowRail branding={branding} dark={dark} />
-      <RecoveryControlsShowcase branding={branding} dark={dark} />
-      <RecoveryWhySection branding={branding} dark={dark} />
-      <RecoveryCommandContact branding={branding} dark={dark} />
+      <RecoveryWorkflowRail branding={branding} dark={dark} copy={copy} />
+      <RecoveryControlsShowcase branding={branding} dark={dark} copy={copy} />
+      <RecoveryWhySection branding={branding} dark={dark} copy={copy} />
+      <RecoveryCommandContact branding={branding} dark={dark} copy={copy} />
       <RecoveryCommandFooter branding={branding} dark={dark} accentText={accentText} />
     </main>
   );
@@ -603,7 +650,9 @@ function CommandCenterMockup({ branding, dark }: { branding: BrandingPolicy; dar
   );
 }
 
-function RecoveryWorkflowRail({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+type RecoveryCommandResolvedCopy = ReturnType<typeof recoveryCommandCopy>;
+
+function RecoveryWorkflowRail({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: RecoveryCommandResolvedCopy }) {
   const muted = dark ? 'text-white/58' : 'text-slate-600';
   const panel = dark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white';
   const displayInk = getDisplayInkColor(branding, dark);
@@ -615,17 +664,17 @@ function RecoveryWorkflowRail({ branding, dark }: { branding: BrandingPolicy; da
           <div>
             <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Workflow</p>
             <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
-              From verified access to pickup release.
+              {copy.workflowTitle}
             </h2>
           </div>
           <p className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
-            Know what to do next at every stage: verify your account, review the lot, place a secured bid, sign the required documents, complete payment, and collect the asset.
+            {copy.workflowSubtitle}
           </p>
         </div>
 
         <div className="mt-12 overflow-hidden rounded-[1.7rem] border border-current/10">
           <div className="grid md:grid-cols-7">
-            {recoveryCommandStages.map((stage, index) => (
+            {[...copy.workflowSteps.map(([title]) => title), ...recoveryCommandStages.slice(4)].map((stage, index) => (
               <motion.div
                 key={stage}
                 className={`relative min-h-44 border-b border-r border-current/10 p-5 last:border-r-0 md:border-b-0 ${panel}`}
@@ -648,7 +697,7 @@ function RecoveryWorkflowRail({ branding, dark }: { branding: BrandingPolicy; da
   );
 }
 
-function RecoveryControlsShowcase({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+function RecoveryControlsShowcase({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: RecoveryCommandResolvedCopy }) {
   const muted = dark ? 'text-white/58' : 'text-slate-600';
   const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
   const displayInk = getDisplayInkColor(branding, dark);
@@ -662,14 +711,14 @@ function RecoveryControlsShowcase({ branding, dark }: { branding: BrandingPolicy
   ] as const;
   const mediaCards = [
     {
-      title: 'Damage review',
-      body: 'Review visual evidence and condition notes before you commit to a bid.',
+      title: copy.controlsCards[0]?.[0] || 'Damage review',
+      body: copy.controlsCards[0]?.[1] || 'Review visual evidence and condition notes before you commit to a bid.',
       image: recoveryCommandAssets.damageReview,
       icon: Search,
     },
     {
-      title: 'Pickup path',
-      body: 'After winning, documents, payment, and pickup status stay visible in one place.',
+      title: copy.controlsCards[1]?.[0] || 'Pickup path',
+      body: copy.controlsCards[1]?.[1] || 'After winning, documents, payment, and pickup status stay visible in one place.',
       image: recoveryCommandAssets.pickupReady,
       icon: FileCheck2,
     },
@@ -680,13 +729,13 @@ function RecoveryControlsShowcase({ branding, dark }: { branding: BrandingPolicy
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-6 lg:grid-cols-[0.86fr_1.14fr] lg:items-end">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Buyer controls</p>
+            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>{copy.controlsLabel}</p>
             <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
-              Bid with the important steps already visible.
+              {copy.controlsTitle}
             </h2>
           </div>
           <p className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
-            The public page should make vendors feel oriented before they enter the auction: what is verified, what is required, and what happens after a winning bid.
+            {copy.controlsText}
           </p>
         </div>
 
@@ -777,7 +826,7 @@ function RecoveryControlsShowcase({ branding, dark }: { branding: BrandingPolicy
   );
 }
 
-function RecoveryWhySection({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+function RecoveryWhySection({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: RecoveryCommandResolvedCopy }) {
   const muted = dark ? 'text-white/58' : 'text-slate-600';
   const panel = dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white';
   const displayInk = getDisplayInkColor(branding, dark);
@@ -798,10 +847,10 @@ function RecoveryWhySection({ branding, dark }: { branding: BrandingPolicy; dark
         <div>
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>For buyers</p>
           <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
-            A clearer way to buy salvage assets.
+            {copy.buyerTitle}
           </h2>
           <p className={`mt-5 max-w-2xl text-base leading-8 ${muted}`}>
-            {branding.brandName} gives verified vendors a structured place to review salvage lots, bid securely, complete documents, pay the balance, and prepare for pickup.
+            {copy.buyerText}
           </p>
           <div className="mt-8 grid gap-3">
             {points.map((point) => (
@@ -817,7 +866,7 @@ function RecoveryWhySection({ branding, dark }: { branding: BrandingPolicy; dark
   );
 }
 
-function RecoveryCommandContact({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+function RecoveryCommandContact({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: RecoveryCommandResolvedCopy }) {
   const [formData, setFormData] = useState({ name: '', email: '', company: '', message: '' });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const accentText = getReadableTextColor(branding.accentColor);
@@ -856,10 +905,10 @@ function RecoveryCommandContact({ branding, dark }: { branding: BrandingPolicy; 
         <div className={`rounded-[2rem] border p-7 ${panel}`}>
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Contact</p>
           <h2 className="mt-4 text-3xl font-black leading-tight md:text-4xl" style={{ color: displayInk }}>
-            Need help before you bid?
+            {copy.contactHeadline}
           </h2>
           <p className={`mt-5 text-base leading-8 ${muted}`}>
-            Ask about vendor verification, lot access, deposits, documents, payment, or pickup requirements before joining an auction.
+            {copy.contactSubtitle}
           </p>
           <div className="mt-8 space-y-4 text-sm">
             <p><span className={muted}>Support:</span> <span className="font-bold">{branding.supportEmail}</span></p>

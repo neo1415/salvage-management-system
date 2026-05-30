@@ -227,6 +227,430 @@ function SelectInput(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   );
 }
 
+type HomepageCopyKey = keyof BusinessPolicy['branding']['homepageCopy'];
+
+type ContentFieldConfig = {
+  key: HomepageCopyKey;
+  label: string;
+  type?: 'text' | 'textarea';
+  hint?: string;
+};
+
+type ContentPanelConfig = {
+  id: string;
+  label: string;
+  summary: string;
+  fields: ContentFieldConfig[];
+};
+
+const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = {
+  eyebrow: 'Verified salvage auction access',
+  heroTitle: 'Bid on verified salvage assets with confidence.',
+  heroSubtitle: 'Browse auction-ready salvage, complete verification, place secured bids, sign documents, and arrange pickup through one trusted recovery marketplace.',
+  primaryCtaLabel: 'Register to bid',
+  secondaryCtaLabel: 'View workflow',
+  trustLine: 'Verified salvage auctions, secure deposits, signed documents, and clear pickup steps.',
+  workflowTitle: 'How buying works',
+  workflowSubtitle: 'A clear path from account setup to pickup release.',
+  workflowStepOneTitle: 'Verify access',
+  workflowStepOneBody: 'Create your vendor profile and complete the checks required for auction access.',
+  workflowStepTwoTitle: 'Review lots',
+  workflowStepTwoBody: 'Inspect photos, condition notes, reserve cues, and document requirements before bidding.',
+  workflowStepThreeTitle: 'Bid securely',
+  workflowStepThreeBody: 'Place bids with clear increments, deposit rules, and verified bidder controls.',
+  workflowStepFourTitle: 'Pay and pickup',
+  workflowStepFourBody: 'Sign documents, complete payment, and follow the pickup release steps.',
+  operationsSectionEyebrow: 'Buyer controls',
+  operationsSectionTitle: 'Bid with the important steps already visible.',
+  operationsSectionSubtitle: 'The public page should make vendors feel oriented before they enter the auction: what is verified, what is required, and what happens after a winning bid.',
+  operationsCardOneTitle: 'Review the lot',
+  operationsCardOneBody: 'Review visual evidence and condition notes before you commit to a bid.',
+  operationsCardTwoTitle: 'Track next steps',
+  operationsCardTwoBody: 'After winning, documents, payment, and pickup status stay visible in one place.',
+  proofSectionTitle: 'A clearer way to buy salvage assets.',
+  proofSectionSubtitle: 'Verified vendors can review salvage lots, bid securely, complete documents, pay the balance, and prepare for pickup.',
+  contactHeadline: 'Need help before you bid?',
+  contactSubtitle: 'Ask about vendor verification, lot access, deposits, documents, payment, or pickup requirements before joining an auction.',
+  authHeadline: 'Access verified salvage auctions.',
+  authSubtitle: 'Sign in to review lots, manage bids, complete documents, track payment, and prepare for pickup.',
+};
+
+function isGenericRecoveryCopy(value: string | undefined) {
+  const text = (value || '').toLowerCase();
+  return !text
+    || text.includes('total losses become recovered capital')
+    || text.includes('salvage auction platform for insurers')
+    || text.includes('insurance recovery')
+    || text.includes('claim intake')
+    || text.includes('request demo')
+    || text.includes('start recovery')
+    || text.includes('recover value without losing control');
+}
+
+function resolveRecoveryCommandEditorValue(copy: BusinessPolicy['branding']['homepageCopy'], key: HomepageCopyKey) {
+  const value = copy[key];
+  const stringValue = typeof value === 'string' ? value : '';
+  const fallback = RECOVERY_COMMAND_DEFAULT_COPY[key];
+  if (fallback && isGenericRecoveryCopy(stringValue)) return fallback;
+  return stringValue;
+}
+
+const RECOVERY_COMMAND_CONTENT_PANELS: ContentPanelConfig[] = [
+  {
+    id: 'hero',
+    label: 'Hero',
+    summary: 'Top of the homepage: promise, intro, and action buttons.',
+    fields: [
+      { key: 'eyebrow', label: 'Small label' },
+      { key: 'heroTitle', label: 'Headline', hint: 'Keep this short and buyer-facing.' },
+      { key: 'heroSubtitle', label: 'Intro text', type: 'textarea' },
+      { key: 'primaryCtaLabel', label: 'Main button' },
+      { key: 'secondaryCtaLabel', label: 'Secondary button' },
+      { key: 'trustLine', label: 'Footer trust line', type: 'textarea' },
+    ],
+  },
+  {
+    id: 'workflow',
+    label: 'Workflow',
+    summary: 'The buying path from verification to pickup release.',
+    fields: [
+      { key: 'workflowTitle', label: 'Section headline' },
+      { key: 'workflowSubtitle', label: 'Section intro', type: 'textarea' },
+      { key: 'workflowStepOneTitle', label: 'Step 1 title' },
+      { key: 'workflowStepOneBody', label: 'Step 1 description', type: 'textarea' },
+      { key: 'workflowStepTwoTitle', label: 'Step 2 title' },
+      { key: 'workflowStepTwoBody', label: 'Step 2 description', type: 'textarea' },
+      { key: 'workflowStepThreeTitle', label: 'Step 3 title' },
+      { key: 'workflowStepThreeBody', label: 'Step 3 description', type: 'textarea' },
+      { key: 'workflowStepFourTitle', label: 'Step 4 title' },
+      { key: 'workflowStepFourBody', label: 'Step 4 description', type: 'textarea' },
+    ],
+  },
+  {
+    id: 'controls',
+    label: 'Buyer Controls',
+    summary: 'The visual control-room section shown below the workflow.',
+    fields: [
+      { key: 'operationsSectionEyebrow', label: 'Small label' },
+      { key: 'operationsSectionTitle', label: 'Section headline' },
+      { key: 'operationsSectionSubtitle', label: 'Section intro', type: 'textarea' },
+      { key: 'operationsCardOneTitle', label: 'Image card 1 title' },
+      { key: 'operationsCardOneBody', label: 'Image card 1 description', type: 'textarea' },
+      { key: 'operationsCardTwoTitle', label: 'Image card 2 title' },
+      { key: 'operationsCardTwoBody', label: 'Image card 2 description', type: 'textarea' },
+    ],
+  },
+  {
+    id: 'buyers',
+    label: 'For Buyers',
+    summary: 'The reassurance section for vendors and bidders.',
+    fields: [
+      { key: 'proofSectionTitle', label: 'Section headline' },
+      { key: 'proofSectionSubtitle', label: 'Section intro', type: 'textarea' },
+    ],
+  },
+  {
+    id: 'contact',
+    label: 'Contact',
+    summary: 'Vendor help copy and sign-in page copy.',
+    fields: [
+      { key: 'contactHeadline', label: 'Contact headline' },
+      { key: 'contactSubtitle', label: 'Contact text', type: 'textarea' },
+      { key: 'authHeadline', label: 'Sign-in headline' },
+      { key: 'authSubtitle', label: 'Sign-in subtitle', type: 'textarea' },
+    ],
+  },
+];
+
+function TemplateContentStep({
+  policy,
+  selectedCopyMap,
+  updateHomepageCopy,
+  updatePolicy,
+}: {
+  policy: BusinessPolicy;
+  selectedCopyMap: Array<{ label: string; fields: string; appears: string }>;
+  updateHomepageCopy: (key: HomepageCopyKey, value: string) => void;
+  updatePolicy: (updater: (draft: BusinessPolicy) => void) => void;
+}) {
+  if (policy.branding.homepageTemplate === 'recovery_command') {
+    return (
+      <RecoveryCommandContentEditor
+        policy={policy}
+        updateHomepageCopy={updateHomepageCopy}
+        updatePolicy={updatePolicy}
+      />
+    );
+  }
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="space-y-5">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--brand-primary)]">Page copy</p>
+          <h3 className="mt-2 text-2xl font-black text-gray-950">Write the homepage in sections</h3>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
+            Keep the main promise short, then use support text, trust lines, and stats to explain the public experience.
+          </p>
+        </div>
+        <section className="rounded-2xl border border-[var(--brand-primary-border)] bg-[var(--brand-primary-surface)] p-4">
+          <h4 className="text-sm font-black uppercase tracking-[0.16em] text-[var(--brand-primary)]">Where this copy appears</h4>
+          <div className="mt-4 grid gap-3">
+            {selectedCopyMap.map((item) => (
+              <div key={item.label} className="rounded-2xl bg-white/80 p-4 shadow-sm">
+                <p className="text-sm font-black text-gray-950">{item.label}</p>
+                <p className="mt-1 text-xs leading-5 text-gray-600">{item.appears}</p>
+                <p className="mt-2 text-xs font-semibold text-[var(--brand-primary)]">{item.fields}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+        <ContentPanel
+          title="Hero section"
+          fields={[
+            { key: 'eyebrow', label: 'Small label above headline' },
+            { key: 'heroTitle', label: 'Hero title', hint: 'Best at 6 to 12 words.' },
+            { key: 'heroSubtitle', label: 'Hero subtitle', type: 'textarea' },
+            { key: 'supportingText', label: 'Supporting line', type: 'textarea' },
+            { key: 'primaryCtaLabel', label: 'Main button' },
+            { key: 'secondaryCtaLabel', label: 'Secondary button' },
+            { key: 'trustLine', label: 'Footer trust line', type: 'textarea' },
+            { key: 'contactHeadline', label: 'Contact headline' },
+            { key: 'contactSubtitle', label: 'Contact subtitle', type: 'textarea' },
+          ]}
+          copy={policy.branding.homepageCopy}
+          updateHomepageCopy={updateHomepageCopy}
+        />
+      </div>
+      <GenericContentPreview policy={policy} />
+    </div>
+  );
+}
+
+function ContentPanel({
+  title,
+  fields,
+  copy,
+  updateHomepageCopy,
+  resolveValue,
+}: {
+  title: string;
+  fields: ContentFieldConfig[];
+  copy: BusinessPolicy['branding']['homepageCopy'];
+  updateHomepageCopy: (key: HomepageCopyKey, value: string) => void;
+  resolveValue?: (key: HomepageCopyKey) => string;
+}) {
+  return (
+    <section className="rounded-[1.5rem] border border-gray-200 bg-white p-4 shadow-sm">
+      <h4 className="text-sm font-black uppercase tracking-[0.16em] text-gray-500">{title}</h4>
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        {fields.map((field) => {
+          const value = resolveValue ? resolveValue(field.key) : String(copy[field.key] ?? '');
+          return (
+            <label key={field.key} className={field.type === 'textarea' ? 'md:col-span-2' : ''}>
+              <span className="text-sm font-bold text-gray-950">{field.label}</span>
+              {field.hint ? <span className="mt-1 block text-xs leading-5 text-gray-500">{field.hint}</span> : null}
+              {field.type === 'textarea' ? (
+                <textarea
+                  value={value}
+                  onChange={(event) => updateHomepageCopy(field.key, event.target.value)}
+                  className="mt-2 min-h-32 w-full resize-y rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-900 shadow-inner outline-none transition focus:border-[var(--brand-primary)] focus:bg-white focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                />
+              ) : (
+                <input
+                  value={value}
+                  onChange={(event) => updateHomepageCopy(field.key, event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 shadow-inner outline-none transition focus:border-[var(--brand-primary)] focus:bg-white focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                />
+              )}
+            </label>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function RecoveryCommandContentEditor({
+  policy,
+  updateHomepageCopy,
+  updatePolicy,
+}: {
+  policy: BusinessPolicy;
+  updateHomepageCopy: (key: HomepageCopyKey, value: string) => void;
+  updatePolicy: (updater: (draft: BusinessPolicy) => void) => void;
+}) {
+  const [activePanel, setActivePanel] = useState(RECOVERY_COMMAND_CONTENT_PANELS[0].id);
+  const activeConfig = RECOVERY_COMMAND_CONTENT_PANELS.find((panel) => panel.id === activePanel) ?? RECOVERY_COMMAND_CONTENT_PANELS[0];
+  const resolved = (key: HomepageCopyKey) => resolveRecoveryCommandEditorValue(policy.branding.homepageCopy, key);
+  const accentText = getReadableTextColor(policy.branding.accentColor);
+
+  const applyDefaults = () => {
+    updatePolicy((draft) => {
+      Object.entries(RECOVERY_COMMAND_DEFAULT_COPY).forEach(([key, value]) => {
+        draft.branding.homepageCopy[key as HomepageCopyKey] = value ?? '';
+      });
+    });
+  };
+
+  return (
+    <div className="grid gap-6 2xl:grid-cols-[minmax(0,0.98fr)_minmax(460px,0.72fr)]">
+      <div className="space-y-5">
+        <div className="rounded-[1.75rem] border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--brand-primary)]">Recovery Command Copy</p>
+              <h3 className="mt-2 text-3xl font-black text-gray-950">Edit the vendor-facing auction page</h3>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
+                These fields map only to this selected template: buyer hero, bid workflow, buyer controls, vendor reassurance, and contact help.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={applyDefaults}
+              className="w-fit rounded-2xl px-4 py-3 text-sm font-black shadow-sm"
+              style={{ backgroundColor: policy.branding.accentColor, color: accentText }}
+            >
+              Use template copy
+            </button>
+          </div>
+          <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
+            {RECOVERY_COMMAND_CONTENT_PANELS.map((panel) => (
+              <button
+                key={panel.id}
+                type="button"
+                onClick={() => setActivePanel(panel.id)}
+                className={`shrink-0 rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                  activePanel === panel.id
+                    ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)] text-gray-950'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-[var(--brand-primary-border)]'
+                }`}
+              >
+                <span className="block font-black">{panel.label}</span>
+                <span className="mt-1 block max-w-44 text-xs leading-4 text-gray-500">{panel.summary}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <ContentPanel
+          title={activeConfig.label}
+          fields={activeConfig.fields}
+          copy={policy.branding.homepageCopy}
+          updateHomepageCopy={updateHomepageCopy}
+          resolveValue={resolved}
+        />
+      </div>
+
+      <RecoveryCommandLivePreview policy={policy} setActivePanel={setActivePanel} resolved={resolved} />
+    </div>
+  );
+}
+
+function RecoveryCommandLivePreview({
+  policy,
+  setActivePanel,
+  resolved,
+}: {
+  policy: BusinessPolicy;
+  setActivePanel: (panel: string) => void;
+  resolved: (key: HomepageCopyKey) => string;
+}) {
+  const primaryText = getReadableTextColor(policy.branding.primaryColor);
+  const accentText = getReadableTextColor(policy.branding.accentColor);
+
+  return (
+    <aside className="2xl:sticky 2xl:top-24 2xl:self-start">
+      <div className="overflow-hidden rounded-[2rem] border border-gray-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-red-400" />
+            <span className="h-3 w-3 rounded-full bg-amber-300" />
+            <span className="h-3 w-3 rounded-full bg-green-400" />
+          </div>
+          <span className="text-xs font-semibold text-gray-500">Live template preview</span>
+        </div>
+        <div className="max-h-[76vh] overflow-y-auto bg-[#F5F7FA] p-4">
+          <button type="button" onClick={() => setActivePanel('hero')} className="block w-full rounded-[1.6rem] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-[var(--brand-primary-border)]">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: policy.branding.accentColor }}>{resolved('eyebrow')}</p>
+            <h4 className="mt-4 text-3xl font-black leading-tight text-gray-950">{resolved('heroTitle')}</h4>
+            <p className="mt-3 text-sm leading-6 text-gray-600">{resolved('heroSubtitle')}</p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className="rounded-xl px-4 py-2 text-sm font-black" style={{ backgroundColor: policy.branding.primaryColor, color: primaryText }}>{resolved('primaryCtaLabel')}</span>
+              <span className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-black text-gray-900">{resolved('secondaryCtaLabel')}</span>
+            </div>
+          </button>
+
+          <button type="button" onClick={() => setActivePanel('workflow')} className="mt-3 block w-full rounded-[1.6rem] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-[var(--brand-primary-border)]">
+            <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: policy.branding.accentColor }}>Workflow</p>
+            <h4 className="mt-2 text-xl font-black text-gray-950">{resolved('workflowTitle')}</h4>
+            <p className="mt-2 text-sm leading-6 text-gray-600">{resolved('workflowSubtitle')}</p>
+            <div className="mt-4 grid gap-2">
+              {[
+                ['workflowStepOneTitle', 'workflowStepOneBody'],
+                ['workflowStepTwoTitle', 'workflowStepTwoBody'],
+                ['workflowStepThreeTitle', 'workflowStepThreeBody'],
+                ['workflowStepFourTitle', 'workflowStepFourBody'],
+              ].map(([titleKey, bodyKey], index) => (
+                <div key={titleKey} className="rounded-xl bg-gray-50 p-3">
+                  <p className="text-xs font-mono text-gray-500">{String(index + 1).padStart(2, '0')}</p>
+                  <p className="mt-1 text-sm font-black text-gray-950">{resolved(titleKey as HomepageCopyKey)}</p>
+                  <p className="mt-1 text-xs leading-5 text-gray-500">{resolved(bodyKey as HomepageCopyKey)}</p>
+                </div>
+              ))}
+            </div>
+          </button>
+
+          <button type="button" onClick={() => setActivePanel('controls')} className="mt-3 block w-full overflow-hidden rounded-[1.6rem] border border-gray-200 bg-gray-950 text-left text-white shadow-sm transition hover:border-[var(--brand-primary-border)]">
+            <div className="h-40 bg-cover bg-center" style={{ backgroundImage: 'url(/assets/recovery-command/field-inspection.png)' }} />
+            <div className="p-4">
+              <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: policy.branding.accentColor }}>{resolved('operationsSectionEyebrow')}</p>
+              <h4 className="mt-2 text-xl font-black">{resolved('operationsSectionTitle')}</h4>
+              <p className="mt-2 text-sm leading-6 text-white/65">{resolved('operationsSectionSubtitle')}</p>
+            </div>
+          </button>
+
+          <button type="button" onClick={() => setActivePanel('buyers')} className="mt-3 block w-full rounded-[1.6rem] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-[var(--brand-primary-border)]">
+            <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: policy.branding.accentColor }}>For buyers</p>
+            <h4 className="mt-2 text-xl font-black text-gray-950">{resolved('proofSectionTitle')}</h4>
+            <p className="mt-2 text-sm leading-6 text-gray-600">{resolved('proofSectionSubtitle')}</p>
+          </button>
+
+          <button type="button" onClick={() => setActivePanel('contact')} className="mt-3 block w-full rounded-[1.6rem] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-[var(--brand-primary-border)]">
+            <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: policy.branding.accentColor }}>Contact</p>
+            <h4 className="mt-2 text-xl font-black text-gray-950">{resolved('contactHeadline')}</h4>
+            <p className="mt-2 text-sm leading-6 text-gray-600">{resolved('contactSubtitle')}</p>
+            <span className="mt-4 inline-flex rounded-xl px-4 py-2 text-sm font-black" style={{ backgroundColor: policy.branding.accentColor, color: accentText }}>Contact team</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function GenericContentPreview({ policy }: { policy: BusinessPolicy }) {
+  return (
+    <aside className="xl:sticky xl:top-24 xl:self-start">
+      <div className="overflow-hidden rounded-3xl border border-gray-200 bg-gray-950 text-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <span className="text-xs font-semibold text-white/50">Live content preview</span>
+        </div>
+        <div className="p-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.24em]" style={{ color: policy.branding.accentColor }}>
+            {policy.branding.homepageCopy.eyebrow || 'Homepage label'}
+          </p>
+          <h4 className="mt-4 text-3xl font-black leading-none">
+            {policy.branding.homepageCopy.heroTitle || 'Homepage headline'}
+          </h4>
+          <p className="mt-4 text-sm leading-6 text-white/65">
+            {policy.branding.homepageCopy.heroSubtitle || 'Short introduction shown on the homepage.'}
+          </p>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function Toggle({
   checked,
   onChange,
@@ -1125,6 +1549,13 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
         </div>
 
         <div className={`rounded-3xl border border-gray-200 bg-white p-5 shadow-sm xl:col-span-2 ${visibleStepClass('content')}`}>
+          <TemplateContentStep
+            policy={policy}
+            selectedCopyMap={selectedCopyMap}
+            updateHomepageCopy={updateHomepageCopy}
+            updatePolicy={updatePolicy}
+          />
+          {false ? (
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
             <div className="space-y-5">
               <div>
@@ -1422,6 +1853,7 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
               </div>
             </aside>
           </div>
+          ) : null}
         </div>
 
         <div className={`space-y-4 rounded-lg border border-gray-200 p-4 ${visibleStepClass('onboarding')}`}>
