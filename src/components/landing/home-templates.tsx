@@ -83,11 +83,11 @@ const recoveryCommandAssets = {
 };
 
 const auctionPulseAssets = {
-  yard: '/assets/recovery-command/hero-yard.png',
-  damage: '/assets/recovery-command/damage-review.png',
-  inspection: '/assets/recovery-command/field-inspection.png',
-  pickup: '/assets/recovery-command/pickup-ready.png',
-  support: '/assets/recovery-command/operations-room.png',
+  mobileAuction: '/assets/auction-pulse/mobile-auction.png',
+  vendorInspection: '/assets/auction-pulse/vendor-inspection.png',
+  auctionYard: '/assets/auction-pulse/auction-yard.png',
+  walletReady: '/assets/auction-pulse/wallet-ready.png',
+  supportAgent: '/assets/auction-pulse/support-agent.png',
 };
 
 const auctionPulseLots = [
@@ -99,7 +99,7 @@ const auctionPulseLots = [
     time: '2h 15m',
     status: 'Reserve met',
     eligibility: 'Wallet eligible',
-    image: auctionPulseAssets.damage,
+    image: auctionPulseAssets.mobileAuction,
   },
   {
     name: '2019 Honda Accord',
@@ -109,7 +109,7 @@ const auctionPulseLots = [
     time: '4h 40m',
     status: 'Closing soon',
     eligibility: 'Verified bidders',
-    image: auctionPulseAssets.yard,
+    image: auctionPulseAssets.auctionYard,
   },
   {
     name: '2020 Ford Ranger',
@@ -119,7 +119,7 @@ const auctionPulseLots = [
     time: '1d 3h',
     status: 'Live auction',
     eligibility: 'Deposit required',
-    image: auctionPulseAssets.inspection,
+    image: auctionPulseAssets.vendorInspection,
   },
   {
     name: '2018 Lexus RX350',
@@ -129,7 +129,7 @@ const auctionPulseLots = [
     time: '5h 10m',
     status: 'Inspection notes',
     eligibility: 'Tier 2 bidders',
-    image: auctionPulseAssets.pickup,
+    image: auctionPulseAssets.walletReady,
   },
 ];
 
@@ -278,43 +278,73 @@ function auctionPulseCopy(copy: BrandingPolicy['homepageCopy']) {
   };
 
   return {
-    eyebrow: safe('eyebrow', 'Live salvage auctions for verified buyers'),
-    heroTitle: safe('heroTitle', 'Bid on verified salvage assets with confidence.'),
-    heroSubtitle: safe('heroSubtitle', 'Browse active lots, review damage details, fund your wallet, and place bids from your phone.'),
+    eyebrow: safe('eyebrow', 'Mobile salvage bidding'),
+    heroTitle: safe('heroTitle', 'Bid from your phone with the asset details in view.'),
+    heroSubtitle: safe('heroSubtitle', 'Browse active salvage auctions, check damage notes, keep your wallet ready, and track every step after you win.'),
     primaryCtaLabel: safe('primaryCtaLabel', 'Browse Active Auctions'),
     secondaryCtaLabel: safe('secondaryCtaLabel', 'Register as a Vendor'),
-    trustLine: safe('trustLine', 'Verified listings, secured deposits, signed documents, and clear pickup steps.'),
-    heroBadges: [
-      safe('statOneLabel', 'Verified lots'),
-      safe('statTwoLabel', 'Wallet-ready bids'),
-      safe('statThreeLabel', 'Pickup instructions'),
+    trustLine: safe('trustLine', 'Verified auction access, deposit visibility, signed documents, and pickup instructions.'),
+    slides: [
+      {
+        title: safe('heroTitle', 'Bid from your phone with the asset details in view.'),
+        body: safe('heroSubtitle', 'Browse active salvage auctions, check damage notes, keep your wallet ready, and track every step after you win.'),
+        primary: safe('primaryCtaLabel', 'Browse Active Auctions'),
+        secondary: safe('secondaryCtaLabel', 'Register as a Vendor'),
+        editId: 'auction-slide-1',
+      },
+      {
+        title: safe('statOneValue', 'Get cleared before the auction clock runs out.'),
+        body: safe('statOneLabel', 'Complete verification, confirm your wallet coverage, and see which auctions you can join.'),
+        primary: safe('auctionSectionButtonLabel', 'Start Verification'),
+        secondary: safe('auctionSectionEyebrow', 'Wallet Guide'),
+        editId: 'auction-slide-2',
+      },
+      {
+        title: safe('statTwoValue', 'Know the path before you place a bid.'),
+        body: safe('statTwoLabel', 'Review the vehicle, fund your wallet, bid, win, sign documents, pay, and receive pickup instructions.'),
+        primary: safe('proofContactLabel', 'See Bidding Steps'),
+        secondary: safe('auctionSectionTitle', 'View Sample Auction'),
+        editId: 'auction-slide-3',
+      },
+      {
+        title: safe('statThreeValue', 'After you win, the next steps stay visible.'),
+        body: safe('statThreeLabel', 'Track document signing, payment confirmation, and pickup release without guessing what happens next.'),
+        primary: safe('recoveryBriefTitle', 'View After-Win Flow'),
+        secondary: safe('recoveryBriefBody', 'Contact Support'),
+        editId: 'auction-slide-4',
+      },
     ],
-    workflowTitle: safe('workflowTitle', 'From registration to pickup, the process is clear.'),
-    workflowSubtitle: safe('workflowSubtitle', 'Each step shows what you need before you bid, after you win, and before pickup.'),
+    heroBadges: [
+      'Verified access',
+      'Wallet readiness',
+      'Pickup guidance',
+    ],
+    workflowTitle: safe('workflowTitle', 'Your bidding path, one step at a time.'),
+    workflowSubtitle: safe('workflowSubtitle', 'A vertical action rail keeps the buying journey easy to follow on mobile.'),
     workflowSteps: [
       [safe('workflowStepOneTitle', 'Register'), safe('workflowStepOneBody', 'Create a vendor account and keep your bidder profile ready.')],
       [safe('workflowStepTwoTitle', 'Verify'), safe('workflowStepTwoBody', 'Complete the checks required for eligible auctions and bid limits.')],
-      [safe('workflowStepThreeTitle', 'Bid'), safe('workflowStepThreeBody', 'Review lot details, keep your wallet ready, and place verified bids.')],
+      [safe('workflowStepThreeTitle', 'Bid'), safe('workflowStepThreeBody', 'Review auction details, keep your wallet ready, and place verified bids.')],
       [safe('workflowStepFourTitle', 'Pickup'), safe('workflowStepFourBody', 'Sign documents, complete payment, and receive pickup instructions.')],
     ] as Array<[string, string]>,
     controlsLabel: safe('operationsSectionEyebrow', 'Bid readiness'),
-    controlsTitle: safe('operationsSectionTitle', 'Know your status before you join an auction.'),
-    controlsText: safe('operationsSectionSubtitle', 'See lot requirements, wallet coverage, verification status, documents, payment, and pickup readiness before you commit.'),
+    controlsTitle: safe('operationsSectionTitle', 'Know your status before joining an auction.'),
+    controlsText: safe('operationsSectionSubtitle', 'See auction requirements, wallet coverage, verification status, documents, payment, and pickup readiness before you commit.'),
     controlsCards: [
-      [safe('operationsCardOneTitle', 'Wallet coverage'), safe('operationsCardOneBody', 'Check the deposit or wallet balance needed for eligible lots before placing a bid.')],
+      [safe('operationsCardOneTitle', 'Wallet coverage'), safe('operationsCardOneBody', 'Check the deposit or wallet balance needed for eligible auctions before placing a bid.')],
       [safe('operationsCardTwoTitle', 'Post-win tracking'), safe('operationsCardTwoBody', 'After winning, follow document signing, payment, and pickup release from one clear page.')],
       [safe('operationsCardThreeTitle', 'Auction rules'), safe('operationsCardThreeBody', 'Bids, deadlines, document windows, and pickup steps are shown before you act.')],
     ] as Array<[string, string]>,
     featureCards: [
-      [safe('proofCardOneTitle', 'Active lots'), safe('proofCardOneBody', 'Scan vehicle images, condition notes, location, current bid, and time left.')],
-      [safe('proofCardTwoTitle', 'Clear eligibility'), safe('proofCardTwoBody', 'Know when verification or wallet funding is needed before joining a lot.')],
+      [safe('proofCardOneTitle', 'Active auctions'), safe('proofCardOneBody', 'Scan vehicle images, condition notes, location, current bid, and time left.')],
+      [safe('proofCardTwoTitle', 'Clear eligibility'), safe('proofCardTwoBody', 'Know when verification or wallet funding is needed before joining an auction.')],
       [safe('proofCardThreeTitle', 'Bid status'), safe('proofCardThreeBody', 'Track whether you are leading, outbid, or waiting for auction close.')],
       [safe('proofCardFourTitle', 'Pickup path'), safe('proofCardFourBody', 'Move from documents and payment to release instructions without confusion.')],
     ] as Array<[string, string]>,
     buyerTitle: safe('proofSectionTitle', 'Clear rules. Verified bidders. Structured handoff.'),
     buyerText: safe('proofSectionSubtitle', 'The portal keeps auction details, deposit expectations, payment steps, documents, and pickup instructions visible to buyers.'),
     contactHeadline: safe('contactHeadline', 'Need help before you bid?'),
-    contactSubtitle: safe('contactSubtitle', 'Ask vendor support about verification, wallet funding, lot access, documents, payment, or pickup requirements.'),
+    contactSubtitle: safe('contactSubtitle', 'Ask vendor support about verification, wallet funding, auction access, documents, payment, or pickup requirements.'),
   };
 }
 
@@ -1153,50 +1183,27 @@ function AuctionPulse({ branding, theme }: { branding: BrandingPolicy; theme: 'd
   const [activeSlide, setActiveSlide] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const reduceMotion = useReducedMotion();
-  const slides = [
-    {
-      title: copy.heroTitle,
-      body: copy.heroSubtitle,
-      primary: copy.primaryCtaLabel,
-      secondary: copy.secondaryCtaLabel,
-      visual: 'lots',
-    },
-    {
-      title: 'Get verified before the next auction closes.',
-      body: 'Complete your vendor profile, fund your wallet, and see which lots you are eligible to bid on.',
-      primary: 'Start Verification',
-      secondary: 'How Wallet Deposits Work',
-      visual: 'wallet',
-    },
-    {
-      title: 'Know every step before you bid.',
-      body: 'From viewing a lot to winning, signing documents, paying, and pickup, every stage is clearly shown.',
-      primary: 'See How It Works',
-      secondary: 'View Sample Lot',
-      visual: 'steps',
-    },
-    {
-      title: 'Win, pay, sign, and pick up without confusion.',
-      body: 'Track your documents, payment status, and pickup readiness after the auction closes.',
-      primary: 'View Auction Process',
-      secondary: 'Contact Support',
-      visual: 'pickup',
-    },
-  ];
+  const slides = copy.slides;
 
   const nextSlide = () => setActiveSlide((current) => (current + 1) % slides.length);
   const previousSlide = () => setActiveSlide((current) => (current - 1 + slides.length) % slides.length);
 
+  useEffect(() => {
+    if (reduceMotion) return;
+    const timer = window.setInterval(nextSlide, 7600);
+    return () => window.clearInterval(timer);
+  }, [reduceMotion, slides.length]);
+
   return (
-    <main className={`min-h-screen overflow-hidden ${dark ? 'bg-[#071018] text-white' : 'bg-[#F6F8FB] text-slate-950'}`} style={cssVars(branding, theme)}>
+    <main className={`min-h-screen overflow-hidden ${dark ? 'bg-[#081019] text-white' : 'bg-[#F7F8F5] text-slate-950'}`} style={cssVars(branding, theme)}>
       {branding.splashEnabled ? <RecoveryCommandSplash branding={branding} dark={dark} /> : null}
       <AuctionPulseNav branding={branding} dark={dark} />
 
-      <section id="platform" className="relative px-4 pb-14 pt-24 sm:px-5 lg:pt-28">
-        <div className="absolute inset-x-0 top-0 h-[540px] opacity-70" style={{ background: `radial-gradient(circle at 18% 12%, ${branding.accentColor}28, transparent 34%), radial-gradient(circle at 82% 4%, ${branding.primaryColor}22, transparent 28%)` }} />
-        <div className="relative mx-auto max-w-7xl">
+      <section id="platform" className="relative px-3 pb-12 pt-20 sm:px-5 lg:pt-24">
+        <div className="absolute inset-x-0 top-0 h-[680px] opacity-90" style={{ background: dark ? `linear-gradient(135deg, #081019 0%, #121C2A 48%, ${branding.primaryColor}44 100%)` : `linear-gradient(135deg, #F7F8F5 0%, #FFFFFF 45%, ${branding.accentColor}20 100%)` }} />
+        <div className="relative mx-auto max-w-[1500px]">
           <div
-            className={`overflow-hidden rounded-[2rem] border shadow-2xl ${dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white'}`}
+            className={`overflow-hidden rounded-[2.2rem] border shadow-2xl ${dark ? 'border-white/10 bg-black/20' : 'border-slate-200 bg-white'}`}
             onTouchStart={(event) => setTouchStart(event.touches[0]?.clientX ?? null)}
             onTouchEnd={(event) => {
               if (touchStart === null) return;
@@ -1205,30 +1212,31 @@ function AuctionPulse({ branding, theme }: { branding: BrandingPolicy; theme: 'd
               setTouchStart(null);
             }}
           >
-            <div className="grid min-h-[620px] lg:grid-cols-[0.92fr_1.08fr]">
-              <div className="relative flex flex-col justify-center px-5 py-12 sm:px-8 lg:px-12">
+            <div className="grid min-h-[720px] lg:grid-cols-[minmax(0,0.88fr)_minmax(520px,1.12fr)]">
+              <div className="relative z-10 flex flex-col justify-center px-5 py-12 sm:px-8 lg:px-12">
                 <p data-recovery-edit-id="hero-label" className="inline-flex w-fit items-center gap-2 rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em]" style={{ borderColor: `${branding.accentColor}55`, color: branding.accentColor }}>
                   <CircleDot className="h-3 w-3" />
                   {copy.eyebrow}
                 </p>
                 <motion.div
                   key={activeSlide}
-                  initial={reduceMotion ? false : { opacity: 0, y: 16 }}
-                  animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35 }}
+                  initial={reduceMotion ? false : { opacity: 0, x: 28 }}
+                  animate={reduceMotion ? undefined : { opacity: 1, x: 0 }}
+                  transition={{ duration: 0.48, ease: 'easeOut' }}
+                  data-recovery-edit-id={slides[activeSlide].editId}
                 >
-                  <h1 data-recovery-edit-id="hero-title" className="mt-6 max-w-3xl text-[clamp(2.35rem,8vw,5.7rem)] font-black leading-[0.92] tracking-[-0.055em]" style={{ color: dark ? '#FFFFFF' : branding.primaryColor }}>
+                  <h1 className="mt-6 max-w-3xl text-[clamp(2.55rem,7.6vw,6.3rem)] font-black leading-[0.88] tracking-[-0.06em]" style={{ color: dark ? '#FFFFFF' : branding.primaryColor }}>
                     {slides[activeSlide].title}
                   </h1>
-                  <p data-recovery-edit-id="hero-copy" className={`mt-6 max-w-2xl text-base leading-8 sm:text-xl ${dark ? 'text-white/65' : 'text-slate-600'}`}>
+                  <p className={`mt-6 max-w-2xl text-base leading-8 sm:text-xl ${dark ? 'text-white/68' : 'text-slate-600'}`}>
                     {slides[activeSlide].body}
                   </p>
                   <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                    <Link data-recovery-edit-id="hero-primary-button" href="/vendor/auctions" className="inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-4 text-sm font-black shadow-lg transition hover:-translate-y-0.5" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
+                    <Link href="/vendor/auctions" className="inline-flex items-center justify-center gap-2 rounded-full px-6 py-4 text-sm font-black shadow-lg transition hover:-translate-y-0.5" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
                       {slides[activeSlide].primary}
                       <ArrowRight className="h-4 w-4" />
                     </Link>
-                    <Link data-recovery-edit-id="hero-secondary-button" href="/register" className={`inline-flex items-center justify-center rounded-2xl border px-5 py-4 text-sm font-black transition hover:border-[var(--wl-accent)] hover:text-[var(--wl-accent)] ${dark ? 'border-white/16 text-white' : 'border-slate-300 text-slate-950'}`}>
+                    <Link href="/register" className={`inline-flex items-center justify-center rounded-full border px-6 py-4 text-sm font-black transition hover:border-[var(--wl-accent)] hover:text-[var(--wl-accent)] ${dark ? 'border-white/16 text-white' : 'border-slate-300 text-slate-950'}`}>
                       {slides[activeSlide].secondary}
                     </Link>
                   </div>
@@ -1276,7 +1284,7 @@ function AuctionPulse({ branding, theme }: { branding: BrandingPolicy; theme: 'd
       <AuctionPulseTrust branding={branding} dark={dark} copy={copy} />
       <AuctionPulseContact branding={branding} dark={dark} copy={copy} />
       <AuctionPulseBottomBar branding={branding} />
-      <RecoveryCommandFooter branding={branding} dark={dark} />
+      <AuctionPulseFooter branding={branding} dark={dark} />
     </main>
   );
 }
@@ -1307,48 +1315,52 @@ function AuctionPulseNav({ branding, dark }: { branding: BrandingPolicy; dark: b
 }
 
 function AuctionPulseHeroVisual({ branding, dark, activeSlide }: { branding: BrandingPolicy; dark: boolean; activeSlide: number }) {
-  const card = dark ? 'border-white/10 bg-white/[0.08] text-white' : 'border-slate-200 bg-white text-slate-950';
-  const muted = dark ? 'text-white/58' : 'text-slate-500';
   const lot = auctionPulseLots[activeSlide % auctionPulseLots.length];
+  const background = [
+    auctionPulseAssets.mobileAuction,
+    auctionPulseAssets.vendorInspection,
+    auctionPulseAssets.walletReady,
+    auctionPulseAssets.supportAgent,
+  ][activeSlide % 4];
   return (
-    <div className={`relative min-h-[520px] overflow-hidden ${dark ? 'bg-slate-950/40' : 'bg-slate-100'}`}>
-      <Image src={lot.image} alt={`${lot.name} auction visual`} fill className="object-cover opacity-70" sizes="(max-width: 1024px) 100vw, 760px" />
-      <div className={`absolute inset-0 ${dark ? 'bg-gradient-to-t from-slate-950 via-slate-950/55 to-slate-950/10' : 'bg-gradient-to-t from-white via-white/55 to-white/5'}`} />
-      <div className="absolute inset-0 flex items-center justify-center p-5">
-        <div className="relative w-full max-w-[390px]">
-          <div className={`overflow-hidden rounded-[2rem] border shadow-2xl ${card}`}>
-            <div className="relative h-64">
-              <Image src={lot.image} alt={`${lot.name} preview`} fill className="object-cover" sizes="390px" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/18 to-transparent" />
-              <div className="absolute left-4 right-4 top-4 flex justify-between gap-2">
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-950">{lot.status}</span>
-                <span className="rounded-full px-3 py-1 text-xs font-black" style={{ backgroundColor: branding.accentColor, color: getReadableTextColor(branding.accentColor) }}>{lot.time}</span>
-              </div>
-              <div className="absolute bottom-4 left-4 right-4 text-white">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-white/65">{lot.location}</p>
-                <h3 className="mt-1 text-2xl font-black">{lot.name}</h3>
-              </div>
+    <div className={`relative min-h-[620px] overflow-hidden ${dark ? 'bg-[#0C1722]' : 'bg-slate-100'}`}>
+      <motion.div
+        key={background}
+        initial={{ opacity: 0, scale: 1.04 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.65, ease: 'easeOut' }}
+        className="absolute inset-0"
+      >
+        <Image src={background} alt={`${lot.name} mobile auction visual`} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 760px" />
+      </motion.div>
+      <div className={`absolute inset-0 ${dark ? 'bg-gradient-to-r from-[#081019]/15 via-[#081019]/25 to-[#081019]/75' : 'bg-gradient-to-r from-white/10 via-white/35 to-white/80'}`} />
+      <div className="absolute inset-0 flex items-end justify-center p-5 lg:items-center">
+        <motion.div
+          key={lot.name}
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: 'easeOut' }}
+          className="w-full max-w-[430px] rounded-[2rem] border border-white/20 bg-black/38 p-4 text-white shadow-2xl backdrop-blur-xl"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-950">{lot.status}</span>
+            <span className="rounded-full px-3 py-1 text-xs font-black" style={{ backgroundColor: branding.accentColor, color: getReadableTextColor(branding.accentColor) }}>{lot.time}</span>
+          </div>
+          <p className="mt-12 text-xs font-black uppercase tracking-[0.18em] text-white/68">{lot.location}</p>
+          <h3 className="mt-2 text-3xl font-black tracking-[-0.04em]">{lot.name}</h3>
+          <p className="mt-2 text-white/70">{lot.damage}</p>
+          <div className="mt-6 grid grid-cols-2 gap-3 border-t border-white/15 pt-5">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/52">Current bid</p>
+              <p className="mt-1 text-2xl font-black">{lot.bid}</p>
             </div>
-            <div className="p-5">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className={`text-[10px] font-bold uppercase tracking-[0.15em] ${muted}`}>Current bid</p>
-                  <p className="mt-1 text-2xl font-black" style={{ color: branding.accentColor }}>{lot.bid}</p>
-                </div>
-                <div>
-                  <p className={`text-[10px] font-bold uppercase tracking-[0.15em] ${muted}`}>Damage</p>
-                  <p className="mt-1 font-black">{lot.damage}</p>
-                </div>
-              </div>
-              <button className="mt-5 w-full rounded-2xl px-5 py-4 text-sm font-black" style={{ backgroundColor: branding.primaryColor, color: getReadableTextColor(branding.primaryColor) }}>View Lot</button>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/52">Access</p>
+              <p className="mt-1 font-black">{lot.eligibility}</p>
             </div>
           </div>
-          <motion.div className={`absolute -right-5 top-16 rounded-2xl border p-4 shadow-xl backdrop-blur-xl ${card}`} animate={{ y: [0, -7, 0] }} transition={{ repeat: Infinity, duration: 4 }}>
-            <ShieldCheck className="h-5 w-5" style={{ color: branding.accentColor }} />
-            <p className="mt-2 text-sm font-black">Verified bidder</p>
-            <p className={`text-xs ${muted}`}>Ready to bid</p>
-          </motion.div>
-        </div>
+          <button className="mt-5 w-full rounded-full px-5 py-4 text-sm font-black" style={{ backgroundColor: branding.primaryColor, color: getReadableTextColor(branding.primaryColor) }}>View auction</button>
+        </motion.div>
       </div>
     </div>
   );
@@ -1356,16 +1368,16 @@ function AuctionPulseHeroVisual({ branding, dark, activeSlide }: { branding: Bra
 
 function AuctionPulseLots({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
   const muted = dark ? 'text-white/60' : 'text-slate-600';
-  const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
+  const panel = dark ? 'border-white/10 bg-white/[0.065]' : 'border-slate-200 bg-white';
   return (
-    <section id="lots" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#071018]' : 'bg-white'}`}>
+    <section id="lots" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#081019]' : 'bg-white'}`}>
       <div className="mx-auto max-w-7xl">
         <div data-recovery-edit-id="controls-copy" className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Active lots</p>
-            <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] md:text-5xl">Active lots closing soon</h2>
+            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Active auctions</p>
+            <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] md:text-5xl">Auctions closing soon</h2>
           </div>
-          <p className={`max-w-2xl text-sm leading-7 ${muted}`}>Review the damage, location, current bid, and time left before joining an auction.</p>
+          <p className={`max-w-2xl text-sm leading-7 ${muted}`}>Scan the damage, location, current bid, and time left before you join an auction.</p>
         </div>
         <div className="mt-6 flex gap-2 overflow-x-auto pb-2">
           {auctionPulseFilters.map((filter) => (
@@ -1374,18 +1386,21 @@ function AuctionPulseLots({ branding, dark }: { branding: BrandingPolicy; dark: 
             </button>
           ))}
         </div>
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           {auctionPulseLots.map((lot) => (
-            <article key={lot.name} className={`overflow-hidden rounded-[1.7rem] border shadow-sm ${panel}`}>
-              <div className="relative h-52">
+            <article key={lot.name} className={`group overflow-hidden rounded-[2rem] border shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl ${panel}`}>
+              <div className="relative h-64">
                 <Image src={lot.image} alt={`${lot.name} salvage lot`} fill className="object-cover" sizes="(max-width: 768px) 100vw, 320px" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/5 to-transparent" />
                 <div className="absolute left-3 top-3 rounded-full bg-white px-3 py-1 text-xs font-black text-slate-950">{lot.status}</div>
+                <div className="absolute bottom-4 left-4 right-4 text-white">
+                  <p className="flex items-center gap-1 text-xs font-bold uppercase tracking-[0.16em] text-white/75"><MapPin className="h-3.5 w-3.5" /> {lot.location}</p>
+                  <h3 className="mt-2 text-2xl font-black">{lot.name}</h3>
+                </div>
               </div>
               <div className="p-4">
-                <h3 className="text-xl font-black">{lot.name}</h3>
-                <div className={`mt-3 grid gap-2 text-sm ${muted}`}>
+                <div className={`grid gap-2 text-sm ${muted}`}>
                   <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> {lot.damage}</p>
-                  <p className="flex items-center gap-2"><MapPin className="h-4 w-4" /> {lot.location}</p>
                   <p className="flex items-center gap-2"><Clock className="h-4 w-4" /> {lot.time} left</p>
                 </div>
                 <div className="mt-4 flex items-end justify-between gap-3">
@@ -1393,7 +1408,7 @@ function AuctionPulseLots({ branding, dark }: { branding: BrandingPolicy; dark: 
                     <p className={`text-[10px] font-bold uppercase tracking-[0.14em] ${muted}`}>Current bid</p>
                     <p className="text-xl font-black" style={{ color: branding.accentColor }}>{lot.bid}</p>
                   </div>
-                  <Link href="/vendor/auctions" className="rounded-xl px-4 py-2 text-sm font-black" style={{ backgroundColor: branding.primaryColor, color: getReadableTextColor(branding.primaryColor) }}>View Lot</Link>
+                  <Link href="/vendor/auctions" className="rounded-full px-4 py-2 text-sm font-black" style={{ backgroundColor: branding.primaryColor, color: getReadableTextColor(branding.primaryColor) }}>View</Link>
                 </div>
                 <p className={`mt-3 rounded-xl px-3 py-2 text-xs font-bold ${dark ? 'bg-white/[0.06] text-white/70' : 'bg-slate-100 text-slate-600'}`}>{lot.eligibility}</p>
               </div>
@@ -1406,26 +1421,48 @@ function AuctionPulseLots({ branding, dark }: { branding: BrandingPolicy; dark: 
 }
 
 function AuctionPulseWorkflow({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: ReturnType<typeof auctionPulseCopy> }) {
-  const steps = ['Register', 'Verify account', 'Fund wallet', 'Choose a lot', 'Place bid', 'Win auction', 'Sign documents', 'Complete payment', 'Pickup instruction'];
+  const steps = [
+    ['Register', 'Create your vendor account.'],
+    ['Verify', 'Complete eligibility checks.'],
+    ['Fund', 'Keep wallet coverage ready.'],
+    ['Choose', 'Review an auction asset.'],
+    ['Bid', 'Place a secured bid.'],
+    ['Win', 'Track auction close status.'],
+    ['Sign', 'Complete required documents.'],
+    ['Pay', 'Confirm the balance.'],
+    ['Pickup', 'Receive release instructions.'],
+  ];
   return (
-    <section id="workflow" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#0B1420]' : 'bg-[#F6F8FB]'}`}>
+    <section id="workflow" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#0D1724]' : 'bg-[#F5F7FA]'}`}>
       <div className="mx-auto max-w-7xl">
         <div data-recovery-edit-id="workflow-heading">
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>How bidding works</p>
           <h2 className="mt-3 max-w-4xl text-3xl font-black tracking-[-0.04em] md:text-5xl">{copy.workflowTitle}</h2>
           <p className={`mt-4 max-w-2xl text-sm leading-7 ${dark ? 'text-white/62' : 'text-slate-600'}`}>{copy.workflowSubtitle}</p>
         </div>
-        <div data-recovery-edit-id="workflow-steps" className="mt-8 overflow-x-auto pb-3">
-          <div className="grid min-w-[980px] grid-cols-9 overflow-hidden rounded-[1.5rem] border border-current/10">
-            {steps.map((step, index) => (
-              <div key={step} className={`relative min-h-36 border-r border-current/10 p-4 last:border-r-0 ${dark ? 'bg-white/[0.045]' : 'bg-white'}`}>
-                <p className="font-mono text-xs" style={{ color: branding.accentColor }}>{String(index + 1).padStart(2, '0')}</p>
-                <h3 className="mt-7 text-base font-black">{index < 4 ? copy.workflowSteps[index]?.[0] || step : step}</h3>
-                <span className="absolute bottom-4 left-4 right-4 h-1 rounded-full bg-current/10">
-                  <span className="block h-1 rounded-full" style={{ width: `${Math.min(100, 42 + index * 7)}%`, backgroundColor: branding.accentColor }} />
-                </span>
-              </div>
-            ))}
+        <div data-recovery-edit-id="workflow-steps" className="relative mt-10 grid gap-4 md:grid-cols-[260px_1fr]">
+          <div className={`rounded-[2rem] border p-6 ${dark ? 'border-white/10 bg-white/[0.06]' : 'border-slate-200 bg-white'}`}>
+            <p className="text-sm font-bold" style={{ color: branding.accentColor }}>Mobile action rail</p>
+            <p className={`mt-3 text-sm leading-7 ${dark ? 'text-white/60' : 'text-slate-600'}`}>The journey is vertical on phones, so buyers can see the next action without decoding a table.</p>
+          </div>
+          <div className="relative">
+            <div className="absolute bottom-8 left-5 top-8 w-px md:left-1/2" style={{ backgroundColor: `${branding.accentColor}55` }} />
+            <div className="grid gap-4 md:grid-cols-2">
+              {steps.map(([title, body], index) => (
+                <motion.div
+                  key={title}
+                  initial={{ opacity: 0, y: 14 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: '-80px' }}
+                  transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.22) }}
+                  className={`relative rounded-[1.5rem] border p-5 ${dark ? 'border-white/10 bg-[#111D2B]' : 'border-slate-200 bg-white'}`}
+                >
+                  <span className="absolute -left-1 top-5 grid h-10 w-10 place-items-center rounded-full text-xs font-black md:left-auto md:right-5" style={{ backgroundColor: branding.accentColor, color: getReadableTextColor(branding.accentColor) }}>{String(index + 1).padStart(2, '0')}</span>
+                  <h3 className="ml-9 text-lg font-black md:ml-0">{index < 4 ? copy.workflowSteps[index]?.[0] || title : title}</h3>
+                  <p className={`mt-2 ml-9 text-sm leading-6 md:ml-0 ${dark ? 'text-white/60' : 'text-slate-600'}`}>{index < 4 ? copy.workflowSteps[index]?.[1] || body : body}</p>
+                </motion.div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -1435,24 +1472,37 @@ function AuctionPulseWorkflow({ branding, dark, copy }: { branding: BrandingPoli
 
 function AuctionPulseControls({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: ReturnType<typeof auctionPulseCopy> }) {
   const muted = dark ? 'text-white/62' : 'text-slate-600';
-  const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
+  const panel = dark ? 'border-white/10 bg-white/[0.06]' : 'border-slate-200 bg-white';
   const icons = [Search, ShieldCheck, WalletCards, FileCheck2];
   return (
     <section id="readiness" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#071018]' : 'bg-white'}`}>
-      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[1fr_1.08fr] lg:items-center">
         <div data-recovery-edit-id="buyer-copy">
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Why vendors use this portal</p>
           <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] md:text-5xl">{copy.buyerTitle}</h2>
           <p className={`mt-4 text-sm leading-7 ${muted}`}>{copy.buyerText}</p>
+          <div className="relative mt-8 overflow-hidden rounded-[2rem]">
+            <Image src={auctionPulseAssets.vendorInspection} alt="Verified salvage buyer reviewing an auction asset" width={980} height={760} className="h-80 w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+            <div className="absolute bottom-4 left-4 right-4 flex flex-wrap gap-2 text-sm font-black text-white">
+              <span className="rounded-full bg-white/20 px-3 py-2 backdrop-blur">Verified vendor</span>
+              <span className="rounded-full bg-white/20 px-3 py-2 backdrop-blur">Bid eligible</span>
+              <span className="rounded-full bg-white/20 px-3 py-2 backdrop-blur">Auction active</span>
+            </div>
+          </div>
         </div>
-        <div data-recovery-edit-id="control-step-cards" className="grid gap-3 sm:grid-cols-2">
+        <div data-recovery-edit-id="control-step-cards" className="grid gap-3">
           {copy.featureCards.map(([title, body], index) => {
             const Icon = icons[index] || CheckCircle2;
             return (
-              <article key={title} className={`rounded-[1.5rem] border p-5 ${panel}`}>
-                <Icon className="h-6 w-6" style={{ color: branding.accentColor }} />
-                <h3 className="mt-5 text-xl font-black">{title}</h3>
-                <p className={`mt-2 text-sm leading-7 ${muted}`}>{body}</p>
+              <article key={title} className={`grid grid-cols-[56px_1fr] gap-4 rounded-[1.5rem] border p-5 ${panel}`}>
+                <span className="grid h-12 w-12 place-items-center rounded-2xl" style={{ backgroundColor: `${branding.accentColor}22`, color: branding.accentColor }}>
+                  <Icon className="h-6 w-6" />
+                </span>
+                <div>
+                  <h3 className="text-xl font-black">{title}</h3>
+                  <p className={`mt-2 text-sm leading-7 ${muted}`}>{body}</p>
+                </div>
               </article>
             );
           })}
@@ -1467,30 +1517,69 @@ function AuctionPulseTrust({ branding, dark, copy }: { branding: BrandingPolicy;
   const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
   return (
     <section id="wallet" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#0B1420]' : 'bg-[#F6F8FB]'}`}>
-      <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-3">
-        <div data-recovery-edit-id="controls-copy" className={`rounded-[1.7rem] border p-6 lg:col-span-1 ${panel}`}>
-          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>{copy.controlsLabel}</p>
-          <h2 className="mt-3 text-3xl font-black tracking-[-0.04em]">{copy.controlsTitle}</h2>
-          <p className={`mt-4 text-sm leading-7 ${muted}`}>{copy.controlsText}</p>
+      <div className="mx-auto max-w-7xl">
+        <div className="grid overflow-hidden rounded-[2rem] border border-current/10 lg:grid-cols-[1.05fr_0.95fr]">
+          <div data-recovery-edit-id="controls-copy" className={`p-7 lg:p-10 ${dark ? 'bg-white/[0.04]' : 'bg-white'}`}>
+            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>{copy.controlsLabel}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] md:text-5xl">{copy.controlsTitle}</h2>
+            <p className={`mt-4 max-w-2xl text-sm leading-7 ${muted}`}>{copy.controlsText}</p>
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              {copy.controlsCards.map(([title, body]) => (
+                <article key={title} data-recovery-edit-id="controls-cards" className={`rounded-[1.3rem] border p-4 ${panel}`}>
+                  <CheckCircle2 className="h-5 w-5" style={{ color: branding.accentColor }} />
+                  <h3 className="mt-4 text-base font-black">{title}</h3>
+                  <p className={`mt-2 text-xs leading-5 ${muted}`}>{body}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+          <div className="relative min-h-[420px]">
+            <Image src={auctionPulseAssets.walletReady} alt="Wallet readiness dashboard" fill className="object-cover" sizes="(max-width: 1024px) 100vw, 600px" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+            <div className="absolute bottom-6 left-6 right-6 rounded-[1.5rem] border border-white/20 bg-black/35 p-5 text-white backdrop-blur-xl">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-white/60">Wallet status</p>
+              <p className="mt-2 text-2xl font-black">Ready to bid</p>
+              <p className="mt-1 text-sm text-white/70">Check coverage before joining eligible auctions.</p>
+            </div>
+          </div>
         </div>
-        {copy.controlsCards.map(([title, body]) => (
-          <article key={title} data-recovery-edit-id="controls-cards" className={`rounded-[1.7rem] border p-6 ${panel}`}>
-            <CheckCircle2 className="h-6 w-6" style={{ color: branding.accentColor }} />
-            <h3 className="mt-5 text-xl font-black">{title}</h3>
-            <p className={`mt-3 text-sm leading-7 ${muted}`}>{body}</p>
-          </article>
-        ))}
       </div>
     </section>
   );
 }
 
 function AuctionPulseContact({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: ReturnType<typeof auctionPulseCopy> }) {
-  return <RecoveryCommandContact branding={branding} dark={dark} copy={{
-    ...recoveryCommandCopy(branding.homepageCopy),
-    contactHeadline: copy.contactHeadline,
-    contactSubtitle: copy.contactSubtitle,
-  }} />;
+  const primaryText = getReadableTextColor(branding.primaryColor);
+  return (
+    <section id="contact" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#081019]' : 'bg-white'}`}>
+      <div className="mx-auto grid max-w-7xl overflow-hidden rounded-[2rem] border border-current/10 lg:grid-cols-[0.95fr_1.05fr]">
+        <div className="relative min-h-[360px]">
+          <Image src={auctionPulseAssets.supportAgent} alt="Vendor support representative" fill className="object-cover" sizes="(max-width: 1024px) 100vw, 600px" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+          <div className="absolute bottom-6 left-6 right-6 text-white">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-white/65">Vendor support</p>
+            <h2 data-recovery-edit-id="contact-copy" className="mt-2 text-3xl font-black tracking-[-0.04em]">{copy.contactHeadline}</h2>
+            <p data-recovery-edit-id="contact-copy" className="mt-3 max-w-md text-sm leading-7 text-white/72">{copy.contactSubtitle}</p>
+          </div>
+        </div>
+        <form className={`grid gap-4 p-6 lg:p-10 ${dark ? 'bg-white/[0.04]' : 'bg-slate-50'}`}>
+          {['Name', 'Email', 'Phone', 'Company'].map((label) => (
+            <label key={label} className="text-sm font-bold">
+              {label}
+              <input className={`mt-2 w-full rounded-2xl border px-4 py-3 outline-none transition focus:ring-2 focus:ring-[var(--wl-accent)] ${dark ? 'border-white/10 bg-white/[0.06] text-white' : 'border-slate-200 bg-white text-slate-950'}`} />
+            </label>
+          ))}
+          <label className="text-sm font-bold">
+            Message
+            <textarea className={`mt-2 min-h-28 w-full resize-y rounded-2xl border px-4 py-3 outline-none transition focus:ring-2 focus:ring-[var(--wl-accent)] ${dark ? 'border-white/10 bg-white/[0.06] text-white' : 'border-slate-200 bg-white text-slate-950'}`} />
+          </label>
+          <button type="button" className="rounded-full px-5 py-4 text-sm font-black" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
+            Contact Vendor Support
+          </button>
+        </form>
+      </div>
+    </section>
+  );
 }
 
 function AuctionPulseBottomBar({ branding }: { branding: BrandingPolicy }) {
@@ -1499,6 +1588,48 @@ function AuctionPulseBottomBar({ branding }: { branding: BrandingPolicy }) {
       <Link href="/vendor/auctions" className="rounded-xl px-3 py-3 text-center text-sm font-black" style={{ backgroundColor: branding.primaryColor, color: getReadableTextColor(branding.primaryColor) }}>Browse Auctions</Link>
       <Link href="/register" className="rounded-xl border border-slate-200 px-3 py-3 text-center text-sm font-black text-slate-950">Register / Login</Link>
     </div>
+  );
+}
+
+function AuctionPulseFooter({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const links = [
+    ['Active Auctions', '/vendor/auctions'],
+    ['How It Works', '#workflow'],
+    ['Vendor Verification', '#readiness'],
+    ['Wallet & Payments', '#wallet'],
+    ['Support', '#contact'],
+    ['Privacy', '/privacy'],
+    ['Terms', '/terms'],
+  ];
+  return (
+    <footer className={`px-4 pb-24 pt-12 sm:px-5 md:pb-12 ${dark ? 'bg-[#050B11] text-white' : 'bg-[#F7F8F5] text-slate-950'}`}>
+      <div className="mx-auto max-w-7xl rounded-[2rem] border border-current/10 p-6">
+        <div className="grid gap-8 lg:grid-cols-[1fr_1.4fr_0.8fr]">
+          <div>
+            <BrandWordmark branding={branding} light={dark} />
+            <p className={`mt-4 max-w-sm text-sm leading-7 ${dark ? 'text-white/58' : 'text-slate-600'}`}>
+              {branding.brandName} helps verified buyers browse salvage auctions, bid securely, complete documents, and prepare for pickup.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+            {links.map(([label, href]) => (
+              <Link key={label} href={href} className={`${dark ? 'text-white/62 hover:text-white' : 'text-slate-600 hover:text-slate-950'} transition`}>
+                {label}
+              </Link>
+            ))}
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Support</p>
+            <a href={`mailto:${branding.supportEmail}`} className="mt-3 block font-black">{branding.supportEmail}</a>
+            {branding.supportPhone ? <a href={`tel:${branding.supportPhone}`} className={`mt-2 block text-sm ${dark ? 'text-white/60' : 'text-slate-600'}`}>{branding.supportPhone}</a> : null}
+          </div>
+        </div>
+        <div className={`mt-10 flex flex-col gap-3 border-t border-current/10 pt-5 text-xs ${dark ? 'text-white/45' : 'text-slate-500'} sm:flex-row sm:items-center sm:justify-between`}>
+          <p>&copy; {new Date().getFullYear()} {branding.legalName}. All rights reserved.</p>
+          <span className="w-fit rounded-full border border-current/10 px-3 py-1 font-bold">Powered by Reclaim</span>
+        </div>
+      </div>
+    </footer>
   );
 }
 

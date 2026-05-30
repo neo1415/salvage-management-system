@@ -38,14 +38,14 @@ const TEMPLATE_EDITOR_GUIDE: Record<string, TemplateEditorGuide> = {
     image: '/assets/Hero-3.png',
   },
   recovery_command: {
-    bestFor: 'Auction buyers and verified vendors who need clear lot access, bidding, documents, payment, and pickup steps.',
+    bestFor: 'Auction buyers and verified vendors who need clear auction access, bidding, documents, payment, and pickup steps.',
     sections: ['Buyer hero', 'Bid workflow', 'Buyer controls', 'Pickup path', 'Contact'],
     image: '/assets/recovery-command/hero-yard.png',
   },
   auction_pulse: {
-    bestFor: 'Mobile-first salvage auction portal for vendors who need lots, wallet readiness, bidding, documents, payment, and pickup clarity.',
-    sections: ['Swipe hero', 'Active lots', 'Filters', 'Bid readiness', 'Vendor support'],
-    image: '/assets/recovery-command/damage-review.png',
+    bestFor: 'Mobile-first salvage auction portal for vendors who need auction listings, wallet readiness, bidding, documents, payment, and pickup clarity.',
+    sections: ['Swipe hero', 'Active auctions', 'Filters', 'Bid readiness', 'Vendor support'],
+    image: '/assets/auction-pulse/mobile-auction.png',
   },
   executive_terminal: {
     bestFor: 'Private, quiet sign-in-first experience with a restrained executive feel.',
@@ -72,7 +72,7 @@ const TEMPLATE_COPY_MAP: Record<string, Array<{ label: string; fields: string; a
   ],
   auction_pulse: [
     { label: 'Mobile auction hero', fields: 'Small label, carousel title, intro, buttons', appears: 'Swipeable public auction intro' },
-    { label: 'Active lots and filters', fields: 'Lot marketplace copy, badges, and filter language', appears: 'Featured auction cards and quick filters' },
+    { label: 'Active auctions and filters', fields: 'Auction marketplace copy, badges, and filter language', appears: 'Featured auction cards and quick filters' },
     { label: 'Vendor support', fields: 'Trust line, wallet guidance, contact text', appears: 'Bid readiness, support, and footer areas' },
   ],
   executive_terminal: [
@@ -260,6 +260,10 @@ const RECOVERY_COMMAND_PREVIEW_HOTSPOTS: PreviewEditHotspot[] = [
   { id: 'hero-copy', label: 'Hero intro', panel: 'hero', keys: ['heroSubtitle'] },
   { id: 'hero-primary-button', label: 'Primary button', panel: 'hero', keys: ['primaryCtaLabel'] },
   { id: 'hero-secondary-button', label: 'Secondary button', panel: 'hero', keys: ['secondaryCtaLabel'] },
+  { id: 'auction-slide-1', label: 'Carousel slide 1', panel: 'hero', keys: ['heroTitle', 'heroSubtitle', 'primaryCtaLabel', 'secondaryCtaLabel'] },
+  { id: 'auction-slide-2', label: 'Carousel slide 2', panel: 'hero', keys: ['statOneValue', 'statOneLabel', 'auctionSectionButtonLabel', 'auctionSectionEyebrow'] },
+  { id: 'auction-slide-3', label: 'Carousel slide 3', panel: 'hero', keys: ['statTwoValue', 'statTwoLabel', 'proofContactLabel', 'auctionSectionTitle'] },
+  { id: 'auction-slide-4', label: 'Carousel slide 4', panel: 'hero', keys: ['statThreeValue', 'statThreeLabel', 'recoveryBriefTitle', 'recoveryBriefBody'] },
   { id: 'hero-badges', label: 'Hero badges', panel: 'hero', keys: ['statOneLabel', 'statTwoLabel', 'statThreeLabel'] },
   { id: 'workflow-heading', label: 'Workflow heading', panel: 'workflow', keys: ['workflowTitle', 'workflowSubtitle'] },
   {
@@ -312,7 +316,7 @@ const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = 
   workflowSubtitle: 'A clear path from account setup to pickup release.',
   workflowStepOneTitle: 'Verify access',
   workflowStepOneBody: 'Create your vendor profile and complete the checks required for auction access.',
-  workflowStepTwoTitle: 'Review lots',
+  workflowStepTwoTitle: 'Review auctions',
   workflowStepTwoBody: 'Inspect photos, condition notes, reserve cues, and document requirements before bidding.',
   workflowStepThreeTitle: 'Bid securely',
   workflowStepThreeBody: 'Place bids with clear increments, deposit rules, and verified bidder controls.',
@@ -321,63 +325,72 @@ const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = 
   operationsSectionEyebrow: 'Buyer controls',
   operationsSectionTitle: 'Bid with the important steps already visible.',
   operationsSectionSubtitle: 'The public page should make vendors feel oriented before they enter the auction: what is verified, what is required, and what happens after a winning bid.',
-  operationsCardOneTitle: 'Review the lot',
+  operationsCardOneTitle: 'Review the auction',
   operationsCardOneBody: 'Review visual evidence and condition notes before you commit to a bid.',
   operationsCardTwoTitle: 'Track next steps',
   operationsCardTwoBody: 'After winning, documents, payment, and pickup status stay visible in one place.',
   proofCardOneTitle: 'Register',
   proofCardOneBody: 'Create a vendor account and keep your bidder profile ready.',
   proofCardTwoTitle: 'Inspect',
-  proofCardTwoBody: 'Review lot details, photos, condition notes, and document requirements.',
+  proofCardTwoBody: 'Review auction details, photos, condition notes, and document requirements.',
   proofCardThreeTitle: 'Bid',
   proofCardThreeBody: 'Place verified bids with reserve gates and clear minimum increments.',
   proofCardFourTitle: 'Deposit',
-  proofCardFourBody: 'Use auction-specific deposits that are tracked to the lot.',
+  proofCardFourBody: 'Use auction-specific deposits that are tracked to the auction.',
   operationsCardThreeTitle: 'Documents',
   operationsCardThreeBody: 'Sign required documents before pickup authorization.',
   recoveryBriefTitle: 'Payment',
-  recoveryBriefBody: 'Complete payment and move the lot toward pickup release.',
+  recoveryBriefBody: 'Complete payment and move the auction toward pickup release.',
   proofSectionTitle: 'A clearer way to buy salvage assets.',
-  proofSectionSubtitle: 'Verified vendors can review salvage lots, bid securely, complete documents, pay the balance, and prepare for pickup.',
+  proofSectionSubtitle: 'Verified vendors can review salvage auctions, bid securely, complete documents, pay the balance, and prepare for pickup.',
   contactHeadline: 'Need help before you bid?',
-  contactSubtitle: 'Ask about vendor verification, lot access, deposits, documents, payment, or pickup requirements before joining an auction.',
+  contactSubtitle: 'Ask about vendor verification, auction access, deposits, documents, payment, or pickup requirements before joining an auction.',
   authHeadline: 'Access verified salvage auctions.',
-  authSubtitle: 'Sign in to review lots, manage bids, complete documents, track payment, and prepare for pickup.',
+  authSubtitle: 'Sign in to Review auctions, manage bids, complete documents, track payment, and prepare for pickup.',
 };
 
 const AUCTION_PULSE_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = {
-  eyebrow: 'Live salvage auctions for verified buyers',
-  heroTitle: 'Bid on verified salvage assets with confidence.',
-  heroSubtitle: 'Browse active lots, review damage details, fund your wallet, and place bids from your phone.',
+  eyebrow: 'Mobile salvage bidding',
+  heroTitle: 'Bid from your phone with the asset details in view.',
+  heroSubtitle: 'Browse active salvage auctions, check damage notes, keep your wallet ready, and track every step after you win.',
   primaryCtaLabel: 'Browse Active Auctions',
   secondaryCtaLabel: 'Register as a Vendor',
-  trustLine: 'Verified listings, secured deposits, signed documents, and clear pickup steps.',
-  statOneLabel: 'Verified lots',
-  statTwoLabel: 'Wallet-ready bids',
-  statThreeLabel: 'Pickup instructions',
-  workflowTitle: 'From registration to pickup, the process is clear.',
-  workflowSubtitle: 'Each step shows what you need before you bid, after you win, and before pickup.',
+  trustLine: 'Verified auction access, deposit visibility, signed documents, and pickup instructions.',
+  statOneValue: 'Get cleared before the auction clock runs out.',
+  statOneLabel: 'Complete verification, confirm your wallet coverage, and see which auctions you can join.',
+  auctionSectionButtonLabel: 'Start Verification',
+  auctionSectionEyebrow: 'Wallet Guide',
+  statTwoValue: 'Know the path before you place a bid.',
+  statTwoLabel: 'Review the vehicle, fund your wallet, bid, win, sign documents, pay, and receive pickup instructions.',
+  proofContactLabel: 'See Bidding Steps',
+  auctionSectionTitle: 'View Sample Auction',
+  statThreeValue: 'After you win, the next steps stay visible.',
+  statThreeLabel: 'Track document signing, payment confirmation, and pickup release without guessing what happens next.',
+  recoveryBriefTitle: 'View After-Win Flow',
+  recoveryBriefBody: 'Contact Support',
+  workflowTitle: 'Your bidding path, one step at a time.',
+  workflowSubtitle: 'A vertical action rail keeps the buying journey easy to follow on mobile.',
   workflowStepOneTitle: 'Register',
   workflowStepOneBody: 'Create a vendor account and keep your bidder profile ready.',
   workflowStepTwoTitle: 'Verify',
   workflowStepTwoBody: 'Complete the checks required for eligible auctions and bid limits.',
   workflowStepThreeTitle: 'Bid',
-  workflowStepThreeBody: 'Review lot details, keep your wallet ready, and place verified bids.',
+  workflowStepThreeBody: 'Review auction details, keep your wallet ready, and place verified bids.',
   workflowStepFourTitle: 'Pickup',
   workflowStepFourBody: 'Sign documents, complete payment, and receive pickup instructions.',
   operationsSectionEyebrow: 'Bid readiness',
   operationsSectionTitle: 'Know your status before you join an auction.',
-  operationsSectionSubtitle: 'See lot requirements, wallet coverage, verification status, documents, payment, and pickup readiness before you commit.',
+  operationsSectionSubtitle: 'See auction requirements, wallet coverage, verification status, documents, payment, and pickup readiness before you commit.',
   operationsCardOneTitle: 'Wallet coverage',
-  operationsCardOneBody: 'Check the deposit or wallet balance needed for eligible lots before placing a bid.',
+  operationsCardOneBody: 'Check the deposit or wallet balance needed for eligible auctions before placing a bid.',
   operationsCardTwoTitle: 'Post-win tracking',
   operationsCardTwoBody: 'After winning, follow document signing, payment, and pickup release from one clear page.',
   operationsCardThreeTitle: 'Auction rules',
   operationsCardThreeBody: 'Bids, deadlines, document windows, and pickup steps are shown before you act.',
-  proofCardOneTitle: 'Active lots',
+  proofCardOneTitle: 'Active auctions',
   proofCardOneBody: 'Scan vehicle images, condition notes, location, current bid, and time left.',
   proofCardTwoTitle: 'Clear eligibility',
-  proofCardTwoBody: 'Know when verification or wallet funding is needed before joining a lot.',
+  proofCardTwoBody: 'Know when verification or wallet funding is needed before joining an auction.',
   proofCardThreeTitle: 'Bid status',
   proofCardThreeBody: 'Track whether you are leading, outbid, or waiting for auction close.',
   proofCardFourTitle: 'Pickup path',
@@ -385,9 +398,9 @@ const AUCTION_PULSE_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = {
   proofSectionTitle: 'Clear rules. Verified bidders. Structured handoff.',
   proofSectionSubtitle: 'The portal keeps auction details, deposit expectations, payment steps, documents, and pickup instructions visible to buyers.',
   contactHeadline: 'Need help before you bid?',
-  contactSubtitle: 'Ask vendor support about verification, wallet funding, lot access, documents, payment, or pickup requirements.',
+  contactSubtitle: 'Ask vendor support about verification, wallet funding, auction access, documents, payment, or pickup requirements.',
   authHeadline: 'Access verified salvage auctions.',
-  authSubtitle: 'Sign in to review lots, manage bids, complete documents, track payment, and prepare for pickup.',
+  authSubtitle: 'Sign in to Review auctions, manage bids, complete documents, track payment, and prepare for pickup.',
 };
 
 function isGenericRecoveryCopy(value: string | undefined) {
@@ -422,9 +435,18 @@ const RECOVERY_COMMAND_CONTENT_PANELS: ContentPanelConfig[] = [
       { key: 'heroSubtitle', label: 'Intro text', type: 'textarea' },
       { key: 'primaryCtaLabel', label: 'Main button' },
       { key: 'secondaryCtaLabel', label: 'Secondary button' },
-      { key: 'statOneLabel', label: 'Badge 1' },
-      { key: 'statTwoLabel', label: 'Badge 2' },
-      { key: 'statThreeLabel', label: 'Badge 3' },
+      { key: 'statOneValue', label: 'Slide 2 headline' },
+      { key: 'statOneLabel', label: 'Badge 1 / slide 2 body', type: 'textarea' },
+      { key: 'auctionSectionButtonLabel', label: 'Slide 2 main button' },
+      { key: 'auctionSectionEyebrow', label: 'Slide 2 secondary button' },
+      { key: 'statTwoValue', label: 'Slide 3 headline' },
+      { key: 'statTwoLabel', label: 'Badge 2 / slide 3 body', type: 'textarea' },
+      { key: 'proofContactLabel', label: 'Slide 3 main button' },
+      { key: 'auctionSectionTitle', label: 'Slide 3 secondary button' },
+      { key: 'statThreeValue', label: 'Slide 4 headline' },
+      { key: 'statThreeLabel', label: 'Badge 3 / slide 4 body', type: 'textarea' },
+      { key: 'recoveryBriefTitle', label: 'Slide 4 main button' },
+      { key: 'recoveryBriefBody', label: 'Slide 4 secondary button' },
       { key: 'trustLine', label: 'Footer trust line', type: 'textarea' },
     ],
   },
@@ -517,7 +539,7 @@ function TemplateContentStep({
         defaults={auctionPulse ? AUCTION_PULSE_DEFAULT_COPY : RECOVERY_COMMAND_DEFAULT_COPY}
         title={auctionPulse ? 'Auction Pulse Editor' : 'Recovery Command Editor'}
         intro={auctionPulse
-          ? 'Click the actual auction portal text, lot copy, workflow, wallet guidance, or support copy in the preview and edit it in place.'
+          ? 'Click the actual auction portal text, auction copy, workflow, wallet guidance, or support copy in the preview and edit it in place.'
           : 'Click a headline, paragraph, button, workflow step, or contact text in the preview and edit it in place.'}
       />
     );
@@ -959,53 +981,56 @@ function TemplateMiniPreview({
 
   if (templateId === 'auction_pulse') {
     return (
-      <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner">
-        <div className="grid h-44 grid-cols-[0.86fr_1.14fr] gap-2 p-2">
-          <div className="rounded-2xl p-3 text-white" style={{ backgroundColor: primaryColor }}>
-            <div className="h-2 w-24 rounded-full" style={{ backgroundColor: accentColor }} />
-            <div className="mt-6 h-5 w-11/12 rounded bg-white/90" />
-            <div className="mt-2 h-5 w-3/4 rounded bg-white/65" />
-            <div className="mt-5 flex gap-1">
-              <div className="h-6 w-16 rounded-full bg-white" />
-              <div className="h-6 w-16 rounded-full border border-white/35" />
+      <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-[#081019] text-white shadow-inner">
+        <div className="grid h-52 grid-cols-[0.82fr_1.18fr]">
+          <div className="flex flex-col justify-between p-4">
+            <div>
+              <div className="h-2 w-20 rounded-full" style={{ backgroundColor: accentColor }} />
+              <div className="mt-5 h-6 w-11/12 rounded bg-white/95" />
+              <div className="mt-2 h-6 w-4/5 rounded bg-white/72" />
+              <div className="mt-2 h-6 w-2/3 rounded bg-white/40" />
+            </div>
+            <div className="flex gap-2">
+              <div className="h-7 w-20 rounded-full" style={{ backgroundColor: primaryColor }} />
+              <div className="h-7 w-16 rounded-full border border-white/30" />
             </div>
           </div>
-          <div className="grid gap-2">
-            <div className="relative overflow-hidden rounded-2xl">
-              <img src="/assets/recovery-command/damage-review.png" alt="" className="h-full w-full object-cover" />
-              <span className="absolute left-2 top-2 rounded-full bg-white px-2 py-1 text-[8px] font-black text-slate-950">LIVE LOT</span>
+          <div className="relative overflow-hidden">
+            <img src="/assets/auction-pulse/mobile-auction.png" alt="" className="h-full w-full object-cover opacity-90" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+            <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-black/40 p-3 backdrop-blur">
+              <div className="h-2 w-16 rounded bg-white/70" />
+              <div className="mt-2 h-3 w-28 rounded bg-white" />
+              <div className="mt-3 h-6 rounded-full" style={{ backgroundColor: primaryColor }} />
             </div>
-            <div className="grid grid-cols-3 gap-1">
-              <div className="rounded-lg bg-slate-100 p-1"><div className="h-2 rounded bg-slate-300" /><div className="mt-1 h-2 rounded" style={{ backgroundColor: accentColor }} /></div>
-              <div className="rounded-lg bg-slate-100 p-1"><div className="h-2 rounded bg-slate-300" /><div className="mt-1 h-2 rounded bg-slate-300" /></div>
-              <div className="rounded-lg bg-slate-100 p-1"><div className="h-2 rounded bg-slate-300" /><div className="mt-1 h-2 rounded bg-slate-300" /></div>
-            </div>
+            <span className="absolute right-3 top-3 rounded-full bg-white px-2 py-1 text-[8px] font-black text-slate-950">MOBILE</span>
           </div>
         </div>
-        <TemplatePreviewFooter guide={guide} selected={selected} />
+        <TemplatePreviewFooter guide={guide} selected={selected} dark />
       </div>
     );
   }
 
   if (templateId === 'recovery_command') {
     return (
-      <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-      <div className="grid h-40 grid-cols-[1fr_0.8fr] gap-2 p-2">
-        <div className="rounded-lg bg-white p-2 shadow-sm">
-          <div className="mb-2 h-2 w-2/3 rounded-full" style={{ backgroundColor: primaryColor }} />
-          <div className="h-9 rounded bg-slate-200" />
-          <div className="mt-2 grid grid-cols-2 gap-1">
-            <div className="h-8 rounded bg-slate-100" />
-            <div className="h-8 rounded bg-slate-100" />
+      <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="grid h-48 grid-cols-[1fr_1fr] gap-2 p-3">
+        <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+          <div className="mb-3 h-2 w-2/3 rounded-full" style={{ backgroundColor: accentColor }} />
+          <div className="h-8 rounded" style={{ backgroundColor: primaryColor }} />
+          <div className="mt-2 h-8 w-4/5 rounded" style={{ backgroundColor: `${primaryColor}88` }} />
+          <div className="mt-4 grid grid-cols-3 gap-1">
+            <div className="h-8 rounded bg-white" />
+            <div className="h-8 rounded bg-white" />
+            <div className="h-8 rounded bg-white" />
           </div>
-          <div className="mt-2 h-4 w-20 rounded-full" style={{ backgroundColor: accentColor }} />
         </div>
-        <div className="rounded-lg p-2 shadow-sm" style={{ backgroundColor: primaryColor, color: primaryText }}>
-          <div className="h-2 w-12 rounded-full bg-white/60" />
-          <div className="mt-4 space-y-1">
-            <div className="h-5 rounded bg-white/20" />
-            <div className="h-5 rounded bg-white/20" />
-            <div className="h-5 rounded" style={{ backgroundColor: accentColor }} />
+        <div className="relative overflow-hidden rounded-2xl shadow-sm">
+          <img src="/assets/recovery-command/hero-yard.png" alt="" className="h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-transparent" />
+          <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-white/85 p-2">
+            <div className="h-2 w-20 rounded bg-slate-300" />
+            <div className="mt-2 h-4 rounded" style={{ backgroundColor: primaryColor }} />
           </div>
         </div>
       </div>
