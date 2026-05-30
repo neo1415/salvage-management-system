@@ -248,8 +248,38 @@ type PreviewEditHotspot = {
   id: string;
   label: string;
   keys: HomepageCopyKey[];
-  className: string;
+  panel: string;
+  rect: { x: number; y: number; width: number; height: number };
 };
+
+const RECOVERY_COMMAND_PREVIEW_WIDTH = 1180;
+const RECOVERY_COMMAND_PREVIEW_HEIGHT = 3600;
+const RECOVERY_COMMAND_PREVIEW_SCALE = 0.78;
+
+const RECOVERY_COMMAND_PREVIEW_HOTSPOTS: PreviewEditHotspot[] = [
+  { id: 'hero-label', label: 'Hero label', panel: 'hero', keys: ['eyebrow'], rect: { x: 38, y: 168, width: 390, height: 46 } },
+  { id: 'hero-title', label: 'Hero headline', panel: 'hero', keys: ['heroTitle'], rect: { x: 38, y: 232, width: 500, height: 335 } },
+  { id: 'hero-copy', label: 'Hero intro', panel: 'hero', keys: ['heroSubtitle'], rect: { x: 38, y: 585, width: 520, height: 112 } },
+  { id: 'hero-buttons', label: 'Hero buttons', panel: 'hero', keys: ['primaryCtaLabel', 'secondaryCtaLabel'], rect: { x: 38, y: 725, width: 360, height: 78 } },
+  { id: 'workflow-heading', label: 'Workflow heading', panel: 'workflow', keys: ['workflowTitle', 'workflowSubtitle'], rect: { x: 38, y: 890, width: 860, height: 145 } },
+  {
+    id: 'workflow-steps',
+    label: 'Workflow steps',
+    panel: 'workflow',
+    keys: ['workflowStepOneTitle', 'workflowStepOneBody', 'workflowStepTwoTitle', 'workflowStepTwoBody', 'workflowStepThreeTitle', 'workflowStepThreeBody', 'workflowStepFourTitle', 'workflowStepFourBody'],
+    rect: { x: 38, y: 1060, width: 1100, height: 235 },
+  },
+  { id: 'controls-copy', label: 'Buyer controls copy', panel: 'controls', keys: ['operationsSectionEyebrow', 'operationsSectionTitle', 'operationsSectionSubtitle'], rect: { x: 38, y: 1450, width: 1060, height: 165 } },
+  {
+    id: 'controls-cards',
+    label: 'Buyer control cards',
+    panel: 'controls',
+    keys: ['operationsCardOneTitle', 'operationsCardOneBody', 'operationsCardTwoTitle', 'operationsCardTwoBody'],
+    rect: { x: 38, y: 1650, width: 1100, height: 730 },
+  },
+  { id: 'buyer-copy', label: 'Buyer reassurance', panel: 'buyers', keys: ['proofSectionTitle', 'proofSectionSubtitle'], rect: { x: 560, y: 2620, width: 560, height: 240 } },
+  { id: 'contact-copy', label: 'Contact copy', panel: 'contact', keys: ['contactHeadline', 'contactSubtitle'], rect: { x: 38, y: 3050, width: 500, height: 260 } },
+];
 
 const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = {
   eyebrow: 'Verified salvage auction access',
@@ -564,19 +594,7 @@ function RecoveryCommandLivePreview({
     };
   }, [policy.branding, resolved]);
 
-  const hotspots: PreviewEditHotspot[] = [
-    { id: 'hero-label', label: 'Hero label', keys: ['eyebrow'], className: 'left-[4%] top-[5%] h-[3%] w-[34%]' },
-    { id: 'hero-title', label: 'Hero headline', keys: ['heroTitle'], className: 'left-[4%] top-[10%] h-[20%] w-[40%]' },
-    { id: 'hero-copy', label: 'Hero intro', keys: ['heroSubtitle'], className: 'left-[4%] top-[31%] h-[8%] w-[39%]' },
-    { id: 'hero-buttons', label: 'Hero buttons', keys: ['primaryCtaLabel', 'secondaryCtaLabel'], className: 'left-[4%] top-[41%] h-[6%] w-[25%]' },
-    { id: 'workflow-heading', label: 'Workflow heading', keys: ['workflowTitle', 'workflowSubtitle'], className: 'left-[4%] top-[55%] h-[8%] w-[70%]' },
-    { id: 'workflow-steps', label: 'Workflow steps', keys: ['workflowStepOneTitle', 'workflowStepOneBody', 'workflowStepTwoTitle', 'workflowStepTwoBody', 'workflowStepThreeTitle', 'workflowStepThreeBody', 'workflowStepFourTitle', 'workflowStepFourBody'], className: 'left-[4%] top-[64%] h-[13%] w-[90%]' },
-    { id: 'controls-copy', label: 'Buyer controls', keys: ['operationsSectionEyebrow', 'operationsSectionTitle', 'operationsSectionSubtitle'], className: 'left-[4%] top-[78%] h-[8%] w-[58%]' },
-    { id: 'controls-cards', label: 'Buyer control cards', keys: ['operationsCardOneTitle', 'operationsCardOneBody', 'operationsCardTwoTitle', 'operationsCardTwoBody'], className: 'left-[4%] top-[87%] h-[8%] w-[62%]' },
-    { id: 'buyer-copy', label: 'Buyer reassurance', keys: ['proofSectionTitle', 'proofSectionSubtitle'], className: 'left-[66%] top-[78%] h-[8%] w-[28%]' },
-    { id: 'contact-copy', label: 'Contact copy', keys: ['contactHeadline', 'contactSubtitle'], className: 'left-[66%] top-[87%] h-[8%] w-[28%]' },
-  ];
-  const activeHotspot = hotspots.find((hotspot) => hotspot.id === activeHotspotId) ?? hotspots[1];
+  const activeHotspot = RECOVERY_COMMAND_PREVIEW_HOTSPOTS.find((hotspot) => hotspot.id === activeHotspotId) ?? RECOVERY_COMMAND_PREVIEW_HOTSPOTS[1];
   const selectedPanel = RECOVERY_COMMAND_CONTENT_PANELS.find((panel) => panel.id === activePanel);
 
   return (
@@ -592,13 +610,22 @@ function RecoveryCommandLivePreview({
         </div>
         <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="max-h-[72vh] overflow-auto bg-slate-100 p-4">
-            <div className="mx-auto w-[1180px] origin-top-left scale-[0.78] overflow-hidden rounded-[1.5rem] bg-white shadow-sm">
-              <div className="relative min-h-[1240px]">
+            <div
+              className="mx-auto origin-top-left overflow-hidden rounded-[1.5rem] bg-white shadow-sm"
+              style={{
+                width: RECOVERY_COMMAND_PREVIEW_WIDTH,
+                height: RECOVERY_COMMAND_PREVIEW_HEIGHT,
+                transform: `scale(${RECOVERY_COMMAND_PREVIEW_SCALE})`,
+                marginRight: -(RECOVERY_COMMAND_PREVIEW_WIDTH * (1 - RECOVERY_COMMAND_PREVIEW_SCALE)),
+                marginBottom: -(RECOVERY_COMMAND_PREVIEW_HEIGHT * (1 - RECOVERY_COMMAND_PREVIEW_SCALE)),
+              }}
+            >
+              <div className="relative" style={{ width: RECOVERY_COMMAND_PREVIEW_WIDTH, minHeight: RECOVERY_COMMAND_PREVIEW_HEIGHT }}>
                 <div className="pointer-events-none">
                   <WhiteLabelHomeTemplates branding={previewBranding} showLegacyBelowFold={false} />
                 </div>
                 <div className="absolute inset-0">
-                  {hotspots.map((hotspot) => {
+                  {RECOVERY_COMMAND_PREVIEW_HOTSPOTS.map((hotspot) => {
                     const isActive = hotspot.id === activeHotspot.id;
                     return (
                       <button
@@ -606,14 +633,19 @@ function RecoveryCommandLivePreview({
                         type="button"
                         onClick={() => {
                           setActiveHotspotId(hotspot.id);
-                          const panel = RECOVERY_COMMAND_CONTENT_PANELS.find((item) => item.fields.some((field) => hotspot.keys.includes(field.key)));
-                          if (panel) setActivePanel(panel.id);
+                          setActivePanel(hotspot.panel);
                         }}
                         className={`absolute rounded-[1.25rem] border text-left transition ${
                           isActive
                             ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)]/35 shadow-[0_0_0_4px_var(--brand-focus-ring)]'
                             : 'border-transparent hover:border-[var(--brand-primary)] hover:bg-[var(--brand-primary-surface)]/30'
-                        } ${hotspot.className}`}
+                        }`}
+                        style={{
+                          left: hotspot.rect.x,
+                          top: hotspot.rect.y,
+                          width: hotspot.rect.width,
+                          height: hotspot.rect.height,
+                        }}
                         aria-label={hotspot.label}
                         title={hotspot.label}
                       >
