@@ -38,7 +38,7 @@ const TEMPLATE_EDITOR_GUIDE: Record<string, TemplateEditorGuide> = {
   },
   recovery_command: {
     bestFor: 'Executive insurance teams that need recovery visibility, governance, and clean handoffs.',
-    sections: ['Command hero', 'Workflow rail', 'Platform controls', 'Insurer handoff', 'Contact'],
+    sections: ['Command hero', 'Workflow rail', 'Control room', 'Insurer handoff', 'Contact'],
     image: '/assets/recovery-command/hero-yard.png',
   },
   claims_orbit: {
@@ -67,7 +67,7 @@ const TEMPLATE_COPY_MAP: Record<string, Array<{ label: string; fields: string; a
   recovery_command: [
     { label: 'Command hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Split hero and product command-center visual' },
     { label: 'Workflow rail', fields: 'Workflow labels and process copy', appears: 'Case to pickup release timeline' },
-    { label: 'Contact section', fields: 'Trust line, support email, support phone', appears: 'Demo request and footer support area' },
+    { label: 'Contact section', fields: 'Trust line, support email, support phone', appears: 'Contact form and footer support area' },
   ],
   claims_orbit: [
     { label: 'Orbit hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Animated circular recovery story' },

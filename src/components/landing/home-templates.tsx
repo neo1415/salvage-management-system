@@ -14,9 +14,7 @@ import {
   CreditCard,
   FileCheck2,
   Gavel,
-  Landmark,
   Search,
-  ShieldCheck,
   Users,
   WalletCards,
 } from 'lucide-react';
@@ -124,6 +122,16 @@ function cssVars(branding: BrandingPolicy, theme: 'day' | 'night') {
     '--wl-muted': theme === 'night' ? '#88877F' : '#64748B',
     '--wl-soft': theme === 'night' ? '#ECEAE3' : '#F3F4F6',
   } as CSSProperties;
+}
+
+function getDisplayInkColor(branding: BrandingPolicy, dark: boolean) {
+  if (dark) return '#FFFFFF';
+  if (!/^#[0-9A-Fa-f]{6}$/.test(branding.primaryColor)) return '#0F172A';
+  const red = parseInt(branding.primaryColor.slice(1, 3), 16);
+  const green = parseInt(branding.primaryColor.slice(3, 5), 16);
+  const blue = parseInt(branding.primaryColor.slice(5, 7), 16);
+  const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+  return luminance > 210 ? '#0F172A' : branding.primaryColor;
 }
 
 function BrandWordmark({ branding, light = false }: { branding: BrandingPolicy; light?: boolean }) {
@@ -360,6 +368,7 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
   const dark = theme === 'night';
   const primaryText = getReadableTextColor(branding.primaryColor);
   const accentText = getReadableTextColor(branding.accentColor);
+  const displayInk = getDisplayInkColor(branding, dark);
   const shell = dark ? 'bg-[#080D14] text-white' : 'bg-[#F5F7FA] text-slate-950';
   const muted = dark ? 'text-white/62' : 'text-slate-600';
   const heroTitle = copy.heroTitle || 'Recover more value from every salvage asset.';
@@ -378,7 +387,7 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
               <CircleDot className="h-3.5 w-3.5" />
               {copy.eyebrow || 'Insurance salvage command center'}
             </p>
-            <h1 className="mt-7 max-w-3xl text-[clamp(3.4rem,7.6vw,6.9rem)] font-black leading-[0.86] tracking-[-0.075em]">
+            <h1 className="mt-7 max-w-3xl text-[clamp(2.8rem,5.5vw,5.45rem)] font-black leading-[0.95]" style={{ color: displayInk }}>
               {heroTitle}
             </h1>
             <p className={`mt-7 max-w-2xl text-lg leading-8 sm:text-xl ${muted}`}>
@@ -389,8 +398,8 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
                 {copy.primaryCtaLabel || 'Request Demo'}
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
-              <a href="#workflow" className={`inline-flex items-center justify-center rounded-xl border px-6 py-4 text-sm font-black transition-colors ${dark ? 'border-white/15 text-white hover:bg-white hover:text-slate-950' : 'border-slate-300 text-slate-950 hover:bg-slate-950 hover:text-white'}`}>
-                {copy.secondaryCtaLabel || 'View Workflow'}
+              <a href="#workflow" className={`inline-flex items-center justify-center rounded-xl border px-6 py-4 text-sm font-black transition-colors hover:border-[var(--wl-accent)] hover:text-[var(--wl-accent)] ${dark ? 'border-white/15 text-white' : 'border-slate-300 text-slate-950'}`}>
+                {copy.secondaryCtaLabel && copy.secondaryCtaLabel.toLowerCase() !== 'sign in' ? copy.secondaryCtaLabel : 'View Workflow'}
               </a>
             </div>
             <div className={`mt-8 grid max-w-2xl gap-3 text-sm sm:grid-cols-3 ${muted}`}>
@@ -408,7 +417,7 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
       </section>
 
       <RecoveryWorkflowRail branding={branding} dark={dark} />
-      <RecoveryFeatureGrid branding={branding} dark={dark} />
+      <RecoveryControlsShowcase branding={branding} dark={dark} />
       <RecoveryWhySection branding={branding} dark={dark} />
       <RecoveryCommandContact branding={branding} dark={dark} />
       <RecoveryCommandFooter branding={branding} dark={dark} accentText={accentText} />
@@ -457,11 +466,11 @@ function RecoveryCommandSplash({ branding, dark }: { branding: BrandingPolicy; d
 }
 
 function RecoveryCommandNav({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
-  const primaryText = getReadableTextColor(branding.primaryColor);
+  const accentText = getReadableTextColor(branding.accentColor);
   const navLinks = [
     ['Platform', '#platform'],
     ['Workflow', '#workflow'],
-    ['Security', '#security'],
+    ['Controls', '#controls'],
     ['For Insurers', '#insurers'],
     ['Contact', '#contact'],
   ];
@@ -475,9 +484,14 @@ function RecoveryCommandNav({ branding, dark }: { branding: BrandingPolicy; dark
             <a key={label} href={href} className="transition-colors hover:text-[var(--wl-accent)]">{label}</a>
           ))}
         </div>
-        <Link href="#contact" className="rounded-xl px-4 py-2 text-sm font-black shadow-sm" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
-          Request Demo
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/login" className={`rounded-xl border px-4 py-2 text-sm font-black transition-colors hover:border-[var(--wl-accent)] hover:text-[var(--wl-accent)] ${dark ? 'border-white/15 text-white' : 'border-slate-300 text-slate-950'}`}>
+            Sign in
+          </Link>
+          <Link href="/register" className="hidden rounded-xl px-4 py-2 text-sm font-black shadow-sm sm:inline-flex" style={{ backgroundColor: branding.accentColor, color: accentText }}>
+            Register
+          </Link>
+        </div>
       </div>
     </nav>
   );
@@ -563,6 +577,7 @@ function CommandCenterMockup({ branding, dark }: { branding: BrandingPolicy; dar
 function RecoveryWorkflowRail({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
   const muted = dark ? 'text-white/58' : 'text-slate-600';
   const panel = dark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white';
+  const displayInk = getDisplayInkColor(branding, dark);
 
   return (
     <section id="workflow" className={`px-5 py-24 ${dark ? 'bg-[#0B111A]' : 'bg-white'}`}>
@@ -570,7 +585,7 @@ function RecoveryWorkflowRail({ branding, dark }: { branding: BrandingPolicy; da
         <div className="grid gap-6 lg:grid-cols-[360px_1fr] lg:items-end">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Workflow</p>
-            <h2 className="mt-4 text-4xl font-black leading-tight tracking-[-0.055em] md:text-5xl">
+            <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
               One governed path from claim intake to pickup release.
             </h2>
           </div>
@@ -604,45 +619,129 @@ function RecoveryWorkflowRail({ branding, dark }: { branding: BrandingPolicy; da
   );
 }
 
-function RecoveryFeatureGrid({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+function RecoveryControlsShowcase({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
   const muted = dark ? 'text-white/58' : 'text-slate-600';
-  const panel = dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white';
+  const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
+  const displayInk = getDisplayInkColor(branding, dark);
   const features = [
-    [ClipboardCheck, 'Case intake', 'Capture claim assets, photos, voice notes, documents, and inspection location in one record.'],
-    [Search, 'Damage assessment', 'Support adjusters with structured photo review and salvage-specific assessment notes.'],
-    [Landmark, 'Reserve recommendations', 'Set reserve guidance before vendors enter a controlled auction flow.'],
-    [Users, 'Vendor verification', 'Limit access by verification tier, registration status, and policy rules.'],
-    [Gavel, 'Verified auction bidding', 'Run live bidding with reserve status, extensions, and controlled bidder access.'],
-    [WalletCards, 'Wallet deposits', 'Hold auction deposits for the right bidders and keep finance visibility clear.'],
-    [FileCheck2, 'Document signing', 'Generate and track bill of sale and waiver completion before payment release.'],
-    [CreditCard, 'Payment tracking', 'Move from signed documents to payment authorization with clear status changes.'],
-    [ShieldCheck, 'Audit logs', 'Keep decisions and handoffs traceable across claims, salvage, finance, and vendors.'],
+    [ClipboardCheck, 'Intake', 'Claim asset, photos, voice notes, documents, and inspection location.'],
+    [Search, 'Assess', 'Structured damage review and reserve recommendation support.'],
+    [Gavel, 'Auction', 'Verified bidders, reserve gates, extensions, and bid controls.'],
+    [WalletCards, 'Deposit', 'Auction-specific deposit hold and finance visibility.'],
+    [FileCheck2, 'Documents', 'Bill of sale and waiver progress before payment release.'],
+    [CreditCard, 'Payment', 'Clear payment authorization state and pickup handoff.'],
+  ] as const;
+  const mediaCards = [
+    {
+      title: 'Damage review',
+      body: 'Inspection evidence and assessment status stay attached to the case.',
+      image: recoveryCommandAssets.damageReview,
+      icon: Search,
+    },
+    {
+      title: 'Field handoff',
+      body: 'Pickup, documents, and payment status move together instead of living in separate threads.',
+      image: recoveryCommandAssets.pickupReady,
+      icon: FileCheck2,
+    },
   ] as const;
 
   return (
-    <section id="security" className={`px-5 py-24 ${dark ? 'bg-[#080D14]' : 'bg-[#F5F7FA]'}`}>
+    <section id="controls" className={`px-5 py-24 ${dark ? 'bg-[#080D14]' : 'bg-[#F5F7FA]'}`}>
       <div className="mx-auto max-w-7xl">
-        <div className="max-w-3xl">
-          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Platform controls</p>
-          <h2 className="mt-4 text-4xl font-black leading-tight tracking-[-0.055em] md:text-5xl">
-            Built for operational clarity, not marketplace noise.
-          </h2>
+        <div className="grid gap-6 lg:grid-cols-[0.86fr_1.14fr] lg:items-end">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Control room</p>
+            <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
+              See the handoff before it becomes a delay.
+            </h2>
+          </div>
+          <p className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
+            The page should feel like the product: evidence, approvals, vendor access, deposits, documents, and pickup release all moving through one controlled lane.
+          </p>
         </div>
-        <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {features.map(([Icon, title, body], index) => (
-            <motion.article
-              key={title}
-              className={`min-h-56 rounded-2xl border p-6 ${panel}`}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.35 }}
-              transition={{ delay: index * 0.03, duration: 0.4 }}
-            >
-              <Icon className="h-7 w-7" style={{ color: branding.accentColor }} />
-              <h3 className="mt-8 text-xl font-black tracking-[-0.04em]">{title}</h3>
-              <p className={`mt-3 text-sm leading-7 ${muted}`}>{body}</p>
-            </motion.article>
-          ))}
+
+        <div className="mt-12 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+          <motion.div
+            className={`relative min-h-[560px] overflow-hidden rounded-[2rem] border ${panel}`}
+            initial={{ opacity: 0, y: 22 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={{ duration: 0.5 }}
+          >
+            <Image src={recoveryCommandAssets.fieldInspection} alt="Field inspection with a verified salvage case" fill className="object-cover" sizes="(max-width: 1024px) 100vw, 720px" />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/82 via-slate-950/18 to-transparent" />
+            <div className="absolute inset-x-5 bottom-5">
+              <div className="grid gap-3 rounded-[1.6rem] border border-white/15 bg-white/12 p-4 text-white shadow-2xl backdrop-blur-xl sm:grid-cols-3">
+                {[
+                  ['Case', 'Verified'],
+                  ['Auction', 'Ready'],
+                  ['Reserve', 'Set'],
+                ].map(([label, value], index) => (
+                  <motion.div
+                    key={label}
+                    className="rounded-2xl bg-white/12 p-4"
+                    whileHover={{ y: -4 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/55">0{index + 1} {label}</span>
+                    <p className="mt-2 text-xl font-black">{value}</p>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
+          <div className="grid gap-4">
+            {mediaCards.map(({ title, body, image, icon: Icon }, index) => (
+              <motion.article
+                key={title}
+                className={`group grid min-h-64 overflow-hidden rounded-[2rem] border ${panel} md:grid-cols-[0.9fr_1.1fr]`}
+                initial={{ opacity: 0, x: 24 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, amount: 0.35 }}
+                transition={{ delay: index * 0.08, duration: 0.45 }}
+              >
+                <div className="relative min-h-56 overflow-hidden md:min-h-0">
+                  <Image src={image} alt={`${title} visual`} fill className="object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 1024px) 100vw, 360px" />
+                  <div className="absolute inset-0 bg-slate-950/12" />
+                </div>
+                <div className="flex flex-col justify-between p-6">
+                  <div>
+                    <Icon className="h-7 w-7" style={{ color: branding.accentColor }} />
+                    <h3 className="mt-5 text-2xl font-black" style={{ color: displayInk }}>{title}</h3>
+                    <p className={`mt-3 text-sm leading-7 ${muted}`}>{body}</p>
+                  </div>
+                  <div className="mt-6 h-2 rounded-full bg-current/10">
+                    <motion.span className="block h-2 rounded-full" style={{ backgroundColor: branding.accentColor }} initial={{ width: '34%' }} whileInView={{ width: index === 0 ? '72%' : '100%' }} viewport={{ once: true }} transition={{ duration: 0.7 }} />
+                  </div>
+                </div>
+              </motion.article>
+            ))}
+          </div>
+        </div>
+
+        <div className={`mt-4 rounded-[2rem] border p-4 ${panel}`}>
+          <div className="grid gap-3 md:grid-cols-6">
+            {features.map(([Icon, title, body], index) => (
+              <motion.div
+                key={title}
+                className={`group rounded-2xl border p-4 transition-shadow ${dark ? 'border-white/10 bg-slate-950/25 hover:bg-white/[0.08]' : 'border-slate-200 bg-slate-50 hover:bg-white hover:shadow-lg'}`}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.35 }}
+                transition={{ delay: index * 0.035, duration: 0.35 }}
+                whileHover={{ y: -5 }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <Icon className="h-5 w-5" style={{ color: branding.accentColor }} />
+                  <span className={`font-mono text-[10px] ${muted}`}>{String(index + 1).padStart(2, '0')}</span>
+                </div>
+                <h3 className="mt-5 text-base font-black" style={{ color: displayInk }}>{title}</h3>
+                <p className={`mt-2 text-xs leading-6 ${muted}`}>{body}</p>
+              </motion.div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
@@ -652,6 +751,7 @@ function RecoveryFeatureGrid({ branding, dark }: { branding: BrandingPolicy; dar
 function RecoveryWhySection({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
   const muted = dark ? 'text-white/58' : 'text-slate-600';
   const panel = dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white';
+  const displayInk = getDisplayInkColor(branding, dark);
   const points = [
     'Reduce manual follow-up between claims, salvage, finance, and vendors.',
     'Keep reserve status, auction progress, document signing, and payment state visible.',
@@ -668,7 +768,7 @@ function RecoveryWhySection({ branding, dark }: { branding: BrandingPolicy; dark
         </div>
         <div>
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>For insurers</p>
-          <h2 className="mt-4 text-4xl font-black leading-tight tracking-[-0.055em] md:text-5xl">
+          <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
             Faster recovery starts with a cleaner operating picture.
           </h2>
           <p className={`mt-5 max-w-2xl text-base leading-8 ${muted}`}>
@@ -694,6 +794,7 @@ function RecoveryCommandContact({ branding, dark }: { branding: BrandingPolicy; 
   const accentText = getReadableTextColor(branding.accentColor);
   const panel = dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white';
   const muted = dark ? 'text-white/58' : 'text-slate-600';
+  const displayInk = getDisplayInkColor(branding, dark);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -725,7 +826,7 @@ function RecoveryCommandContact({ branding, dark }: { branding: BrandingPolicy; 
       <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.82fr_1.18fr]">
         <div className={`rounded-[2rem] border p-7 ${panel}`}>
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Contact</p>
-          <h2 className="mt-4 text-4xl font-black leading-tight tracking-[-0.055em]">
+          <h2 className="mt-4 text-3xl font-black leading-tight md:text-4xl" style={{ color: displayInk }}>
             See the recovery workflow in context.
           </h2>
           <p className={`mt-5 text-base leading-8 ${muted}`}>
@@ -791,7 +892,7 @@ function RecoveryCommandFooter({ branding, dark, accentText }: { branding: Brand
           </p>
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
-          {['Platform', 'Workflow', 'Security', 'For Insurers', 'Contact'].map((label) => (
+          {['Platform', 'Workflow', 'Controls', 'For Insurers', 'Contact'].map((label) => (
             <a key={label} href={`#${label === 'For Insurers' ? 'insurers' : label.toLowerCase()}`} className={linkClass}>{label}</a>
           ))}
         </div>

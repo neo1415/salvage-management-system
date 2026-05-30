@@ -29,10 +29,10 @@ Do not hardcode product names into the template body unless the copy is intentio
 ### Required Sections
 
 - Splash screen with logo, appName, and a short workflow line: Case, Assessment, Auction, Documents, Payment
-- Navbar with Platform, Workflow, Security, For Insurers, Contact, and Request Demo
+- Navbar with Platform, Workflow, Controls, For Insurers, Contact, Sign in, and Register
 - Split hero with a command-center product mockup
 - Workflow section using a rail, timeline, or operational flow visual
-- Feature section covering intake, damage assessment, reserve recommendations, verified vendor bidding, wallet deposits, documents, payments, fraud alerts, and audit logs
+- Controls section covering intake, damage assessment, auction readiness, deposits, documents, payments, and handoffs
 - Why it matters section focused on claims, salvage, finance, and vendor handoffs
 - Contact section with a simple operational demo request form
 - Footer with platform links, legal links, and support contact
