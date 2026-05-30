@@ -2,9 +2,24 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  CircleDot,
+  ClipboardCheck,
+  CreditCard,
+  FileCheck2,
+  Gavel,
+  Landmark,
+  Search,
+  ShieldCheck,
+  Users,
+  WalletCards,
+} from 'lucide-react';
 import type { BrandingPolicy } from '@/features/business-policy/types';
 import { getReadableTextColor } from '@/features/branding/brand-colors';
 import { normalizeHomepageTemplate, resolveTemplateTheme } from './template-config';
@@ -52,6 +67,26 @@ const processSteps = [
   ['02', 'Review', 'Route approval, valuation, KYC, and fraud signals through controlled workflows.'],
   ['03', 'Auction', 'Run verified bidding with deposits, extensions, notifications, and audit trails.'],
   ['04', 'Settle', 'Generate branded documents, collect payment, and reconcile recovery value.'],
+];
+
+// Default Recovery Command media. These can later be exposed in the template
+// editor as configurable uploads while keeping this template production-ready.
+const recoveryCommandAssets = {
+  heroYard: '/assets/recovery-command/hero-yard.png',
+  damageReview: '/assets/recovery-command/damage-review.png',
+  operationsRoom: '/assets/recovery-command/operations-room.png',
+  pickupReady: '/assets/recovery-command/pickup-ready.png',
+  fieldInspection: '/assets/recovery-command/field-inspection.png',
+};
+
+const recoveryCommandStages = [
+  'Case Created',
+  'Damage Assessment',
+  'Reserve Set',
+  'Auction Live',
+  'Documents Signed',
+  'Payment Confirmed',
+  'Pickup Released',
 ];
 
 function getProcessSteps(copy: BrandingPolicy['homepageCopy']) {
@@ -324,56 +359,454 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
   const copy = branding.homepageCopy;
   const dark = theme === 'night';
   const primaryText = getReadableTextColor(branding.primaryColor);
+  const accentText = getReadableTextColor(branding.accentColor);
+  const shell = dark ? 'bg-[#080D14] text-white' : 'bg-[#F5F7FA] text-slate-950';
+  const muted = dark ? 'text-white/62' : 'text-slate-600';
+  const heroTitle = copy.heroTitle || 'Recover more value from every salvage asset.';
+  const heroSubtitle = copy.heroSubtitle || 'Run salvage cases, auctions, vendor bidding, documents, payments, and fraud monitoring from one controlled workflow.';
+
   return (
-    <main className={`min-h-screen ${dark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-950'}`} style={cssVars(branding, theme)}>
-      {branding.splashEnabled ? <Splash branding={branding} /> : null}
-      <TemplateNav branding={branding} light={dark} />
-      <section className="px-5 pb-20 pt-32">
-        <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.22em]" style={{ color: branding.accentColor }}>{copy.eyebrow || 'Recovery command center'}</p>
-            <h1 className="mt-6 text-5xl font-black leading-[0.95] tracking-[-0.06em] sm:text-7xl">{copy.heroTitle}</h1>
-            <p className={`mt-6 max-w-xl text-lg leading-8 ${dark ? 'text-white/60' : 'text-slate-600'}`}>{copy.heroSubtitle}</p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/register" className="rounded-md px-6 py-4 text-center text-sm font-bold" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>{copy.primaryCtaLabel}</Link>
-              <Link href="/login" className={`rounded-md border px-6 py-4 text-center text-sm font-bold ${dark ? 'border-white/15 text-white' : 'border-slate-300 text-slate-900'}`}>{copy.secondaryCtaLabel || 'Sign in'}</Link>
+    <main className={`min-h-screen overflow-hidden ${shell}`} style={cssVars(branding, theme)}>
+      {branding.splashEnabled ? <RecoveryCommandSplash branding={branding} dark={dark} /> : null}
+      <RecoveryCommandNav branding={branding} dark={dark} />
+
+      <section id="platform" className="relative px-5 pb-20 pt-28 sm:pt-32 lg:pb-28">
+        <div className="absolute inset-x-0 top-0 h-[640px] opacity-70" style={{ background: `radial-gradient(circle at 18% 18%, ${branding.accentColor}24, transparent 34%), radial-gradient(circle at 82% 8%, ${branding.primaryColor}22, transparent 28%)` }} />
+        <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
+          <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }}>
+            <p className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em]" style={{ borderColor: `${branding.accentColor}55`, color: branding.accentColor }}>
+              <CircleDot className="h-3.5 w-3.5" />
+              {copy.eyebrow || 'Insurance salvage command center'}
+            </p>
+            <h1 className="mt-7 max-w-3xl text-[clamp(3.4rem,7.6vw,6.9rem)] font-black leading-[0.86] tracking-[-0.075em]">
+              {heroTitle}
+            </h1>
+            <p className={`mt-7 max-w-2xl text-lg leading-8 sm:text-xl ${muted}`}>
+              {heroSubtitle}
+            </p>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <Link href="#contact" className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-black shadow-lg transition-transform hover:-translate-y-0.5" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
+                {copy.primaryCtaLabel || 'Request Demo'}
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+              <a href="#workflow" className={`inline-flex items-center justify-center rounded-xl border px-6 py-4 text-sm font-black transition-colors ${dark ? 'border-white/15 text-white hover:bg-white hover:text-slate-950' : 'border-slate-300 text-slate-950 hover:bg-slate-950 hover:text-white'}`}>
+                {copy.secondaryCtaLabel || 'View Workflow'}
+              </a>
             </div>
-          </div>
-          <MediaFrame lot={auctionLots[0]} dark={dark} className="h-72 lg:hidden" />
-          <div className={`rounded-lg border p-3 shadow-2xl ${dark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-white'}`}>
-            <MediaFrame lot={auctionLots[1]} dark={dark} className="mb-3 h-56" />
-            <div className="grid gap-3 md:grid-cols-3">
-              {[[copy.statOneLabel, copy.statOneValue], [copy.statTwoLabel, copy.statTwoValue], [copy.statThreeLabel, copy.statThreeValue]].map(([label, value]) => (
-                <div key={label} className={`rounded-md p-4 ${dark ? 'bg-slate-900' : 'bg-slate-50'}`}>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">{label}</p>
-                  <p className="mt-3 text-3xl font-black tracking-[-0.04em]">{value}</p>
+            <div className={`mt-8 grid max-w-2xl gap-3 text-sm sm:grid-cols-3 ${muted}`}>
+              {['Case ownership', 'Verified bidding', 'Payment handoff'].map((item) => (
+                <div key={item} className={`rounded-xl border px-4 py-3 ${dark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white/70'}`}>
+                  <CheckCircle2 className="mb-2 h-4 w-4" style={{ color: branding.accentColor }} />
+                  {item}
                 </div>
               ))}
             </div>
-            <div className={`mt-3 rounded-md p-5 ${dark ? 'bg-slate-900' : 'bg-slate-100'}`}>
-              <div className="mb-5 flex items-center justify-between">
-                <p className="font-mono text-xs uppercase tracking-[0.18em] text-slate-500">Live recovery board</p>
-                <span className="rounded-full bg-red-500/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-red-500">Live</span>
+          </motion.div>
+
+          <CommandCenterMockup branding={branding} dark={dark} />
+        </div>
+      </section>
+
+      <RecoveryWorkflowRail branding={branding} dark={dark} />
+      <RecoveryFeatureGrid branding={branding} dark={dark} />
+      <RecoveryWhySection branding={branding} dark={dark} />
+      <RecoveryCommandContact branding={branding} dark={dark} />
+      <RecoveryCommandFooter branding={branding} dark={dark} accentText={accentText} />
+    </main>
+  );
+}
+
+function RecoveryCommandSplash({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const logo = branding.logoPath || '/icons/icon-192.png';
+  const stages = ['Case', 'Assessment', 'Auction', 'Documents', 'Payment'];
+
+  return (
+    <motion.div
+      className={`fixed inset-0 z-[9000] grid place-items-center ${dark ? 'bg-[#070B12]' : 'bg-slate-950'} text-white`}
+      initial={{ opacity: 1 }}
+      animate={{ opacity: 0, pointerEvents: 'none' }}
+      transition={{ delay: reduceMotion ? 0.35 : 1.25, duration: reduceMotion ? 0.2 : 0.45 }}
+      aria-hidden
+    >
+      <div className="absolute inset-0 opacity-35" style={{ background: `radial-gradient(circle at 50% 45%, ${branding.accentColor}40, transparent 34%)` }} />
+      <div className="relative w-full max-w-xl px-6 text-center">
+        <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-white/10 bg-white/10 p-2 shadow-2xl">
+          <Image src={logo} alt="" width={48} height={48} className="h-12 w-12 rounded-xl object-contain" unoptimized />
+        </div>
+        <p className="mt-5 text-4xl font-black tracking-[-0.06em]">{branding.brandName}</p>
+        <div className="mt-8 flex items-center justify-between gap-1 sm:gap-2">
+          {stages.map((stage, index) => (
+            <div key={stage} className="flex flex-1 items-center">
+              <div className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                <motion.span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: branding.accentColor }}
+                  animate={reduceMotion ? undefined : { scale: [1, 1.6, 1], opacity: [0.55, 1, 0.55] }}
+                  transition={{ delay: index * 0.12, duration: 0.9, repeat: Infinity, repeatDelay: 0.8 }}
+                />
+                <span className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-white/55">{stage}</span>
               </div>
-              <div className="space-y-3">
-                {auctionLots.map((lot) => (
-                  <div key={lot.id} className={`grid grid-cols-[auto_1fr_auto] items-center gap-4 rounded-md border p-3 ${dark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-white'}`}>
-                    <span className="font-mono text-xs text-slate-500">{lot.id}</span>
-                    <div><p className="font-bold">{lot.name}</p><p className="text-sm text-slate-500">{lot.condition}</p></div>
-                    <p className="font-black" style={{ color: branding.accentColor }}>{lot.bid}</p>
+              {index < stages.length - 1 ? <span className="h-px flex-1 bg-white/18" /> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function RecoveryCommandNav({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const primaryText = getReadableTextColor(branding.primaryColor);
+  const navLinks = [
+    ['Platform', '#platform'],
+    ['Workflow', '#workflow'],
+    ['Security', '#security'],
+    ['For Insurers', '#insurers'],
+    ['Contact', '#contact'],
+  ];
+
+  return (
+    <nav className={`fixed left-0 right-0 top-0 z-50 border-b px-4 py-3 backdrop-blur-xl ${dark ? 'border-white/10 bg-[#080D14]/78' : 'border-slate-200/70 bg-white/80'}`}>
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+        <BrandWordmark branding={branding} light={dark} />
+        <div className={`hidden items-center gap-6 text-[11px] font-bold uppercase tracking-[0.14em] lg:flex ${dark ? 'text-white/55' : 'text-slate-500'}`}>
+          {navLinks.map(([label, href]) => (
+            <a key={label} href={href} className="transition-colors hover:text-[var(--wl-accent)]">{label}</a>
+          ))}
+        </div>
+        <Link href="#contact" className="rounded-xl px-4 py-2 text-sm font-black shadow-sm" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
+          Request Demo
+        </Link>
+      </div>
+    </nav>
+  );
+}
+
+function CommandCenterMockup({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const card = dark ? 'border-white/10 bg-white/[0.07]' : 'border-slate-200 bg-white/92';
+  const muted = dark ? 'text-white/55' : 'text-slate-500';
+
+  return (
+    <motion.div
+      className="relative"
+      initial={{ opacity: 0, y: 24, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.65, delay: 0.15 }}
+    >
+      <div className={`relative overflow-hidden rounded-[2rem] border p-3 shadow-2xl ${dark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white'}`}>
+        <div className="relative h-[460px] overflow-hidden rounded-[1.45rem] sm:h-[560px]">
+          <Image src={recoveryCommandAssets.heroYard} alt="Salvage vehicles in a controlled auction yard" fill priority className="object-cover" sizes="(max-width: 1024px) 100vw, 720px" />
+          <div className={`absolute inset-0 ${dark ? 'bg-slate-950/28' : 'bg-white/10'}`} />
+          <div className="absolute inset-x-4 bottom-4 grid gap-3 md:grid-cols-[1fr_0.82fr]">
+            <div className={`rounded-2xl border p-4 shadow-xl backdrop-blur-xl ${card}`}>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: branding.accentColor }}>Salvage case</p>
+                <span className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em]" style={{ backgroundColor: `${branding.accentColor}22`, color: branding.accentColor }}>In review</span>
+              </div>
+              <h2 className="mt-4 text-2xl font-black tracking-[-0.04em]">2020 Toyota Camry</h2>
+              <p className={`mt-1 text-sm ${muted}`}>Front impact - Lagos inspection yard</p>
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                {[
+                  ['Reserve', 'Set'],
+                  ['Auction', 'Live'],
+                  ['Vendors', 'Verified'],
+                ].map(([label, value]) => (
+                  <div key={label} className={`rounded-xl border p-3 ${dark ? 'border-white/10 bg-slate-950/45' : 'border-slate-200 bg-slate-50'}`}>
+                    <p className={`text-[10px] uppercase tracking-[0.14em] ${muted}`}>{label}</p>
+                    <p className="mt-1 font-black">{value}</p>
                   </div>
                 ))}
               </div>
             </div>
+            <div className={`rounded-2xl border p-4 shadow-xl backdrop-blur-xl ${card}`}>
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-500" />
+                <div>
+                  <p className="font-black">Fraud signal review</p>
+                  <p className={`mt-1 text-sm leading-6 ${muted}`}>Bid velocity and identity checks routed for approval.</p>
+                </div>
+              </div>
+              <div className="mt-4 h-2 rounded-full bg-current/10">
+                <motion.div className="h-2 rounded-full" style={{ width: '68%', backgroundColor: branding.accentColor }} initial={{ width: '28%' }} whileInView={{ width: '68%' }} viewport={{ once: true }} transition={{ duration: 0.7 }} />
+              </div>
+            </div>
           </div>
         </div>
-      </section>
-      <CommandOperationsBand branding={branding} dark={dark} />
-      <ProcessAndLots branding={branding} dark={dark} variant="command" />
-      <TemplateProofAndContact branding={branding} dark={dark} variant="command" />
-      <ContactSection />
-      <TemplateFooter branding={branding} dark={dark} />
-    </main>
+        <motion.div className={`absolute right-8 top-10 hidden w-72 rounded-2xl border p-4 shadow-2xl backdrop-blur-xl md:block ${card}`} animate={{ y: [0, -8, 0] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}>
+          <p className={`text-[10px] uppercase tracking-[0.16em] ${muted}`}>Document progress</p>
+          <div className="mt-3 flex items-center gap-3">
+            <FileCheck2 className="h-6 w-6" style={{ color: branding.accentColor }} />
+            <div className="flex-1">
+              <p className="font-black">2 of 2 signed</p>
+              <div className="mt-2 h-1.5 rounded-full bg-current/10">
+                <div className="h-1.5 rounded-full" style={{ width: '100%', backgroundColor: branding.accentColor }} />
+              </div>
+            </div>
+          </div>
+        </motion.div>
+        <motion.div className={`absolute -left-4 top-36 hidden w-64 rounded-2xl border p-4 shadow-2xl backdrop-blur-xl lg:block ${card}`} animate={{ y: [0, 10, 0] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}>
+          <p className={`text-[10px] uppercase tracking-[0.16em] ${muted}`}>Payment status</p>
+          <div className="mt-3 flex items-center gap-3">
+            <WalletCards className="h-6 w-6" style={{ color: branding.accentColor }} />
+            <div>
+              <p className="font-black">Deposit held</p>
+              <p className={`text-sm ${muted}`}>Finance handoff ready</p>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+function RecoveryWorkflowRail({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const muted = dark ? 'text-white/58' : 'text-slate-600';
+  const panel = dark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white';
+
+  return (
+    <section id="workflow" className={`px-5 py-24 ${dark ? 'bg-[#0B111A]' : 'bg-white'}`}>
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-6 lg:grid-cols-[360px_1fr] lg:items-end">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Workflow</p>
+            <h2 className="mt-4 text-4xl font-black leading-tight tracking-[-0.055em] md:text-5xl">
+              One governed path from claim intake to pickup release.
+            </h2>
+          </div>
+          <p className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
+            Each step shows the next operational gate, so claims, salvage, finance, and vendor teams know what is waiting and what has already cleared.
+          </p>
+        </div>
+
+        <div className="mt-12 overflow-hidden rounded-[1.7rem] border border-current/10">
+          <div className="grid md:grid-cols-7">
+            {recoveryCommandStages.map((stage, index) => (
+              <motion.div
+                key={stage}
+                className={`relative min-h-44 border-b border-r border-current/10 p-5 last:border-r-0 md:border-b-0 ${panel}`}
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.4 }}
+                transition={{ delay: index * 0.04, duration: 0.42 }}
+              >
+                <p className="font-mono text-xs" style={{ color: branding.accentColor }}>{String(index + 1).padStart(2, '0')}</p>
+                <h3 className="mt-8 text-lg font-black tracking-[-0.03em]">{stage}</h3>
+                <span className="absolute bottom-5 left-5 right-5 h-1 rounded-full bg-current/10">
+                  <motion.span className="block h-1 rounded-full" style={{ backgroundColor: branding.accentColor }} initial={{ width: 0 }} whileInView={{ width: '100%' }} viewport={{ once: true }} transition={{ delay: 0.12 + index * 0.06, duration: 0.45 }} />
+                </span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RecoveryFeatureGrid({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const muted = dark ? 'text-white/58' : 'text-slate-600';
+  const panel = dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white';
+  const features = [
+    [ClipboardCheck, 'Case intake', 'Capture claim assets, photos, voice notes, documents, and inspection location in one record.'],
+    [Search, 'Damage assessment', 'Support adjusters with structured photo review and salvage-specific assessment notes.'],
+    [Landmark, 'Reserve recommendations', 'Set reserve guidance before vendors enter a controlled auction flow.'],
+    [Users, 'Vendor verification', 'Limit access by verification tier, registration status, and policy rules.'],
+    [Gavel, 'Verified auction bidding', 'Run live bidding with reserve status, extensions, and controlled bidder access.'],
+    [WalletCards, 'Wallet deposits', 'Hold auction deposits for the right bidders and keep finance visibility clear.'],
+    [FileCheck2, 'Document signing', 'Generate and track bill of sale and waiver completion before payment release.'],
+    [CreditCard, 'Payment tracking', 'Move from signed documents to payment authorization with clear status changes.'],
+    [ShieldCheck, 'Audit logs', 'Keep decisions and handoffs traceable across claims, salvage, finance, and vendors.'],
+  ] as const;
+
+  return (
+    <section id="security" className={`px-5 py-24 ${dark ? 'bg-[#080D14]' : 'bg-[#F5F7FA]'}`}>
+      <div className="mx-auto max-w-7xl">
+        <div className="max-w-3xl">
+          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Platform controls</p>
+          <h2 className="mt-4 text-4xl font-black leading-tight tracking-[-0.055em] md:text-5xl">
+            Built for operational clarity, not marketplace noise.
+          </h2>
+        </div>
+        <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {features.map(([Icon, title, body], index) => (
+            <motion.article
+              key={title}
+              className={`min-h-56 rounded-2xl border p-6 ${panel}`}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.35 }}
+              transition={{ delay: index * 0.03, duration: 0.4 }}
+            >
+              <Icon className="h-7 w-7" style={{ color: branding.accentColor }} />
+              <h3 className="mt-8 text-xl font-black tracking-[-0.04em]">{title}</h3>
+              <p className={`mt-3 text-sm leading-7 ${muted}`}>{body}</p>
+            </motion.article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RecoveryWhySection({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const muted = dark ? 'text-white/58' : 'text-slate-600';
+  const panel = dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white';
+  const points = [
+    'Reduce manual follow-up between claims, salvage, finance, and vendors.',
+    'Keep reserve status, auction progress, document signing, and payment state visible.',
+    'Give managers cleaner approval points before pickup authorization is released.',
+    'Support audit-ready records without making vendors the center of the homepage story.',
+  ];
+
+  return (
+    <section id="insurers" className={`px-5 py-24 ${dark ? 'bg-[#0B111A]' : 'bg-white'}`}>
+      <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+        <div className="relative min-h-[440px] overflow-hidden rounded-[2rem] border border-current/10">
+          <Image src={recoveryCommandAssets.operationsRoom} alt="Insurance operations leaders reviewing salvage auction workflow" fill className="object-cover" sizes="(max-width: 1024px) 100vw, 620px" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/65 via-transparent to-transparent" />
+        </div>
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>For insurers</p>
+          <h2 className="mt-4 text-4xl font-black leading-tight tracking-[-0.055em] md:text-5xl">
+            Faster recovery starts with a cleaner operating picture.
+          </h2>
+          <p className={`mt-5 max-w-2xl text-base leading-8 ${muted}`}>
+            {branding.brandName} frames salvage as a managed workflow: case evidence enters once, approvals stay visible, bidders are controlled, and finance sees what is ready for payment.
+          </p>
+          <div className="mt-8 grid gap-3">
+            {points.map((point) => (
+              <div key={point} className={`flex gap-3 rounded-2xl border p-4 ${panel}`}>
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" style={{ color: branding.accentColor }} />
+                <p className={`text-sm leading-7 ${muted}`}>{point}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RecoveryCommandContact({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const [formData, setFormData] = useState({ name: '', email: '', company: '', message: '' });
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const accentText = getReadableTextColor(branding.accentColor);
+  const panel = dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white';
+  const muted = dark ? 'text-white/58' : 'text-slate-600';
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setStatus('loading');
+
+    const response = await fetch('/api/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.company,
+        message: `Company: ${formData.company || 'Not provided'}\n\n${formData.message}`,
+      }),
+    }).catch(() => null);
+
+    if (response?.ok) {
+      setStatus('success');
+      setFormData({ name: '', email: '', company: '', message: '' });
+    } else {
+      setStatus('error');
+    }
+
+    window.setTimeout(() => setStatus('idle'), 3500);
+  };
+
+  return (
+    <section id="contact" className={`px-5 py-24 ${dark ? 'bg-[#080D14]' : 'bg-[#F5F7FA]'}`}>
+      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.82fr_1.18fr]">
+        <div className={`rounded-[2rem] border p-7 ${panel}`}>
+          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Contact</p>
+          <h2 className="mt-4 text-4xl font-black leading-tight tracking-[-0.055em]">
+            See the recovery workflow in context.
+          </h2>
+          <p className={`mt-5 text-base leading-8 ${muted}`}>
+            Tell us how your salvage, claims, and finance teams work today. The demo can focus on the approval and handoff points that matter most.
+          </p>
+          <div className="mt-8 space-y-4 text-sm">
+            <p><span className={muted}>Support:</span> <span className="font-bold">{branding.supportEmail}</span></p>
+            <p><span className={muted}>Phone:</span> <span className="font-bold">{branding.supportPhone || 'Configured in enterprise setup'}</span></p>
+            <p><span className={muted}>Company:</span> <span className="font-bold">{branding.legalName}</span></p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className={`rounded-[2rem] border p-5 sm:p-7 ${panel}`}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {[
+              ['name', 'Name', 'Ada Okafor', 'text'],
+              ['email', 'Work email', 'ada@insurer.com', 'email'],
+              ['company', 'Company', branding.legalName, 'text'],
+            ].map(([name, label, placeholder, type]) => (
+              <label key={name} className={name === 'company' ? 'sm:col-span-2' : ''}>
+                <span className="text-sm font-bold">{label}</span>
+                <input
+                  required={name !== 'company'}
+                  type={type}
+                  name={name}
+                  value={formData[name as keyof typeof formData]}
+                  onChange={(event) => setFormData((current) => ({ ...current, [name]: event.target.value }))}
+                  placeholder={placeholder}
+                  className={`mt-2 w-full rounded-xl border px-4 py-3 outline-none transition-colors focus:border-[var(--wl-accent)] ${dark ? 'border-white/10 bg-white/[0.06] text-white placeholder:text-white/35' : 'border-slate-200 bg-slate-50 text-slate-950 placeholder:text-slate-400'}`}
+                />
+              </label>
+            ))}
+            <label className="sm:col-span-2">
+              <span className="text-sm font-bold">Message</span>
+              <textarea
+                required
+                rows={5}
+                value={formData.message}
+                onChange={(event) => setFormData((current) => ({ ...current, message: event.target.value }))}
+                placeholder="Tell us about your salvage recovery process..."
+                className={`mt-2 w-full resize-none rounded-xl border px-4 py-3 outline-none transition-colors focus:border-[var(--wl-accent)] ${dark ? 'border-white/10 bg-white/[0.06] text-white placeholder:text-white/35' : 'border-slate-200 bg-slate-50 text-slate-950 placeholder:text-slate-400'}`}
+              />
+            </label>
+          </div>
+          <button type="submit" disabled={status === 'loading'} className="mt-5 inline-flex w-full items-center justify-center rounded-xl px-6 py-4 text-sm font-black disabled:opacity-60" style={{ backgroundColor: branding.accentColor, color: accentText }}>
+            {status === 'loading' ? 'Sending...' : status === 'success' ? 'Message sent' : status === 'error' ? 'Try again' : 'Request Demo'}
+          </button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function RecoveryCommandFooter({ branding, dark, accentText }: { branding: BrandingPolicy; dark: boolean; accentText: string }) {
+  const linkClass = dark ? 'text-white/48 hover:text-white' : 'text-slate-500 hover:text-slate-950';
+
+  return (
+    <footer className={`px-5 py-12 ${dark ? 'bg-[#070B12] text-white' : 'bg-white text-slate-950'}`}>
+      <div className="mx-auto grid max-w-7xl gap-8 border-t border-current/10 pt-8 md:grid-cols-[1.2fr_1fr_1fr]">
+        <div>
+          <BrandWordmark branding={branding} light={dark} />
+          <p className={`mt-4 max-w-md text-sm leading-7 ${dark ? 'text-white/48' : 'text-slate-600'}`}>
+            {branding.homepageCopy.trustLine || 'Controlled salvage recovery for claims, salvage, finance, and vendor teams.'}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          {['Platform', 'Workflow', 'Security', 'For Insurers', 'Contact'].map((label) => (
+            <a key={label} href={`#${label === 'For Insurers' ? 'insurers' : label.toLowerCase()}`} className={linkClass}>{label}</a>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <Link href="/privacy" className={linkClass}>Privacy</Link>
+          <Link href="/terms" className={linkClass}>Terms</Link>
+          <Link href="/cookies" className={linkClass}>Cookies</Link>
+          <a href={`mailto:${branding.supportEmail}`} className="font-bold" style={{ color: branding.accentColor }}>{branding.supportEmail}</a>
+        </div>
+      </div>
+      <div className="mx-auto mt-8 flex max-w-7xl flex-col gap-3 text-xs opacity-55 sm:flex-row sm:items-center sm:justify-between">
+        <p>&copy; {new Date().getFullYear()} {branding.legalName}. All rights reserved.</p>
+        <span className="w-fit rounded-full px-3 py-1 font-bold" style={{ backgroundColor: branding.accentColor, color: accentText }}>Recovery Command</span>
+      </div>
+    </footer>
   );
 }
 

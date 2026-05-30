@@ -37,9 +37,9 @@ const TEMPLATE_EDITOR_GUIDE: Record<string, TemplateEditorGuide> = {
     image: '/assets/Hero-3.png',
   },
   recovery_command: {
-    bestFor: 'Operations-led teams that want rules, stages, and active lots visible quickly.',
-    sections: ['Command hero', 'Access cards', 'Workflow sequence', 'Inventory board'],
-    image: '/assets/hero-2.png',
+    bestFor: 'Executive insurance teams that need recovery visibility, governance, and clean handoffs.',
+    sections: ['Command hero', 'Workflow rail', 'Platform controls', 'Insurer handoff', 'Contact'],
+    image: '/assets/recovery-command/hero-yard.png',
   },
   claims_orbit: {
     bestFor: 'Relationship-led teams that want a more animated, connected journey.',
@@ -65,9 +65,9 @@ const TEMPLATE_COPY_MAP: Record<string, Array<{ label: string; fields: string; a
     { label: 'Sign-in shell', fields: 'Auth headline and subtitle', appears: 'Login and registration screens' },
   ],
   recovery_command: [
-    { label: 'Command hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Operations-style top section' },
-    { label: 'Live board', fields: 'Stats and support text', appears: 'Auction board and workflow areas' },
-    { label: 'Contact section', fields: 'Trust line, support email, support phone', appears: 'Bottom support area' },
+    { label: 'Command hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Split hero and product command-center visual' },
+    { label: 'Workflow rail', fields: 'Workflow labels and process copy', appears: 'Case to pickup release timeline' },
+    { label: 'Contact section', fields: 'Trust line, support email, support phone', appears: 'Demo request and footer support area' },
   ],
   claims_orbit: [
     { label: 'Orbit hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Animated circular recovery story' },
