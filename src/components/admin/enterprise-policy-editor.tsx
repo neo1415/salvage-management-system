@@ -244,6 +244,13 @@ type ContentPanelConfig = {
   fields: ContentFieldConfig[];
 };
 
+type PreviewEditHotspot = {
+  id: string;
+  label: string;
+  keys: HomepageCopyKey[];
+  className: string;
+};
+
 const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = {
   eyebrow: 'Verified salvage auction access',
   heroTitle: 'Bid on verified salvage assets with confidence.',
@@ -278,8 +285,7 @@ const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = 
 
 function isGenericRecoveryCopy(value: string | undefined) {
   const text = (value || '').toLowerCase();
-  return !text
-    || text.includes('total losses become recovered capital')
+  return text.includes('total losses become recovered capital')
     || text.includes('where losses become recovered capital')
     || text.includes('salvage auction platform for insurers')
     || text.includes('insurance recovery')
@@ -293,6 +299,7 @@ function resolveRecoveryCommandEditorValue(copy: BusinessPolicy['branding']['hom
   const value = copy[key];
   const stringValue = typeof value === 'string' ? value : '';
   const fallback = RECOVERY_COMMAND_DEFAULT_COPY[key];
+  if (value === undefined || value === null) return fallback ?? '';
   if (fallback && isGenericRecoveryCopy(stringValue)) return fallback;
   return stringValue;
 }
@@ -483,7 +490,6 @@ function RecoveryCommandContentEditor({
   updatePolicy: (updater: (draft: BusinessPolicy) => void) => void;
 }) {
   const [activePanel, setActivePanel] = useState(RECOVERY_COMMAND_CONTENT_PANELS[0].id);
-  const activeConfig = RECOVERY_COMMAND_CONTENT_PANELS.find((panel) => panel.id === activePanel) ?? RECOVERY_COMMAND_CONTENT_PANELS[0];
   const resolved = (key: HomepageCopyKey) => resolveRecoveryCommandEditorValue(policy.branding.homepageCopy, key);
   const accentText = getReadableTextColor(policy.branding.accentColor);
 
@@ -496,68 +502,52 @@ function RecoveryCommandContentEditor({
   };
 
   return (
-    <div className="grid gap-6 2xl:grid-cols-[minmax(0,0.98fr)_minmax(460px,0.72fr)]">
-      <div className="space-y-5">
-        <div className="rounded-[1.75rem] border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-5 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--brand-primary)]">Recovery Command Copy</p>
-              <h3 className="mt-2 text-3xl font-black text-gray-950">Edit the vendor-facing auction page</h3>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
-                These fields map only to this selected template: buyer hero, bid workflow, buyer controls, vendor reassurance, and contact help.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={applyDefaults}
-              className="w-fit rounded-2xl px-4 py-3 text-sm font-black shadow-sm"
-              style={{ backgroundColor: policy.branding.accentColor, color: accentText }}
-            >
-              Use template copy
-            </button>
+    <div className="space-y-5">
+      <div className="rounded-[1.75rem] border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--brand-primary)]">Recovery Command Editor</p>
+            <h3 className="mt-2 text-3xl font-black text-gray-950">Click the template text to edit it</h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600">
+              This is the actual template surface. Click a headline, paragraph, button, workflow step, or contact text in the preview and edit it in place.
+            </p>
           </div>
-          <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
-            {RECOVERY_COMMAND_CONTENT_PANELS.map((panel) => (
-              <button
-                key={panel.id}
-                type="button"
-                onClick={() => setActivePanel(panel.id)}
-                className={`shrink-0 rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                  activePanel === panel.id
-                    ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)] text-gray-950'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-[var(--brand-primary-border)]'
-                }`}
-              >
-                <span className="block font-black">{panel.label}</span>
-                <span className="mt-1 block max-w-44 text-xs leading-4 text-gray-500">{panel.summary}</span>
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={applyDefaults}
+            className="w-fit rounded-2xl px-4 py-3 text-sm font-black shadow-sm"
+            style={{ backgroundColor: policy.branding.accentColor, color: accentText }}
+          >
+            Use template copy
+          </button>
         </div>
-
-        <ContentPanel
-          title={activeConfig.label}
-          fields={activeConfig.fields}
-          copy={policy.branding.homepageCopy}
-          updateHomepageCopy={updateHomepageCopy}
-          resolveValue={resolved}
-        />
       </div>
 
-      <RecoveryCommandLivePreview policy={policy} setActivePanel={setActivePanel} resolved={resolved} />
+      <RecoveryCommandLivePreview
+        policy={policy}
+        activePanel={activePanel}
+        setActivePanel={setActivePanel}
+        resolved={resolved}
+        updateHomepageCopy={updateHomepageCopy}
+      />
     </div>
   );
 }
 
 function RecoveryCommandLivePreview({
   policy,
+  activePanel,
   setActivePanel,
   resolved,
+  updateHomepageCopy,
 }: {
   policy: BusinessPolicy;
+  activePanel: string;
   setActivePanel: (panel: string) => void;
   resolved: (key: HomepageCopyKey) => string;
+  updateHomepageCopy: (key: HomepageCopyKey, value: string) => void;
 }) {
+  const [activeHotspotId, setActiveHotspotId] = useState('hero-title');
   const previewBranding = useMemo(() => {
     const homepageCopy = { ...policy.branding.homepageCopy };
     (Object.keys(RECOVERY_COMMAND_DEFAULT_COPY) as HomepageCopyKey[]).forEach((key) => {
@@ -574,16 +564,23 @@ function RecoveryCommandLivePreview({
     };
   }, [policy.branding, resolved]);
 
-  const hotspots = [
-    { id: 'hero', label: 'Edit hero', className: 'left-[2%] top-[2%] h-[23%] w-[42%]' },
-    { id: 'workflow', label: 'Edit workflow', className: 'left-[2%] top-[42%] h-[20%] w-[96%]' },
-    { id: 'controls', label: 'Edit buyer controls', className: 'left-[2%] top-[63%] h-[17%] w-[96%]' },
-    { id: 'buyers', label: 'Edit buyer section', className: 'left-[2%] top-[80%] h-[10%] w-[48%]' },
-    { id: 'contact', label: 'Edit contact', className: 'left-[52%] top-[80%] h-[10%] w-[46%]' },
+  const hotspots: PreviewEditHotspot[] = [
+    { id: 'hero-label', label: 'Hero label', keys: ['eyebrow'], className: 'left-[4%] top-[5%] h-[3%] w-[34%]' },
+    { id: 'hero-title', label: 'Hero headline', keys: ['heroTitle'], className: 'left-[4%] top-[10%] h-[20%] w-[40%]' },
+    { id: 'hero-copy', label: 'Hero intro', keys: ['heroSubtitle'], className: 'left-[4%] top-[31%] h-[8%] w-[39%]' },
+    { id: 'hero-buttons', label: 'Hero buttons', keys: ['primaryCtaLabel', 'secondaryCtaLabel'], className: 'left-[4%] top-[41%] h-[6%] w-[25%]' },
+    { id: 'workflow-heading', label: 'Workflow heading', keys: ['workflowTitle', 'workflowSubtitle'], className: 'left-[4%] top-[55%] h-[8%] w-[70%]' },
+    { id: 'workflow-steps', label: 'Workflow steps', keys: ['workflowStepOneTitle', 'workflowStepOneBody', 'workflowStepTwoTitle', 'workflowStepTwoBody', 'workflowStepThreeTitle', 'workflowStepThreeBody', 'workflowStepFourTitle', 'workflowStepFourBody'], className: 'left-[4%] top-[64%] h-[13%] w-[90%]' },
+    { id: 'controls-copy', label: 'Buyer controls', keys: ['operationsSectionEyebrow', 'operationsSectionTitle', 'operationsSectionSubtitle'], className: 'left-[4%] top-[78%] h-[8%] w-[58%]' },
+    { id: 'controls-cards', label: 'Buyer control cards', keys: ['operationsCardOneTitle', 'operationsCardOneBody', 'operationsCardTwoTitle', 'operationsCardTwoBody'], className: 'left-[4%] top-[87%] h-[8%] w-[62%]' },
+    { id: 'buyer-copy', label: 'Buyer reassurance', keys: ['proofSectionTitle', 'proofSectionSubtitle'], className: 'left-[66%] top-[78%] h-[8%] w-[28%]' },
+    { id: 'contact-copy', label: 'Contact copy', keys: ['contactHeadline', 'contactSubtitle'], className: 'left-[66%] top-[87%] h-[8%] w-[28%]' },
   ];
+  const activeHotspot = hotspots.find((hotspot) => hotspot.id === activeHotspotId) ?? hotspots[1];
+  const selectedPanel = RECOVERY_COMMAND_CONTENT_PANELS.find((panel) => panel.id === activePanel);
 
   return (
-    <aside className="2xl:sticky 2xl:top-24 2xl:self-start">
+    <aside>
       <div className="overflow-hidden rounded-[2rem] border border-gray-200 bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
           <div className="flex items-center gap-2">
@@ -593,22 +590,79 @@ function RecoveryCommandLivePreview({
           </div>
           <span className="text-xs font-semibold text-gray-500">Live template editor</span>
         </div>
-        <div className="max-h-[76vh] overflow-auto bg-slate-100">
-          <div className="relative min-h-[1240px] min-w-[1180px] overflow-hidden bg-white">
-            <div className="pointer-events-none">
-              <WhiteLabelHomeTemplates branding={previewBranding} showLegacyBelowFold={false} />
+        <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="max-h-[72vh] overflow-auto bg-slate-100 p-4">
+            <div className="mx-auto w-[1180px] origin-top-left scale-[0.78] overflow-hidden rounded-[1.5rem] bg-white shadow-sm">
+              <div className="relative min-h-[1240px]">
+                <div className="pointer-events-none">
+                  <WhiteLabelHomeTemplates branding={previewBranding} showLegacyBelowFold={false} />
+                </div>
+                <div className="absolute inset-0">
+                  {hotspots.map((hotspot) => {
+                    const isActive = hotspot.id === activeHotspot.id;
+                    return (
+                      <button
+                        key={hotspot.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveHotspotId(hotspot.id);
+                          const panel = RECOVERY_COMMAND_CONTENT_PANELS.find((item) => item.fields.some((field) => hotspot.keys.includes(field.key)));
+                          if (panel) setActivePanel(panel.id);
+                        }}
+                        className={`absolute rounded-[1.25rem] border text-left transition ${
+                          isActive
+                            ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)]/35 shadow-[0_0_0_4px_var(--brand-focus-ring)]'
+                            : 'border-transparent hover:border-[var(--brand-primary)] hover:bg-[var(--brand-primary-surface)]/30'
+                        } ${hotspot.className}`}
+                        aria-label={hotspot.label}
+                        title={hotspot.label}
+                      >
+                        {isActive ? (
+                          <span className="absolute -top-8 left-0 rounded-full bg-[var(--brand-primary)] px-3 py-1 text-[11px] font-black text-[var(--brand-primary-foreground)] shadow-sm">
+                            {hotspot.label}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-            <div className="absolute inset-0">
-              {hotspots.map((hotspot) => (
-                <button
-                  key={hotspot.id}
-                  type="button"
-                  onClick={() => setActivePanel(hotspot.id)}
-                  className={`absolute rounded-[1.75rem] border border-transparent text-left transition hover:border-[var(--brand-primary)] hover:bg-[var(--brand-primary-surface)]/40 focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] ${hotspot.className}`}
-                  aria-label={hotspot.label}
-                  title={hotspot.label}
-                />
-              ))}
+          </div>
+
+          <div className="border-t border-gray-200 bg-white p-4 xl:border-l xl:border-t-0">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-[var(--brand-primary)]">Editing</p>
+            <h4 className="mt-2 text-xl font-black text-gray-950">{activeHotspot.label}</h4>
+            <p className="mt-1 text-xs leading-5 text-gray-500">
+              {selectedPanel?.summary || 'Change the selected text. Empty values stay empty where the template supports it.'}
+            </p>
+            <div className="mt-4 space-y-4">
+              {activeHotspot.keys.map((key) => {
+                const field = RECOVERY_COMMAND_CONTENT_PANELS
+                  .flatMap((panel) => panel.fields)
+                  .find((item) => item.key === key);
+                const label = field?.label ?? key;
+                const value = resolved(key);
+                const longField = field?.type === 'textarea' || value.length > 70;
+                return (
+                  <label key={key} className="block">
+                    <span className="text-sm font-bold text-gray-950">{label}</span>
+                    {longField ? (
+                      <textarea
+                        value={value}
+                        onChange={(event) => updateHomepageCopy(key, event.target.value)}
+                        className="mt-2 min-h-28 w-full resize-y rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-[var(--brand-primary)] focus:bg-white focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                      />
+                    ) : (
+                      <input
+                        value={value}
+                        onChange={(event) => updateHomepageCopy(key, event.target.value)}
+                        className="mt-2 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-[var(--brand-primary)] focus:bg-white focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                      />
+                    )}
+                  </label>
+                );
+              })}
             </div>
           </div>
         </div>

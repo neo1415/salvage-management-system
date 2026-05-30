@@ -89,8 +89,7 @@ const recoveryCommandStages = [
 
 function isGenericRecoveryCommandCopy(value: string | undefined) {
   const text = (value || '').toLowerCase();
-  return !text
-    || text.includes('total losses become recovered capital')
+  return text.includes('total losses become recovered capital')
     || text.includes('where losses become recovered capital')
     || text.includes('salvage auction platform for insurers')
     || text.includes('insurance salvage command center')
@@ -99,10 +98,10 @@ function isGenericRecoveryCommandCopy(value: string | undefined) {
 }
 
 function recoveryCommandCopy(copy: BrandingPolicy['homepageCopy']) {
-  const genericTitle = isGenericRecoveryCommandCopy(copy.heroTitle);
-  const genericSubtitle = isGenericRecoveryCommandCopy(copy.heroSubtitle);
-  const genericEyebrow = isGenericRecoveryCommandCopy(copy.eyebrow);
-  const genericPrimary = isGenericRecoveryCommandCopy(copy.primaryCtaLabel);
+  const genericTitle = copy.heroTitle === undefined || isGenericRecoveryCommandCopy(copy.heroTitle);
+  const genericSubtitle = copy.heroSubtitle === undefined || isGenericRecoveryCommandCopy(copy.heroSubtitle);
+  const genericEyebrow = copy.eyebrow === undefined || isGenericRecoveryCommandCopy(copy.eyebrow);
+  const genericPrimary = copy.primaryCtaLabel === undefined || isGenericRecoveryCommandCopy(copy.primaryCtaLabel);
   const genericSecondary = !copy.secondaryCtaLabel || copy.secondaryCtaLabel.toLowerCase() === 'sign in';
 
   return {
@@ -116,51 +115,51 @@ function recoveryCommandCopy(copy: BrandingPolicy['homepageCopy']) {
     trustLine: isGenericRecoveryCommandCopy(copy.trustLine)
       ? 'Verified salvage auctions, secure deposits, signed documents, and clear pickup steps.'
       : copy.trustLine,
-    workflowTitle: isGenericRecoveryCommandCopy(copy.workflowTitle) ? 'How buying works' : copy.workflowTitle,
-    workflowSubtitle: isGenericRecoveryCommandCopy(copy.workflowSubtitle)
+    workflowTitle: copy.workflowTitle === undefined || isGenericRecoveryCommandCopy(copy.workflowTitle) ? 'How buying works' : copy.workflowTitle,
+    workflowSubtitle: copy.workflowSubtitle === undefined || isGenericRecoveryCommandCopy(copy.workflowSubtitle)
       ? 'A clear path from account setup to pickup release.'
       : copy.workflowSubtitle,
     workflowSteps: [
       [
-        copy.workflowStepOneTitle && !isGenericRecoveryCommandCopy(copy.workflowStepOneTitle) ? copy.workflowStepOneTitle : 'Verify access',
-        copy.workflowStepOneBody && !isGenericRecoveryCommandCopy(copy.workflowStepOneBody) ? copy.workflowStepOneBody : 'Create your vendor profile and complete the checks required for auction access.',
+        copy.workflowStepOneTitle !== undefined && !isGenericRecoveryCommandCopy(copy.workflowStepOneTitle) ? copy.workflowStepOneTitle : 'Verify access',
+        copy.workflowStepOneBody !== undefined && !isGenericRecoveryCommandCopy(copy.workflowStepOneBody) ? copy.workflowStepOneBody : 'Create your vendor profile and complete the checks required for auction access.',
       ],
       [
-        copy.workflowStepTwoTitle && !isGenericRecoveryCommandCopy(copy.workflowStepTwoTitle) ? copy.workflowStepTwoTitle : 'Review lots',
-        copy.workflowStepTwoBody && !isGenericRecoveryCommandCopy(copy.workflowStepTwoBody) ? copy.workflowStepTwoBody : 'Inspect photos, condition notes, reserve cues, and document requirements before bidding.',
+        copy.workflowStepTwoTitle !== undefined && !isGenericRecoveryCommandCopy(copy.workflowStepTwoTitle) ? copy.workflowStepTwoTitle : 'Review lots',
+        copy.workflowStepTwoBody !== undefined && !isGenericRecoveryCommandCopy(copy.workflowStepTwoBody) ? copy.workflowStepTwoBody : 'Inspect photos, condition notes, reserve cues, and document requirements before bidding.',
       ],
       [
-        copy.workflowStepThreeTitle && !isGenericRecoveryCommandCopy(copy.workflowStepThreeTitle) ? copy.workflowStepThreeTitle : 'Bid securely',
-        copy.workflowStepThreeBody && !isGenericRecoveryCommandCopy(copy.workflowStepThreeBody) ? copy.workflowStepThreeBody : 'Place bids with clear increments, deposit rules, and verified bidder controls.',
+        copy.workflowStepThreeTitle !== undefined && !isGenericRecoveryCommandCopy(copy.workflowStepThreeTitle) ? copy.workflowStepThreeTitle : 'Bid securely',
+        copy.workflowStepThreeBody !== undefined && !isGenericRecoveryCommandCopy(copy.workflowStepThreeBody) ? copy.workflowStepThreeBody : 'Place bids with clear increments, deposit rules, and verified bidder controls.',
       ],
       [
-        copy.workflowStepFourTitle && !isGenericRecoveryCommandCopy(copy.workflowStepFourTitle) ? copy.workflowStepFourTitle : 'Pay and pickup',
-        copy.workflowStepFourBody && !isGenericRecoveryCommandCopy(copy.workflowStepFourBody) ? copy.workflowStepFourBody : 'Sign documents, complete payment, and follow the pickup release steps.',
+        copy.workflowStepFourTitle !== undefined && !isGenericRecoveryCommandCopy(copy.workflowStepFourTitle) ? copy.workflowStepFourTitle : 'Pay and pickup',
+        copy.workflowStepFourBody !== undefined && !isGenericRecoveryCommandCopy(copy.workflowStepFourBody) ? copy.workflowStepFourBody : 'Sign documents, complete payment, and follow the pickup release steps.',
       ],
     ] as Array<[string, string]>,
-    controlsLabel: isGenericRecoveryCommandCopy(copy.operationsSectionEyebrow) ? 'Buyer controls' : copy.operationsSectionEyebrow,
-    controlsTitle: isGenericRecoveryCommandCopy(copy.operationsSectionTitle)
+    controlsLabel: copy.operationsSectionEyebrow === undefined || isGenericRecoveryCommandCopy(copy.operationsSectionEyebrow) ? 'Buyer controls' : copy.operationsSectionEyebrow,
+    controlsTitle: copy.operationsSectionTitle === undefined || isGenericRecoveryCommandCopy(copy.operationsSectionTitle)
       ? 'Bid with the important steps already visible.'
       : copy.operationsSectionTitle,
-    controlsText: isGenericRecoveryCommandCopy(copy.operationsSectionSubtitle)
+    controlsText: copy.operationsSectionSubtitle === undefined || isGenericRecoveryCommandCopy(copy.operationsSectionSubtitle)
       ? 'The public page should make vendors feel oriented before they enter the auction: what is verified, what is required, and what happens after a winning bid.'
       : copy.operationsSectionSubtitle,
     controlsCards: [
       [
-        copy.operationsCardOneTitle && !isGenericRecoveryCommandCopy(copy.operationsCardOneTitle) ? copy.operationsCardOneTitle : 'Review the lot',
-        copy.operationsCardOneBody && !isGenericRecoveryCommandCopy(copy.operationsCardOneBody) ? copy.operationsCardOneBody : 'Review visual evidence and condition notes before you commit to a bid.',
+        copy.operationsCardOneTitle !== undefined && !isGenericRecoveryCommandCopy(copy.operationsCardOneTitle) ? copy.operationsCardOneTitle : 'Review the lot',
+        copy.operationsCardOneBody !== undefined && !isGenericRecoveryCommandCopy(copy.operationsCardOneBody) ? copy.operationsCardOneBody : 'Review visual evidence and condition notes before you commit to a bid.',
       ],
       [
-        copy.operationsCardTwoTitle && !isGenericRecoveryCommandCopy(copy.operationsCardTwoTitle) ? copy.operationsCardTwoTitle : 'Track next steps',
-        copy.operationsCardTwoBody && !isGenericRecoveryCommandCopy(copy.operationsCardTwoBody) ? copy.operationsCardTwoBody : 'After winning, documents, payment, and pickup status stay visible in one place.',
+        copy.operationsCardTwoTitle !== undefined && !isGenericRecoveryCommandCopy(copy.operationsCardTwoTitle) ? copy.operationsCardTwoTitle : 'Track next steps',
+        copy.operationsCardTwoBody !== undefined && !isGenericRecoveryCommandCopy(copy.operationsCardTwoBody) ? copy.operationsCardTwoBody : 'After winning, documents, payment, and pickup status stay visible in one place.',
       ],
     ] as Array<[string, string]>,
-    buyerTitle: isGenericRecoveryCommandCopy(copy.proofSectionTitle) ? 'A clearer way to buy salvage assets.' : copy.proofSectionTitle,
-    buyerText: isGenericRecoveryCommandCopy(copy.proofSectionSubtitle)
+    buyerTitle: copy.proofSectionTitle === undefined || isGenericRecoveryCommandCopy(copy.proofSectionTitle) ? 'A clearer way to buy salvage assets.' : copy.proofSectionTitle,
+    buyerText: copy.proofSectionSubtitle === undefined || isGenericRecoveryCommandCopy(copy.proofSectionSubtitle)
       ? 'Verified vendors can review salvage lots, bid securely, complete documents, pay the balance, and prepare for pickup.'
       : copy.proofSectionSubtitle,
-    contactHeadline: isGenericRecoveryCommandCopy(copy.contactHeadline) ? 'Need help before you bid?' : copy.contactHeadline,
-    contactSubtitle: isGenericRecoveryCommandCopy(copy.contactSubtitle)
+    contactHeadline: copy.contactHeadline === undefined || isGenericRecoveryCommandCopy(copy.contactHeadline) ? 'Need help before you bid?' : copy.contactHeadline,
+    contactSubtitle: copy.contactSubtitle === undefined || isGenericRecoveryCommandCopy(copy.contactSubtitle)
       ? 'Ask about vendor verification, lot access, deposits, documents, payment, or pickup requirements before joining an auction.'
       : copy.contactSubtitle,
   };
