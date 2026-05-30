@@ -23,6 +23,7 @@ const HOMEPAGE_TEMPLATES: BusinessPolicy['branding']['homepageTemplate'][] = [
   'reclaim_editorial',
   'nem_salvage',
   'recovery_command',
+  'auction_pulse',
   'claims_orbit',
   'executive_terminal',
   'salvage_showcase',

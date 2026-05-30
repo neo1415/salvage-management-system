@@ -9,12 +9,17 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleDot,
   ClipboardCheck,
+  Clock,
   CreditCard,
   FileCheck2,
   Gavel,
+  MapPin,
   Search,
+  ShieldCheck,
   Users,
   WalletCards,
 } from 'lucide-react';
@@ -76,6 +81,59 @@ const recoveryCommandAssets = {
   pickupReady: '/assets/recovery-command/pickup-ready.png',
   fieldInspection: '/assets/recovery-command/field-inspection.png',
 };
+
+const auctionPulseAssets = {
+  yard: '/assets/recovery-command/hero-yard.png',
+  damage: '/assets/recovery-command/damage-review.png',
+  inspection: '/assets/recovery-command/field-inspection.png',
+  pickup: '/assets/recovery-command/pickup-ready.png',
+  support: '/assets/recovery-command/operations-room.png',
+};
+
+const auctionPulseLots = [
+  {
+    name: '2021 Toyota Camry',
+    damage: 'Front-end damage',
+    location: 'Lagos',
+    bid: 'NGN 4.8M',
+    time: '2h 15m',
+    status: 'Reserve met',
+    eligibility: 'Wallet eligible',
+    image: auctionPulseAssets.damage,
+  },
+  {
+    name: '2019 Honda Accord',
+    damage: 'Side impact',
+    location: 'Abuja',
+    bid: 'NGN 3.6M',
+    time: '4h 40m',
+    status: 'Closing soon',
+    eligibility: 'Verified bidders',
+    image: auctionPulseAssets.yard,
+  },
+  {
+    name: '2020 Ford Ranger',
+    damage: 'Rear damage',
+    location: 'Port Harcourt',
+    bid: 'NGN 6.2M',
+    time: '1d 3h',
+    status: 'Live auction',
+    eligibility: 'Deposit required',
+    image: auctionPulseAssets.inspection,
+  },
+  {
+    name: '2018 Lexus RX350',
+    damage: 'Mechanical review',
+    location: 'Ibadan',
+    bid: 'NGN 7.1M',
+    time: '5h 10m',
+    status: 'Inspection notes',
+    eligibility: 'Tier 2 bidders',
+    image: auctionPulseAssets.pickup,
+  },
+];
+
+const auctionPulseFilters = ['Cars', 'SUVs', 'Trucks', 'Runs & Drives', 'Front-end Damage', 'Side Damage', 'Lagos', 'Abuja', 'Closing Soon', 'Wallet Eligible'];
 
 const recoveryCommandStages = [
   'Create Account',
@@ -199,6 +257,64 @@ function recoveryCommandCopy(copy: BrandingPolicy['homepageCopy']) {
     contactSubtitle: copy.contactSubtitle === undefined || isGenericRecoveryCommandCopy(copy.contactSubtitle)
       ? 'Ask about vendor verification, lot access, deposits, documents, payment, or pickup requirements before joining an auction.'
       : copy.contactSubtitle,
+  };
+}
+
+function isGenericAuctionPulseCopy(value: string | undefined) {
+  const text = (value || '').toLowerCase();
+  return isGenericRecoveryCommandCopy(value)
+    || text.includes('claims and finance')
+    || text.includes('internal teams')
+    || text.includes('operations command')
+    || text.includes('coordinate salvage')
+    || text.includes('audit-ready operation');
+}
+
+function auctionPulseCopy(copy: BrandingPolicy['homepageCopy']) {
+  const safe = (key: keyof BrandingPolicy['homepageCopy'], fallback: string) => {
+    const value = copy[key];
+    if (typeof value !== 'string' || value.trim() === '' || isGenericAuctionPulseCopy(value)) return fallback;
+    return value;
+  };
+
+  return {
+    eyebrow: safe('eyebrow', 'Live salvage auctions for verified buyers'),
+    heroTitle: safe('heroTitle', 'Bid on verified salvage assets with confidence.'),
+    heroSubtitle: safe('heroSubtitle', 'Browse active lots, review damage details, fund your wallet, and place bids from your phone.'),
+    primaryCtaLabel: safe('primaryCtaLabel', 'Browse Active Auctions'),
+    secondaryCtaLabel: safe('secondaryCtaLabel', 'Register as a Vendor'),
+    trustLine: safe('trustLine', 'Verified listings, secured deposits, signed documents, and clear pickup steps.'),
+    heroBadges: [
+      safe('statOneLabel', 'Verified lots'),
+      safe('statTwoLabel', 'Wallet-ready bids'),
+      safe('statThreeLabel', 'Pickup instructions'),
+    ],
+    workflowTitle: safe('workflowTitle', 'From registration to pickup, the process is clear.'),
+    workflowSubtitle: safe('workflowSubtitle', 'Each step shows what you need before you bid, after you win, and before pickup.'),
+    workflowSteps: [
+      [safe('workflowStepOneTitle', 'Register'), safe('workflowStepOneBody', 'Create a vendor account and keep your bidder profile ready.')],
+      [safe('workflowStepTwoTitle', 'Verify'), safe('workflowStepTwoBody', 'Complete the checks required for eligible auctions and bid limits.')],
+      [safe('workflowStepThreeTitle', 'Bid'), safe('workflowStepThreeBody', 'Review lot details, keep your wallet ready, and place verified bids.')],
+      [safe('workflowStepFourTitle', 'Pickup'), safe('workflowStepFourBody', 'Sign documents, complete payment, and receive pickup instructions.')],
+    ] as Array<[string, string]>,
+    controlsLabel: safe('operationsSectionEyebrow', 'Bid readiness'),
+    controlsTitle: safe('operationsSectionTitle', 'Know your status before you join an auction.'),
+    controlsText: safe('operationsSectionSubtitle', 'See lot requirements, wallet coverage, verification status, documents, payment, and pickup readiness before you commit.'),
+    controlsCards: [
+      [safe('operationsCardOneTitle', 'Wallet coverage'), safe('operationsCardOneBody', 'Check the deposit or wallet balance needed for eligible lots before placing a bid.')],
+      [safe('operationsCardTwoTitle', 'Post-win tracking'), safe('operationsCardTwoBody', 'After winning, follow document signing, payment, and pickup release from one clear page.')],
+      [safe('operationsCardThreeTitle', 'Auction rules'), safe('operationsCardThreeBody', 'Bids, deadlines, document windows, and pickup steps are shown before you act.')],
+    ] as Array<[string, string]>,
+    featureCards: [
+      [safe('proofCardOneTitle', 'Active lots'), safe('proofCardOneBody', 'Scan vehicle images, condition notes, location, current bid, and time left.')],
+      [safe('proofCardTwoTitle', 'Clear eligibility'), safe('proofCardTwoBody', 'Know when verification or wallet funding is needed before joining a lot.')],
+      [safe('proofCardThreeTitle', 'Bid status'), safe('proofCardThreeBody', 'Track whether you are leading, outbid, or waiting for auction close.')],
+      [safe('proofCardFourTitle', 'Pickup path'), safe('proofCardFourBody', 'Move from documents and payment to release instructions without confusion.')],
+    ] as Array<[string, string]>,
+    buyerTitle: safe('proofSectionTitle', 'Clear rules. Verified bidders. Structured handoff.'),
+    buyerText: safe('proofSectionSubtitle', 'The portal keeps auction details, deposit expectations, payment steps, documents, and pickup instructions visible to buyers.'),
+    contactHeadline: safe('contactHeadline', 'Need help before you bid?'),
+    contactSubtitle: safe('contactSubtitle', 'Ask vendor support about verification, wallet funding, lot access, documents, payment, or pickup requirements.'),
   };
 }
 
@@ -393,7 +509,7 @@ export function WhiteLabelHomeTemplates({ branding, showLegacyBelowFold }: HomeT
   }
 
   if (template === 'recovery_command') return <RecoveryCommand branding={branding} theme={theme} />;
-  if (template === 'claims_orbit') return <ClaimsOrbit branding={branding} theme={theme} />;
+  if (template === 'auction_pulse') return <AuctionPulse branding={branding} theme={theme} />;
   if (template === 'executive_terminal') return <ExecutiveTerminal branding={branding} theme={theme} />;
   return <ReclaimEditorial branding={branding} theme={theme} />;
 }
@@ -1026,6 +1142,363 @@ function RecoveryCommandFooter({ branding, dark }: { branding: BrandingPolicy; d
         </span>
       </div>
     </footer>
+  );
+}
+
+function AuctionPulse({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
+  const copy = auctionPulseCopy(branding.homepageCopy);
+  const dark = theme === 'night';
+  const accentText = getReadableTextColor(branding.accentColor);
+  const primaryText = getReadableTextColor(branding.primaryColor);
+  const [activeSlide, setActiveSlide] = useState(0);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const reduceMotion = useReducedMotion();
+  const slides = [
+    {
+      title: copy.heroTitle,
+      body: copy.heroSubtitle,
+      primary: copy.primaryCtaLabel,
+      secondary: copy.secondaryCtaLabel,
+      visual: 'lots',
+    },
+    {
+      title: 'Get verified before the next auction closes.',
+      body: 'Complete your vendor profile, fund your wallet, and see which lots you are eligible to bid on.',
+      primary: 'Start Verification',
+      secondary: 'How Wallet Deposits Work',
+      visual: 'wallet',
+    },
+    {
+      title: 'Know every step before you bid.',
+      body: 'From viewing a lot to winning, signing documents, paying, and pickup, every stage is clearly shown.',
+      primary: 'See How It Works',
+      secondary: 'View Sample Lot',
+      visual: 'steps',
+    },
+    {
+      title: 'Win, pay, sign, and pick up without confusion.',
+      body: 'Track your documents, payment status, and pickup readiness after the auction closes.',
+      primary: 'View Auction Process',
+      secondary: 'Contact Support',
+      visual: 'pickup',
+    },
+  ];
+
+  const nextSlide = () => setActiveSlide((current) => (current + 1) % slides.length);
+  const previousSlide = () => setActiveSlide((current) => (current - 1 + slides.length) % slides.length);
+
+  return (
+    <main className={`min-h-screen overflow-hidden ${dark ? 'bg-[#071018] text-white' : 'bg-[#F6F8FB] text-slate-950'}`} style={cssVars(branding, theme)}>
+      {branding.splashEnabled ? <RecoveryCommandSplash branding={branding} dark={dark} /> : null}
+      <AuctionPulseNav branding={branding} dark={dark} />
+
+      <section id="platform" className="relative px-4 pb-14 pt-24 sm:px-5 lg:pt-28">
+        <div className="absolute inset-x-0 top-0 h-[540px] opacity-70" style={{ background: `radial-gradient(circle at 18% 12%, ${branding.accentColor}28, transparent 34%), radial-gradient(circle at 82% 4%, ${branding.primaryColor}22, transparent 28%)` }} />
+        <div className="relative mx-auto max-w-7xl">
+          <div
+            className={`overflow-hidden rounded-[2rem] border shadow-2xl ${dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white'}`}
+            onTouchStart={(event) => setTouchStart(event.touches[0]?.clientX ?? null)}
+            onTouchEnd={(event) => {
+              if (touchStart === null) return;
+              const delta = touchStart - (event.changedTouches[0]?.clientX ?? touchStart);
+              if (Math.abs(delta) > 42) delta > 0 ? nextSlide() : previousSlide();
+              setTouchStart(null);
+            }}
+          >
+            <div className="grid min-h-[620px] lg:grid-cols-[0.92fr_1.08fr]">
+              <div className="relative flex flex-col justify-center px-5 py-12 sm:px-8 lg:px-12">
+                <p data-recovery-edit-id="hero-label" className="inline-flex w-fit items-center gap-2 rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em]" style={{ borderColor: `${branding.accentColor}55`, color: branding.accentColor }}>
+                  <CircleDot className="h-3 w-3" />
+                  {copy.eyebrow}
+                </p>
+                <motion.div
+                  key={activeSlide}
+                  initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+                  animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35 }}
+                >
+                  <h1 data-recovery-edit-id="hero-title" className="mt-6 max-w-3xl text-[clamp(2.35rem,8vw,5.7rem)] font-black leading-[0.92] tracking-[-0.055em]" style={{ color: dark ? '#FFFFFF' : branding.primaryColor }}>
+                    {slides[activeSlide].title}
+                  </h1>
+                  <p data-recovery-edit-id="hero-copy" className={`mt-6 max-w-2xl text-base leading-8 sm:text-xl ${dark ? 'text-white/65' : 'text-slate-600'}`}>
+                    {slides[activeSlide].body}
+                  </p>
+                  <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                    <Link data-recovery-edit-id="hero-primary-button" href="/vendor/auctions" className="inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-4 text-sm font-black shadow-lg transition hover:-translate-y-0.5" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
+                      {slides[activeSlide].primary}
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                    <Link data-recovery-edit-id="hero-secondary-button" href="/register" className={`inline-flex items-center justify-center rounded-2xl border px-5 py-4 text-sm font-black transition hover:border-[var(--wl-accent)] hover:text-[var(--wl-accent)] ${dark ? 'border-white/16 text-white' : 'border-slate-300 text-slate-950'}`}>
+                      {slides[activeSlide].secondary}
+                    </Link>
+                  </div>
+                </motion.div>
+
+                <div data-recovery-edit-id="hero-badges" className="mt-7 flex gap-2 overflow-x-auto pb-1">
+                  {copy.heroBadges.map((badge) => (
+                    <span key={badge} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold ${dark ? 'border-white/10 bg-white/[0.06] text-white/75' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+                      {badge}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="mt-8 flex items-center gap-3">
+                  <button type="button" aria-label="Previous hero slide" onClick={previousSlide} className={`grid h-11 w-11 place-items-center rounded-full border ${dark ? 'border-white/15 text-white' : 'border-slate-300 text-slate-700'}`}>
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <div className="flex gap-2" aria-label="Hero slide selector">
+                    {slides.map((slide, index) => (
+                      <button
+                        key={slide.title}
+                        type="button"
+                        aria-label={`Show slide ${index + 1}`}
+                        onClick={() => setActiveSlide(index)}
+                        className="h-2.5 rounded-full transition-all"
+                        style={{ width: activeSlide === index ? 28 : 10, backgroundColor: activeSlide === index ? branding.accentColor : dark ? 'rgba(255,255,255,0.25)' : '#CBD5E1' }}
+                      />
+                    ))}
+                  </div>
+                  <button type="button" aria-label="Next hero slide" onClick={nextSlide} className={`grid h-11 w-11 place-items-center rounded-full border ${dark ? 'border-white/15 text-white' : 'border-slate-300 text-slate-700'}`}>
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              <AuctionPulseHeroVisual branding={branding} dark={dark} activeSlide={activeSlide} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <AuctionPulseLots branding={branding} dark={dark} />
+      <AuctionPulseWorkflow branding={branding} dark={dark} copy={copy} />
+      <AuctionPulseControls branding={branding} dark={dark} copy={copy} />
+      <AuctionPulseTrust branding={branding} dark={dark} copy={copy} />
+      <AuctionPulseContact branding={branding} dark={dark} copy={copy} />
+      <AuctionPulseBottomBar branding={branding} />
+      <RecoveryCommandFooter branding={branding} dark={dark} />
+    </main>
+  );
+}
+
+function AuctionPulseNav({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const accentText = getReadableTextColor(branding.accentColor);
+  const links = [
+    ['Active Auctions', '#lots'],
+    ['How It Works', '#workflow'],
+    ['Vendor Verification', '#readiness'],
+    ['Wallet & Payments', '#wallet'],
+    ['Support', '#contact'],
+  ];
+  return (
+    <nav className={`fixed inset-x-0 top-0 z-50 border-b px-4 py-3 backdrop-blur-xl ${dark ? 'border-white/10 bg-[#071018]/82' : 'border-slate-200/80 bg-white/86'}`}>
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+        <BrandWordmark branding={branding} light={dark} />
+        <div className={`hidden items-center gap-5 text-[11px] font-black uppercase tracking-[0.13em] lg:flex ${dark ? 'text-white/55' : 'text-slate-500'}`}>
+          {links.map(([label, href]) => <a key={label} href={href} className="transition hover:text-[var(--wl-accent)]">{label}</a>)}
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href="/login" className={`rounded-xl border px-4 py-2 text-sm font-black transition hover:border-[var(--wl-accent)] hover:text-[var(--wl-accent)] ${dark ? 'border-white/15 text-white' : 'border-slate-300 text-slate-950'}`}>Sign in</Link>
+          <Link href="/register" className="hidden rounded-xl px-4 py-2 text-sm font-black sm:inline-flex" style={{ backgroundColor: branding.accentColor, color: accentText }}>Register</Link>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function AuctionPulseHeroVisual({ branding, dark, activeSlide }: { branding: BrandingPolicy; dark: boolean; activeSlide: number }) {
+  const card = dark ? 'border-white/10 bg-white/[0.08] text-white' : 'border-slate-200 bg-white text-slate-950';
+  const muted = dark ? 'text-white/58' : 'text-slate-500';
+  const lot = auctionPulseLots[activeSlide % auctionPulseLots.length];
+  return (
+    <div className={`relative min-h-[520px] overflow-hidden ${dark ? 'bg-slate-950/40' : 'bg-slate-100'}`}>
+      <Image src={lot.image} alt={`${lot.name} auction visual`} fill className="object-cover opacity-70" sizes="(max-width: 1024px) 100vw, 760px" />
+      <div className={`absolute inset-0 ${dark ? 'bg-gradient-to-t from-slate-950 via-slate-950/55 to-slate-950/10' : 'bg-gradient-to-t from-white via-white/55 to-white/5'}`} />
+      <div className="absolute inset-0 flex items-center justify-center p-5">
+        <div className="relative w-full max-w-[390px]">
+          <div className={`overflow-hidden rounded-[2rem] border shadow-2xl ${card}`}>
+            <div className="relative h-64">
+              <Image src={lot.image} alt={`${lot.name} preview`} fill className="object-cover" sizes="390px" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/18 to-transparent" />
+              <div className="absolute left-4 right-4 top-4 flex justify-between gap-2">
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-950">{lot.status}</span>
+                <span className="rounded-full px-3 py-1 text-xs font-black" style={{ backgroundColor: branding.accentColor, color: getReadableTextColor(branding.accentColor) }}>{lot.time}</span>
+              </div>
+              <div className="absolute bottom-4 left-4 right-4 text-white">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-white/65">{lot.location}</p>
+                <h3 className="mt-1 text-2xl font-black">{lot.name}</h3>
+              </div>
+            </div>
+            <div className="p-5">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-[0.15em] ${muted}`}>Current bid</p>
+                  <p className="mt-1 text-2xl font-black" style={{ color: branding.accentColor }}>{lot.bid}</p>
+                </div>
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-[0.15em] ${muted}`}>Damage</p>
+                  <p className="mt-1 font-black">{lot.damage}</p>
+                </div>
+              </div>
+              <button className="mt-5 w-full rounded-2xl px-5 py-4 text-sm font-black" style={{ backgroundColor: branding.primaryColor, color: getReadableTextColor(branding.primaryColor) }}>View Lot</button>
+            </div>
+          </div>
+          <motion.div className={`absolute -right-5 top-16 rounded-2xl border p-4 shadow-xl backdrop-blur-xl ${card}`} animate={{ y: [0, -7, 0] }} transition={{ repeat: Infinity, duration: 4 }}>
+            <ShieldCheck className="h-5 w-5" style={{ color: branding.accentColor }} />
+            <p className="mt-2 text-sm font-black">Verified bidder</p>
+            <p className={`text-xs ${muted}`}>Ready to bid</p>
+          </motion.div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AuctionPulseLots({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+  const muted = dark ? 'text-white/60' : 'text-slate-600';
+  const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
+  return (
+    <section id="lots" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#071018]' : 'bg-white'}`}>
+      <div className="mx-auto max-w-7xl">
+        <div data-recovery-edit-id="controls-copy" className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Active lots</p>
+            <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] md:text-5xl">Active lots closing soon</h2>
+          </div>
+          <p className={`max-w-2xl text-sm leading-7 ${muted}`}>Review the damage, location, current bid, and time left before joining an auction.</p>
+        </div>
+        <div className="mt-6 flex gap-2 overflow-x-auto pb-2">
+          {auctionPulseFilters.map((filter) => (
+            <button key={filter} type="button" className={`shrink-0 rounded-full border px-4 py-2 text-sm font-bold ${dark ? 'border-white/10 bg-white/[0.06] text-white/75' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+              {filter}
+            </button>
+          ))}
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {auctionPulseLots.map((lot) => (
+            <article key={lot.name} className={`overflow-hidden rounded-[1.7rem] border shadow-sm ${panel}`}>
+              <div className="relative h-52">
+                <Image src={lot.image} alt={`${lot.name} salvage lot`} fill className="object-cover" sizes="(max-width: 768px) 100vw, 320px" />
+                <div className="absolute left-3 top-3 rounded-full bg-white px-3 py-1 text-xs font-black text-slate-950">{lot.status}</div>
+              </div>
+              <div className="p-4">
+                <h3 className="text-xl font-black">{lot.name}</h3>
+                <div className={`mt-3 grid gap-2 text-sm ${muted}`}>
+                  <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> {lot.damage}</p>
+                  <p className="flex items-center gap-2"><MapPin className="h-4 w-4" /> {lot.location}</p>
+                  <p className="flex items-center gap-2"><Clock className="h-4 w-4" /> {lot.time} left</p>
+                </div>
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div>
+                    <p className={`text-[10px] font-bold uppercase tracking-[0.14em] ${muted}`}>Current bid</p>
+                    <p className="text-xl font-black" style={{ color: branding.accentColor }}>{lot.bid}</p>
+                  </div>
+                  <Link href="/vendor/auctions" className="rounded-xl px-4 py-2 text-sm font-black" style={{ backgroundColor: branding.primaryColor, color: getReadableTextColor(branding.primaryColor) }}>View Lot</Link>
+                </div>
+                <p className={`mt-3 rounded-xl px-3 py-2 text-xs font-bold ${dark ? 'bg-white/[0.06] text-white/70' : 'bg-slate-100 text-slate-600'}`}>{lot.eligibility}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AuctionPulseWorkflow({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: ReturnType<typeof auctionPulseCopy> }) {
+  const steps = ['Register', 'Verify account', 'Fund wallet', 'Choose a lot', 'Place bid', 'Win auction', 'Sign documents', 'Complete payment', 'Pickup instruction'];
+  return (
+    <section id="workflow" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#0B1420]' : 'bg-[#F6F8FB]'}`}>
+      <div className="mx-auto max-w-7xl">
+        <div data-recovery-edit-id="workflow-heading">
+          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>How bidding works</p>
+          <h2 className="mt-3 max-w-4xl text-3xl font-black tracking-[-0.04em] md:text-5xl">{copy.workflowTitle}</h2>
+          <p className={`mt-4 max-w-2xl text-sm leading-7 ${dark ? 'text-white/62' : 'text-slate-600'}`}>{copy.workflowSubtitle}</p>
+        </div>
+        <div data-recovery-edit-id="workflow-steps" className="mt-8 overflow-x-auto pb-3">
+          <div className="grid min-w-[980px] grid-cols-9 overflow-hidden rounded-[1.5rem] border border-current/10">
+            {steps.map((step, index) => (
+              <div key={step} className={`relative min-h-36 border-r border-current/10 p-4 last:border-r-0 ${dark ? 'bg-white/[0.045]' : 'bg-white'}`}>
+                <p className="font-mono text-xs" style={{ color: branding.accentColor }}>{String(index + 1).padStart(2, '0')}</p>
+                <h3 className="mt-7 text-base font-black">{index < 4 ? copy.workflowSteps[index]?.[0] || step : step}</h3>
+                <span className="absolute bottom-4 left-4 right-4 h-1 rounded-full bg-current/10">
+                  <span className="block h-1 rounded-full" style={{ width: `${Math.min(100, 42 + index * 7)}%`, backgroundColor: branding.accentColor }} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AuctionPulseControls({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: ReturnType<typeof auctionPulseCopy> }) {
+  const muted = dark ? 'text-white/62' : 'text-slate-600';
+  const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
+  const icons = [Search, ShieldCheck, WalletCards, FileCheck2];
+  return (
+    <section id="readiness" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#071018]' : 'bg-white'}`}>
+      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+        <div data-recovery-edit-id="buyer-copy">
+          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Why vendors use this portal</p>
+          <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] md:text-5xl">{copy.buyerTitle}</h2>
+          <p className={`mt-4 text-sm leading-7 ${muted}`}>{copy.buyerText}</p>
+        </div>
+        <div data-recovery-edit-id="control-step-cards" className="grid gap-3 sm:grid-cols-2">
+          {copy.featureCards.map(([title, body], index) => {
+            const Icon = icons[index] || CheckCircle2;
+            return (
+              <article key={title} className={`rounded-[1.5rem] border p-5 ${panel}`}>
+                <Icon className="h-6 w-6" style={{ color: branding.accentColor }} />
+                <h3 className="mt-5 text-xl font-black">{title}</h3>
+                <p className={`mt-2 text-sm leading-7 ${muted}`}>{body}</p>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AuctionPulseTrust({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: ReturnType<typeof auctionPulseCopy> }) {
+  const muted = dark ? 'text-white/62' : 'text-slate-600';
+  const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
+  return (
+    <section id="wallet" className={`px-4 py-16 sm:px-5 ${dark ? 'bg-[#0B1420]' : 'bg-[#F6F8FB]'}`}>
+      <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-3">
+        <div data-recovery-edit-id="controls-copy" className={`rounded-[1.7rem] border p-6 lg:col-span-1 ${panel}`}>
+          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>{copy.controlsLabel}</p>
+          <h2 className="mt-3 text-3xl font-black tracking-[-0.04em]">{copy.controlsTitle}</h2>
+          <p className={`mt-4 text-sm leading-7 ${muted}`}>{copy.controlsText}</p>
+        </div>
+        {copy.controlsCards.map(([title, body]) => (
+          <article key={title} data-recovery-edit-id="controls-cards" className={`rounded-[1.7rem] border p-6 ${panel}`}>
+            <CheckCircle2 className="h-6 w-6" style={{ color: branding.accentColor }} />
+            <h3 className="mt-5 text-xl font-black">{title}</h3>
+            <p className={`mt-3 text-sm leading-7 ${muted}`}>{body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AuctionPulseContact({ branding, dark, copy }: { branding: BrandingPolicy; dark: boolean; copy: ReturnType<typeof auctionPulseCopy> }) {
+  return <RecoveryCommandContact branding={branding} dark={dark} copy={{
+    ...recoveryCommandCopy(branding.homepageCopy),
+    contactHeadline: copy.contactHeadline,
+    contactSubtitle: copy.contactSubtitle,
+  }} />;
+}
+
+function AuctionPulseBottomBar({ branding }: { branding: BrandingPolicy }) {
+  return (
+    <div className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-2 gap-2 rounded-2xl border border-white/20 bg-white/92 p-2 shadow-2xl backdrop-blur-xl md:hidden">
+      <Link href="/vendor/auctions" className="rounded-xl px-3 py-3 text-center text-sm font-black" style={{ backgroundColor: branding.primaryColor, color: getReadableTextColor(branding.primaryColor) }}>Browse Auctions</Link>
+      <Link href="/register" className="rounded-xl border border-slate-200 px-3 py-3 text-center text-sm font-black text-slate-950">Register / Login</Link>
+    </div>
   );
 }
 

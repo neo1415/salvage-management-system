@@ -35,6 +35,7 @@ export type BrandingPolicy = {
     | 'reclaim_editorial'
     | 'nem_salvage'
     | 'recovery_command'
+    | 'auction_pulse'
     | 'claims_orbit'
     | 'executive_terminal'
     // Backward-compatible aliases for already-saved draft policies.

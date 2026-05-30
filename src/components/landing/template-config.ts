@@ -4,7 +4,7 @@ export type CanonicalHomepageTemplate =
   | 'reclaim_editorial'
   | 'nem_salvage'
   | 'recovery_command'
-  | 'claims_orbit'
+  | 'auction_pulse'
   | 'executive_terminal';
 
 export type TemplateSurface = {
@@ -38,11 +38,11 @@ export const HOMEPAGE_TEMPLATE_OPTIONS: TemplateSurface[] = [
     authTone: 'Operations command center',
   },
   {
-    id: 'claims_orbit',
-    name: 'Claims Orbit',
-    description: 'Carousel-led narrative with claim, auction, payment, and compliance stages orbiting one recovery pipeline.',
+    id: 'auction_pulse',
+    name: 'Auction Pulse',
+    description: 'Mobile-first auction portal for vendors and buyers who need lots, bid readiness, documents, payment, and pickup clarity.',
     defaultTheme: 'night',
-    authTone: 'Connected claims network',
+    authTone: 'Verified auction access',
   },
   {
     id: 'executive_terminal',
@@ -56,6 +56,7 @@ export const HOMEPAGE_TEMPLATE_OPTIONS: TemplateSurface[] = [
 export function normalizeHomepageTemplate(template: BrandingPolicy['homepageTemplate']): CanonicalHomepageTemplate {
   if (template === 'salvage_showcase') return 'nem_salvage';
   if (template === 'auction_marketplace') return 'recovery_command';
+  if (template === 'claims_orbit') return 'auction_pulse';
   if (template === 'minimal_private') return 'executive_terminal';
   return template;
 }

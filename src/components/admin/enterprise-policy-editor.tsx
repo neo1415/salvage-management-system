@@ -4,7 +4,7 @@ import { useMemo, useState, type MouseEvent } from 'react';
 import { AlertTriangle, CheckCircle2, MonitorSmartphone, Rocket, Save, ShieldAlert, Upload } from 'lucide-react';
 import type { BusinessPolicy, PolicyValidationResult } from '@/features/business-policy/types';
 import { validateBusinessPolicy } from '@/features/business-policy/policy-validation';
-import { HOMEPAGE_TEMPLATE_OPTIONS } from '@/components/landing/template-config';
+import { HOMEPAGE_TEMPLATE_OPTIONS, normalizeHomepageTemplate } from '@/components/landing/template-config';
 import { WhiteLabelHomeTemplates } from '@/components/landing/home-templates';
 import { getReadableTextColor } from '@/features/branding/brand-colors';
 import { useToast } from '@/components/ui/toast';
@@ -42,10 +42,10 @@ const TEMPLATE_EDITOR_GUIDE: Record<string, TemplateEditorGuide> = {
     sections: ['Buyer hero', 'Bid workflow', 'Buyer controls', 'Pickup path', 'Contact'],
     image: '/assets/recovery-command/hero-yard.png',
   },
-  claims_orbit: {
-    bestFor: 'Relationship-led teams that want a more animated, connected journey.',
-    sections: ['Orbit hero', 'Connected loop', 'Stage cards', 'Assets in motion'],
-    image: '/assets/hero-1.png',
+  auction_pulse: {
+    bestFor: 'Mobile-first salvage auction portal for vendors who need lots, wallet readiness, bidding, documents, payment, and pickup clarity.',
+    sections: ['Swipe hero', 'Active lots', 'Filters', 'Bid readiness', 'Vendor support'],
+    image: '/assets/recovery-command/damage-review.png',
   },
   executive_terminal: {
     bestFor: 'Private, quiet sign-in-first experience with a restrained executive feel.',
@@ -70,10 +70,10 @@ const TEMPLATE_COPY_MAP: Record<string, Array<{ label: string; fields: string; a
     { label: 'Bid workflow', fields: 'Workflow labels and process copy', appears: 'Vendor verification to pickup release timeline' },
     { label: 'Contact section', fields: 'Trust line, support email, support phone', appears: 'Vendor help and footer support area' },
   ],
-  claims_orbit: [
-    { label: 'Orbit hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Animated circular recovery story' },
-    { label: 'Connected stages', fields: 'Supporting line and stats', appears: 'Claims, auction, payment, and document sections' },
-    { label: 'Contact section', fields: 'Trust line and support details', appears: 'Bottom support area' },
+  auction_pulse: [
+    { label: 'Mobile auction hero', fields: 'Small label, carousel title, intro, buttons', appears: 'Swipeable public auction intro' },
+    { label: 'Active lots and filters', fields: 'Lot marketplace copy, badges, and filter language', appears: 'Featured auction cards and quick filters' },
+    { label: 'Vendor support', fields: 'Trust line, wallet guidance, contact text', appears: 'Bid readiness, support, and footer areas' },
   ],
   executive_terminal: [
     { label: 'Private entry', fields: 'Hero title, subtitle, buttons', appears: 'Left-side access panel' },
@@ -345,6 +345,51 @@ const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = 
   authSubtitle: 'Sign in to review lots, manage bids, complete documents, track payment, and prepare for pickup.',
 };
 
+const AUCTION_PULSE_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = {
+  eyebrow: 'Live salvage auctions for verified buyers',
+  heroTitle: 'Bid on verified salvage assets with confidence.',
+  heroSubtitle: 'Browse active lots, review damage details, fund your wallet, and place bids from your phone.',
+  primaryCtaLabel: 'Browse Active Auctions',
+  secondaryCtaLabel: 'Register as a Vendor',
+  trustLine: 'Verified listings, secured deposits, signed documents, and clear pickup steps.',
+  statOneLabel: 'Verified lots',
+  statTwoLabel: 'Wallet-ready bids',
+  statThreeLabel: 'Pickup instructions',
+  workflowTitle: 'From registration to pickup, the process is clear.',
+  workflowSubtitle: 'Each step shows what you need before you bid, after you win, and before pickup.',
+  workflowStepOneTitle: 'Register',
+  workflowStepOneBody: 'Create a vendor account and keep your bidder profile ready.',
+  workflowStepTwoTitle: 'Verify',
+  workflowStepTwoBody: 'Complete the checks required for eligible auctions and bid limits.',
+  workflowStepThreeTitle: 'Bid',
+  workflowStepThreeBody: 'Review lot details, keep your wallet ready, and place verified bids.',
+  workflowStepFourTitle: 'Pickup',
+  workflowStepFourBody: 'Sign documents, complete payment, and receive pickup instructions.',
+  operationsSectionEyebrow: 'Bid readiness',
+  operationsSectionTitle: 'Know your status before you join an auction.',
+  operationsSectionSubtitle: 'See lot requirements, wallet coverage, verification status, documents, payment, and pickup readiness before you commit.',
+  operationsCardOneTitle: 'Wallet coverage',
+  operationsCardOneBody: 'Check the deposit or wallet balance needed for eligible lots before placing a bid.',
+  operationsCardTwoTitle: 'Post-win tracking',
+  operationsCardTwoBody: 'After winning, follow document signing, payment, and pickup release from one clear page.',
+  operationsCardThreeTitle: 'Auction rules',
+  operationsCardThreeBody: 'Bids, deadlines, document windows, and pickup steps are shown before you act.',
+  proofCardOneTitle: 'Active lots',
+  proofCardOneBody: 'Scan vehicle images, condition notes, location, current bid, and time left.',
+  proofCardTwoTitle: 'Clear eligibility',
+  proofCardTwoBody: 'Know when verification or wallet funding is needed before joining a lot.',
+  proofCardThreeTitle: 'Bid status',
+  proofCardThreeBody: 'Track whether you are leading, outbid, or waiting for auction close.',
+  proofCardFourTitle: 'Pickup path',
+  proofCardFourBody: 'Move from documents and payment to release instructions without confusion.',
+  proofSectionTitle: 'Clear rules. Verified bidders. Structured handoff.',
+  proofSectionSubtitle: 'The portal keeps auction details, deposit expectations, payment steps, documents, and pickup instructions visible to buyers.',
+  contactHeadline: 'Need help before you bid?',
+  contactSubtitle: 'Ask vendor support about verification, wallet funding, lot access, documents, payment, or pickup requirements.',
+  authHeadline: 'Access verified salvage auctions.',
+  authSubtitle: 'Sign in to review lots, manage bids, complete documents, track payment, and prepare for pickup.',
+};
+
 function isGenericRecoveryCopy(value: string | undefined) {
   const text = (value || '').toLowerCase();
   return text.includes('total losses become recovered capital')
@@ -357,10 +402,10 @@ function isGenericRecoveryCopy(value: string | undefined) {
     || text.includes('recover value without losing control');
 }
 
-function resolveRecoveryCommandEditorValue(copy: BusinessPolicy['branding']['homepageCopy'], key: HomepageCopyKey) {
+function resolveTemplateEditorValue(copy: BusinessPolicy['branding']['homepageCopy'], key: HomepageCopyKey, defaults: Partial<Record<HomepageCopyKey, string>>) {
   const value = copy[key];
   const stringValue = typeof value === 'string' ? value : '';
-  const fallback = RECOVERY_COMMAND_DEFAULT_COPY[key];
+  const fallback = defaults[key];
   if (value === undefined || value === null) return fallback ?? '';
   if (fallback && isGenericRecoveryCopy(stringValue)) return fallback;
   return stringValue;
@@ -459,12 +504,21 @@ function TemplateContentStep({
   updateHomepageCopy: (key: HomepageCopyKey, value: string) => void;
   updatePolicy: (updater: (draft: BusinessPolicy) => void) => void;
 }) {
-  if (policy.branding.homepageTemplate === 'recovery_command') {
+  const template = normalizeHomepageTemplate(policy.branding.homepageTemplate);
+
+  if (template === 'recovery_command' || template === 'auction_pulse') {
+    const auctionPulse = template === 'auction_pulse';
     return (
       <RecoveryCommandContentEditor
         policy={policy}
         updateHomepageCopy={updateHomepageCopy}
         updatePolicy={updatePolicy}
+        templateId={template}
+        defaults={auctionPulse ? AUCTION_PULSE_DEFAULT_COPY : RECOVERY_COMMAND_DEFAULT_COPY}
+        title={auctionPulse ? 'Auction Pulse Editor' : 'Recovery Command Editor'}
+        intro={auctionPulse
+          ? 'Click the actual auction portal text, lot copy, workflow, wallet guidance, or support copy in the preview and edit it in place.'
+          : 'Click a headline, paragraph, button, workflow step, or contact text in the preview and edit it in place.'}
       />
     );
   }
@@ -561,18 +615,26 @@ function RecoveryCommandContentEditor({
   policy,
   updateHomepageCopy,
   updatePolicy,
+  templateId,
+  defaults,
+  title,
+  intro,
 }: {
   policy: BusinessPolicy;
   updateHomepageCopy: (key: HomepageCopyKey, value: string) => void;
   updatePolicy: (updater: (draft: BusinessPolicy) => void) => void;
+  templateId: 'recovery_command' | 'auction_pulse';
+  defaults: Partial<Record<HomepageCopyKey, string>>;
+  title: string;
+  intro: string;
 }) {
   const [activePanel, setActivePanel] = useState(RECOVERY_COMMAND_CONTENT_PANELS[0].id);
-  const resolved = (key: HomepageCopyKey) => resolveRecoveryCommandEditorValue(policy.branding.homepageCopy, key);
+  const resolved = (key: HomepageCopyKey) => resolveTemplateEditorValue(policy.branding.homepageCopy, key, defaults);
   const accentText = getReadableTextColor(policy.branding.accentColor);
 
   const applyDefaults = () => {
     updatePolicy((draft) => {
-      Object.entries(RECOVERY_COMMAND_DEFAULT_COPY).forEach(([key, value]) => {
+      Object.entries(defaults).forEach(([key, value]) => {
         draft.branding.homepageCopy[key as HomepageCopyKey] = value ?? '';
       });
     });
@@ -583,10 +645,10 @@ function RecoveryCommandContentEditor({
       <div className="rounded-[1.75rem] border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--brand-primary)]">Recovery Command Editor</p>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--brand-primary)]">{title}</p>
             <h3 className="mt-2 text-3xl font-black text-gray-950">Click the template text to edit it</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600">
-              This is the actual template surface. Click a headline, paragraph, button, workflow step, or contact text in the preview and edit it in place.
+              {intro}
             </p>
           </div>
           <button
@@ -606,6 +668,8 @@ function RecoveryCommandContentEditor({
         setActivePanel={setActivePanel}
         resolved={resolved}
         updateHomepageCopy={updateHomepageCopy}
+        templateId={templateId}
+        defaults={defaults}
       />
     </div>
   );
@@ -617,29 +681,33 @@ function RecoveryCommandLivePreview({
   setActivePanel,
   resolved,
   updateHomepageCopy,
+  templateId,
+  defaults,
 }: {
   policy: BusinessPolicy;
   activePanel: string;
   setActivePanel: (panel: string) => void;
   resolved: (key: HomepageCopyKey) => string;
   updateHomepageCopy: (key: HomepageCopyKey, value: string) => void;
+  templateId: 'recovery_command' | 'auction_pulse';
+  defaults: Partial<Record<HomepageCopyKey, string>>;
 }) {
   const [activeHotspotId, setActiveHotspotId] = useState('hero-title');
   const previewBranding = useMemo(() => {
     const homepageCopy = { ...policy.branding.homepageCopy };
-    (Object.keys(RECOVERY_COMMAND_DEFAULT_COPY) as HomepageCopyKey[]).forEach((key) => {
+    (Object.keys(defaults) as HomepageCopyKey[]).forEach((key) => {
       homepageCopy[key] = resolved(key);
     });
 
     return {
       ...policy.branding,
-      homepageTemplate: 'recovery_command' as const,
+      homepageTemplate: templateId,
       homepageMode: 'landing' as const,
       homepageTheme: policy.branding.homepageTheme === 'night' ? 'night' as const : 'day' as const,
       splashEnabled: false,
       homepageCopy,
     };
-  }, [policy.branding, resolved]);
+  }, [policy.branding, resolved, templateId, defaults]);
 
   const activeHotspot = RECOVERY_COMMAND_PREVIEW_HOTSPOTS.find((hotspot) => hotspot.id === activeHotspotId) ?? RECOVERY_COMMAND_PREVIEW_HOTSPOTS[1];
   const selectedPanel = RECOVERY_COMMAND_CONTENT_PANELS.find((panel) => panel.id === activePanel);
@@ -889,25 +957,32 @@ function TemplateMiniPreview({
     );
   }
 
-  if (templateId === 'claims_orbit') {
+  if (templateId === 'auction_pulse') {
     return (
-      <div className="relative mt-4 overflow-hidden rounded-2xl bg-neutral-950 text-white">
-        <div className="relative h-40 p-3">
-        <div className="absolute -right-10 -top-10 h-28 w-28 rounded-full border border-white/15" />
-        <div className="absolute right-5 top-5 h-20 w-20 rounded-full border" style={{ borderColor: accentColor }} />
-        <div className="relative z-10 flex items-center justify-between">
-          <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/60">{brandName || 'Orbit'}</span>
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: accentColor }} />
+      <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner">
+        <div className="grid h-44 grid-cols-[0.86fr_1.14fr] gap-2 p-2">
+          <div className="rounded-2xl p-3 text-white" style={{ backgroundColor: primaryColor }}>
+            <div className="h-2 w-24 rounded-full" style={{ backgroundColor: accentColor }} />
+            <div className="mt-6 h-5 w-11/12 rounded bg-white/90" />
+            <div className="mt-2 h-5 w-3/4 rounded bg-white/65" />
+            <div className="mt-5 flex gap-1">
+              <div className="h-6 w-16 rounded-full bg-white" />
+              <div className="h-6 w-16 rounded-full border border-white/35" />
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <div className="relative overflow-hidden rounded-2xl">
+              <img src="/assets/recovery-command/damage-review.png" alt="" className="h-full w-full object-cover" />
+              <span className="absolute left-2 top-2 rounded-full bg-white px-2 py-1 text-[8px] font-black text-slate-950">LIVE LOT</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              <div className="rounded-lg bg-slate-100 p-1"><div className="h-2 rounded bg-slate-300" /><div className="mt-1 h-2 rounded" style={{ backgroundColor: accentColor }} /></div>
+              <div className="rounded-lg bg-slate-100 p-1"><div className="h-2 rounded bg-slate-300" /><div className="mt-1 h-2 rounded bg-slate-300" /></div>
+              <div className="rounded-lg bg-slate-100 p-1"><div className="h-2 rounded bg-slate-300" /><div className="mt-1 h-2 rounded bg-slate-300" /></div>
+            </div>
+          </div>
         </div>
-        <div className="relative z-10 mt-8 h-4 w-4/5 rounded bg-white/85" />
-        <div className="relative z-10 mt-2 h-4 w-3/5 rounded bg-white/45" />
-        <div className="absolute bottom-3 left-3 right-3 grid grid-cols-3 gap-1">
-          <div className="h-6 rounded-full bg-white/10" />
-          <div className="h-6 rounded-full bg-white/10" />
-          <div className="h-6 rounded-full" style={{ backgroundColor: accentColor }} />
-        </div>
-        </div>
-        <TemplatePreviewFooter guide={guide} selected={selected} dark />
+        <TemplatePreviewFooter guide={guide} selected={selected} />
       </div>
     );
   }
@@ -1169,8 +1244,9 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
   const validation = useMemo(() => validateBusinessPolicy(policy), [policy]);
   const errors = validation.issues.filter((issue) => issue.severity === 'error');
   const warnings = validation.issues.filter((issue) => issue.severity === 'warning');
-  const selectedTemplateGuide = TEMPLATE_EDITOR_GUIDE[policy.branding.homepageTemplate] ?? TEMPLATE_EDITOR_GUIDE.reclaim_editorial;
-  const selectedCopyMap = TEMPLATE_COPY_MAP[policy.branding.homepageTemplate] ?? TEMPLATE_COPY_MAP.reclaim_editorial;
+  const normalizedTemplate = normalizeHomepageTemplate(policy.branding.homepageTemplate);
+  const selectedTemplateGuide = TEMPLATE_EDITOR_GUIDE[normalizedTemplate] ?? TEMPLATE_EDITOR_GUIDE.reclaim_editorial;
+  const selectedCopyMap = TEMPLATE_COPY_MAP[normalizedTemplate] ?? TEMPLATE_COPY_MAP.reclaim_editorial;
   const activeStepIndex = SETUP_STEPS.findIndex((step) => step.id === activeStep);
   const activeStepConfig = SETUP_STEPS[activeStepIndex] ?? SETUP_STEPS[0];
   const visibleStepClass = (step: SetupStepId) => activeStep === step ? '' : 'hidden';
@@ -1600,7 +1676,7 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
                 Active choice
               </div>
               <p className="mt-1">
-                {HOMEPAGE_TEMPLATE_OPTIONS.find((template) => template.id === policy.branding.homepageTemplate)?.name ?? 'Selected template'}
+                {HOMEPAGE_TEMPLATE_OPTIONS.find((template) => template.id === normalizedTemplate)?.name ?? 'Selected template'}
               </p>
             </div>
           </div>
@@ -1616,7 +1692,7 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
                   draft.branding.homepageTheme = template.defaultTheme;
                 })}
                 className={`group rounded-3xl border p-3 text-left transition ${
-                  policy.branding.homepageTemplate === template.id
+                  normalizedTemplate === template.id
                     ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)] shadow-md shadow-[var(--brand-shadow-color)]'
                     : 'border-gray-200 bg-white hover:border-[var(--brand-primary-border)] hover:shadow-sm'
                 }`}
@@ -1635,7 +1711,7 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
                   accentColor={policy.branding.accentColor}
                   brandName={policy.branding.brandName}
                   heroTitle={policy.branding.homepageCopy.heroTitle}
-                  selected={policy.branding.homepageTemplate === template.id}
+                  selected={normalizedTemplate === template.id}
                 />
               </button>
             ))}

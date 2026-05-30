@@ -30,7 +30,7 @@ export function Navigation() {
   ];
   const template = normalizeHomepageTemplate(branding.homepageTemplate);
   const resolvedTheme = resolveTemplateTheme(branding);
-  const darkHeroTemplates = new Set(['nem_salvage', 'reclaim_editorial', 'claims_orbit']);
+  const darkHeroTemplates = new Set(['nem_salvage', 'reclaim_editorial', 'auction_pulse']);
   const darkHero = resolvedTheme === 'night' || darkHeroTemplates.has(template);
   const transparentOnDark = !isScrolled && darkHero;
   const primaryText = getReadableTextColor(branding.primaryColor);
