@@ -33,8 +33,8 @@ const TEMPLATE_EDITOR_GUIDE: Record<string, TemplateEditorGuide> = {
     image: '/assets/hero-1.png',
   },
   nem_salvage: {
-    bestFor: 'Animated public homepage with a familiar auction-marketplace feel.',
-    sections: ['Animated hero', 'How it works', 'Auction preview', 'FAQ and contact'],
+    bestFor: 'Classic public auction homepage with carousel, day/night mode, bidding steps, and buyer support.',
+    sections: ['Carousel hero', 'Auction path', 'Buyer controls', 'Contact'],
     image: '/assets/Hero-3.png',
   },
   recovery_command: {
@@ -61,9 +61,9 @@ const TEMPLATE_COPY_MAP: Record<string, Array<{ label: string; fields: string; a
     { label: 'Trust block', fields: 'Trust line and support contacts', appears: 'Trust and contact section near the footer' },
   ],
   nem_salvage: [
-    { label: 'Animated hero', fields: 'Hero title, subtitle, buttons, stats', appears: 'Classic animated public homepage' },
-    { label: 'Below-fold sections', fields: 'Brand colors, support details, legal links', appears: 'How it works, auction preview, FAQ, and contact' },
-    { label: 'Sign-in shell', fields: 'Auth headline and subtitle', appears: 'Login and registration screens' },
+    { label: 'Carousel hero', fields: 'Hero slides, subtitle, buttons, badges', appears: 'Classic public auction homepage' },
+    { label: 'Auction path', fields: 'Workflow labels and process copy', appears: 'Register to pickup release flow' },
+    { label: 'Contact and support', fields: 'Contact text, trust line, sign-in copy', appears: 'Support form, footer, and authentication screens' },
   ],
   recovery_command: [
     { label: 'Buyer hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Public salvage auction landing hero' },
@@ -403,6 +403,60 @@ const AUCTION_PULSE_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = {
   authSubtitle: 'Sign in to Review auctions, manage bids, complete documents, track payment, and prepare for pickup.',
 };
 
+const CLASSIC_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = {
+  eyebrow: 'Verified salvage marketplace',
+  heroTitle: 'Buy verified salvage with clear next steps.',
+  heroSubtitle: 'Register, review active auctions, place secured bids, sign documents, complete payment, and receive pickup guidance.',
+  primaryCtaLabel: 'Register to bid',
+  secondaryCtaLabel: 'Browse auctions',
+  trustLine: 'Verified auctions, clear deposit handling, signed documents, and pickup-ready communication.',
+  statOneValue: 'Find auctions that are ready for review.',
+  statOneLabel: 'Check vehicle photos, damage notes, location, current bid, and time left before joining the auction.',
+  auctionSectionButtonLabel: 'View auctions',
+  auctionSectionEyebrow: 'How bidding works',
+  statTwoValue: 'Know when you are ready to bid.',
+  statTwoLabel: 'Verification, wallet coverage, auction rules, and document requirements are shown before you act.',
+  proofContactLabel: 'Check readiness',
+  auctionSectionTitle: 'Learn deposits',
+  statThreeValue: 'Move from winning bid to pickup release.',
+  statThreeLabel: 'Track documents, payment, support messages, and pickup status after the auction closes.',
+  recoveryBriefTitle: 'See pickup flow',
+  recoveryBriefBody: 'Contact support',
+  workflowTitle: 'How the auction path works',
+  workflowSubtitle: 'Move from account setup to pickup release without guessing the next step.',
+  workflowStepOneTitle: 'Register',
+  workflowStepOneBody: 'Create your vendor account and keep your bidder profile ready.',
+  workflowStepTwoTitle: 'Review',
+  workflowStepTwoBody: 'Inspect photos, notes, auction rules, and document requirements.',
+  workflowStepThreeTitle: 'Bid',
+  workflowStepThreeBody: 'Place secured bids with clear increments, deposits, and status updates.',
+  workflowStepFourTitle: 'Pickup',
+  workflowStepFourBody: 'Sign documents, complete payment, and receive pickup instructions.',
+  operationsSectionEyebrow: 'Auction controls',
+  operationsSectionTitle: 'Everything important stays visible.',
+  operationsSectionSubtitle: 'Auction details, bidder readiness, documents, payments, and pickup updates are presented in plain language.',
+  operationsCardOneTitle: 'Auction details',
+  operationsCardOneBody: 'Review condition notes, photos, bids, and location before you commit.',
+  operationsCardTwoTitle: 'Bid readiness',
+  operationsCardTwoBody: 'See verification, wallet, and auction access requirements before bidding.',
+  operationsCardThreeTitle: 'After winning',
+  operationsCardThreeBody: 'Follow document signing, payment, and pickup release from one place.',
+  proofCardOneTitle: 'Verified access',
+  proofCardOneBody: 'Registration and review steps keep auction access structured.',
+  proofCardTwoTitle: 'Clear auction rules',
+  proofCardTwoBody: 'Bids, deposits, deadlines, and document windows are easy to follow.',
+  proofCardThreeTitle: 'Payment visibility',
+  proofCardThreeBody: 'Track what is paid, what is pending, and when pickup can be released.',
+  proofCardFourTitle: 'Support contact',
+  proofCardFourBody: 'Reach the auction support team before or after bidding.',
+  proofSectionTitle: 'A familiar auction page with clearer safeguards.',
+  proofSectionSubtitle: 'Classic keeps the marketplace feel, but adds verification, deposit visibility, document tracking, and pickup guidance.',
+  contactHeadline: 'Questions before you bid?',
+  contactSubtitle: 'Contact support for help with registration, verification, deposits, payment, documents, or pickup instructions.',
+  authHeadline: 'Access verified salvage auctions.',
+  authSubtitle: 'Sign in to review auctions, manage bids, complete documents, track payment, and prepare for pickup.',
+};
+
 function isGenericRecoveryCopy(value: string | undefined) {
   const text = (value || '').toLowerCase();
   return text.includes('total losses become recovered capital')
@@ -528,19 +582,33 @@ function TemplateContentStep({
 }) {
   const template = normalizeHomepageTemplate(policy.branding.homepageTemplate);
 
-  if (template === 'recovery_command' || template === 'auction_pulse') {
-    const auctionPulse = template === 'auction_pulse';
+  if (template === 'recovery_command' || template === 'auction_pulse' || template === 'nem_salvage') {
+    const config = {
+      recovery_command: {
+        defaults: RECOVERY_COMMAND_DEFAULT_COPY,
+        title: 'Recovery Command Editor',
+        intro: 'Click a headline, paragraph, button, workflow step, or contact text in the preview and edit it in place.',
+      },
+      auction_pulse: {
+        defaults: AUCTION_PULSE_DEFAULT_COPY,
+        title: 'Auction Pulse Editor',
+        intro: 'Click the actual auction portal text, auction copy, workflow, wallet guidance, or support copy in the preview and edit it in place.',
+      },
+      nem_salvage: {
+        defaults: CLASSIC_DEFAULT_COPY,
+        title: 'Classic Editor',
+        intro: 'Click the carousel slide, badges, workflow, controls, support copy, or footer-related text in the preview and edit it in place.',
+      },
+    }[template];
     return (
       <RecoveryCommandContentEditor
         policy={policy}
         updateHomepageCopy={updateHomepageCopy}
         updatePolicy={updatePolicy}
         templateId={template}
-        defaults={auctionPulse ? AUCTION_PULSE_DEFAULT_COPY : RECOVERY_COMMAND_DEFAULT_COPY}
-        title={auctionPulse ? 'Auction Pulse Editor' : 'Recovery Command Editor'}
-        intro={auctionPulse
-          ? 'Click the actual auction portal text, auction copy, workflow, wallet guidance, or support copy in the preview and edit it in place.'
-          : 'Click a headline, paragraph, button, workflow step, or contact text in the preview and edit it in place.'}
+        defaults={config.defaults}
+        title={config.title}
+        intro={config.intro}
       />
     );
   }
@@ -645,7 +713,7 @@ function RecoveryCommandContentEditor({
   policy: BusinessPolicy;
   updateHomepageCopy: (key: HomepageCopyKey, value: string) => void;
   updatePolicy: (updater: (draft: BusinessPolicy) => void) => void;
-  templateId: 'recovery_command' | 'auction_pulse';
+  templateId: 'recovery_command' | 'auction_pulse' | 'nem_salvage';
   defaults: Partial<Record<HomepageCopyKey, string>>;
   title: string;
   intro: string;
@@ -711,7 +779,7 @@ function RecoveryCommandLivePreview({
   setActivePanel: (panel: string) => void;
   resolved: (key: HomepageCopyKey) => string;
   updateHomepageCopy: (key: HomepageCopyKey, value: string) => void;
-  templateId: 'recovery_command' | 'auction_pulse';
+  templateId: 'recovery_command' | 'auction_pulse' | 'nem_salvage';
   defaults: Partial<Record<HomepageCopyKey, string>>;
 }) {
   const [activeHotspotId, setActiveHotspotId] = useState('hero-title');
@@ -949,7 +1017,6 @@ function TemplateMiniPreview({
 }) {
   const guide = TEMPLATE_EDITOR_GUIDE[templateId] ?? TEMPLATE_EDITOR_GUIDE.reclaim_editorial;
   const accentText = getReadableTextColor(accentColor);
-  const primaryText = getReadableTextColor(primaryColor);
 
   if (templateId === 'executive_terminal') {
     return (
@@ -1041,25 +1108,40 @@ function TemplateMiniPreview({
 
   if (templateId === 'nem_salvage') {
     return (
-      <div className="mt-4 overflow-hidden rounded-2xl" style={{ background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`, color: primaryText }}>
-      <div className="h-40 p-3">
-        <div className="flex items-center justify-between">
-          <div className="h-2 w-20 rounded-full bg-white/70" />
-          <div className="h-6 w-6 rounded bg-white/20" />
+      <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner">
+        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+          <span className="flex items-center gap-2 text-xs font-black text-slate-950">
+            <span className="h-5 w-5 rounded-full" style={{ backgroundColor: primaryColor }} />
+            {brandName || 'Classic'}
+          </span>
+          <span className="rounded-full bg-slate-950 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-white">Classic</span>
         </div>
-        <div className="mt-5 h-5 w-3/4 rounded bg-white/85" />
-        <div className="mt-2 h-5 w-1/2 rounded bg-white/45" />
-        <div className="mt-4 flex gap-2">
-          <div className="h-6 w-20 rounded-full bg-white" />
-          <div className="h-6 w-20 rounded-full border border-white/60" />
+        <div className="grid h-52 grid-cols-[0.88fr_1.12fr]">
+          <div className="flex flex-col justify-between p-4">
+            <div>
+              <div className="h-2 w-20 rounded-full" style={{ backgroundColor: accentColor }} />
+              <div className="mt-5 h-6 w-11/12 rounded" style={{ backgroundColor: primaryColor }} />
+              <div className="mt-2 h-6 w-4/5 rounded" style={{ backgroundColor: `${primaryColor}99` }} />
+              <div className="mt-2 h-6 w-2/3 rounded" style={{ backgroundColor: `${primaryColor}66` }} />
+            </div>
+            <div className="flex gap-2">
+              <div className="h-7 w-20 rounded-xl" style={{ backgroundColor: primaryColor }} />
+              <div className="h-7 w-16 rounded-xl border border-slate-200 bg-white" />
+            </div>
+          </div>
+          <div className="relative overflow-hidden">
+            <img src="/assets/Hero-3.png" alt="" className="h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
+            <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-white/88 p-3 shadow-sm backdrop-blur">
+              <div className="flex items-center justify-between">
+                <div className="h-2 w-20 rounded bg-slate-300" />
+                <span className="rounded-full px-2 py-0.5 text-[8px] font-black" style={{ backgroundColor: accentColor, color: accentText }}>LIVE</span>
+              </div>
+              <div className="mt-2 h-4 rounded" style={{ backgroundColor: primaryColor }} />
+            </div>
+          </div>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-1">
-          <div className="h-5 rounded bg-white/15" />
-          <div className="h-5 rounded bg-white/15" />
-          <div className="h-5 rounded bg-white/15" />
-        </div>
-      </div>
-      <TemplatePreviewFooter guide={guide} selected={selected} dark={primaryText === '#FFFFFF'} />
+        <TemplatePreviewFooter guide={guide} selected={selected} />
       </div>
     );
   }
@@ -1270,7 +1352,6 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
   const errors = validation.issues.filter((issue) => issue.severity === 'error');
   const warnings = validation.issues.filter((issue) => issue.severity === 'warning');
   const normalizedTemplate = normalizeHomepageTemplate(policy.branding.homepageTemplate);
-  const selectedTemplateGuide = TEMPLATE_EDITOR_GUIDE[normalizedTemplate] ?? TEMPLATE_EDITOR_GUIDE.reclaim_editorial;
   const selectedCopyMap = TEMPLATE_COPY_MAP[normalizedTemplate] ?? TEMPLATE_COPY_MAP.reclaim_editorial;
   const activeStepIndex = SETUP_STEPS.findIndex((step) => step.id === activeStep);
   const activeStepConfig = SETUP_STEPS[activeStepIndex] ?? SETUP_STEPS[0];
@@ -1504,7 +1585,7 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
         </div>
       ) : null}
 
-      <div className="sticky top-3 z-30 mt-5 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-xl shadow-gray-900/10 backdrop-blur">
+      <div className="sticky top-0 z-40 mt-5 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-xl shadow-gray-900/10 backdrop-blur">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-primary)]">
@@ -1774,21 +1855,6 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             </div>
           </div>
 
-          <div className="grid gap-4 rounded-3xl border border-gray-200 p-4 lg:grid-cols-[0.8fr_1.2fr]">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--brand-primary)]">What this template includes</p>
-              <h4 className="mt-2 text-xl font-black tracking-[-0.03em] text-gray-950">
-                {selectedTemplateGuide.bestFor}
-              </h4>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {selectedTemplateGuide.sections.map((section) => (
-                <div key={section} className="rounded-2xl bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-700">
-                  {section}
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
         <div className={`rounded-3xl border border-gray-200 bg-white p-5 shadow-sm xl:col-span-2 ${visibleStepClass('content')}`}>

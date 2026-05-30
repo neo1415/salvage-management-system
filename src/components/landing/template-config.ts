@@ -17,15 +17,8 @@ export type TemplateSurface = {
 
 export const HOMEPAGE_TEMPLATE_OPTIONS: TemplateSurface[] = [
   {
-    id: 'reclaim_editorial',
-    name: 'Reclaim Editorial',
-    description: 'Industrial editorial homepage with split typography, live auction rhythm, and a premium salvage recovery feel.',
-    defaultTheme: 'night',
-    authTone: 'Precision recovery workspace',
-  },
-  {
     id: 'nem_salvage',
-    name: 'NEM Salvage Classic',
+    name: 'Classic',
     description: 'The animated salvage showcase style with bold motion, auctions, and a familiar recovery flow.',
     defaultTheme: 'night',
     authTone: 'Verified salvage access',
@@ -44,13 +37,9 @@ export const HOMEPAGE_TEMPLATE_OPTIONS: TemplateSurface[] = [
     defaultTheme: 'night',
     authTone: 'Verified auction access',
   },
-  {
-    id: 'executive_terminal',
-    name: 'Executive Terminal',
-    description: 'Quiet private portal for teams that want minimal marketing and fast sign-in.',
-    defaultTheme: 'day',
-    authTone: 'Private executive access',
-  },
+  // Reclaim Editorial and Executive Terminal remain supported for existing
+  // policies, but they are hidden from the picker until their templates are
+  // fully wired into the live editor.
 ];
 
 export function normalizeHomepageTemplate(template: BrandingPolicy['homepageTemplate']): CanonicalHomepageTemplate {
