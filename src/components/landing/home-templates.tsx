@@ -78,14 +78,45 @@ const recoveryCommandAssets = {
 };
 
 const recoveryCommandStages = [
-  'Case Created',
-  'Damage Assessment',
-  'Reserve Set',
-  'Auction Live',
-  'Documents Signed',
-  'Payment Confirmed',
+  'Create Account',
+  'Verify Access',
+  'Review Lot',
+  'Bid Securely',
+  'Sign Documents',
+  'Complete Payment',
   'Pickup Released',
 ];
+
+function isGenericRecoveryCommandCopy(value: string | undefined) {
+  const text = (value || '').toLowerCase();
+  return !text
+    || text.includes('total losses become recovered capital')
+    || text.includes('salvage auction platform for insurers')
+    || text.includes('insurance salvage command center')
+    || text.includes('request demo')
+    || text.includes('start recovery');
+}
+
+function recoveryCommandCopy(copy: BrandingPolicy['homepageCopy']) {
+  const genericTitle = isGenericRecoveryCommandCopy(copy.heroTitle);
+  const genericSubtitle = isGenericRecoveryCommandCopy(copy.heroSubtitle);
+  const genericEyebrow = isGenericRecoveryCommandCopy(copy.eyebrow);
+  const genericPrimary = isGenericRecoveryCommandCopy(copy.primaryCtaLabel);
+  const genericSecondary = !copy.secondaryCtaLabel || copy.secondaryCtaLabel.toLowerCase() === 'sign in';
+
+  return {
+    eyebrow: genericEyebrow ? 'Verified salvage auction access' : copy.eyebrow,
+    heroTitle: genericTitle ? 'Bid on verified salvage assets with confidence.' : copy.heroTitle,
+    heroSubtitle: genericSubtitle
+      ? 'Browse auction-ready salvage, complete verification, place secured bids, sign documents, and arrange pickup through one trusted recovery marketplace.'
+      : copy.heroSubtitle,
+    primaryCtaLabel: genericPrimary ? 'Register to bid' : copy.primaryCtaLabel,
+    secondaryCtaLabel: genericSecondary ? 'View workflow' : copy.secondaryCtaLabel,
+    trustLine: isGenericRecoveryCommandCopy(copy.trustLine)
+      ? 'Verified salvage auctions, secure deposits, signed documents, and clear pickup steps.'
+      : copy.trustLine,
+  };
+}
 
 function getProcessSteps(copy: BrandingPolicy['homepageCopy']) {
   return [
@@ -364,15 +395,13 @@ function ReclaimEditorial({ branding, theme }: { branding: BrandingPolicy; theme
 }
 
 function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
-  const copy = branding.homepageCopy;
+  const copy = recoveryCommandCopy(branding.homepageCopy);
   const dark = theme === 'night';
   const primaryText = getReadableTextColor(branding.primaryColor);
   const accentText = getReadableTextColor(branding.accentColor);
   const displayInk = getDisplayInkColor(branding, dark);
   const shell = dark ? 'bg-[#080D14] text-white' : 'bg-[#F5F7FA] text-slate-950';
   const muted = dark ? 'text-white/62' : 'text-slate-600';
-  const heroTitle = copy.heroTitle || 'Recover more value from every salvage asset.';
-  const heroSubtitle = copy.heroSubtitle || 'Run salvage cases, auctions, vendor bidding, documents, payments, and fraud monitoring from one controlled workflow.';
 
   return (
     <main className={`min-h-screen overflow-hidden ${shell}`} style={cssVars(branding, theme)}>
@@ -385,25 +414,25 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
           <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }}>
             <p className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em]" style={{ borderColor: `${branding.accentColor}55`, color: branding.accentColor }}>
               <CircleDot className="h-3.5 w-3.5" />
-              {copy.eyebrow || 'Insurance salvage command center'}
+              {copy.eyebrow}
             </p>
             <h1 className="mt-7 max-w-3xl text-[clamp(2.8rem,5.5vw,5.45rem)] font-black leading-[0.95]" style={{ color: displayInk }}>
-              {heroTitle}
+              {copy.heroTitle}
             </h1>
             <p className={`mt-7 max-w-2xl text-lg leading-8 sm:text-xl ${muted}`}>
-              {heroSubtitle}
+              {copy.heroSubtitle}
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <Link href="#contact" className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-black shadow-lg transition-transform hover:-translate-y-0.5" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
-                {copy.primaryCtaLabel || 'Request Demo'}
+              <Link href="/register" className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-black shadow-lg transition-transform hover:-translate-y-0.5" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
+                {copy.primaryCtaLabel}
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
               <a href="#workflow" className={`inline-flex items-center justify-center rounded-xl border px-6 py-4 text-sm font-black transition-colors hover:border-[var(--wl-accent)] hover:text-[var(--wl-accent)] ${dark ? 'border-white/15 text-white' : 'border-slate-300 text-slate-950'}`}>
-                {copy.secondaryCtaLabel && copy.secondaryCtaLabel.toLowerCase() !== 'sign in' ? copy.secondaryCtaLabel : 'View Workflow'}
+                {copy.secondaryCtaLabel}
               </a>
             </div>
             <div className={`mt-8 grid max-w-2xl gap-3 text-sm sm:grid-cols-3 ${muted}`}>
-              {['Case ownership', 'Verified bidding', 'Payment handoff'].map((item) => (
+              {['Verified listings', 'Secured deposits', 'Pickup-ready steps'].map((item) => (
                 <div key={item} className={`rounded-xl border px-4 py-3 ${dark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white/70'}`}>
                   <CheckCircle2 className="mb-2 h-4 w-4" style={{ color: branding.accentColor }} />
                   {item}
@@ -471,7 +500,7 @@ function RecoveryCommandNav({ branding, dark }: { branding: BrandingPolicy; dark
     ['Platform', '#platform'],
     ['Workflow', '#workflow'],
     ['Controls', '#controls'],
-    ['For Insurers', '#insurers'],
+    ['For Buyers', '#buyers'],
     ['Contact', '#contact'],
   ];
 
@@ -515,8 +544,8 @@ function CommandCenterMockup({ branding, dark }: { branding: BrandingPolicy; dar
           <div className="absolute inset-x-4 bottom-4 grid gap-3 md:grid-cols-[1fr_0.82fr]">
             <div className={`rounded-2xl border p-4 shadow-xl backdrop-blur-xl ${card}`}>
               <div className="flex items-center justify-between">
-                <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: branding.accentColor }}>Salvage case</p>
-                <span className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em]" style={{ backgroundColor: `${branding.accentColor}22`, color: branding.accentColor }}>In review</span>
+                <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: branding.accentColor }}>Auction lot</p>
+                <span className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em]" style={{ backgroundColor: `${branding.accentColor}22`, color: branding.accentColor }}>Verified</span>
               </div>
               <h2 className="mt-4 text-2xl font-black tracking-[-0.04em]">2020 Toyota Camry</h2>
               <p className={`mt-1 text-sm ${muted}`}>Front impact - Lagos inspection yard</p>
@@ -537,8 +566,8 @@ function CommandCenterMockup({ branding, dark }: { branding: BrandingPolicy; dar
               <div className="flex items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-500" />
                 <div>
-                  <p className="font-black">Fraud signal review</p>
-                  <p className={`mt-1 text-sm leading-6 ${muted}`}>Bid velocity and identity checks routed for approval.</p>
+                  <p className="font-black">Fair bidding checks</p>
+                  <p className={`mt-1 text-sm leading-6 ${muted}`}>Identity and deposit checks keep auction access structured.</p>
                 </div>
               </div>
               <div className="mt-4 h-2 rounded-full bg-current/10">
@@ -564,8 +593,8 @@ function CommandCenterMockup({ branding, dark }: { branding: BrandingPolicy; dar
           <div className="mt-3 flex items-center gap-3">
             <WalletCards className="h-6 w-6" style={{ color: branding.accentColor }} />
             <div>
-              <p className="font-black">Deposit held</p>
-              <p className={`text-sm ${muted}`}>Finance handoff ready</p>
+              <p className="font-black">Deposit secured</p>
+              <p className={`text-sm ${muted}`}>Applied after winning</p>
             </div>
           </div>
         </motion.div>
@@ -586,11 +615,11 @@ function RecoveryWorkflowRail({ branding, dark }: { branding: BrandingPolicy; da
           <div>
             <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Workflow</p>
             <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
-              One governed path from claim intake to pickup release.
+              From verified access to pickup release.
             </h2>
           </div>
           <p className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
-            Each step shows the next operational gate, so claims, salvage, finance, and vendor teams know what is waiting and what has already cleared.
+            Know what to do next at every stage: verify your account, review the lot, place a secured bid, sign the required documents, complete payment, and collect the asset.
           </p>
         </div>
 
@@ -624,23 +653,23 @@ function RecoveryControlsShowcase({ branding, dark }: { branding: BrandingPolicy
   const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
   const displayInk = getDisplayInkColor(branding, dark);
   const features = [
-    [ClipboardCheck, 'Intake', 'Claim asset, photos, voice notes, documents, and inspection location.'],
-    [Search, 'Assess', 'Structured damage review and reserve recommendation support.'],
-    [Gavel, 'Auction', 'Verified bidders, reserve gates, extensions, and bid controls.'],
-    [WalletCards, 'Deposit', 'Auction-specific deposit hold and finance visibility.'],
-    [FileCheck2, 'Documents', 'Bill of sale and waiver progress before payment release.'],
-    [CreditCard, 'Payment', 'Clear payment authorization state and pickup handoff.'],
+    [ClipboardCheck, 'Register', 'Create a vendor account and keep your bidder profile ready.'],
+    [Search, 'Inspect', 'Review lot details, photos, condition notes, and document requirements.'],
+    [Gavel, 'Bid', 'Place verified bids with reserve gates and clear minimum increments.'],
+    [WalletCards, 'Deposit', 'Use auction-specific deposits that are tracked to the lot.'],
+    [FileCheck2, 'Documents', 'Sign the bill of sale and waiver before pickup authorization.'],
+    [CreditCard, 'Payment', 'Complete the balance and move to pickup release.'],
   ] as const;
   const mediaCards = [
     {
       title: 'Damage review',
-      body: 'Inspection evidence and assessment status stay attached to the case.',
+      body: 'Review visual evidence and condition notes before you commit to a bid.',
       image: recoveryCommandAssets.damageReview,
       icon: Search,
     },
     {
-      title: 'Field handoff',
-      body: 'Pickup, documents, and payment status move together instead of living in separate threads.',
+      title: 'Pickup path',
+      body: 'After winning, documents, payment, and pickup status stay visible in one place.',
       image: recoveryCommandAssets.pickupReady,
       icon: FileCheck2,
     },
@@ -651,13 +680,13 @@ function RecoveryControlsShowcase({ branding, dark }: { branding: BrandingPolicy
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-6 lg:grid-cols-[0.86fr_1.14fr] lg:items-end">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Control room</p>
+            <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Buyer controls</p>
             <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
-              See the handoff before it becomes a delay.
+              Bid with the important steps already visible.
             </h2>
           </div>
           <p className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
-            The page should feel like the product: evidence, approvals, vendor access, deposits, documents, and pickup release all moving through one controlled lane.
+            The public page should make vendors feel oriented before they enter the auction: what is verified, what is required, and what happens after a winning bid.
           </p>
         </div>
 
@@ -753,26 +782,26 @@ function RecoveryWhySection({ branding, dark }: { branding: BrandingPolicy; dark
   const panel = dark ? 'border-white/10 bg-white/[0.045]' : 'border-slate-200 bg-white';
   const displayInk = getDisplayInkColor(branding, dark);
   const points = [
-    'Reduce manual follow-up between claims, salvage, finance, and vendors.',
-    'Keep reserve status, auction progress, document signing, and payment state visible.',
-    'Give managers cleaner approval points before pickup authorization is released.',
-    'Support audit-ready records without making vendors the center of the homepage story.',
+    'See auction status, current bid, reserve cues, and document requirements before you act.',
+    'Use a verified profile so bidding access is clear before the lot closes.',
+    'Track signed documents and payment status without chasing multiple contacts.',
+    'Know when pickup authorization is ready after the required steps are complete.',
   ];
 
   return (
-    <section id="insurers" className={`px-5 py-24 ${dark ? 'bg-[#0B111A]' : 'bg-white'}`}>
+    <section id="buyers" className={`px-5 py-24 ${dark ? 'bg-[#0B111A]' : 'bg-white'}`}>
       <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
         <div className="relative min-h-[440px] overflow-hidden rounded-[2rem] border border-current/10">
-          <Image src={recoveryCommandAssets.operationsRoom} alt="Insurance operations leaders reviewing salvage auction workflow" fill className="object-cover" sizes="(max-width: 1024px) 100vw, 620px" />
+          <Image src={recoveryCommandAssets.operationsRoom} alt="Auction team reviewing salvage inventory and buyer activity" fill className="object-cover" sizes="(max-width: 1024px) 100vw, 620px" />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/65 via-transparent to-transparent" />
         </div>
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>For insurers</p>
+          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>For buyers</p>
           <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
-            Faster recovery starts with a cleaner operating picture.
+            A clearer way to buy salvage assets.
           </h2>
           <p className={`mt-5 max-w-2xl text-base leading-8 ${muted}`}>
-            {branding.brandName} frames salvage as a managed workflow: case evidence enters once, approvals stay visible, bidders are controlled, and finance sees what is ready for payment.
+            {branding.brandName} gives verified vendors a structured place to review salvage lots, bid securely, complete documents, pay the balance, and prepare for pickup.
           </p>
           <div className="mt-8 grid gap-3">
             {points.map((point) => (
@@ -827,10 +856,10 @@ function RecoveryCommandContact({ branding, dark }: { branding: BrandingPolicy; 
         <div className={`rounded-[2rem] border p-7 ${panel}`}>
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Contact</p>
           <h2 className="mt-4 text-3xl font-black leading-tight md:text-4xl" style={{ color: displayInk }}>
-            See the recovery workflow in context.
+            Need help before you bid?
           </h2>
           <p className={`mt-5 text-base leading-8 ${muted}`}>
-            Tell us how your salvage, claims, and finance teams work today. The demo can focus on the approval and handoff points that matter most.
+            Ask about vendor verification, lot access, deposits, documents, payment, or pickup requirements before joining an auction.
           </p>
           <div className="mt-8 space-y-4 text-sm">
             <p><span className={muted}>Support:</span> <span className="font-bold">{branding.supportEmail}</span></p>
@@ -842,8 +871,8 @@ function RecoveryCommandContact({ branding, dark }: { branding: BrandingPolicy; 
           <div className="grid gap-4 sm:grid-cols-2">
             {[
               ['name', 'Name', 'Ada Okafor', 'text'],
-              ['email', 'Work email', 'ada@insurer.com', 'email'],
-              ['company', 'Company', branding.legalName, 'text'],
+              ['email', 'Email', 'ada@example.com', 'email'],
+              ['company', 'Business name', 'Your company', 'text'],
             ].map(([name, label, placeholder, type]) => (
               <label key={name} className={name === 'company' ? 'sm:col-span-2' : ''}>
                 <span className="text-sm font-bold">{label}</span>
@@ -865,13 +894,13 @@ function RecoveryCommandContact({ branding, dark }: { branding: BrandingPolicy; 
                 rows={5}
                 value={formData.message}
                 onChange={(event) => setFormData((current) => ({ ...current, message: event.target.value }))}
-                placeholder="Tell us about your salvage recovery process..."
+                placeholder="Tell us what you need help with..."
                 className={`mt-2 w-full resize-none rounded-xl border px-4 py-3 outline-none transition-colors focus:border-[var(--wl-accent)] ${dark ? 'border-white/10 bg-white/[0.06] text-white placeholder:text-white/35' : 'border-slate-200 bg-slate-50 text-slate-950 placeholder:text-slate-400'}`}
               />
             </label>
           </div>
           <button type="submit" disabled={status === 'loading'} className="mt-5 inline-flex w-full items-center justify-center rounded-xl px-6 py-4 text-sm font-black disabled:opacity-60" style={{ backgroundColor: branding.accentColor, color: accentText }}>
-            {status === 'loading' ? 'Sending...' : status === 'success' ? 'Message sent' : status === 'error' ? 'Try again' : 'Request Demo'}
+            {status === 'loading' ? 'Sending...' : status === 'success' ? 'Message sent' : status === 'error' ? 'Try again' : 'Contact team'}
           </button>
         </form>
       </div>
@@ -888,12 +917,12 @@ function RecoveryCommandFooter({ branding, dark, accentText }: { branding: Brand
         <div>
           <BrandWordmark branding={branding} light={dark} />
           <p className={`mt-4 max-w-md text-sm leading-7 ${dark ? 'text-white/48' : 'text-slate-600'}`}>
-            {branding.homepageCopy.trustLine || 'Controlled salvage recovery for claims, salvage, finance, and vendor teams.'}
+            {recoveryCommandCopy(branding.homepageCopy).trustLine}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
-          {['Platform', 'Workflow', 'Controls', 'For Insurers', 'Contact'].map((label) => (
-            <a key={label} href={`#${label === 'For Insurers' ? 'insurers' : label.toLowerCase()}`} className={linkClass}>{label}</a>
+          {['Platform', 'Workflow', 'Controls', 'For Buyers', 'Contact'].map((label) => (
+            <a key={label} href={`#${label === 'For Buyers' ? 'buyers' : label.toLowerCase()}`} className={linkClass}>{label}</a>
           ))}
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">

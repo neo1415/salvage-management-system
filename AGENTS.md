@@ -2,15 +2,15 @@
 
 ## Landing Page Template 1: Recovery Command
 
-Recovery Command is the first white-label landing page direction for the salvage auction platform. It should feel like an executive insurance operations command center, not a vendor marketplace, dealership page, or generic SaaS homepage.
+Recovery Command is a white-label public landing page for an insurer or salvage operator's own auction portal. Reclaim is the SaaS sales page; this template is for vendors and buyers who want to join auctions, bid, sign documents, pay, and arrange pickup.
 
 ### Objective
 
-Build and maintain a premium homepage that communicates control, recovery visibility, auction governance, payment tracking, document flow, fraud monitoring, and operational trust.
+Build and maintain a premium homepage that communicates verified auction access, salvage inventory confidence, secure bidding, deposit handling, document flow, payment tracking, pickup readiness, and operational trust.
 
 ### Audience
 
-Primary users are insurance executives, salvage managers, claims leaders, finance teams, and operations leaders. Vendors and bidders are secondary; they should understand the platform is structured and trustworthy.
+Primary users are vendors, buyers, bidders, recovery partners, and businesses interested in salvage auctions. The page should make them confident that listings are structured, bidding is controlled, documents are clear, and pickup has a defined path.
 
 ### Branding
 
@@ -29,19 +29,19 @@ Do not hardcode product names into the template body unless the copy is intentio
 ### Required Sections
 
 - Splash screen with logo, appName, and a short workflow line: Case, Assessment, Auction, Documents, Payment
-- Navbar with Platform, Workflow, Controls, For Insurers, Contact, Sign in, and Register
+- Navbar with Platform, Workflow, Controls, For Buyers, Contact, Sign in, and Register
 - Split hero with a command-center product mockup
-- Workflow section using a rail, timeline, or operational flow visual
-- Controls section covering intake, damage assessment, auction readiness, deposits, documents, payments, and handoffs
-- Why it matters section focused on claims, salvage, finance, and vendor handoffs
-- Contact section with a simple operational demo request form
+- Workflow section using a rail, timeline, or operational flow visual from registration to pickup
+- Controls section covering lot review, verified bidding, deposits, documents, payments, and pickup
+- Why it matters section focused on buyer confidence and clear auction steps
+- Contact section for buyer/vendor questions
 - Footer with platform links, legal links, and support contact
 
 ### Copy Rules
 
 Keep copy concise and credible. Avoid fake stats, invented customer counts, recovery percentages, compliance certifications, awards, or guarantees.
 
-Allowed language includes "recover value faster", "reduce manual follow-up", "track salvage workflows", "manage auction status", "monitor fraud signals", "support audit-ready records", and "coordinate claims, salvage, finance, and vendors".
+Allowed language includes "verified salvage auctions", "register to bid", "review lot details", "secure deposits", "sign required documents", "complete payment", "pickup release", and "contact the auction team".
 
 ### Motion Rules
 

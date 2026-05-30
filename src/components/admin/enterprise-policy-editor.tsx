@@ -37,8 +37,8 @@ const TEMPLATE_EDITOR_GUIDE: Record<string, TemplateEditorGuide> = {
     image: '/assets/Hero-3.png',
   },
   recovery_command: {
-    bestFor: 'Executive insurance teams that need recovery visibility, governance, and clean handoffs.',
-    sections: ['Command hero', 'Workflow rail', 'Control room', 'Insurer handoff', 'Contact'],
+    bestFor: 'Auction buyers and verified vendors who need clear lot access, bidding, documents, payment, and pickup steps.',
+    sections: ['Buyer hero', 'Bid workflow', 'Buyer controls', 'Pickup path', 'Contact'],
     image: '/assets/recovery-command/hero-yard.png',
   },
   claims_orbit: {
@@ -65,9 +65,9 @@ const TEMPLATE_COPY_MAP: Record<string, Array<{ label: string; fields: string; a
     { label: 'Sign-in shell', fields: 'Auth headline and subtitle', appears: 'Login and registration screens' },
   ],
   recovery_command: [
-    { label: 'Command hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Split hero and product command-center visual' },
-    { label: 'Workflow rail', fields: 'Workflow labels and process copy', appears: 'Case to pickup release timeline' },
-    { label: 'Contact section', fields: 'Trust line, support email, support phone', appears: 'Contact form and footer support area' },
+    { label: 'Buyer hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Public salvage auction landing hero' },
+    { label: 'Bid workflow', fields: 'Workflow labels and process copy', appears: 'Vendor verification to pickup release timeline' },
+    { label: 'Contact section', fields: 'Trust line, support email, support phone', appears: 'Vendor help and footer support area' },
   ],
   claims_orbit: [
     { label: 'Orbit hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Animated circular recovery story' },
