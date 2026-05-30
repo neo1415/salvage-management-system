@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, MonitorSmartphone, Rocket, Save, ShieldAle
 import type { BusinessPolicy, PolicyValidationResult } from '@/features/business-policy/types';
 import { validateBusinessPolicy } from '@/features/business-policy/policy-validation';
 import { HOMEPAGE_TEMPLATE_OPTIONS } from '@/components/landing/template-config';
+import { WhiteLabelHomeTemplates } from '@/components/landing/home-templates';
 import { getReadableTextColor } from '@/features/branding/brand-colors';
 import { useToast } from '@/components/ui/toast';
 
@@ -279,6 +280,7 @@ function isGenericRecoveryCopy(value: string | undefined) {
   const text = (value || '').toLowerCase();
   return !text
     || text.includes('total losses become recovered capital')
+    || text.includes('where losses become recovered capital')
     || text.includes('salvage auction platform for insurers')
     || text.includes('insurance recovery')
     || text.includes('claim intake')
@@ -556,8 +558,29 @@ function RecoveryCommandLivePreview({
   setActivePanel: (panel: string) => void;
   resolved: (key: HomepageCopyKey) => string;
 }) {
-  const primaryText = getReadableTextColor(policy.branding.primaryColor);
-  const accentText = getReadableTextColor(policy.branding.accentColor);
+  const previewBranding = useMemo(() => {
+    const homepageCopy = { ...policy.branding.homepageCopy };
+    (Object.keys(RECOVERY_COMMAND_DEFAULT_COPY) as HomepageCopyKey[]).forEach((key) => {
+      homepageCopy[key] = resolved(key);
+    });
+
+    return {
+      ...policy.branding,
+      homepageTemplate: 'recovery_command' as const,
+      homepageMode: 'landing' as const,
+      homepageTheme: policy.branding.homepageTheme === 'night' ? 'night' as const : 'day' as const,
+      splashEnabled: false,
+      homepageCopy,
+    };
+  }, [policy.branding, resolved]);
+
+  const hotspots = [
+    { id: 'hero', label: 'Edit hero', className: 'left-[2%] top-[2%] h-[23%] w-[42%]' },
+    { id: 'workflow', label: 'Edit workflow', className: 'left-[2%] top-[42%] h-[20%] w-[96%]' },
+    { id: 'controls', label: 'Edit buyer controls', className: 'left-[2%] top-[63%] h-[17%] w-[96%]' },
+    { id: 'buyers', label: 'Edit buyer section', className: 'left-[2%] top-[80%] h-[10%] w-[48%]' },
+    { id: 'contact', label: 'Edit contact', className: 'left-[52%] top-[80%] h-[10%] w-[46%]' },
+  ];
 
   return (
     <aside className="2xl:sticky 2xl:top-24 2xl:self-start">
@@ -568,60 +591,26 @@ function RecoveryCommandLivePreview({
             <span className="h-3 w-3 rounded-full bg-amber-300" />
             <span className="h-3 w-3 rounded-full bg-green-400" />
           </div>
-          <span className="text-xs font-semibold text-gray-500">Live template preview</span>
+          <span className="text-xs font-semibold text-gray-500">Live template editor</span>
         </div>
-        <div className="max-h-[76vh] overflow-y-auto bg-[#F5F7FA] p-4">
-          <button type="button" onClick={() => setActivePanel('hero')} className="block w-full rounded-[1.6rem] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-[var(--brand-primary-border)]">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: policy.branding.accentColor }}>{resolved('eyebrow')}</p>
-            <h4 className="mt-4 text-3xl font-black leading-tight text-gray-950">{resolved('heroTitle')}</h4>
-            <p className="mt-3 text-sm leading-6 text-gray-600">{resolved('heroSubtitle')}</p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <span className="rounded-xl px-4 py-2 text-sm font-black" style={{ backgroundColor: policy.branding.primaryColor, color: primaryText }}>{resolved('primaryCtaLabel')}</span>
-              <span className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-black text-gray-900">{resolved('secondaryCtaLabel')}</span>
+        <div className="max-h-[76vh] overflow-auto bg-slate-100">
+          <div className="relative min-h-[1240px] min-w-[1180px] overflow-hidden bg-white">
+            <div className="pointer-events-none">
+              <WhiteLabelHomeTemplates branding={previewBranding} showLegacyBelowFold={false} />
             </div>
-          </button>
-
-          <button type="button" onClick={() => setActivePanel('workflow')} className="mt-3 block w-full rounded-[1.6rem] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-[var(--brand-primary-border)]">
-            <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: policy.branding.accentColor }}>Workflow</p>
-            <h4 className="mt-2 text-xl font-black text-gray-950">{resolved('workflowTitle')}</h4>
-            <p className="mt-2 text-sm leading-6 text-gray-600">{resolved('workflowSubtitle')}</p>
-            <div className="mt-4 grid gap-2">
-              {[
-                ['workflowStepOneTitle', 'workflowStepOneBody'],
-                ['workflowStepTwoTitle', 'workflowStepTwoBody'],
-                ['workflowStepThreeTitle', 'workflowStepThreeBody'],
-                ['workflowStepFourTitle', 'workflowStepFourBody'],
-              ].map(([titleKey, bodyKey], index) => (
-                <div key={titleKey} className="rounded-xl bg-gray-50 p-3">
-                  <p className="text-xs font-mono text-gray-500">{String(index + 1).padStart(2, '0')}</p>
-                  <p className="mt-1 text-sm font-black text-gray-950">{resolved(titleKey as HomepageCopyKey)}</p>
-                  <p className="mt-1 text-xs leading-5 text-gray-500">{resolved(bodyKey as HomepageCopyKey)}</p>
-                </div>
+            <div className="absolute inset-0">
+              {hotspots.map((hotspot) => (
+                <button
+                  key={hotspot.id}
+                  type="button"
+                  onClick={() => setActivePanel(hotspot.id)}
+                  className={`absolute rounded-[1.75rem] border border-transparent text-left transition hover:border-[var(--brand-primary)] hover:bg-[var(--brand-primary-surface)]/40 focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] ${hotspot.className}`}
+                  aria-label={hotspot.label}
+                  title={hotspot.label}
+                />
               ))}
             </div>
-          </button>
-
-          <button type="button" onClick={() => setActivePanel('controls')} className="mt-3 block w-full overflow-hidden rounded-[1.6rem] border border-gray-200 bg-gray-950 text-left text-white shadow-sm transition hover:border-[var(--brand-primary-border)]">
-            <div className="h-40 bg-cover bg-center" style={{ backgroundImage: 'url(/assets/recovery-command/field-inspection.png)' }} />
-            <div className="p-4">
-              <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: policy.branding.accentColor }}>{resolved('operationsSectionEyebrow')}</p>
-              <h4 className="mt-2 text-xl font-black">{resolved('operationsSectionTitle')}</h4>
-              <p className="mt-2 text-sm leading-6 text-white/65">{resolved('operationsSectionSubtitle')}</p>
-            </div>
-          </button>
-
-          <button type="button" onClick={() => setActivePanel('buyers')} className="mt-3 block w-full rounded-[1.6rem] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-[var(--brand-primary-border)]">
-            <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: policy.branding.accentColor }}>For buyers</p>
-            <h4 className="mt-2 text-xl font-black text-gray-950">{resolved('proofSectionTitle')}</h4>
-            <p className="mt-2 text-sm leading-6 text-gray-600">{resolved('proofSectionSubtitle')}</p>
-          </button>
-
-          <button type="button" onClick={() => setActivePanel('contact')} className="mt-3 block w-full rounded-[1.6rem] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-[var(--brand-primary-border)]">
-            <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: policy.branding.accentColor }}>Contact</p>
-            <h4 className="mt-2 text-xl font-black text-gray-950">{resolved('contactHeadline')}</h4>
-            <p className="mt-2 text-sm leading-6 text-gray-600">{resolved('contactSubtitle')}</p>
-            <span className="mt-4 inline-flex rounded-xl px-4 py-2 text-sm font-black" style={{ backgroundColor: policy.branding.accentColor, color: accentText }}>Contact team</span>
-          </button>
+          </div>
         </div>
       </div>
     </aside>

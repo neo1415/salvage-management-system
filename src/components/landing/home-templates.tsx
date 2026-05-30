@@ -91,6 +91,7 @@ function isGenericRecoveryCommandCopy(value: string | undefined) {
   const text = (value || '').toLowerCase();
   return !text
     || text.includes('total losses become recovered capital')
+    || text.includes('where losses become recovered capital')
     || text.includes('salvage auction platform for insurers')
     || text.includes('insurance salvage command center')
     || text.includes('request demo')
