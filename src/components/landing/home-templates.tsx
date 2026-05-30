@@ -459,22 +459,22 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
         <div className="absolute inset-x-0 top-0 h-[640px] opacity-70" style={{ background: `radial-gradient(circle at 18% 18%, ${branding.accentColor}24, transparent 34%), radial-gradient(circle at 82% 8%, ${branding.primaryColor}22, transparent 28%)` }} />
         <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
           <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }}>
-            <p className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em]" style={{ borderColor: `${branding.accentColor}55`, color: branding.accentColor }}>
+            <p data-recovery-edit-id="hero-label" className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em]" style={{ borderColor: `${branding.accentColor}55`, color: branding.accentColor }}>
               <CircleDot className="h-3.5 w-3.5" />
               {copy.eyebrow}
             </p>
-            <h1 className="mt-7 max-w-3xl text-[clamp(2.8rem,5.5vw,5.45rem)] font-black leading-[0.95]" style={{ color: displayInk }}>
+            <h1 data-recovery-edit-id="hero-title" className="mt-7 max-w-3xl text-[clamp(2.8rem,5.5vw,5.45rem)] font-black leading-[0.95]" style={{ color: displayInk }}>
               {copy.heroTitle}
             </h1>
-            <p className={`mt-7 max-w-2xl text-lg leading-8 sm:text-xl ${muted}`}>
+            <p data-recovery-edit-id="hero-copy" className={`mt-7 max-w-2xl text-lg leading-8 sm:text-xl ${muted}`}>
               {copy.heroSubtitle}
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <Link href="/register" className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-black shadow-lg transition-transform hover:-translate-y-0.5" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
+              <Link data-recovery-edit-id="hero-primary-button" href="/register" className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-black shadow-lg transition-transform hover:-translate-y-0.5" style={{ backgroundColor: branding.primaryColor, color: primaryText }}>
                 {copy.primaryCtaLabel}
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
-              <a href="#workflow" className={`inline-flex items-center justify-center rounded-xl border px-6 py-4 text-sm font-black transition-colors hover:border-[var(--wl-accent)] hover:text-[var(--wl-accent)] ${dark ? 'border-white/15 text-white' : 'border-slate-300 text-slate-950'}`}>
+              <a data-recovery-edit-id="hero-secondary-button" href="#workflow" className={`inline-flex items-center justify-center rounded-xl border px-6 py-4 text-sm font-black transition-colors hover:border-[var(--wl-accent)] hover:text-[var(--wl-accent)] ${dark ? 'border-white/15 text-white' : 'border-slate-300 text-slate-950'}`}>
                 {copy.secondaryCtaLabel}
               </a>
             </div>
@@ -661,13 +661,13 @@ function RecoveryWorkflowRail({ branding, dark, copy }: { branding: BrandingPoli
     <section id="workflow" className={`px-5 py-24 ${dark ? 'bg-[#0B111A]' : 'bg-white'}`}>
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-6 lg:grid-cols-[360px_1fr] lg:items-end">
-          <div>
+          <div data-recovery-edit-id="workflow-heading">
             <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Workflow</p>
             <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
               {copy.workflowTitle}
             </h2>
           </div>
-          <p className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
+          <p data-recovery-edit-id="workflow-heading" className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
             {copy.workflowSubtitle}
           </p>
         </div>
@@ -677,6 +677,7 @@ function RecoveryWorkflowRail({ branding, dark, copy }: { branding: BrandingPoli
             {[...copy.workflowSteps.map(([title]) => title), ...recoveryCommandStages.slice(4)].map((stage, index) => (
               <motion.div
                 key={stage}
+                data-recovery-edit-id="workflow-steps"
                 className={`relative min-h-44 border-b border-r border-current/10 p-5 last:border-r-0 md:border-b-0 ${panel}`}
                 initial={{ opacity: 0, y: 18 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -728,13 +729,13 @@ function RecoveryControlsShowcase({ branding, dark, copy }: { branding: Branding
     <section id="controls" className={`px-5 py-24 ${dark ? 'bg-[#080D14]' : 'bg-[#F5F7FA]'}`}>
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-6 lg:grid-cols-[0.86fr_1.14fr] lg:items-end">
-          <div>
+          <div data-recovery-edit-id="controls-copy">
             <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>{copy.controlsLabel}</p>
             <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
               {copy.controlsTitle}
             </h2>
           </div>
-          <p className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
+          <p data-recovery-edit-id="controls-copy" className={`max-w-2xl text-base leading-8 lg:justify-self-end ${muted}`}>
             {copy.controlsText}
           </p>
         </div>
@@ -774,6 +775,7 @@ function RecoveryControlsShowcase({ branding, dark, copy }: { branding: Branding
             {mediaCards.map(({ title, body, image, icon: Icon }, index) => (
               <motion.article
                 key={title}
+                data-recovery-edit-id="controls-cards"
                 className={`group grid min-h-64 overflow-hidden rounded-[2rem] border ${panel} md:grid-cols-[0.9fr_1.1fr]`}
                 initial={{ opacity: 0, x: 24 }}
                 whileInView={{ opacity: 1, x: 0 }}
@@ -846,10 +848,10 @@ function RecoveryWhySection({ branding, dark, copy }: { branding: BrandingPolicy
         </div>
         <div>
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>For buyers</p>
-          <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
+          <h2 data-recovery-edit-id="buyer-copy" className="mt-4 text-3xl font-black leading-tight md:text-5xl" style={{ color: displayInk }}>
             {copy.buyerTitle}
           </h2>
-          <p className={`mt-5 max-w-2xl text-base leading-8 ${muted}`}>
+          <p data-recovery-edit-id="buyer-copy" className={`mt-5 max-w-2xl text-base leading-8 ${muted}`}>
             {copy.buyerText}
           </p>
           <div className="mt-8 grid gap-3">
@@ -904,10 +906,10 @@ function RecoveryCommandContact({ branding, dark, copy }: { branding: BrandingPo
       <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.82fr_1.18fr]">
         <div className={`rounded-[2rem] border p-7 ${panel}`}>
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: branding.accentColor }}>Contact</p>
-          <h2 className="mt-4 text-3xl font-black leading-tight md:text-4xl" style={{ color: displayInk }}>
+          <h2 data-recovery-edit-id="contact-copy" className="mt-4 text-3xl font-black leading-tight md:text-4xl" style={{ color: displayInk }}>
             {copy.contactHeadline}
           </h2>
-          <p className={`mt-5 text-base leading-8 ${muted}`}>
+          <p data-recovery-edit-id="contact-copy" className={`mt-5 text-base leading-8 ${muted}`}>
             {copy.contactSubtitle}
           </p>
           <div className="mt-8 space-y-4 text-sm">
