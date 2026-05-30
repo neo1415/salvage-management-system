@@ -309,8 +309,11 @@ function TemplateFooter({ branding, dark = true }: { branding: BrandingPolicy; d
           </div>
         </div>
       </div>
-      <div className={`mx-auto mt-8 max-w-7xl text-xs ${dark ? 'text-white/30' : 'text-black/40'}`}>
-        &copy; {new Date().getFullYear()} {branding.legalName}. All rights reserved.
+      <div className={`mx-auto mt-8 flex max-w-7xl flex-col gap-3 text-xs sm:flex-row sm:items-center sm:justify-between ${dark ? 'text-white/30' : 'text-black/40'}`}>
+        <p>&copy; {new Date().getFullYear()} {branding.legalName}. All rights reserved.</p>
+        <p className={`w-fit rounded-full px-3 py-1 font-bold ${dark ? 'bg-white/10 text-white/65' : 'bg-black/5 text-black/55'}`}>
+          Powered by Reclaim
+        </p>
       </div>
     </footer>
   );
@@ -482,7 +485,6 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
   const copy = recoveryCommandCopy(branding.homepageCopy);
   const dark = theme === 'night';
   const primaryText = getReadableTextColor(branding.primaryColor);
-  const accentText = getReadableTextColor(branding.accentColor);
   const displayInk = getDisplayInkColor(branding, dark);
   const shell = dark ? 'bg-[#080D14] text-white' : 'bg-[#F5F7FA] text-slate-950';
   const muted = dark ? 'text-white/62' : 'text-slate-600';
@@ -533,7 +535,7 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
       <RecoveryControlsShowcase branding={branding} dark={dark} copy={copy} />
       <RecoveryWhySection branding={branding} dark={dark} copy={copy} />
       <RecoveryCommandContact branding={branding} dark={dark} copy={copy} />
-      <RecoveryCommandFooter branding={branding} dark={dark} accentText={accentText} />
+      <RecoveryCommandFooter branding={branding} dark={dark} />
     </main>
   );
 }
@@ -993,7 +995,7 @@ function RecoveryCommandContact({ branding, dark, copy }: { branding: BrandingPo
   );
 }
 
-function RecoveryCommandFooter({ branding, dark, accentText }: { branding: BrandingPolicy; dark: boolean; accentText: string }) {
+function RecoveryCommandFooter({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
   const linkClass = dark ? 'text-white/48 hover:text-white' : 'text-slate-500 hover:text-slate-950';
 
   return (
@@ -1019,7 +1021,9 @@ function RecoveryCommandFooter({ branding, dark, accentText }: { branding: Brand
       </div>
       <div className="mx-auto mt-8 flex max-w-7xl flex-col gap-3 text-xs opacity-55 sm:flex-row sm:items-center sm:justify-between">
         <p>&copy; {new Date().getFullYear()} {branding.legalName}. All rights reserved.</p>
-        <span className="w-fit rounded-full px-3 py-1 font-bold" style={{ backgroundColor: branding.accentColor, color: accentText }}>Recovery Command</span>
+        <span className={`w-fit rounded-full px-3 py-1 font-bold ${dark ? 'bg-white/10 text-white/75' : 'bg-slate-950/5 text-slate-700'}`}>
+          Powered by Reclaim
+        </span>
       </div>
     </footer>
   );
