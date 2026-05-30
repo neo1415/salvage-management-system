@@ -252,7 +252,6 @@ type PreviewEditHotspot = {
 };
 
 const RECOVERY_COMMAND_PREVIEW_WIDTH = 1180;
-const RECOVERY_COMMAND_PREVIEW_HEIGHT = 3800;
 const RECOVERY_COMMAND_PREVIEW_SCALE = 0.78;
 
 const RECOVERY_COMMAND_PREVIEW_HOTSPOTS: PreviewEditHotspot[] = [
@@ -261,6 +260,7 @@ const RECOVERY_COMMAND_PREVIEW_HOTSPOTS: PreviewEditHotspot[] = [
   { id: 'hero-copy', label: 'Hero intro', panel: 'hero', keys: ['heroSubtitle'] },
   { id: 'hero-primary-button', label: 'Primary button', panel: 'hero', keys: ['primaryCtaLabel'] },
   { id: 'hero-secondary-button', label: 'Secondary button', panel: 'hero', keys: ['secondaryCtaLabel'] },
+  { id: 'hero-badges', label: 'Hero badges', panel: 'hero', keys: ['statOneLabel', 'statTwoLabel', 'statThreeLabel'] },
   { id: 'workflow-heading', label: 'Workflow heading', panel: 'workflow', keys: ['workflowTitle', 'workflowSubtitle'] },
   {
     id: 'workflow-steps',
@@ -275,6 +275,25 @@ const RECOVERY_COMMAND_PREVIEW_HOTSPOTS: PreviewEditHotspot[] = [
     panel: 'controls',
     keys: ['operationsCardOneTitle', 'operationsCardOneBody', 'operationsCardTwoTitle', 'operationsCardTwoBody'],
   },
+  {
+    id: 'control-step-cards',
+    label: 'Control step cards',
+    panel: 'controls',
+    keys: [
+      'proofCardOneTitle',
+      'proofCardOneBody',
+      'proofCardTwoTitle',
+      'proofCardTwoBody',
+      'proofCardThreeTitle',
+      'proofCardThreeBody',
+      'proofCardFourTitle',
+      'proofCardFourBody',
+      'operationsCardThreeTitle',
+      'operationsCardThreeBody',
+      'recoveryBriefTitle',
+      'recoveryBriefBody',
+    ],
+  },
   { id: 'buyer-copy', label: 'Buyer reassurance', panel: 'buyers', keys: ['proofSectionTitle', 'proofSectionSubtitle'] },
   { id: 'contact-copy', label: 'Contact copy', panel: 'contact', keys: ['contactHeadline', 'contactSubtitle'] },
 ];
@@ -286,6 +305,9 @@ const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = 
   primaryCtaLabel: 'Register to bid',
   secondaryCtaLabel: 'View workflow',
   trustLine: 'Verified salvage auctions, secure deposits, signed documents, and clear pickup steps.',
+  statOneLabel: 'Verified listings',
+  statTwoLabel: 'Secured deposits',
+  statThreeLabel: 'Pickup-ready steps',
   workflowTitle: 'How buying works',
   workflowSubtitle: 'A clear path from account setup to pickup release.',
   workflowStepOneTitle: 'Verify access',
@@ -303,6 +325,18 @@ const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = 
   operationsCardOneBody: 'Review visual evidence and condition notes before you commit to a bid.',
   operationsCardTwoTitle: 'Track next steps',
   operationsCardTwoBody: 'After winning, documents, payment, and pickup status stay visible in one place.',
+  proofCardOneTitle: 'Register',
+  proofCardOneBody: 'Create a vendor account and keep your bidder profile ready.',
+  proofCardTwoTitle: 'Inspect',
+  proofCardTwoBody: 'Review lot details, photos, condition notes, and document requirements.',
+  proofCardThreeTitle: 'Bid',
+  proofCardThreeBody: 'Place verified bids with reserve gates and clear minimum increments.',
+  proofCardFourTitle: 'Deposit',
+  proofCardFourBody: 'Use auction-specific deposits that are tracked to the lot.',
+  operationsCardThreeTitle: 'Documents',
+  operationsCardThreeBody: 'Sign required documents before pickup authorization.',
+  recoveryBriefTitle: 'Payment',
+  recoveryBriefBody: 'Complete payment and move the lot toward pickup release.',
   proofSectionTitle: 'A clearer way to buy salvage assets.',
   proofSectionSubtitle: 'Verified vendors can review salvage lots, bid securely, complete documents, pay the balance, and prepare for pickup.',
   contactHeadline: 'Need help before you bid?',
@@ -343,6 +377,9 @@ const RECOVERY_COMMAND_CONTENT_PANELS: ContentPanelConfig[] = [
       { key: 'heroSubtitle', label: 'Intro text', type: 'textarea' },
       { key: 'primaryCtaLabel', label: 'Main button' },
       { key: 'secondaryCtaLabel', label: 'Secondary button' },
+      { key: 'statOneLabel', label: 'Badge 1' },
+      { key: 'statTwoLabel', label: 'Badge 2' },
+      { key: 'statThreeLabel', label: 'Badge 3' },
       { key: 'trustLine', label: 'Footer trust line', type: 'textarea' },
     ],
   },
@@ -375,6 +412,18 @@ const RECOVERY_COMMAND_CONTENT_PANELS: ContentPanelConfig[] = [
       { key: 'operationsCardOneBody', label: 'Image card 1 description', type: 'textarea' },
       { key: 'operationsCardTwoTitle', label: 'Image card 2 title' },
       { key: 'operationsCardTwoBody', label: 'Image card 2 description', type: 'textarea' },
+      { key: 'proofCardOneTitle', label: 'Control card 1 title' },
+      { key: 'proofCardOneBody', label: 'Control card 1 description', type: 'textarea' },
+      { key: 'proofCardTwoTitle', label: 'Control card 2 title' },
+      { key: 'proofCardTwoBody', label: 'Control card 2 description', type: 'textarea' },
+      { key: 'proofCardThreeTitle', label: 'Control card 3 title' },
+      { key: 'proofCardThreeBody', label: 'Control card 3 description', type: 'textarea' },
+      { key: 'proofCardFourTitle', label: 'Control card 4 title' },
+      { key: 'proofCardFourBody', label: 'Control card 4 description', type: 'textarea' },
+      { key: 'operationsCardThreeTitle', label: 'Control card 5 title' },
+      { key: 'operationsCardThreeBody', label: 'Control card 5 description', type: 'textarea' },
+      { key: 'recoveryBriefTitle', label: 'Control card 6 title' },
+      { key: 'recoveryBriefBody', label: 'Control card 6 description', type: 'textarea' },
     ],
   },
   {
@@ -623,12 +672,32 @@ function RecoveryCommandLivePreview({
           <span className="text-xs font-semibold text-gray-500">Live template editor</span>
         </div>
         <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="max-h-[72vh] overflow-auto bg-slate-100 p-4">
+          <div className="recovery-template-editor-scroll max-h-[72vh] overflow-auto bg-slate-100 p-4">
             <style>{`
+              .recovery-template-editor-scroll,
+              .recovery-template-editor-scroll * {
+                scrollbar-color: var(--brand-primary) #e5e7eb;
+              }
+              .recovery-template-editor-scroll::-webkit-scrollbar,
+              .recovery-template-editor-scroll *::-webkit-scrollbar {
+                width: 12px;
+                height: 12px;
+              }
+              .recovery-template-editor-scroll::-webkit-scrollbar-track,
+              .recovery-template-editor-scroll *::-webkit-scrollbar-track {
+                background: #e5e7eb;
+                border-radius: 999px;
+              }
+              .recovery-template-editor-scroll::-webkit-scrollbar-thumb,
+              .recovery-template-editor-scroll *::-webkit-scrollbar-thumb {
+                background: var(--brand-primary);
+                border: 3px solid #e5e7eb;
+                border-radius: 999px;
+              }
               .recovery-template-editor-surface [data-recovery-edit-id] {
                 cursor: text;
                 outline: 2px solid transparent;
-                outline-offset: 7px;
+                outline-offset: 5px;
                 border-radius: 16px;
                 transition: outline-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
               }
@@ -638,22 +707,6 @@ function RecoveryCommandLivePreview({
                 box-shadow: 0 0 0 5px var(--brand-focus-ring);
                 background-color: rgba(255,255,255,0.18);
               }
-              .recovery-template-editor-surface [data-recovery-edit-id="${activeHotspot.id}"]::after {
-                content: "${activeHotspot.label}";
-                position: absolute;
-                left: 0;
-                top: -2.15rem;
-                z-index: 5;
-                border-radius: 999px;
-                background: var(--brand-primary);
-                color: var(--brand-primary-foreground);
-                padding: 0.32rem 0.68rem;
-                font-size: 0.68rem;
-                font-weight: 900;
-                line-height: 1;
-                white-space: nowrap;
-                box-shadow: 0 10px 24px rgba(15,23,42,0.16);
-              }
               .recovery-template-editor-surface [data-recovery-edit-id="${activeHotspot.id}"] {
                 position: relative;
               }
@@ -662,15 +715,13 @@ function RecoveryCommandLivePreview({
               className="mx-auto origin-top-left overflow-hidden rounded-[1.5rem] bg-white shadow-sm"
               style={{
                 width: RECOVERY_COMMAND_PREVIEW_WIDTH,
-                height: RECOVERY_COMMAND_PREVIEW_HEIGHT,
                 transform: `scale(${RECOVERY_COMMAND_PREVIEW_SCALE})`,
                 marginRight: -(RECOVERY_COMMAND_PREVIEW_WIDTH * (1 - RECOVERY_COMMAND_PREVIEW_SCALE)),
-                marginBottom: -(RECOVERY_COMMAND_PREVIEW_HEIGHT * (1 - RECOVERY_COMMAND_PREVIEW_SCALE)),
               }}
             >
               <div
                 className="recovery-template-editor-surface"
-                style={{ width: RECOVERY_COMMAND_PREVIEW_WIDTH, minHeight: RECOVERY_COMMAND_PREVIEW_HEIGHT }}
+                style={{ width: RECOVERY_COMMAND_PREVIEW_WIDTH }}
                 onClickCapture={handlePreviewClick}
               >
                 <WhiteLabelHomeTemplates branding={previewBranding} showLegacyBelowFold={false} />

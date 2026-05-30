@@ -93,6 +93,12 @@ function isGenericRecoveryCommandCopy(value: string | undefined) {
     || text.includes('where losses become recovered capital')
     || text.includes('salvage auction platform for insurers')
     || text.includes('insurance salvage command center')
+    || text.includes('average recovery rate')
+    || text.includes('average time to sale')
+    || text.includes('verified buyers')
+    || text.includes('vendor access')
+    || text.includes('auction rules')
+    || text.includes('payment steps')
     || text.includes('request demo')
     || text.includes('start recovery');
 }
@@ -115,6 +121,11 @@ function recoveryCommandCopy(copy: BrandingPolicy['homepageCopy']) {
     trustLine: isGenericRecoveryCommandCopy(copy.trustLine)
       ? 'Verified salvage auctions, secure deposits, signed documents, and clear pickup steps.'
       : copy.trustLine,
+    heroBadges: [
+      copy.statOneLabel !== undefined && !isGenericRecoveryCommandCopy(copy.statOneLabel) ? copy.statOneLabel : 'Verified listings',
+      copy.statTwoLabel !== undefined && !isGenericRecoveryCommandCopy(copy.statTwoLabel) ? copy.statTwoLabel : 'Secured deposits',
+      copy.statThreeLabel !== undefined && !isGenericRecoveryCommandCopy(copy.statThreeLabel) ? copy.statThreeLabel : 'Pickup-ready steps',
+    ] as string[],
     workflowTitle: copy.workflowTitle === undefined || isGenericRecoveryCommandCopy(copy.workflowTitle) ? 'How buying works' : copy.workflowTitle,
     workflowSubtitle: copy.workflowSubtitle === undefined || isGenericRecoveryCommandCopy(copy.workflowSubtitle)
       ? 'A clear path from account setup to pickup release.'
@@ -152,6 +163,32 @@ function recoveryCommandCopy(copy: BrandingPolicy['homepageCopy']) {
       [
         copy.operationsCardTwoTitle !== undefined && !isGenericRecoveryCommandCopy(copy.operationsCardTwoTitle) ? copy.operationsCardTwoTitle : 'Track next steps',
         copy.operationsCardTwoBody !== undefined && !isGenericRecoveryCommandCopy(copy.operationsCardTwoBody) ? copy.operationsCardTwoBody : 'After winning, documents, payment, and pickup status stay visible in one place.',
+      ],
+    ] as Array<[string, string]>,
+    featureCards: [
+      [
+        copy.proofCardOneTitle !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardOneTitle) ? copy.proofCardOneTitle : 'Register',
+        copy.proofCardOneBody !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardOneBody) ? copy.proofCardOneBody : 'Create a vendor account and keep your bidder profile ready.',
+      ],
+      [
+        copy.proofCardTwoTitle !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardTwoTitle) ? copy.proofCardTwoTitle : 'Inspect',
+        copy.proofCardTwoBody !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardTwoBody) ? copy.proofCardTwoBody : 'Review lot details, photos, condition notes, and document requirements.',
+      ],
+      [
+        copy.proofCardThreeTitle !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardThreeTitle) ? copy.proofCardThreeTitle : 'Bid',
+        copy.proofCardThreeBody !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardThreeBody) ? copy.proofCardThreeBody : 'Place verified bids with reserve gates and clear minimum increments.',
+      ],
+      [
+        copy.proofCardFourTitle !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardFourTitle) ? copy.proofCardFourTitle : 'Deposit',
+        copy.proofCardFourBody !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardFourBody) ? copy.proofCardFourBody : 'Use auction-specific deposits that are tracked to the lot.',
+      ],
+      [
+        copy.operationsCardThreeTitle !== undefined && !isGenericRecoveryCommandCopy(copy.operationsCardThreeTitle) ? copy.operationsCardThreeTitle : 'Documents',
+        copy.operationsCardThreeBody !== undefined && !isGenericRecoveryCommandCopy(copy.operationsCardThreeBody) ? copy.operationsCardThreeBody : 'Sign required documents before pickup authorization.',
+      ],
+      [
+        copy.recoveryBriefTitle !== undefined && !isGenericRecoveryCommandCopy(copy.recoveryBriefTitle) ? copy.recoveryBriefTitle : 'Payment',
+        copy.recoveryBriefBody !== undefined && !isGenericRecoveryCommandCopy(copy.recoveryBriefBody) ? copy.recoveryBriefBody : 'Complete payment and move the lot toward pickup release.',
       ],
     ] as Array<[string, string]>,
     buyerTitle: copy.proofSectionTitle === undefined || isGenericRecoveryCommandCopy(copy.proofSectionTitle) ? 'A clearer way to buy salvage assets.' : copy.proofSectionTitle,
@@ -479,8 +516,8 @@ function RecoveryCommand({ branding, theme }: { branding: BrandingPolicy; theme:
               </a>
             </div>
             <div className={`mt-8 grid max-w-2xl gap-3 text-sm sm:grid-cols-3 ${muted}`}>
-              {['Verified listings', 'Secured deposits', 'Pickup-ready steps'].map((item) => (
-                <div key={item} className={`rounded-xl border px-4 py-3 ${dark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white/70'}`}>
+              {copy.heroBadges.map((item) => (
+                <div key={item} data-recovery-edit-id="hero-badges" className={`rounded-xl border px-4 py-3 ${dark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white/70'}`}>
                   <CheckCircle2 className="mb-2 h-4 w-4" style={{ color: branding.accentColor }} />
                   {item}
                 </div>
@@ -702,14 +739,7 @@ function RecoveryControlsShowcase({ branding, dark, copy }: { branding: Branding
   const muted = dark ? 'text-white/58' : 'text-slate-600';
   const panel = dark ? 'border-white/10 bg-white/[0.055]' : 'border-slate-200 bg-white';
   const displayInk = getDisplayInkColor(branding, dark);
-  const features = [
-    [ClipboardCheck, 'Register', 'Create a vendor account and keep your bidder profile ready.'],
-    [Search, 'Inspect', 'Review lot details, photos, condition notes, and document requirements.'],
-    [Gavel, 'Bid', 'Place verified bids with reserve gates and clear minimum increments.'],
-    [WalletCards, 'Deposit', 'Use auction-specific deposits that are tracked to the lot.'],
-    [FileCheck2, 'Documents', 'Sign the bill of sale and waiver before pickup authorization.'],
-    [CreditCard, 'Payment', 'Complete the balance and move to pickup release.'],
-  ] as const;
+  const featureIcons = [ClipboardCheck, Search, Gavel, WalletCards, FileCheck2, CreditCard] as const;
   const mediaCards = [
     {
       title: copy.controlsCards[0]?.[0] || 'Damage review',
@@ -803,9 +833,12 @@ function RecoveryControlsShowcase({ branding, dark, copy }: { branding: Branding
 
         <div className={`mt-4 rounded-[2rem] border p-4 ${panel}`}>
           <div className="grid gap-3 md:grid-cols-6">
-            {features.map(([Icon, title, body], index) => (
+            {copy.featureCards.map(([title, body], index) => {
+              const Icon = featureIcons[index] || ClipboardCheck;
+              return (
               <motion.div
                 key={title}
+                data-recovery-edit-id="control-step-cards"
                 className={`group rounded-2xl border p-4 transition-shadow ${dark ? 'border-white/10 bg-slate-950/25 hover:bg-white/[0.08]' : 'border-slate-200 bg-slate-50 hover:bg-white hover:shadow-lg'}`}
                 initial={{ opacity: 0, y: 16 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -820,7 +853,8 @@ function RecoveryControlsShowcase({ branding, dark, copy }: { branding: Branding
                 <h3 className="mt-5 text-base font-black" style={{ color: displayInk }}>{title}</h3>
                 <p className={`mt-2 text-xs leading-6 ${muted}`}>{body}</p>
               </motion.div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
