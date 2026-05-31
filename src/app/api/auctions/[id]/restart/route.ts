@@ -20,6 +20,7 @@ import { eq, and, arrayContains } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 interface RestartRequest {
   scheduleData: {
@@ -234,7 +235,7 @@ export async function POST(
 
       console.log(`Notifying ${realVendors.length} vendors for restarted auction ${auctionId}`);
 
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      const appUrl = getAppUrl();
       const reservePrice = parseFloat(caseRecord.reservePrice ?? '0');
 
       for (const vendor of realVendors) {

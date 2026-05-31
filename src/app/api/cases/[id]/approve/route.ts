@@ -27,6 +27,7 @@ import {
   logPolicyDecision,
   resolveReservePrice,
 } from '@/features/business-policy';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 /**
  * Price override data structure
@@ -189,7 +190,7 @@ export async function POST(
       // APPROVE CASE
       
       // Define appUrl for use in notifications
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      const appUrl = getAppUrl();
       
       // Determine final values to use (Requirements: 6.1, 6.2, 6.3, 11.3, 11.4)
       const aiEstimates = {

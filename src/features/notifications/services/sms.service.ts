@@ -16,6 +16,7 @@
 import axios from 'axios';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { businessPolicyService } from '@/features/business-policy';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 // Validate required environment variables
 if (!process.env.TERMII_API_KEY) {
@@ -482,7 +483,7 @@ export class SMSService {
     timeRemaining: string,
     userId?: string
   ): Promise<SMSResult> {
-    const message = `⏰ Auction ending soon! "${auctionTitle}" ends in ${timeRemaining}. Place your bid now at salvage.nem-insurance.com`;
+    const message = `Auction ending soon! "${auctionTitle}" ends in ${timeRemaining}. Place your bid now at ${getAppUrl()}`;
     return this.sendSMS({ to: phone, message, userId, category: 'routine' });
   }
 

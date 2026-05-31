@@ -31,6 +31,7 @@ import { eq, and, lte, arrayContains } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60 seconds max execution time
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
     console.log(`[Cron] Found ${scheduledAuctions.length} auctions to start`);
 
     const results = [];
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+    const appUrl = getAppUrl();
 
     for (const { auction, case: caseRecord } of scheduledAuctions) {
       try {

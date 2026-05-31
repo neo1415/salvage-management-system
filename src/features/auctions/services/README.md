@@ -116,7 +116,7 @@ This runs the closure check every 5 minutes.
 CRON_SECRET=your-secret-key-here
 
 # Required for notifications
-NEXT_PUBLIC_APP_URL=https://salvage.nem-insurance.com
+NEXT_PUBLIC_APP_URL=https://salvagebridge.com
 ```
 
 **API Endpoint:**

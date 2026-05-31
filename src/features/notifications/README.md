@@ -27,8 +27,8 @@ Add to your `.env` file:
 
 ```env
 RESEND_API_KEY=re_your_api_key_here
-EMAIL_FROM=NEM Insurance <noreply@salvage.nem-insurance.com>
-NEXT_PUBLIC_APP_URL=https://salvage.nem-insurance.com
+EMAIL_FROM=NEM Insurance <noreply@salvagebridge.com>
+NEXT_PUBLIC_APP_URL=https://salvagebridge.com
 ```
 
 ### 3. Verify Domain

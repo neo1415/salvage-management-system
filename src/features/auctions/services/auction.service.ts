@@ -18,6 +18,7 @@ import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { brandLegalName, brandTeamName, getEmailBranding, type EmailBranding } from '@/features/notifications/templates/email-branding';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 import { formatAssetName as formatCaseAssetName } from '@/lib/utils/asset-name';
 
 /**
@@ -260,7 +261,7 @@ export class AuctionService {
     auctionId: string
   ): Promise<void> {
     try {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      const appUrl = getAppUrl();
       const auctionUrl = `${appUrl}/vendor/auctions/${auctionId}`;
       const branding = await getEmailBranding();
 

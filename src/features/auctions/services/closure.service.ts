@@ -27,6 +27,7 @@ import {
 } from '@/features/notifications/services/notification.service';
 import { generateDocument } from '@/features/documents/services/document.service';
 import { broadcastAuctionClosure, broadcastAuctionUpdate, broadcastAuctionClosing, broadcastDocumentGenerated, broadcastDocumentGenerationComplete } from '@/lib/socket/server';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 import { configService } from '@/features/auction-deposit/services/config.service';
 import {
   businessPolicyService,
@@ -884,7 +885,7 @@ export class AuctionClosureService {
     paymentDeadline: Date
   ): Promise<void> {
     try {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      const appUrl = getAppUrl();
       // FIXED: Link to auction details page where documents can be signed
       const auctionDetailsUrl = `${appUrl}/vendor/auctions/${auction.id}`;
       const branding = await getEmailBranding();

@@ -16,6 +16,7 @@ import { eq, desc } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { broadcastAuctionExtension } from '@/lib/socket/server';
 import { smsService } from '@/features/notifications/services/sms.service';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 /**
  * Extension check result
@@ -328,7 +329,7 @@ export class AutoExtendService {
     newEndTime: Date
   ): Promise<void> {
     try {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      const appUrl = getAppUrl();
       const auctionUrl = `${appUrl}/vendor/auctions/${auctionId}`;
 
       // Format new end time

@@ -7,6 +7,7 @@ import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { createAuctionWonNotification } from '@/features/notifications/services/notification.service';
 import { brandLegalName, brandTeamName, getEmailBranding, type EmailBranding } from '@/features/notifications/templates/email-branding';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 import { formatAssetName } from '@/lib/utils/asset-name';
 
 /**
@@ -93,7 +94,7 @@ export async function POST(
       );
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+    const appUrl = getAppUrl();
     const paymentUrl = `${appUrl}/vendor/payments/${payment.id}`;
     const winningBid = parseFloat(auction.currentBid!);
     const formattedAmount = winningBid.toLocaleString();

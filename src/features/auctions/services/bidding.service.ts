@@ -20,6 +20,7 @@ import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/u
 import { broadcastNewBid, notifyVendorOutbid } from '@/lib/socket/server';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 import { autoExtendService } from './auto-extend.service';
 import { escrowService } from '@/features/payments/services/escrow.service';
 import { createOutbidNotification } from '@/features/notifications/services/notification.service';
@@ -953,7 +954,7 @@ export class BiddingService {
           }
 
           // Send SMS notification
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+          const appUrl = getAppUrl();
           const smsMessage = `You've been outbid! New bid: ₦${newBidAmount.toLocaleString()}. Place a higher bid now: ${appUrl}/vendor/auctions/${auctionId}`;
 
           await smsService.sendSMS({

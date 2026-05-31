@@ -18,6 +18,7 @@ import { emailService } from '@/features/notifications/services/email.service';
 import { pushNotificationService } from '@/features/notifications/services/push.service';
 import { cache } from '@/lib/redis/client';
 import { getEmailBranding } from '@/features/notifications/templates/email-branding';
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 /**
  * Fraud pattern types
@@ -365,7 +366,7 @@ export class FraudDetectionService {
     details: { pattern: FraudPattern; evidence: string }[]
   ): Promise<void> {
     try {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://salvage.nem-insurance.com';
+      const appUrl = getAppUrl();
       const adminEmail = process.env.ADMIN_EMAIL || 'admin@nem-insurance.com';
       const branding = await getEmailBranding();
 
