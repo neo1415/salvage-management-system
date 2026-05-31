@@ -16,8 +16,7 @@ import { salvageCases } from '@/lib/db/schema/cases';
 import { users } from '@/lib/db/schema/users';
 import { auctions } from '@/lib/db/schema/auctions';
 import { bids } from '@/lib/db/schema/bids';
-import { auditLogs } from '@/lib/db/schema/audit-logs';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 
 export async function GET(
@@ -159,7 +158,7 @@ export async function PATCH(
     const caseData = existingCase[0];
     const userRole = session.user.role;
     const isOwner = caseData.createdBy === session.user.id;
-    const isManager = userRole === 'manager' || userRole === 'admin';
+    const isManager = userRole === 'salvage_manager' || userRole === 'system_admin';
 
     // Only owner or manager can update
     if (!isOwner && !isManager) {
@@ -277,7 +276,7 @@ export async function DELETE(
     const caseData = existingCase[0];
     const userRole = session.user.role;
     const isOwner = caseData.createdBy === session.user.id;
-    const isAdmin = userRole === 'admin' || userRole === 'manager';
+    const isAdmin = userRole === 'system_admin' || userRole === 'salvage_manager';
     const isDraft = caseData.status === 'draft';
 
     // Permission check
@@ -321,14 +320,6 @@ export async function DELETE(
       // Delete auction if no bids
       await db.delete(auctions).where(eq(auctions.id, auction.id));
     }
-
-    // Delete related audit logs
-    await db.delete(auditLogs).where(
-      and(
-        eq(auditLogs.entityType, 'case'),
-        eq(auditLogs.entityId, caseId)
-      )
-    );
 
     // Delete the case
     await db.delete(salvageCases).where(eq(salvageCases.id, caseId));

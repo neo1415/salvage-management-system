@@ -28,7 +28,7 @@ type TemplateEditorGuide = {
 
 const TEMPLATE_EDITOR_GUIDE: Record<string, TemplateEditorGuide> = {
   reclaim_editorial: {
-    bestFor: 'Premium recovery story with a strong editorial first impression.',
+    bestFor: 'Flagship Salvage Bridge story with a premium recovery first impression.',
     sections: ['Hero story', 'Recovery brief', 'Auction inventory', 'Trust and contact'],
     image: '/assets/hero-1.png',
   },
@@ -56,7 +56,7 @@ const TEMPLATE_EDITOR_GUIDE: Record<string, TemplateEditorGuide> = {
 
 const TEMPLATE_COPY_MAP: Record<string, Array<{ label: string; fields: string; appears: string }>> = {
   reclaim_editorial: [
-    { label: 'Editorial hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Top full-screen editorial intro' },
+    { label: 'Salvage Bridge hero', fields: 'Small label, hero title, subtitle, buttons', appears: 'Top full-screen editorial intro' },
     { label: 'About section', fields: 'Supporting line and stats', appears: 'Light section below the hero' },
     { label: 'Trust block', fields: 'Trust line and support contacts', appears: 'Trust and contact section near the footer' },
   ],

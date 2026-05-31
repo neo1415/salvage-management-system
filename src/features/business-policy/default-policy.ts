@@ -1,14 +1,14 @@
 import type { BusinessPolicy } from './types';
 
-export const CURRENT_NEM_POLICY_VERSION = 'reclaim-default-2026-05-23';
+export const CURRENT_NEM_POLICY_VERSION = 'salvage-bridge-default-2026-05-31';
 
 export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
   version: CURRENT_NEM_POLICY_VERSION,
   updatedAt: '2026-05-23T00:00:00.000Z',
   branding: {
-    brandName: 'Reclaim',
-    legalName: 'Reclaim Salvage Technologies',
-    supportEmail: 'support@reclaimsalvage.com',
+    brandName: 'Salvage Bridge',
+    legalName: 'Salvage Bridge Technologies',
+    supportEmail: 'support@salvagebridge.com',
     primaryColor: '#0C0C0B',
     accentColor: '#D97706',
     logoPath: '/icons/icon-512.png',
@@ -258,9 +258,9 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
     registrationNumber: 'Configured in enterprise setup',
     addressLine1: 'Registered business address',
     addressLine2: 'Nigeria',
-    privacyEmail: 'support@reclaimsalvage.com',
-    dpoEmail: 'support@reclaimsalvage.com',
-    legalEmail: 'support@reclaimsalvage.com',
+    privacyEmail: 'support@salvagebridge.com',
+    dpoEmail: 'support@salvagebridge.com',
+    legalEmail: 'support@salvagebridge.com',
     legalLastUpdated: 'April 27, 2026',
   },
   fraud: {

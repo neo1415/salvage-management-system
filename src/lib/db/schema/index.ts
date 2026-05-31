@@ -29,3 +29,4 @@ export * from './fraud-detection';
 export * from './reconciliation';
 export * from './ledger';
 export * from './business-policies';
+export * from './data-rights';

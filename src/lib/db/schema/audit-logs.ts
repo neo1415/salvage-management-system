@@ -14,6 +14,8 @@ export const auditLogs = pgTable('audit_logs', {
   userAgent: varchar('user_agent', { length: 500 }).notNull(),
   beforeState: jsonb('before_state').$type<Record<string, unknown>>(),
   afterState: jsonb('after_state').$type<Record<string, unknown>>(),
+  previousHash: varchar('previous_hash', { length: 64 }),
+  recordHash: varchar('record_hash', { length: 64 }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
@@ -23,3 +25,4 @@ export const auditLogs = pgTable('audit_logs', {
 // CREATE INDEX idx_audit_logs_entity_type ON audit_logs(entity_type);
 // CREATE INDEX idx_audit_logs_entity_id ON audit_logs(entity_id);
 // CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at DESC);
+// CREATE INDEX idx_audit_logs_record_hash ON audit_logs(record_hash);

@@ -11,6 +11,7 @@ import {
   KeyRound,
   Camera,
   Receipt,
+  FileText,
 } from 'lucide-react';
 
 interface Tab {
@@ -34,6 +35,12 @@ const BASE_TABS: Tab[] = [
     label: 'Security',
     href: '/settings/security',
     icon: <Shield className="w-5 h-5" />,
+  },
+  {
+    id: 'privacy',
+    label: 'Privacy & data',
+    href: '/settings/privacy',
+    icon: <FileText className="w-5 h-5" />,
   },
   {
     id: 'password',

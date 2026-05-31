@@ -10,6 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { releaseForms } from '@/lib/db/schema/release-forms';
@@ -40,6 +41,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ConfirmPickupResponse>> {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Unauthorized',
+        } as ConfirmPickupResponse,
+        { status: 401 }
+      );
+    }
+
     // Await params in Next.js 15+
     const { id: auctionId } = await params;
 
@@ -77,6 +89,32 @@ export async function POST(
 
     // Verify vendor is the winner
     if (auction.currentBidder !== vendorId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Only the auction winner can confirm pickup',
+        } as ConfirmPickupResponse,
+        { status: 403 }
+      );
+    }
+
+    const [vendor] = await db
+      .select()
+      .from(vendors)
+      .where(eq(vendors.id, vendorId))
+      .limit(1);
+
+    if (!vendor) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Vendor not found',
+        } as ConfirmPickupResponse,
+        { status: 404 }
+      );
+    }
+
+    if (vendor.userId !== session.user.id) {
       return NextResponse.json(
         {
           success: false,
@@ -152,23 +190,6 @@ export async function POST(
       })
       .where(eq(auctions.id, auctionId))
       .returning();
-
-    // Get vendor details for notification
-    const [vendor] = await db
-      .select()
-      .from(vendors)
-      .where(eq(vendors.id, vendorId))
-      .limit(1);
-
-    if (!vendor) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Vendor not found',
-        } as ConfirmPickupResponse,
-        { status: 404 }
-      );
-    }
 
     const [vendorUser] = await db
       .select()

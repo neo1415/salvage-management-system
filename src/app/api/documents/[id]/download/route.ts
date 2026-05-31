@@ -8,7 +8,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { downloadDocument } from '@/features/documents/services/document.service';
-import { getIpAddress, getDeviceTypeFromUserAgent } from '@/lib/utils/audit-logger';
+import {
+  AuditActionType,
+  AuditEntityType,
+  createAuditLogData,
+  getDeviceTypeFromUserAgent,
+  getIpAddress,
+  logAction,
+} from '@/lib/utils/audit-logger';
+
+function createDocumentFilename(title: string): string {
+  const safeTitle = title
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+
+  return `${safeTitle || 'document'}.pdf`;
+}
 
 export async function GET(
   request: NextRequest,
@@ -50,6 +66,22 @@ export async function GET(
       userAgent
     );
 
+    await logAction(
+      createAuditLogData(
+        request,
+        session.user.id,
+        AuditActionType.DOCUMENT_DOWNLOADED,
+        AuditEntityType.DOCUMENT,
+        documentId,
+        undefined,
+        {
+          method: 'browser',
+          documentType: document.documentType,
+          title: document.title,
+        }
+      )
+    );
+
     // Fetch the PDF from Cloudinary
     const pdfResponse = await fetch(document.pdfUrl);
     
@@ -64,7 +96,7 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${document.title}.pdf"`,
+        'Content-Disposition': `attachment; filename="${createDocumentFilename(document.title)}"`,
         'Cache-Control': 'private, max-age=3600',
       },
     });

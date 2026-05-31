@@ -3,11 +3,21 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/next-auth.config';
 import { AuctionPerformanceService } from '@/features/reports/operational/services';
 import { ReportFilters } from '@/features/reports/types';
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ status: 'error', message: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (!['system_admin', 'salvage_manager', 'finance_officer'].includes(session.user.role)) {
+      return NextResponse.json({ status: 'error', message: 'Forbidden' }, { status: 403 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     
     const filters: ReportFilters = {

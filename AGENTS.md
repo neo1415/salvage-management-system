@@ -2,7 +2,7 @@
 
 ## Landing Page Template 1: Recovery Command
 
-Recovery Command is a white-label public landing page for an insurer or salvage operator's own auction portal. Reclaim is the SaaS sales page; this template is for vendors and buyers who want to join auctions, bid, sign documents, pay, and arrange pickup.
+Recovery Command is a white-label public landing page for an insurer or salvage operator's own auction portal. Salvage Bridge is the SaaS sales page; this template is for vendors and buyers who want to join auctions, bid, sign documents, pay, and arrange pickup.
 
 ### Objective
 

@@ -2,9 +2,9 @@
 
 These are the editable public-facing templates for the salvage platform. They are scoped to the homepage, splash/loading treatment, login, registration, and public error surfaces. Dashboard/product UI remains operational and unchanged.
 
-## 1. Reclaim Editorial
+## 1. Salvage Bridge Editorial
 
-Default product identity. Based on `reclaim-design-specs.md`.
+Default product identity. Based on `salvage-bridge-design-specs.md`.
 
 - Mood: industrial editorial, premium recovery, precise insurance compliance.
 - Themes: night default, day supported.
@@ -19,7 +19,7 @@ Preserves the current NEM animated salvage homepage as a selectable white-label 
 - Mood: familiar, animated, vendor-facing, conversion-oriented.
 - Themes: night/default gradient, day via brand color changes.
 - Motion: existing hero carousel and below-fold animation system.
-- Best for: retaining current NEM behavior while Reclaim becomes the product default.
+- Best for: retaining current NEM behavior while Salvage Bridge becomes the product default.
 - Editable policy fields: existing hero copy, brand colors, logo, favicon, CTA labels.
 
 ## 3. Recovery Command

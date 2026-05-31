@@ -172,6 +172,14 @@ export enum AuditActionType {
   
   // Rating actions
   VENDOR_RATED = 'vendor_rated',
+
+  // Privacy and data rights actions
+  PRIVACY_REQUEST_CREATED = 'privacy_request_created',
+  PRIVACY_REQUEST_REVIEWED = 'privacy_request_reviewed',
+  PRIVACY_RETENTION_REVIEWED = 'privacy_retention_reviewed',
+  PRIVACY_EXPORT_REQUESTED = 'privacy_export_requested',
+  ACCOUNT_DEACTIVATION_REQUESTED = 'account_deactivation_requested',
+  ACCOUNT_DELETION_REQUESTED = 'account_deletion_requested',
 }
 
 /**
@@ -192,6 +200,7 @@ export enum AuditEntityType {
   POLICY = 'policy',
   RATING = 'rating',
   FRAUD_FLAG = 'fraud_flag',
+  PRIVACY_REQUEST = 'privacy_request',
 }
 
 /**
@@ -241,17 +250,19 @@ export async function logAction(data: AuditLogData): Promise<void> {
     
     const userId = UUID_RE.test(data.userId) ? data.userId : SYSTEM_AUDIT_USER_ID;
 
-    await withRetry(() => db.insert(auditLogs).values({
-      userId,
-      actionType: data.actionType,
-      entityType: data.entityType,
-      entityId: data.entityId,
-      ipAddress: data.ipAddress,
-      deviceType: data.deviceType,
-      userAgent: data.userAgent,
-      beforeState: sanitizedBeforeState,
-      afterState: sanitizedAfterState,
-    }), 2, 500);
+    await withRetry(async () => {
+      await db.insert(auditLogs).values({
+        userId,
+        actionType: data.actionType,
+        entityType: data.entityType,
+        entityId: data.entityId,
+        ipAddress: data.ipAddress,
+        deviceType: data.deviceType,
+        userAgent: data.userAgent,
+        beforeState: sanitizedBeforeState,
+        afterState: sanitizedAfterState,
+      });
+    }, 2, 500);
   } catch (error) {
     // Log error but don't throw to prevent audit logging from breaking application flow
     console.error('Failed to log audit action:', error);

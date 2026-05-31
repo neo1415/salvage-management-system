@@ -4,10 +4,20 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/next-auth.config';
 import { autocompleteCache } from '@/lib/cache/autocomplete-cache';
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (session.user.role !== 'system_admin') {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
     // Clear all autocomplete caches
     await autocompleteCache.clearAll();
     

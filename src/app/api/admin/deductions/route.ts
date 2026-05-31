@@ -13,6 +13,7 @@ import { db } from '@/lib/db';
 import { damageDeductions } from '@/lib/db/schema/vehicle-valuations';
 import { eq, and, like, desc } from 'drizzle-orm';
 import { deductionSchema } from '@/features/valuations/validation/schemas';
+import { valuationAuditService } from '@/features/valuations/services/audit.service';
 
 /**
  * GET /api/admin/deductions
@@ -148,8 +149,15 @@ export async function POST(request: NextRequest) {
       createdBy: session.user.id,
     }).returning();
 
-    // TODO: Log creation in audit logs (Requirement 12.1)
-    // This will be implemented in task 7
+    await valuationAuditService.log({
+      entityType: 'deduction',
+      entityId: result[0].id,
+      action: 'create',
+      userId: session.user.id,
+      changes: {
+        deduction: { old: null, new: result[0] },
+      },
+    });
 
     return NextResponse.json(
       { 

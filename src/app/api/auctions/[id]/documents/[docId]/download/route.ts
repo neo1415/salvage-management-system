@@ -8,7 +8,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { downloadDocument } from '@/features/documents/services/document.service';
-import { logAction, AuditActionType, AuditEntityType, createAuditLogData, getDeviceTypeFromUserAgent } from '@/lib/utils/audit-logger';
+import {
+  logAction,
+  AuditActionType,
+  AuditEntityType,
+  createAuditLogData,
+  getDeviceTypeFromUserAgent,
+} from '@/lib/utils/audit-logger';
+
+function createDocumentFilename(title: string): string {
+  const safeTitle = title
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+
+  return `${safeTitle || 'document'}.pdf`;
+}
 
 export async function GET(
   request: NextRequest,
@@ -42,7 +57,7 @@ export async function GET(
     const deviceType = getDeviceTypeFromUserAgent(userAgent);
 
     // Download document (with audit logging)
-    const { pdfUrl, title } = await downloadDocument(
+    const document = await downloadDocument(
       docId,
       vendorId,
       'portal',
@@ -56,16 +71,36 @@ export async function GET(
       createAuditLogData(
         request,
         session.user.id,
-        AuditActionType.CASE_UPDATED, // TODO: Add DOCUMENT_DOWNLOADED action type
-        AuditEntityType.CASE,
+        AuditActionType.DOCUMENT_DOWNLOADED,
+        AuditEntityType.DOCUMENT,
         docId,
         undefined,
-        { action: 'download', method: 'portal' }
+        {
+          action: 'download',
+          method: 'portal',
+          auctionId,
+          documentType: document.documentType,
+          title: document.title,
+        }
       )
     );
 
-    // Redirect to Cloudinary URL
-    return NextResponse.redirect(pdfUrl);
+    const pdfResponse = await fetch(document.pdfUrl);
+
+    if (!pdfResponse.ok) {
+      throw new Error('Failed to fetch PDF from storage');
+    }
+
+    const pdfBuffer = await pdfResponse.arrayBuffer();
+
+    return new NextResponse(pdfBuffer, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${createDocumentFilename(document.title)}"`,
+        'Cache-Control': 'private, max-age=3600',
+      },
+    });
   } catch (error) {
     console.error('Download document error:', error);
     return NextResponse.json(

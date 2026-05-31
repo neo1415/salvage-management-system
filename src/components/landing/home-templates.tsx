@@ -544,7 +544,7 @@ function TemplateFooter({ branding, dark = true }: { branding: BrandingPolicy; d
       <div className={`mx-auto mt-8 flex max-w-7xl flex-col gap-3 text-xs sm:flex-row sm:items-center sm:justify-between ${dark ? 'text-white/30' : 'text-black/40'}`}>
         <p>&copy; {new Date().getFullYear()} {branding.legalName}. All rights reserved.</p>
         <p className={`w-fit rounded-full px-3 py-1 font-bold ${dark ? 'bg-white/10 text-white/65' : 'bg-black/5 text-black/55'}`}>
-          Powered by Reclaim
+          Powered by Salvage Bridge
         </p>
       </div>
     </footer>
@@ -621,7 +621,7 @@ export function WhiteLabelHomeTemplates({ branding }: HomeTemplatesProps) {
   if (template === 'recovery_command') return <RecoveryCommand branding={branding} theme={theme} />;
   if (template === 'auction_pulse') return <AuctionPulse branding={branding} theme={theme} />;
   if (template === 'executive_terminal') return <ExecutiveTerminal branding={branding} theme={theme} />;
-  return <ReclaimEditorial branding={branding} theme={theme} />;
+  return <SalvageBridgeEditorial branding={branding} theme={theme} />;
 }
 
 function ClassicTemplate({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
@@ -811,7 +811,7 @@ function ClassicTemplate({ branding, theme }: { branding: BrandingPolicy; theme:
   );
 }
 
-function ReclaimEditorial({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
+function SalvageBridgeEditorial({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
   const copy = branding.homepageCopy;
   const accentText = getReadableTextColor(branding.accentColor);
   return (
@@ -1401,7 +1401,7 @@ function RecoveryCommandFooter({ branding, dark }: { branding: BrandingPolicy; d
       <div className="mx-auto mt-8 flex max-w-7xl flex-col gap-3 text-xs opacity-55 sm:flex-row sm:items-center sm:justify-between">
         <p>&copy; {new Date().getFullYear()} {branding.legalName}. All rights reserved.</p>
         <span className={`w-fit rounded-full px-3 py-1 font-bold ${dark ? 'bg-white/10 text-white/75' : 'bg-slate-950/5 text-slate-700'}`}>
-          Powered by Reclaim
+          Powered by Salvage Bridge
         </span>
       </div>
     </footer>
@@ -1838,7 +1838,7 @@ function AuctionPulseFooter({ branding, dark }: { branding: BrandingPolicy; dark
         </div>
         <div className={`mt-10 flex flex-col gap-3 border-t border-current/10 pt-5 text-xs ${dark ? 'text-white/45' : 'text-slate-500'} sm:flex-row sm:items-center sm:justify-between`}>
           <p>&copy; {new Date().getFullYear()} {branding.legalName}. All rights reserved.</p>
-          <span className="w-fit rounded-full border border-current/10 px-3 py-1 font-bold">Powered by Reclaim</span>
+          <span className="w-fit rounded-full border border-current/10 px-3 py-1 font-bold">Powered by Salvage Bridge</span>
         </div>
       </div>
     </footer>

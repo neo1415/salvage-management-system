@@ -13,6 +13,23 @@ import { db } from '@/lib/db';
 import { vehicleValuations } from '@/lib/db/schema/vehicle-valuations';
 import { eq } from 'drizzle-orm';
 import { valuationSchema } from '@/features/valuations/validation/schemas';
+import { valuationAuditService } from '@/features/valuations/services/audit.service';
+
+function buildChangedFields(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>
+): Record<string, { old: unknown; new: unknown }> {
+  const changes: Record<string, { old: unknown; new: unknown }> = {};
+
+  for (const [key, newValue] of Object.entries(after)) {
+    const oldValue = before[key];
+    if (String(oldValue ?? '') !== String(newValue ?? '')) {
+      changes[key] = { old: oldValue ?? null, new: newValue ?? null };
+    }
+  }
+
+  return changes;
+}
 
 /**
  * PUT /api/admin/valuations/[id]
@@ -93,8 +110,13 @@ export async function PUT(
       .where(eq(vehicleValuations.id, id))
       .returning();
 
-    // TODO: Log update with changed fields in audit logs (Requirement 12.1)
-    // This will be implemented in task 7
+    await valuationAuditService.log({
+      entityType: 'valuation',
+      entityId: id,
+      action: 'update',
+      userId: session.user.id,
+      changes: buildChangedFields(existing[0] as Record<string, unknown>, result[0] as Record<string, unknown>),
+    });
 
     return NextResponse.json({
       message: 'Valuation updated successfully',
@@ -176,8 +198,15 @@ export async function DELETE(
       .delete(vehicleValuations)
       .where(eq(vehicleValuations.id, id));
 
-    // TODO: Log deletion in audit logs (Requirement 12.1)
-    // This will be implemented in task 7
+    await valuationAuditService.log({
+      entityType: 'valuation',
+      entityId: id,
+      action: 'delete',
+      userId: session.user.id,
+      changes: {
+        valuation: { old: existing[0], new: null },
+      },
+    });
 
     return NextResponse.json({
       message: 'Valuation deleted successfully'

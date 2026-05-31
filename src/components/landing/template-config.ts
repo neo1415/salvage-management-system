@@ -17,6 +17,13 @@ export type TemplateSurface = {
 
 export const HOMEPAGE_TEMPLATE_OPTIONS: TemplateSurface[] = [
   {
+    id: 'reclaim_editorial',
+    name: 'Salvage Bridge',
+    description: 'Flagship Salvage Bridge homepage for the platform provider, with an editorial recovery story and premium buyer confidence.',
+    defaultTheme: 'night',
+    authTone: 'Salvage Bridge access',
+  },
+  {
     id: 'nem_salvage',
     name: 'Classic',
     description: 'The animated salvage showcase style with bold motion, auctions, and a familiar recovery flow.',
@@ -37,9 +44,8 @@ export const HOMEPAGE_TEMPLATE_OPTIONS: TemplateSurface[] = [
     defaultTheme: 'night',
     authTone: 'Verified auction access',
   },
-  // Reclaim Editorial and Executive Terminal remain supported for existing
-  // policies, but they are hidden from the picker until their templates are
-  // fully wired into the live editor.
+  // Executive Terminal remains supported for existing policies, but it is
+  // hidden from the picker until the template is fully wired into the live editor.
 ];
 
 export function normalizeHomepageTemplate(template: BrandingPolicy['homepageTemplate']): CanonicalHomepageTemplate {

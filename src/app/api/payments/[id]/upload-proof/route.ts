@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { payments } from '@/lib/db/schema/payments';
 import { vendors } from '@/lib/db/schema/vendors';
@@ -31,6 +32,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     // Rate limiting: 5 uploads per hour per IP
     const rateLimitResult = await rateLimit(request, {
       limit: 5,
@@ -122,6 +128,13 @@ export async function POST(
       return NextResponse.json(
         { error: 'Vendor not found' },
         { status: 404 }
+      );
+    }
+
+    if (vendor.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: 'Only the payment owner can upload proof for this payment' },
+        { status: 403 }
       );
     }
 

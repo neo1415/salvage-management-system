@@ -13,6 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
@@ -32,6 +33,11 @@ export const maxDuration = 60;
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const now = new Date();
     console.log(`[Polling] Checking scheduled auctions at ${now.toISOString()} (${now.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })} WAT)`);
 

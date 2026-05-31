@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Package,
   Database,
+  ShieldCheck,
 } from 'lucide-react';
 import Link from 'next/link';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
@@ -277,7 +278,7 @@ function AdminDashboardContentInner() {
       {/* Quick Actions */}
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Link
             href="/admin/users"
             className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
@@ -308,6 +309,14 @@ function AdminDashboardContentInner() {
           >
             <ClipboardList className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">View Logs</p>
+          </Link>
+
+          <Link
+            href="/admin/privacy-requests"
+            className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
+          >
+            <ShieldCheck className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
+            <p className="font-medium">Privacy Requests</p>
           </Link>
         </div>
       </div>

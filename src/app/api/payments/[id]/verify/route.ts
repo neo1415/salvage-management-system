@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { payments } from '@/lib/db/schema/payments';
 import { vendors } from '@/lib/db/schema/vendors';
@@ -50,6 +51,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     // SECURITY: Rate limiting check
     const ipAddress = getIpAddress(request.headers);
     
@@ -93,15 +99,8 @@ export async function POST(
 
     // Parse request body
     const body = await request.json();
-    const { financeOfficerId, action, comment } = body;
-
-    // Validate required fields
-    if (!financeOfficerId) {
-      return NextResponse.json(
-        { error: 'Finance Officer ID is required' },
-        { status: 400 }
-      );
-    }
+    const { action, comment } = body;
+    const financeOfficerId = session.user.id;
 
     if (!action || !['approve', 'reject'].includes(action)) {
       return NextResponse.json(

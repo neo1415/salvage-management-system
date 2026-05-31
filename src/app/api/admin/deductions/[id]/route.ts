@@ -13,6 +13,23 @@ import { db } from '@/lib/db';
 import { damageDeductions } from '@/lib/db/schema/vehicle-valuations';
 import { eq } from 'drizzle-orm';
 import { deductionSchema } from '@/features/valuations/validation/schemas';
+import { valuationAuditService } from '@/features/valuations/services/audit.service';
+
+function buildChangedFields(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>
+): Record<string, { old: unknown; new: unknown }> {
+  const changes: Record<string, { old: unknown; new: unknown }> = {};
+
+  for (const [key, newValue] of Object.entries(after)) {
+    const oldValue = before[key];
+    if (String(oldValue ?? '') !== String(newValue ?? '')) {
+      changes[key] = { old: oldValue ?? null, new: newValue ?? null };
+    }
+  }
+
+  return changes;
+}
 
 /**
  * PUT /api/admin/deductions/[id]
@@ -90,8 +107,13 @@ export async function PUT(
       .where(eq(damageDeductions.id, id))
       .returning();
 
-    // TODO: Log update with changed fields in audit logs (Requirement 12.1)
-    // This will be implemented in task 7
+    await valuationAuditService.log({
+      entityType: 'deduction',
+      entityId: id,
+      action: 'update',
+      userId: session.user.id,
+      changes: buildChangedFields(existing[0] as Record<string, unknown>, result[0] as Record<string, unknown>),
+    });
 
     return NextResponse.json({
       message: 'Deduction updated successfully',
@@ -173,8 +195,15 @@ export async function DELETE(
       .delete(damageDeductions)
       .where(eq(damageDeductions.id, id));
 
-    // TODO: Log deletion in audit logs (Requirement 12.1)
-    // This will be implemented in task 7
+    await valuationAuditService.log({
+      entityType: 'deduction',
+      entityId: id,
+      action: 'delete',
+      userId: session.user.id,
+      changes: {
+        deduction: { old: existing[0], new: null },
+      },
+    });
 
     return NextResponse.json({
       message: 'Deduction deleted successfully'

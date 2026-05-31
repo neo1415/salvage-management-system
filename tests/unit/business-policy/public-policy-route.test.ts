@@ -24,9 +24,9 @@ describe('/api/business-policy/public', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(response.headers.get('x-business-policy-version')).toBe('reclaim-default-2026-05-23');
+    expect(response.headers.get('x-business-policy-version')).toBe('salvage-bridge-default-2026-05-31');
     expect(payload.success).toBe(true);
-    expect(payload.policy.branding.brandName).toBe('Reclaim');
+    expect(payload.policy.branding.brandName).toBe('Salvage Bridge');
     expect(payload.policy.branding.homepageTemplate).toBe('reclaim_editorial');
     expect(payload.policy.onboarding.tier1BidLimit).toBe(500000);
     expect(payload.policy.payments).toEqual({
