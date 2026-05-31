@@ -7,10 +7,12 @@ import { Menu, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { usePublicBranding } from '@/hooks/use-public-branding';
 import { getReadableTextColor } from '@/features/branding/brand-colors';
+import type { BrandingPolicy } from '@/features/business-policy/types';
 import { normalizeHomepageTemplate, resolveTemplateTheme } from './template-config';
 
-export function Navigation() {
-  const { branding } = usePublicBranding();
+export function Navigation({ brandingOverride }: { brandingOverride?: BrandingPolicy } = {}) {
+  const publicBranding = usePublicBranding();
+  const branding = brandingOverride ?? publicBranding.branding;
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 

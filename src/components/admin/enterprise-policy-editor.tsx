@@ -257,7 +257,7 @@ const RECOVERY_COMMAND_PREVIEW_SCALE = 0.78;
 const RECOVERY_COMMAND_PREVIEW_HOTSPOTS: PreviewEditHotspot[] = [
   { id: 'hero-label', label: 'Hero label', panel: 'hero', keys: ['eyebrow'] },
   { id: 'hero-title', label: 'Hero headline', panel: 'hero', keys: ['heroTitle'] },
-  { id: 'hero-copy', label: 'Hero intro', panel: 'hero', keys: ['heroSubtitle'] },
+  { id: 'hero-copy', label: 'Hero intro', panel: 'hero', keys: ['heroSubtitle', 'supportingText'] },
   { id: 'hero-primary-button', label: 'Primary button', panel: 'hero', keys: ['primaryCtaLabel'] },
   { id: 'hero-secondary-button', label: 'Secondary button', panel: 'hero', keys: ['secondaryCtaLabel'] },
   { id: 'auction-slide-1', label: 'Carousel slide 1', panel: 'hero', keys: ['heroTitle', 'heroSubtitle', 'primaryCtaLabel', 'secondaryCtaLabel'] },
@@ -300,6 +300,7 @@ const RECOVERY_COMMAND_PREVIEW_HOTSPOTS: PreviewEditHotspot[] = [
   },
   { id: 'buyer-copy', label: 'Buyer reassurance', panel: 'buyers', keys: ['proofSectionTitle', 'proofSectionSubtitle'] },
   { id: 'contact-copy', label: 'Contact copy', panel: 'contact', keys: ['contactHeadline', 'contactSubtitle'] },
+  { id: 'footer-copy', label: 'Footer copy', panel: 'contact', keys: ['trustLine'] },
 ];
 
 const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = {
@@ -882,7 +883,7 @@ function RecoveryCommandLivePreview({
                 style={{ width: RECOVERY_COMMAND_PREVIEW_WIDTH }}
                 onClickCapture={handlePreviewClick}
               >
-                <WhiteLabelHomeTemplates branding={previewBranding} showLegacyBelowFold={false} />
+                <WhiteLabelHomeTemplates branding={previewBranding} showLegacyBelowFold={templateId === 'nem_salvage'} />
               </div>
             </div>
           </div>

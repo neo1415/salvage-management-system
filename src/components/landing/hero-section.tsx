@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
+import type { BrandingPolicy } from '@/features/business-policy/types';
 
 const heroSlides = [
   {
@@ -24,8 +25,9 @@ const heroSlides = [
   },
 ];
 
-export function HeroSection() {
-  const { branding } = usePublicBranding();
+export function HeroSection({ brandingOverride }: { brandingOverride?: BrandingPolicy } = {}) {
+  const publicBranding = usePublicBranding();
+  const branding = brandingOverride ?? publicBranding.branding;
   const [currentSlide, setCurrentSlide] = useState(0);
   const copy = branding.homepageCopy;
   const slides = [
@@ -77,11 +79,18 @@ export function HeroSection() {
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.8, ease: 'easeInOut' }}
                 className="mb-6"
+                data-recovery-edit-id={currentSlide === 0 ? undefined : `auction-slide-${currentSlide + 1}`}
               >
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-black leading-tight mb-4 bg-gradient-to-r from-white via-[var(--brand-accent)] to-[var(--brand-accent)] bg-clip-text text-transparent">
+                <h1
+                  data-recovery-edit-id={currentSlide === 0 ? 'hero-title' : undefined}
+                  className="text-4xl md:text-5xl lg:text-6xl font-black leading-tight mb-4 bg-gradient-to-r from-white via-[var(--brand-accent)] to-[var(--brand-accent)] bg-clip-text text-transparent"
+                >
                   {slides[currentSlide].title}
                 </h1>
-                <p className="text-lg md:text-xl text-gray-200 max-w-xl">
+                <p
+                  data-recovery-edit-id={currentSlide === 0 ? 'hero-copy' : undefined}
+                  className="text-lg md:text-xl text-gray-200 max-w-xl"
+                >
                   {slides[currentSlide].subtitle}
                 </p>
               </motion.div>
@@ -92,6 +101,7 @@ export function HeroSection() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4, duration: 0.6 }}
+              data-recovery-edit-id="hero-copy"
             >
               {copy.supportingText}
             </motion.p>
@@ -101,6 +111,7 @@ export function HeroSection() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.6, duration: 0.6 }}
+              data-recovery-edit-id="hero-primary-button"
             >
               <Link href="/register">
                 <motion.button
@@ -109,9 +120,9 @@ export function HeroSection() {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                >
-                  {copy.primaryCtaLabel} -&gt;
-                </motion.button>
+                  >
+                    {copy.primaryCtaLabel} -&gt;
+                  </motion.button>
               </Link>
 
               {/* Watch Demo button - commented out */}
@@ -175,6 +186,7 @@ export function HeroSection() {
 
                   {/* Floating badge */}
                   <motion.div
+                    data-recovery-edit-id="hero-badges"
                     className="absolute -bottom-6 -left-6 bg-[var(--brand-accent)] text-[var(--brand-primary)] px-6 py-3 rounded-xl shadow-xl font-bold text-lg"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}

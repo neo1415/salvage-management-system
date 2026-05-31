@@ -6,8 +6,9 @@ import { FAQSection } from './faq-section';
 import { ContactSection } from './contact-section';
 import { Footer } from './footer';
 import { FloatingCTA } from './floating-cta';
+import type { BrandingPolicy } from '@/features/business-policy/types';
 
-export default function BelowFoldSections() {
+export default function BelowFoldSections({ brandingOverride }: { brandingOverride?: BrandingPolicy } = {}) {
   return (
     <>
       <ValuePropsSection />
@@ -15,8 +16,8 @@ export default function BelowFoldSections() {
       <HowItWorksSection />
       <SocialProofSection />
       <FAQSection />
-      <ContactSection />
-      <Footer />
+      <ContactSection brandingOverride={brandingOverride} />
+      <Footer brandingOverride={brandingOverride} />
       <FloatingCTA />
     </>
   );

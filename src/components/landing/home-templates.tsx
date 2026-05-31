@@ -27,6 +27,9 @@ import type { BrandingPolicy } from '@/features/business-policy/types';
 import { getReadableTextColor } from '@/features/branding/brand-colors';
 import { normalizeHomepageTemplate, resolveTemplateTheme } from './template-config';
 import { ContactSection } from './contact-section';
+import { Navigation } from './navigation';
+import { HeroSection } from './hero-section';
+import BelowFoldSections from './below-fold-sections';
 
 type HomeTemplatesProps = {
   branding: BrandingPolicy;
@@ -610,12 +613,18 @@ function Splash({ branding }: { branding: BrandingPolicy }) {
   );
 }
 
-export function WhiteLabelHomeTemplates({ branding }: HomeTemplatesProps) {
+export function WhiteLabelHomeTemplates({ branding, showLegacyBelowFold }: HomeTemplatesProps) {
   const template = normalizeHomepageTemplate(branding.homepageTemplate);
   const theme = resolveTemplateTheme(branding);
 
   if (template === 'nem_salvage') {
-    return <ClassicTemplate branding={branding} theme={theme} />;
+    return (
+      <main className="min-h-screen bg-white" style={cssVars(branding, theme)}>
+        <Navigation brandingOverride={branding} />
+        <HeroSection brandingOverride={branding} />
+        {showLegacyBelowFold && <BelowFoldSections brandingOverride={branding} />}
+      </main>
+    );
   }
 
   if (template === 'recovery_command') return <RecoveryCommand branding={branding} theme={theme} />;

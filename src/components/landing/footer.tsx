@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
+import type { BrandingPolicy } from '@/features/business-policy/types';
 
 const footerLinks = {
   company: [
@@ -28,8 +29,9 @@ const footerLinks = {
   ],
 };
 
-export function Footer() {
-  const { branding } = usePublicBranding();
+export function Footer({ brandingOverride }: { brandingOverride?: BrandingPolicy } = {}) {
+  const publicBranding = usePublicBranding();
+  const branding = brandingOverride ?? publicBranding.branding;
   const [email, setEmail] = useState('');
   const [subscribeStatus, setSubscribeStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
@@ -61,8 +63,8 @@ export function Footer() {
               <span className="text-xl font-bold">{branding.brandName}</span>
             </Link>
 
-            <p className="mb-6 leading-relaxed text-white/70">
-              {branding.legalName} salvage management platform. Vendor onboarding, auctions, payments, documents, and recovery workflows under one controlled brand.
+            <p className="mb-6 leading-relaxed text-white/70" data-recovery-edit-id="footer-copy">
+              {branding.homepageCopy.trustLine || `${branding.legalName} salvage management platform. Vendor onboarding, auctions, payments, documents, and recovery workflows under one controlled brand.`}
             </p>
 
             <div>

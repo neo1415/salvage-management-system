@@ -4,9 +4,11 @@ import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { Phone, Mail, MapPin, Send } from 'lucide-react';
 import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
+import type { BrandingPolicy } from '@/features/business-policy/types';
 
-export function ContactSection() {
-  const { branding } = usePublicBranding();
+export function ContactSection({ brandingOverride }: { brandingOverride?: BrandingPolicy } = {}) {
+  const publicBranding = usePublicBranding();
+  const branding = brandingOverride ?? publicBranding.branding;
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -79,6 +81,7 @@ export function ContactSection() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
+          data-recovery-edit-id="contact-copy"
         >
           <h2
             className="mb-4 bg-clip-text text-4xl font-black text-transparent md:text-5xl"
