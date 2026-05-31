@@ -34,6 +34,7 @@ export interface EmailOptions {
   html: string;
   replyTo?: string;
   category?: 'auth' | 'notification' | 'system';
+  critical?: boolean;
   attachments?: Array<{
     filename: string;
     content: string | Buffer;
@@ -73,7 +74,7 @@ export class EmailService {
   }
 
   private async canSendPolicyEmail(options: EmailOptions): Promise<boolean> {
-    if (options.category === 'auth') {
+    if (options.category === 'auth' || options.critical) {
       return true;
     }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Download, FileText, ShieldCheck, UserX } from 'lucide-react';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 
 type RequestType =
   | 'access'
@@ -64,6 +65,7 @@ function formatDate(value: string | null) {
 }
 
 export function PrivacySettingsPanel() {
+  const { branding } = usePublicBranding();
   const [requests, setRequests] = useState<PrivacyRequest[]>([]);
   const [selectedType, setSelectedType] = useState<RequestType>('export');
   const [reason, setReason] = useState('');
@@ -138,6 +140,10 @@ export function PrivacySettingsPanel() {
             <p className="mt-2 max-w-2xl text-sm text-gray-600">
               Submit privacy requests for review. Some auction, KYC, wallet, payment, document,
               audit, fraud, and legal records may need to be retained even when access changes.
+            </p>
+            <p className="mt-2 max-w-2xl text-xs text-gray-500">
+              Submitted requests are recorded in the admin privacy queue and sent to {branding.supportEmail}
+              {' '}and the platform privacy desk.
             </p>
           </div>
         </div>
