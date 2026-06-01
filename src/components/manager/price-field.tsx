@@ -66,6 +66,18 @@ function formatCurrency(value: number, symbol: string = '₦'): string {
   return `${symbol}${value.toLocaleString('en-US')}`;
 }
 
+function formatNumberInput(value: number | string): string {
+  const digits = String(value).replace(/[^\d]/g, '');
+  if (!digits) return '';
+  return Number(digits).toLocaleString('en-US');
+}
+
+function parseFormattedNumber(value: string): number | null {
+  const digits = value.replace(/[^\d]/g, '');
+  if (!digits) return null;
+  return Number(digits);
+}
+
 /**
  * PriceField Component
  */
@@ -84,23 +96,23 @@ export function PriceField({
   const isLowConfidence = confidence !== undefined && confidence < 70;
 
   // Local state for input value (to handle typing)
-  const [inputValue, setInputValue] = useState(displayValue.toString());
+  const [inputValue, setInputValue] = useState(formatNumberInput(displayValue));
 
   // Update input value when displayValue changes
   useEffect(() => {
-    setInputValue(displayValue.toString());
+    setInputValue(formatNumberInput(displayValue));
   }, [displayValue]);
 
   /**
    * Handle input change
    */
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+    const value = formatNumberInput(e.target.value);
     setInputValue(value);
 
     // Parse and validate
-    const numericValue = parseFloat(value);
-    if (!isNaN(numericValue) && numericValue >= 0) {
+    const numericValue = parseFormattedNumber(value);
+    if (numericValue !== null && numericValue >= 0) {
       onChange(numericValue);
     }
   };
@@ -109,12 +121,12 @@ export function PriceField({
    * Handle input blur (format on blur)
    */
   const handleBlur = () => {
-    const numericValue = parseFloat(inputValue);
-    if (!isNaN(numericValue) && numericValue >= 0) {
-      setInputValue(numericValue.toString());
+    const numericValue = parseFormattedNumber(inputValue);
+    if (numericValue !== null && numericValue >= 0) {
+      setInputValue(formatNumberInput(numericValue));
     } else {
       // Reset to display value if invalid
-      setInputValue(displayValue.toString());
+      setInputValue(formatNumberInput(displayValue));
     }
   };
 
@@ -146,15 +158,14 @@ export function PriceField({
       {isEditMode ? (
         <div className="space-y-1">
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
             value={inputValue}
             onChange={handleInputChange}
             onBlur={handleBlur}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent text-lg font-semibold"
             style={{ minHeight: '44px' }} // Mobile touch target
             placeholder="Enter amount"
-            min="0"
-            step="1000"
           />
           {hasOverride && (
             <p className="text-xs text-blue-600">

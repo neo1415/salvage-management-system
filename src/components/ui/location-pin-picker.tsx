@@ -63,6 +63,7 @@ export function LocationPinPicker({
   const markerRef = useRef<any>(null);
   const geocoderRef = useRef<any>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const hasValidApiKey = !!apiKey && apiKey !== 'your-google-maps-api-key';
   const hasCoordinates = typeof latitude === 'number' && typeof longitude === 'number';
@@ -99,6 +100,7 @@ export function LocationPinPicker({
 
         mapInstanceRef.current = map;
         markerRef.current = marker;
+        setIsLoading(false);
 
         const commitPosition = async (position: { lat: number; lng: number }) => {
           marker.setPosition(position);
@@ -131,7 +133,10 @@ export function LocationPinPicker({
           void commitPosition({ lat: next.lat(), lng: next.lng() });
         });
       })
-      .catch(() => setLoadError('Map pin confirmation is unavailable. Use a full address or GPS.'));
+      .catch(() => {
+        setIsLoading(false);
+        setLoadError('Map pin confirmation is unavailable. Use a full address or GPS.');
+      });
 
     return () => {
       cancelled = true;
@@ -174,12 +179,19 @@ export function LocationPinPicker({
       {loadError ? (
         <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">{loadError}</div>
       ) : (
-        <div
-          ref={mapRef}
-          className="overflow-hidden rounded-lg bg-gray-100"
-          style={{ height }}
-          aria-label="Map for confirming exact location pin"
-        />
+        <div className="relative overflow-hidden rounded-lg bg-gray-100" style={{ height }}>
+          {isLoading && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-gray-50 text-sm text-gray-600">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-[var(--brand-primary)]" />
+              <span>Loading map...</span>
+            </div>
+          )}
+          <div
+            ref={mapRef}
+            className="h-full w-full"
+            aria-label="Map for confirming exact location pin"
+          />
+        </div>
       )}
     </div>
   );

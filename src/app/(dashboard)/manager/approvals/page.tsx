@@ -116,6 +116,70 @@ const isValidPhotoUrl = (url: any): url is string => {
   return trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/');
 };
 
+const CURRENCY_DETAIL_KEYS = new Set([
+  'marketValue',
+  'estimatedValue',
+  'purchasePrice',
+  'replacementValue',
+  'claimAmount',
+  'claimsPaid',
+  'assetValue',
+  'insuredValue',
+  'reservePrice',
+  'estimatedSalvageValue',
+]);
+
+function parseNumberLike(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[^\d.-]/g, '');
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function normalizeCondition(value: unknown): CaseData['vehicleCondition'] | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.toLowerCase().trim();
+  if (normalized.includes('excellent')) return 'excellent';
+  if (normalized.includes('poor') || normalized.includes('bad')) return 'poor';
+  if (normalized.includes('fair') || normalized.includes('average')) return 'fair';
+  if (normalized.includes('good') || normalized.includes('foreign') || normalized.includes('tokunbo')) return 'good';
+  return undefined;
+}
+
+function getVehicleMileage(caseData: CaseData): number | undefined {
+  return caseData.vehicleMileage
+    ?? parseNumberLike(caseData.assetDetails?.mileage)
+    ?? parseNumberLike(caseData.assetDetails?.odometer);
+}
+
+function getVehicleCondition(caseData: CaseData): CaseData['vehicleCondition'] | undefined {
+  return caseData.vehicleCondition
+    ?? normalizeCondition(caseData.assetDetails?.condition)
+    ?? normalizeCondition(caseData.aiAssessment?.itemDetails?.overallCondition);
+}
+
+function formatAssetDetailValue(key: string, value: string | number): string {
+  if (typeof value === 'string') return value;
+  const normalizedKey = key.toLowerCase();
+
+  if (normalizedKey.includes('year')) {
+    return String(value);
+  }
+
+  if (normalizedKey.includes('mileage') || normalizedKey.includes('odometer')) {
+    return `${value.toLocaleString()} km`;
+  }
+
+  if (CURRENCY_DETAIL_KEYS.has(key) || normalizedKey.includes('price') || normalizedKey.includes('amount') || normalizedKey.includes('value')) {
+    return `₦${value.toLocaleString()}`;
+  }
+
+  return value.toLocaleString();
+}
+
 export default function ApprovalsPage() {
   const router = useRouter();
   const { status } = useSession();
@@ -644,6 +708,9 @@ export default function ApprovalsPage() {
 
   // Detail view
   if (selectedCase) {
+    const vehicleMileage = getVehicleMileage(selectedCase);
+    const vehicleCondition = getVehicleCondition(selectedCase);
+
     return (
       <div className="min-h-screen bg-gray-50 pb-32 overflow-y-auto">
         {/* Header */}
@@ -842,11 +909,11 @@ export default function ApprovalsPage() {
                     <div className="p-3 bg-blue-50 rounded-lg">
                       <p className="text-xs text-blue-600 font-medium mb-1">📊 Mileage</p>
                       <p className="text-sm font-bold text-blue-900">
-                        {selectedCase.vehicleMileage 
-                          ? `${selectedCase.vehicleMileage.toLocaleString()} km`
+                        {vehicleMileage 
+                          ? `${vehicleMileage.toLocaleString()} km`
                           : 'Not provided'}
                       </p>
-                      {!selectedCase.vehicleMileage && (
+                      {!vehicleMileage && (
                         <p className="text-xs text-blue-700 mt-1">Estimated from vehicle age</p>
                       )}
                     </div>
@@ -856,11 +923,11 @@ export default function ApprovalsPage() {
                         <span>Condition</span>
                       </p>
                       <p className="text-sm font-bold text-purple-900">
-                        {selectedCase.vehicleCondition 
-                          ? formatConditionForDisplay(selectedCase.vehicleCondition).label
+                        {vehicleCondition 
+                          ? formatConditionForDisplay(vehicleCondition).label
                           : 'Good (Foreign Used) (default)'}
                       </p>
-                      {!selectedCase.vehicleCondition && (
+                      {!vehicleCondition && (
                         <p className="text-xs text-purple-700 mt-1">Default assumption</p>
                       )}
                     </div>
@@ -868,13 +935,13 @@ export default function ApprovalsPage() {
                 )}
 
                 {/* Missing Data Notices */}
-                {selectedCase.assetType === 'vehicle' && (!selectedCase.vehicleMileage || !selectedCase.vehicleCondition) && (
+                {selectedCase.assetType === 'vehicle' && (!vehicleMileage || !vehicleCondition) && (
                   <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <p className="text-sm text-yellow-800">
                       <span className="font-medium">ℹ️ Note:</span> {' '}
-                      {!selectedCase.vehicleMileage && !selectedCase.vehicleCondition 
+                      {!vehicleMileage && !vehicleCondition 
                         ? 'Mileage and condition data not provided. Estimates may be less accurate.'
-                        : !selectedCase.vehicleMileage
+                        : !vehicleMileage
                         ? 'Mileage data not provided. Using estimated mileage based on vehicle age.'
                         : 'Condition data not provided. Assuming "good" condition.'}
                     </p>
@@ -1058,18 +1125,9 @@ export default function ApprovalsPage() {
             <h3 className="font-bold text-gray-900 mb-3">Asset Details</h3>
             <div className="space-y-2 text-sm">
               {selectedCase.assetDetails && typeof selectedCase.assetDetails === 'object' && Object.entries(selectedCase.assetDetails).map(([key, value]) => {
-                if (!value) return null;
-                
-                // Format the value based on type
-                let displayValue = value;
-                if (typeof value === 'number') {
-                  // Check if it's a currency value (large numbers)
-                  if (value >= 1000) {
-                    displayValue = `₦${value.toLocaleString()}`;
-                  } else {
-                    displayValue = value.toLocaleString();
-                  }
-                }
+                if (value === undefined || value === null || value === '') return null;
+
+                const displayValue = formatAssetDetailValue(key, value);
                 
                 return (
                   <div key={key} className="flex justify-between">

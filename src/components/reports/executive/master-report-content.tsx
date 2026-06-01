@@ -63,14 +63,22 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   <p className="text-sm text-gray-600">Total Revenue</p>
                   <MetricValue>{formatCurrency(data.executiveSummary.totalRevenue)}</MetricValue>
                   <div className="flex items-center mt-1">
-                    {data.executiveSummary.revenueGrowth >= 0 ? (
-                      <TrendingUp className="h-4 w-4 text-green-600 mr-1" />
+                    {data.executiveSummary.previousRevenue > 0 ? (
+                      <>
+                        {data.executiveSummary.revenueGrowth >= 0 ? (
+                          <TrendingUp className="h-4 w-4 text-green-600 mr-1" />
+                        ) : (
+                          <TrendingDown className="h-4 w-4 text-red-600 mr-1" />
+                        )}
+                        <span className={`text-sm ${data.executiveSummary.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatPercent(Math.abs(data.executiveSummary.revenueGrowth))} growth
+                        </span>
+                      </>
                     ) : (
-                      <TrendingDown className="h-4 w-4 text-red-600 mr-1" />
+                      <span className="text-sm text-gray-500">
+                        {data.executiveSummary.totalRevenue > 0 ? 'New revenue this period' : 'No prior revenue'}
+                      </span>
                     )}
-                    <span className={`text-sm ${data.executiveSummary.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatPercent(Math.abs(data.executiveSummary.revenueGrowth))} growth
-                    </span>
                   </div>
                 </div>
                 <Banknote className="h-8 w-8 shrink-0 text-[var(--brand-primary)] opacity-20" />

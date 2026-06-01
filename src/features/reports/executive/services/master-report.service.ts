@@ -12,6 +12,7 @@ export interface MasterReportData {
   executiveSummary: {
     totalRevenue: number;
     revenueGrowth: number;
+    previousRevenue: number;
     totalCases: number;
     caseGrowth: number;
     auctionSuccessRate: number;
@@ -283,6 +284,7 @@ export class MasterReportService {
 
     return {
       totalRevenue: Math.round(currentRevenue * 100) / 100,
+      previousRevenue: Math.round(prevRevenue * 100) / 100,
       revenueGrowth: prevRevenue > 0 ? Math.round(((currentRevenue - prevRevenue) / prevRevenue * 100) * 100) / 100 : 0,
       totalCases: currentCases,
       caseGrowth: prevCases > 0 ? Math.round(((currentCases - prevCases) / prevCases * 100) * 100) / 100 : 0,

@@ -265,8 +265,8 @@ export class PredictionService {
 
     const anchor = this.calculateCaseValueAnchor(auctionData);
     if (anchor > 0) {
-      const sampleWeight = Math.min(0.75, 0.45 + similarAuctions.length * 0.02);
-      adjustedPrice = (adjustedPrice * sampleWeight) + (anchor * (1 - sampleWeight));
+      const historicalWeight = Math.min(0.9, Math.max(0.65, 0.65 + similarAuctions.length * 0.03));
+      adjustedPrice = (adjustedPrice * historicalWeight) + (anchor * (1 - historicalWeight));
     }
 
     if (auctionData.currentBid && Number(auctionData.currentBid) > 0) {
@@ -823,9 +823,10 @@ export class PredictionService {
     let lowerBound = predictedPrice * (1 - intervalFactor);
     let upperBound = predictedPrice * (1 + intervalFactor);
 
-    // Ensure lower bound is at least the reserve price
-    if (reservePrice && lowerBound < reservePrice) {
-      lowerBound = reservePrice;
+    // Reserve is a seller threshold, not proof of likely bidder demand.
+    // Keep it as upper-side context so low-demand auctions do not get inflated.
+    if (reservePrice && upperBound < reservePrice) {
+      upperBound = reservePrice;
     }
 
     return { lowerBound, upperBound };
@@ -880,8 +881,8 @@ export class PredictionService {
       throw new Error('Insufficient data for price prediction');
     }
 
-    // Calculate bounds
-    let lowerBound = reservePrice || predictedPrice * 0.8;
+    // Calculate bounds. Reserve is a seller threshold, not a guaranteed close price.
+    let lowerBound = predictedPrice * 0.8;
     let upperBound = predictedPrice * 1.3;
 
     // Task 2.3.4: Edge case handling
@@ -897,13 +898,11 @@ export class PredictionService {
       }
     }
     
-    // Handle high reserve price
+    // Handle high reserve price without inflating the expected bidder outcome.
     if (reservePrice && reservePrice > predictedPrice) {
-      lowerBound = reservePrice;
-      predictedPrice = reservePrice * 1.15;
-      upperBound = reservePrice * 1.35;
+      upperBound = Math.max(upperBound, reservePrice);
       confidenceScore *= 0.6;
-      warnings.push('Reserve price exceeds historical data - prediction based on extrapolation');
+      warnings.push('Reserve price exceeds model estimate - auction may need stronger demand to clear');
     }
 
     // Handle no bids scenario
