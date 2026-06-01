@@ -38,6 +38,7 @@ import { DraftList } from '@/components/cases/draft-list';
 import { AIAnalysisStatusBadge } from '@/components/cases/ai-analysis-status-badge';
 import { compressImage } from '@/utils/image-compression';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { LocationPinPicker } from '@/components/ui/location-pin-picker';
 
 /**
  * Web Speech API types (not fully supported in TypeScript)
@@ -359,7 +360,7 @@ function NewCasePageContent() {
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [isCapturingGPS, setIsCapturingGPS] = useState(false);
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
-  const [coordinateSource, setCoordinateSource] = useState<'gps' | 'address' | null>(null);
+  const [coordinateSource, setCoordinateSource] = useState<'gps' | 'address' | 'manual_pin' | null>(null);
   const skipAddressGeocodeRef = useRef(false);
   const addressGeocodeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const locationName = watch('locationName');
@@ -764,6 +765,25 @@ function NewCasePageContent() {
       }
     } finally {
       setIsCapturingGPS(false);
+    }
+  };
+
+  const confirmMapPinLocation = (location: {
+    latitude: number;
+    longitude: number;
+    formattedAddress?: string;
+  }) => {
+    setGpsLocation({
+      latitude: location.latitude,
+      longitude: location.longitude,
+    });
+    setGpsAccuracy(null);
+    setCoordinateSource('manual_pin');
+    setGpsError(null);
+    skipAddressGeocodeRef.current = true;
+
+    if (location.formattedAddress) {
+      setValue('locationName', location.formattedAddress, { shouldValidate: true, shouldDirty: true });
     }
   };
 
@@ -1607,7 +1627,7 @@ function NewCasePageContent() {
         locationAccuracyMeters: gpsAccuracy,
         locationSource: coordinateSource,
         locationCapturedAt: gpsLocation ? new Date().toISOString() : undefined,
-        locationManualOverride: coordinateSource === 'address',
+        locationManualOverride: coordinateSource === 'address' || coordinateSource === 'manual_pin',
         // Convert unified voice content to voiceNotes array for backend.
         voiceNotes: finalVoiceContent ? [finalVoiceContent] : [],
         status: isDraft ? 'draft' as const : 'pending_approval' as const,
@@ -2869,14 +2889,23 @@ function NewCasePageContent() {
               {coordinateSource === 'address' && (
                 <span className="text-gray-600 ml-2">(from address lookup)</span>
               )}
+              {coordinateSource === 'manual_pin' && (
+                <span className="text-gray-600 ml-2">(confirmed on map)</span>
+              )}
             </p>
           )}
           {gpsError && (
             <p className="mt-1 text-sm text-red-600">{gpsError}</p>
           )}
           <p className="mt-1 text-xs text-gray-500">
-            Type the full address or use 📍 for device GPS. Coordinates update automatically when online.
+            Type a specific address, use device GPS, then confirm the exact inspection or pickup point on the map.
           </p>
+          <LocationPinPicker
+            latitude={gpsLocation?.latitude}
+            longitude={gpsLocation?.longitude}
+            label={locationName}
+            onChange={confirmMapPinLocation}
+          />
         </div>
 
         {/* Voice Notes - Unified Modern Interface */}

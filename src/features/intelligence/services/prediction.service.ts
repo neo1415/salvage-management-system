@@ -63,6 +63,8 @@ interface SimilarAuction {
   bidCount: number;
   damageSeverity: string;
   marketValue: number;
+  estimatedSalvageValue: number;
+  reservePrice: number;
   endTime: Date;
 }
 
@@ -197,6 +199,7 @@ export class PredictionService {
         marketValue: salvageCases.marketValue,
         estimatedSalvageValue: salvageCases.estimatedSalvageValue,
         aiAssessment: salvageCases.aiAssessment,
+        locationName: salvageCases.locationName,
       })
       .from(auctions)
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
@@ -256,9 +259,19 @@ export class PredictionService {
     adjustedPrice *= temporalAdjustment.priceMultiplier;
 
     // Task 2.2.6: Apply geographic adjustments
-    const region = auctionData.region || auctionData.assetDetails?.region;
+    const region = auctionData.region || auctionData.assetDetails?.region || this.extractRegionFromLocation(auctionData.locationName);
     const geoAdjustment = await this.getGeographicAdjustment(auctionData.assetType, region);
     adjustedPrice *= geoAdjustment.demandMultiplier;
+
+    const anchor = this.calculateCaseValueAnchor(auctionData);
+    if (anchor > 0) {
+      const sampleWeight = Math.min(0.75, 0.45 + similarAuctions.length * 0.02);
+      adjustedPrice = (adjustedPrice * sampleWeight) + (anchor * (1 - sampleWeight));
+    }
+
+    if (auctionData.currentBid && Number(auctionData.currentBid) > 0) {
+      adjustedPrice = Math.max(adjustedPrice, Number(auctionData.currentBid));
+    }
 
     // Task 2.1.6: Calculate confidence score
     let confidenceScore = this.calculateConfidenceScore(
@@ -304,7 +317,7 @@ export class PredictionService {
                                   geoAdjustment.demandMultiplier).toFixed(2)),
         competitionLevel: marketConditions.competitionLevel,
         seasonalFactor: marketConditions.seasonalMultiplier,
-        notes: this.generatePredictionNotes(auctionData, similarAuctions),
+        notes: this.generatePredictionNotes(auctionData, similarAuctions, anchor),
       },
       algorithmVersion: this.ALGORITHM_VERSION,
       createdAt: new Date(),
@@ -323,7 +336,7 @@ export class PredictionService {
     const assetDetails = auctionData.assetDetails || {};
     const targetMake = assetDetails.make;
     const targetModel = assetDetails.model;
-    const targetYear = assetDetails.year ? parseInt(assetDetails.year) : null;
+    const targetYear = Number.isFinite(Number(assetDetails.year)) ? parseInt(String(assetDetails.year), 10) : null;
     const targetDamage = auctionData.damageSeverity;
     const targetMarketValue = auctionData.marketValue || 0;
     const targetColor = assetDetails.color; // Task 2.2.1
@@ -343,6 +356,8 @@ export class PredictionService {
           sc.asset_details,
           sc.damage_severity,
           sc.market_value,
+          sc.estimated_salvage_value,
+          sc.reserve_price,
           a.end_time,
           COUNT(b.id) AS bid_count,
           ${this.buildSimilarityScoreSQL(assetType, targetMake, targetModel, targetYear, targetDamage, targetMarketValue, targetColor, targetTrim)} AS similarity_score,
@@ -367,15 +382,17 @@ export class PredictionService {
     const results: any = await db.execute(query);
 
     return (results as any[]).map(row => ({
-      auctionId: row.auction_id,
-      finalPrice: parseFloat(row.final_price),
-      similarityScore: parseFloat(row.similarity_score),
-      timeWeight: parseFloat(row.time_weight),
-      bidCount: parseInt(row.bid_count),
-      damageSeverity: row.damage_severity,
-      marketValue: parseFloat(row.market_value),
-      endTime: new Date(row.end_time),
-    }));
+        auctionId: row.auction_id,
+        finalPrice: parseFloat(row.final_price),
+        similarityScore: parseFloat(row.similarity_score),
+        timeWeight: parseFloat(row.time_weight),
+        bidCount: parseInt(row.bid_count),
+        damageSeverity: row.damage_severity,
+        marketValue: parseFloat(row.market_value),
+        estimatedSalvageValue: parseFloat(row.estimated_salvage_value || '0'),
+        reservePrice: parseFloat(row.reserve_price || '0'),
+        endTime: new Date(row.end_time),
+      }));
   }
 
   /**
@@ -407,9 +424,9 @@ export class PredictionService {
             ELSE 0
           END +
           CASE 
-            WHEN (sc.asset_details->>'year')::int = ${targetYear || 0} THEN 20
-            WHEN ABS((sc.asset_details->>'year')::int - ${targetYear || 0}) = 1 THEN 15
-            WHEN ABS((sc.asset_details->>'year')::int - ${targetYear || 0}) = 2 THEN 10
+            WHEN ${targetYear ? sql`(sc.asset_details->>'year') ~ '^[0-9]{4}$' AND (sc.asset_details->>'year')::int = ${targetYear}` : sql`FALSE`} THEN 20
+            WHEN ${targetYear ? sql`(sc.asset_details->>'year') ~ '^[0-9]{4}$' AND ABS((sc.asset_details->>'year')::int - ${targetYear}) = 1` : sql`FALSE`} THEN 15
+            WHEN ${targetYear ? sql`(sc.asset_details->>'year') ~ '^[0-9]{4}$' AND ABS((sc.asset_details->>'year')::int - ${targetYear}) = 2` : sql`FALSE`} THEN 10
             ELSE 0
           END +
           CASE 
@@ -540,6 +557,53 @@ export class PredictionService {
     }
 
     return totalWeight > 0 ? totalWeightedPrice / totalWeight : 0;
+  }
+
+  private calculateCaseValueAnchor(auctionData: any): number {
+    const salvageValue = Number(auctionData.estimatedSalvageValue || 0);
+    const reservePrice = Number(auctionData.reservePrice || 0);
+    const marketValue = Number(auctionData.marketValue || 0);
+    const damageSeverity = auctionData.damageSeverity;
+
+    if (salvageValue > 0 && reservePrice > 0) {
+      return (salvageValue * 0.65) + (reservePrice * 0.35);
+    }
+
+    if (salvageValue > 0) {
+      return salvageValue;
+    }
+
+    if (reservePrice > 0) {
+      return reservePrice * 1.12;
+    }
+
+    if (marketValue > 0) {
+      return marketValue * (1 - this.getDamageMultiplier(damageSeverity));
+    }
+
+    return 0;
+  }
+
+  private extractRegionFromLocation(locationName?: string | null): string | undefined {
+    if (!locationName) return undefined;
+
+    const normalized = locationName.toLowerCase();
+    const knownRegions = [
+      'lagos',
+      'abuja',
+      'fct',
+      'port harcourt',
+      'rivers',
+      'ibadan',
+      'oyo',
+      'kano',
+      'kaduna',
+      'enugu',
+      'benin',
+      'edo',
+    ];
+
+    return knownRegions.find((region) => normalized.includes(region));
   }
 
   /**
@@ -822,6 +886,16 @@ export class PredictionService {
 
     // Task 2.3.4: Edge case handling
     const warnings: string[] = [];
+
+    if (auctionData.currentBid && Number(auctionData.currentBid) > 0) {
+      const currentBid = Number(auctionData.currentBid);
+      if (currentBid > predictedPrice) {
+        predictedPrice = currentBid;
+        lowerBound = currentBid;
+        upperBound = Math.max(upperBound, currentBid * 1.2);
+        warnings.push('Current bid is above model estimate - prediction anchored to live bidding');
+      }
+    }
     
     // Handle high reserve price
     if (reservePrice && reservePrice > predictedPrice) {
@@ -878,7 +952,7 @@ export class PredictionService {
   /**
    * Generate prediction notes
    */
-  private generatePredictionNotes(auctionData: any, similarAuctions: SimilarAuction[]): string[] {
+  private generatePredictionNotes(auctionData: any, similarAuctions: SimilarAuction[], anchorValue?: number): string[] {
     const notes: string[] = [];
 
     if (similarAuctions.length < 5) {
@@ -891,6 +965,10 @@ export class PredictionService {
 
     if (auctionData.watchingCount > 10) {
       notes.push('High interest - above average watching count');
+    }
+
+    if (anchorValue && anchorValue > 0) {
+      notes.push('Prediction blended with this case valuation and reserve signals');
     }
 
     return notes;

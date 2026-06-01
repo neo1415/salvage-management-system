@@ -293,10 +293,10 @@ export class DamageCalculationService {
       ? partsWithRealPrices.reduce((sum, part) => sum + (part.confidence || 0), 0) / partsWithRealPrices.length
       : 0;
 
-    console.log(`\n💰 REAL Part Prices (NO multipliers applied):`);
+    console.log(`\n💰 Real part-price repair estimate:`);
     console.log(`   Total cost: ₦${totalRealPartsCost.toLocaleString()}`);
     console.log(`   Deduction: ${(realPartsDeductionPercent * 100).toFixed(1)}%`);
-    console.log(`   Confidence: ${(averagePartConfidence * 100).toFixed(1)}%`);
+    console.log(`   Confidence: ${averagePartConfidence.toFixed(1)}%`);
 
     // ========================================
     // PART 2: Calculate deduction for parts WITHOUT prices (WITH MULTIPLIERS)

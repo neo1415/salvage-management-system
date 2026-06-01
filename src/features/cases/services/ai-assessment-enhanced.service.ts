@@ -494,7 +494,7 @@ export async function assessDamageEnhanced(params: {
       const isActuallyTotalLoss = geminiTotalLoss === true || salvageCalc.isTotalLoss;
       
       if (geminiTotalLoss === true && !salvageCalc.isTotalLoss) {
-        console.log(`🚨 GEMINI OVERRIDE: Gemini detected total loss but damage calculation did not. Forcing total loss.`);
+        console.log(`🚨 AI TOTAL-LOSS OVERRIDE: ${damageAnalysis.method} detected total loss but damage calculation did not. Forcing total loss.`);
       }
       
       // TOTAL LOSS OVERRIDE: Cap salvage value at 30% of condition-adjusted market value for total loss items
@@ -503,7 +503,7 @@ export async function assessDamageEnhanced(params: {
         const originalSalvage = salvageValue;
         salvageValue = Math.round(conditionAdjustedMarketValue * totalLossSalvageCapRatio);
         console.log(`🚨 Total loss override applied: Salvage value capped from ₦${originalSalvage.toLocaleString()} to ₦${salvageValue.toLocaleString()} (${Math.round(totalLossSalvageCapRatio * 100)}% of condition-adjusted market value ₦${conditionAdjustedMarketValue.toLocaleString()})`);
-        console.log(`   Source: ${geminiTotalLoss === true ? 'Gemini AI' : 'Damage Calculation'}`);
+        console.log(`   Source: ${geminiTotalLoss === true ? `${damageAnalysis.method} AI` : 'Damage Calculation'}`);
       }
       
       // Update isTotalLoss to reflect Gemini's determination
