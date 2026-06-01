@@ -359,9 +359,7 @@ function NewCasePageContent() {
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [isCapturingGPS, setIsCapturingGPS] = useState(false);
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
-  const [coordinateSource, setCoordinateSource] = useState<'gps' | 'address' | 'manual_pin' | null>(null);
-  const [manualLatitude, setManualLatitude] = useState('');
-  const [manualLongitude, setManualLongitude] = useState('');
+  const [coordinateSource, setCoordinateSource] = useState<'gps' | 'address' | null>(null);
   const skipAddressGeocodeRef = useRef(false);
   const addressGeocodeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const locationName = watch('locationName');
@@ -687,8 +685,6 @@ function NewCasePageContent() {
             latitude: json.data.latitude,
             longitude: json.data.longitude,
           });
-          setManualLatitude(String(json.data.latitude));
-          setManualLongitude(String(json.data.longitude));
           setGpsAccuracy(null);
           setCoordinateSource('address');
           setGpsError(null);
@@ -738,8 +734,6 @@ function NewCasePageContent() {
       };
 
       setGpsLocation(location);
-      setManualLatitude(String(result.latitude));
-      setManualLongitude(String(result.longitude));
       setGpsAccuracy(result.accuracy);
       setCoordinateSource('gps');
       skipAddressGeocodeRef.current = true;
@@ -771,24 +765,6 @@ function NewCasePageContent() {
     } finally {
       setIsCapturingGPS(false);
     }
-  };
-
-  const applyManualCoordinates = (latitudeText: string, longitudeText: string) => {
-    const latitude = Number(latitudeText);
-    const longitude = Number(longitudeText);
-
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-      setGpsError('Manual coordinates are outside the valid latitude/longitude range.');
-      return;
-    }
-
-    setGpsLocation({ latitude, longitude });
-    setManualLatitude(latitudeText);
-    setManualLongitude(longitudeText);
-    setGpsAccuracy(null);
-    setCoordinateSource('manual_pin');
-    setGpsError(null);
   };
 
   /**
@@ -969,6 +945,10 @@ function NewCasePageContent() {
       let itemInfo: any = {
         assetType: assetType,
       };
+      const providedMarketValue = watch('marketValue');
+      if (providedMarketValue && providedMarketValue > 0) {
+        itemInfo.marketValue = providedMarketValue;
+      }
 
       switch (assetType) {
         case 'vehicle':
@@ -1043,6 +1023,7 @@ function NewCasePageContent() {
             ...itemInfo,
             propertyType: watch('propertyType'),
             address: watch('propertyAddress'),
+            location: watch('propertyAddress') || watch('locationName'),
           };
           break;
       }
@@ -1083,7 +1064,7 @@ function NewCasePageContent() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'AI assessment failed');
+        throw new Error(error.details || error.message || error.error || 'AI assessment failed');
       }
 
       const result = await response.json();
@@ -1107,6 +1088,7 @@ function NewCasePageContent() {
           damageScore: result.data.damageScore,
           analysisMethod: result.data.analysisMethod,
           qualityTier: result.data.qualityTier,
+          priceSource: result.data.priceSource,
           // CRITICAL: Store detailed Gemini analysis results
           itemDetails: result.data.itemDetails,
           damagedParts: result.data.damagedParts,
@@ -1119,8 +1101,12 @@ function NewCasePageContent() {
         console.log('🎯 COMPLETE AI assessment stored:', assessment);
         setAiAssessment(assessment);
         
-        // Auto-fill market value with the REAL market value from enhanced service
-        setValue('marketValue', result.data.marketValue || result.data.estimatedSalvageValue);
+        // Preserve a manually-entered claims paid/asset value. If left empty,
+        // fill it from the valuation search/AI result.
+        const existingMarketValue = watch('marketValue');
+        if (!existingMarketValue || existingMarketValue <= 0) {
+          setValue('marketValue', result.data.marketValue || result.data.estimatedSalvageValue);
+        }
         
         // Show completion with confidence and data source
         setComplete(
@@ -1527,7 +1513,7 @@ function NewCasePageContent() {
     try {
       // Market value is required for submission but not for draft saves
       if (isDraft === false && (!data.marketValue || data.marketValue <= 0)) {
-        toast.error('Market value required', 'Please complete AI analysis to determine market value before submitting.');
+        toast.error('Claims paid value required', 'Enter the claim/asset value or run AI analysis to estimate it before submitting.');
         setIsSubmittingForApproval(false);
         return;
       }
@@ -1621,7 +1607,7 @@ function NewCasePageContent() {
         locationAccuracyMeters: gpsAccuracy,
         locationSource: coordinateSource,
         locationCapturedAt: gpsLocation ? new Date().toISOString() : undefined,
-        locationManualOverride: coordinateSource === 'address' || coordinateSource === 'manual_pin',
+        locationManualOverride: coordinateSource === 'address',
         // Convert unified voice content to voiceNotes array for backend.
         voiceNotes: finalVoiceContent ? [finalVoiceContent] : [],
         status: isDraft ? 'draft' as const : 'pending_approval' as const,
@@ -2458,10 +2444,10 @@ function NewCasePageContent() {
           </div>
         )}
 
-        {/* Market Value - AI Estimated */}
+        {/* Claims Paid / Market Value */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Market Value (₦)
+            Claims Paid / Asset Value (NGN)
           </label>
           <div className="relative">
             <input
@@ -2469,31 +2455,20 @@ function NewCasePageContent() {
               {...register('marketValue', { 
                 setValueAs: (v) => v === '' || v === null ? undefined : parseFloat(v)
               })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent bg-gray-50"
-              placeholder="AI will estimate from photos"
-              readOnly={!aiAssessment}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent bg-white"
+              placeholder="Enter claims paid amount or leave blank for AI estimate"
             />
-            {aiAssessment && (
-              <button
-                type="button"
-                onClick={() => {
-                  const newValue = prompt('Enter market value:', watch('marketValue')?.toString());
-                  if (newValue) setValue('marketValue', parseFloat(newValue));
-                }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-primary)] hover:underline"
-              >
-                Edit
-              </button>
-            )}
           </div>
           {aiAssessment && (
             <p className="mt-1 text-xs text-green-600">
-              ✓ AI estimated from photos
+              {aiAssessment.priceSource === 'user_provided'
+                ? 'Used the claims paid value you entered.'
+                : 'Estimated from market evidence. You can still edit it if claims paid differs.'}
             </p>
           )}
           {!aiAssessment && (
             <p className="mt-1 text-xs text-gray-500">
-              Upload photos first - AI will estimate the market value
+              If this is known, enter the claims paid or asset value. If not, AI will estimate market value from the item details and photos.
             </p>
           )}
           {errors.marketValue && (
@@ -2884,7 +2859,7 @@ function NewCasePageContent() {
           )}
           {gpsLocation && (
             <p className="mt-1 text-sm text-green-600">
-              ✓ Coordinates: {gpsLocation.latitude.toFixed(6)}, {gpsLocation.longitude.toFixed(6)}
+              Location captured
               {gpsAccuracy !== null && (
                 <span className="text-gray-600 ml-2">(accuracy: {Math.round(gpsAccuracy).toLocaleString()}m)</span>
               )}
@@ -2895,43 +2870,6 @@ function NewCasePageContent() {
                 <span className="text-gray-600 ml-2">(from address lookup)</span>
               )}
             </p>
-          )}
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              type="number"
-              step="0.000001"
-              min="-90"
-              max="90"
-              value={manualLatitude}
-              onChange={(event) => {
-                setManualLatitude(event.target.value);
-                if (event.target.value && manualLongitude) {
-                  applyManualCoordinates(event.target.value, manualLongitude);
-                }
-              }}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
-              placeholder="Manual latitude"
-              aria-label="Manual latitude"
-            />
-            <input
-              type="number"
-              step="0.000001"
-              min="-180"
-              max="180"
-              value={manualLongitude}
-              onChange={(event) => {
-                setManualLongitude(event.target.value);
-                if (manualLatitude && event.target.value) {
-                  applyManualCoordinates(manualLatitude, event.target.value);
-                }
-              }}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
-              placeholder="Manual longitude"
-              aria-label="Manual longitude"
-            />
-          </div>
-          {coordinateSource === 'manual_pin' && (
-            <p className="mt-1 text-sm text-green-600">Manual pin correction applied.</p>
           )}
           {gpsError && (
             <p className="mt-1 text-sm text-red-600">{gpsError}</p>

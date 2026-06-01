@@ -1,8 +1,8 @@
 /**
  * AI Analysis Validator
  * 
- * Validates that cases have completed AI analysis before submission.
- * Enforces business rule: AI analysis is mandatory for case submission.
+ * Validates that cases have either AI analysis or enough manual valuation data
+ * before submission.
  */
 
 export interface AIAnalysisValidation {
@@ -21,18 +21,18 @@ export class AIAnalysisValidator {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Check for AI analysis completion
-    const hasAnalysis = Boolean(caseData.hasAIAnalysis || caseData.aiAnalysisComplete);
-    if (!hasAnalysis) {
-      errors.push('AI analysis must be completed before submission');
-      errors.push('Click "Analyze with AI" to get market value assessment');
-    }
-
-    // Check for market value
+    // Check for market value. This may be manually entered claims paid value
+    // or AI/market-search estimated value.
     const marketValue = caseData.marketValue as number | undefined;
     const hasMarketValue = Boolean(marketValue && marketValue > 0);
     if (!hasMarketValue) {
-      errors.push('Market value must be determined by AI analysis');
+      errors.push('Claims paid / asset value is required. Enter it manually or run AI analysis to estimate it.');
+    }
+
+    // Check for AI analysis completion
+    const hasAnalysis = Boolean(caseData.hasAIAnalysis || caseData.aiAnalysisComplete);
+    if (!hasAnalysis) {
+      warnings.push('AI analysis has not completed; the backend will use manual valuation fallback if submitted.');
     }
 
     // Warnings for incomplete data

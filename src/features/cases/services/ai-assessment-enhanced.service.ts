@@ -119,6 +119,7 @@ export interface UniversalItemInfo {
   age?: number; // Years since manufacture
   brandPrestige?: 'luxury' | 'premium' | 'standard' | 'budget';
   description?: string;
+  marketValue?: number; // Claims paid / user-provided asset value
 }
 
 // Backward compatibility alias
@@ -404,7 +405,7 @@ export async function assessDamageEnhanced(params: {
     // Apply universal adjustments for pristine items (works for all item types)
     if (itemInfo) {
       // Skip condition adjustment only for internet search (already condition-specific)
-      const skipConditionAdjustment = priceSource === 'internet_search';
+      const skipConditionAdjustment = priceSource === 'internet_search' || priceSource === 'user_provided';
       const universalAdjustment = getUniversalAdjustment(itemInfo, skipConditionAdjustment);
       pristineValue = marketValue * universalAdjustment;
       
@@ -446,7 +447,7 @@ export async function assessDamageEnhanced(params: {
       // 3. Foreign Used items retain more value than Nigerian Used
       let conditionAdjustedMarketValue = marketValue;
       
-      if (itemInfo && priceSource !== 'internet_search') {
+      if (itemInfo && priceSource !== 'internet_search' && priceSource !== 'user_provided') {
         // Only apply condition adjustment if NOT from internet search (which already includes condition)
         const conditionAdjustment = getConditionAdjustment(itemInfo.condition);
         conditionAdjustedMarketValue = marketValue * conditionAdjustment;
@@ -1979,6 +1980,24 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
       confidence: 30,
       source: 'estimated',
       evidence: { reason: 'missing_item_info' },
+    };
+  }
+
+  if (itemInfo.marketValue && itemInfo.marketValue > 0) {
+    console.log('Using user-provided claims paid / asset value:', itemInfo.marketValue);
+    return {
+      value: Math.round(itemInfo.marketValue),
+      confidence: 95,
+      source: 'user_provided',
+      uniqueSourceCount: 1,
+      priceSpreadPercent: 0,
+      evidence: {
+        provider: 'adjuster_input',
+        source: 'user_provided',
+        value: Math.round(itemInfo.marketValue),
+        confidence: 95,
+        skippedMarketSearch: true,
+      },
     };
   }
 

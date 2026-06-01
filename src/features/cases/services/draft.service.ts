@@ -119,12 +119,8 @@ class DraftServiceClass {
   canSubmit(draft: DraftCase): DraftValidation {
     const errors: string[] = [];
 
-    if (!draft.hasAIAnalysis) {
-      errors.push('AI analysis is required before submission');
-    }
-
     if (!draft.marketValue || draft.marketValue <= 0) {
-      errors.push('Market value must be determined by AI analysis');
+      errors.push('Claims paid / asset value is required. Enter it manually or run AI analysis to estimate it.');
     }
 
     // Check required fields in formData

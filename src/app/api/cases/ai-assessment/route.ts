@@ -112,6 +112,12 @@ function getWatchBrandPrestige(brand?: string): 'luxury' | 'premium' | 'standard
   return 'standard';
 }
 
+function parseOptionalPositiveNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Get user session for rate limiting
@@ -164,6 +170,7 @@ export async function POST(request: NextRequest) {
 
     // Build universal item info object from request (support both vehicleInfo and itemInfo formats)
     const universalItemData: UniversalItemInfo | undefined = (() => {
+      const providedMarketValue = parseOptionalPositiveNumber(vehicleInfo?.marketValue ?? itemInfo?.marketValue);
       // Try vehicleInfo first (legacy format)
       if (vehicleInfo) {
         return {
@@ -172,6 +179,7 @@ export async function POST(request: NextRequest) {
           model: vehicleInfo.model,
           year: vehicleInfo.year,
           mileage: vehicleInfo.mileage,
+          marketValue: providedMarketValue,
           condition: vehicleInfo.condition || 'Nigerian Used',
           age: vehicleInfo.year ? new Date().getFullYear() - vehicleInfo.year : undefined,
           brandPrestige: getLuxuryBrandPrestige(vehicleInfo.make),
@@ -184,6 +192,7 @@ export async function POST(request: NextRequest) {
           type: itemInfo.assetType || 'other',
           condition: itemInfo.condition || 'Nigerian Used',
           description: itemInfo.description,
+          marketValue: providedMarketValue,
         };
 
         // Add type-specific fields
@@ -195,6 +204,7 @@ export async function POST(request: NextRequest) {
               model: itemInfo.model,
               year: itemInfo.year,
               mileage: itemInfo.mileage,
+              marketValue: providedMarketValue,
               age: itemInfo.year ? new Date().getFullYear() - itemInfo.year : undefined,
               brandPrestige: getLuxuryBrandPrestige(itemInfo.make),
             };
@@ -214,7 +224,7 @@ export async function POST(request: NextRequest) {
             return {
               ...baseItem,
               propertyType: itemInfo.propertyType || itemInfo.type || 'property',
-              location: itemInfo.location,
+              location: itemInfo.location || itemInfo.address,
               bedrooms: itemInfo.bedrooms,
               age: itemInfo.age,
             };
@@ -271,6 +281,7 @@ export async function POST(request: NextRequest) {
       model: universalItemData.model,
       year: universalItemData.year,
       mileage: universalItemData.mileage,
+      marketValue: universalItemData.marketValue,
       condition: universalItemData.condition,
       age: universalItemData.age,
       brandPrestige: universalItemData.brandPrestige,
@@ -338,7 +349,7 @@ export async function POST(request: NextRequest) {
         reviewReasons: assessment.reviewReasons,
         valuationEvidence: assessment.valuationEvidence,
         // Add metadata for progress indicators
-        dataSource: 'internet', // Default to internet search
+        dataSource: assessment.priceSource || 'valuation',
         searchQuery: universalItemData ? 
           `${universalItemData.brand || universalItemData.make || ''} ${universalItemData.model || ''} ${universalItemData.year || ''} ${universalItemData.condition || 'used'} price Nigeria`.trim() :
           'market price search',
