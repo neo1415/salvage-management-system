@@ -89,16 +89,8 @@ async function getBrowserGeolocation(options: AccurateGeolocationOptions = {}): 
       const timer = window.setTimeout(() => {
         clearWatch();
 
-        if (bestPosition && bestPosition.coords.accuracy <= acceptableAccuracyMeters) {
-          resolve(bestPosition);
-          return;
-        }
-
         if (bestPosition) {
-          reject({
-            code: 3,
-            message: `Best GPS accuracy was ${Math.round(bestPosition.coords.accuracy)}m. Please move outdoors, enable precise location, or confirm the address manually.`,
-          });
+          resolve(bestPosition);
           return;
         }
 
@@ -131,6 +123,12 @@ async function getBrowserGeolocation(options: AccurateGeolocationOptions = {}): 
     });
 
     console.log('📍 GPS Accuracy:', position.coords.accuracy + 'm');
+    if (position.coords.accuracy > acceptableAccuracyMeters) {
+      console.warn(
+        `GPS accuracy (${Math.round(position.coords.accuracy)}m) is above preferred threshold ` +
+        `(${acceptableAccuracyMeters}m), but the best available fix will be used with a UI warning.`
+      );
+    }
 
     // Get location name using reverse geocoding (if online)
     let locationName: string | undefined;

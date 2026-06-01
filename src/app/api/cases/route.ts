@@ -16,6 +16,7 @@ import {
   logPolicyDecision,
   resolveCaseAssetTypeAllowed,
 } from '@/features/business-policy';
+import { geocodeAddress } from '@/lib/integrations/google-geocoding';
 
 /**
  * POST /api/cases
@@ -90,16 +91,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!body.gpsLocation) {
+    if (!body.locationName) {
       return NextResponse.json(
-        { success: false, error: 'GPS location is required' },
+        { success: false, error: 'Location name is required' },
         { status: 400 }
       );
     }
 
-    if (!body.locationName) {
+    if (!body.gpsLocation && typeof body.locationName === 'string' && body.locationName.trim().length >= 3) {
+      try {
+        const geocoded = await geocodeAddress(body.locationName);
+        if (geocoded) {
+          body.gpsLocation = {
+            latitude: geocoded.latitude,
+            longitude: geocoded.longitude,
+          };
+          body.locationName = geocoded.formattedAddress || body.locationName;
+          body.locationSource = body.locationSource || 'address';
+          body.locationManualOverride = true;
+          body.locationCapturedAt = body.locationCapturedAt || new Date().toISOString();
+        }
+      } catch (geocodeError) {
+        console.warn('Case location geocode fallback failed:', geocodeError);
+      }
+    }
+
+    if (!body.gpsLocation) {
       return NextResponse.json(
-        { success: false, error: 'Location name is required' },
+        {
+          success: false,
+          error: 'Location could not be verified',
+          message: 'Enter a more specific pickup or inspection address, or use device GPS before submitting.',
+        },
         { status: 400 }
       );
     }

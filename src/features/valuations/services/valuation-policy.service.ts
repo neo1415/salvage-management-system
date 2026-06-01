@@ -4,20 +4,63 @@ import type { AiValuationPolicy } from '@/features/business-policy/types';
 
 export type ValuationPolicyConfig = AiValuationPolicy;
 
+function mergeValuationPolicy(value: Partial<AiValuationPolicy> | null | undefined): ValuationPolicyConfig {
+  const fallback = DEFAULT_BUSINESS_POLICY.aiValuation;
+  const policy = value || {};
+
+  return {
+    ...fallback,
+    ...policy,
+    providerPriority: Array.isArray(policy.providerPriority) && policy.providerPriority.length > 0
+      ? policy.providerPriority
+      : fallback.providerPriority,
+    exchangeRates: {
+      ...fallback.exchangeRates,
+      ...(policy.exchangeRates || {}),
+    },
+    repairCostMultipliers: {
+      ...fallback.repairCostMultipliers,
+      ...(policy.repairCostMultipliers || {}),
+    },
+    pricePlausibility: {
+      marketMinimums: {
+        ...fallback.pricePlausibility.marketMinimums,
+        ...(policy.pricePlausibility?.marketMinimums || {}),
+      },
+      partMinimums: {
+        ...fallback.pricePlausibility.partMinimums,
+        ...(policy.pricePlausibility?.partMinimums || {}),
+      },
+      partMaximums: {
+        ...fallback.pricePlausibility.partMaximums,
+        ...(policy.pricePlausibility?.partMaximums || {}),
+      },
+    },
+    photoRequirements: {
+      ...fallback.photoRequirements,
+      ...(policy.photoRequirements || {}),
+      general_asset: {
+        ...fallback.photoRequirements.general_asset,
+        ...(policy.photoRequirements?.general_asset || {}),
+      },
+    },
+  };
+}
+
 export async function getValuationPolicyConfig(): Promise<ValuationPolicyConfig> {
   try {
     const policy = await businessPolicyService.getEffectivePolicy();
-    return policy.aiValuation;
+    return mergeValuationPolicy(policy.aiValuation);
   } catch (error) {
     console.warn('[ValuationPolicy] Falling back to default valuation policy', {
       error: error instanceof Error ? error.message : 'Unknown error',
     });
-    return DEFAULT_BUSINESS_POLICY.aiValuation;
+    return mergeValuationPolicy(DEFAULT_BUSINESS_POLICY.aiValuation);
   }
 }
 
 export function getDefaultValuationPolicyConfig(): ValuationPolicyConfig {
-  return DEFAULT_BUSINESS_POLICY.aiValuation;
+  return mergeValuationPolicy(DEFAULT_BUSINESS_POLICY.aiValuation);
 }
 
 export function shouldRequireManualReview(input: {
