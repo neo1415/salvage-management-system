@@ -68,6 +68,91 @@ function numberValue(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+function boundedNumberValue(value: unknown, fallback: number, min: number, max: number): number {
+  const numeric = numberValue(value, fallback);
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function exchangeRatesValue(
+  value: unknown,
+  fallback: BusinessPolicy['aiValuation']['exchangeRates']
+): BusinessPolicy['aiValuation']['exchangeRates'] {
+  const rates = asRecord(value);
+  return {
+    USD: boundedNumberValue(rates.USD, fallback.USD, 100, 10000),
+    GBP: boundedNumberValue(rates.GBP, fallback.GBP, 100, 15000),
+    EUR: boundedNumberValue(rates.EUR, fallback.EUR, 100, 15000),
+  };
+}
+
+function repairCostMultipliersValue(
+  value: unknown,
+  fallback: BusinessPolicy['aiValuation']['repairCostMultipliers']
+): BusinessPolicy['aiValuation']['repairCostMultipliers'] {
+  const multipliers = asRecord(value);
+  return {
+    laborPercent: boundedNumberValue(multipliers.laborPercent, fallback.laborPercent, 0, 100),
+    paintAndMaterialsPercent: boundedNumberValue(multipliers.paintAndMaterialsPercent, fallback.paintAndMaterialsPercent, 0, 100),
+    logisticsPercent: boundedNumberValue(multipliers.logisticsPercent, fallback.logisticsPercent, 0, 100),
+    severeDamageMultiplier: boundedNumberValue(multipliers.severeDamageMultiplier, fallback.severeDamageMultiplier, 1, 3),
+    moderateDamageMultiplier: boundedNumberValue(multipliers.moderateDamageMultiplier, fallback.moderateDamageMultiplier, 1, 2),
+  };
+}
+
+function numericRecordValue(
+  value: unknown,
+  fallback: Record<string, number>,
+  min: number,
+  max: number
+): Record<string, number> {
+  const input = asRecord(value);
+  const result: Record<string, number> = {};
+  const keys = new Set([...Object.keys(fallback), ...Object.keys(input)]);
+
+  for (const key of keys) {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) continue;
+    result[normalizedKey] = boundedNumberValue(input[key], fallback[key] ?? fallback.general_asset ?? min, min, max);
+  }
+
+  return Object.keys(result).length > 0 ? result : fallback;
+}
+
+function pricePlausibilityValue(
+  value: unknown,
+  fallback: BusinessPolicy['aiValuation']['pricePlausibility']
+): BusinessPolicy['aiValuation']['pricePlausibility'] {
+  const input = asRecord(value);
+  return {
+    marketMinimums: numericRecordValue(input.marketMinimums, fallback.marketMinimums, 0, 1_000_000_000),
+    partMinimums: numericRecordValue(input.partMinimums, fallback.partMinimums, 0, 1_000_000_000),
+    partMaximums: numericRecordValue(input.partMaximums, fallback.partMaximums, 1_000, 1_000_000_000),
+  };
+}
+
+function photoRequirementsValue(
+  value: unknown,
+  fallback: BusinessPolicy['aiValuation']['photoRequirements']
+): BusinessPolicy['aiValuation']['photoRequirements'] {
+  const input = asRecord(value);
+  const result: BusinessPolicy['aiValuation']['photoRequirements'] = {};
+  const keys = new Set([...Object.keys(fallback), ...Object.keys(input)]);
+
+  for (const key of keys) {
+    const normalizedKey = sanitizeAssetTypeKey(key);
+    if (!normalizedKey) continue;
+    const entry = asRecord(input[key]);
+    const fallbackEntry = fallback[normalizedKey] || fallback.general_asset;
+    result[normalizedKey] = {
+      minimumPhotos: Math.round(boundedNumberValue(entry.minimumPhotos, fallbackEntry.minimumPhotos, 1, 20)),
+      recommendedPhotos: Math.round(boundedNumberValue(entry.recommendedPhotos, fallbackEntry.recommendedPhotos, 1, 30)),
+      requiredAngles: stringArrayValue(entry.requiredAngles, fallbackEntry.requiredAngles),
+    };
+  }
+
+  return Object.keys(result).length > 0 ? result : fallback;
+}
+
 function stringArrayValue(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) return fallback;
   return value.filter((item): item is string => typeof item === 'string');
@@ -298,6 +383,18 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       repairVsReplaceEnabled: booleanValue(aiValuation.repairVsReplaceEnabled, fallback.aiValuation.repairVsReplaceEnabled),
       showDamageCostBreakdownToVendors: booleanValue(aiValuation.showDamageCostBreakdownToVendors, fallback.aiValuation.showDamageCostBreakdownToVendors),
       lowConfidenceRequiresManualReview: booleanValue(aiValuation.lowConfidenceRequiresManualReview, fallback.aiValuation.lowConfidenceRequiresManualReview),
+      minimumOverallConfidence: boundedNumberValue(aiValuation.minimumOverallConfidence, fallback.aiValuation.minimumOverallConfidence, 0, 100),
+      minimumMarketConfidence: boundedNumberValue(aiValuation.minimumMarketConfidence, fallback.aiValuation.minimumMarketConfidence, 0, 100),
+      minimumDamageConfidence: boundedNumberValue(aiValuation.minimumDamageConfidence, fallback.aiValuation.minimumDamageConfidence, 0, 100),
+      minimumMarketSourceCount: Math.round(boundedNumberValue(aiValuation.minimumMarketSourceCount, fallback.aiValuation.minimumMarketSourceCount, 1, 20)),
+      sourceDiversityRequired: booleanValue(aiValuation.sourceDiversityRequired, fallback.aiValuation.sourceDiversityRequired),
+      maxAllowedPriceSpreadPercent: boundedNumberValue(aiValuation.maxAllowedPriceSpreadPercent, fallback.aiValuation.maxAllowedPriceSpreadPercent, 0, 300),
+      reservePriceRatio: boundedNumberValue(aiValuation.reservePriceRatio, fallback.aiValuation.reservePriceRatio, 0.05, 0.95),
+      totalLossSalvageCapRatio: boundedNumberValue(aiValuation.totalLossSalvageCapRatio, fallback.aiValuation.totalLossSalvageCapRatio, 0.05, 0.95),
+      exchangeRates: exchangeRatesValue(aiValuation.exchangeRates, fallback.aiValuation.exchangeRates),
+      repairCostMultipliers: repairCostMultipliersValue(aiValuation.repairCostMultipliers, fallback.aiValuation.repairCostMultipliers),
+      pricePlausibility: pricePlausibilityValue(aiValuation.pricePlausibility, fallback.aiValuation.pricePlausibility),
+      photoRequirements: photoRequirementsValue(aiValuation.photoRequirements, fallback.aiValuation.photoRequirements),
     },
     notifications: {
       emailEnabled: booleanValue(notifications.emailEnabled, fallback.notifications.emailEnabled),

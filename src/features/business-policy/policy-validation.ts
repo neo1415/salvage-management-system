@@ -269,6 +269,18 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     issues.push(issue('aiValuation.providerPriority', 'At least one AI provider is required when AI valuation is enabled.'));
   }
 
+  if (policy.aiValuation.minimumMarketSourceCount < 2) {
+    issues.push(issue('aiValuation.minimumMarketSourceCount', 'Market valuation should require at least two price sources for production use.', 'warning'));
+  }
+
+  if (policy.aiValuation.minimumOverallConfidence < 60) {
+    issues.push(issue('aiValuation.minimumOverallConfidence', 'Overall AI confidence below 60 may allow weak valuations without review.', 'warning'));
+  }
+
+  if (policy.aiValuation.maxAllowedPriceSpreadPercent > 100) {
+    issues.push(issue('aiValuation.maxAllowedPriceSpreadPercent', 'A very wide price spread can hide poor market comparables.', 'warning'));
+  }
+
   if (!policy.notifications.emailEnabled && !policy.notifications.smsEnabled && !policy.notifications.pushEnabled) {
     issues.push(issue('notifications', 'At least one notification channel must be enabled.'));
   }

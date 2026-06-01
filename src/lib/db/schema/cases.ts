@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, numeric, jsonb, point, pgEnum, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, numeric, jsonb, point, pgEnum, integer, boolean, index } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { assetTypeEnum } from './vendors';
 
@@ -83,9 +83,17 @@ export const salvageCases = pgTable('salvage_cases', {
       warnings?: string[];
       analysisMethod?: 'gemini' | 'vision' | 'neutral' | 'mock' | 'google-vision' | 'claude';
       photoCount?: number;
+      manualReviewRequired?: boolean;
+      reviewReasons?: string[];
+      valuationEvidenceId?: string;
+      valuationEvidence?: Record<string, unknown>;
     }>(),
   gpsLocation: point('gps_location').notNull(),
   locationName: varchar('location_name', { length: 255 }).notNull(),
+  locationAccuracyMeters: numeric('location_accuracy_meters', { precision: 10, scale: 2 }),
+  locationSource: varchar('location_source', { length: 50 }),
+  locationCapturedAt: timestamp('location_captured_at'),
+  locationManualOverride: boolean('location_manual_override').notNull().default(false),
   photos: varchar('photos').array().notNull(),
   voiceNotes: varchar('voice_notes').array(),
   status: caseStatusEnum('status').notNull().default('draft'),
@@ -119,6 +127,30 @@ export const salvageCases = pgTable('salvage_cases', {
     overriddenAt: string;
   }>(),
 });
+
+export const valuationEvidence = pgTable('valuation_evidence', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  caseId: uuid('case_id').references(() => salvageCases.id),
+  assetType: assetTypeEnum('asset_type').notNull(),
+  itemIdentifier: jsonb('item_identifier').notNull().$type<Record<string, unknown>>(),
+  marketEvidence: jsonb('market_evidence').notNull().$type<Record<string, unknown>>(),
+  partEvidence: jsonb('part_evidence').$type<Record<string, unknown>>(),
+  decisionSummary: jsonb('decision_summary').notNull().$type<{
+    marketConfidence: number;
+    damageConfidence: number;
+    overallConfidence: number;
+    uniqueSourceCount: number;
+    priceSpreadPercent: number;
+    manualReviewRequired: boolean;
+    reviewReasons: string[];
+  }>(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  caseIdx: index('idx_valuation_evidence_case').on(table.caseId),
+  assetTypeIdx: index('idx_valuation_evidence_asset_type').on(table.assetType),
+  createdAtIdx: index('idx_valuation_evidence_created_at').on(table.createdAt),
+}));
 
 // Indexes are created via SQL in migrations
 // CREATE INDEX idx_cases_claim_reference ON salvage_cases(claim_reference);

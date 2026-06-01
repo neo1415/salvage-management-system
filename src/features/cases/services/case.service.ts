@@ -6,7 +6,7 @@
  */
 
 import { db } from '@/lib/db/drizzle';
-import { salvageCases } from '@/lib/db/schema/cases';
+import { salvageCases, valuationEvidence } from '@/lib/db/schema/cases';
 import { eq } from 'drizzle-orm';
 import { assessDamageEnhanced, type EnhancedDamageAssessment, type VehicleInfo, type UniversalItemInfo } from './ai-assessment-enhanced.service';
 import { uploadFile, getSalvageCaseFolder, TRANSFORMATION_PRESETS } from '@/lib/storage/cloudinary';
@@ -85,6 +85,10 @@ export interface CreateCaseInput {
   photos: Buffer[]; // Photo buffers to upload
   gpsLocation: GeoPoint;
   locationName: string;
+  locationAccuracyMeters?: number | null;
+  locationSource?: 'gps' | 'address' | 'manual_pin' | 'browser' | string | null;
+  locationCapturedAt?: string | Date | null;
+  locationManualOverride?: boolean;
   voiceNotes?: string[]; // Voice-to-text transcriptions
   createdBy: string; // User ID
   status?: 'draft' | 'pending_approval';
@@ -116,6 +120,9 @@ export interface CreateCaseInput {
     priceSource?: string; // NEW: Price source (database, internet_search, etc.)
     recommendation?: string;
     warnings?: string[];
+    manualReviewRequired?: boolean;
+    reviewReasons?: string[];
+    valuationEvidence?: Record<string, unknown>;
     analysisMethod?: 'claude' | 'gemini' | 'vision' | 'neutral' | 'mock';
     qualityTier?: string;
     // CRITICAL: Detailed Gemini analysis results
@@ -414,6 +421,9 @@ export async function createCase(
         priceSource: input.aiAssessmentResult.priceSource, // NEW: Store price source
         recommendation: input.aiAssessmentResult.recommendation || 'Assess for salvage auction',
         warnings: input.aiAssessmentResult.warnings || [],
+        manualReviewRequired: input.aiAssessmentResult.manualReviewRequired,
+        reviewReasons: input.aiAssessmentResult.reviewReasons,
+        valuationEvidence: input.aiAssessmentResult.valuationEvidence,
         analysisMethod: input.aiAssessmentResult.analysisMethod || 'gemini' as const,
         photoCount: photoUrls.length,
         qualityTier: (input.aiAssessmentResult.qualityTier || 'fair') as any,
@@ -485,6 +495,9 @@ export async function createCase(
         priceSource: aiAssessment.priceSource, // NEW: Store price source
         recommendation: aiAssessment.recommendation,
         warnings: aiAssessment.warnings,
+        manualReviewRequired: aiAssessment.manualReviewRequired,
+        reviewReasons: aiAssessment.reviewReasons,
+        valuationEvidence: aiAssessment.valuationEvidence,
         analysisMethod: aiAssessment.analysisMethod,
         photoCount: aiAssessment.photoCount,
         // CRITICAL: Store detailed Gemini analysis results
@@ -493,6 +506,10 @@ export async function createCase(
       } : null,
       gpsLocation: [input.gpsLocation.latitude, input.gpsLocation.longitude] as [number, number],
       locationName: input.locationName,
+      locationAccuracyMeters: input.locationAccuracyMeters != null ? String(input.locationAccuracyMeters) : null,
+      locationSource: input.locationSource || null,
+      locationCapturedAt: input.locationCapturedAt ? new Date(input.locationCapturedAt) : null,
+      locationManualOverride: input.locationManualOverride || false,
       photos: photoUrls,
       voiceNotes: input.voiceNotes || [],
       status,
@@ -512,6 +529,32 @@ export async function createCase(
       .insert(salvageCases)
       .values(caseValues)
       .returning();
+
+    if (aiAssessment?.valuationEvidence) {
+      try {
+        const evidenceValues: typeof valuationEvidence.$inferInsert = {
+          caseId: createdCase.id,
+          assetType: input.assetType,
+          itemIdentifier: input.assetDetails as unknown as Record<string, unknown>,
+          marketEvidence: aiAssessment.valuationEvidence.marketEvidence || {},
+          partEvidence: aiAssessment.valuationEvidence.partEvidence || {},
+          decisionSummary: (aiAssessment.valuationEvidence.decisionSummary || {
+            marketConfidence: aiAssessment.confidenceScore,
+            damageConfidence: aiAssessment.confidenceScore,
+            overallConfidence: aiAssessment.confidenceScore,
+            uniqueSourceCount: 0,
+            priceSpreadPercent: 0,
+            manualReviewRequired: aiAssessment.manualReviewRequired || false,
+            reviewReasons: aiAssessment.reviewReasons || [],
+          }) as typeof valuationEvidence.$inferInsert['decisionSummary'],
+          createdBy: input.createdBy,
+        };
+
+        await db.insert(valuationEvidence).values(evidenceValues);
+      } catch (error) {
+        console.error('Failed to store valuation evidence:', error);
+      }
+    }
     
     // DEBUG: Verify what was actually stored in database
     console.log('✅ Case stored successfully in database:', {

@@ -282,6 +282,10 @@ interface AIAssessmentResult {
   };
   analysisMethod?: 'gemini' | 'vision' | 'neutral' | 'mock';
   qualityTier?: string;
+  priceSource?: string;
+  manualReviewRequired?: boolean;
+  reviewReasons?: string[];
+  valuationEvidence?: Record<string, unknown>;
   // CRITICAL: Detailed Gemini analysis results
   itemDetails?: {
     detectedMake?: string;
@@ -355,7 +359,9 @@ function NewCasePageContent() {
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [isCapturingGPS, setIsCapturingGPS] = useState(false);
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
-  const [coordinateSource, setCoordinateSource] = useState<'gps' | 'address' | null>(null);
+  const [coordinateSource, setCoordinateSource] = useState<'gps' | 'address' | 'manual_pin' | null>(null);
+  const [manualLatitude, setManualLatitude] = useState('');
+  const [manualLongitude, setManualLongitude] = useState('');
   const skipAddressGeocodeRef = useRef(false);
   const addressGeocodeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const locationName = watch('locationName');
@@ -681,6 +687,8 @@ function NewCasePageContent() {
             latitude: json.data.latitude,
             longitude: json.data.longitude,
           });
+          setManualLatitude(String(json.data.latitude));
+          setManualLongitude(String(json.data.longitude));
           setGpsAccuracy(null);
           setCoordinateSource('address');
           setGpsError(null);
@@ -716,8 +724,13 @@ function NewCasePageContent() {
     setGpsError(null);
 
     try {
-      // Use hybrid geolocation service (Google API + browser fallback)
-      const result = await getAccurateGeolocation();
+      // Collect the best GPS fix available instead of accepting the first
+      // low-quality browser position.
+      const result = await getAccurateGeolocation({
+        desiredAccuracyMeters: 50,
+        acceptableAccuracyMeters: 150,
+        timeoutMs: 30000,
+      });
 
       const location: GeoLocation = {
         latitude: result.latitude,
@@ -725,6 +738,8 @@ function NewCasePageContent() {
       };
 
       setGpsLocation(location);
+      setManualLatitude(String(result.latitude));
+      setManualLongitude(String(result.longitude));
       setGpsAccuracy(result.accuracy);
       setCoordinateSource('gps');
       skipAddressGeocodeRef.current = true;
@@ -756,6 +771,24 @@ function NewCasePageContent() {
     } finally {
       setIsCapturingGPS(false);
     }
+  };
+
+  const applyManualCoordinates = (latitudeText: string, longitudeText: string) => {
+    const latitude = Number(latitudeText);
+    const longitude = Number(longitudeText);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      setGpsError('Manual coordinates are outside the valid latitude/longitude range.');
+      return;
+    }
+
+    setGpsLocation({ latitude, longitude });
+    setManualLatitude(latitudeText);
+    setManualLongitude(longitudeText);
+    setGpsAccuracy(null);
+    setCoordinateSource('manual_pin');
+    setGpsError(null);
   };
 
   /**
@@ -1585,6 +1618,10 @@ function NewCasePageContent() {
         photos: data.photos,
         gpsLocation: gpsLocation || undefined, // Optional when offline
         locationName: data.locationName || (isOffline ? 'Location unavailable (offline)' : 'Unknown location'),
+        locationAccuracyMeters: gpsAccuracy,
+        locationSource: coordinateSource,
+        locationCapturedAt: gpsLocation ? new Date().toISOString() : undefined,
+        locationManualOverride: coordinateSource === 'address' || coordinateSource === 'manual_pin',
         // Convert unified voice content to voiceNotes array for backend.
         voiceNotes: finalVoiceContent ? [finalVoiceContent] : [],
         status: isDraft ? 'draft' as const : 'pending_approval' as const,
@@ -1606,6 +1643,10 @@ function NewCasePageContent() {
           damageScore: aiAssessment.damageScore,
           analysisMethod: aiAssessment.analysisMethod,
           qualityTier: aiAssessment.qualityTier,
+          priceSource: aiAssessment.priceSource,
+          manualReviewRequired: aiAssessment.manualReviewRequired,
+          reviewReasons: aiAssessment.reviewReasons,
+          valuationEvidence: aiAssessment.valuationEvidence,
           // CRITICAL: Include detailed Gemini analysis results
           itemDetails: aiAssessment.itemDetails,
           damagedParts: aiAssessment.damagedParts,
@@ -2854,6 +2895,43 @@ function NewCasePageContent() {
                 <span className="text-gray-600 ml-2">(from address lookup)</span>
               )}
             </p>
+          )}
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="number"
+              step="0.000001"
+              min="-90"
+              max="90"
+              value={manualLatitude}
+              onChange={(event) => {
+                setManualLatitude(event.target.value);
+                if (event.target.value && manualLongitude) {
+                  applyManualCoordinates(event.target.value, manualLongitude);
+                }
+              }}
+              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+              placeholder="Manual latitude"
+              aria-label="Manual latitude"
+            />
+            <input
+              type="number"
+              step="0.000001"
+              min="-180"
+              max="180"
+              value={manualLongitude}
+              onChange={(event) => {
+                setManualLongitude(event.target.value);
+                if (manualLatitude && event.target.value) {
+                  applyManualCoordinates(manualLatitude, event.target.value);
+                }
+              }}
+              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+              placeholder="Manual longitude"
+              aria-label="Manual longitude"
+            />
+          </div>
+          {coordinateSource === 'manual_pin' && (
+            <p className="mt-1 text-sm text-green-600">Manual pin correction applied.</p>
           )}
           {gpsError && (
             <p className="mt-1 text-sm text-red-600">{gpsError}</p>

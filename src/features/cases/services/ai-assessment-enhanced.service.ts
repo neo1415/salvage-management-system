@@ -38,28 +38,9 @@ import { isGeminiEnabled } from '@/lib/integrations/gemini-damage-detection';
 import { getClaudeRateLimiter } from '@/lib/integrations/claude-rate-limiter';
 import { getGeminiRateLimiter } from '@/lib/integrations/gemini-rate-limiter';
 import { type QualityTier, mapAnyConditionToQuality } from '@/features/valuations/services/condition-mapping.service';
+import { getValuationPolicyConfig, shouldRequireManualReview } from '@/features/valuations/services/valuation-policy.service';
 
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
-const DEFAULT_RESERVE_PRICE_RATIO = 0.7;
-const DEFAULT_TOTAL_LOSS_SALVAGE_CAP_RATIO = 0.3;
-
-function getClampedRatio(value: string | undefined, fallback: number): number {
-  if (!value) return fallback;
-
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-
-  return Math.min(0.95, Math.max(0.05, parsed));
-}
-
-function getReservePriceRatio(): number {
-  return getClampedRatio(process.env.DEFAULT_RESERVE_PRICE_RATIO, DEFAULT_RESERVE_PRICE_RATIO);
-}
-
-function getTotalLossSalvageCapRatio(): number {
-  return getClampedRatio(process.env.DEFAULT_TOTAL_LOSS_SALVAGE_CAP_RATIO, DEFAULT_TOTAL_LOSS_SALVAGE_CAP_RATIO);
-}
-
 /**
  * Determines quality tier based on damage assessment and vehicle context
  * 
@@ -307,6 +288,14 @@ export interface EnhancedDamageAssessment {
   recommendation: string;
   summary?: string; // CRITICAL FIX: Gemini's summary for display in purple box
   warnings: string[];
+  manualReviewRequired?: boolean;
+  reviewReasons?: string[];
+  valuationEvidence?: {
+    marketEvidence?: Record<string, unknown>;
+    partEvidence?: Record<string, unknown>;
+    decisionSummary?: Record<string, unknown>;
+    policySnapshot?: Record<string, unknown>;
+  };
   
   // Metadata
   processedAt: Date;
@@ -334,6 +323,20 @@ export async function assessDamageEnhanced(params: {
     condition: vehicleInfo.condition || 'Nigerian Used',
     age: vehicleInfo.year ? new Date().getFullYear() - vehicleInfo.year : undefined,
   } : undefined);
+  const valuationPolicy = await getValuationPolicyConfig();
+  const assetTypeForPolicy = itemInfo?.type || 'general_asset';
+  const photoRequirement = valuationPolicy.photoRequirements[assetTypeForPolicy]
+    || valuationPolicy.photoRequirements.general_asset;
+  const photoReviewReasons: string[] = [];
+  if (photoRequirement && photos.length < photoRequirement.minimumPhotos) {
+    photoReviewReasons.push(
+      `${assetTypeForPolicy} assessment needs at least ${photoRequirement.minimumPhotos} photos for reliable AI review`
+    );
+  } else if (photoRequirement && photos.length < photoRequirement.recommendedPhotos) {
+    photoReviewReasons.push(
+      `${assetTypeForPolicy} assessment has ${photos.length} photos; ${photoRequirement.recommendedPhotos} is recommended for stronger valuation confidence`
+    );
+  }
   
   // Initialize AI services if not already initialized
   await initializeClaudeService();
@@ -374,6 +377,7 @@ export async function assessDamageEnhanced(params: {
     deductionAmount: number;
   }> | undefined;
   let isTotalLoss: boolean | undefined;
+  let partPrices: Awaited<ReturnType<typeof searchUniversalPartPrices>> = [];
   
   // ELECTRONICS FIX: For electronics, use Gemini's specific parts directly instead of generic scores
   // This preserves part names like "front screen display" instead of converting to "body"
@@ -453,7 +457,7 @@ export async function assessDamageEnhanced(params: {
       }
       
       // NEW: Search for part prices to enhance salvage calculations (Task 7.4)
-      const partPrices = await searchUniversalPartPrices(itemInfo, damages);
+      partPrices = await searchUniversalPartPrices(itemInfo, damages);
       console.log(`🔍 Part price search results: ${partPrices.filter(p => p.searchedPrice).length}/${partPrices.length} found`);
       
       // Extract item make/brand for make-specific deductions (Requirement 6.1)
@@ -493,7 +497,7 @@ export async function assessDamageEnhanced(params: {
       }
       
       // TOTAL LOSS OVERRIDE: Cap salvage value at 30% of condition-adjusted market value for total loss items
-      const totalLossSalvageCapRatio = getTotalLossSalvageCapRatio();
+      const totalLossSalvageCapRatio = valuationPolicy.totalLossSalvageCapRatio;
       if (isActuallyTotalLoss && salvageValue > conditionAdjustedMarketValue * totalLossSalvageCapRatio) {
         const originalSalvage = salvageValue;
         salvageValue = Math.round(conditionAdjustedMarketValue * totalLossSalvageCapRatio);
@@ -551,7 +555,7 @@ export async function assessDamageEnhanced(params: {
     }
   }
   
-  const reservePrice = salvageValue * getReservePriceRatio();
+  const reservePrice = salvageValue * valuationPolicy.reservePriceRatio;
   
   // Step 5: Determine severity
   const damagePercentage = calculateDamagePercentage(damageScore);
@@ -567,7 +571,14 @@ export async function assessDamageEnhanced(params: {
   const repairability = assessRepairability(damageScore, repairCost, marketValue, itemInfo?.type);
   
   // Step 7: Calculate confidence (with universal item support)
-  const confidence = calculateUniversalConfidence(photos, itemInfo, visionResults, damageScore, marketDataConfidence);
+  const confidence = calculateUniversalConfidence(
+    photos,
+    itemInfo,
+    visionResults,
+    damageScore,
+    marketDataConfidence,
+    photoRequirement
+  );
   
   // Step 8: Validate and generate warnings
   const warnings = validateAssessment({
@@ -576,7 +587,8 @@ export async function assessDamageEnhanced(params: {
     reservePrice,
     damagePercentage,
     damageSeverity,
-    confidence: confidence.overall
+    confidence: confidence.overall,
+    reservePriceRatio: valuationPolicy.reservePriceRatio
   });
   
   // Step 9: Determine quality tier based on damage and item context
@@ -585,6 +597,62 @@ export async function assessDamageEnhanced(params: {
     damagePercentage,
     itemInfo
   );
+  const partEvidence = typeof partPrices !== 'undefined'
+    ? {
+        searchedParts: partPrices.map(part => ({
+          component: part.component,
+          found: !!part.searchedPrice,
+          price: part.searchedPrice,
+          confidence: part.confidence,
+          source: part.source,
+          evidence: part.evidence,
+        })),
+      }
+    : { searchedParts: [] };
+  const manualReviewDecision = shouldRequireManualReview({
+    policy: valuationPolicy,
+    overallConfidence: confidence.overall,
+    marketConfidence: marketDataConfidence,
+    damageConfidence: confidence.damageDetection,
+    uniqueSourceCount: marketValueResult.uniqueSourceCount ?? 0,
+    priceSpreadPercent: marketValueResult.priceSpreadPercent ?? 0,
+  });
+  const reviewReasons = [
+    ...photoReviewReasons,
+    ...manualReviewDecision.reasons,
+  ];
+  const manualReviewRequired = reviewReasons.length > 0;
+  const valuationEvidence = {
+    marketEvidence: marketValueResult.evidence || {
+      source: priceSource,
+      value: marketValue,
+      confidence: marketDataConfidence,
+    },
+    partEvidence,
+    decisionSummary: {
+      marketConfidence: marketDataConfidence,
+      damageConfidence: confidence.damageDetection,
+      overallConfidence: confidence.overall,
+      uniqueSourceCount: marketValueResult.uniqueSourceCount,
+      priceSpreadPercent: marketValueResult.priceSpreadPercent,
+      manualReviewRequired,
+      reviewReasons,
+      photoCount: photos.length,
+      requiredPhotoCount: photoRequirement?.minimumPhotos,
+      recommendedPhotoCount: photoRequirement?.recommendedPhotos,
+    },
+    policySnapshot: {
+      minimumOverallConfidence: valuationPolicy.minimumOverallConfidence,
+      minimumMarketConfidence: valuationPolicy.minimumMarketConfidence,
+      minimumDamageConfidence: valuationPolicy.minimumDamageConfidence,
+      minimumMarketSourceCount: valuationPolicy.minimumMarketSourceCount,
+      sourceDiversityRequired: valuationPolicy.sourceDiversityRequired,
+      maxAllowedPriceSpreadPercent: valuationPolicy.maxAllowedPriceSpreadPercent,
+      reservePriceRatio: valuationPolicy.reservePriceRatio,
+      totalLossSalvageCapRatio: valuationPolicy.totalLossSalvageCapRatio,
+      repairCostMultipliers: valuationPolicy.repairCostMultipliers,
+    },
+  };
   
   const assessment: EnhancedDamageAssessment = {
     labels: visionResults.labels.map(l => l.description),
@@ -606,7 +674,12 @@ export async function assessDamageEnhanced(params: {
     isRepairable: repairability.isRepairable,
     recommendation: repairability.recommendation,
     summary: damageAnalysis.summary, // CRITICAL FIX: Include Gemini's summary for display
-    warnings,
+    warnings: manualReviewRequired
+      ? [...warnings, ...reviewReasons.map(reason => `Manual review: ${reason}`)]
+      : warnings,
+    manualReviewRequired,
+    reviewReasons,
+    valuationEvidence,
     processedAt: new Date(),
     photoCount: photos.length,
     analysisMethod: MOCK_MODE ? 'mock' : damageAnalysis.method
@@ -1149,6 +1222,7 @@ async function searchPartPrices(
   searchedPrice?: number;
   confidence?: number;
   source: 'internet_search' | 'not_found';
+  evidence?: Record<string, unknown>;
 }>> {
   if (!vehicleInfo?.make || !vehicleInfo?.model || damages.length === 0) {
     return [];
@@ -1191,20 +1265,33 @@ async function searchPartPrices(
           component: damage.component,
           searchedPrice: partResult.priceData.averagePrice,
           confidence: partResult.priceData.confidence,
-          source: 'internet_search' as const
+          source: 'internet_search' as const,
+          evidence: {
+            query: partResult.query,
+            resultsProcessed: partResult.resultsProcessed,
+            priceData: partResult.priceData,
+          },
         };
       } else {
         console.log(`⚠️ No price found for ${partName}`);
         return {
           component: damage.component,
-          source: 'not_found' as const
+          source: 'not_found' as const,
+          evidence: {
+            searchedPart: partName,
+            reason: partResult.error || 'no_average_price',
+          },
         };
       }
     } catch (error) {
       console.error(`❌ Part search failed for ${partName}:`, error);
       return {
         component: damage.component,
-        source: 'not_found' as const
+        source: 'not_found' as const,
+        evidence: {
+          searchedPart: partName,
+          reason: error instanceof Error ? error.message : 'search_failed',
+        },
       };
     }
   });
@@ -1880,6 +1967,9 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
   value: number;
   confidence: number;
   source: 'database' | 'user_provided' | 'internet_search' | 'scraping' | 'estimated';
+  evidence?: Record<string, unknown>;
+  uniqueSourceCount?: number;
+  priceSpreadPercent?: number;
 }> {
   // If no item info, use generic estimation
   if (!itemInfo) {
@@ -1887,7 +1977,8 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
     return {
       value: 3000000, // Default 3M Naira for unknown items
       confidence: 30,
-      source: 'estimated'
+      source: 'estimated',
+      evidence: { reason: 'missing_item_info' },
     };
   }
 
@@ -1942,7 +2033,15 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
       return {
         value: Math.round(marketPrice.median),
         confidence: confidencePercent,
-        source
+        source,
+        uniqueSourceCount: marketPrice.count,
+        evidence: {
+          provider: 'market-data-service',
+          source,
+          median: marketPrice.median,
+          count: marketPrice.count,
+          confidence: confidencePercent,
+        },
       };
     } catch (error) {
       console.error('❌ Vehicle market data failed, using estimation:', error);
@@ -1970,7 +2069,14 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
         return {
           value: Math.round(searchResult.priceData.medianPrice || searchResult.priceData.averagePrice),
           confidence: Math.round(searchResult.priceData.confidence),
-          source: 'internet_search'
+          source: 'internet_search',
+          uniqueSourceCount: searchResult.priceData.evidenceSummary?.uniqueSourceCount,
+          priceSpreadPercent: searchResult.priceData.evidenceSummary?.priceSpreadPercent,
+          evidence: {
+            query: searchResult.query,
+            resultsProcessed: searchResult.resultsProcessed,
+            priceData: searchResult.priceData,
+          },
         };
       }
     } catch (error) {
@@ -2039,7 +2145,14 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
         return {
           value: marketValue,
           confidence: Math.round(searchResult.priceData.confidence),
-          source: 'internet_search'
+          source: 'internet_search',
+          uniqueSourceCount: searchResult.priceData.evidenceSummary?.uniqueSourceCount,
+          priceSpreadPercent: searchResult.priceData.evidenceSummary?.priceSpreadPercent,
+          evidence: {
+            query: searchResult.query,
+            resultsProcessed: searchResult.resultsProcessed,
+            priceData: searchResult.priceData,
+          },
         };
       } else {
         console.log(`⚠️ No market price found for ${itemInfo.brand} ${itemInfo.model}, using estimation`);
@@ -2054,7 +2167,14 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
   return {
     value: estimatedValue,
     confidence: 40,
-    source: 'estimated'
+    source: 'estimated',
+    evidence: {
+      reason: 'fallback_type_estimation',
+      itemType: itemInfo.type,
+      brand: itemInfo.brand || itemInfo.make,
+      model: itemInfo.model,
+      condition: itemInfo.condition,
+    },
   };
 }
 
@@ -2139,6 +2259,7 @@ async function searchUniversalPartPrices(
   searchedPrice?: number;
   confidence?: number;
   source: 'internet_search' | 'not_found';
+  evidence?: Record<string, unknown>;
 }>> {
   if ((!itemInfo?.brand && !itemInfo?.make && !(itemInfo?.type === 'property' && itemInfo.propertyType && itemInfo.location)) || damages.length === 0) {
     return [];
@@ -2291,20 +2412,33 @@ async function searchUniversalPartPrices(
           component: damage.component,
           searchedPrice: partResult.priceData.averagePrice,
           confidence: partResult.priceData.confidence,
-          source: 'internet_search' as const
+          source: 'internet_search' as const,
+          evidence: {
+            query: partResult.query,
+            resultsProcessed: partResult.resultsProcessed,
+            priceData: partResult.priceData,
+          },
         };
       } else {
         console.log(`⚠️ No price found for ${itemInfo.type} part: ${partName}`);
         return {
           component: damage.component,
-          source: 'not_found' as const
+          source: 'not_found' as const,
+          evidence: {
+            searchedPart: partName,
+            reason: partResult.error || 'No average price returned',
+          },
         };
       }
     } catch (error) {
       console.error(`❌ ${itemInfo.type} part search failed for ${partName}:`, error);
       return {
         component: damage.component,
-        source: 'not_found' as const
+        source: 'not_found' as const,
+        evidence: {
+          searchedPart: partName,
+          reason: error instanceof Error ? error.message : 'Unknown search error',
+        },
       };
     }
   });
@@ -2359,7 +2493,8 @@ function calculateUniversalConfidence(
   itemInfo: UniversalItemInfo | undefined,
   visionResults: { labels: Array<{ description: string; score: number }>; totalConfidence: number },
   damageScore: DamageScore,
-  marketDataConfidence?: number
+  marketDataConfidence?: number,
+  photoRequirement?: { minimumPhotos: number; recommendedPhotos: number; requiredAngles?: string[] }
 ): AssessmentConfidence {
   const confidence: AssessmentConfidence = {
     overall: 0,
@@ -2370,15 +2505,20 @@ function calculateUniversalConfidence(
     reasons: []
   };
   
-  // Photo quality (need 3+ photos for good assessment)
-  if (photos.length < 3) {
+  const minimumPhotos = photoRequirement?.minimumPhotos ?? 3;
+  const recommendedPhotos = photoRequirement?.recommendedPhotos ?? 5;
+
+  // Photo quality is policy-driven per asset type. A vehicle needs more evidence
+  // than a small electronics item because angles and hidden damage matter more.
+  if (photos.length < minimumPhotos) {
     confidence.photoQuality = 30;
-    confidence.reasons.push('Very few photos - need at least 3 for accurate assessment');
-  } else if (photos.length < 5) {
+    confidence.reasons.push(`Very few photos - need at least ${minimumPhotos} for reliable ${itemInfo?.type || 'asset'} assessment`);
+  } else if (photos.length < recommendedPhotos) {
     confidence.photoQuality = 60;
-    confidence.reasons.push('Limited photos - 5+ recommended for best accuracy');
+    confidence.reasons.push(`Limited photos - ${recommendedPhotos}+ recommended for best ${itemInfo?.type || 'asset'} accuracy`);
   } else {
-    confidence.photoQuality = Math.min(100, 60 + (photos.length * 8));
+    const extraPhotos = Math.max(0, photos.length - recommendedPhotos);
+    confidence.photoQuality = Math.min(100, 85 + (extraPhotos * 3));
   }
   
   // Item detection (universal)
@@ -2467,6 +2607,7 @@ function validateAssessment(params: {
   damagePercentage: number;
   damageSeverity: string;
   confidence: number;
+  reservePriceRatio?: number;
 }): string[] {
   const warnings: string[] = [];
   
@@ -2481,7 +2622,7 @@ function validateAssessment(params: {
   }
   
   // Reserve price validation
-  const expectedReserve = params.salvageValue * 0.7;
+  const expectedReserve = params.salvageValue * (params.reservePriceRatio ?? 0.7);
   if (Math.abs(params.reservePrice - expectedReserve) > expectedReserve * 0.2) {
     warnings.push('⚠️ Reserve price calculation may need review');
   }

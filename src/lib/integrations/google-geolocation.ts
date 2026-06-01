@@ -14,12 +14,18 @@ export interface GeolocationResult {
   longitude: number;
   accuracy: number; // Accuracy in meters
   locationName?: string;
-  source: 'google-api' | 'browser';
+  source: 'browser';
 }
 
 export interface GeolocationError {
   code: 'PERMISSION_DENIED' | 'POSITION_UNAVAILABLE' | 'TIMEOUT' | 'API_ERROR' | 'NETWORK_ERROR';
   message: string;
+}
+
+export interface AccurateGeolocationOptions {
+  desiredAccuracyMeters?: number;
+  acceptableAccuracyMeters?: number;
+  timeoutMs?: number;
 }
 
 /**
@@ -29,7 +35,7 @@ export interface GeolocationError {
  * REMOVED: Google Geolocation API fallback because it uses IP-based location
  * which is extremely inaccurate (100km+ radius) and causes wildly inconsistent results
  */
-export async function getAccurateGeolocation(): Promise<GeolocationResult> {
+export async function getAccurateGeolocation(options: AccurateGeolocationOptions = {}): Promise<GeolocationResult> {
   
   // Log diagnostic info
   console.log('🌍 Online status:', navigator.onLine);
@@ -45,7 +51,7 @@ export async function getAccurateGeolocation(): Promise<GeolocationResult> {
 
   console.log('🌍 Using browser GPS (most accurate method)...');
   try {
-    const browserLocation = await getBrowserGeolocation();
+    const browserLocation = await getBrowserGeolocation(options);
     console.log('✅ Browser GPS succeeded:', browserLocation);
     return browserLocation;
   } catch (error) {
@@ -59,16 +65,67 @@ export async function getAccurateGeolocation(): Promise<GeolocationResult> {
  * This is the MOST ACCURATE method available (5-50m accuracy)
  * Works both online and offline
  */
-async function getBrowserGeolocation(): Promise<GeolocationResult> {
+async function getBrowserGeolocation(options: AccurateGeolocationOptions = {}): Promise<GeolocationResult> {
   if (!navigator.geolocation) {
     throw new Error('Geolocation is not supported by your browser');
   }
 
+  const desiredAccuracyMeters = options.desiredAccuracyMeters ?? 50;
+  const acceptableAccuracyMeters = options.acceptableAccuracyMeters ?? 150;
+  const timeoutMs = options.timeoutMs ?? 30000;
+
   try {
     const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
+      let bestPosition: GeolocationPosition | null = null;
+      let watchId: number | null = null;
+
+      const clearWatch = () => {
+        if (watchId !== null) {
+          navigator.geolocation.clearWatch(watchId);
+          watchId = null;
+        }
+      };
+
+      const timer = window.setTimeout(() => {
+        clearWatch();
+
+        if (bestPosition && bestPosition.coords.accuracy <= acceptableAccuracyMeters) {
+          resolve(bestPosition);
+          return;
+        }
+
+        if (bestPosition) {
+          reject({
+            code: 3,
+            message: `Best GPS accuracy was ${Math.round(bestPosition.coords.accuracy)}m. Please move outdoors, enable precise location, or confirm the address manually.`,
+          });
+          return;
+        }
+
+        reject({
+          code: 3,
+          message: 'Location request timed out. Please try again or move to an area with better GPS signal.',
+        });
+      }, timeoutMs);
+
+      watchId = navigator.geolocation.watchPosition((candidate) => {
+        if (!bestPosition || candidate.coords.accuracy < bestPosition.coords.accuracy) {
+          bestPosition = candidate;
+          console.log('GPS candidate accuracy:', `${Math.round(candidate.coords.accuracy)}m`);
+        }
+
+        if (candidate.coords.accuracy <= desiredAccuracyMeters) {
+          window.clearTimeout(timer);
+          clearWatch();
+          resolve(candidate);
+        }
+      }, (error) => {
+        window.clearTimeout(timer);
+        clearWatch();
+        reject(error);
+      }, {
         enableHighAccuracy: true, // Use GPS, not WiFi/IP
-        timeout: 30000, // 30 seconds - give GPS time to get accurate fix
+        timeout: timeoutMs, // Give GPS time to get accurate fix
         maximumAge: 0, // No cache - always get fresh location
       });
     });

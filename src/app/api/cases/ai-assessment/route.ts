@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { assessDamageEnhanced } from '@/features/cases/services/ai-assessment-enhanced.service';
 import type { VehicleInfo, UniversalItemInfo } from '@/features/cases/services/ai-assessment-enhanced.service';
 import { auth } from '@/lib/auth/next-auth.config';
+import { getValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
 
 // In-memory rate limiting store (in production, use Redis)
 const rateLimitStore = new Map<string, number[]>();
@@ -275,6 +276,21 @@ export async function POST(request: NextRequest) {
       brandPrestige: universalItemData.brandPrestige,
     } : undefined;
 
+    const valuationPolicy = await getValuationPolicyConfig();
+    const requirementKey = universalItemData?.type || 'general_asset';
+    const photoRequirement = valuationPolicy.photoRequirements[requirementKey]
+      || valuationPolicy.photoRequirements.general_asset;
+
+    if (photoRequirement && photos.length < photoRequirement.minimumPhotos) {
+      return NextResponse.json(
+        {
+          error: `At least ${photoRequirement.minimumPhotos} photos are required for ${requirementKey} assessment`,
+          requiredAngles: photoRequirement.requiredAngles,
+        },
+        { status: 400 }
+      );
+    }
+
     // Run ENHANCED AI assessment with universal item support
     console.log(`Running ENHANCED AI assessment on ${photos.length} photos...`);
     console.log('Universal item info:', universalItemData);
@@ -318,6 +334,9 @@ export async function POST(request: NextRequest) {
         // CRITICAL FIX: Return detailed Gemini analysis results
         itemDetails: assessment.itemDetails, // Item identification from Gemini
         damagedParts: assessment.damagedParts, // Detailed damaged parts list from Gemini
+        manualReviewRequired: assessment.manualReviewRequired,
+        reviewReasons: assessment.reviewReasons,
+        valuationEvidence: assessment.valuationEvidence,
         // Add metadata for progress indicators
         dataSource: 'internet', // Default to internet search
         searchQuery: universalItemData ? 

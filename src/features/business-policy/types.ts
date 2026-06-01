@@ -179,6 +179,36 @@ export type AiValuationPolicy = {
   repairVsReplaceEnabled: boolean;
   showDamageCostBreakdownToVendors: boolean;
   lowConfidenceRequiresManualReview: boolean;
+  minimumOverallConfidence: number;
+  minimumMarketConfidence: number;
+  minimumDamageConfidence: number;
+  minimumMarketSourceCount: number;
+  sourceDiversityRequired: boolean;
+  maxAllowedPriceSpreadPercent: number;
+  reservePriceRatio: number;
+  totalLossSalvageCapRatio: number;
+  exchangeRates: {
+    USD: number;
+    GBP: number;
+    EUR: number;
+  };
+  repairCostMultipliers: {
+    laborPercent: number;
+    paintAndMaterialsPercent: number;
+    logisticsPercent: number;
+    severeDamageMultiplier: number;
+    moderateDamageMultiplier: number;
+  };
+  pricePlausibility: {
+    marketMinimums: Record<string, number>;
+    partMinimums: Record<string, number>;
+    partMaximums: Record<string, number>;
+  };
+  photoRequirements: Record<string, {
+    minimumPhotos: number;
+    recommendedPhotos: number;
+    requiredAngles: string[];
+  }>;
 };
 
 export type NotificationPolicy = {

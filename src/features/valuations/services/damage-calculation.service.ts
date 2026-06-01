@@ -9,6 +9,7 @@ import { db } from '@/lib/db';
 import { damageDeductions } from '@/lib/db/schema/vehicle-valuations';
 import { eq, and, isNull } from 'drizzle-orm';
 import type { DamageInput, DamageDeduction, SalvageCalculation } from '../types';
+import { getValuationPolicyConfig } from './valuation-policy.service';
 
 /**
  * Default deduction percentages when component not found in database
@@ -270,7 +271,23 @@ export class DamageCalculationService {
     // ========================================
     // PART 1: Calculate deduction from REAL part prices (NO MULTIPLIERS)
     // ========================================
-    const totalRealPartsCost = partsWithRealPrices.reduce((sum, part) => sum + (part.partPrice || 0), 0);
+    const valuationPolicy = await getValuationPolicyConfig();
+    const repairMultipliers = valuationPolicy.repairCostMultipliers;
+    const repairLoadFactor = 1 + (
+      repairMultipliers.laborPercent +
+      repairMultipliers.paintAndMaterialsPercent +
+      repairMultipliers.logisticsPercent
+    ) / 100;
+    const getSeverityLoad = (component: string) => {
+      const matchingDamage = deduplicatedDamages.find(d => d.component === component);
+      if (matchingDamage?.damageLevel === 'severe') return repairMultipliers.severeDamageMultiplier;
+      if (matchingDamage?.damageLevel === 'moderate') return repairMultipliers.moderateDamageMultiplier;
+      return 1;
+    };
+    const loadedPartCost = (part: { component: string; partPrice?: number }) =>
+      (part.partPrice || 0) * repairLoadFactor * getSeverityLoad(part.component);
+
+    const totalRealPartsCost = partsWithRealPrices.reduce((sum, part) => sum + loadedPartCost(part), 0);
     const realPartsDeductionPercent = totalRealPartsCost / basePrice;
     const averagePartConfidence = partsWithRealPrices.length > 0 
       ? partsWithRealPrices.reduce((sum, part) => sum + (part.confidence || 0), 0) / partsWithRealPrices.length
@@ -391,7 +408,8 @@ export class DamageCalculationService {
 
     // Enhanced confidence based on part price availability and confidence
     const partPriceCoverage = partsWithRealPrices.length / deduplicatedDamages.length;
-    const confidence = 0.85 + (partPriceCoverage * averagePartConfidence * 0.15);
+    const normalizedPartConfidence = Math.max(0, Math.min(1, averagePartConfidence / 100));
+    const confidence = 0.85 + (partPriceCoverage * normalizedPartConfidence * 0.15);
 
     // Create deductions array combining real prices and traditional deductions
     const processedDeductions: DamageDeduction[] = [];
@@ -403,12 +421,12 @@ export class DamageCalculationService {
         processedDeductions.push({
           component: part.component,
           damageLevel: matchingDamage.damageLevel,
-          repairCostLow: part.partPrice,
-          repairCostHigh: part.partPrice,
-          valuationDeductionLow: part.partPrice / basePrice,
-          valuationDeductionHigh: part.partPrice / basePrice,
-          deductionPercent: part.partPrice / basePrice,
-          deductionAmount: part.partPrice,
+          repairCostLow: loadedPartCost(part),
+          repairCostHigh: loadedPartCost(part),
+          valuationDeductionLow: loadedPartCost(part) / basePrice,
+          valuationDeductionHigh: loadedPartCost(part) / basePrice,
+          deductionPercent: loadedPartCost(part) / basePrice,
+          deductionAmount: loadedPartCost(part),
           make: make || undefined,
           source: 'internet_search'
         });

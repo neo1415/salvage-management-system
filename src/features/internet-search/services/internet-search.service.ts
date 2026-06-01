@@ -11,6 +11,7 @@ import { queryBuilder, type ItemIdentifier } from './query-builder.service';
 import { priceExtractor, type PriceExtractionResult } from './price-extraction.service';
 import { performanceMonitor, createSearchTimer } from '../utils/performance-monitor';
 import { cacheIntegrationService } from './cache-integration.service';
+import { getValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
 
 export interface SearchMarketPriceOptions {
   /** Item to search for */
@@ -73,6 +74,19 @@ export interface PartPriceResult {
 }
 
 export class InternetSearchService {
+  private getResultKey(result: { link?: string; title?: string }): string {
+    return (result.link || result.title || '').trim().toLowerCase();
+  }
+
+  private dedupeOrganicResults<T extends { title?: string; link?: string; snippet?: string }>(results: T[]): T[] {
+    const seen = new Set<string>();
+    return results.filter((result) => {
+      const key = this.getResultKey(result);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
   
   /**
    * Search for market price of an item using internet search
@@ -197,33 +211,59 @@ export class InternetSearchService {
       }
       
       // Build search query
-      const query = queryBuilder.buildMarketQuery(item);
+      const valuationPolicy = await getValuationPolicyConfig();
+      const queries = queryBuilder.generateQueryVariations(
+        item,
+        Math.max(3, Math.min(5, valuationPolicy.minimumMarketSourceCount + 1))
+      );
+      const query = queries.join(' | ');
       
       // Log the actual query being sent to Serper
       console.log(`🔍 Serper Search Query: "${query}"`);
       console.log(`📊 Search Parameters: maxResults=${maxResults}, timeout=${timeout}ms, itemType=${item.type}`);
       
       // Execute search with timeout
-      const searchPromise = serperApi.search(query, { num: maxResults });
+      const perQueryLimit = Math.max(5, Math.ceil(maxResults / Math.max(1, queries.length)));
+      const searchPromise = Promise.all(
+        queries.map(async (singleQuery) => {
+          try {
+            return await serperApi.search(singleQuery, { num: perQueryLimit });
+          } catch (error) {
+            console.warn(`Serper query failed: "${singleQuery}"`, error);
+            return { organic: [] };
+          }
+        })
+      );
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Search timeout')), timeout)
       );
       
-      const searchResults = await Promise.race([searchPromise, timeoutPromise]) as Awaited<typeof searchPromise>;
+      const searchBatches = await Promise.race([searchPromise, timeoutPromise]) as Awaited<typeof searchPromise>;
+      const organicResults = this.dedupeOrganicResults(searchBatches.flatMap(batch => batch.organic || [])).slice(0, maxResults);
       
-      if (!searchResults.organic || searchResults.organic.length === 0) {
+      if (organicResults.length === 0) {
         throw new Error('No search results returned');
       }
       
       // Log search results summary
-      console.log(`📄 Search Results: ${searchResults.organic.length} results found`);
-      console.log(`🌐 Result Sources: ${searchResults.organic.map(r => new URL(r.link).hostname).join(', ')}`);
+      console.log(`Search Results: ${organicResults.length} unique results found`);
+      console.log(`Result Sources: ${organicResults.map(r => {
+        try {
+          return new URL(r.link || '').hostname;
+        } catch {
+          return 'unknown';
+        }
+      }).join(', ')}`);
       
       // Extract prices from results with year filtering
       const priceData = priceExtractor.extractPrices(
-        searchResults.organic, 
+        organicResults, 
         item.type,
-        item.type === 'vehicle' ? item.year : undefined
+        item.type === 'vehicle' ? item.year : undefined,
+        {
+          exchangeRates: valuationPolicy.exchangeRates,
+          pricePlausibility: valuationPolicy.pricePlausibility,
+        }
       );
       
       // Log extracted prices with sources
@@ -240,7 +280,7 @@ export class InternetSearchService {
       const result: MarketPriceResult = {
         priceData,
         query,
-        resultsProcessed: searchResults.organic.length,
+        resultsProcessed: organicResults.length,
         executionTime,
         dataSource: 'internet_search',
         success: true
@@ -256,7 +296,7 @@ export class InternetSearchService {
         startTime: timer.getStartTime(),
         endTime: Date.now(),
         success: true,
-        resultsCount: searchResults.organic.length,
+        resultsCount: organicResults.length,
         pricesExtracted: priceData.prices.length,
         confidence: priceData.confidence,
         fromCache: false
@@ -322,26 +362,50 @@ export class InternetSearchService {
         };
       }
       
-      // Build part-specific search query
-      const query = queryBuilder.buildPartPriceQuery(item, partName, damageType);
+      // Build part-specific search queries. The first query is the precise part query;
+      // the additional market variations improve resilience when sellers describe
+      // parts in broader item listing language.
+      const valuationPolicy = await getValuationPolicyConfig();
+      const primaryQuery = queryBuilder.buildPartPriceQuery(item, partName, damageType);
+      const contextQueries = queryBuilder
+        .generateQueryVariations(item, 2)
+        .map((contextQuery) => `${contextQuery} ${partName} replacement part price Nigeria`);
+      const queries = [primaryQuery, ...contextQueries];
+      const query = queries.join(' | ');
       
       // Execute search with timeout
-      const searchPromise = serperApi.search(query, { num: maxResults });
+      const perQueryLimit = Math.max(4, Math.ceil(maxResults / queries.length));
+      const searchPromise = Promise.all(
+        queries.map(async (singleQuery) => {
+          try {
+            return await serperApi.search(singleQuery, { num: perQueryLimit });
+          } catch (error) {
+            console.warn(`Serper part query failed: "${singleQuery}"`, error);
+            return { organic: [] };
+          }
+        })
+      );
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Search timeout')), timeout)
       );
       
-      const searchResults = await Promise.race([searchPromise, timeoutPromise]) as Awaited<typeof searchPromise>;
+      const searchBatches = await Promise.race([searchPromise, timeoutPromise]) as Awaited<typeof searchPromise>;
+      const organicResults = this.dedupeOrganicResults(searchBatches.flatMap(batch => batch.organic || [])).slice(0, maxResults);
       
-      if (!searchResults.organic || searchResults.organic.length === 0) {
+      if (organicResults.length === 0) {
         throw new Error('No search results returned');
       }
       
       const priceData = priceExtractor.extractPrices(
-        searchResults.organic,
+        organicResults,
         item.type,
         undefined,
-        { mode: 'part', partName }
+        {
+          mode: 'part',
+          partName,
+          exchangeRates: valuationPolicy.exchangeRates,
+          pricePlausibility: valuationPolicy.pricePlausibility,
+        }
       );
       
       const executionTime = Date.now() - startTime;
@@ -350,7 +414,7 @@ export class InternetSearchService {
         partName,
         priceData,
         query,
-        resultsProcessed: searchResults.organic.length,
+        resultsProcessed: organicResults.length,
         executionTime,
         dataSource: 'internet_search',
         success: true
