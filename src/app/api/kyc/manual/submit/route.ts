@@ -16,7 +16,7 @@ import type { NormalizedVerificationResult } from '@/features/kyc/types/provider
 /**
  * POST /api/kyc/manual/submit
  * Manual Tier 2 KYC submission endpoint
- * Accepts form data with business details, personal info, bank account, and document uploads
+ * Accepts form data with business details, identity details, address, and document uploads.
  * 
  * IMPLEMENTATION STATUS:
  * ✅ Document upload to Supabase Storage implemented
@@ -26,18 +26,17 @@ import type { NormalizedVerificationResult } from '@/features/kyc/types/provider
  * ✅ Comprehensive error handling
  * 
  * FIELDS EXPECTED:
- * - businessName, businessType, cacNumber (optional), tin (optional)
+ * - businessName, businessType, cacNumber
  * - address, city, state (for address verification)
- * - nin, bvn (encrypted before storage)
- * - bankName, accountName, accountNumber
- * - Files: cacCertificate (if not individual), ninCard, utilityBill, bankStatement, photoId
+ * - nin, bvn (BVN required only if Tier 1 has not already verified it)
+ * - businessDocumentType, governmentIdType
+ * - Files: businessDocument, governmentIdDocument, addressProof
  * 
  * FIELDS STORED IN DATABASE:
- * - businessName, businessType, cacNumber, tin
+ * - businessName, businessType, cacNumber
  * - ninEncrypted, bvnEncrypted
- * - bankName, bankAccountName, bankAccountNumber
  * - ninVerificationData (contains address data and NIN details)
- * - Document URLs: cacCertificateUrl, ninCardUrl, addressProofUrl, bankStatementUrl, photoIdUrl
+ * - Document URLs: cacCertificateUrl, ninCardUrl, addressProofUrl, photoIdUrl
  * - tier2SubmittedAt
  * 
  * SECURITY MEASURES:
@@ -95,22 +94,29 @@ export async function POST(request: NextRequest) {
     const businessName = formData.get('businessName') as string;
     const businessType = formData.get('businessType') as string;
     const cacNumber = formData.get('cacNumber') as string;
-    const tin = formData.get('tin') as string;
     const address = formData.get('address') as string;
     const city = formData.get('city') as string;
     const state = formData.get('state') as string;
     const nin = formData.get('nin') as string;
-    const bvn = formData.get('bvn') as string;
-    const bankName = formData.get('bankName') as string;
-    const accountName = formData.get('accountName') as string;
-    const accountNumber = formData.get('accountNumber') as string;
+    const bvn = (formData.get('bvn') as string | null)?.trim() || '';
+    const businessDocumentType = (formData.get('businessDocumentType') as string | null) || 'cac_certificate';
+    const governmentIdType = (formData.get('governmentIdType') as string | null) || 'nin_slip';
+    const needsBvn = !vendor.bvnVerifiedAt;
 
     // Validate required fields
-    if (!businessName || !nin || !bvn || !bankName || !accountName || !accountNumber) {
+    if (!businessName || !businessType || !nin || (needsBvn && !bvn)) {
       return NextResponse.json(
-        { error: 'Missing required fields: businessName, nin, bvn, bankName, accountName, accountNumber' },
+        { error: needsBvn ? 'Missing required fields: businessName, businessType, nin, bvn' : 'Missing required fields: businessName, businessType, nin' },
         { status: 400 }
       );
+    }
+
+    if (!/^\d{11}$/.test(nin)) {
+      return NextResponse.json({ error: 'NIN must be exactly 11 digits.' }, { status: 400 });
+    }
+
+    if (needsBvn && !/^\d{11}$/.test(bvn)) {
+      return NextResponse.json({ error: 'BVN must be exactly 11 digits.' }, { status: 400 });
     }
 
     // Validate address fields (required for address verification)
@@ -122,25 +128,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Get files from form data
-    const cacCertificate = formData.get('cacCertificate') as File | null;
-    const ninCard = formData.get('ninCard') as File | null;
-    const utilityBill = formData.get('utilityBill') as File | null;
-    const bankStatement = formData.get('bankStatement') as File | null;
-    const photoId = formData.get('photoId') as File | null;
-    const selfie = formData.get('selfie') as File | null;
+    const businessDocument = formData.get('businessDocument') as File | null;
+    const governmentIdDocument = formData.get('governmentIdDocument') as File | null;
+    const addressProof = formData.get('addressProof') as File | null;
 
     // Validate required documents
-    if (!ninCard || !utilityBill || !bankStatement || !photoId || !selfie) {
+    if (!governmentIdDocument || !addressProof) {
       return NextResponse.json(
-        { error: 'Missing required documents: ninCard, utilityBill, bankStatement, photoId, selfie' },
+        { error: 'Missing required documents: governmentIdDocument, addressProof' },
         { status: 400 }
       );
     }
 
-    // Validate CAC certificate for non-individual businesses
-    if (businessType !== 'individual' && !cacCertificate) {
+    // Validate business document for non-individual businesses
+    if (businessType !== 'individual' && !businessDocument) {
       return NextResponse.json(
-        { error: 'CAC certificate is required for non-individual businesses' },
+        { error: 'Business registration document is required for non-individual businesses' },
         { status: 400 }
       );
     }
@@ -149,15 +152,12 @@ export async function POST(request: NextRequest) {
     // Maximum 5MB per file (5 * 1024 * 1024 bytes)
     const MAX_FILE_SIZE = 5 * 1024 * 1024;
     const filesToValidate: Array<{ file: File; name: string }> = [
-      { file: ninCard, name: 'NIN Card' },
-      { file: utilityBill, name: 'Utility Bill' },
-      { file: bankStatement, name: 'Bank Statement' },
-      { file: photoId, name: 'Photo ID' },
-      { file: selfie, name: 'Selfie' },
+      { file: governmentIdDocument, name: 'Government ID' },
+      { file: addressProof, name: 'Proof of Address' },
     ];
 
-    if (cacCertificate) {
-      filesToValidate.push({ file: cacCertificate, name: 'CAC Certificate' });
+    if (businessDocument) {
+      filesToValidate.push({ file: businessDocument, name: 'Business Document' });
     }
 
     // Check each file size
@@ -210,16 +210,13 @@ export async function POST(request: NextRequest) {
       file: File;
       type: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id' | 'selfie';
     }> = [
-      { file: ninCard, type: 'nin_card' as const },
-      { file: utilityBill, type: 'utility_bill' as const },
-      { file: bankStatement, type: 'bank_statement' as const },
-      { file: photoId, type: 'photo_id' as const },
-      { file: selfie, type: 'selfie' as const },
+      { file: governmentIdDocument, type: 'photo_id' as const },
+      { file: addressProof, type: 'utility_bill' as const },
     ];
 
-    // Add CAC certificate if provided
-    if (cacCertificate) {
-      documentsToUpload.push({ file: cacCertificate, type: 'cac_certificate' as const });
+    // Add business registration document if provided
+    if (businessDocument) {
+      documentsToUpload.push({ file: businessDocument, type: 'cac_certificate' as const });
     }
 
     const { results, errors } = await uploadService.uploadMultipleDocuments(
@@ -242,7 +239,7 @@ export async function POST(request: NextRequest) {
     // Encrypt sensitive data
     const enc = getEncryptionService();
     const ninEncrypted = enc.encrypt(nin);
-    const bvnEncrypted = enc.encrypt(bvn);
+    const bvnEncrypted = bvn ? enc.encrypt(bvn) : null;
 
     // Prepare address data for ninVerificationData
     const addressData = {
@@ -252,6 +249,10 @@ export async function POST(request: NextRequest) {
       submittedAt: new Date().toISOString(),
       // Store NIN details for manager review (encrypted NIN is in ninEncrypted field)
       ninLastFourDigits: nin.slice(-4),
+      businessDocumentType,
+      governmentIdType,
+      bvnLastFourDigits: bvn ? bvn.slice(-4) : undefined,
+      bvnSource: vendor.bvnVerifiedAt ? 'tier1_verified' : 'tier2_submitted',
     };
     const providerReference = buildDojahReference(vendor.id);
     const providerEvidence = await collectHybridProviderEvidence({
@@ -263,14 +264,13 @@ export async function POST(request: NextRequest) {
       cacNumber,
       businessName,
       businessType,
+      businessDocumentType,
+      governmentIdType,
       addressData,
       documents: {
-        ninCard: results.nin_card?.path,
-        utilityBill: results.utility_bill?.path,
-        bankStatement: results.bank_statement?.path,
+        addressProof: results.utility_bill?.path,
         photoId: results.photo_id?.path,
-        cacCertificate: results.cac_certificate?.path,
-        selfie: results.selfie?.path,
+        businessDocument: results.cac_certificate?.path,
       },
       bvnAlreadyVerified: Boolean(vendor.bvnVerifiedAt),
     });
@@ -281,23 +281,18 @@ export async function POST(request: NextRequest) {
         .update(vendors)
         .set({
           businessName,
-          businessType: businessType as 'individual' | 'sole_proprietor' | 'limited_company',
+          businessType,
           cacNumber: cacNumber || null,
-          tin: tin || null,
           ninEncrypted,
-          bvnEncrypted,
-          bankName,
-          bankAccountName: accountName,
-          bankAccountNumber: accountNumber,
+          ...(bvnEncrypted ? { bvnEncrypted } : {}),
           // Store address data in ninVerificationData for manager review
           ninVerificationData: addressData,
           // Store document PATHS (not public URLs) for signed URL generation
           cacCertificateUrl: results.cac_certificate?.path || null,
-          ninCardUrl: results.nin_card?.path || null,
+          ninCardUrl: results.photo_id?.path || null,
           addressProofUrl: results.utility_bill?.path || null,
-          bankStatementUrl: results.bank_statement?.path || null,
           photoIdUrl: results.photo_id?.path || null,
-          selfieUrl: results.selfie?.path || null,
+          photoIdType: governmentIdType,
           tier2SubmittedAt: new Date(),
           tier2DojahReferenceId: providerReference,
           amlScreeningData: providerEvidence.normalizedResult.dojahEvidenceSummary ?? null,
@@ -378,6 +373,8 @@ type HybridEvidenceInput = {
   cacNumber?: string;
   businessName: string;
   businessType: string;
+  businessDocumentType: string;
+  governmentIdType: string;
   addressData: Record<string, unknown>;
   documents: Record<string, string | undefined>;
   bvnAlreadyVerified: boolean;
@@ -387,6 +384,17 @@ function riskLevelFromFailures(failedChecks: string[]): NormalizedVerificationRe
   if (failedChecks.some((check) => ['aml_screening', 'nin_lookup'].includes(check))) return 'high';
   if (failedChecks.length >= 2) return 'medium';
   return 'low';
+}
+
+function splitName(fullName: string): { firstName: string; middleName?: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: 'Unknown', lastName: 'Unknown' };
+  if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
+  return {
+    firstName: parts[0],
+    middleName: parts.length > 2 ? parts.slice(1, -1).join(' ') : undefined,
+    lastName: parts[parts.length - 1],
+  };
 }
 
 async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promise<NormalizedVerificationResult> {
@@ -402,10 +410,48 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
   const dojahEvidenceSummary: Record<string, unknown> = {};
 
   if (input.bvnAlreadyVerified) checksCompleted.add('tier1_bvn_verified');
+  else if (input.bvn) pendingChecks.add('tier2_bvn_validation');
   else pendingChecks.add('tier1_bvn_verification');
 
   try {
     const dojah = getDojahService();
+
+    if (!input.bvnAlreadyVerified && input.bvn) {
+      try {
+        const bvnName = splitName(input.fullName);
+        const bvnResult = await dojah.validateBVN({
+          bvn: input.bvn,
+          firstName: bvnName.firstName,
+          middleName: bvnName.middleName,
+          lastName: bvnName.lastName,
+          dateOfBirth: input.dateOfBirth,
+          customerReference: `${input.providerReference}-bvn`,
+        });
+        checksCompleted.add('tier2_bvn_validation');
+        pendingChecks.delete('tier2_bvn_validation');
+        dojahEvidenceSummary.bvn = {
+          status: bvnResult.status ?? null,
+          message: bvnResult.message ?? null,
+          bvnValid: bvnResult.entity?.bvn?.status ?? null,
+          firstNameConfidence: bvnResult.entity?.first_name?.confidence_value ?? null,
+          lastNameConfidence: bvnResult.entity?.last_name?.confidence_value ?? null,
+          dobMatched: bvnResult.entity?.dob?.status ?? null,
+          lastFour: input.bvn.slice(-4),
+        };
+        if (bvnResult.status === false || bvnResult.entity?.bvn?.status === false) {
+          failedChecks.add('tier2_bvn_validation');
+          reasonCodes.add('dojah_bvn_validation_failed');
+        }
+      } catch (error) {
+        pendingChecks.add('tier2_bvn_validation');
+        reasonCodes.add('dojah_bvn_validation_unavailable');
+        dojahEvidenceSummary.bvn = {
+          status: 'unavailable',
+          message: error instanceof Error ? error.message : 'BVN validation unavailable',
+          lastFour: input.bvn.slice(-4),
+        };
+      }
+    }
 
     try {
       const ninResult = await dojah.verifyNINAdvanced(input.nin);
@@ -518,7 +564,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
     normalizedResult: {
       verificationMode: 'nem_hybrid_manual_review',
       verificationStatus: 'submitted_for_review',
-      providerMessage: 'NEM Salvage collected the business documents, address, ID documents, and selfie evidence directly. Dojah API checks are used as supporting evidence when available.',
+      providerMessage: 'NEM Salvage collected business, address, and government ID evidence directly. Dojah API checks are used as supporting evidence when available.',
       nemSubmittedProfile: {
         fullName: input.fullName,
         businessName: input.businessName,
@@ -526,12 +572,11 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
         businessRegistrationNumber: input.cacNumber ? `****${input.cacNumber.slice(-4)}` : 'Not provided',
       },
       documentMetadata: {
-        ninCard: Boolean(input.documents.ninCard),
-        utilityBill: Boolean(input.documents.utilityBill),
-        bankStatement: Boolean(input.documents.bankStatement),
+        businessDocumentType: input.businessDocumentType,
+        governmentIdType: input.governmentIdType,
+        businessDocument: Boolean(input.documents.businessDocument),
+        addressProof: Boolean(input.documents.addressProof),
         photoId: Boolean(input.documents.photoId),
-        cacCertificate: Boolean(input.documents.cacCertificate),
-        selfie: Boolean(input.documents.selfie),
       },
       addressStatus: 'submitted_for_manual_review',
       addressData: input.addressData,
