@@ -15,7 +15,6 @@ import {
   FileText,
   Home,
   Loader2,
-  RefreshCw,
   Shield,
   User,
   XCircle,
@@ -87,6 +86,11 @@ export default function Tier2ManualKYCPage() {
     nin: initialCheck,
     cac: initialCheck,
   });
+  const [lastAutoCheckKey, setLastAutoCheckKey] = useState<Record<'bvn' | 'nin' | 'cac', string>>({
+    bvn: '',
+    nin: '',
+    cac: '',
+  });
   const [formData, setFormData] = useState<FormDataState>({
     businessName: '',
     businessType: 'business_name',
@@ -106,10 +110,6 @@ export default function Tier2ManualKYCPage() {
   const isSubmittingKyc = pageState === 'submitting';
   const needsBusinessDocument = formData.businessType !== 'individual';
   const needsBvn = !bvnAlreadyVerified;
-  const canCheckCac = needsBusinessDocument && formData.cacNumber.trim().length >= 4 && formData.businessName.trim().length >= 2;
-  const canCheckNin = /^\d{11}$/.test(formData.nin);
-  const canCheckBvn = needsBvn && /^\d{11}$/.test(formData.bvn);
-
   const documents = useMemo(
     () => [
       {
@@ -222,6 +222,58 @@ export default function Tier2ManualKYCPage() {
     if (field === 'bvn') setChecks((prev) => ({ ...prev, bvn: initialCheck }));
     if (field === 'cacNumber' || field === 'businessName') setChecks((prev) => ({ ...prev, cac: initialCheck }));
   };
+
+  useEffect(() => {
+    if (pageState !== 'idle') return;
+
+    const timeout = window.setTimeout(() => {
+      if (needsBusinessDocument && formData.cacNumber.trim().length >= 4) {
+        if (formData.businessName.trim().length < 2) {
+          setChecks((prev) => ({
+            ...prev,
+            cac: { state: 'failed', message: 'Enter the business name so the CAC/RC number can be checked against it.' },
+          }));
+        } else {
+          const key = `${formData.businessName.trim().toLowerCase()}|${formData.cacNumber.trim().toLowerCase()}`;
+          if (lastAutoCheckKey.cac !== key) {
+            setLastAutoCheckKey((prev) => ({ ...prev, cac: key }));
+            void runCheck('cac');
+          }
+        }
+      }
+
+      if (/^\d{11}$/.test(formData.nin)) {
+        const key = formData.nin;
+        if (lastAutoCheckKey.nin !== key) {
+          setLastAutoCheckKey((prev) => ({ ...prev, nin: key }));
+          void runCheck('nin');
+        }
+      }
+
+      if (needsBvn && /^\d{11}$/.test(formData.bvn)) {
+        const key = formData.bvn;
+        if (lastAutoCheckKey.bvn !== key) {
+          setLastAutoCheckKey((prev) => ({ ...prev, bvn: key }));
+          void runCheck('bvn');
+        }
+      }
+    }, 800);
+
+    return () => window.clearTimeout(timeout);
+    // runCheck intentionally reads current form state; this effect is the debouncer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    formData.businessName,
+    formData.cacNumber,
+    formData.nin,
+    formData.bvn,
+    lastAutoCheckKey.bvn,
+    lastAutoCheckKey.cac,
+    lastAutoCheckKey.nin,
+    needsBusinessDocument,
+    needsBvn,
+    pageState,
+  ]);
 
   const runCheck = async (type: 'bvn' | 'nin' | 'cac') => {
     setChecks((prev) => ({ ...prev, [type]: { state: 'checking', message: 'Checking with verification provider...' } }));
@@ -398,20 +450,9 @@ export default function Tier2ManualKYCPage() {
                   />
                   {needsBusinessDocument && (
                     <>
-                      <div>
+                      <div className="md:col-span-2">
                         <TextField label="CAC / RC Number" required value={formData.cacNumber} onChange={(v) => handleInputChange('cacNumber', v)} />
                         <CheckMessage check={checks.cac} />
-                      </div>
-                      <div className="flex items-end">
-                        <button
-                          type="button"
-                          disabled={!canCheckCac || checks.cac.state === 'checking'}
-                          onClick={() => runCheck('cac')}
-                          className="w-full px-4 py-3 rounded-lg border border-[var(--brand-primary)] text-[var(--brand-primary)] font-semibold hover:bg-[var(--brand-primary)] hover:text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                          {checks.cac.state === 'checking' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                          Check CAC
-                        </button>
                       </div>
                     </>
                   )}
@@ -438,38 +479,16 @@ export default function Tier2ManualKYCPage() {
                   Identity Details
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+                  <div className="md:col-span-2">
                     <TextField label="NIN" required inputMode="numeric" maxLength={11} value={formData.nin} onChange={(v) => handleInputChange('nin', v)} />
                     <CheckMessage check={checks.nin} />
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      disabled={!canCheckNin || checks.nin.state === 'checking'}
-                      onClick={() => runCheck('nin')}
-                      className="w-full px-4 py-3 rounded-lg border border-[var(--brand-primary)] text-[var(--brand-primary)] font-semibold hover:bg-[var(--brand-primary)] hover:text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {checks.nin.state === 'checking' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                      Check NIN
-                    </button>
                   </div>
 
                   {needsBvn ? (
                     <>
-                      <div>
+                      <div className="md:col-span-2">
                         <TextField label="BVN" required inputMode="numeric" maxLength={11} value={formData.bvn} onChange={(v) => handleInputChange('bvn', v)} />
                         <CheckMessage check={checks.bvn} />
-                      </div>
-                      <div className="flex items-end">
-                        <button
-                          type="button"
-                          disabled={!canCheckBvn || checks.bvn.state === 'checking'}
-                          onClick={() => runCheck('bvn')}
-                          className="w-full px-4 py-3 rounded-lg border border-[var(--brand-primary)] text-[var(--brand-primary)] font-semibold hover:bg-[var(--brand-primary)] hover:text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                          {checks.bvn.state === 'checking' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                          Check BVN
-                        </button>
                       </div>
                     </>
                   ) : (

@@ -118,7 +118,10 @@ export async function POST(request: NextRequest) {
       if (result.status !== false && businessNameLooksClose(businessName, providerBusinessName)) {
         return response('verified', 'CAC record looks consistent with the business name.');
       }
-      return response('review', 'CAC lookup completed, but the business name needs manager review.');
+      return response(
+        'review',
+        'CAC lookup completed, but the returned business name did not confidently match. A manager will review the uploaded business document.'
+      );
     } catch {
       return response('unavailable', 'CAC provider check is unavailable. You can still submit for manager review.');
     }

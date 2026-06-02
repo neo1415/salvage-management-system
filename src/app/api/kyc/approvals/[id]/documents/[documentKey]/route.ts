@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
+import { getDocumentUploadService } from '@/features/kyc/services/document-upload.service';
 import { logAction, AuditActionType, AuditEntityType, DeviceType, getIpAddress } from '@/lib/utils/audit-logger';
 import type { PendingApproval } from '@/features/kyc/types/kyc.types';
 
@@ -32,8 +33,16 @@ export async function GET(
   }
 
   const document = collectDocuments(detail.approval).find((entry) => entry.key === documentKey);
-  if (!document?.url || !/^https:\/\//i.test(document.url)) {
+  if (!document?.url) {
     return NextResponse.json({ error: 'Document not available' }, { status: 404 });
+  }
+
+  const documentUrl = /^https:\/\//i.test(document.url)
+    ? document.url
+    : await getDocumentUploadService().getSignedUrl(document.url);
+
+  if (!documentUrl) {
+    return NextResponse.json({ error: 'Document could not be authorized' }, { status: 502 });
   }
 
   await logAction({
@@ -51,7 +60,7 @@ export async function GET(
     },
   });
 
-  const upstream = await fetch(document.url, { cache: 'no-store' });
+  const upstream = await fetch(documentUrl, { cache: 'no-store' });
   if (!upstream.ok || !upstream.body) {
     return NextResponse.json({ error: 'Document could not be loaded' }, { status: 502 });
   }

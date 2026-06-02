@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { getKycDocumentFolder, uploadFile } from '@/lib/storage/cloudinary';
 
 /**
  * DocumentUploadService
@@ -38,15 +39,25 @@ export interface UploadError {
 
 export class DocumentUploadService {
   private supabase: SupabaseClient | null = null;
+  private cloudinaryConfigured = false;
 
   constructor() {
     // Initialize Supabase client
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ??
+      process.env.SUPABASE_SERVICE_KEY ??
+      process.env.SUPABASE_SERVICE_ROLE;
 
     if (supabaseUrl && supabaseServiceKey) {
       this.supabase = createClient(supabaseUrl, supabaseServiceKey);
     }
+
+    this.cloudinaryConfigured = Boolean(
+      process.env.CLOUDINARY_CLOUD_NAME &&
+      process.env.CLOUDINARY_API_KEY &&
+      process.env.CLOUDINARY_API_SECRET
+    );
   }
   /**
    * Upload a KYC document to Supabase Storage
@@ -57,14 +68,6 @@ export class DocumentUploadService {
     documentType: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id' | 'selfie'
   ): Promise<UploadResult | UploadError> {
     try {
-      // Check if Supabase is configured
-      if (!this.supabase) {
-        return {
-          error: 'Supabase not configured. Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY',
-          code: 'UPLOAD_FAILED',
-        };
-      }
-
       // Validate file size
       if (file.size > MAX_FILE_SIZE) {
         return {
@@ -79,6 +82,10 @@ export class DocumentUploadService {
           error: `Invalid file type: ${file.type}. Only images (JPEG, PNG, WebP) and PDFs are allowed.`,
           code: 'INVALID_FILE_TYPE',
         };
+      }
+
+      if (!this.supabase) {
+        return this.uploadDocumentToCloudinary(file, vendorId, documentType);
       }
 
       // Generate unique file path
@@ -100,6 +107,11 @@ export class DocumentUploadService {
 
       if (error) {
         console.error('[DocumentUpload] Supabase upload error:', error);
+        if (this.cloudinaryConfigured) {
+          console.warn('[DocumentUpload] Falling back to Cloudinary for KYC document upload');
+          return this.uploadDocumentToCloudinary(file, vendorId, documentType);
+        }
+
         return {
           error: `Upload failed: ${error.message}`,
           code: 'UPLOAD_FAILED',
@@ -121,6 +133,48 @@ export class DocumentUploadService {
       console.error('[DocumentUpload] Unexpected error:', error);
       return {
         error: 'An unexpected error occurred during upload',
+        code: 'UPLOAD_FAILED',
+      };
+    }
+  }
+
+  private async uploadDocumentToCloudinary(
+    file: File,
+    vendorId: string,
+    documentType: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id' | 'selfie'
+  ): Promise<UploadResult | UploadError> {
+    if (!this.cloudinaryConfigured) {
+      return {
+        error: 'KYC document storage is not configured. Please configure Supabase storage or Cloudinary storage.',
+        code: 'UPLOAD_FAILED',
+      };
+    }
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      const dataUri = `data:${file.type};base64,${base64}`;
+      const extension = file.name.split('.').pop()?.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'document';
+      const publicId = `${documentType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${extension}`;
+
+      const result = await uploadFile(dataUri, {
+        folder: getKycDocumentFolder(vendorId),
+        publicId,
+        resourceType: file.type === 'application/pdf' ? 'raw' : 'image',
+        compress: false,
+        tags: ['kyc-document', documentType, vendorId],
+      });
+
+      return {
+        url: result.secureUrl,
+        path: result.secureUrl,
+        size: file.size,
+        mimeType: file.type,
+      };
+    } catch (error) {
+      console.error('[DocumentUpload] Cloudinary fallback upload error:', error);
+      return {
+        error: `Upload failed: ${error instanceof Error ? error.message : 'Cloudinary storage error'}`,
         code: 'UPLOAD_FAILED',
       };
     }
