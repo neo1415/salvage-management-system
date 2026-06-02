@@ -214,6 +214,7 @@ export default function Tier2KYCPage() {
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [successModalCopy, setSuccessModalCopy] = useState({ title: '', message: '' });
   const submissionFinishedRef = useRef(false);
+  const pendingWidgetCompletionRef = useRef<string | null>(null);
 
   const goToDashboard = useCallback(() => {
     setSuccessModalOpen(false);
@@ -421,13 +422,14 @@ export default function Tier2KYCPage() {
         verificationStatus: response?.verification_status ?? response?.verificationStatus,
       });
 
-      if (source === 'complete' && referenceId) {
-        setWidgetSessionActive(false);
-        await handleVerificationComplete(referenceId, true);
-        return;
-      }
-
       if (!isFinal) {
+        if (source === 'complete' && referenceId) {
+          pendingWidgetCompletionRef.current = referenceId;
+          console.info('[Dojah Widget] Completion callback captured; waiting for widget close before server verification');
+          setWidgetSessionActive(true);
+          setPageState('ready');
+          return;
+        }
         if (isIntermediate) {
           console.info('[Dojah Widget] Ignoring intermediate step — continue in the identity window');
           setWidgetSessionActive(true);
@@ -450,6 +452,7 @@ export default function Tier2KYCPage() {
       }
 
       setWidgetSessionActive(false);
+      pendingWidgetCompletionRef.current = null;
       if (!referenceId) {
         showVerificationError(
           resolveTier2ApiError({
@@ -549,6 +552,12 @@ export default function Tier2KYCPage() {
       },
       onClose: () => {
         setWidgetSessionActive(false);
+        const pendingReference = pendingWidgetCompletionRef.current;
+        pendingWidgetCompletionRef.current = null;
+        if (pendingReference && !submissionFinishedRef.current) {
+          void handleVerificationComplete(pendingReference, true);
+          return;
+        }
         if (pageState === 'verifying') {
           setPageState('ready');
         }
