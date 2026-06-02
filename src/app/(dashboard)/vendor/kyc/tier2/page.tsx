@@ -128,7 +128,9 @@ interface DojahConnect {
 type PageState = 'idle' | 'loading_config' | 'ready' | 'verifying' | 'pending_review' | 'approved' | 'rejected' | 'expired' | 'error';
 
 const DOJAH_IFRAME_ALLOW = 'camera; microphone; geolocation; fullscreen; autoplay';
-const TIER2_KYC_PROVIDER = process.env.NEXT_PUBLIC_TIER2_KYC_PROVIDER === 'manual' ? 'manual' : 'dojah';
+const TIER2_KYC_PROVIDER = process.env.NEXT_PUBLIC_TIER2_KYC_PROVIDER === 'dojah_widget'
+  ? 'dojah_widget'
+  : 'manual';
 
 function formatEmbeddedCameraHelp(prefix: string) {
   return [

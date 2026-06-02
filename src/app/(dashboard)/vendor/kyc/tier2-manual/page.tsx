@@ -41,6 +41,7 @@ interface FormData {
   utilityBill: File | null;
   bankStatement: File | null;
   photoId: File | null;
+  selfie: File | null;
 }
 
 export default function Tier2ManualKYCPage() {
@@ -67,6 +68,7 @@ export default function Tier2ManualKYCPage() {
     utilityBill: null,
     bankStatement: null,
     photoId: null,
+    selfie: null,
   });
 
   useEffect(() => {
@@ -167,6 +169,7 @@ export default function Tier2ManualKYCPage() {
         { key: 'utilityBill', file: formData.utilityBill },
         { key: 'bankStatement', file: formData.bankStatement },
         { key: 'photoId', file: formData.photoId },
+        { key: 'selfie', file: formData.selfie },
       ];
 
       for (const { key, file } of filesToUpload) {
@@ -321,8 +324,11 @@ export default function Tier2ManualKYCPage() {
           {pageState === 'idle' && (
             <form onSubmit={handleSubmit} className="p-6 sm:p-8">
               <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-xl p-5 text-white mb-6">
-                <h2 className="text-lg font-bold mb-3">Tier 2 Benefits</h2>
-                <ul className="space-y-2 text-sm text-gray-200">
+              <h2 className="text-lg font-bold mb-3">Tier 2 Verification</h2>
+              <p className="mb-3 text-sm text-gray-100">
+                Upload your documents here. NEM Salvage will store the evidence, run available provider checks in the background, and route the file to a manager for review.
+              </p>
+              <ul className="space-y-2 text-sm text-gray-200">
                   <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Higher bidding access when approved</li>
                   <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Leaderboard eligibility</li>
                   <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Tier 2 Verified badge</li>
@@ -525,6 +531,7 @@ export default function Tier2ManualKYCPage() {
                     { key: 'utilityBill', label: 'Utility Bill (within 3 months)', required: true },
                     { key: 'bankStatement', label: 'Bank Statement', required: true },
                     { key: 'photoId', label: 'Photo ID (Passport/Driver\'s License)', required: true },
+                    { key: 'selfie', label: 'Live selfie / clear face photo', required: true },
                   ].map(({ key, label, required }) => (
                     <div key={key} className="border border-gray-300 rounded-lg p-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -533,7 +540,7 @@ export default function Tier2ManualKYCPage() {
                       <input
                         type="file"
                         required={required}
-                        accept="image/*,application/pdf"
+                        accept={key === 'selfie' ? 'image/*' : 'image/*,application/pdf'}
                         onChange={(e) => handleFileChange(key as keyof FormData, e.target.files?.[0] || null)}
                         className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[var(--brand-primary)] file:text-white hover:file:bg-[var(--brand-primary-hover)]"
                       />

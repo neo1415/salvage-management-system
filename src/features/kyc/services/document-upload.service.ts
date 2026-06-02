@@ -54,7 +54,7 @@ export class DocumentUploadService {
   async uploadDocument(
     file: File,
     vendorId: string,
-    documentType: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id'
+    documentType: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id' | 'selfie'
   ): Promise<UploadResult | UploadError> {
     try {
       // Check if Supabase is configured
@@ -132,7 +132,7 @@ export class DocumentUploadService {
   async uploadMultipleDocuments(
     documents: Array<{
       file: File;
-      type: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id';
+      type: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id' | 'selfie';
     }>,
     vendorId: string
   ): Promise<{

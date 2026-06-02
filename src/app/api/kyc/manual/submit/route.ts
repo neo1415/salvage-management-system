@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
+import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { getEncryptionService } from '@/features/kyc/services/encryption.service';
 import { getKYCNotificationService } from '@/features/kyc/services/notification.service';
 import { createRoleNotifications } from '@/features/notifications/services/notification.service';
 import { getDocumentUploadService } from '@/features/kyc/services/document-upload.service';
+import { getDojahService } from '@/features/kyc/services/dojah.service';
+import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
+import { buildDojahReference } from '@/features/kyc/utils/dojah-reference';
+import type { NormalizedVerificationResult } from '@/features/kyc/types/provider-verification.types';
 
 /**
  * POST /api/kyc/manual/submit
@@ -53,8 +58,18 @@ export async function POST(request: NextRequest) {
 
     // Get vendor record
     const [vendor] = await db
-      .select({ id: vendors.id, businessName: vendors.businessName })
+      .select({
+        id: vendors.id,
+        businessName: vendors.businessName,
+        bvnVerifiedAt: vendors.bvnVerifiedAt,
+        registrationFeePaid: vendors.registrationFeePaid,
+        fullName: users.fullName,
+        email: users.email,
+        phone: users.phone,
+        dateOfBirth: users.dateOfBirth,
+      })
       .from(vendors)
+      .innerJoin(users, eq(vendors.userId, users.id))
       .where(eq(vendors.userId, userId))
       .limit(1);
 
@@ -112,11 +127,12 @@ export async function POST(request: NextRequest) {
     const utilityBill = formData.get('utilityBill') as File | null;
     const bankStatement = formData.get('bankStatement') as File | null;
     const photoId = formData.get('photoId') as File | null;
+    const selfie = formData.get('selfie') as File | null;
 
     // Validate required documents
-    if (!ninCard || !utilityBill || !bankStatement || !photoId) {
+    if (!ninCard || !utilityBill || !bankStatement || !photoId || !selfie) {
       return NextResponse.json(
-        { error: 'Missing required documents: ninCard, utilityBill, bankStatement, photoId' },
+        { error: 'Missing required documents: ninCard, utilityBill, bankStatement, photoId, selfie' },
         { status: 400 }
       );
     }
@@ -137,6 +153,7 @@ export async function POST(request: NextRequest) {
       { file: utilityBill, name: 'Utility Bill' },
       { file: bankStatement, name: 'Bank Statement' },
       { file: photoId, name: 'Photo ID' },
+      { file: selfie, name: 'Selfie' },
     ];
 
     if (cacCertificate) {
@@ -191,12 +208,13 @@ export async function POST(request: NextRequest) {
     
     const documentsToUpload: Array<{
       file: File;
-      type: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id';
+      type: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id' | 'selfie';
     }> = [
       { file: ninCard, type: 'nin_card' as const },
       { file: utilityBill, type: 'utility_bill' as const },
       { file: bankStatement, type: 'bank_statement' as const },
       { file: photoId, type: 'photo_id' as const },
+      { file: selfie, type: 'selfie' as const },
     ];
 
     // Add CAC certificate if provided
@@ -235,6 +253,27 @@ export async function POST(request: NextRequest) {
       // Store NIN details for manager review (encrypted NIN is in ninEncrypted field)
       ninLastFourDigits: nin.slice(-4),
     };
+    const providerReference = buildDojahReference(vendor.id);
+    const providerEvidence = await collectHybridProviderEvidence({
+      providerReference,
+      fullName: vendor.fullName ?? session.user.name ?? businessName,
+      dateOfBirth: vendor.dateOfBirth ? new Date(vendor.dateOfBirth).toISOString().slice(0, 10) : undefined,
+      nin,
+      bvn,
+      cacNumber,
+      businessName,
+      businessType,
+      addressData,
+      documents: {
+        ninCard: results.nin_card?.path,
+        utilityBill: results.utility_bill?.path,
+        bankStatement: results.bank_statement?.path,
+        photoId: results.photo_id?.path,
+        cacCertificate: results.cac_certificate?.path,
+        selfie: results.selfie?.path,
+      },
+      bvnAlreadyVerified: Boolean(vendor.bvnVerifiedAt),
+    });
 
     // Update vendor record in a transaction
     await db.transaction(async (tx) => {
@@ -258,12 +297,38 @@ export async function POST(request: NextRequest) {
           addressProofUrl: results.utility_bill?.path || null,
           bankStatementUrl: results.bank_statement?.path || null,
           photoIdUrl: results.photo_id?.path || null,
+          selfieUrl: results.selfie?.path || null,
           tier2SubmittedAt: new Date(),
+          tier2DojahReferenceId: providerReference,
+          amlScreeningData: providerEvidence.normalizedResult.dojahEvidenceSummary ?? null,
+          amlRiskLevel: providerEvidence.riskLevel,
+          amlScreenedAt: providerEvidence.checksCompleted.includes('aml_screening') ? new Date() : null,
+          fraudRiskScore: providerEvidence.riskLevel === 'critical'
+            ? '95'
+            : providerEvidence.riskLevel === 'high'
+              ? '80'
+              : providerEvidence.riskLevel === 'medium'
+                ? '55'
+                : '20',
+          fraudFlags: providerEvidence.reasonCodes,
           // CRITICAL FIX: Do NOT set tier2ApprovedAt or change tier here
           // The vendor should remain in pending_review status until manager approves
           updatedAt: new Date(),
         })
         .where(eq(vendors.id, vendor.id));
+    });
+
+    await getProviderVerificationService().persistVerification({
+      userId,
+      vendorId: vendor.id,
+      actorId: userId,
+      result: providerEvidence,
+      rawPayload: {
+        source: 'nem_hybrid_tier2_submit',
+        dojahEvidence: providerEvidence.normalizedResult.dojahEvidenceSummary,
+      },
+    }).catch((error) => {
+      console.error('[Manual KYC Submit] Provider evidence persistence failed:', error);
     });
 
     // Send notification
@@ -302,4 +367,178 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+type HybridEvidenceInput = {
+  providerReference: string;
+  fullName: string;
+  dateOfBirth?: string;
+  nin: string;
+  bvn: string;
+  cacNumber?: string;
+  businessName: string;
+  businessType: string;
+  addressData: Record<string, unknown>;
+  documents: Record<string, string | undefined>;
+  bvnAlreadyVerified: boolean;
+};
+
+function riskLevelFromFailures(failedChecks: string[]): NormalizedVerificationResult['riskLevel'] {
+  if (failedChecks.some((check) => ['aml_screening', 'nin_lookup'].includes(check))) return 'high';
+  if (failedChecks.length >= 2) return 'medium';
+  return 'low';
+}
+
+async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promise<NormalizedVerificationResult> {
+  const checksCompleted = new Set<string>([
+    'nem_business_profile_submitted',
+    'nem_address_submitted',
+    'nem_documents_uploaded',
+    'selfie_uploaded_for_manual_review',
+  ]);
+  const pendingChecks = new Set<string>(['manager_identity_review', 'manager_document_review', 'manager_selfie_review']);
+  const failedChecks = new Set<string>();
+  const reasonCodes = new Set<string>();
+  const dojahEvidenceSummary: Record<string, unknown> = {};
+
+  if (input.bvnAlreadyVerified) checksCompleted.add('tier1_bvn_verified');
+  else pendingChecks.add('tier1_bvn_verification');
+
+  try {
+    const dojah = getDojahService();
+
+    try {
+      const ninResult = await dojah.verifyNINAdvanced(input.nin);
+      checksCompleted.add('nin_lookup');
+      dojahEvidenceSummary.nin = {
+        status: ninResult.status ?? null,
+        message: ninResult.message ?? null,
+        hasEntity: Boolean(ninResult.entity),
+        lastFour: input.nin.slice(-4),
+      };
+      if (ninResult.status === false) {
+        failedChecks.add('nin_lookup');
+        reasonCodes.add('dojah_nin_lookup_failed');
+      }
+    } catch (error) {
+      pendingChecks.add('nin_lookup');
+      reasonCodes.add('dojah_nin_lookup_unavailable');
+      dojahEvidenceSummary.nin = {
+        status: 'unavailable',
+        message: error instanceof Error ? error.message : 'NIN lookup unavailable',
+        lastFour: input.nin.slice(-4),
+      };
+    }
+
+    if (input.cacNumber?.trim()) {
+      try {
+        const cacResult = await dojah.verifyCAC(input.cacNumber.trim());
+        checksCompleted.add('business_registration_lookup');
+        dojahEvidenceSummary.cac = {
+          status: cacResult.status ?? null,
+          message: cacResult.message ?? null,
+          hasEntity: Boolean(cacResult.entity),
+          submittedBusinessName: input.businessName,
+          submittedBusinessType: input.businessType,
+          registrationNumberLastFour: input.cacNumber.trim().slice(-4),
+        };
+        if (cacResult.status === false) {
+          failedChecks.add('business_registration_lookup');
+          reasonCodes.add('dojah_cac_lookup_failed');
+        }
+      } catch (error) {
+        pendingChecks.add('business_registration_lookup');
+        reasonCodes.add('dojah_cac_lookup_unavailable');
+        dojahEvidenceSummary.cac = {
+          status: 'unavailable',
+          message: error instanceof Error ? error.message : 'Business registration lookup unavailable',
+          submittedBusinessName: input.businessName,
+          submittedBusinessType: input.businessType,
+          registrationNumberLastFour: input.cacNumber.trim().slice(-4),
+        };
+      }
+    } else {
+      pendingChecks.add('business_registration_lookup');
+    }
+
+    if (input.dateOfBirth) {
+      try {
+        const amlResult = await dojah.screenAML(input.fullName, input.dateOfBirth);
+        checksCompleted.add('aml_screening');
+        dojahEvidenceSummary.aml = {
+          status: amlResult.status ?? null,
+          hasPepHits: (amlResult.entity?.pep?.length ?? 0) > 0,
+          hasSanctionHits: (amlResult.entity?.sanctions?.length ?? 0) > 0,
+          hasAdverseMediaHits: (amlResult.entity?.adverse_media?.length ?? 0) > 0,
+        };
+        if (
+          (amlResult.entity?.pep?.length ?? 0) > 0 ||
+          (amlResult.entity?.sanctions?.length ?? 0) > 0 ||
+          (amlResult.entity?.adverse_media?.length ?? 0) > 0
+        ) {
+          failedChecks.add('aml_screening');
+          reasonCodes.add('dojah_aml_flagged');
+        }
+      } catch (error) {
+        pendingChecks.add('aml_screening');
+        reasonCodes.add('dojah_aml_unavailable');
+        dojahEvidenceSummary.aml = {
+          status: 'unavailable',
+          message: error instanceof Error ? error.message : 'AML screening unavailable',
+        };
+      }
+    } else {
+      pendingChecks.add('aml_screening');
+      reasonCodes.add('date_of_birth_missing_for_aml');
+    }
+  } catch (error) {
+    pendingChecks.add('provider_api_checks');
+    reasonCodes.add('dojah_provider_unavailable');
+    dojahEvidenceSummary.provider = {
+      status: 'unavailable',
+      message: error instanceof Error ? error.message : 'Dojah provider unavailable',
+    };
+  }
+
+  const failed = [...failedChecks];
+  const riskLevel = riskLevelFromFailures(failed);
+
+  return {
+    provider: 'dojah',
+    providerReference: input.providerReference,
+    workflowReference: 'nem-hybrid-tier2',
+    verificationType: 'tier2',
+    status: 'review_required',
+    riskLevel,
+    checksCompleted: [...checksCompleted],
+    pendingChecks: [...pendingChecks],
+    failedChecks: failed,
+    reasonCodes: [...reasonCodes],
+    displayMessage: 'Tier 2 evidence was submitted through NEM Salvage and is ready for internal review.',
+    normalizedResult: {
+      verificationMode: 'nem_hybrid_manual_review',
+      verificationStatus: 'submitted_for_review',
+      providerMessage: 'NEM Salvage collected the business documents, address, ID documents, and selfie evidence directly. Dojah API checks are used as supporting evidence when available.',
+      nemSubmittedProfile: {
+        fullName: input.fullName,
+        businessName: input.businessName,
+        businessType: input.businessType,
+        businessRegistrationNumber: input.cacNumber ? `****${input.cacNumber.slice(-4)}` : 'Not provided',
+      },
+      documentMetadata: {
+        ninCard: Boolean(input.documents.ninCard),
+        utilityBill: Boolean(input.documents.utilityBill),
+        bankStatement: Boolean(input.documents.bankStatement),
+        photoId: Boolean(input.documents.photoId),
+        cacCertificate: Boolean(input.documents.cacCertificate),
+        selfie: Boolean(input.documents.selfie),
+      },
+      addressStatus: 'submitted_for_manual_review',
+      addressData: input.addressData,
+      maskedIdentityValue: `****${input.nin.slice(-4)}`,
+      livenessScore: null,
+      biometricMatchScore: null,
+      dojahEvidenceSummary,
+    },
+  };
 }
