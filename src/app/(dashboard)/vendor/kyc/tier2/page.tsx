@@ -525,12 +525,12 @@ export default function Tier2KYCPage() {
           return;
         }
 
-        if (isDojahWidgetRecoverableAfterError(err) || errorObj.referenceId) {
+        if (isDojahWidgetRecoverableAfterError(err)) {
           void recoverSubmissionFromServer().then((recovered) => {
             if (!recovered) {
               showVerificationError(
                 resolveTier2WidgetError(
-                  'Some checks need manual review, but your session may still be processing. Wait a moment, then refresh this page.'
+                  'Your verification session is still processing. Wait a moment, then refresh this page.'
                 ),
                 { openDialog: true, nextPageState: 'ready' }
               );

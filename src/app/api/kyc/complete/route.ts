@@ -23,7 +23,7 @@ import {
   isCleanTier2Verification,
 } from '@/features/kyc/services/tier2-review-settings.service';
 import { appPath } from '@/features/notifications/templates/email-urls';
-import { isTier2ReadyForVendorSubmission } from '@/features/kyc/services/tier2-submission-readiness';
+import { getTier2SubmissionReadiness } from '@/features/kyc/services/tier2-submission-readiness';
 import { businessPolicyService } from '@/features/business-policy';
 
 const LOCK_TTL_SECONDS = 300; // 5 minutes
@@ -143,13 +143,39 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedPreview = normalizeDojahWorkflowResult(verificationResult);
-    if (!isTier2ReadyForVendorSubmission(verificationResult, normalizedPreview)) {
+    const readiness = getTier2SubmissionReadiness(verificationResult, normalizedPreview, {
+      businessData: policy.kyc.tier2RequiresBusinessData,
+      governmentId: policy.kyc.tier2RequiresGovernmentId,
+      liveness: policy.kyc.tier2RequiresLiveness,
+      address: policy.kyc.tier2RequiresAddress,
+    });
+    if (!readiness.ready) {
+      await audit.log({
+        vendorId,
+        actorId: userId,
+        action: AuditActionType.DOJAH_KYC_FAILED,
+        ipAddress,
+        userAgent: request.headers.get('user-agent') ?? 'unknown',
+        afterState: {
+          provider: 'dojah',
+          providerReference: referenceId,
+          source: 'frontend_callback',
+          providerStatus: readiness.providerStatus,
+          reason: readiness.reason,
+          missingBlockingEvidence: readiness.missingBlockingEvidence,
+          missingReviewEvidence: readiness.missingReviewEvidence,
+        },
+      });
       return NextResponse.json(
         {
           error: 'verification_incomplete',
           message:
             'Identity verification is not finished yet. Complete every step in the verification window before leaving the page.',
           errorSource: 'app',
+          providerStatus: readiness.providerStatus,
+          reason: readiness.reason,
+          missingEvidence: readiness.missingBlockingEvidence,
+          reviewWarnings: readiness.missingReviewEvidence,
         },
         { status: 409 }
       );

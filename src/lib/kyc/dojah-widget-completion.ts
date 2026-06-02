@@ -42,9 +42,14 @@ export function resolveDojahWidgetReference(response?: DojahWidgetCallbackRespon
 
 function workflowStatusText(response: DojahWidgetCallbackResponse): string {
   const raw = response.verification_status ?? response.verificationStatus;
-  if (raw) return String(raw).toLowerCase();
-  if (typeof response.status === 'string') return response.status.toLowerCase();
+  if (raw) return String(raw).trim().toLowerCase();
+  if (typeof response.status === 'string') return response.status.trim().toLowerCase();
   return '';
+}
+
+function isCompletedWorkflowStatus(statusText: string): boolean {
+  const normalized = statusText.replace(/[_-]+/g, ' ').trim();
+  return normalized === 'completed' || normalized === 'complete';
 }
 
 /** Full workflow finished (safe to call /api/kyc/complete). */
@@ -56,37 +61,15 @@ export function isDojahWidgetFinalSuccess(response?: DojahWidgetCallbackResponse
 
   if (response.status === false) return false;
 
-  const statusText = workflowStatusText(response);
-  if (
-    statusText.includes('complete') ||
-    statusText.includes('success') ||
-    statusText.includes('passed') ||
-    statusText.includes('approved')
-  ) {
-    return true;
-  }
-
-  const messageText = (response.message ?? '').toLowerCase();
-  if (
-    messageText.includes('complete') ||
-    messageText.includes('success') ||
-    messageText.includes('passed') ||
-    messageText.includes('approved')
-  ) {
-    return true;
-  }
-
-  return false;
+  return isCompletedWorkflowStatus(workflowStatusText(response));
 }
 
 /** Widget reported a step failure but the overall session may still have finished (manual review). */
 export function isDojahWidgetRecoverableAfterError(err: unknown): boolean {
   const errorObj = err as { message?: string; referenceId?: string; reference_id?: string };
-  const hasReference = Boolean(
-    errorObj.referenceId || errorObj.reference_id || errorObj.message?.toLowerCase().includes('review')
-  );
+  const hasReference = Boolean(errorObj.referenceId || errorObj.reference_id);
   const message = (errorObj.message ?? '').toLowerCase();
-  return hasReference && (message.includes('verification failed') || message.includes('failed'));
+  return hasReference && message.includes('completed');
 }
 
 /** Intermediate step (e.g. liveness only) — has a reference or partial data but workflow not done. */
@@ -97,5 +80,9 @@ export function isDojahWidgetIntermediateStep(response?: DojahWidgetCallbackResp
   const hasPartialData = Boolean(
     data?.selfie || data?.government_data || data?.id || data?.business_id || data?.business_data
   );
-  return Boolean(reference || hasPartialData || response.status === true);
+  const statusText = workflowStatusText(response);
+  const providerStillWorking = ['ongoing', 'pending', 'submitted', 'failed', 'abandoned'].some((status) =>
+    statusText.includes(status)
+  );
+  return Boolean(reference || hasPartialData || response.status === true || providerStillWorking);
 }

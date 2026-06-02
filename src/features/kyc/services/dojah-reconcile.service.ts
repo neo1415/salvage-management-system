@@ -11,6 +11,7 @@ import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/u
 import type { DojahVerificationResult } from '../schemas/dojah.schemas';
 import { assertProviderVerificationStorageReady } from './provider-verification-readiness';
 import {
+  getTier2SubmissionReadiness,
   isDojahResultFetchable,
   isTier2ReadyForVendorSubmission,
 } from './tier2-submission-readiness';
@@ -106,11 +107,42 @@ export async function reconcileTier2FromDojah(input: {
       }
 
       const normalized = normalizeDojahWorkflowResult(verificationResult);
-      if (!isTier2ReadyForVendorSubmission(verificationResult, normalized)) {
-        continue;
-      }
+      const readiness = getTier2SubmissionReadiness(verificationResult, normalized);
       normalized.providerReference = normalized.providerReference || providerReference;
       normalized.workflowReference = normalized.workflowReference || providerReference;
+
+      if (!readiness.ready) {
+        await providerService.persistVerification({
+          userId: input.userId,
+          vendorId: input.vendorId,
+          actorId: input.actorId,
+          result: normalized,
+          rawPayload: { source: 'reconcile_fetch_not_ready', verificationResult },
+          ipAddress: input.ipAddress,
+          userAgent: input.userAgent,
+        });
+        await logAction({
+          userId: input.actorId,
+          actionType: AuditActionType.DOJAH_KYC_FAILED,
+          entityType: AuditEntityType.KYC,
+          entityId: input.vendorId,
+          ipAddress: input.ipAddress ?? 'system',
+          deviceType: DeviceType.DESKTOP,
+          userAgent: input.userAgent ?? 'system',
+          afterState: {
+            provider: 'dojah',
+            providerReference,
+            providerStatus: readiness.providerStatus,
+            reason: readiness.reason,
+            missingBlockingEvidence: readiness.missingBlockingEvidence,
+            missingReviewEvidence: readiness.missingReviewEvidence,
+            source: 'reconcile_fetch',
+            evidenceStored: true,
+          },
+        });
+        lastError = readiness.reason;
+        continue;
+      }
       const media = await ingestDojahMediaForVendor({
         vendorId: input.vendorId,
         userId: input.userId,

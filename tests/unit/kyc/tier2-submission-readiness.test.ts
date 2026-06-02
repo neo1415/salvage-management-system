@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getTier2SubmissionReadiness,
   hasTier2VerificationEvidence,
   isTier2ReadyForVendorSubmission,
 } from '@/features/kyc/services/tier2-submission-readiness';
@@ -25,7 +26,7 @@ describe('tier2-submission-readiness', () => {
     expect(isTier2ReadyForVendorSubmission(result)).toBe(false);
   });
 
-  it('accepts results with NIN and selfie evidence', () => {
+  it('rejects completed results missing business evidence', () => {
     const result = {
       verification_status: 'Completed',
       data: {
@@ -38,6 +39,28 @@ describe('tier2-submission-readiness', () => {
       },
     } as DojahVerificationResult;
 
+    const readiness = getTier2SubmissionReadiness(result);
+    expect(isTier2ReadyForVendorSubmission(result)).toBe(false);
+    expect(readiness.reason).toBe('missing_core_evidence');
+    expect(readiness.missingBlockingEvidence).toContain('business_data_or_id');
+  });
+
+  it('accepts completed results with identity, liveness, and business evidence', () => {
+    const result = {
+      verification_status: 'Completed',
+      data: {
+        government_data: {
+          data: {
+            nin: { entity: { nin: '12345678901', firstname: 'Ada' } },
+          },
+        },
+        selfie: { data: { liveness_score: 90 } },
+        business_id: { business_name: 'Ada Parts Ventures', business_number: 'BN12345' },
+      },
+    } as DojahVerificationResult;
+
+    const readiness = getTier2SubmissionReadiness(result);
     expect(isTier2ReadyForVendorSubmission(result)).toBe(true);
+    expect(readiness.reason).toBe('ready');
   });
 });

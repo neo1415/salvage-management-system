@@ -17,6 +17,8 @@ import type { NormalizedVerificationResult } from '@/features/kyc/types/provider
 import { extractVendorIdFromDojahReference } from '@/features/kyc/utils/dojah-reference';
 import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
 import { appPath } from '@/features/notifications/templates/email-urls';
+import { getTier2SubmissionReadiness } from '@/features/kyc/services/tier2-submission-readiness';
+import { businessPolicyService } from '@/features/business-policy';
 
 export const dynamic = 'force-dynamic';
 
@@ -322,7 +324,23 @@ export async function POST(request: NextRequest) {
       userAgent,
     });
 
-    if (isCompletionLikeWebhook(payload, eventType)) {
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const readiness = verificationResult
+      ? getTier2SubmissionReadiness(verificationResult, normalized, {
+          businessData: policy.kyc.tier2RequiresBusinessData,
+          governmentId: policy.kyc.tier2RequiresGovernmentId,
+          liveness: policy.kyc.tier2RequiresLiveness,
+          address: policy.kyc.tier2RequiresAddress,
+        })
+      : {
+          ready: false,
+          providerStatus: normalized.status,
+          reason: 'provider_not_completed',
+          missingBlockingEvidence: [],
+          missingReviewEvidence: normalized.pendingChecks,
+        };
+
+    if (isCompletionLikeWebhook(payload, eventType) && readiness.ready) {
       await getKYCRepository().upsertVerificationData(vendor.id, {
         dojahReferenceId: normalized.providerReference || providerReference || eventId,
         tier2SubmittedAt: new Date(),
@@ -355,6 +373,26 @@ export async function POST(request: NextRequest) {
         riskLevel: normalized.riskLevel,
         reviewUrl: appPath(`/manager/kyc-approvals/${vendor.id}`),
         outcome: 'pending_review',
+      });
+    } else if (isCompletionLikeWebhook(payload, eventType)) {
+      await logAction({
+        userId: systemActorId,
+        actionType: AuditActionType.DOJAH_KYC_FAILED,
+        entityType: AuditEntityType.KYC,
+        entityId: vendor.id,
+        ipAddress,
+        deviceType: DeviceType.DESKTOP,
+        userAgent,
+        afterState: {
+          provider: 'dojah',
+          providerReference: normalized.providerReference || providerReference,
+          source: 'webhook',
+          providerStatus: readiness.providerStatus,
+          reason: readiness.reason,
+          missingBlockingEvidence: readiness.missingBlockingEvidence,
+          missingReviewEvidence: readiness.missingReviewEvidence,
+          evidenceStored: true,
+        },
       });
     }
 

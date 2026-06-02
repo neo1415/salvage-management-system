@@ -15,12 +15,23 @@ describe('dojah-widget-completion', () => {
     expect(isDojahWidgetIntermediateStep(response)).toBe(true);
   });
 
-  it('treats pending review verification_status as final', () => {
+  it('treats pending review verification_status as intermediate, not final', () => {
     const response = {
       reference_id: 'DJ-TEST-789',
       verification_status: 'Pending',
     };
-    expect(isDojahWidgetFinalSuccess(response)).toBe(true);
+    expect(isDojahWidgetFinalSuccess(response)).toBe(false);
+    expect(isDojahWidgetIntermediateStep(response)).toBe(true);
+  });
+
+  it('does not treat generic success message as final without completed workflow status', () => {
+    const response = {
+      reference_id: 'DJ-TEST-999',
+      status: true,
+      message: 'Business ID step successful',
+    };
+    expect(isDojahWidgetFinalSuccess(response)).toBe(false);
+    expect(isDojahWidgetIntermediateStep(response)).toBe(true);
   });
 
   it('treats completed verification_status as final', () => {
