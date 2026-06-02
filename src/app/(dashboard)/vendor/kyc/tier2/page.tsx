@@ -421,6 +421,12 @@ export default function Tier2KYCPage() {
         verificationStatus: response?.verification_status ?? response?.verificationStatus,
       });
 
+      if (source === 'complete' && referenceId) {
+        setWidgetSessionActive(false);
+        await handleVerificationComplete(referenceId, true);
+        return;
+      }
+
       if (!isFinal) {
         if (isIntermediate) {
           console.info('[Dojah Widget] Ignoring intermediate step — continue in the identity window');
