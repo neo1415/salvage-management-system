@@ -83,11 +83,14 @@ export async function GET(
       )
     : null;
 
-  const verificationSource = approval.providerEvidence
-    ? 'dojah'
-    : approval.ninVerificationData
-      ? 'legacy_manual'
-      : 'unknown';
+  const normalizedResult = (approval.providerEvidence?.normalizedResult as Record<string, unknown> | null) ?? null;
+  const verificationSource = normalizedResult?.verificationMode === 'nem_hybrid_manual_review'
+    ? 'manual_hybrid'
+    : approval.providerEvidence
+      ? 'dojah'
+      : approval.ninVerificationData
+        ? 'legacy_manual'
+        : 'unknown';
 
   return NextResponse.json(
     {

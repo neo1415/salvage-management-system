@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
@@ -10,6 +10,7 @@ import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MIS
 import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
 import { resetVendorTier2ForTesting } from '@/features/kyc/services/kyc-testing-reset.service';
 import { clearPrematureTier2Submission } from '@/features/kyc/services/clear-premature-tier2-submission';
+import { buildDojahReference } from '@/features/kyc/utils/dojah-reference';
 import {
   businessPolicyService,
   getBusinessPolicyRuntimeMode,
@@ -23,7 +24,7 @@ import {
  * Returns Dojah widget configuration for the authenticated vendor.
  * Returns only safe browser-side widget configuration and non-secret profile prefill data.
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -33,6 +34,9 @@ export async function GET(request: Request) {
   const publicKey = process.env.DOJAH_PUBLIC_KEY;
   const widgetId = process.env.DOJAH_WIDGET_ID || process.env.DOJAH_EASYONBOARD_FLOW_ID;
   const workflowSlug = process.env.DOJAH_WORKFLOW_SLUG || 'salvage';
+  const requestUrl = request.nextUrl ?? new URL(request.url);
+  const mode = requestUrl.searchParams.get('mode');
+  const livenessWidgetId = process.env.DOJAH_LIVENESS_WIDGET_ID || process.env.DOJAH_LIVENESS_FLOW_ID;
 
   if (!appId || !publicKey) {
     console.error('[KYC] Dojah credentials not configured');
@@ -107,6 +111,58 @@ export async function GET(request: Request) {
       },
       { status: 403 }
     );
+  }
+
+  if (mode === 'liveness') {
+    if (!livenessWidgetId) {
+      return NextResponse.json(
+        {
+          error: 'liveness_widget_not_configured',
+          message: 'Liveness verification is not configured. Please contact support.',
+        },
+        { status: 503 }
+      );
+    }
+
+    const nameParts = parseName(result.fullName);
+    const livenessReference = `${buildDojahReference(result.vendorId)}-live`;
+    return NextResponse.json({
+      appId,
+      publicKey,
+      widgetId: livenessWidgetId,
+      phone: result.phone ?? session.user.phone ?? undefined,
+      dob: dob ?? undefined,
+      vendorId: result.vendorId,
+      workflowSlug: 'nem-hybrid-liveness',
+      verificationReference: livenessReference,
+      livenessOnly: true,
+      profile: {
+        fullName: result.fullName,
+        firstName: nameParts.firstName,
+        middleName: nameParts.middleName,
+        lastName: nameParts.lastName,
+        email: result.email ?? session.user.email ?? undefined,
+        phone: result.phone ?? session.user.phone ?? undefined,
+        dateOfBirth: dob ?? undefined,
+        businessName: result.businessName ?? undefined,
+        businessType: result.businessType ?? undefined,
+        businessRegistrationNumberMasked: maskIdentifier(result.cacNumber),
+        hasBusinessRegistrationNumber: Boolean(result.cacNumber),
+        bvnAlreadyVerified: Boolean(result.bvnVerifiedAt),
+        registrationFeePaid: Boolean(result.registrationFeePaid),
+      },
+      requirements: {
+        bvnRequiredInThisFlow: false,
+        businessData: false,
+        governmentId: false,
+        liveness: true,
+        address: false,
+        amlScreening: false,
+        duplicateIdentityCheck: false,
+        manualReview: true,
+      },
+      ...(isKycTestingMode() ? { kycTestingMode: true as const } : {}),
+    });
   }
 
   if (isKycTestingMode()) {

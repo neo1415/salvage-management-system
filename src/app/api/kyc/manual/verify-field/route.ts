@@ -19,7 +19,11 @@ function splitName(fullName: string): { firstName: string; middleName?: string; 
 }
 
 function normalizeName(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return value
+    .toLowerCase()
+    .replace(/\b(plc|ltd|limited|incorporated|inc|company|co|nigeria|ng|the)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 function businessNameLooksClose(expected: string, actual?: string | null): boolean {
@@ -27,11 +31,55 @@ function businessNameLooksClose(expected: string, actual?: string | null): boole
   const left = normalizeName(expected);
   const right = normalizeName(actual);
   if (!left || !right) return false;
-  return left.includes(right) || right.includes(left) || left.split(' ').some((part) => part.length > 3 && right.includes(part));
+  if (left === right || left.includes(right) || right.includes(left)) return true;
+  const leftTokens = new Set(left.split(/\s+/).filter((part) => part.length > 2));
+  const rightTokens = right.split(/\s+/).filter((part) => part.length > 2);
+  if (!leftTokens.size || !rightTokens.length) return false;
+  const overlap = rightTokens.filter((part) => leftTokens.has(part)).length;
+  return overlap / Math.max(leftTokens.size, rightTokens.length) >= 0.6;
 }
 
 function response(state: CheckState, message: string, extra?: Record<string, unknown>) {
   return NextResponse.json({ state, message, ...(extra ?? {}) });
+}
+
+function extractBusinessName(value: unknown): string | null {
+  const seen = new Set<unknown>();
+  const nameKeys = new Set([
+    'company_name',
+    'companyName',
+    'business_name',
+    'businessName',
+    'registered_name',
+    'registeredName',
+    'name',
+  ]);
+
+  function walk(node: unknown): string | null {
+    if (!node || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    const record = node as Record<string, unknown>;
+    for (const [key, child] of Object.entries(record)) {
+      if (nameKeys.has(key) && typeof child === 'string' && child.trim()) {
+        return child.trim();
+      }
+    }
+    for (const child of Object.values(record)) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return walk(value);
 }
 
 export async function POST(request: NextRequest) {
@@ -113,14 +161,18 @@ export async function POST(request: NextRequest) {
     if (!cacNumber || !businessName) return response('failed', 'Business name and CAC/RC number are required.');
     try {
       const result = await dojah.verifyCAC(cacNumber);
-      const entity = result.entity as Record<string, unknown> | undefined;
-      const providerBusinessName = String(entity?.company_name ?? entity?.business_name ?? entity?.name ?? '');
+      const providerBusinessName = extractBusinessName(result);
       if (result.status !== false && businessNameLooksClose(businessName, providerBusinessName)) {
-        return response('verified', 'CAC record looks consistent with the business name.');
+        return response('verified', 'CAC record looks consistent with the business name.', {
+          providerBusinessName,
+        });
       }
       return response(
         'review',
-        'CAC lookup completed, but the returned business name did not confidently match. A manager will review the uploaded business document.'
+        providerBusinessName
+          ? `CAC lookup found "${providerBusinessName}", but it still needs manager review against your uploaded business document.`
+          : 'CAC lookup completed, but no business name was returned for automatic matching. A manager will review the uploaded business document.',
+        { providerBusinessName }
       );
     } catch {
       return response('unavailable', 'CAC provider check is unavailable. You can still submit for manager review.');

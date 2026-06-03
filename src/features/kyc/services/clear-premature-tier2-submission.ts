@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
+import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { abandonOpenTier2Workflows } from './kyc-testing-reset.service';
 
 /**
@@ -21,6 +22,29 @@ export async function clearPrematureTier2Submission(vendorId: string): Promise<b
     .limit(1);
 
   if (!vendor?.tier2SubmittedAt || vendor.tier2ApprovedAt) {
+    return false;
+  }
+
+  const [latestEvidence] = await db
+    .select({
+      workflowReference: providerVerificationRecords.workflowReference,
+      status: providerVerificationRecords.status,
+      checksCompleted: providerVerificationRecords.checksCompleted,
+      normalizedResult: providerVerificationRecords.normalizedResult,
+    })
+    .from(providerVerificationRecords)
+    .where(eq(providerVerificationRecords.vendorId, vendorId))
+    .orderBy(desc(providerVerificationRecords.updatedAt))
+    .limit(1);
+
+  const normalized = latestEvidence?.normalizedResult as Record<string, unknown> | null | undefined;
+  const verificationMode = String(normalized?.verificationMode ?? '');
+  const hasManualHybridEvidence =
+    latestEvidence?.workflowReference === 'nem-hybrid-tier2' ||
+    verificationMode === 'nem_hybrid_manual_review' ||
+    (latestEvidence?.checksCompleted ?? []).includes('nem_documents_uploaded');
+
+  if (hasManualHybridEvidence) {
     return false;
   }
 

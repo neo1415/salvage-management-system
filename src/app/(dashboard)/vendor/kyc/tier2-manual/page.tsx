@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import Script from 'next/script';
 import imageCompression from 'browser-image-compression';
 import {
   AlertCircle,
@@ -19,8 +20,14 @@ import {
   User,
   XCircle,
 } from 'lucide-react';
+import {
+  isDojahWidgetFinalSuccess,
+  isDojahWidgetIntermediateStep,
+  resolveDojahWidgetReference,
+  type DojahWidgetCallbackResponse,
+} from '@/lib/kyc/dojah-widget-completion';
 
-type PageState = 'idle' | 'loading' | 'submitting' | 'pending_review' | 'approved' | 'rejected';
+type PageState = 'idle' | 'loading' | 'submitting' | 'liveness' | 'pending_review' | 'approved' | 'rejected';
 type CheckState = 'idle' | 'checking' | 'verified' | 'review' | 'unavailable' | 'failed';
 type BusinessType = 'individual' | 'business_name' | 'incorporated_company' | 'limited_company';
 type BusinessDocumentType = 'cac_certificate' | 'memorandum_articles' | 'business_registration';
@@ -47,7 +54,47 @@ interface VerificationCheck {
   message: string;
 }
 
+interface DojahConnect {
+  setup(): void;
+  open(): void;
+}
+
+interface DojahWidgetOptions {
+  app_id: string;
+  p_key: string;
+  type: string;
+  reference_id?: string;
+  config?: { widget_id?: string };
+  user_data?: {
+    first_name?: string;
+    last_name?: string;
+    dob?: string;
+    email?: string;
+  };
+  gov_data?: { mobile?: string };
+  metadata?: Record<string, string>;
+  onSuccess: (response: DojahWidgetCallbackResponse) => void;
+  onComplete?: (response: DojahWidgetCallbackResponse) => void;
+  onError: (err: unknown) => void;
+  onClose: () => void;
+}
+
+type LivenessWidgetConfig = {
+  appId: string;
+  publicKey: string;
+  widgetId?: string | null;
+  verificationReference?: string;
+  phone?: string;
+  dob?: string;
+  profile?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  };
+};
+
 const initialCheck: VerificationCheck = { state: 'idle', message: 'Not checked yet' };
+const DOJAH_IFRAME_ALLOW = 'camera; microphone; geolocation; fullscreen; autoplay';
 
 const businessDocumentOptions: Array<{ value: BusinessDocumentType; label: string }> = [
   { value: 'cac_certificate', label: 'CAC certificate' },
@@ -75,12 +122,23 @@ function normalizeDigits(value: string, maxLength = 11): string {
   return value.replace(/\D/g, '').slice(0, maxLength);
 }
 
+function getDojahConnectConstructor() {
+  if (typeof window === 'undefined') return null;
+  return (window as unknown as { Connect?: new (options: DojahWidgetOptions) => DojahConnect }).Connect ?? null;
+}
+
 export default function Tier2ManualKYCPage() {
   const router = useRouter();
   const { status: authStatus } = useSession();
   const [pageState, setPageState] = useState<PageState>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [bvnAlreadyVerified, setBvnAlreadyVerified] = useState(false);
+  const [livenessConfig, setLivenessConfig] = useState<LivenessWidgetConfig | null>(null);
+  const [livenessReady, setLivenessReady] = useState(false);
+  const [livenessAvailable, setLivenessAvailable] = useState(false);
+  const [connect, setConnect] = useState<DojahConnect | null>(null);
+  const manualReferenceRef = useRef<string | null>(null);
+  const pendingLivenessReferenceRef = useRef<string | null>(null);
   const [checks, setChecks] = useState<Record<'bvn' | 'nin' | 'cac', VerificationCheck>>({
     bvn: initialCheck,
     nin: initialCheck,
@@ -177,6 +235,21 @@ export default function Tier2ManualKYCPage() {
         else if (statusData?.status === 'approved') setPageState('approved');
         else if (statusData?.status === 'rejected') setPageState('rejected');
         else setPageState('idle');
+
+        fetch('/api/kyc/widget-config?mode=liveness')
+          .then(async (res) => {
+            if (!res.ok) {
+              setLivenessAvailable(false);
+              return null;
+            }
+            const config = (await res.json()) as LivenessWidgetConfig;
+            setLivenessConfig(config);
+            setLivenessAvailable(Boolean(config.widgetId && config.verificationReference));
+            return config;
+          })
+          .catch(() => {
+            setLivenessAvailable(false);
+          });
       } catch {
         setPageState('idle');
       }
@@ -184,6 +257,123 @@ export default function Tier2ManualKYCPage() {
 
     void loadState();
   }, [authStatus, router]);
+
+  const applyDojahIframePermissions = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const iframes = document.querySelectorAll<HTMLIFrameElement>(
+      'iframe[src*="dojah.io"], iframe[src*="identity.dojah.io"], iframe[src*="widget.dojah.io"]'
+    );
+    iframes.forEach((iframe) => {
+      const existingAllow = iframe.getAttribute('allow') ?? '';
+      const allowParts = new Set(
+        `${existingAllow}; ${DOJAH_IFRAME_ALLOW}`
+          .split(';')
+          .map((part) => part.trim())
+          .filter(Boolean)
+      );
+      iframe.setAttribute('allow', Array.from(allowParts).join('; '));
+    });
+  }, []);
+
+  const completeLiveness = useCallback(async (referenceId: string) => {
+    setPageState('liveness');
+    try {
+      const res = await fetch('/api/kyc/manual/liveness/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reference_id: referenceId,
+          manual_reference: manualReferenceRef.current,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorMessage(data.error ?? 'Liveness could not be linked. Your documents are still under review.');
+      }
+      setPageState('pending_review');
+    } catch {
+      setErrorMessage('Liveness could not be linked because the network dropped. Your documents are still under review.');
+      setPageState('pending_review');
+    }
+  }, []);
+
+  const initLivenessWidget = useCallback(() => {
+    const Connect = getDojahConnectConstructor();
+    if (!livenessConfig || !Connect || !livenessConfig.widgetId) return;
+
+    const handleCompletion = async (response: DojahWidgetCallbackResponse | undefined) => {
+      const referenceId = resolveDojahWidgetReference(response) ?? livenessConfig.verificationReference;
+      if (!referenceId) {
+        setErrorMessage('Liveness completed, but the provider did not return a reference. Your documents are still under review.');
+        setPageState('pending_review');
+        return;
+      }
+      await completeLiveness(referenceId);
+    };
+
+    const instance = new Connect({
+      app_id: livenessConfig.appId,
+      p_key: livenessConfig.publicKey,
+      type: 'custom',
+      reference_id: livenessConfig.verificationReference,
+      config: { widget_id: livenessConfig.widgetId },
+      user_data: {
+        first_name: livenessConfig.profile?.firstName,
+        last_name: livenessConfig.profile?.lastName,
+        dob: livenessConfig.dob,
+        email: livenessConfig.profile?.email,
+      },
+      gov_data: {
+        mobile: livenessConfig.phone,
+      },
+      metadata: {
+        flow: 'nem_hybrid_liveness',
+      },
+      onSuccess: (response) => {
+        if (isDojahWidgetFinalSuccess(response)) {
+          void handleCompletion(response);
+        } else if (isDojahWidgetIntermediateStep(response)) {
+          setPageState('liveness');
+        }
+      },
+      onComplete: (response) => {
+        const referenceId = resolveDojahWidgetReference(response);
+        if (referenceId) {
+          pendingLivenessReferenceRef.current = referenceId;
+        }
+      },
+      onError: (err) => {
+        console.error('[Manual KYC Liveness] Widget error', err);
+        setErrorMessage('Liveness could not be completed. Your submitted evidence is still under review.');
+        setPageState('pending_review');
+      },
+      onClose: () => {
+        const pendingReference = pendingLivenessReferenceRef.current;
+        pendingLivenessReferenceRef.current = null;
+        if (pendingReference) {
+          void completeLiveness(pendingReference);
+        } else if (pageState === 'liveness') {
+          setPageState('pending_review');
+        }
+      },
+    });
+    instance.setup();
+    setConnect(instance);
+    setLivenessReady(true);
+  }, [completeLiveness, livenessConfig, pageState]);
+
+  useEffect(() => {
+    if (livenessConfig && getDojahConnectConstructor()) {
+      initLivenessWidget();
+    }
+  }, [initLivenessWidget, livenessConfig]);
+
+  useEffect(() => {
+    applyDojahIframePermissions();
+    const observer = new MutationObserver(applyDojahIframePermissions);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [applyDojahIframePermissions]);
 
   const handleFileChange = async (field: keyof FormDataState, file: File | null) => {
     if (!file) {
@@ -333,6 +523,16 @@ export default function Tier2ManualKYCPage() {
         return;
       }
 
+      manualReferenceRef.current = typeof data.providerReference === 'string' ? data.providerReference : null;
+      if (livenessAvailable && connect && livenessReady) {
+        setPageState('liveness');
+        applyDojahIframePermissions();
+        connect.open();
+        window.setTimeout(applyDojahIframePermissions, 250);
+        window.setTimeout(applyDojahIframePermissions, 1000);
+        return;
+      }
+
       setPageState('pending_review');
     } catch {
       setErrorMessage('Network error. Please check your connection and try again.');
@@ -353,6 +553,11 @@ export default function Tier2ManualKYCPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] py-8 px-4">
+      <Script
+        src="https://widget.dojah.io/widget.js"
+        strategy="lazyOnload"
+        onLoad={initLivenessWidget}
+      />
       <div className="w-full max-w-4xl mx-auto">
         <button onClick={() => router.back()} className="mb-6 flex items-center gap-2 text-white hover:text-gray-200 transition-colors">
           <ArrowLeft className="w-5 h-5" />
@@ -406,6 +611,17 @@ export default function Tier2ManualKYCPage() {
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Submitting Your Application</h2>
               <p className="text-gray-600 mb-4">Uploading documents, encrypting sensitive fields, and running available provider checks...</p>
               <p className="text-xs text-gray-500 mt-4">Please do not close this page.</p>
+            </div>
+          )}
+
+          {pageState === 'liveness' && (
+            <div className="p-8 text-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-100 rounded-full mb-6">
+                <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Liveness Check</h2>
+              <p className="text-gray-600 mb-4">Finish the face check in the secure verification window. Your documents have already been saved for review.</p>
+              <p className="text-xs text-gray-500 mt-4">If the window closes, your application will remain under review.</p>
             </div>
           )}
 
@@ -543,10 +759,6 @@ export default function Tier2ManualKYCPage() {
                   ))}
                 </div>
               </section>
-
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-                <strong>Liveness note:</strong> A normal uploaded selfie is not treated as a liveness check. If NEM enables a Dojah liveness-only step, that provider result will be linked to this application before final approval.
-              </div>
 
               <button
                 type="submit"

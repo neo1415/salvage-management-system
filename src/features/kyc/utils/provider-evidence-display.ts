@@ -148,6 +148,110 @@ export function buildDojahEvidenceSections(
   const documentMetadata = recordFrom(normalized?.documentMetadata);
   const managerDecision = recordFrom(normalized?.managerDecision);
   const submittedProfile = recordFrom(normalized?.nemSubmittedProfile);
+  const addressData = recordFrom(normalized?.addressData);
+  const dojahEvidenceSummary = recordFrom(normalized?.dojahEvidenceSummary);
+  const isManualHybrid = normalized?.verificationMode === 'nem_hybrid_manual_review';
+
+  if (isManualHybrid) {
+    const cac = recordFrom(dojahEvidenceSummary?.cac);
+    const nin = recordFrom(dojahEvidenceSummary?.nin);
+    const bvn = recordFrom(dojahEvidenceSummary?.bvn);
+    const aml = recordFrom(dojahEvidenceSummary?.aml);
+    const liveness = recordFrom(dojahEvidenceSummary?.liveness);
+    const livenessStatus = displayOrFallback(normalized?.livenessStatus, 'pending_liveness');
+
+    return {
+      providerSummary: {
+        Source: 'NEM hybrid manual verification',
+        'Reference ID': displayOrFallback(providerEvidence?.providerReference),
+        'Workflow reference': displayOrFallback(providerEvidence?.workflowReference, 'nem-hybrid-tier2'),
+        Status: displayOrFallback(providerEvidence?.status?.replace(/_/g, ' ')),
+        'Risk level': displayOrFallback(providerEvidence?.riskLevel),
+        'Verification status': displayOrFallback(normalized?.verificationStatus),
+        Mode: 'Manual evidence with Dojah supporting checks',
+        'Last updated': providerEvidence?.updatedAt
+          ? new Date(providerEvidence.updatedAt).toLocaleString()
+          : 'Pending review',
+        Message: displayOrFallback(providerEvidence?.displayMessage, 'Submitted for internal review'),
+        'Reviewer decision': displayOrFallback(managerDecision?.decision, 'Not reviewed yet'),
+        'Reviewed at': managerDecision?.reviewedAt
+          ? new Date(String(managerDecision.reviewedAt)).toLocaleString()
+          : 'Not reviewed yet',
+        'Submitted name': displayOrFallback(submittedProfile?.fullName, 'Not provided'),
+        'Submitted business': displayOrFallback(submittedProfile?.businessName, 'Not provided'),
+        'Submitted business number': displayOrFallback(submittedProfile?.businessRegistrationNumber, 'Not provided'),
+      },
+      pendingReason: {
+        Reason: 'NEM collected the documents and profile directly. Dojah checks are supporting evidence; manager approval remains the final decision.',
+        'Reason codes': formatReasonCodes(providerEvidence?.reasonCodes),
+      },
+      business: {
+        'Submitted business name': displayOrFallback(submittedProfile?.businessName, 'Not provided'),
+        'Submitted business type': displayOrFallback(submittedProfile?.businessType, 'Not provided'),
+        'Submitted registration number': displayOrFallback(submittedProfile?.businessRegistrationNumber, 'Not provided'),
+        'Provider lookup': displayOrFallback(cac?.status, 'Not completed'),
+        'Provider business name': displayOrFallback(cac?.providerBusinessName, 'Not returned'),
+        'Business name match': cac?.businessNameMatched === true ? 'Matched' : cac?.businessNameMatched === false ? 'Needs manager review' : 'Not checked',
+        'Provider message': displayOrFallback(cac?.message, 'No provider message returned'),
+      },
+      governmentData: {
+        'Identity number': displayOrFallback(normalized?.maskedIdentityValue, 'Stored securely'),
+        'Government ID type': displayOrFallback(documentMetadata?.governmentIdType, 'Not provided'),
+        'NIN lookup': displayOrFallback(nin?.status, 'Not completed'),
+        'NIN last four': displayOrFallback(nin?.lastFour, 'Stored securely'),
+        'NIN message': displayOrFallback(nin?.message, 'No provider message returned'),
+        'BVN source': displayOrFallback(addressData?.bvnSource, 'Not provided'),
+        'BVN check': displayOrFallback(bvn?.status, 'Already verified or not required in this flow'),
+      },
+      liveness: {
+        'Liveness status': livenessStatus.replace(/_/g, ' '),
+        'Liveness score': displayOrFallback(
+          normalized?.livenessScore !== null && normalized?.livenessScore !== undefined ? `${normalized.livenessScore}%` : liveness?.livenessScore,
+          livenessStatus === 'completed' ? 'Completed, score not returned' : 'Pending liveness completion'
+        ),
+        'Face match score': displayOrFallback(
+          normalized?.biometricMatchScore !== null && normalized?.biometricMatchScore !== undefined ? `${normalized.biometricMatchScore}%` : liveness?.biometricMatchScore,
+          livenessStatus === 'completed' ? 'Completed, score not returned' : 'Pending liveness completion'
+        ),
+        'Selfie evidence': normalized?.selfieUrl || liveness?.hasSelfie ? 'Available' : 'Not linked yet',
+      },
+      address: {
+        'Submitted address': displayOrFallback(addressData?.address, 'Not provided'),
+        City: displayOrFallback(addressData?.city, 'Not provided'),
+        State: displayOrFallback(addressData?.state, 'Not provided'),
+        'Address proof': documentMetadata?.addressProof ? 'Uploaded' : 'Not uploaded',
+        'Review status': displayOrFallback(normalized?.addressStatus, 'submitted_for_manual_review'),
+      },
+      governmentId: {
+        'Government ID type': displayOrFallback(documentMetadata?.governmentIdType, 'Not provided'),
+        'Government ID document': documentMetadata?.photoId ? 'Uploaded' : 'Not uploaded',
+        'Document decision': 'Manager review required',
+      },
+      businessId: {
+        'Business document type': displayOrFallback(documentMetadata?.businessDocumentType, 'Not provided'),
+        'Business document': documentMetadata?.businessDocument ? 'Uploaded' : 'Not uploaded',
+        'Document decision': 'Manager review required',
+      },
+      documents: {
+        'Government ID': documentMetadata?.photoId ? 'Uploaded for protected review' : 'Not uploaded',
+        'Address proof': documentMetadata?.addressProof ? 'Uploaded for protected review' : 'Not uploaded',
+        'Business document': documentMetadata?.businessDocument ? 'Uploaded for protected review' : 'Not required or not uploaded',
+        Note: 'Files open through protected manager-only document routes.',
+      },
+      aml: {
+        'AML screening': displayOrFallback(aml?.status, 'Not completed'),
+        'PEP hits': aml?.hasPepHits === true ? 'Yes' : aml?.hasPepHits === false ? 'No' : 'Not returned',
+        'Sanctions hits': aml?.hasSanctionHits === true ? 'Yes' : aml?.hasSanctionHits === false ? 'No' : 'Not returned',
+        'Adverse media hits': aml?.hasAdverseMediaHits === true ? 'Yes' : aml?.hasAdverseMediaHits === false ? 'No' : 'Not returned',
+        'Reason codes': formatReasonCodes(providerEvidence?.reasonCodes),
+        'Failed checks': formatCheckList(providerEvidence?.failedChecks).join(', ') || 'None',
+      },
+      ipDevice: {
+        'IP / device risk': 'Not part of this manual hybrid submission',
+        'Device fingerprint': 'Not part of this manual hybrid submission',
+      },
+    };
+  }
 
   return {
     providerSummary: {

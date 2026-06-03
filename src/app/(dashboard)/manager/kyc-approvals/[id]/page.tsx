@@ -105,7 +105,7 @@ export default function KYCApprovalDetailPage() {
   const decisionInFlight = useRef(false);
   const [exportingEvidence, setExportingEvidence] = useState(false);
   const [evidenceSections, setEvidenceSections] = useState<DojahEvidenceSections | null>(null);
-  const [verificationSource, setVerificationSource] = useState<'dojah' | 'legacy_manual' | 'unknown'>('unknown');
+  const [verificationSource, setVerificationSource] = useState<'dojah' | 'manual_hybrid' | 'legacy_manual' | 'unknown'>('unknown');
   const [refreshingEvidence, setRefreshingEvidence] = useState(false);
   const [confirmDecision, setConfirmDecision] = useState<'approve' | 'reject' | null>(null);
   const viewerRole = session?.user?.role;
@@ -288,8 +288,16 @@ export default function KYCApprovalDetailPage() {
   const displayBiometric =
     approval.biometricMatchScore ??
     (typeof normalized.biometricMatchScore === 'number' ? normalized.biometricMatchScore : undefined);
-  const scoreUnavailable = verificationSource === 'dojah' ? 'Not available in this verification' : '—';
+  const scoreUnavailable = verificationSource === 'dojah' || verificationSource === 'manual_hybrid'
+    ? 'Not available in this verification'
+    : '—';
   const documents = getApprovalDocuments(approval);
+  const manualScore = typeof (approval.ninVerificationData as Record<string, unknown> | undefined)?.score === 'number'
+    ? (approval.ninVerificationData as Record<string, number>).score
+    : null;
+  const manualRecommendation = typeof (approval.ninVerificationData as Record<string, unknown> | undefined)?.recommendation === 'string'
+    ? String((approval.ninVerificationData as Record<string, unknown>).recommendation)
+    : null;
   const managerDecision = (normalized.managerDecision ?? {}) as Record<string, unknown>;
   const managerDecisionReviewedAt = managerDecision.reviewedAt
     ? String(managerDecision.reviewedAt)
@@ -467,7 +475,9 @@ export default function KYCApprovalDetailPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-4">
             <div>
               <p className="text-gray-500">Source</p>
-              <p className="font-semibold">Identity verification</p>
+              <p className="font-semibold">
+                {verificationSource === 'manual_hybrid' ? 'NEM hybrid manual verification' : 'Identity verification'}
+              </p>
             </div>
             <div>
               <p className="text-gray-500">Verification status</p>
@@ -548,7 +558,7 @@ export default function KYCApprovalDetailPage() {
       )}
 
       {/* AI Verification Results (for manual KYC) */}
-      {approval.ninVerificationData && (
+      {approval.ninVerificationData && manualScore !== null && manualRecommendation && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6">
           <div className="flex items-center gap-2 mb-4">
             <Shield className="w-4 h-4 text-blue-600" />
@@ -558,14 +568,14 @@ export default function KYCApprovalDetailPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-gray-500 mb-1">Overall Score</p>
-                <p className={`text-2xl font-bold ${(approval.ninVerificationData as any).score >= 80 ? 'text-green-600' : (approval.ninVerificationData as any).score >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
-                  {(approval.ninVerificationData as any).score}/100
+                <p className={`text-2xl font-bold ${manualScore >= 80 ? 'text-green-600' : manualScore >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                  {manualScore}/100
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">Recommendation</p>
-                <p className={`text-lg font-semibold capitalize ${(approval.ninVerificationData as any).recommendation === 'approve' ? 'text-green-600' : (approval.ninVerificationData as any).recommendation === 'reject' ? 'text-red-600' : 'text-yellow-600'}`}>
-                  {(approval.ninVerificationData as any).recommendation}
+                <p className={`text-lg font-semibold capitalize ${manualRecommendation === 'approve' ? 'text-green-600' : manualRecommendation === 'reject' ? 'text-red-600' : 'text-yellow-600'}`}>
+                  {manualRecommendation}
                 </p>
               </div>
             </div>

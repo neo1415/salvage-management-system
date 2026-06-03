@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { vendors } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
+import { desc, eq } from 'drizzle-orm';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
@@ -56,8 +57,24 @@ export async function GET(request: NextRequest) {
       .limit(1);
 
     // Only sync provider results after a real submission — never on first widget load.
+    const [latestEvidence] = await db
+      .select({
+        workflowReference: providerVerificationRecords.workflowReference,
+        normalizedResult: providerVerificationRecords.normalizedResult,
+      })
+      .from(providerVerificationRecords)
+      .where(eq(providerVerificationRecords.vendorId, vendorRow.id))
+      .orderBy(desc(providerVerificationRecords.updatedAt))
+      .limit(1);
+
+    const latestNormalized = (latestEvidence?.normalizedResult as Record<string, unknown> | null) ?? null;
+    const isManualHybridEvidence =
+      latestEvidence?.workflowReference === 'nem-hybrid-tier2' ||
+      latestNormalized?.verificationMode === 'nem_hybrid_manual_review';
+
     if (
       !isKycTestingMode() &&
+      !isManualHybridEvidence &&
       vendorAfterCleanup?.tier2SubmittedAt &&
       !vendorAfterCleanup.tier2ApprovedAt
     ) {

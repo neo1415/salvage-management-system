@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
@@ -326,34 +326,43 @@ export async function POST(request: NextRequest) {
       console.error('[Manual KYC Submit] Provider evidence persistence failed:', error);
     });
 
-    // Send notification
-    const notify = getKYCNotificationService();
-    await notify.sendKYCUnderReviewNotification({
-      vendorId: vendor.id,
-      userId,
-      phone: session.user.phone ?? '',
-      email: session.user.email ?? '',
-      fullName: session.user.name ?? '',
-    });
-
-    try {
-      await createRoleNotifications(['salvage_manager', 'system_admin'], {
-        type: 'tier2_pending_review',
-        title: 'Tier 2 KYC Pending Review',
-        message: `${session.user.name || 'A vendor'} submitted Tier 2 verification for approval.`,
-        data: {
+    after(async () => {
+      const notify = getKYCNotificationService();
+      await Promise.allSettled([
+        notify.sendKYCUnderReviewNotification({
           vendorId: vendor.id,
-          url: '/manager/kyc-approvals',
-        },
+          userId,
+          phone: session.user.phone ?? '',
+          email: session.user.email ?? '',
+          fullName: session.user.name ?? '',
+        }),
+        createRoleNotifications(['salvage_manager', 'system_admin'], {
+          type: 'tier2_pending_review',
+          title: 'Tier 2 KYC Pending Review',
+          message: `${session.user.name || 'A vendor'} submitted Tier 2 verification for approval.`,
+          data: {
+            vendorId: vendor.id,
+            url: '/manager/kyc-approvals',
+          },
+        }),
+      ]).then((results) => {
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            console.error('[Manual KYC Submit] Deferred notification failed', {
+              index,
+              error: result.reason,
+            });
+          }
+        });
       });
-    } catch (notificationError) {
-      console.error('Failed to notify managers about Tier 2 KYC submission:', notificationError);
-    }
+    });
 
     return NextResponse.json({
       success: true,
       message: 'KYC application submitted successfully',
       documentsUploaded: Object.keys(results),
+      providerReference,
+      livenessRequired: true,
     });
   } catch (error) {
     console.error('[Manual KYC Submit] Error:', error);
@@ -402,9 +411,8 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
     'nem_business_profile_submitted',
     'nem_address_submitted',
     'nem_documents_uploaded',
-    'selfie_uploaded_for_manual_review',
   ]);
-  const pendingChecks = new Set<string>(['manager_identity_review', 'manager_document_review', 'manager_selfie_review']);
+  const pendingChecks = new Set<string>(['manager_identity_review', 'manager_document_review', 'dojah_liveness']);
   const failedChecks = new Set<string>();
   const reasonCodes = new Set<string>();
   const dojahEvidenceSummary: Record<string, unknown> = {};
@@ -480,10 +488,14 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
       try {
         const cacResult = await dojah.verifyCAC(input.cacNumber.trim());
         checksCompleted.add('business_registration_lookup');
+        const providerBusinessName = extractBusinessNameFromCACResult(cacResult);
+        const nameMatch = businessNameLooksClose(input.businessName, providerBusinessName);
         dojahEvidenceSummary.cac = {
           status: cacResult.status ?? null,
           message: cacResult.message ?? null,
           hasEntity: Boolean(cacResult.entity),
+          providerBusinessName: providerBusinessName || null,
+          businessNameMatched: nameMatch,
           submittedBusinessName: input.businessName,
           submittedBusinessType: input.businessType,
           registrationNumberLastFour: input.cacNumber.trim().slice(-4),
@@ -583,7 +595,70 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
       maskedIdentityValue: `****${input.nin.slice(-4)}`,
       livenessScore: null,
       biometricMatchScore: null,
+      livenessStatus: 'pending_liveness',
       dojahEvidenceSummary,
     },
   };
+}
+
+function normalizeBusinessName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b(plc|ltd|limited|incorporated|inc|company|co|nigeria|ng|the)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function businessNameLooksClose(expected: string, actual?: string | null): boolean {
+  if (!actual) return false;
+  const left = normalizeBusinessName(expected);
+  const right = normalizeBusinessName(actual);
+  if (!left || !right) return false;
+  if (left === right || left.includes(right) || right.includes(left)) return true;
+  const leftTokens = new Set(left.split(/\s+/).filter((token) => token.length > 2));
+  const rightTokens = right.split(/\s+/).filter((token) => token.length > 2);
+  if (!leftTokens.size || !rightTokens.length) return false;
+  const overlap = rightTokens.filter((token) => leftTokens.has(token)).length;
+  return overlap / Math.max(leftTokens.size, rightTokens.length) >= 0.6;
+}
+
+function extractBusinessNameFromCACResult(value: unknown): string | null {
+  const seen = new Set<unknown>();
+  const keys = new Set([
+    'company_name',
+    'companyName',
+    'business_name',
+    'businessName',
+    'registered_name',
+    'registeredName',
+    'name',
+  ]);
+
+  function walk(node: unknown): string | null {
+    if (!node || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    const record = node as Record<string, unknown>;
+    for (const key of Object.keys(record)) {
+      const child = record[key];
+      if (keys.has(key) && typeof child === 'string' && child.trim()) {
+        return child.trim();
+      }
+    }
+
+    for (const child of Object.values(record)) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return walk(value);
 }
