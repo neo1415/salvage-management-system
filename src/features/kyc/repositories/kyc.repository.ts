@@ -76,9 +76,10 @@ export class KYCRepository {
             fraudRiskScore: String(data.fraudRiskScore),
           }),
           ...(data.fraudFlags !== undefined && { fraudFlags: data.fraudFlags }),
-          // Workflow
+          // Workflow — new submission clears any prior manager rejection
           ...(data.tier2SubmittedAt !== undefined && {
             tier2SubmittedAt: data.tier2SubmittedAt,
+            tier2RejectionReason: null,
           }),
           updatedAt: new Date(),
         })

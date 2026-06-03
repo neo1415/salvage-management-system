@@ -160,7 +160,12 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
             ) : null}
           </div>
           <button
-            onClick={handleUpgradeClick}
+            onClick={() => {
+              void (async () => {
+                await fetch('/api/kyc/prepare-resubmit', { method: 'POST' });
+                handleUpgradeClick();
+              })();
+            }}
             className="flex-shrink-0 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors"
           >
             Resubmit

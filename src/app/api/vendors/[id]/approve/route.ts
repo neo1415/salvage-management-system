@@ -8,6 +8,7 @@ import { emailService } from '@/features/notifications/services/email.service';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
 import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
+import { abandonOpenTier2Workflows } from '@/features/kyc/services/kyc-testing-reset.service';
 
 /**
  * Vendor Approval/Rejection API
@@ -253,12 +254,26 @@ export async function POST(
       });
     } else {
       console.log('❌ [VENDOR APPROVAL] Processing rejection...');
-      
-      const updateData = {
-        status: 'suspended' as const,
-        tier2RejectionReason: comment.trim(),
-        updatedAt: new Date(),
-      };
+
+      const isTier2Rejection =
+        vendor.tier2SubmittedAt !== null || vendor.tier === 'tier2_full';
+
+      if (isTier2Rejection) {
+        await abandonOpenTier2Workflows(id);
+      }
+
+      const updateData = isTier2Rejection
+        ? {
+            tier2RejectionReason: comment.trim(),
+            tier2SubmittedAt: null,
+            tier2DojahReferenceId: null,
+            updatedAt: new Date(),
+          }
+        : {
+            status: 'suspended' as const,
+            tier2RejectionReason: comment.trim(),
+            updatedAt: new Date(),
+          };
 
       console.log('💾 [VENDOR APPROVAL] Updating vendor in database:', updateData);
 

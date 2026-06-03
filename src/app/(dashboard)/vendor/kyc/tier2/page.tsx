@@ -960,8 +960,11 @@ export default function Tier2KYCPage() {
                 </p>
                 <button
                   onClick={() => {
-                    setPageState('ready');
-                    void loadWidgetConfig();
+                    void (async () => {
+                      await fetch('/api/kyc/prepare-resubmit', { method: 'POST' });
+                      setPageState('ready');
+                      await loadWidgetConfig();
+                    })();
                   }}
                   className="w-full bg-[var(--brand-primary)] text-white font-bold py-3 rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors flex items-center justify-center gap-2"
                 >

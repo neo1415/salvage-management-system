@@ -42,6 +42,23 @@ export async function resetVendorTier2ForTesting(vendorId: string): Promise<bool
   return true;
 }
 
+/**
+ * Clears manager rejection and stale Tier 2 submission pointers so a new Dojah run can start immediately.
+ * There is no resubmit cooldown in Salvage — vendors may retry as soon as they are rejected.
+ */
+export async function prepareVendorTier2Resubmission(vendorId: string): Promise<void> {
+  await abandonOpenTier2Workflows(vendorId);
+  await db
+    .update(vendors)
+    .set({
+      tier2RejectionReason: null,
+      tier2SubmittedAt: null,
+      tier2DojahReferenceId: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendors.id, vendorId));
+}
+
 /** Close abandoned in-widget sessions so vendors can start fresh. */
 export async function abandonOpenTier2Workflows(vendorId: string): Promise<void> {
   await db

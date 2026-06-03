@@ -17,7 +17,10 @@ import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/u
 import type { NormalizedVerificationResult } from '../types/provider-verification.types';
 import { buildDojahReference } from '../utils/dojah-reference';
 import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
-import { abandonOpenTier2Workflows } from './kyc-testing-reset.service';
+import {
+  abandonOpenTier2Workflows,
+  prepareVendorTier2Resubmission,
+} from './kyc-testing-reset.service';
 
 interface PersistVerificationInput {
   userId?: string;
@@ -90,7 +93,12 @@ export class ProviderVerificationService {
       .where(eq(vendors.id, input.vendorId))
       .limit(1);
 
-    if (!isKycTestingMode() && vendorState?.tier2SubmittedAt) {
+    const isResubmission = Boolean(vendorState?.tier2RejectionReason);
+
+    // After manager rejection, always start a fresh provider reference (never reuse the failed attempt).
+    if (isResubmission) {
+      await prepareVendorTier2Resubmission(input.vendorId);
+    } else if (!isKycTestingMode() && vendorState?.tier2SubmittedAt) {
       const existing = await db.query.providerVerificationRecords.findFirst({
         where: and(
           eq(providerVerificationRecords.provider, 'dojah'),
@@ -104,15 +112,12 @@ export class ProviderVerificationService {
       if (existing?.providerReference) {
         return { providerReference: existing.providerReference, created: false };
       }
-    }
-
-    if (!vendorState?.tier2SubmittedAt) {
+    } else if (!vendorState?.tier2SubmittedAt) {
       await abandonOpenTier2Workflows(input.vendorId);
     }
 
     const providerReference = buildDojahReference(input.vendorId);
     const now = new Date();
-    const isResubmission = Boolean(vendorState?.tier2RejectionReason);
     const pendingChecks = [
       'business_data',
       'business_id',
@@ -151,14 +156,6 @@ export class ProviderVerificationService {
     });
 
     if (isResubmission) {
-      await db
-        .update(vendors)
-        .set({
-          tier2RejectionReason: null,
-          updatedAt: now,
-        })
-        .where(eq(vendors.id, input.vendorId));
-
       await logAction({
         userId: input.actorId,
         actionType: AuditActionType.VENDOR_TIER2_RESUBMITTED,

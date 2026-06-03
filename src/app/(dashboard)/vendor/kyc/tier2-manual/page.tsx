@@ -594,13 +594,34 @@ export default function Tier2ManualKYCPage() {
           )}
 
           {pageState === 'rejected' && (
-            <StatusPanel
-              icon={<XCircle className="w-12 h-12 text-red-600" />}
-              iconClass="bg-red-100"
-              title="Application Rejected"
-              text="Your application was not approved. You may resubmit after 24 hours. Contact support for assistance."
-              onClick={() => router.push('/vendor/dashboard')}
-            />
+            <div className="p-8 text-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-red-100 rounded-full mb-6">
+                <XCircle className="w-12 h-12 text-red-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Application Not Approved</h2>
+              <p className="text-gray-600 mb-6 text-sm">
+                Please correct the requested items and resubmit. You can start a new submission right away.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  void (async () => {
+                    await fetch('/api/kyc/prepare-resubmit', { method: 'POST' });
+                    setPageState('idle');
+                  })();
+                }}
+                className="w-full bg-[var(--brand-primary)] text-white font-bold py-3 rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors mb-3"
+              >
+                Try Again
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/vendor/dashboard')}
+                className="w-full border border-gray-300 text-gray-700 font-semibold py-3 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Back to Dashboard
+              </button>
+            </div>
           )}
 
           {pageState === 'submitting' && (
