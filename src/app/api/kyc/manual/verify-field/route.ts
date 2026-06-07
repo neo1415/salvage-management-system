@@ -128,6 +128,39 @@ function extractPersonName(value: unknown): string | null {
   return walk(value)[0] ?? null;
 }
 
+function redactProviderValue(key: string, value: unknown, depth = 0): unknown {
+  if (depth > 4) return '[depth-limit]';
+  if (value === null || value === undefined) return value;
+  const lower = key.toLowerCase();
+
+  if (typeof value === 'string') {
+    if (/(nin|bvn|phone|mobile|email|address|url|image|photo|selfie|document|id_url|back_url)/i.test(lower)) {
+      return value.length <= 4 ? '****' : `****${value.slice(-4)}`;
+    }
+    return value.slice(0, 120);
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 5).map((item, index) => redactProviderValue(`${key}[${index}]`, item, depth + 1));
+  }
+
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .slice(0, 30)
+        .map(([childKey, childValue]) => [childKey, redactProviderValue(childKey, childValue, depth + 1)])
+    );
+  }
+
+  return String(value);
+}
+
+function redactedProviderSnapshot(value: unknown): unknown {
+  return redactProviderValue('root', value);
+}
+
 function extractBirthDate(value: unknown): string | null {
   const seen = new Set<unknown>();
   const dateKeys = new Set(['birthdate', 'birth_date', 'date_of_birth', 'dob', 'dateOfBirth']);
@@ -182,6 +215,7 @@ function safeProviderDiagnostics(
     status: data.status,
     topLevelKeys: Object.keys(record).slice(0, 20),
     entityKeys: entity ? Object.keys(entity).slice(0, 30) : [],
+    providerSnapshot: redactedProviderSnapshot(record),
     submittedName: data.submittedName,
     providerName: data.providerName,
     submittedBusinessName: data.submittedBusinessName,

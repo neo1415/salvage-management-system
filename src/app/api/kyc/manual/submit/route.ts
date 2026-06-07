@@ -463,14 +463,21 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
 
     try {
       const ninResult = await dojah.verifyNINAdvanced(input.nin);
+      const providerName = extractPersonNameFromProviderResult(ninResult);
+      const providerBirthDate = extractBirthDateFromProviderResult(ninResult);
+      const nameMatched = nameLooksClose(input.fullName, providerName);
+      const dobMatched = !input.dateOfBirth || !providerBirthDate || providerBirthDate === input.dateOfBirth;
       checksCompleted.add('nin_lookup');
       dojahEvidenceSummary.nin = {
         status: ninResult.status ?? null,
         message: ninResult.message ?? null,
         hasEntity: Boolean(ninResult.entity),
+        providerName: providerName || null,
+        nameMatched,
+        dobMatched,
         lastFour: input.nin.slice(-4),
       };
-      if (ninResult.status === false) {
+      if (ninResult.status === false || (providerName && (!nameMatched || !dobMatched))) {
         failedChecks.add('nin_lookup');
         reasonCodes.add('dojah_nin_lookup_failed');
       }
@@ -609,17 +616,91 @@ function normalizeBusinessName(value: string): string {
     .trim();
 }
 
-function businessNameLooksClose(expected: string, actual?: string | null): boolean {
+function nameLooksClose(expected: string, actual?: string | null): boolean {
   if (!actual) return false;
   const left = normalizeBusinessName(expected);
   const right = normalizeBusinessName(actual);
   if (!left || !right) return false;
   if (left === right || left.includes(right) || right.includes(left)) return true;
-  const leftTokens = new Set(left.split(/\s+/).filter((token) => token.length > 2));
-  const rightTokens = right.split(/\s+/).filter((token) => token.length > 2);
+  const leftTokens = new Set(left.split(/\s+/).filter((token) => token.length > 1));
+  const rightTokens = right.split(/\s+/).filter((token) => token.length > 1);
   if (!leftTokens.size || !rightTokens.length) return false;
   const overlap = rightTokens.filter((token) => leftTokens.has(token)).length;
-  return overlap / Math.max(leftTokens.size, rightTokens.length) >= 0.6;
+  return overlap / Math.max(leftTokens.size, rightTokens.length) >= 0.55;
+}
+
+function businessNameLooksClose(expected: string, actual?: string | null): boolean {
+  return nameLooksClose(expected, actual);
+}
+
+function extractPersonNameFromProviderResult(value: unknown): string | null {
+  const seen = new Set<unknown>();
+  const fullNameKeys = ['full_name', 'fullName', 'name'];
+  const partKeys = ['firstname', 'first_name', 'middlename', 'middle_name', 'surname', 'last_name', 'lastname'];
+
+  function walk(node: unknown): string | null {
+    if (!node || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    const record = node as Record<string, unknown>;
+    for (const key of fullNameKeys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+
+    const parts = partKeys
+      .map((key) => record[key])
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    if (parts.length >= 2) return parts.join(' ');
+
+    for (const child of Object.values(record)) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return walk(value);
+}
+
+function extractBirthDateFromProviderResult(value: unknown): string | null {
+  const seen = new Set<unknown>();
+  const dateKeys = new Set(['birthdate', 'birth_date', 'date_of_birth', 'dob', 'dateOfBirth']);
+
+  function walk(node: unknown): string | null {
+    if (!node || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    const record = node as Record<string, unknown>;
+    for (const [key, child] of Object.entries(record)) {
+      if (dateKeys.has(key) && (typeof child === 'string' || child instanceof Date)) {
+        const value = String(child).slice(0, 10);
+        if (value) return value;
+      }
+    }
+
+    for (const child of Object.values(record)) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return walk(value);
 }
 
 function extractBusinessNameFromCACResult(value: unknown): string | null {

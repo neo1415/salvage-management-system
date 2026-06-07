@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { vendors } from '@/lib/db/schema';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
@@ -63,8 +63,21 @@ export async function GET(request: NextRequest) {
         normalizedResult: providerVerificationRecords.normalizedResult,
       })
       .from(providerVerificationRecords)
-      .where(eq(providerVerificationRecords.vendorId, vendorRow.id))
-      .orderBy(desc(providerVerificationRecords.updatedAt))
+      .where(
+        and(
+          eq(providerVerificationRecords.vendorId, vendorRow.id),
+          eq(providerVerificationRecords.verificationType, 'tier2')
+        )
+      )
+      .orderBy(
+        sql`CASE
+          WHEN ${providerVerificationRecords.workflowReference} = 'nem-hybrid-tier2'
+            OR ${providerVerificationRecords.normalizedResult}->>'verificationMode' = 'nem_hybrid_manual_review'
+          THEN 0
+          ELSE 1
+        END`,
+        desc(providerVerificationRecords.updatedAt)
+      )
       .limit(1);
 
     const latestNormalized = (latestEvidence?.normalizedResult as Record<string, unknown> | null) ?? null;

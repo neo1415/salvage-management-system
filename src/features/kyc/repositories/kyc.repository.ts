@@ -17,6 +17,15 @@ async function hasProviderVerificationTable(): Promise<boolean> {
   return hasProviderVerificationStorage();
 }
 
+function providerEvidenceReviewOrder() {
+  return sql`CASE
+    WHEN ${providerVerificationRecords.workflowReference} = 'nem-hybrid-tier2'
+      OR ${providerVerificationRecords.normalizedResult}->>'verificationMode' = 'nem_hybrid_manual_review'
+    THEN 0
+    ELSE 1
+  END`;
+}
+
 /**
  * KYCRepository
  *
@@ -245,7 +254,7 @@ export class KYCRepository {
           .select()
           .from(providerVerificationRecords)
           .where(inArray(providerVerificationRecords.vendorId, vendorIds))
-          .orderBy(desc(providerVerificationRecords.updatedAt))
+          .orderBy(providerEvidenceReviewOrder(), desc(providerVerificationRecords.updatedAt))
       : [];
 
     return uniqueRows.map((r) => {
@@ -386,7 +395,7 @@ export class KYCRepository {
           eq(providerVerificationRecords.verificationType, 'tier2')
         )
       )
-      .orderBy(desc(providerVerificationRecords.updatedAt))
+      .orderBy(providerEvidenceReviewOrder(), desc(providerVerificationRecords.updatedAt))
       .limit(1);
 
     const approval = this.mapVendorRowToPendingApproval(row, providerEvidence ?? null);

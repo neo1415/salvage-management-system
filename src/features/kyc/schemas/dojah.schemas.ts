@@ -50,7 +50,7 @@ export const DojahNINEntitySchema = z.object({
   residence_state: z.string().optional().nullable(),
   image_url: z.string().optional().nullable(),
   trackingId: z.string().optional().nullable(),
-});
+}).passthrough();
 
 export type DojahNINEntity = z.infer<typeof DojahNINEntitySchema>;
 
@@ -385,9 +385,10 @@ export const DojahCACResultSchema = z.object({
       address: z.string().optional().nullable(),
       directors: z.array(z.record(z.string(), z.unknown())).optional().nullable(),
     })
+    .passthrough()
     .optional()
     .nullable(),
-});
+}).passthrough();
 
 export type DojahCACResult = z.infer<typeof DojahCACResultSchema>;
 
@@ -399,6 +400,6 @@ export const DojahNINAdvancedResultSchema = z.object({
   status: z.boolean().optional().nullable(),
   message: z.string().optional().nullable(),
   entity: DojahNINEntitySchema.optional().nullable(),
-});
+}).passthrough();
 
 export type DojahNINAdvancedResult = z.infer<typeof DojahNINAdvancedResultSchema>;
