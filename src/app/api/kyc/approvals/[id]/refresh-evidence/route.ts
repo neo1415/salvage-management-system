@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { buildDojahEvidenceSections } from '@/features/kyc/utils/provider-evidence-display';
 import { getIpAddress } from '@/lib/utils/audit-logger';
+import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,34 @@ export async function POST(
 
   if (!vendor) {
     return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
+  }
+
+  const [latestProviderRecord] = await db
+    .select({
+      workflowReference: providerVerificationRecords.workflowReference,
+      normalizedResult: providerVerificationRecords.normalizedResult,
+    })
+    .from(providerVerificationRecords)
+    .where(
+      and(
+        eq(providerVerificationRecords.vendorId, vendorId),
+        eq(providerVerificationRecords.provider, 'dojah'),
+        eq(providerVerificationRecords.verificationType, 'tier2')
+      )
+    )
+    .orderBy(desc(providerVerificationRecords.updatedAt))
+    .limit(1);
+
+  const normalized = (latestProviderRecord?.normalizedResult as Record<string, unknown> | null) ?? null;
+  const isManualHybrid =
+    latestProviderRecord?.workflowReference === 'nem-hybrid-tier2' ||
+    normalized?.verificationMode === 'nem_hybrid_manual_review';
+
+  if (isManualHybrid) {
+    return NextResponse.json(
+      { error: 'Manual hybrid KYC evidence is reviewed from stored NEM evidence. Provider refresh is only available for full Dojah widget submissions.' },
+      { status: 400 }
+    );
   }
 
   const reconcileResult = await reconcileTier2FromDojah({

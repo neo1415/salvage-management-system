@@ -140,7 +140,7 @@ export default function KYCApprovalDetailPage() {
 
   useEffect(() => {
     if (status !== 'authenticated') return;
-    void loadApproval(true);
+    void loadApproval(false);
   }, [status, vendorId]);
 
   async function handleRefreshProviderEvidence() {

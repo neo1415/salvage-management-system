@@ -26,17 +26,21 @@ function normalizeName(value: string): string {
     .trim();
 }
 
-function businessNameLooksClose(expected: string, actual?: string | null): boolean {
+function nameLooksClose(expected: string, actual?: string | null): boolean {
   if (!actual) return false;
   const left = normalizeName(expected);
   const right = normalizeName(actual);
   if (!left || !right) return false;
   if (left === right || left.includes(right) || right.includes(left)) return true;
-  const leftTokens = new Set(left.split(/\s+/).filter((part) => part.length > 2));
-  const rightTokens = right.split(/\s+/).filter((part) => part.length > 2);
+  const leftTokens = new Set(left.split(/\s+/).filter((part) => part.length > 1));
+  const rightTokens = right.split(/\s+/).filter((part) => part.length > 1);
   if (!leftTokens.size || !rightTokens.length) return false;
   const overlap = rightTokens.filter((part) => leftTokens.has(part)).length;
-  return overlap / Math.max(leftTokens.size, rightTokens.length) >= 0.6;
+  return overlap / Math.max(leftTokens.size, rightTokens.length) >= 0.55;
+}
+
+function businessNameLooksClose(expected: string, actual?: string | null): boolean {
+  return nameLooksClose(expected, actual);
 }
 
 function response(state: CheckState, message: string, extra?: Record<string, unknown>) {
@@ -80,6 +84,111 @@ function extractBusinessName(value: unknown): string | null {
   }
 
   return walk(value);
+}
+
+function extractPersonName(value: unknown): string | null {
+  const seen = new Set<unknown>();
+  const nameKeys = new Set([
+    'full_name',
+    'fullName',
+    'name',
+    'firstname',
+    'first_name',
+    'middlename',
+    'middle_name',
+    'surname',
+    'last_name',
+    'lastname',
+  ]);
+
+  function walk(node: unknown): string[] {
+    if (!node || typeof node !== 'object' || seen.has(node)) return [];
+    seen.add(node);
+    if (Array.isArray(node)) return node.flatMap(walk);
+
+    const record = node as Record<string, unknown>;
+    const directFullName = ['full_name', 'fullName', 'name']
+      .map((key) => record[key])
+      .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    if (directFullName) return [directFullName.trim()];
+
+    const parts = ['firstname', 'first_name', 'middlename', 'middle_name', 'surname', 'last_name', 'lastname']
+      .map((key) => record[key])
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    if (parts.length >= 2) return [parts.join(' ')];
+
+    const nested: string[] = [];
+    for (const [key, child] of Object.entries(record)) {
+      if (nameKeys.has(key) && typeof child === 'string' && child.trim()) nested.push(child.trim());
+      else nested.push(...walk(child));
+    }
+    return nested;
+  }
+
+  return walk(value)[0] ?? null;
+}
+
+function extractBirthDate(value: unknown): string | null {
+  const seen = new Set<unknown>();
+  const dateKeys = new Set(['birthdate', 'birth_date', 'date_of_birth', 'dob', 'dateOfBirth']);
+
+  function walk(node: unknown): string | null {
+    if (!node || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    const record = node as Record<string, unknown>;
+    for (const [key, child] of Object.entries(record)) {
+      if (dateKeys.has(key) && (typeof child === 'string' || child instanceof Date)) {
+        const value = String(child).slice(0, 10);
+        if (value) return value;
+      }
+    }
+    for (const child of Object.values(record)) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return walk(value);
+}
+
+function safeProviderDiagnostics(
+  check: 'nin' | 'cac',
+  data: {
+    result: unknown;
+    submittedName?: string;
+    providerName?: string | null;
+    submittedBusinessName?: string;
+    providerBusinessName?: string | null;
+    nameMatched?: boolean;
+    dobMatched?: boolean;
+    status?: unknown;
+  }
+) {
+  const enabled = process.env.KYC_PROVIDER_DEBUG_LOGS === 'true' || process.env.NODE_ENV !== 'production';
+  if (!enabled) return;
+  const record = data.result && typeof data.result === 'object' ? (data.result as Record<string, unknown>) : {};
+  const entity = record.entity && typeof record.entity === 'object' ? (record.entity as Record<string, unknown>) : null;
+  console.info('[Manual KYC Verify Field] provider diagnostics', {
+    check,
+    status: data.status,
+    topLevelKeys: Object.keys(record).slice(0, 20),
+    entityKeys: entity ? Object.keys(entity).slice(0, 30) : [],
+    submittedName: data.submittedName,
+    providerName: data.providerName,
+    submittedBusinessName: data.submittedBusinessName,
+    providerBusinessName: data.providerBusinessName,
+    nameMatched: data.nameMatched,
+    dobMatched: data.dobMatched,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -143,11 +252,21 @@ export async function POST(request: NextRequest) {
       if (!/^\d{11}$/.test(nin)) return response('failed', 'NIN must be exactly 11 digits.');
       try {
         const result = await dojah.verifyNINAdvanced(nin);
-        const entity = result.entity;
         const expected = normalizeName(row.fullName ?? session.user.name ?? '');
-        const providerName = normalizeName([entity?.firstname, entity?.middlename, entity?.surname].filter(Boolean).join(' '));
-        const dobMatches = !dateOfBirth || !entity?.birthdate || String(entity.birthdate).slice(0, 10) === dateOfBirth;
-        if (result.status !== false && providerName && (expected.includes(providerName) || providerName.includes(expected)) && dobMatches) {
+        const providerRawName = extractPersonName(result);
+        const providerName = normalizeName(providerRawName ?? '');
+        const providerBirthDate = extractBirthDate(result);
+        const dobMatches = !dateOfBirth || !providerBirthDate || providerBirthDate === dateOfBirth;
+        const nameMatched = nameLooksClose(expected, providerName);
+        safeProviderDiagnostics('nin', {
+          result,
+          status: result.status,
+          submittedName: expected,
+          providerName,
+          nameMatched,
+          dobMatched: dobMatches,
+        });
+        if (result.status !== false && providerName && nameMatched && dobMatches) {
           return response('verified', 'NIN matches the name and date of birth on your profile.');
         }
         return response('review', 'NIN lookup completed, but the details need manager review.');
@@ -162,7 +281,15 @@ export async function POST(request: NextRequest) {
     try {
       const result = await dojah.verifyCAC(cacNumber);
       const providerBusinessName = extractBusinessName(result);
-      if (result.status !== false && businessNameLooksClose(businessName, providerBusinessName)) {
+      const businessMatched = businessNameLooksClose(businessName, providerBusinessName);
+      safeProviderDiagnostics('cac', {
+        result,
+        status: result.status,
+        submittedBusinessName: businessName,
+        providerBusinessName,
+        nameMatched: businessMatched,
+      });
+      if (result.status !== false && businessMatched) {
         return response('verified', 'CAC record looks consistent with the business name.', {
           providerBusinessName,
         });

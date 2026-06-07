@@ -379,11 +379,25 @@ export class ProviderVerificationService {
   }
 
   private async createFraudAlertIfNeeded(input: PersistVerificationInput): Promise<void> {
+    const riskyReasonCodes = new Set([
+      'dojah_aml_flagged',
+      'dojah_watchlist_flagged',
+      'sanctions_match',
+      'pep_match',
+      'adverse_media_match',
+      'nin_lookup_failed',
+      'identity_mismatch',
+      'document_mismatch',
+      'duplicate_identity',
+      'liveness_failed',
+      'biometric_mismatch',
+    ]);
+    const hasRiskSignal = input.result.reasonCodes.some((code) => riskyReasonCodes.has(code));
     const risky =
       input.result.status === 'failed' ||
-      input.result.status === 'review_required' ||
       input.result.riskLevel === 'high' ||
-      input.result.riskLevel === 'critical';
+      input.result.riskLevel === 'critical' ||
+      hasRiskSignal;
 
     if (!risky || !input.vendorId) return;
 

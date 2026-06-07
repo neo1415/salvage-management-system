@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { buildDojahEvidenceSections } from '@/features/kyc/utils/provider-evidence-display';
 import { getIpAddress } from '@/lib/utils/audit-logger';
 import { isProviderVerificationStorageError, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
+import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +42,32 @@ export async function GET(
     return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
   }
 
+  let isManualHybrid = false;
+
   if (shouldRefresh) {
+    const [latestProviderRecord] = await db
+      .select({
+        workflowReference: providerVerificationRecords.workflowReference,
+        normalizedResult: providerVerificationRecords.normalizedResult,
+      })
+      .from(providerVerificationRecords)
+      .where(
+        and(
+          eq(providerVerificationRecords.vendorId, vendorId),
+          eq(providerVerificationRecords.provider, 'dojah'),
+          eq(providerVerificationRecords.verificationType, 'tier2')
+        )
+      )
+      .orderBy(desc(providerVerificationRecords.updatedAt))
+      .limit(1);
+
+    const normalized = (latestProviderRecord?.normalizedResult as Record<string, unknown> | null) ?? null;
+    isManualHybrid =
+      latestProviderRecord?.workflowReference === 'nem-hybrid-tier2' ||
+      normalized?.verificationMode === 'nem_hybrid_manual_review';
+  }
+
+  if (shouldRefresh && !isManualHybrid) {
     await reconcileTier2FromDojah({
       vendorId,
       userId: vendor.userId,

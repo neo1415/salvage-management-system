@@ -236,6 +236,7 @@ export function buildDojahEvidenceSections(
         'Government ID': documentMetadata?.photoId ? 'Uploaded for protected review' : 'Not uploaded',
         'Address proof': documentMetadata?.addressProof ? 'Uploaded for protected review' : 'Not uploaded',
         'Business document': documentMetadata?.businessDocument ? 'Uploaded for protected review' : 'Not required or not uploaded',
+        'Provider document OCR': 'Not used in this manual hybrid flow',
         Note: 'Files open through protected manager-only document routes.',
       },
       aml: {
