@@ -76,6 +76,7 @@ NEXTAUTH_URL=http://localhost:3000
 DOJAH_BASE_URL=https://api.dojah.io
 DOJAH_WORKFLOW_SLUG=salvage
 DOJAH_WIDGET_ID=<widget_id from the Dojah shareable link>
+DOJAH_LIVENESS_WIDGET_ID=<widget_id from a separate liveness-only Dojah flow>
 ```
 
 2. In the Dojah dashboard, confirm the widget/shareable link belongs to the same Dojah app as `DOJAH_APP_ID` and `DOJAH_PUBLIC_KEY`.
@@ -88,6 +89,18 @@ https://nemsalvage.com
 
 4. If Dojah rejects `localhost`, use an HTTPS tunnel for browser testing too, set `NEXT_PUBLIC_APP_URL` and `NEXTAUTH_URL` to that tunnel URL for that local session, and add the tunnel origin in Dojah while testing.
 5. The browser must only receive public widget config. Do not return BVN, NIN, full government ID numbers, raw documents, private keys, or raw provider payloads to the client.
+
+### Hybrid Tier 2 Liveness
+
+The NEM hybrid Tier 2 flow collects business data, NIN/BVN/CAC fields, address details, and documents inside NEM Salvage, then uses Dojah only for supporting API checks and liveness.
+
+For this mode, configure a separate Dojah widget/flow that contains only the Liveness step and set:
+
+```text
+DOJAH_LIVENESS_WIDGET_ID=<widget_id from the liveness-only shareable link>
+```
+
+Do not reuse the full `DOJAH_WIDGET_ID` for hybrid liveness. A full KYC/KYB widget can emit intermediate completion events and can push users out before the intended manual package is complete.
 
 ## Completion-to-Review Pipeline
 

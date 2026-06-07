@@ -493,7 +493,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
 
     if (input.cacNumber?.trim()) {
       try {
-        const cacResult = await dojah.verifyCAC(input.cacNumber.trim());
+        const cacResult = await dojah.verifyCAC(input.cacNumber.trim(), input.businessName);
         checksCompleted.add('business_registration_lookup');
         const providerBusinessName = extractBusinessNameFromCACResult(cacResult);
         const nameMatch = businessNameLooksClose(input.businessName, providerBusinessName);

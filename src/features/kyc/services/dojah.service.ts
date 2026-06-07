@@ -316,9 +316,17 @@ export class DojahService {
   /**
    * CAC Lookup — verifies company registration status.
    */
-  async verifyCAC(rcNumber: string): Promise<DojahCACResult> {
-    const url = `${this.config.baseUrl}/api/v1/kyc/cac?rc_number=${encodeURIComponent(rcNumber)}`;
-    console.log('[DojahService] verifyCAC called', { rcNumber: maskIdentifier(rcNumber) });
+  async verifyCAC(rcNumber: string, companyName?: string): Promise<DojahCACResult> {
+    const params = new URLSearchParams({ rc_number: rcNumber });
+    if (companyName?.trim()) {
+      params.set('company_name', companyName.trim());
+    }
+
+    const url = `${this.config.baseUrl}/api/v1/kyc/cac?${params.toString()}`;
+    console.log('[DojahService] verifyCAC called', {
+      rcNumber: maskIdentifier(rcNumber),
+      hasCompanyName: Boolean(companyName?.trim()),
+    });
 
     const res = await this.fetchWithRetry(url, { method: 'GET', headers: this.headers });
     const json = await res.json();

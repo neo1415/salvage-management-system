@@ -313,7 +313,7 @@ export async function POST(request: NextRequest) {
     const businessName = String(body?.businessName ?? '').trim();
     if (!cacNumber || !businessName) return response('failed', 'Business name and CAC/RC number are required.');
     try {
-      const result = await dojah.verifyCAC(cacNumber);
+      const result = await dojah.verifyCAC(cacNumber, businessName);
       const providerBusinessName = extractBusinessName(result);
       const businessMatched = businessNameLooksClose(businessName, providerBusinessName);
       safeProviderDiagnostics('cac', {
