@@ -13,15 +13,29 @@ export async function clearPrematureTier2Submission(vendorId: string): Promise<b
     .select({
       tier2SubmittedAt: vendors.tier2SubmittedAt,
       tier2ApprovedAt: vendors.tier2ApprovedAt,
+      tier2DojahReferenceId: vendors.tier2DojahReferenceId,
       ninVerified: vendors.ninVerified,
       livenessScore: vendors.livenessScore,
       biometricMatchScore: vendors.biometricMatchScore,
+      photoIdUrl: vendors.photoIdUrl,
+      addressProofUrl: vendors.addressProofUrl,
+      cacCertificateUrl: vendors.cacCertificateUrl,
     })
     .from(vendors)
     .where(eq(vendors.id, vendorId))
     .limit(1);
 
   if (!vendor?.tier2SubmittedAt || vendor.tier2ApprovedAt) {
+    return false;
+  }
+
+  const hasManualSubmissionFootprint = Boolean(
+    vendor.tier2DojahReferenceId?.startsWith('nem-') ||
+      vendor.photoIdUrl ||
+      vendor.addressProofUrl ||
+      vendor.cacCertificateUrl
+  );
+  if (hasManualSubmissionFootprint) {
     return false;
   }
 

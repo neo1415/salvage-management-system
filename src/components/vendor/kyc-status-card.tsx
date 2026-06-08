@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Crown, ArrowRight, CheckCircle2, Clock, XCircle, AlertTriangle, RefreshCw, Shield } from 'lucide-react';
 import type { KYCStatus } from '@/features/kyc/types/kyc.types';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { isPendingTier2Review } from '@/features/kyc/utils/tier2-status';
 
 export type VendorTier = 'tier1_bvn' | 'tier2_full';
 
@@ -49,6 +50,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
   };
 
   const tier2Approved = currentTier === 'tier2_full' || kycStatus?.status === 'approved';
+  const tier2PendingReview = isPendingTier2Review(kycStatus);
 
   // Tier 2 approved — show expiry info if within 30 days
   if (tier2Approved && kycStatus?.expiresAt) {
@@ -126,7 +128,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
   if (loading) return null;
 
   // Pending review
-  if (kycStatus?.status === 'pending_review') {
+  if (tier2PendingReview) {
     return (
       <div className={`bg-yellow-50 border border-yellow-200 rounded-lg p-4 ${className}`}>
         <div className="flex items-start gap-3">

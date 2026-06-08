@@ -26,6 +26,7 @@ import {
   resolveDojahWidgetReference,
   type DojahWidgetCallbackResponse,
 } from '@/lib/kyc/dojah-widget-completion';
+import { isPendingTier2Review, type Tier2StatusLike } from '@/features/kyc/utils/tier2-status';
 
 type PageState = 'idle' | 'loading' | 'submitting' | 'liveness' | 'pending_review' | 'approved' | 'rejected';
 type CheckState = 'idle' | 'checking' | 'verified' | 'review' | 'unavailable' | 'failed';
@@ -212,7 +213,7 @@ export default function Tier2ManualKYCPage() {
           fetch('/api/settings/profile'),
         ]);
 
-        const statusData = await statusRes.json();
+        const statusData = (await statusRes.json().catch(() => null)) as Tier2StatusLike | null;
         const profileData = await profileRes.json().catch(() => null);
         const vendor = profileData?.vendor;
 
@@ -232,7 +233,7 @@ export default function Tier2ManualKYCPage() {
           }
         }
 
-        if (statusData?.status === 'pending_review') setPageState('pending_review');
+        if (isPendingTier2Review(statusData)) setPageState('pending_review');
         else if (statusData?.status === 'approved') setPageState('approved');
         else if (statusData?.status === 'rejected') setPageState('rejected');
         else setPageState('idle');

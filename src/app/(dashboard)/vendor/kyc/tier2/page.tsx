@@ -49,6 +49,7 @@ import {
   VerificationErrorAlert,
   VerificationErrorDialog,
 } from '@/components/kyc/verification-error-dialog';
+import { isPendingTier2Review } from '@/features/kyc/utils/tier2-status';
 
 declare global {
   interface Window {
@@ -258,8 +259,8 @@ export default function Tier2KYCPage() {
       const statusRes = await fetch('/api/kyc/status');
       if (!statusRes.ok) return false;
       const status = (await statusRes.json()) as KYCStatus;
-      if (status.status === 'approved' || status.status === 'pending_review') {
-        showSubmissionSuccess(status.status);
+      if (status.status === 'approved' || isPendingTier2Review(status)) {
+        showSubmissionSuccess(status.status === 'approved' ? 'approved' : 'pending_review');
         return true;
       }
     } catch {
@@ -339,7 +340,7 @@ export default function Tier2KYCPage() {
 
           if (!allowRetest) {
             if (status.status === 'approved') { setPageState('approved'); return; }
-            if (status.status === 'pending_review') { setPageState('pending_review'); return; }
+            if (isPendingTier2Review(status)) { setPageState('pending_review'); return; }
             if (status.status === 'rejected') { setPageState('rejected'); return; }
             if (status.status === 'expired') { setPageState('expired'); return; }
           }

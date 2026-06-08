@@ -98,8 +98,7 @@ export async function GET(request: NextRequest) {
     if (
       isManualHybridEvidence &&
       !effectiveTier2SubmittedAt &&
-      !effectiveTier2ApprovedAt &&
-      payloadStatusLooksSubmitted(latestEvidence?.status)
+      !effectiveTier2ApprovedAt
     ) {
       const submittedAt = latestEvidence?.updatedAt ?? new Date();
       await db
@@ -148,7 +147,7 @@ export async function GET(request: NextRequest) {
       : kycStatus;
     const authoritativeStatus =
       !isKycTestingMode() &&
-      effectiveTier2SubmittedAt &&
+      (effectiveTier2SubmittedAt || isManualHybridEvidence) &&
       !effectiveTier2ApprovedAt &&
       payload.status !== 'approved' &&
       payload.status !== 'rejected'
