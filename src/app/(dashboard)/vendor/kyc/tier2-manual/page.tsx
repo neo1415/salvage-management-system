@@ -139,15 +139,16 @@ export default function Tier2ManualKYCPage() {
   const [connect, setConnect] = useState<DojahConnect | null>(null);
   const manualReferenceRef = useRef<string | null>(null);
   const pendingLivenessReferenceRef = useRef<string | null>(null);
+  const lastAutoCheckKeyRef = useRef<Record<'bvn' | 'nin' | 'cac', string>>({
+    bvn: '',
+    nin: '',
+    cac: '',
+  });
+  const runningCheckKeyRef = useRef<Set<string>>(new Set());
   const [checks, setChecks] = useState<Record<'bvn' | 'nin' | 'cac', VerificationCheck>>({
     bvn: initialCheck,
     nin: initialCheck,
     cac: initialCheck,
-  });
-  const [lastAutoCheckKey, setLastAutoCheckKey] = useState<Record<'bvn' | 'nin' | 'cac', string>>({
-    bvn: '',
-    nin: '',
-    cac: '',
   });
   const [formData, setFormData] = useState<FormDataState>({
     businessName: '',
@@ -425,26 +426,26 @@ export default function Tier2ManualKYCPage() {
           }));
         } else {
           const key = `${formData.businessName.trim().toLowerCase()}|${formData.cacNumber.trim().toLowerCase()}`;
-          if (lastAutoCheckKey.cac !== key) {
-            setLastAutoCheckKey((prev) => ({ ...prev, cac: key }));
-            void runCheck('cac');
+          if (lastAutoCheckKeyRef.current.cac !== key) {
+            lastAutoCheckKeyRef.current.cac = key;
+            void runCheck('cac', key);
           }
         }
       }
 
       if (/^\d{11}$/.test(formData.nin)) {
         const key = formData.nin;
-        if (lastAutoCheckKey.nin !== key) {
-          setLastAutoCheckKey((prev) => ({ ...prev, nin: key }));
-          void runCheck('nin');
+        if (lastAutoCheckKeyRef.current.nin !== key) {
+          lastAutoCheckKeyRef.current.nin = key;
+          void runCheck('nin', key);
         }
       }
 
       if (needsBvn && /^\d{11}$/.test(formData.bvn)) {
         const key = formData.bvn;
-        if (lastAutoCheckKey.bvn !== key) {
-          setLastAutoCheckKey((prev) => ({ ...prev, bvn: key }));
-          void runCheck('bvn');
+        if (lastAutoCheckKeyRef.current.bvn !== key) {
+          lastAutoCheckKeyRef.current.bvn = key;
+          void runCheck('bvn', key);
         }
       }
     }, 800);
@@ -457,15 +458,15 @@ export default function Tier2ManualKYCPage() {
     formData.cacNumber,
     formData.nin,
     formData.bvn,
-    lastAutoCheckKey.bvn,
-    lastAutoCheckKey.cac,
-    lastAutoCheckKey.nin,
     needsBusinessDocument,
     needsBvn,
     pageState,
   ]);
 
-  const runCheck = async (type: 'bvn' | 'nin' | 'cac') => {
+  const runCheck = async (type: 'bvn' | 'nin' | 'cac', dedupeKey?: string) => {
+    const requestKey = `${type}:${dedupeKey ?? Date.now()}`;
+    if (runningCheckKeyRef.current.has(requestKey)) return;
+    runningCheckKeyRef.current.add(requestKey);
     setChecks((prev) => ({ ...prev, [type]: { state: 'checking', message: 'Checking with verification provider...' } }));
     const payload = {
       type,
@@ -495,6 +496,8 @@ export default function Tier2ManualKYCPage() {
         ...prev,
         [type]: { state: 'unavailable', message: 'Provider check is unavailable. Managers can still review the uploaded evidence.' },
       }));
+    } finally {
+      runningCheckKeyRef.current.delete(requestKey);
     }
   };
 

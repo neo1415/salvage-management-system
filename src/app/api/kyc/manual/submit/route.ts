@@ -495,6 +495,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
       try {
         const cacResult = await dojah.verifyCAC(input.cacNumber.trim(), input.businessName);
         checksCompleted.add('business_registration_lookup');
+        const providerError = providerErrorMessage(cacResult);
         const providerBusinessName = extractBusinessNameFromCACResult(cacResult);
         const nameMatch = businessNameLooksClose(input.businessName, providerBusinessName);
         dojahEvidenceSummary.cac = {
@@ -507,7 +508,10 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
           submittedBusinessType: input.businessType,
           registrationNumberLastFour: input.cacNumber.trim().slice(-4),
         };
-        if (cacResult.status === false) {
+        if (providerError && /unable to reach|unavailable|timeout|service/i.test(providerError)) {
+          pendingChecks.add('business_registration_lookup');
+          reasonCodes.add('dojah_cac_lookup_unavailable');
+        } else if (cacResult.status === false) {
           failedChecks.add('business_registration_lookup');
           reasonCodes.add('dojah_cac_lookup_failed');
         }
@@ -631,6 +635,13 @@ function nameLooksClose(expected: string, actual?: string | null): boolean {
 
 function businessNameLooksClose(expected: string, actual?: string | null): boolean {
   return nameLooksClose(expected, actual);
+}
+
+function providerErrorMessage(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const error = record.error ?? record.message;
+  return typeof error === 'string' && error.trim() ? error.trim() : null;
 }
 
 function extractPersonNameFromProviderResult(value: unknown): string | null {

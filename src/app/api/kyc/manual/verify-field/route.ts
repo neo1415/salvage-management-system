@@ -161,6 +161,13 @@ function redactedProviderSnapshot(value: unknown): unknown {
   return redactProviderValue('root', value);
 }
 
+function providerErrorMessage(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const error = record.error ?? record.message;
+  return typeof error === 'string' && error.trim() ? error.trim() : null;
+}
+
 function extractBirthDate(value: unknown): string | null {
   const seen = new Set<unknown>();
   const dateKeys = new Set(['birthdate', 'birth_date', 'date_of_birth', 'dob', 'dateOfBirth']);
@@ -314,6 +321,7 @@ export async function POST(request: NextRequest) {
     if (!cacNumber || !businessName) return response('failed', 'Business name and CAC/RC number are required.');
     try {
       const result = await dojah.verifyCAC(cacNumber, businessName);
+      const providerError = providerErrorMessage(result);
       const providerBusinessName = extractBusinessName(result);
       const businessMatched = businessNameLooksClose(businessName, providerBusinessName);
       safeProviderDiagnostics('cac', {
@@ -323,6 +331,11 @@ export async function POST(request: NextRequest) {
         providerBusinessName,
         nameMatched: businessMatched,
       });
+      if (providerError && /unable to reach|unavailable|timeout|service/i.test(providerError)) {
+        return response('unavailable', 'CAC provider check is temporarily unavailable. Managers can still review the uploaded business document.', {
+          providerBusinessName,
+        });
+      }
       if (result.status !== false && businessMatched) {
         return response('verified', 'CAC record looks consistent with the business name.', {
           providerBusinessName,
