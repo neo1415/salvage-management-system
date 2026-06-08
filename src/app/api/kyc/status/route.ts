@@ -60,7 +60,11 @@ export async function GET(request: NextRequest) {
     const [latestEvidence] = await db
       .select({
         workflowReference: providerVerificationRecords.workflowReference,
+        providerReference: providerVerificationRecords.providerReference,
+        status: providerVerificationRecords.status,
+        checksCompleted: providerVerificationRecords.checksCompleted,
         normalizedResult: providerVerificationRecords.normalizedResult,
+        updatedAt: providerVerificationRecords.updatedAt,
       })
       .from(providerVerificationRecords)
       .where(
@@ -83,13 +87,40 @@ export async function GET(request: NextRequest) {
     const latestNormalized = (latestEvidence?.normalizedResult as Record<string, unknown> | null) ?? null;
     const isManualHybridEvidence =
       latestEvidence?.workflowReference === 'nem-hybrid-tier2' ||
-      latestNormalized?.verificationMode === 'nem_hybrid_manual_review';
+      latestNormalized?.verificationMode === 'nem_hybrid_manual_review' ||
+      (latestEvidence?.checksCompleted ?? []).includes('nem_documents_uploaded');
+
+    let effectiveTier2SubmittedAt = vendorAfterCleanup?.tier2SubmittedAt ?? null;
+    let effectiveTier2ApprovedAt = vendorAfterCleanup?.tier2ApprovedAt ?? null;
+
+    // Self-heal vendors whose manual Tier 2 evidence was saved before the vendor row
+    // status was reliably backfilled. Existing applicants should not have to resubmit.
+    if (
+      isManualHybridEvidence &&
+      !effectiveTier2SubmittedAt &&
+      !effectiveTier2ApprovedAt &&
+      payloadStatusLooksSubmitted(latestEvidence?.status)
+    ) {
+      const submittedAt = latestEvidence?.updatedAt ?? new Date();
+      await db
+        .update(vendors)
+        .set({
+          tier2SubmittedAt: submittedAt,
+          ...(latestEvidence?.providerReference
+            ? { tier2DojahReferenceId: latestEvidence.providerReference }
+            : {}),
+          tier2RejectionReason: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(vendors.id, vendorRow.id));
+      effectiveTier2SubmittedAt = submittedAt;
+    }
 
     if (
       !isKycTestingMode() &&
       !isManualHybridEvidence &&
-      vendorAfterCleanup?.tier2SubmittedAt &&
-      !vendorAfterCleanup.tier2ApprovedAt
+      effectiveTier2SubmittedAt &&
+      !effectiveTier2ApprovedAt
     ) {
       await reconcileTier2FromDojah({
         vendorId: vendorRow.id,
@@ -117,8 +148,8 @@ export async function GET(request: NextRequest) {
       : kycStatus;
     const authoritativeStatus =
       !isKycTestingMode() &&
-      vendorAfterCleanup?.tier2SubmittedAt &&
-      !vendorAfterCleanup.tier2ApprovedAt &&
+      effectiveTier2SubmittedAt &&
+      !effectiveTier2ApprovedAt &&
       payload.status !== 'approved' &&
       payload.status !== 'rejected'
         ? 'pending_review'
@@ -152,4 +183,16 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function payloadStatusLooksSubmitted(status: string | null | undefined): boolean {
+  const normalized = String(status ?? '').toLowerCase();
+  return [
+    'review_required',
+    'pending',
+    'pending_review',
+    'submitted',
+    'submitted_for_review',
+    'manual_review',
+  ].includes(normalized);
 }

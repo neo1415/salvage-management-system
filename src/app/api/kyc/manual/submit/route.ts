@@ -416,6 +416,8 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
   const failedChecks = new Set<string>();
   const reasonCodes = new Set<string>();
   const dojahEvidenceSummary: Record<string, unknown> = {};
+  let resolvedAmlName = input.fullName;
+  let resolvedAmlDateOfBirth = input.dateOfBirth;
 
   if (input.bvnAlreadyVerified) checksCompleted.add('tier1_bvn_verified');
   else if (input.bvn) pendingChecks.add('tier2_bvn_validation');
@@ -465,14 +467,27 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
       const ninResult = await dojah.verifyNINAdvanced(input.nin);
       const providerName = extractPersonNameFromProviderResult(ninResult);
       const providerBirthDate = extractBirthDateFromProviderResult(ninResult);
+      const providerFirstName = extractFirstStringFromProviderResult(ninResult, ['first_name', 'firstname', 'firstName']);
+      const providerMiddleName = extractFirstStringFromProviderResult(ninResult, ['middle_name', 'middlename', 'middleName']);
+      const providerLastName = extractFirstStringFromProviderResult(ninResult, ['last_name', 'surname', 'lastname', 'lastName']);
+      const providerGender = extractFirstStringFromProviderResult(ninResult, ['gender', 'sex']);
+      const providerPhone = extractFirstStringFromProviderResult(ninResult, ['phone_number', 'telephoneno', 'phone', 'mobile']);
       const nameMatched = nameLooksClose(input.fullName, providerName);
       const dobMatched = !input.dateOfBirth || !providerBirthDate || providerBirthDate === input.dateOfBirth;
+      if (providerName) resolvedAmlName = providerName;
+      if (providerBirthDate) resolvedAmlDateOfBirth = providerBirthDate;
       checksCompleted.add('nin_lookup');
       dojahEvidenceSummary.nin = {
         status: ninResult.status ?? null,
         message: ninResult.message ?? null,
         hasEntity: Boolean(ninResult.entity),
         providerName: providerName || null,
+        providerFirstName: providerFirstName || null,
+        providerMiddleName: providerMiddleName || null,
+        providerLastName: providerLastName || null,
+        providerGender: providerGender || null,
+        providerDateOfBirth: providerBirthDate || null,
+        providerPhoneLastFour: providerPhone ? providerPhone.slice(-4) : null,
         nameMatched,
         dobMatched,
         lastFour: input.nin.slice(-4),
@@ -497,12 +512,40 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
         checksCompleted.add('business_registration_lookup');
         const providerError = providerErrorMessage(cacResult);
         const providerBusinessName = extractBusinessNameFromCACResult(cacResult);
+        const providerBusinessNumber = extractFirstStringFromProviderResult(cacResult, [
+          'business_number',
+          'businessNumber',
+          'registration_number',
+          'registrationNumber',
+          'rc_number',
+          'rcNumber',
+          'number',
+        ]);
+        const providerBusinessType = extractFirstStringFromProviderResult(cacResult, [
+          'business_type',
+          'businessType',
+          'entity_type',
+          'entityType',
+          'type',
+        ]);
+        const providerCountry = extractFirstStringFromProviderResult(cacResult, ['country', 'country_code', 'countryCode']);
+        const providerRegistrationDate = extractFirstStringFromProviderResult(cacResult, [
+          'registration_date',
+          'registrationDate',
+          'date_of_registration',
+          'dateOfRegistration',
+          'date',
+        ]);
         const nameMatch = businessNameLooksClose(input.businessName, providerBusinessName);
         dojahEvidenceSummary.cac = {
           status: cacResult.status ?? null,
           message: cacResult.message ?? null,
           hasEntity: Boolean(cacResult.entity),
           providerBusinessName: providerBusinessName || null,
+          providerBusinessNumber: providerBusinessNumber || null,
+          providerBusinessType: providerBusinessType || null,
+          providerCountry: providerCountry || null,
+          providerRegistrationDate: providerRegistrationDate || null,
           businessNameMatched: nameMatch,
           submittedBusinessName: input.businessName,
           submittedBusinessType: input.businessType,
@@ -530,12 +573,14 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
       pendingChecks.add('business_registration_lookup');
     }
 
-    if (input.dateOfBirth) {
+    if (resolvedAmlDateOfBirth) {
       try {
-        const amlResult = await dojah.screenAML(input.fullName, input.dateOfBirth);
+        const amlResult = await dojah.screenAML(resolvedAmlName, resolvedAmlDateOfBirth);
         checksCompleted.add('aml_screening');
         dojahEvidenceSummary.aml = {
           status: amlResult.status ?? null,
+          screenedName: resolvedAmlName,
+          screenedDateOfBirth: resolvedAmlDateOfBirth,
           hasPepHits: (amlResult.entity?.pep?.length ?? 0) > 0,
           hasSanctionHits: (amlResult.entity?.sanctions?.length ?? 0) > 0,
           hasAdverseMediaHits: (amlResult.entity?.adverse_media?.length ?? 0) > 0,
@@ -701,6 +746,38 @@ function extractBirthDateFromProviderResult(value: unknown): string | null {
       if (dateKeys.has(key) && (typeof child === 'string' || child instanceof Date)) {
         const value = String(child).slice(0, 10);
         if (value) return value;
+      }
+    }
+
+    for (const child of Object.values(record)) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return walk(value);
+}
+
+function extractFirstStringFromProviderResult(value: unknown, keys: string[]): string | null {
+  const wanted = new Set(keys);
+  const seen = new Set<unknown>();
+
+  function walk(node: unknown): string | null {
+    if (!node || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    const record = node as Record<string, unknown>;
+    for (const [key, child] of Object.entries(record)) {
+      if (wanted.has(key) && typeof child === 'string' && child.trim()) {
+        return child.trim();
       }
     }
 

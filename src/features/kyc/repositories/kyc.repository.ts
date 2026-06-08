@@ -128,6 +128,8 @@ export class KYCRepository {
           .select({
             status: providerVerificationRecords.status,
             providerReference: providerVerificationRecords.providerReference,
+            workflowReference: providerVerificationRecords.workflowReference,
+            checksCompleted: providerVerificationRecords.checksCompleted,
             normalizedResult: providerVerificationRecords.normalizedResult,
             updatedAt: providerVerificationRecords.updatedAt,
           })
@@ -139,9 +141,15 @@ export class KYCRepository {
               eq(providerVerificationRecords.verificationType, 'tier2')
             )
           )
-          .orderBy(desc(providerVerificationRecords.updatedAt))
+          .orderBy(providerEvidenceReviewOrder(), desc(providerVerificationRecords.updatedAt))
           .limit(1)
       : [];
+    const latestNormalized = (latestTier2Provider?.normalizedResult as Record<string, unknown> | null) ?? null;
+    const hasSubmittedProviderEvidence =
+      latestTier2Provider?.workflowReference === 'nem-hybrid-tier2' ||
+      latestNormalized?.verificationMode === 'nem_hybrid_manual_review' ||
+      (latestTier2Provider?.checksCompleted ?? []).includes('nem_documents_uploaded') ||
+      payloadStatusLooksSubmitted(latestTier2Provider?.status);
 
     // Determine status
     let status: KYCStatus['status'] = 'not_started';
@@ -150,7 +158,7 @@ export class KYCRepository {
       status = v.tier2ExpiresAt && v.tier2ExpiresAt < now ? 'expired' : 'approved';
     } else if (v.tier2RejectionReason) {
       status = 'rejected';
-    } else if (v.tier2SubmittedAt && !v.tier2ApprovedAt) {
+    } else if ((v.tier2SubmittedAt || hasSubmittedProviderEvidence) && !v.tier2ApprovedAt) {
       status = 'pending_review';
     } else if (v.tier2SubmittedAt) {
       status = 'in_progress';
@@ -607,6 +615,18 @@ export class KYCRepository {
       })
       .where(eq(vendors.id, vendorId));
   }
+}
+
+function payloadStatusLooksSubmitted(status: string | null | undefined): boolean {
+  const normalized = String(status ?? '').toLowerCase();
+  return [
+    'review_required',
+    'pending',
+    'pending_review',
+    'submitted',
+    'submitted_for_review',
+    'manual_review',
+  ].includes(normalized);
 }
 
 function recordFrom(value: unknown): Record<string, unknown> | null {
