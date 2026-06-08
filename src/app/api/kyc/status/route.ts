@@ -115,10 +115,18 @@ export async function GET(request: NextRequest) {
     const payload = isKycTestingMode()
       ? applyKycTestingStatusOverride(kycStatus)
       : kycStatus;
+    const authoritativeStatus =
+      !isKycTestingMode() &&
+      vendorAfterCleanup?.tier2SubmittedAt &&
+      !vendorAfterCleanup.tier2ApprovedAt &&
+      payload.status !== 'approved' &&
+      payload.status !== 'rejected'
+        ? 'pending_review'
+        : payload.status;
 
     return NextResponse.json(
       {
-        status: payload.status,
+        status: authoritativeStatus,
         tier: payload.tier,
         submittedAt: kycStatus.submittedAt,
         approvedAt: kycStatus.approvedAt,

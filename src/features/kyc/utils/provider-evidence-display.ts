@@ -19,7 +19,7 @@ export function formatCheckList(checks: string[] | undefined | null): string[] {
 }
 
 export function formatReasonCode(reason: string): string {
-  return reason.replace(/^dojah_/i, '').replace(/_/g, ' ');
+  return reason.replace(/^(dojah|nem)_/i, '').replace(/_/g, ' ');
 }
 
 function formatReasonCodes(reasons: string[] | undefined | null): string {
@@ -162,13 +162,13 @@ export function buildDojahEvidenceSections(
 
     return {
       providerSummary: {
-        Source: 'NEM hybrid manual verification',
+        Source: 'Manual verification',
         'Reference ID': displayOrFallback(providerEvidence?.providerReference),
         'Workflow reference': displayOrFallback(providerEvidence?.workflowReference, 'nem-hybrid-tier2'),
         Status: displayOrFallback(providerEvidence?.status?.replace(/_/g, ' ')),
         'Risk level': displayOrFallback(providerEvidence?.riskLevel),
         'Verification status': displayOrFallback(normalized?.verificationStatus),
-        Mode: 'Manual evidence with Dojah supporting checks',
+        Mode: 'Manual evidence with automated supporting checks',
         'Last updated': providerEvidence?.updatedAt
           ? new Date(providerEvidence.updatedAt).toLocaleString()
           : 'Pending review',
@@ -182,7 +182,7 @@ export function buildDojahEvidenceSections(
         'Submitted business number': displayOrFallback(submittedProfile?.businessRegistrationNumber, 'Not provided'),
       },
       pendingReason: {
-        Reason: 'NEM collected the documents and profile directly. Dojah checks are supporting evidence; manager approval remains the final decision.',
+        Reason: 'The documents and profile were collected directly. Automated checks are supporting evidence; manager approval remains the final decision.',
         'Reason codes': formatReasonCodes(providerEvidence?.reasonCodes),
       },
       business: {
@@ -239,7 +239,7 @@ export function buildDojahEvidenceSections(
         'Government ID': documentMetadata?.photoId ? 'Uploaded for protected review' : 'Not uploaded',
         'Address proof': documentMetadata?.addressProof ? 'Uploaded for protected review' : 'Not uploaded',
         'Business document': documentMetadata?.businessDocument ? 'Uploaded for protected review' : 'Not required or not uploaded',
-        'Provider document OCR': 'Not used in this manual hybrid flow',
+        'Provider document OCR': 'Not used in this manual review flow',
         Note: 'Files open through protected manager-only document routes.',
       },
       aml: {
@@ -251,8 +251,8 @@ export function buildDojahEvidenceSections(
         'Failed checks': formatCheckList(providerEvidence?.failedChecks).join(', ') || 'None',
       },
       ipDevice: {
-        'IP / device risk': 'Not part of this manual hybrid submission',
-        'Device fingerprint': 'Not part of this manual hybrid submission',
+        'IP / device risk': 'Not part of this manual submission',
+        'Device fingerprint': 'Not part of this manual submission',
       },
     };
   }
@@ -357,7 +357,7 @@ export function buildDojahEvidenceSections(
         : 'No media import record found',
       Note: normalized?.idStatus === false && mediaAssets.length
         ? 'Media files are available, but the document/OCR check failed.'
-        : 'Imported files are stored in NEM evidence storage when available.',
+        : 'Imported files are stored in protected evidence storage when available.',
     },
     businessId: cleanBusinessIdFields(mergeEvidenceFields({
       'Business ID name': displayOrFallback(businessId?.businessName),

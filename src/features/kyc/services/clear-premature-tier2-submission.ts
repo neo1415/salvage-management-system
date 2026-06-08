@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
@@ -25,6 +25,27 @@ export async function clearPrematureTier2Submission(vendorId: string): Promise<b
     return false;
   }
 
+  const [manualHybridEvidence] = await db
+    .select({ id: providerVerificationRecords.id })
+    .from(providerVerificationRecords)
+    .where(
+      and(
+        eq(providerVerificationRecords.vendorId, vendorId),
+        eq(providerVerificationRecords.verificationType, 'tier2'),
+        or(
+          eq(providerVerificationRecords.workflowReference, 'nem-hybrid-tier2'),
+          sql`${providerVerificationRecords.normalizedResult}->>'verificationMode' = 'nem_hybrid_manual_review'`,
+          sql`${providerVerificationRecords.checksCompleted} ? 'nem_documents_uploaded'`,
+          sql`${providerVerificationRecords.checksCompleted} ? 'documents_uploaded'`
+        )
+      )
+    )
+    .limit(1);
+
+  if (manualHybridEvidence) {
+    return false;
+  }
+
   const [latestEvidence] = await db
     .select({
       workflowReference: providerVerificationRecords.workflowReference,
@@ -39,12 +60,13 @@ export async function clearPrematureTier2Submission(vendorId: string): Promise<b
 
   const normalized = latestEvidence?.normalizedResult as Record<string, unknown> | null | undefined;
   const verificationMode = String(normalized?.verificationMode ?? '');
-  const hasManualHybridEvidence =
+  const latestIsManualHybrid =
     latestEvidence?.workflowReference === 'nem-hybrid-tier2' ||
     verificationMode === 'nem_hybrid_manual_review' ||
-    (latestEvidence?.checksCompleted ?? []).includes('nem_documents_uploaded');
+    (latestEvidence?.checksCompleted ?? []).includes('nem_documents_uploaded') ||
+    (latestEvidence?.checksCompleted ?? []).includes('documents_uploaded');
 
-  if (hasManualHybridEvidence) {
+  if (latestIsManualHybrid) {
     return false;
   }
 

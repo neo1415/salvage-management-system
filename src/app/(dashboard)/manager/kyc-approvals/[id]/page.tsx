@@ -3,10 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import Image from 'next/image';
 import {
   Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle,
-  Shield, User, FileText, Eye, Download, RefreshCw
+  Shield, User, FileText, Eye, Download, RefreshCw, LockKeyhole, BadgeCheck
 } from 'lucide-react';
 import type { PendingApproval } from '@/features/kyc/types/kyc.types';
 import type { DojahEvidenceSections } from '@/features/kyc/utils/provider-evidence-display';
@@ -81,9 +80,35 @@ function getApprovalDocuments(approval: PendingApproval): ApprovalDocument[] {
   return documents;
 }
 
-function isImageLike(document: ApprovalDocument): boolean {
-  if (document.type === 'selfie' || document.type === 'photo_id') return true;
-  return /\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(document.url ?? '');
+function valueFrom(fields: Record<string, string> | undefined | null, label: string, fallback = 'Not available') {
+  const value = fields?.[label]?.trim();
+  return value && value !== 'â€”' ? value : fallback;
+}
+
+function humanRisk(value?: string | null) {
+  if (!value) return 'Low';
+  const normalized = value.toLowerCase();
+  if (normalized === 'high' || normalized === 'critical') return 'High';
+  if (normalized === 'medium') return 'Medium';
+  return 'Low';
+}
+
+function reviewStatusLabel(status: 'pending' | 'approved' | 'rejected') {
+  if (status === 'approved') return 'Approved';
+  if (status === 'rejected') return 'Rejected';
+  return 'Awaiting manager review';
+}
+
+function cleanFlags(reasons: string[] | undefined) {
+  return (reasons ?? [])
+    .map((reason) => reason?.trim())
+    .filter((reason): reason is string => Boolean(reason && reason !== 'â€¢' && reason !== '•'));
+}
+
+function cardTone(value: string) {
+  if (/failed|flagged|mismatch|rejected|high/i.test(value)) return 'border-red-200 bg-red-50 text-red-900';
+  if (/pending|review|unavailable|not completed/i.test(value)) return 'border-yellow-200 bg-yellow-50 text-yellow-900';
+  return 'border-green-200 bg-green-50 text-green-900';
 }
 
 export default function KYCApprovalDetailPage() {
@@ -304,6 +329,33 @@ export default function KYCApprovalDetailPage() {
     : null;
   const managerDecisionReason = managerDecision.reason ? String(managerDecision.reason) : null;
   const decisionMade = isReviewFinalized || Boolean(managerDecision.decision);
+  const businessFields = evidenceSections?.business ?? {};
+  const identityFields = evidenceSections?.governmentData ?? {};
+  const livenessFields = evidenceSections?.liveness ?? {};
+  const addressFields = evidenceSections?.address ?? {};
+  const amlFields = evidenceSections?.aml ?? {};
+  const riskLevel = humanRisk(approval.providerEvidence?.riskLevel ?? approval.amlRiskLevel);
+  const livenessStatus = displayLiveness !== undefined
+    ? `${displayLiveness}%`
+    : valueFrom(livenessFields, 'Liveness status', 'Pending');
+  const amlScreening = valueFrom(amlFields, 'AML screening', 'Not completed');
+  const pepHits = valueFrom(amlFields, 'PEP hits', 'No');
+  const sanctionsHits = valueFrom(amlFields, 'Sanctions hits', 'No');
+  const adverseHits = valueFrom(amlFields, 'Adverse media hits', 'No');
+  const amlCompleted = approval.providerEvidence?.checksCompleted?.includes('aml_screening') ?? false;
+  const amlDecision =
+    /yes/i.test(`${pepHits} ${sanctionsHits} ${adverseHits}`)
+      ? 'Needs review'
+      : amlCompleted && /no/i.test(`${pepHits} ${sanctionsHits} ${adverseHits}`)
+        ? 'No matches found'
+        : /unavailable|not completed|pending/i.test(amlScreening)
+        ? 'Not completed'
+        : 'No matches found';
+  const attentionReasons = cleanFlags([
+    ...approval.flaggedReasons,
+    ...((approval.providerEvidence?.reasonCodes ?? []).map(formatReasonCode)),
+  ]);
+  const showLegacyTechnicalEvidence: boolean = false;
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -362,9 +414,12 @@ export default function KYCApprovalDetailPage() {
       <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Shield className="w-6 h-6 text-[var(--brand-primary)]" />
-          <h1 className="text-2xl font-bold text-gray-900">KYC Review: {approval.vendorName}</h1>
-          {approval.amlRiskLevel === 'High' && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">High Risk</span>}
-          {approval.amlRiskLevel === 'Medium' && <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">Medium Risk</span>}
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Vendor Verification Review</h1>
+            <p className="text-sm text-gray-600">{approval.vendorName}</p>
+          </div>
+          {riskLevel === 'High' && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">High Risk</span>}
+          {riskLevel === 'Medium' && <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">Medium Risk</span>}
         </div>
         <div className="flex flex-wrap gap-2">
           {verificationSource === 'dojah' && (
@@ -405,22 +460,37 @@ export default function KYCApprovalDetailPage() {
         <div className="bg-white border border-gray-200 rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <User className="w-4 h-4 text-gray-500" />
-            <h2 className="font-semibold text-gray-900">Vendor Details</h2>
+            <h2 className="font-semibold text-gray-900">Application Summary</h2>
           </div>
           <dl className="space-y-2 text-sm">
-            <div className="flex justify-between"><dt className="text-gray-500">Name</dt><dd className="font-medium">{approval.vendorName}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-gray-500">Business</dt><dd className="font-medium text-right">{approval.vendorName}</dd></div>
             <div className="flex justify-between"><dt className="text-gray-500">Email</dt><dd className="font-medium">{approval.vendorEmail || '—'}</dd></div>
             <div className="flex justify-between"><dt className="text-gray-500">Submitted</dt><dd className="font-medium">{new Date(approval.submittedAt).toLocaleString()}</dd></div>
+            <div className="flex justify-between"><dt className="text-gray-500">Status</dt><dd className="font-semibold">{reviewStatusLabel(reviewStatus)}</dd></div>
           </dl>
         </div>
 
-        {/* Verification scores */}
+        {/* Review status */}
         <div className="bg-white border border-gray-200 rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <Shield className="w-4 h-4 text-gray-500" />
-            <h2 className="font-semibold text-gray-900">Verification Scores</h2>
+            <h2 className="font-semibold text-gray-900">Review Snapshot</h2>
           </div>
-          <dl className="space-y-2 text-sm">
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            <div className={`rounded-lg border p-3 ${cardTone(riskLevel)}`}>
+              <p className="text-xs font-semibold uppercase tracking-wide opacity-70">Risk level</p>
+              <p className="mt-1 font-bold">{riskLevel}</p>
+            </div>
+            <div className={`rounded-lg border p-3 ${cardTone(livenessStatus)}`}>
+              <p className="text-xs font-semibold uppercase tracking-wide opacity-70">Liveness</p>
+              <p className="mt-1 font-bold">{livenessStatus}</p>
+            </div>
+            <div className={`rounded-lg border p-3 sm:col-span-2 ${cardTone(amlDecision)}`}>
+              <p className="text-xs font-semibold uppercase tracking-wide opacity-70">AML / watchlist</p>
+              <p className="mt-1 font-bold">{amlDecision}</p>
+            </div>
+          </div>
+          <dl className="hidden" aria-hidden="true">
             <div className="flex justify-between">
               <dt className="text-gray-500">Liveness Score</dt>
               <dd className={`font-semibold ${scoreColor(displayLiveness, 50)}`}>
@@ -449,8 +519,75 @@ export default function KYCApprovalDetailPage() {
         </div>
       </div>
 
-      {/* Flagged reasons */}
-      {approval.flaggedReasons.length > 0 && (
+      {attentionReasons.length > 0 ? (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-orange-600" />
+            <h2 className="font-semibold text-orange-900">Needs Attention</h2>
+          </div>
+          <ul className="space-y-1">
+            {attentionReasons.map((reason, index) => (
+              <li key={`${reason}-${index}`} className="text-sm text-orange-800 flex items-start gap-2">
+                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-orange-500" />
+                <span>{reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+          <div className="flex items-center gap-2">
+            <BadgeCheck className="w-4 h-4 text-green-600" />
+            <p className="text-sm font-semibold text-green-900">No high-risk automated flags were found. Continue with document and identity review.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 mb-6 lg:grid-cols-2">
+        <EvidenceSectionGrid
+          title="Identity"
+          fields={{
+            'Submitted name': valueFrom(evidenceSections?.providerSummary, 'Submitted name', 'Not provided'),
+            'Verified name': valueFrom(identityFields, 'Provider name', 'Not returned'),
+            'Date of birth': valueFrom(identityFields, 'Date of birth', valueFrom(identityFields, 'Date of birth match', 'Not returned')),
+            Gender: valueFrom(identityFields, 'Gender', 'Not returned'),
+            NIN: valueFrom(identityFields, 'Identity number', valueFrom(identityFields, 'NIN', 'Stored securely')),
+            BVN: valueFrom(identityFields, 'BVN', valueFrom(identityFields, 'BVN check', 'Stored securely')),
+          }}
+        />
+        <EvidenceSectionGrid
+          title="Business"
+          fields={{
+            'Business name': valueFrom(businessFields, 'Submitted business name', valueFrom(evidenceSections?.providerSummary, 'Submitted business', approval.vendorName)),
+            'Business type': valueFrom(businessFields, 'Submitted business type', 'Not provided'),
+            'Registration number': valueFrom(businessFields, 'Submitted registration number', valueFrom(evidenceSections?.providerSummary, 'Submitted business number', 'Not provided')),
+            'Registry name': valueFrom(businessFields, 'Provider business name', 'Not returned'),
+            'Registry result': valueFrom(businessFields, 'Provider lookup', 'Not completed'),
+            'Name match': valueFrom(businessFields, 'Business name match', 'Needs manager review'),
+          }}
+        />
+        <EvidenceSectionGrid
+          title="Address"
+          fields={{
+            Address: valueFrom(addressFields, 'Submitted address', 'Not provided'),
+            City: valueFrom(addressFields, 'City', 'Not provided'),
+            State: valueFrom(addressFields, 'State', 'Not provided'),
+            'Proof of address': valueFrom(addressFields, 'Address proof', 'Not uploaded'),
+          }}
+        />
+        <EvidenceSectionGrid
+          title="AML And Watchlist"
+          fields={{
+            Screening: amlDecision,
+            'PEP hits': pepHits,
+            'Sanctions hits': sanctionsHits,
+            'Adverse media hits': adverseHits,
+          }}
+        />
+      </div>
+
+      {/* Legacy technical evidence is kept out of the default staff view; use CSV export for audit details. */}
+      {showLegacyTechnicalEvidence && approval.flaggedReasons.length > 0 && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="w-4 h-4 text-orange-600" />
@@ -466,7 +603,7 @@ export default function KYCApprovalDetailPage() {
         </div>
       )}
 
-      {approval.providerEvidence && (
+      {showLegacyTechnicalEvidence && approval.providerEvidence && evidenceSections && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
           <div className="flex items-center gap-2 mb-4">
             <Shield className="w-4 h-4 text-[var(--brand-primary)]" />
@@ -612,19 +749,19 @@ export default function KYCApprovalDetailPage() {
               return (
               <div key={`${document.label}-${document.url}`} className="text-center">
                 <p className="text-xs text-gray-500 mb-2">{document.label}</p>
-                <a href={protectedDocumentUrl} target="_blank" rel="noopener noreferrer" className="block">
-                  <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-gray-200 hover:border-[var(--brand-primary)] transition-colors bg-gray-50">
-                    {isImageLike(document) ? (
-                      <Image src={protectedDocumentUrl} alt={document.label} fill className="object-cover" />
-                    ) : (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-gray-600">
-                        <FileText className="h-8 w-8" />
-                        <span className="text-xs font-medium">Open file</span>
-                      </div>
-                    )}
-                      <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
-                        <Eye className="w-5 h-5 text-white opacity-0 hover:opacity-100" />
-                      </div>
+                <a href={protectedDocumentUrl} target="_blank" rel="noopener noreferrer" className="block group">
+                  <div className="relative flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 text-gray-700 transition-colors hover:border-[var(--brand-primary)] hover:bg-orange-50/40">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-gray-200">
+                      <LockKeyhole className="h-5 w-5 text-[var(--brand-primary)]" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Protected file</p>
+                      <p className="mt-1 text-xs text-gray-500">Open with manager access</p>
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--brand-primary)] opacity-0 transition-opacity group-hover:opacity-100">
+                      <Eye className="h-3.5 w-3.5" />
+                      View securely
+                    </span>
                   </div>
                 </a>
                 {viewerRole === 'system_admin' && document.sourceKey && (

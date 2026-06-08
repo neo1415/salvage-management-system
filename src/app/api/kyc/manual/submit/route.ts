@@ -583,11 +583,11 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
     pendingChecks: [...pendingChecks],
     failedChecks: failed,
     reasonCodes: [...reasonCodes],
-    displayMessage: 'Tier 2 evidence was submitted through NEM Salvage and is ready for internal review.',
+    displayMessage: 'Tier 2 evidence was submitted and is ready for internal review.',
     normalizedResult: {
       verificationMode: 'nem_hybrid_manual_review',
       verificationStatus: 'submitted_for_review',
-      providerMessage: 'NEM Salvage collected business, address, and government ID evidence directly. Dojah API checks are used as supporting evidence when available.',
+      providerMessage: 'Business, address, and government ID evidence were collected directly. Automated checks are used as supporting evidence when available.',
       nemSubmittedProfile: {
         fullName: input.fullName,
         businessName: input.businessName,
