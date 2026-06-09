@@ -203,11 +203,18 @@ export async function GET() {
     if (isMissingPrivacyTableError(error)) {
       return NextResponse.json(
         {
-          error:
-            'Privacy request storage is not ready yet. Ask an administrator to run the latest database migrations.',
+          requests: [],
           setupRequired: true,
+          warning:
+            'Privacy request storage is not ready yet. Ask an administrator to run the latest database migrations.',
+          capabilities: {
+            mode: 'request_review',
+            supportedTypes: dataRightTypes,
+            notice:
+              'Requests are reviewed against legal, payment, fraud, audit, and dispute-retention obligations before fulfilment.',
+          },
         },
-        { status: 503 }
+        { status: 200 }
       );
     }
     return NextResponse.json({ error: 'Failed to load privacy requests' }, { status: 500 });

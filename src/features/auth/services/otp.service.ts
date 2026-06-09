@@ -87,7 +87,8 @@ export class OTPService {
     email?: string,
     fullName?: string,
     context: OTPContext = 'authentication',
-    auctionId?: string
+    auctionId?: string,
+    pushUserId?: string
   ): Promise<{ success: boolean; message: string }> {
     try {
       const normalizedPhone = this.normalizePhoneNumber(phone);
@@ -236,6 +237,12 @@ export class OTPService {
         }
       }
 
+      if (context === 'bidding' && pushUserId) {
+        void this.sendBiddingOtpPush(pushUserId, otp, auctionId).catch((pushError) => {
+          console.error('Bidding OTP push delivery failed:', pushError);
+        });
+      }
+
       return {
         success: true,
         message: 'OTP sent successfully',
@@ -246,6 +253,29 @@ export class OTPService {
         success: false,
         message: 'Failed to send OTP. Please try again.',
       };
+    }
+  }
+
+  private async sendBiddingOtpPush(userId: string, otp: string, auctionId?: string): Promise<void> {
+    const { sendPushToUser } = await import('@/features/notifications/services/push-subscription.service');
+    const result = await sendPushToUser(userId, {
+      title: 'Bid verification code',
+      body: `Your bid verification code is ${otp}. It expires in 5 minutes.`,
+      tag: auctionId ? `bidding-otp-${auctionId}` : 'bidding-otp',
+      requireInteraction: true,
+      data: {
+        type: 'bidding_otp',
+        auctionId,
+        url: auctionId ? `/vendor/auctions/${auctionId}` : '/vendor/auctions',
+      },
+    });
+
+    if (!result.success) {
+      console.warn('Bidding OTP push was not delivered', {
+        userId,
+        auctionId,
+        errors: result.errors,
+      });
     }
   }
 

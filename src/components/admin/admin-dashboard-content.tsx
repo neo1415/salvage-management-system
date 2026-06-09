@@ -103,6 +103,13 @@ function AdminDashboardContentInner() {
     return <DataLoadingState label="Admin dashboard" variant="page" />;
   }
 
+  const systemHealthMessage =
+    stats.systemHealth === 'healthy'
+      ? 'All systems operational. No issues detected.'
+      : stats.systemHealth === 'warning'
+        ? 'Some queues need attention. Review pending fraud alerts and operational tasks.'
+        : 'Critical operational attention required. Review fraud alerts and system queues immediately.';
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -266,12 +273,12 @@ function AdminDashboardContentInner() {
                 : 'bg-red-500'
             }`}
           />
-          <span className="text-lg font-medium capitalize">
-            {stats?.systemHealth || 'Unknown'}
-          </span>
+        <span className="text-lg font-medium capitalize">
+          {stats?.systemHealth || 'Unknown'}
+        </span>
         </div>
         <p className="text-sm text-gray-600 mt-2">
-          All systems operational. No issues detected.
+          {systemHealthMessage}
         </p>
       </div>
 

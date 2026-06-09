@@ -112,8 +112,15 @@ const isValidPhotoUrl = (url: any): url is string => {
   if (!url || typeof url !== 'string') return false;
   const trimmed = url.trim();
   if (!trimmed) return false;
-  // Check if it starts with http:// or https:// or /
-  return trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/');
+  if (trimmed.startsWith('/')) return true;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    return !['example.com', 'www.example.com'].includes(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
 };
 
 const CURRENCY_DETAIL_KEYS = new Set([

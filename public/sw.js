@@ -307,8 +307,8 @@ self.addEventListener('notificationclick', (event) => {
 
   if (typeof data.url === 'string' && data.url.startsWith('/')) {
     url = data.url;
-  } else if (data.type === 'outbid' || data.type === 'auction-ending' || data.type === 'auction_closing_soon') {
-    if (action === 'view' || action === 'bid') {
+  } else if (data.type === 'outbid' || data.type === 'auction-ending' || data.type === 'auction_closing_soon' || data.type === 'bidding_otp') {
+    if (!action || action === 'view' || action === 'bid') {
       url = data.auctionId ? `/vendor/auctions/${data.auctionId}` : '/vendor/auctions';
     }
   } else if (data.type === 'payment-confirmation') {

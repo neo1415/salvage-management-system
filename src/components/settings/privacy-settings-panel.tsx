@@ -72,6 +72,7 @@ export function PrivacySettingsPanel() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [setupRequired, setSetupRequired] = useState(false);
 
   const selectedOption = useMemo(
     () => REQUEST_OPTIONS.find((option) => option.type === selectedType) ?? REQUEST_OPTIONS[0],
@@ -86,6 +87,13 @@ export function PrivacySettingsPanel() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load privacy requests');
       setRequests(data.requests ?? []);
+      setSetupRequired(Boolean(data.setupRequired));
+      if (data.setupRequired) {
+        setMessage({
+          type: 'error',
+          text: data.warning || 'Privacy request storage is not ready yet.',
+        });
+      }
     } catch (error) {
       setMessage({
         type: 'error',
@@ -101,6 +109,7 @@ export function PrivacySettingsPanel() {
   }, []);
 
   const submitRequest = async () => {
+    if (setupRequired) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -206,10 +215,10 @@ export function PrivacySettingsPanel() {
           <button
             type="button"
             onClick={submitRequest}
-            disabled={busy}
+            disabled={busy || setupRequired}
             className="rounded-lg bg-[var(--brand-primary)] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[var(--brand-primary-hover)] disabled:opacity-60"
           >
-            {busy ? 'Submitting...' : 'Submit request'}
+            {setupRequired ? 'Storage setup required' : busy ? 'Submitting...' : 'Submit request'}
           </button>
         </div>
       </section>

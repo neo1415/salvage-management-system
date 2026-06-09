@@ -88,7 +88,8 @@ export async function POST(
       user.email,
       user.fullName,
       'bidding',  // ✅ CRITICAL: Use bidding context for higher rate limits
-      auctionId   // ✅ CRITICAL: Pass auction ID for per-auction rate limiting
+      auctionId,   // ✅ CRITICAL: Pass auction ID for per-auction rate limiting
+      session.user.id
     );
 
     if (!result.success) {
