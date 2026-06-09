@@ -414,6 +414,9 @@ export class ProviderVerificationService {
       checksCompleted: input.result.checksCompleted,
       failedChecks: input.result.failedChecks,
       reasonCodes: input.result.reasonCodes,
+      ipAddress: input.ipAddress ?? null,
+      userAgent: input.userAgent ?? null,
+      ipDevice: (input.result.normalizedResult?.dojahEvidenceSummary as Record<string, unknown> | undefined)?.ipDevice ?? null,
     };
 
     if (existing) {

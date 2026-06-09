@@ -17,6 +17,7 @@ import {
   Database,
   Settings,
   AlertTriangle,
+  PackageCheck,
 } from 'lucide-react';
 import type { AppRole } from '@/lib/auth/rbac';
 import { normalizeRole } from '@/lib/auth/rbac';
@@ -43,7 +44,7 @@ const ROLE_NAV: Record<AppRole, NavItem[]> = {
   salvage_manager: [
     { href: '/manager/dashboard', label: 'Home', icon: Home },
     { href: '/manager/approvals', label: 'Approvals', icon: ClipboardList },
-    { href: '/manager/vendors', label: 'Vendors', icon: Users },
+    { href: '/manager/pickups', label: 'Pickups', icon: PackageCheck },
     {
       href: '/settings/profile',
       label: 'Settings',
@@ -75,6 +76,7 @@ const ROLE_NAV: Record<AppRole, NavItem[]> = {
   system_admin: [
     { href: '/admin/dashboard', label: 'Home', icon: Home },
     { href: '/admin/users', label: 'Users', icon: Users },
+    { href: '/admin/pickups', label: 'Pickups', icon: PackageCheck },
     {
       href: '/settings/profile',
       label: 'Settings',

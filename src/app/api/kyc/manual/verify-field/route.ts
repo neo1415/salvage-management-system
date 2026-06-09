@@ -43,6 +43,28 @@ function businessNameLooksClose(expected: string, actual?: string | null): boole
   return nameLooksClose(expected, actual);
 }
 
+function businessTypeAliases(value: string): string[] {
+  const normalized = normalizeName(value);
+  if (!normalized || normalized.includes('individual')) return [];
+  if (normalized.includes('business name')) return ['business name', 'enterprise', 'ventures'];
+  if (normalized.includes('trust')) return ['incorporated trustees', 'trustees', 'trust'];
+  if (normalized.includes('liability partnership') || normalized.includes('llp')) return ['limited liability partnership', 'llp'];
+  if (normalized.includes('limited partnership')) return ['limited partnership', 'lp'];
+  if (normalized.includes('public') || /\bplc\b/i.test(value)) return ['public limited company', 'plc', 'company limited by shares', 'limited by shares'];
+  if (normalized.includes('guarantee')) return ['company limited by guarantee', 'limited by guarantee'];
+  if (normalized.includes('unlimited')) return ['unlimited company'];
+  return ['private limited company', 'limited company', 'incorporated company', 'company limited by shares', 'limited by shares'];
+}
+
+function businessTypeLooksClose(expectedType: string, actual?: string | null): boolean {
+  if (!actual) return true;
+  const normalizedActual = normalizeName(actual);
+  return businessTypeAliases(expectedType).some((alias) => {
+    const normalizedAlias = normalizeName(alias);
+    return normalizedActual.includes(normalizedAlias) || nameLooksClose(normalizedAlias, normalizedActual);
+  });
+}
+
 function response(state: CheckState, message: string, extra?: Record<string, unknown>) {
   return NextResponse.json({ state, message, ...(extra ?? {}) });
 }
@@ -75,6 +97,39 @@ function extractBusinessName(value: unknown): string | null {
       if (nameKeys.has(key) && typeof child === 'string' && child.trim()) {
         return child.trim();
       }
+    }
+    for (const child of Object.values(record)) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return walk(value);
+}
+
+function extractBusinessType(value: unknown): string | null {
+  const keys = ['business_type', 'businessType', 'type_of_company', 'typeOfCompany', 'company_type', 'companyType', 'entity_type', 'entityType', 'type'];
+  return extractFirstString(value, keys);
+}
+
+function extractFirstString(value: unknown, keys: string[]): string | null {
+  const seen = new Set<unknown>();
+  const wanted = new Set(keys);
+
+  function walk(node: unknown): string | null {
+    if (!node || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    }
+    const record = node as Record<string, unknown>;
+    for (const [key, child] of Object.entries(record)) {
+      if (wanted.has(key) && typeof child === 'string' && child.trim()) return child.trim();
     }
     for (const child of Object.values(record)) {
       const found = walk(child);
@@ -208,7 +263,9 @@ function safeProviderDiagnostics(
     providerName?: string | null;
     submittedBusinessName?: string;
     providerBusinessName?: string | null;
+    providerBusinessType?: string | null;
     nameMatched?: boolean;
+    typeMatched?: boolean;
     dobMatched?: boolean;
     status?: unknown;
   }
@@ -227,7 +284,9 @@ function safeProviderDiagnostics(
     providerName: data.providerName,
     submittedBusinessName: data.submittedBusinessName,
     providerBusinessName: data.providerBusinessName,
+    providerBusinessType: data.providerBusinessType,
     nameMatched: data.nameMatched,
+    typeMatched: data.typeMatched,
     dobMatched: data.dobMatched,
   });
 }
@@ -320,25 +379,30 @@ export async function POST(request: NextRequest) {
     const businessName = String(body?.businessName ?? '').trim();
     if (!cacNumber || !businessName) return response('failed', 'Business name and CAC/RC number are required.');
     try {
-      const result = await dojah.verifyCAC(cacNumber, businessName);
+      const result = await dojah.verifyCAC(cacNumber, businessName, String(body?.businessType ?? ''));
       const providerError = providerErrorMessage(result);
       const providerBusinessName = extractBusinessName(result);
+      const providerBusinessType = extractBusinessType(result);
       const businessMatched = businessNameLooksClose(businessName, providerBusinessName);
+      const typeMatched = businessTypeLooksClose(String(body?.businessType ?? ''), providerBusinessType);
       safeProviderDiagnostics('cac', {
         result,
         status: result.status,
         submittedBusinessName: businessName,
         providerBusinessName,
+        providerBusinessType,
         nameMatched: businessMatched,
+        typeMatched,
       });
       if (providerError && /unable to reach|unavailable|timeout|service/i.test(providerError)) {
         return response('unavailable', 'CAC provider check is temporarily unavailable. Managers can still review the uploaded business document.', {
           providerBusinessName,
         });
       }
-      if (result.status !== false && businessMatched) {
+      if (result.status !== false && businessMatched && typeMatched) {
         return response('verified', 'CAC record looks consistent with the business name.', {
           providerBusinessName,
+          providerBusinessType,
         });
       }
       return response(

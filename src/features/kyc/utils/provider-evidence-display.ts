@@ -96,6 +96,67 @@ function cleanBusinessIdFields(fields: Record<string, string>, businessNumber: u
   return clean;
 }
 
+function formatManualProviderStatus(status: unknown, fallback = 'Not completed'): string {
+  const value = displayOrFallback(status, fallback);
+  if (/^completed$/i.test(value) || /^true$/i.test(value)) return 'Completed';
+  if (/^false$/i.test(value)) return 'Failed';
+  if (/^(captured|captured_locally)$/i.test(value)) return 'Captured locally';
+  if (/^(local_capture_only|not_configured_or_not_returned|not_submitted)$/i.test(value)) return 'Local capture only';
+  return value.replace(/_/g, ' ');
+}
+
+function formatBooleanSignal(value: unknown, fallback = 'Not returned'): string {
+  if (value === true) return 'Yes';
+  if (value === false) return 'No';
+  const text = displayOrFallback(value, fallback).toLowerCase();
+  if (text === 'true') return 'Yes';
+  if (text === 'false') return 'No';
+  return displayOrFallback(value, fallback);
+}
+
+function formatDateForReview(value: unknown): string {
+  const raw = displayOrFallback(value, '');
+  if (!raw) return 'Not returned';
+  const date = new Date(raw);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toLocaleDateString('en-NG', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'Africa/Lagos',
+    });
+  }
+  return raw;
+}
+
+function providerLookupLabel(cac: Record<string, unknown> | null): string {
+  if (!cac) return 'Not completed';
+  const status = String(cac.status ?? '').toLowerCase();
+  if (status === 'completed' || cac.providerBusinessName || cac.providerBusinessNumber) return 'Matched';
+  if (status === 'unavailable') return 'Provider unavailable';
+  if (status === 'false') return 'Failed';
+  return formatManualProviderStatus(cac.status);
+}
+
+function amlScreeningLabel(aml: Record<string, unknown> | null, amlCompleted: boolean): string {
+  const hasStoredAmlResult = Boolean(
+    aml?.status !== undefined ||
+    aml?.screenedName ||
+    aml?.screenedDateOfBirth ||
+    aml?.hasPepHits !== undefined ||
+    aml?.hasSanctionHits !== undefined ||
+    aml?.hasAdverseMediaHits !== undefined
+  );
+  if (!amlCompleted && !hasStoredAmlResult) return 'Not completed';
+  const status = String(aml?.status ?? '').toLowerCase();
+  if (status === 'flagged' || aml?.hasPepHits === true || aml?.hasSanctionHits === true || aml?.hasAdverseMediaHits === true) {
+    return 'Flagged - manual review required';
+  }
+  if (status === 'completed' || status === 'true') return 'No matches found';
+  if (status === 'unavailable') return 'Provider unavailable';
+  return 'No matches found';
+}
+
 function identityNumberLabel(normalized: Record<string, unknown> | null | undefined): string {
   const verificationType = String(normalized?.verificationType ?? '').toLowerCase();
   if (verificationType.includes('bvn')) return 'BVN';
@@ -158,7 +219,15 @@ export function buildDojahEvidenceSections(
     const bvn = recordFrom(dojahEvidenceSummary?.bvn);
     const aml = recordFrom(dojahEvidenceSummary?.aml);
     const liveness = recordFrom(dojahEvidenceSummary?.liveness);
+    const ipDevice = recordFrom(dojahEvidenceSummary?.ipDevice);
+    const documentOcr = recordFrom(dojahEvidenceSummary?.documents);
+    const governmentOcr = recordFrom(documentOcr?.governmentId);
+    const businessOcr = recordFrom(documentOcr?.businessDocument);
+    const addressOcr = recordFrom(documentOcr?.addressProof);
     const livenessStatus = displayOrFallback(normalized?.livenessStatus, 'pending_liveness');
+    const amlCompleted = Boolean(providerEvidence?.checksCompleted?.includes('aml_screening'));
+    const amlScreening = amlScreeningLabel(aml, amlCompleted);
+    const amlUnavailable = /unavailable|not completed|pending/i.test(amlScreening) || !amlCompleted;
 
     return {
       providerSummary: {
@@ -189,12 +258,17 @@ export function buildDojahEvidenceSections(
         'Submitted business name': displayOrFallback(submittedProfile?.businessName, 'Not provided'),
         'Submitted business type': displayOrFallback(submittedProfile?.businessType, 'Not provided'),
         'Submitted registration number': displayOrFallback(submittedProfile?.businessRegistrationNumber, 'Not provided'),
-        'Provider lookup': displayOrFallback(cac?.status, 'Not completed'),
+        'Provider lookup': providerLookupLabel(cac),
         'Provider business name': displayOrFallback(cac?.providerBusinessName, 'Not returned'),
         'Provider business number': displayOrFallback(cac?.providerBusinessNumber, 'Not returned'),
         'Provider business type': displayOrFallback(cac?.providerBusinessType, 'Not returned'),
+        'Business type match': cac?.businessTypeMatched === true
+          ? 'Matched'
+          : cac?.businessTypeMatched === false
+            ? `Needs review (${displayOrFallback(cac?.businessTypeMatchScore, '0')})`
+            : 'Not checked',
         'Provider country': displayOrFallback(cac?.providerCountry, 'Not returned'),
-        'Registration date': displayOrFallback(cac?.providerRegistrationDate, 'Not returned'),
+        'Registration date': formatDateForReview(cac?.providerRegistrationDate),
         'Business name match': cac?.businessNameMatched === true ? 'Matched' : cac?.businessNameMatched === false ? 'Needs manager review' : 'Not checked',
         'Provider message': displayOrFallback(cac?.message, 'No provider message returned'),
       },
@@ -249,22 +323,48 @@ export function buildDojahEvidenceSections(
         'Government ID': documentMetadata?.photoId ? 'Uploaded for protected review' : 'Not uploaded',
         'Address proof': documentMetadata?.addressProof ? 'Uploaded for protected review' : 'Not uploaded',
         'Business document': documentMetadata?.businessDocument ? 'Uploaded for protected review' : 'Not required or not uploaded',
-        'Document review': 'Protected manager review',
+        'Government ID OCR': displayOrFallback(governmentOcr?.status, 'Not completed'),
+        'Business document OCR': displayOrFallback(businessOcr?.status, 'Not completed'),
+        'Address proof OCR': displayOrFallback(addressOcr?.status, 'Not completed'),
+        'Document review': documentOcr ? 'OCR-assisted manager review' : 'Protected manager review',
         Note: 'Files open through protected manager-only document routes.',
       },
       aml: {
-        'AML screening': displayOrFallback(aml?.status, 'Not completed'),
-        'Screened name': displayOrFallback(aml?.screenedName, 'Not returned'),
-        'Screened date of birth': displayOrFallback(aml?.screenedDateOfBirth, 'Not returned'),
-        'PEP hits': aml?.hasPepHits === true ? 'Yes' : aml?.hasPepHits === false ? 'No' : 'Not returned',
-        'Sanctions hits': aml?.hasSanctionHits === true ? 'Yes' : aml?.hasSanctionHits === false ? 'No' : 'Not returned',
-        'Adverse media hits': aml?.hasAdverseMediaHits === true ? 'Yes' : aml?.hasAdverseMediaHits === false ? 'No' : 'Not returned',
+        'AML screening': amlScreening,
+        'Screened name': displayOrFallback(aml?.screenedName, amlUnavailable ? 'Not completed' : 'Not returned'),
+        'Screened date of birth': displayOrFallback(aml?.screenedDateOfBirth, amlUnavailable ? 'Not completed' : 'Not returned'),
+        'PEP hits': amlUnavailable ? 'Not completed' : aml?.hasPepHits === true ? 'Yes' : aml?.hasPepHits === false ? 'No' : 'Not returned',
+        'Sanctions hits': amlUnavailable ? 'Not completed' : aml?.hasSanctionHits === true ? 'Yes' : aml?.hasSanctionHits === false ? 'No' : 'Not returned',
+        'Adverse media hits': amlUnavailable ? 'Not completed' : aml?.hasAdverseMediaHits === true ? 'Yes' : aml?.hasAdverseMediaHits === false ? 'No' : 'Not returned',
         'Reason codes': formatReasonCodes(providerEvidence?.reasonCodes),
         'Failed checks': formatCheckList(providerEvidence?.failedChecks).join(', ') || 'None',
       },
       ipDevice: {
-        'IP / device risk': 'Not part of this manual submission',
-        'Device fingerprint': 'Not part of this manual submission',
+        'Capture status': formatManualProviderStatus(ipDevice?.status, 'Not captured'),
+        'IP address': displayOrFallback(ipDevice?.ipAddress, 'Not captured'),
+        'Device type': displayOrFallback(ipDevice?.deviceType, 'Not captured'),
+        OS: displayOrFallback(ipDevice?.os, 'Not captured'),
+        Browser: displayOrFallback(ipDevice?.browser, 'Not captured'),
+        'Browser version': displayOrFallback(ipDevice?.browserVersion, 'Not captured'),
+        Model: displayOrFallback(ipDevice?.model, 'Not captured'),
+        Platform: displayOrFallback(ipDevice?.platform, 'Web'),
+        'Device signal': formatManualProviderStatus(ipDevice?.easyDetectStatus, 'Not submitted'),
+        'IP screening': formatManualProviderStatus(ipDevice?.ipScreeningStatus, 'Not completed'),
+        'Screened IP': displayOrFallback(ipDevice?.screenedIpAddress, 'Not returned'),
+        Country: displayOrFallback(ipDevice?.country, 'Not returned'),
+        Region: displayOrFallback(ipDevice?.region, 'Not returned'),
+        City: displayOrFallback(ipDevice?.city, 'Not returned'),
+        Latitude: displayOrFallback(ipDevice?.latitude, 'Not returned'),
+        Longitude: displayOrFallback(ipDevice?.longitude, 'Not returned'),
+        ISP: displayOrFallback(ipDevice?.isp, 'Not returned'),
+        ASN: displayOrFallback(ipDevice?.asn, 'Not returned'),
+        VPN: formatBooleanSignal(ipDevice?.vpn),
+        Proxy: formatBooleanSignal(ipDevice?.proxy),
+        Hosting: formatBooleanSignal(ipDevice?.hosting),
+        Tor: formatBooleanSignal(ipDevice?.tor),
+        'Risk score': displayOrFallback(ipDevice?.riskScore, 'Not returned'),
+        'Blacklist detections': displayOrFallback(ipDevice?.blacklistDetections, 'Not returned'),
+        'Blacklist detection rate': displayOrFallback(ipDevice?.blacklistDetectionRate, 'Not returned'),
       },
     };
   }

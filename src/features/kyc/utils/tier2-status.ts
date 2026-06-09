@@ -8,6 +8,10 @@ export function isPendingTier2Review(status: Tier2StatusLike | null | undefined)
   if (!status) return false;
   const normalizedStatus = String(status.status ?? '').toLowerCase();
 
+  if (['approved', 'rejected', 'expired'].includes(normalizedStatus)) {
+    return false;
+  }
+
   if (normalizedStatus === 'pending_review') return true;
 
   return Boolean(

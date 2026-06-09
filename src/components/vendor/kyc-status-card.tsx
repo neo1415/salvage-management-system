@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Crown, ArrowRight, CheckCircle2, Clock, XCircle, AlertTriangle, RefreshCw, Shield } from 'lucide-react';
 import type { KYCStatus } from '@/features/kyc/types/kyc.types';
@@ -22,10 +22,12 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadStatus = useCallback((showLoader = false) => {
+    if (showLoader) setLoading(true);
+    const noStore = { cache: 'no-store' as const, headers: { 'Cache-Control': 'no-cache' } };
     Promise.all([
-      fetch('/api/kyc/status').then((r) => r.ok ? r.json() : null),
-      fetch('/api/vendors/registration-fee/status').then((r) => r.ok ? r.json() : null),
+      fetch('/api/kyc/status', noStore).then((r) => r.ok ? r.json() : null),
+      fetch('/api/vendors/registration-fee/status', noStore).then((r) => r.ok ? r.json() : null),
     ])
       .then(([kycData, feeData]) => {
         setKycStatus(kycData);
@@ -34,6 +36,24 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
       })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadStatus(true);
+  }, [loadStatus]);
+
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') {
+        loadStatus(false);
+      }
+    };
+    window.addEventListener('focus', refreshIfVisible);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    return () => {
+      window.removeEventListener('focus', refreshIfVisible);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+    };
+  }, [loadStatus]);
 
   const handleUpgradeClick = () => {
     if (!policy?.onboarding.registrationFeeRequired) {
@@ -127,24 +147,6 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
 
   if (loading) return null;
 
-  // Pending review
-  if (tier2PendingReview) {
-    return (
-      <div className={`bg-yellow-50 border border-yellow-200 rounded-lg p-4 ${className}`}>
-        <div className="flex items-start gap-3">
-          <Clock className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold text-yellow-900">Tier 2 Application Under Review</p>
-            <p className="text-sm text-yellow-700 mt-1">
-              Our team is reviewing your application. You'll be notified once the review is complete.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Rejected — allow resubmit
   if (kycStatus?.status === 'rejected') {
     return (
       <div className={`bg-red-50 border border-red-200 rounded-lg p-4 ${className}`}>
@@ -172,6 +174,23 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
           >
             Resubmit
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Pending review
+  if (tier2PendingReview) {
+    return (
+      <div className={`bg-yellow-50 border border-yellow-200 rounded-lg p-4 ${className}`}>
+        <div className="flex items-start gap-3">
+          <Clock className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-yellow-900">Tier 2 Application Under Review</p>
+            <p className="text-sm text-yellow-700 mt-1">
+              Our team is reviewing your application. You'll be notified once the review is complete.
+            </p>
+          </div>
         </div>
       </div>
     );

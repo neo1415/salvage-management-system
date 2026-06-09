@@ -3,7 +3,8 @@ import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq } from 'drizzle-orm';
+import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
+import { and, desc, eq } from 'drizzle-orm';
 import { emailService } from '@/features/notifications/services/email.service';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
@@ -121,6 +122,28 @@ export async function POST(
       tier2SubmittedAt: vendor.tier2SubmittedAt,
     });
 
+    const [latestTier2Evidence] = await db
+      .select({
+        id: providerVerificationRecords.id,
+        workflowReference: providerVerificationRecords.workflowReference,
+        normalizedResult: providerVerificationRecords.normalizedResult,
+      })
+      .from(providerVerificationRecords)
+      .where(
+        and(
+          eq(providerVerificationRecords.vendorId, id),
+          eq(providerVerificationRecords.verificationType, 'tier2')
+        )
+      )
+      .orderBy(desc(providerVerificationRecords.updatedAt))
+      .limit(1);
+
+    const hasTier2Evidence = Boolean(
+      vendor.tier2SubmittedAt ||
+        vendor.tier === 'tier2_full' ||
+        latestTier2Evidence
+    );
+
     // Get vendor user details for notifications
     console.log('🔍 [VENDOR APPROVAL] Fetching vendor user details...');
     const [vendorUser] = await db
@@ -150,8 +173,8 @@ export async function POST(
     if (action === 'approve') {
       console.log('✅ [VENDOR APPROVAL] Processing approval...');
       
-      // Determine if this is a Tier 2 approval based on tier2SubmittedAt
-      const isTier2Approval = vendor.tier2SubmittedAt !== null;
+      // Determine if this is a Tier 2 approval based on the vendor row or saved provider evidence.
+      const isTier2Approval = hasTier2Evidence;
       
       console.log('📊 [VENDOR APPROVAL] Approval type:', {
         isTier2Approval,
@@ -189,6 +212,26 @@ export async function POST(
       if (updateResult.length === 0) {
         console.error('❌ [VENDOR APPROVAL] Database update failed - no rows affected');
         throw new Error('Failed to update vendor in database');
+      }
+
+      if (isTier2Approval) {
+        await db
+          .update(users)
+          .set({
+            status: 'verified_tier_2',
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, vendor.userId));
+
+        if (latestTier2Evidence?.id) {
+          await markTier2EvidenceReviewed({
+            evidenceId: latestTier2Evidence.id,
+            normalizedResult: latestTier2Evidence.normalizedResult,
+            decision: 'approve',
+            reason: comment?.trim() || null,
+            reviewerId: manager.id,
+          });
+        }
       }
 
       // Determine tier display text for email
@@ -255,8 +298,7 @@ export async function POST(
     } else {
       console.log('❌ [VENDOR APPROVAL] Processing rejection...');
 
-      const isTier2Rejection =
-        vendor.tier2SubmittedAt !== null || vendor.tier === 'tier2_full';
+      const isTier2Rejection = hasTier2Evidence;
 
       if (isTier2Rejection) {
         await abandonOpenTier2Workflows(id);
@@ -291,6 +333,16 @@ export async function POST(
       if (updateResult.length === 0) {
         console.error('❌ [VENDOR APPROVAL] Database update failed - no rows affected');
         throw new Error('Failed to update vendor in database');
+      }
+
+      if (latestTier2Evidence?.id) {
+        await markTier2EvidenceReviewed({
+          evidenceId: latestTier2Evidence.id,
+          normalizedResult: latestTier2Evidence.normalizedResult,
+          decision: 'reject',
+          reason: comment.trim(),
+          reviewerId: manager.id,
+        });
       }
 
       console.log('📧 [VENDOR APPROVAL] Sending rejection email...');
@@ -370,4 +422,47 @@ export async function POST(
       { status: 500 }
     );
   }
+}
+
+async function markTier2EvidenceReviewed({
+  evidenceId,
+  normalizedResult,
+  decision,
+  reason,
+  reviewerId,
+}: {
+  evidenceId: string;
+  normalizedResult: unknown;
+  decision: 'approve' | 'reject';
+  reason: string | null;
+  reviewerId: string;
+}) {
+  const reviewedAt = new Date();
+  const existing =
+    normalizedResult &&
+    typeof normalizedResult === 'object' &&
+    !Array.isArray(normalizedResult)
+      ? normalizedResult as Record<string, unknown>
+      : {};
+
+  await db
+    .update(providerVerificationRecords)
+    .set({
+      status: decision === 'approve' ? 'passed' : 'failed',
+      finalDecision: decision,
+      decisionReason: reason,
+      reviewedAt,
+      reviewedBy: reviewerId,
+      normalizedResult: {
+        ...existing,
+        managerDecision: {
+          decision,
+          reason: reason ?? undefined,
+          reviewedAt: reviewedAt.toISOString(),
+          reviewedBy: reviewerId,
+        },
+      },
+      updatedAt: reviewedAt,
+    })
+    .where(eq(providerVerificationRecords.id, evidenceId));
 }

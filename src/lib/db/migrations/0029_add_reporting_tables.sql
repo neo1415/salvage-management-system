@@ -112,7 +112,7 @@ CREATE UNIQUE INDEX idx_report_favorites_unique ON report_favorites(user_id, rep
 CREATE INDEX IF NOT EXISTS idx_cases_created_at ON salvage_cases(created_at);
 CREATE INDEX IF NOT EXISTS idx_cases_status ON salvage_cases(status);
 CREATE INDEX IF NOT EXISTS idx_cases_asset_type ON salvage_cases(asset_type);
-CREATE INDEX IF NOT EXISTS idx_cases_adjuster ON salvage_cases(adjuster_id);
+CREATE INDEX IF NOT EXISTS idx_cases_created_by ON salvage_cases(created_by);
 CREATE INDEX IF NOT EXISTS idx_cases_market_value ON salvage_cases(market_value);
 
 -- Auctions indexes for reporting

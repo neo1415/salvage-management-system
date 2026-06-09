@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { auctions, bids, payments, vendors, salvageCases, auctionWinners } from '@/lib/db/schema';
+import { auctions, bids, payments, vendors, salvageCases, auctionWinners, releaseForms } from '@/lib/db/schema';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 import { calculateAutoRating } from '@/features/vendors/services/auto-rating.service';
@@ -122,7 +122,7 @@ export async function GET() {
 
     // Try to get cached data. Include policy version so display-only policy changes
     // do not keep stale bid limits in the vendor dashboard cache.
-    const cacheKey = `dashboard:vendor:${vendor.id}:policy:${policy.version}`;
+    const cacheKey = `dashboard:vendor:${vendor.id}`;
     try {
       const cachedData = await cache.get<VendorDashboardData>(cacheKey);
 
@@ -151,9 +151,8 @@ export async function GET() {
     const comparisons = await calculateComparisons(vendor.id, performanceStats);
 
     console.log('[Dashboard API] Fetching pending pickup confirmations...');
-    // Pending means vendor has not confirmed pickup yet.
-    // Additionally gate to escrow_wallet payments that are verified, so pickup UI only
-    // appears when pickup authorization should already exist.
+    // Pending means payment is verified and a pickup authorization exists, but
+    // staff have not completed the physical handoff yet.
     const pendingPickupConfirmations = await db
       .select({
         auctionId: auctions.id,
@@ -170,16 +169,23 @@ export async function GET() {
         payments,
         and(
           eq(payments.auctionId, auctions.id),
-          eq(payments.vendorId, vendor.id)
+          eq(payments.vendorId, vendor.id),
+          eq(payments.status, 'verified')
+        )
+      )
+      .innerJoin(
+        releaseForms,
+        and(
+          eq(releaseForms.auctionId, auctions.id),
+          eq(releaseForms.vendorId, vendor.id),
+          eq(releaseForms.documentType, 'pickup_authorization')
         )
       )
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
       .where(
         and(
           eq(auctions.currentBidder, vendor.id),
-          eq(auctions.pickupConfirmedVendor, false),
-          eq(payments.paymentMethod, 'escrow_wallet'),
-          eq(payments.status, 'verified')
+          eq(auctions.pickupConfirmedAdmin, false)
         )
       );
 
@@ -285,6 +291,7 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
       )
     );
 
+  const totalVerifiedPayments = paymentTimesResult.length;
   let avgPaymentTimeHours = 0;
   if (paymentTimesResult.length > 0) {
     const totalPaymentTime = paymentTimesResult.reduce((sum, item) => {
@@ -299,23 +306,32 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
     avgPaymentTimeHours = totalPaymentTime / paymentTimesResult.length;
   }
 
-  // Calculate on-time pickup rate (assuming pickup is within 48 hours of payment)
-  // For now, we'll use payment verification as a proxy for pickup
-  const onTimePaymentsResult = await db
-    .select({ count: sql<number>`count(*)::int` })
+  // Calculate on-time pickup rate using staff-confirmed pickup, not payment as a proxy.
+  const pickupTimingResult = await db
+    .select({
+      paymentVerifiedTime: payments.verifiedAt,
+      pickupConfirmedAt: auctions.pickupConfirmedAdminAt,
+    })
     .from(payments)
     .innerJoin(auctions, eq(payments.auctionId, auctions.id))
     .where(
       and(
         eq(payments.vendorId, vendorId),
         eq(payments.status, 'verified'),
-        sql`${payments.verifiedAt} <= ${auctions.endTime} + INTERVAL '48 hours'`
+        eq(auctions.pickupConfirmedAdmin, true)
       )
     );
 
-  const onTimePayments = onTimePaymentsResult[0]?.count || 0;
-  const totalVerifiedPayments = paymentTimesResult.length;
-  const onTimePickupRate = totalVerifiedPayments > 0 ? (onTimePayments / totalVerifiedPayments) * 100 : 0;
+  const pickupDeadlineHours = 48;
+  const completedPickups = pickupTimingResult.filter(
+    (item) => item.paymentVerifiedTime && item.pickupConfirmedAt
+  );
+  const onTimePickups = completedPickups.filter((item) => {
+    const verifiedAt = new Date(item.paymentVerifiedTime!).getTime();
+    const pickedAt = new Date(item.pickupConfirmedAt!).getTime();
+    return pickedAt - verifiedAt <= pickupDeadlineHours * 60 * 60 * 1000;
+  }).length;
+  const onTimePickupRate = completedPickups.length > 0 ? (onTimePickups / completedPickups.length) * 100 : 0;
 
   // Get vendor rating
   const vendorRecord = await db

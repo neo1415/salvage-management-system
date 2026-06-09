@@ -17,15 +17,6 @@ async function hasProviderVerificationTable(): Promise<boolean> {
   return hasProviderVerificationStorage();
 }
 
-function providerEvidenceReviewOrder() {
-  return sql`CASE
-    WHEN ${providerVerificationRecords.workflowReference} = 'nem-hybrid-tier2'
-      OR ${providerVerificationRecords.normalizedResult}->>'verificationMode' = 'nem_hybrid_manual_review'
-    THEN 0
-    ELSE 1
-  END`;
-}
-
 /**
  * KYCRepository
  *
@@ -127,6 +118,9 @@ export class KYCRepository {
       ? await db
           .select({
             status: providerVerificationRecords.status,
+            finalDecision: providerVerificationRecords.finalDecision,
+            decisionReason: providerVerificationRecords.decisionReason,
+            reviewedAt: providerVerificationRecords.reviewedAt,
             providerReference: providerVerificationRecords.providerReference,
             workflowReference: providerVerificationRecords.workflowReference,
             checksCompleted: providerVerificationRecords.checksCompleted,
@@ -141,7 +135,7 @@ export class KYCRepository {
               eq(providerVerificationRecords.verificationType, 'tier2')
             )
           )
-          .orderBy(providerEvidenceReviewOrder(), desc(providerVerificationRecords.updatedAt))
+          .orderBy(desc(providerVerificationRecords.updatedAt))
           .limit(1)
       : [];
     const latestNormalized = (latestTier2Provider?.normalizedResult as Record<string, unknown> | null) ?? null;
@@ -150,13 +144,16 @@ export class KYCRepository {
       latestNormalized?.verificationMode === 'nem_hybrid_manual_review' ||
       (latestTier2Provider?.checksCompleted ?? []).includes('nem_documents_uploaded') ||
       payloadStatusLooksSubmitted(latestTier2Provider?.status);
+    const providerDecision = resolveProviderDecision(latestTier2Provider);
 
     // Determine status
     let status: KYCStatus['status'] = 'not_started';
     if (v.tier === 'tier2_full') {
       const now = new Date();
       status = v.tier2ExpiresAt && v.tier2ExpiresAt < now ? 'expired' : 'approved';
-    } else if (v.tier2RejectionReason) {
+    } else if (v.tier2ApprovedAt || providerDecision?.decision === 'approve') {
+      status = 'approved';
+    } else if (v.tier2RejectionReason || providerDecision?.decision === 'reject') {
       status = 'rejected';
     } else if ((v.tier2SubmittedAt || hasSubmittedProviderEvidence) && !v.tier2ApprovedAt) {
       status = 'pending_review';
@@ -168,9 +165,9 @@ export class KYCRepository {
       status,
       tier: v.tier,
       submittedAt: v.tier2SubmittedAt ?? latestTier2Provider?.updatedAt ?? undefined,
-      approvedAt: v.tier2ApprovedAt ?? undefined,
+      approvedAt: v.tier2ApprovedAt ?? (providerDecision?.decision === 'approve' ? latestTier2Provider?.reviewedAt ?? latestTier2Provider?.updatedAt : undefined) ?? undefined,
       expiresAt: v.tier2ExpiresAt ?? undefined,
-      rejectionReason: v.tier2RejectionReason ?? undefined,
+      rejectionReason: v.tier2RejectionReason ?? (providerDecision?.decision === 'reject' ? providerDecision.reason : undefined) ?? undefined,
       rejectedSections: extractRejectedSections(
         (latestTier2Provider?.normalizedResult as Record<string, unknown> | null) ?? null
       ),
@@ -262,7 +259,7 @@ export class KYCRepository {
           .select()
           .from(providerVerificationRecords)
           .where(inArray(providerVerificationRecords.vendorId, vendorIds))
-          .orderBy(providerEvidenceReviewOrder(), desc(providerVerificationRecords.updatedAt))
+          .orderBy(desc(providerVerificationRecords.updatedAt))
       : [];
 
     return uniqueRows.map((r) => {
@@ -302,6 +299,9 @@ export class KYCRepository {
               providerReference: providerEvidence.providerReference,
               workflowReference: providerEvidence.workflowReference,
               status: providerEvidence.status,
+              finalDecision: providerEvidence.finalDecision,
+              decisionReason: providerEvidence.decisionReason,
+              reviewedAt: providerEvidence.reviewedAt,
               riskLevel: providerEvidence.riskLevel,
               checksCompleted: providerEvidence.checksCompleted,
               pendingChecks: providerEvidence.pendingChecks,
@@ -334,6 +334,17 @@ export class KYCRepository {
   } | null> {
     const pending = await this.getPendingApprovalByVendorId(vendorId);
     if (pending) {
+      const providerDecision = resolveProviderDecision(pending.providerEvidence ?? null);
+      if (providerDecision?.decision === 'approve') {
+        return { approval: pending, reviewStatus: 'approved' };
+      }
+      if (providerDecision?.decision === 'reject') {
+        return {
+          approval: pending,
+          reviewStatus: 'rejected',
+          rejectionReason: providerDecision.reason,
+        };
+      }
       return { approval: pending, reviewStatus: 'pending' };
     }
 
@@ -403,7 +414,7 @@ export class KYCRepository {
           eq(providerVerificationRecords.verificationType, 'tier2')
         )
       )
-      .orderBy(providerEvidenceReviewOrder(), desc(providerVerificationRecords.updatedAt))
+      .orderBy(desc(providerVerificationRecords.updatedAt))
       .limit(1);
 
     const approval = this.mapVendorRowToPendingApproval(row, providerEvidence ?? null);
@@ -480,6 +491,9 @@ export class KYCRepository {
             providerReference: providerEvidence.providerReference,
             workflowReference: providerEvidence.workflowReference,
             status: providerEvidence.status,
+            finalDecision: providerEvidence.finalDecision,
+            decisionReason: providerEvidence.decisionReason,
+            reviewedAt: providerEvidence.reviewedAt,
             riskLevel: providerEvidence.riskLevel,
             checksCompleted: providerEvidence.checksCompleted,
             pendingChecks: providerEvidence.pendingChecks,
@@ -696,6 +710,26 @@ function extractRejectedSections(normalizedResult: Record<string, unknown> | nul
     ? managerDecision.rejectedSections.filter((section): section is string => typeof section === 'string' && section.trim().length > 0)
     : [];
   return rejectedSections.length ? rejectedSections : undefined;
+}
+
+function resolveProviderDecision(evidence: {
+  finalDecision?: string | null;
+  decisionReason?: string | null;
+  normalizedResult?: unknown;
+} | null | undefined): { decision: 'approve' | 'reject'; reason?: string } | null {
+  const normalized = recordFrom(evidence?.normalizedResult);
+  const managerDecision = recordFrom(normalized?.managerDecision);
+  const decision = firstString(evidence?.finalDecision, managerDecision?.decision)?.toLowerCase();
+
+  if (decision === 'approve' || decision === 'approved') {
+    return { decision: 'approve', reason: firstString(evidence?.decisionReason, managerDecision?.reason) };
+  }
+
+  if (decision === 'reject' || decision === 'rejected') {
+    return { decision: 'reject', reason: firstString(evidence?.decisionReason, managerDecision?.reason) };
+  }
+
+  return null;
 }
 
 let _instance: KYCRepository | null = null;

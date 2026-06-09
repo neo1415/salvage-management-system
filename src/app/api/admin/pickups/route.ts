@@ -10,8 +10,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { auctions, salvageCases, vendors, users, payments } from '@/lib/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { auctions, salvageCases, vendors, users, payments, releaseForms } from '@/lib/db/schema';
+import { eq, and, desc, sql } from 'drizzle-orm';
+import { derivePickupLifecycleStatus } from '@/features/pickups/services/pickup-confirmation.service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,7 +34,9 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'confirmedAt'; // 'confirmedAt' | 'amount' | 'claimRef'
     const sortOrder = searchParams.get('sortOrder') || 'desc'; // 'asc' | 'desc'
 
-    // Fetch auctions where vendor confirmed but admin has not
+    // Fetch payment-verified auctions with a pickup authorization document.
+    // These are operationally ready for staff pickup validation even if the
+    // vendor did not self-confirm in the portal first.
     const pendingPickups = await db
       .select({
         auction: {
@@ -69,17 +72,36 @@ export async function GET(request: NextRequest) {
           amount: payments.amount,
           status: payments.status,
           paymentMethod: payments.paymentMethod,
+          verifiedAt: payments.verifiedAt,
+        },
+        pickupDocument: {
+          id: releaseForms.id,
+          deadline: sql<string | null>`${releaseForms.documentData}->>'pickupDeadline'`,
         },
       })
       .from(auctions)
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
       .innerJoin(vendors, eq(auctions.currentBidder, vendors.id))
       .innerJoin(users, eq(vendors.userId, users.id))
-      .leftJoin(payments, eq(payments.auctionId, auctions.id))
+      .innerJoin(
+        payments,
+        and(
+          eq(payments.auctionId, auctions.id),
+          eq(payments.vendorId, vendors.id),
+          eq(payments.status, 'verified')
+        )
+      )
+      .innerJoin(
+        releaseForms,
+        and(
+          eq(releaseForms.auctionId, auctions.id),
+          eq(releaseForms.vendorId, vendors.id),
+          eq(releaseForms.documentType, 'pickup_authorization')
+        )
+      )
       .where(
         status === 'pending'
           ? and(
-              eq(auctions.pickupConfirmedVendor, true),
               eq(auctions.pickupConfirmedAdmin, false)
             )
           : undefined
@@ -91,7 +113,9 @@ export async function GET(request: NextRequest) {
       );
 
     // Format response
-    const formattedPickups = pendingPickups.map((pickup) => ({
+    const formattedPickups = Array.from(
+      new Map(pendingPickups.map((pickup) => [pickup.auction.id, pickup])).values()
+    ).map((pickup) => ({
       auctionId: pickup.auction.id,
       claimReference: pickup.case.claimReference,
       assetType: pickup.case.assetType,
@@ -113,12 +137,20 @@ export async function GET(request: NextRequest) {
         confirmedAt: pickup.auction.pickupConfirmedAdminAt,
         confirmedBy: pickup.auction.pickupConfirmedAdminBy,
       },
+      pickupStatus: derivePickupLifecycleStatus({
+        hasVerifiedPayment: pickup.payment?.status === 'verified',
+        hasPickupAuthorization: !!pickup.pickupDocument?.id,
+        pickupConfirmedVendor: pickup.auction.pickupConfirmedVendor,
+        pickupConfirmedAdmin: pickup.auction.pickupConfirmedAdmin,
+      }),
+      pickupDeadline: pickup.pickupDocument?.deadline || null,
       payment: pickup.payment
         ? {
             id: pickup.payment.id,
             amount: pickup.payment.amount,
             status: pickup.payment.status,
             paymentMethod: pickup.payment.paymentMethod,
+            verifiedAt: pickup.payment.verifiedAt,
           }
         : null,
       auctionStatus: pickup.auction.status,

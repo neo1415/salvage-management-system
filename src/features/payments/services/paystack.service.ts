@@ -12,6 +12,7 @@ import { emailService } from '@/features/notifications/services/email.service';
 import { appPath } from '@/features/notifications/templates/email-urls';
 import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
 import { businessPolicyService, resolvePaymentDeadlineHours } from '@/features/business-policy';
+import { generatePickupAuthorizationCode } from '@/features/pickups/services/pickup-confirmation.service';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY!;
 // Paystack uses the SECRET KEY for webhook signature verification
@@ -474,7 +475,7 @@ async function processAuctionPayment(reference: string, amountInKobo: number): P
         .where(eq(payments.id, payment.id));
 
       // Generate pickup authorization code
-      const pickupCode = generatePickupAuthorizationCode(payment.id);
+      const pickupCode = generatePickupAuthorizationCode(payment.auctionId);
       const branding = await getEmailBranding();
 
       // Send SMS notification
@@ -538,13 +539,3 @@ async function processAuctionPayment(reference: string, amountInKobo: number): P
   }
 }
 
-/**
- * Generate a pickup authorization code
- * Format: AUTH-XXXX-XXXX
- */
-function generatePickupAuthorizationCode(paymentId: string): string {
-  const hash = crypto.createHash('sha256').update(paymentId).digest('hex');
-  const code1 = hash.substring(0, 4).toUpperCase();
-  const code2 = hash.substring(4, 8).toUpperCase();
-  return `AUTH-${code1}-${code2}`;
-}

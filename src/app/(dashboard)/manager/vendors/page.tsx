@@ -219,8 +219,6 @@ function VendorManagementContent() {
               return app.bvnVerified;
             case 'nin':
               return app.ninVerified;
-            case 'bank':
-              return app.bankAccountVerified;
             case 'cac':
               return app.cacVerified;
             default:
@@ -259,7 +257,6 @@ function VendorManagementContent() {
         return [
           { value: 'bvn', label: 'BVN Verified', count: tierApplications.filter((a) => a.bvnVerified).length },
           { value: 'nin', label: 'NIN Verified', count: tierApplications.filter((a) => a.ninVerified).length },
-          { value: 'bank', label: 'Bank Verified', count: tierApplications.filter((a) => a.bankAccountVerified).length },
           { value: 'cac', label: 'CAC Verified', count: tierApplications.filter((a) => a.cacVerified).length },
         ];
       default:
@@ -528,7 +525,6 @@ function VendorManagementContent() {
               const labels: Record<string, string> = {
                 bvn: 'BVN Verified',
                 nin: 'NIN Verified',
-                bank: 'Bank Verified',
                 cac: 'CAC Verified',
               };
               return (
@@ -813,10 +809,6 @@ function ApplicationCard({
                     verified={application.ninVerified}
                   />
                   <VerificationBadge
-                    label="Bank Account"
-                    verified={application.bankAccountVerified}
-                  />
-                  <VerificationBadge
                     label="CAC"
                     verified={application.cacVerified}
                   />
@@ -1001,22 +993,6 @@ function ReviewModal({
                       <span className="text-gray-600">CAC Number:</span>
                       <span className="ml-2 font-medium text-gray-900">{application.cacNumber || 'N/A'}</span>
                     </div>
-                    <div>
-                      <span className="text-gray-600">TIN:</span>
-                      <span className="ml-2 font-medium text-gray-900">{application.tin || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-600">Bank:</span>
-                      <span className="ml-2 font-medium text-gray-900">{application.bankName || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-600">Account Number:</span>
-                      <span className="ml-2 font-medium text-gray-900">{application.bankAccountNumber || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-600">Account Name:</span>
-                      <span className="ml-2 font-medium text-gray-900">{application.bankAccountName || 'N/A'}</span>
-                    </div>
                   </>
                 )}
               </div>
@@ -1035,7 +1011,6 @@ function ReviewModal({
                   <>
                     <VerificationBadge label="BVN" verified={application.bvnVerified} />
                     <VerificationBadge label="NIN" verified={application.ninVerified} />
-                    <VerificationBadge label="Bank Account" verified={application.bankAccountVerified} />
                     <VerificationBadge label="CAC" verified={application.cacVerified} />
                   </>
                 )}

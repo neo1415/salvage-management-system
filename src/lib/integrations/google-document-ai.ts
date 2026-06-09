@@ -4,11 +4,75 @@
  */
 
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
+import { ImageAnnotatorClient } from '@google-cloud/vision';
+
+const predictionEndpoint =
+  process.env.GOOGLE_DOCUMENT_AI_PREDICTION_ENDPOINT?.trim() ||
+  process.env.PREDICTION_ENDPOINT?.trim();
+
+const documentAiApiEndpoint = predictionEndpoint?.match(/^https:\/\/([^/]+)/i)?.[1];
 
 // Initialize the Document AI client
 const client = new DocumentProcessorServiceClient({
   keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+  ...(documentAiApiEndpoint ? { apiEndpoint: documentAiApiEndpoint } : {}),
 });
+
+const visionClient = new ImageAnnotatorClient({
+  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+});
+
+function hasDocumentAiProcessor(): boolean {
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID?.trim();
+  const processorId = process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID?.trim();
+  return Boolean(
+    getProcessorNameFromPredictionEndpoint() ||
+    (projectId && processorId && processorId.toLowerCase() !== 'default')
+  );
+}
+
+function getDocumentAiProcessorName(): string {
+  const endpointProcessorName = getProcessorNameFromPredictionEndpoint();
+  if (endpointProcessorName) return endpointProcessorName;
+
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID?.trim();
+  const location = process.env.GOOGLE_DOCUMENT_AI_LOCATION?.trim() || 'us';
+  const processorId = process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID?.trim();
+
+  if (!projectId || !processorId || processorId.toLowerCase() === 'default') {
+    throw new Error(
+      'Google Document AI processor is not configured. Set GOOGLE_DOCUMENT_AI_PROCESSOR_ID to a real processor id.'
+    );
+  }
+
+  return `projects/${projectId}/locations/${location}/processors/${processorId}`;
+}
+
+function getProcessorNameFromPredictionEndpoint(): string | null {
+  if (!predictionEndpoint) return null;
+  const match = predictionEndpoint.match(/\/v1\/(projects\/[^/]+\/locations\/[^/]+\/processors\/[^/:]+):process$/i);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
+async function extractTextWithVision(
+  imageBuffer: Buffer,
+  mimeType: string
+): Promise<{ text: string; confidence: number }> {
+  if (!mimeType.startsWith('image/')) {
+    throw new Error('Google Vision OCR fallback only supports image uploads. Configure Google Document AI for PDF OCR.');
+  }
+
+  const [result] = await visionClient.documentTextDetection({
+    image: { content: imageBuffer },
+  });
+  const text = result.fullTextAnnotation?.text ?? result.textAnnotations?.[0]?.description ?? '';
+  const pageConfidence = result.fullTextAnnotation?.pages?.[0]?.confidence;
+
+  return {
+    text,
+    confidence: typeof pageConfidence === 'number' ? pageConfidence * 100 : text ? 70 : 0,
+  };
+}
 
 export interface ExtractedNINData {
   nin: string | null;
@@ -26,11 +90,22 @@ export async function extractNINFromDocument(
   mimeType: string
 ): Promise<ExtractedNINData> {
   try {
-    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
-    const location = 'us'; // or 'eu'
-    const processorId = process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID || 'default';
+    if (!hasDocumentAiProcessor()) {
+      const vision = await extractTextWithVision(imageBuffer, mimeType);
+      const text = vision.text;
+      const ninMatch = text.match(/\b\d{11}\b/);
+      const nameMatch = text.match(/(?:Name|FULL NAME|Surname)[\s:]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+      const dobMatch = text.match(/(?:Date of Birth|DOB|Born)[\s:]+(\d{1,2}[-/]\d{1,2}[-/]\d{2,4})/i);
+      return {
+        nin: ninMatch ? ninMatch[0] : null,
+        fullName: nameMatch ? nameMatch[1].trim() : null,
+        dateOfBirth: dobMatch ? dobMatch[1] : null,
+        confidence: vision.confidence,
+        rawText: text,
+      };
+    }
 
-    const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
+    const name = getDocumentAiProcessorName();
 
     // Convert buffer to base64
     const encodedImage = imageBuffer.toString('base64');
@@ -99,11 +174,11 @@ export async function extractTextFromDocument(
   mimeType: string
 ): Promise<{ text: string; confidence: number }> {
   try {
-    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
-    const location = 'us';
-    const processorId = process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID || 'default';
+    if (!hasDocumentAiProcessor()) {
+      return extractTextWithVision(imageBuffer, mimeType);
+    }
 
-    const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
+    const name = getDocumentAiProcessorName();
 
     const encodedImage = imageBuffer.toString('base64');
 

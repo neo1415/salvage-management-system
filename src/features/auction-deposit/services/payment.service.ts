@@ -20,6 +20,7 @@ import { payments } from '@/lib/db/schema/payments';
 import { depositEvents, auctionWinners } from '@/lib/db/schema/auction-deposit';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
+import { releaseForms } from '@/lib/db/schema/release-forms';
 import { eq, and, desc, ne } from 'drizzle-orm';
 import { depositNotificationService } from './deposit-notification.service';
 import { smsService } from '@/features/notifications/services/sms.service';
@@ -1299,8 +1300,26 @@ export class PaymentService {
     try {
       console.log(`🎫 Generating pickup authorization for auction ${paymentInfo.auctionId}`);
       
+      const [existingPickupAuth] = await db
+        .select({ id: releaseForms.id, status: releaseForms.status })
+        .from(releaseForms)
+        .where(
+          and(
+            eq(releaseForms.auctionId, paymentInfo.auctionId),
+            eq(releaseForms.vendorId, paymentInfo.vendorId),
+            eq(releaseForms.documentType, 'pickup_authorization')
+          )
+        )
+        .limit(1);
+
+      if (existingPickupAuth && existingPickupAuth.status !== 'voided') {
+        console.log(`✅ Pickup authorization already exists for auction ${paymentInfo.auctionId}; skipping duplicate notifications.`);
+        return;
+      }
+
       // Generate pickup authorization code
-      const pickupAuthCode = this.generatePickupAuthorizationCode(paymentInfo.auctionId);
+      const { generatePickupAuthorizationCode } = await import('@/features/pickups/services/pickup-confirmation.service');
+      const pickupAuthCode = generatePickupAuthorizationCode(paymentInfo.auctionId);
       
       // Generate pickup authorization document
       const { generateDocument } = await import('@/features/documents/services/document.service');
@@ -1449,17 +1468,6 @@ export class PaymentService {
         console.error('Error stack:', error.stack);
       }
     }
-  }
-
-  /**
-   * Generate pickup authorization code
-   * Format: AUTH-{first 8 chars of auction ID uppercase}
-   * 
-   * @param auctionId - Auction ID
-   * @returns Pickup authorization code
-   */
-  private generatePickupAuthorizationCode(auctionId: string): string {
-    return `AUTH-${auctionId.substring(0, 8).toUpperCase()}`;
   }
 
   /**

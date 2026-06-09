@@ -1,39 +1,30 @@
 /**
- * KYC testing mode — allows repeating Tier 1 (BVN) and Tier 2 (Dojah) verification
- * for the same user/documents during local/staging QA.
+ * KYC runs against live provider state.
  *
- * Set KYC_TESTING_MODE=true (server) and NEXT_PUBLIC_KYC_TESTING_MODE=true (client UI).
- * Never enable in production.
+ * This module remains as a compatibility shim for older imports, but the old
+ * env-driven testing override is intentionally disabled so live keys cannot be
+ * paired with stale status resets or client-side testing banners.
  */
 export function isKycTestingMode(): boolean {
-  return process.env.KYC_TESTING_MODE === 'true';
+  return false;
 }
 
-/** Client components (must mirror KYC_TESTING_MODE in .env). */
+/** Client compatibility shim. */
 export function isKycTestingModeClient(): boolean {
-  return process.env.NEXT_PUBLIC_KYC_TESTING_MODE === 'true';
+  return false;
 }
 
 /**
- * Status values that block the Tier 2 widget; in testing mode the portal treats these as not started.
+ * Legacy list retained for old tests/imports. It is no longer used to rewrite
+ * status responses.
  */
 export const KYC_TIER2_BLOCKING_STATUSES = [
-  'approved',
-  'pending_review',
-  'rejected',
   'expired',
   'in_progress',
 ] as const;
 
 export function applyKycTestingStatusOverride<T extends { status: string }>(
   kycStatus: T
-): T & { kycTestingMode: true } {
-  if (!KYC_TIER2_BLOCKING_STATUSES.includes(kycStatus.status as (typeof KYC_TIER2_BLOCKING_STATUSES)[number])) {
-    return { ...kycStatus, kycTestingMode: true };
-  }
-  return {
-    ...kycStatus,
-    status: 'not_started',
-    kycTestingMode: true,
-  };
+): T {
+  return kycStatus;
 }

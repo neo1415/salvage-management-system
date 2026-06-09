@@ -15,6 +15,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { AdminPickupConfirmation } from '@/components/admin/admin-pickup-confirmation';
 import { DataLoadingState } from '@/components/ui/loading-states';
+import { PickupConfirmationDesk } from '@/components/pickups/pickup-confirmation-desk';
 
 interface PickupConfirmation {
   auctionId: string;
@@ -43,7 +44,10 @@ interface PickupConfirmation {
     amount: string;
     status: string;
     paymentMethod: string;
+    verifiedAt?: string | null;
   } | null;
+  pickupStatus?: 'not_ready' | 'ready_for_pickup' | 'vendor_confirmed' | 'staff_confirmed';
+  pickupDeadline?: string | null;
   auctionStatus: string;
   caseStatus: string;
   auctionEndTime: string;
@@ -212,6 +216,10 @@ export default function AdminPickupsPage() {
           <p className="mt-2 text-gray-600">
             Confirm vendor pickups and complete transactions
           </p>
+        </div>
+
+        <div className="mb-6">
+          <PickupConfirmationDesk onConfirmed={fetchPickups} />
         </div>
 
         {/* Filters */}
@@ -420,7 +428,7 @@ export default function AdminPickupsPage() {
                   {/* Actions */}
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-2">Actions</h3>
-                    {!pickup.adminConfirmation.confirmed && pickup.vendorConfirmation.confirmed ? (
+                    {!pickup.adminConfirmation.confirmed ? (
                       <button
                         onClick={() => {
                           setSelectedPickup(pickup);
@@ -434,13 +442,7 @@ export default function AdminPickupsPage() {
                       <div className="text-center p-3 bg-green-50 border border-green-200 rounded-lg">
                         <p className="text-sm font-medium text-green-800">✓ Completed</p>
                       </div>
-                    ) : (
-                      <div className="text-center p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <p className="text-xs text-yellow-800">
-                          Waiting for vendor confirmation
-                        </p>
-                      </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>

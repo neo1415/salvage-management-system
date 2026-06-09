@@ -459,6 +459,9 @@ export default function AuctionPerformancePage() {
                         <th className="text-right p-2">Bidders</th>
                         <th className="text-right p-2">Winning Bid</th>
                         <th className="text-right p-2">Reserve</th>
+                        <th className="text-left p-2">Pickup</th>
+                        <th className="text-left p-2">Possessing Vendor</th>
+                        <th className="text-left p-2">Picked Up</th>
                         <th className="text-left p-2">Status</th>
                       </tr>
                     </thead>
@@ -475,6 +478,9 @@ export default function AuctionPerformancePage() {
                             {auction.winningBid ? formatCurrency(auction.winningBid) : '-'}
                           </td>
                           <td className="text-right p-2">{formatCurrency(auction.reservePrice)}</td>
+                          <td className="p-2 capitalize">{String(auction.pickupStatus || 'not_ready').replaceAll('_', ' ')}</td>
+                          <td className="p-2">{auction.pickupVendorName || '-'}</td>
+                          <td className="p-2">{auction.pickedUpAt ? new Date(auction.pickedUpAt).toLocaleDateString() : '-'}</td>
                           <td className="p-2">
                             <span className={`px-2 py-1 rounded text-xs ${
                               auction.isSuccessful ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'

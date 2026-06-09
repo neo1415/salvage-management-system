@@ -12,6 +12,7 @@ export type CaseDisplayStatus =
   | 'sold'
   | 'active_auction'
   | 'awaiting_payment'
+  | 'awaiting_pickup'
   | 'closed';
 
 export interface CaseLifecycleInput {
@@ -55,8 +56,12 @@ export function resolveCaseDisplayStatus(input: CaseLifecycleInput): CaseDisplay
     return 'awaiting_payment';
   }
 
-  if (caseStatus === 'sold' || isPaymentVerified(paymentStatus)) {
+  if (caseStatus === 'sold') {
     return 'sold';
+  }
+
+  if (isPaymentVerified(paymentStatus)) {
+    return 'awaiting_pickup';
   }
 
   if (caseStatus !== 'active_auction') {

@@ -201,9 +201,9 @@ SELECT
       )
     )
   ),
-  (SELECT id FROM users WHERE role = 'super_admin' LIMIT 1),
+  (SELECT id FROM users WHERE role = 'system_admin' LIMIT 1),
   NOW()
-WHERE EXISTS (SELECT 1 FROM users WHERE role = 'super_admin');
+WHERE EXISTS (SELECT 1 FROM users WHERE role = 'system_admin');
 
 -- ============================================================================
 -- 7. Create initial API usage tracking entry

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { vendors } from '@/lib/db/schema';
+import { users, vendors } from '@/lib/db/schema';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
         id: vendors.id,
         tier2SubmittedAt: vendors.tier2SubmittedAt,
         tier2ApprovedAt: vendors.tier2ApprovedAt,
+        tier2RejectionReason: vendors.tier2RejectionReason,
       })
       .from(vendors)
       .where(eq(vendors.userId, session.user.id))
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest) {
       .select({
         tier2SubmittedAt: vendors.tier2SubmittedAt,
         tier2ApprovedAt: vendors.tier2ApprovedAt,
+        tier2RejectionReason: vendors.tier2RejectionReason,
       })
       .from(vendors)
       .where(eq(vendors.id, vendorRow.id))
@@ -62,6 +64,10 @@ export async function GET(request: NextRequest) {
         workflowReference: providerVerificationRecords.workflowReference,
         providerReference: providerVerificationRecords.providerReference,
         status: providerVerificationRecords.status,
+        finalDecision: providerVerificationRecords.finalDecision,
+        decisionReason: providerVerificationRecords.decisionReason,
+        reviewedAt: providerVerificationRecords.reviewedAt,
+        reviewedBy: providerVerificationRecords.reviewedBy,
         checksCompleted: providerVerificationRecords.checksCompleted,
         normalizedResult: providerVerificationRecords.normalizedResult,
         updatedAt: providerVerificationRecords.updatedAt,
@@ -73,15 +79,7 @@ export async function GET(request: NextRequest) {
           eq(providerVerificationRecords.verificationType, 'tier2')
         )
       )
-      .orderBy(
-        sql`CASE
-          WHEN ${providerVerificationRecords.workflowReference} = 'nem-hybrid-tier2'
-            OR ${providerVerificationRecords.normalizedResult}->>'verificationMode' = 'nem_hybrid_manual_review'
-          THEN 0
-          ELSE 1
-        END`,
-        desc(providerVerificationRecords.updatedAt)
-      )
+      .orderBy(desc(providerVerificationRecords.updatedAt))
       .limit(1);
 
     const latestNormalized = (latestEvidence?.normalizedResult as Record<string, unknown> | null) ?? null;
@@ -92,13 +90,77 @@ export async function GET(request: NextRequest) {
 
     let effectiveTier2SubmittedAt = vendorAfterCleanup?.tier2SubmittedAt ?? null;
     let effectiveTier2ApprovedAt = vendorAfterCleanup?.tier2ApprovedAt ?? null;
+    let effectiveTier2RejectionReason = vendorAfterCleanup?.tier2RejectionReason ?? null;
+    const latestProviderDecision = resolveLatestProviderDecision(latestEvidence);
+
+    if (
+      !isKycTestingMode() &&
+      latestProviderDecision?.decision === 'reject' &&
+      !effectiveTier2ApprovedAt &&
+      !effectiveTier2RejectionReason
+    ) {
+      const rejectionReason =
+        latestProviderDecision.reason ||
+        latestEvidence?.decisionReason ||
+        'Application rejected';
+
+      await db
+        .update(vendors)
+        .set({
+          tier2RejectionReason: rejectionReason,
+          tier2SubmittedAt: null,
+          tier2DojahReferenceId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(vendors.id, vendorRow.id));
+
+      effectiveTier2SubmittedAt = null;
+      effectiveTier2RejectionReason = rejectionReason;
+    }
+
+    if (
+      !isKycTestingMode() &&
+      latestProviderDecision?.decision === 'approve' &&
+      !effectiveTier2ApprovedAt &&
+      !effectiveTier2RejectionReason
+    ) {
+      const approvedAt = latestEvidence?.reviewedAt ?? latestEvidence?.updatedAt ?? new Date();
+      const expiresAt = new Date(approvedAt);
+      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+
+      await db
+        .update(vendors)
+        .set({
+          tier: 'tier2_full',
+          tier2ApprovedAt: approvedAt,
+          tier2ApprovedBy: latestEvidence?.reviewedBy ?? null,
+          tier2ExpiresAt: expiresAt,
+          tier2RejectionReason: null,
+          tier2SubmittedAt: approvedAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(vendors.id, vendorRow.id));
+
+      await db
+        .update(users)
+        .set({
+          status: 'verified_tier_2',
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, session.user.id));
+
+      effectiveTier2SubmittedAt = approvedAt;
+      effectiveTier2ApprovedAt = approvedAt;
+      effectiveTier2RejectionReason = null;
+    }
 
     // Self-heal vendors whose manual Tier 2 evidence was saved before the vendor row
     // status was reliably backfilled. Existing applicants should not have to resubmit.
     if (
       isManualHybridEvidence &&
       !effectiveTier2SubmittedAt &&
-      !effectiveTier2ApprovedAt
+      !effectiveTier2ApprovedAt &&
+      !effectiveTier2RejectionReason
     ) {
       const submittedAt = latestEvidence?.updatedAt ?? new Date();
       await db
@@ -119,7 +181,8 @@ export async function GET(request: NextRequest) {
       !isKycTestingMode() &&
       !isManualHybridEvidence &&
       effectiveTier2SubmittedAt &&
-      !effectiveTier2ApprovedAt
+      !effectiveTier2ApprovedAt &&
+      !effectiveTier2RejectionReason
     ) {
       await reconcileTier2FromDojah({
         vendorId: vendorRow.id,
@@ -142,27 +205,101 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
     }
 
+    if (
+      !isKycTestingMode() &&
+      kycStatus.status === 'rejected' &&
+      !effectiveTier2ApprovedAt &&
+      !effectiveTier2RejectionReason
+    ) {
+      const rejectionReason = kycStatus.rejectionReason || 'Application rejected';
+      await db
+        .update(vendors)
+        .set({
+          tier2RejectionReason: rejectionReason,
+          tier2SubmittedAt: null,
+          tier2DojahReferenceId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(vendors.id, vendorRow.id));
+
+      effectiveTier2SubmittedAt = null;
+      effectiveTier2RejectionReason = rejectionReason;
+    }
+
+    if (
+      !isKycTestingMode() &&
+      kycStatus.status === 'approved' &&
+      !effectiveTier2ApprovedAt &&
+      !effectiveTier2RejectionReason
+    ) {
+      const approvedAt = kycStatus.approvedAt ?? new Date();
+      const expiresAt = kycStatus.expiresAt ?? new Date(approvedAt);
+      if (!kycStatus.expiresAt) {
+        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      }
+
+      await db
+        .update(vendors)
+        .set({
+          tier: 'tier2_full',
+          tier2ApprovedAt: approvedAt,
+          tier2ExpiresAt: expiresAt,
+          tier2RejectionReason: null,
+          tier2SubmittedAt: approvedAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(vendors.id, vendorRow.id));
+
+      await db
+        .update(users)
+        .set({
+          status: 'verified_tier_2',
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, session.user.id));
+
+      effectiveTier2SubmittedAt = approvedAt;
+      effectiveTier2ApprovedAt = approvedAt;
+      effectiveTier2RejectionReason = null;
+    }
+
     const payload = isKycTestingMode()
       ? applyKycTestingStatusOverride(kycStatus)
       : kycStatus;
+    const responseSubmittedAt =
+      payload.status === 'not_started' ? undefined : kycStatus.submittedAt;
     const authoritativeStatus =
       !isKycTestingMode() &&
       (effectiveTier2SubmittedAt || isManualHybridEvidence) &&
       !effectiveTier2ApprovedAt &&
+      !effectiveTier2RejectionReason &&
       payload.status !== 'approved' &&
       payload.status !== 'rejected'
         ? 'pending_review'
         : payload.status;
 
+    console.info('[KYC Status] resolved', {
+      vendorId: vendorRow.id,
+      repositoryStatus: kycStatus.status,
+      responseStatus: authoritativeStatus,
+      hasSubmittedAt: Boolean(effectiveTier2SubmittedAt),
+      hasApprovedAt: Boolean(effectiveTier2ApprovedAt),
+      hasRejectionReason: Boolean(effectiveTier2RejectionReason),
+      latestProviderStatus: latestEvidence?.status ?? null,
+      latestProviderDecision: latestProviderDecision?.decision ?? null,
+      latestProviderMode: latestNormalized?.verificationMode ?? latestEvidence?.workflowReference ?? null,
+      testingMode: isKycTestingMode(),
+    });
+
     return NextResponse.json(
       {
         status: authoritativeStatus,
         tier: payload.tier,
-        submittedAt: kycStatus.submittedAt,
+        submittedAt: responseSubmittedAt,
         approvedAt: kycStatus.approvedAt,
         expiresAt: kycStatus.expiresAt,
-        rejectionReason: kycStatus.rejectionReason,
-        rejectedSections: kycStatus.rejectedSections,
+        rejectionReason: authoritativeStatus === 'rejected' ? kycStatus.rejectionReason : undefined,
+        rejectedSections: authoritativeStatus === 'rejected' ? kycStatus.rejectedSections : undefined,
         dojahReferenceId: kycStatus.dojahReferenceId,
         steps: kycStatus.steps,
         ...(isKycTestingMode() ? { kycTestingMode: true as const } : {}),
@@ -194,4 +331,39 @@ function payloadStatusLooksSubmitted(status: string | null | undefined): boolean
     'submitted_for_review',
     'manual_review',
   ].includes(normalized);
+}
+
+function recordFrom(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const text = value.trim();
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function resolveLatestProviderDecision(evidence: {
+  finalDecision?: string | null;
+  decisionReason?: string | null;
+  normalizedResult?: unknown;
+} | null | undefined): { decision: 'approve' | 'reject'; reason?: string } | null {
+  const normalized = recordFrom(evidence?.normalizedResult);
+  const managerDecision = recordFrom(normalized?.managerDecision);
+  const decision = firstString(evidence?.finalDecision, managerDecision?.decision)?.toLowerCase();
+
+  if (decision === 'approve' || decision === 'approved') {
+    return { decision: 'approve', reason: firstString(evidence?.decisionReason, managerDecision?.reason) };
+  }
+
+  if (decision === 'reject' || decision === 'rejected') {
+    return { decision: 'reject', reason: firstString(evidence?.decisionReason, managerDecision?.reason) };
+  }
+
+  return null;
 }

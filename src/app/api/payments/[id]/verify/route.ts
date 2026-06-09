@@ -16,6 +16,7 @@ import DOMPurify from 'isomorphic-dompurify';
 import { formatAssetName } from '@/lib/utils/asset-name';
 import { brandLegalName, brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 import { businessPolicyService } from '@/features/business-policy';
+import { generatePickupAuthorizationCode } from '@/features/pickups/services/pickup-confirmation.service';
 
 // SECURITY: Rate limiting for payment verification endpoint
 // Prevents notification spam and abuse
@@ -264,7 +265,7 @@ export async function POST(
 
     if (action === 'approve') {
       // Generate pickup authorization code
-      const pickupAuthCode = generatePickupAuthorizationCode();
+      const pickupAuthCode = generatePickupAuthorizationCode(payment.auctionId);
 
       // Update payment status to verified
       const [updatedPayment] = await db
@@ -279,14 +280,9 @@ export async function POST(
         .where(eq(payments.id, paymentId))
         .returning();
 
-      // Mark case as 'sold' now that payment is verified
-      await db
-        .update(salvageCases)
-        .set({
-          status: 'sold',
-          updatedAt: new Date(),
-        })
-        .where(eq(salvageCases.id, auction.caseId));
+      // Payment verification makes the asset ready for pickup. The case is
+      // marked sold only after staff confirm physical release with the pickup
+      // authorization code.
 
       // Generate pickup authorization document
       const { generateDocument } = await import('@/features/documents/services/document.service');
@@ -514,13 +510,6 @@ export async function POST(
  * Generate pickup authorization code
  * Format: AUTH-XXXX-XXXX
  */
-function generatePickupAuthorizationCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude similar-looking characters
-  const part1 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  const part2 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  return `AUTH-${part1}-${part2}`;
-}
-
 /**
  * Send rejection email to vendor
  * SECURITY: Sanitizes all user-provided data to prevent XSS in email clients

@@ -69,7 +69,6 @@ function getApprovalDocuments(approval: PendingApproval): ApprovalDocument[] {
   addDocument(documents, seen, { key: 'photo-id', label: 'Photo ID', url: approval.photoIdUrl, type: 'photo_id' });
   addDocument(documents, seen, { key: 'nin-card', label: 'NIN / government ID', url: approval.ninCardUrl, type: 'photo_id' });
   addDocument(documents, seen, { key: 'address-proof', label: 'Address proof', url: approval.addressProofUrl, type: 'address_proof' });
-  addDocument(documents, seen, { key: 'bank-statement', label: 'Bank statement', url: approval.bankStatementUrl, type: 'bank_statement' });
   addDocument(documents, seen, { key: 'business-registration', label: 'CAC / business registration', url: approval.cacCertificateUrl, type: 'cac_certificate' });
   addDocument(documents, seen, { key: 'selfie', label: 'Selfie / liveness image', url: approval.selfieUrl, type: 'selfie' });
 
@@ -334,23 +333,26 @@ export default function KYCApprovalDetailPage() {
   const livenessFields = evidenceSections?.liveness ?? {};
   const addressFields = evidenceSections?.address ?? {};
   const amlFields = evidenceSections?.aml ?? {};
+  const ipDeviceFields = evidenceSections?.ipDevice ?? {};
   const riskLevel = humanRisk(approval.providerEvidence?.riskLevel ?? approval.amlRiskLevel);
   const livenessStatus = displayLiveness !== undefined
     ? `${displayLiveness}%`
     : valueFrom(livenessFields, 'Liveness status', 'Pending');
   const amlScreening = valueFrom(amlFields, 'AML screening', 'Not completed');
-  const pepHits = valueFrom(amlFields, 'PEP hits', 'No');
-  const sanctionsHits = valueFrom(amlFields, 'Sanctions hits', 'No');
-  const adverseHits = valueFrom(amlFields, 'Adverse media hits', 'No');
   const amlCompleted = approval.providerEvidence?.checksCompleted?.includes('aml_screening') ?? false;
+  const amlHasDisplayResult = !/unavailable|not completed|pending/i.test(amlScreening);
+  const amlUnavailable = !amlHasDisplayResult && !amlCompleted;
+  const pepHits = valueFrom(amlFields, 'PEP hits', amlUnavailable ? 'Not completed' : 'No');
+  const sanctionsHits = valueFrom(amlFields, 'Sanctions hits', amlUnavailable ? 'Not completed' : 'No');
+  const adverseHits = valueFrom(amlFields, 'Adverse media hits', amlUnavailable ? 'Not completed' : 'No');
   const amlDecision =
-    /yes/i.test(`${pepHits} ${sanctionsHits} ${adverseHits}`)
+    amlUnavailable
+      ? approval.providerEvidence?.reasonCodes?.includes('dojah_aml_unavailable')
+        ? 'Provider unavailable'
+        : 'Not completed'
+      : /yes/i.test(`${pepHits} ${sanctionsHits} ${adverseHits}`)
       ? 'Needs review'
-      : amlCompleted && /no/i.test(`${pepHits} ${sanctionsHits} ${adverseHits}`)
-        ? 'No matches found'
-        : /unavailable|not completed|pending/i.test(amlScreening)
-        ? 'Not completed'
-        : 'No matches found';
+      : 'No matches found';
   const attentionReasons = cleanFlags([
     ...approval.flaggedReasons,
     ...((approval.providerEvidence?.reasonCodes ?? []).map(formatReasonCode)),
@@ -563,6 +565,7 @@ export default function KYCApprovalDetailPage() {
             'Registration number': valueFrom(businessFields, 'Submitted registration number', valueFrom(evidenceSections?.providerSummary, 'Submitted business number', 'Not provided')),
             'Registry name': valueFrom(businessFields, 'Provider business name', 'Not returned'),
             'Registry result': valueFrom(businessFields, 'Provider lookup', 'Not completed'),
+            'Registration date': valueFrom(businessFields, 'Registration date', 'Not returned'),
             'Name match': valueFrom(businessFields, 'Business name match', 'Needs manager review'),
           }}
         />
@@ -582,6 +585,34 @@ export default function KYCApprovalDetailPage() {
             'PEP hits': pepHits,
             'Sanctions hits': sanctionsHits,
             'Adverse media hits': adverseHits,
+          }}
+        />
+        <EvidenceSectionGrid
+          title="Submission Device"
+          fields={{
+            'Capture status': valueFrom(ipDeviceFields, 'Capture status', 'Not captured'),
+            'IP address': valueFrom(ipDeviceFields, 'IP address', 'Not captured'),
+            'Device type': valueFrom(ipDeviceFields, 'Device type', 'Not captured'),
+            OS: valueFrom(ipDeviceFields, 'OS', 'Not captured'),
+            Browser: valueFrom(ipDeviceFields, 'Browser', 'Not captured'),
+            'Browser version': valueFrom(ipDeviceFields, 'Browser version', 'Not captured'),
+            Model: valueFrom(ipDeviceFields, 'Model', 'Not captured'),
+            Platform: valueFrom(ipDeviceFields, 'Platform', 'Web'),
+            'Device signal': valueFrom(ipDeviceFields, 'Device signal', 'Local capture only'),
+            'IP screening': valueFrom(ipDeviceFields, 'IP screening', 'Not completed'),
+            'Screened IP': valueFrom(ipDeviceFields, 'Screened IP', 'Not returned'),
+            Country: valueFrom(ipDeviceFields, 'Country', 'Not returned'),
+            Region: valueFrom(ipDeviceFields, 'Region', 'Not returned'),
+            City: valueFrom(ipDeviceFields, 'City', 'Not returned'),
+            Latitude: valueFrom(ipDeviceFields, 'Latitude', 'Not returned'),
+            Longitude: valueFrom(ipDeviceFields, 'Longitude', 'Not returned'),
+            ISP: valueFrom(ipDeviceFields, 'ISP', 'Not returned'),
+            ASN: valueFrom(ipDeviceFields, 'ASN', 'Not returned'),
+            VPN: valueFrom(ipDeviceFields, 'VPN', 'Not returned'),
+            Proxy: valueFrom(ipDeviceFields, 'Proxy', 'Not returned'),
+            Hosting: valueFrom(ipDeviceFields, 'Hosting', 'Not returned'),
+            Tor: valueFrom(ipDeviceFields, 'Tor', 'Not returned'),
+            'Risk score': valueFrom(ipDeviceFields, 'Risk score', 'Not returned'),
           }}
         />
       </div>

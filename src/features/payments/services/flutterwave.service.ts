@@ -48,6 +48,7 @@ import { emailService } from '@/features/notifications/services/email.service';
 import { brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
 import { appPath, getAppUrl } from '@/features/notifications/templates/email-urls';
 import { businessPolicyService, resolvePaymentDeadlineHours } from '@/features/business-policy';
+import { generatePickupAuthorizationCode } from '@/features/pickups/services/pickup-confirmation.service';
 
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY!;
 const FLUTTERWAVE_WEBHOOK_SECRET = process.env.FLUTTERWAVE_WEBHOOK_SECRET!;
@@ -607,7 +608,7 @@ export async function processFlutterwaveWebhook(
       .where(eq(payments.id, payment.id));
 
     // Generate pickup authorization code
-    const pickupCode = generatePickupAuthorizationCode(payment.id);
+    const pickupCode = generatePickupAuthorizationCode(payment.auctionId);
     const branding = await getEmailBranding();
 
     // Send SMS notification
@@ -670,38 +671,3 @@ export async function processFlutterwaveWebhook(
   }
 }
 
-/**
- * Generate a pickup authorization code
- * 
- * Creates a unique, secure pickup authorization code using SHA-256 hashing
- * of the payment ID. The code format is AUTH-XXXX-XXXX where X represents
- * uppercase hexadecimal characters.
- * 
- * @function generatePickupAuthorizationCode
- * @param {string} paymentId - UUID of the payment record
- * @returns {string} Pickup authorization code in format AUTH-XXXX-XXXX
- * 
- * @example
- * ```typescript
- * const code = generatePickupAuthorizationCode('123e4567-e89b-12d3-a456-426614174000');
- * console.log(code); // "AUTH-A1B2-C3D4"
- * ```
- * 
- * @security
- * - Uses SHA-256 for cryptographic security
- * - Deterministic (same payment ID always generates same code)
- * - Collision-resistant
- * - Cannot be reverse-engineered to obtain payment ID
- * 
- * @format
- * - Prefix: AUTH
- * - Code 1: First 4 hex characters (uppercase)
- * - Code 2: Next 4 hex characters (uppercase)
- * - Example: AUTH-0738-85FE
- */
-function generatePickupAuthorizationCode(paymentId: string): string {
-  const hash = crypto.createHash('sha256').update(paymentId).digest('hex');
-  const code1 = hash.substring(0, 4).toUpperCase();
-  const code2 = hash.substring(4, 8).toUpperCase();
-  return `AUTH-${code1}-${code2}`;
-}

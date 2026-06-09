@@ -32,6 +32,7 @@ import {
   isBusinessPolicyEnforcementEnabled,
   resolvePaymentDeadlineHours,
 } from '@/features/business-policy';
+import { generatePickupAuthorizationCode } from '@/features/pickups/services/pickup-confirmation.service';
 
 const APP_URL = getAppUrl();
 
@@ -221,7 +222,7 @@ export async function generateDocument(
 
       case 'pickup_authorization':
         title = 'Pickup Authorization';
-        const authCode = `AUTH-${auctionId.substring(0, 8).toUpperCase()}`;
+        const authCode = generatePickupAuthorizationCode(auctionId);
         const pickupAuthData: PickupAuthorizationData = {
           authorizationCode: authCode,
           auctionId,
@@ -1348,8 +1349,8 @@ export async function triggerFundReleaseOnDocumentCompletion(
 
     console.log(`✅ Payment status updated to 'verified'`);
 
-    // Step 7: Update case status to sold
-    // Step 7: Update case status to sold
+    // Step 7: Keep the case pre-pickup; staff pickup confirmation marks it sold.
+    // Step 7: Keep the case pre-pickup; staff pickup confirmation marks it sold.
     const [auction] = await db
       .select()
       .from(auctions)
@@ -1360,7 +1361,7 @@ export async function triggerFundReleaseOnDocumentCompletion(
       await db
         .update(salvageCases)
         .set({
-          status: 'sold',
+          status: 'active_auction',
           updatedAt: new Date(),
         })
         .where(eq(salvageCases.id, auction.caseId));
@@ -1369,7 +1370,7 @@ export async function triggerFundReleaseOnDocumentCompletion(
     }
 
     // Step 8: Generate pickup authorization code
-    const pickupAuthCode = `AUTH-${auctionId.substring(0, 8).toUpperCase()}`;
+    const pickupAuthCode = generatePickupAuthorizationCode(auctionId);
 
     // Step 9: Send notifications to vendor with pickup details
     // Step 9: Send notifications to vendor with pickup details

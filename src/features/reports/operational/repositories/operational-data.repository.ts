@@ -24,6 +24,9 @@ export interface CaseProcessingData {
   marketValue: string;
   estimatedSalvageValue: string | null;
   reservePrice: string | null;
+  possessingVendorId: string | null;
+  possessingVendorName: string | null;
+  pickedUpAt: Date | null;
 }
 
 export interface AuctionPerformanceData {
@@ -47,6 +50,11 @@ export interface AuctionPerformanceData {
   averageBidIncrement: number;
   timeToFirstBidMinutes: number | null;
   lastMinuteBids: number;
+  pickupStatus: string;
+  pickedUpAt: Date | null;
+  pickupVendorId: string | null;
+  pickupVendorName: string | null;
+  paymentVerifiedAt: Date | null;
 }
 
 export interface VendorPerformanceData {
@@ -59,6 +67,10 @@ export interface VendorPerformanceData {
   averageBidAmount: number;
   totalSpent: number;
   participationRate: number;
+  completedPickups: number;
+  pendingPickups: number;
+  onTimePickupRate: number;
+  averagePickupHours: number;
 }
 
 export class OperationalDataRepository {
@@ -97,11 +109,17 @@ export class OperationalDataRepository {
         a.status as auction_status,
         a.end_time as auction_end_time,
         p.id as payment_id,
-        p.status as payment_status
+        p.status as payment_status,
+        a.pickup_confirmed_admin,
+        a.pickup_confirmed_admin_at,
+        a.current_bidder as possessing_vendor_id,
+        COALESCE(v.business_name, vu.full_name) as possessing_vendor_name
       FROM salvage_cases sc
       LEFT JOIN users u ON sc.created_by = u.id
       LEFT JOIN auctions a ON a.case_id = sc.id
       LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
+      LEFT JOIN vendors v ON v.id = a.current_bidder
+      LEFT JOIN users vu ON vu.id = v.user_id
       WHERE sc.created_at >= ${startDate}::timestamp
         AND sc.created_at <= ${endDate}::timestamp
         AND sc.status != 'draft'
@@ -161,6 +179,9 @@ export class OperationalDataRepository {
         marketValue: row.market_value || '0',
         estimatedSalvageValue: row.estimated_salvage_value,
         reservePrice: row.reserve_price,
+        possessingVendorId: row.pickup_confirmed_admin ? row.possessing_vendor_id : null,
+        possessingVendorName: row.pickup_confirmed_admin ? row.possessing_vendor_name : null,
+        pickedUpAt: row.pickup_confirmed_admin_at ? new Date(row.pickup_confirmed_admin_at) : null,
       };
     });
   }
@@ -194,10 +215,24 @@ export class OperationalDataRepository {
         a.current_bidder,
         p.amount as winning_bid,
         p.id as payment_id,
-        p.status as payment_status
+        p.status as payment_status,
+        p.verified_at as payment_verified_at,
+        a.pickup_confirmed_vendor,
+        a.pickup_confirmed_vendor_at,
+        a.pickup_confirmed_admin,
+        a.pickup_confirmed_admin_at,
+        a.current_bidder as pickup_vendor_id,
+        COALESCE(v.business_name, vu.full_name) as pickup_vendor_name,
+        rf.id as pickup_auth_document_id
       FROM auctions a
       LEFT JOIN salvage_cases sc ON a.case_id = sc.id
       LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
+      LEFT JOIN vendors v ON v.id = a.current_bidder
+      LEFT JOIN users vu ON vu.id = v.user_id
+      LEFT JOIN release_forms rf ON rf.auction_id = a.id
+        AND rf.vendor_id = a.current_bidder
+        AND rf.document_type = 'pickup_authorization'
+        AND rf.status != 'voided'
       WHERE a.end_time >= ${startDate}::timestamp
         AND a.end_time <= ${endDate}::timestamp
         AND a.status IN ('active', 'closed', 'awaiting_payment')
@@ -351,6 +386,14 @@ export class OperationalDataRepository {
         displayStatus = 'awaiting_payment';
       }
 
+      const pickupStatus = row.pickup_confirmed_admin
+        ? 'staff_confirmed'
+        : row.pickup_confirmed_vendor
+          ? 'vendor_confirmed'
+          : row.payment_id && row.pickup_auth_document_id
+            ? 'ready_for_pickup'
+            : 'not_ready';
+
       return {
         auctionId: row.auction_id,
         caseId: row.case_id,
@@ -372,6 +415,11 @@ export class OperationalDataRepository {
         averageBidIncrement: Math.round(data.avgIncrement),
         timeToFirstBidMinutes: data.timeToFirstBid,
         lastMinuteBids: data.lastMinuteBids,
+        pickupStatus,
+        pickedUpAt: row.pickup_confirmed_admin_at ? new Date(row.pickup_confirmed_admin_at) : null,
+        pickupVendorId: row.pickup_vendor_id,
+        pickupVendorName: row.pickup_vendor_name,
+        paymentVerifiedAt: row.payment_verified_at ? new Date(row.payment_verified_at) : null,
       };
     });
   }
@@ -394,6 +442,26 @@ export class OperationalDataRepository {
         LEFT JOIN payments p ON p.vendor_id = v.id AND p.status = 'verified'
         WHERE p.created_at >= ${startDate} AND p.created_at <= ${endDate}
         GROUP BY v.id
+      ),
+      vendor_pickups AS (
+        SELECT
+          v.id as vendor_id,
+          COUNT(DISTINCT a.id) FILTER (WHERE a.pickup_confirmed_admin = true) as completed_pickups,
+          COUNT(DISTINCT a.id) FILTER (WHERE p.status = 'verified' AND a.pickup_confirmed_admin = false) as pending_pickups,
+          AVG(EXTRACT(EPOCH FROM (a.pickup_confirmed_admin_at - p.verified_at)) / 3600)
+            FILTER (WHERE a.pickup_confirmed_admin = true AND p.verified_at IS NOT NULL) as avg_pickup_hours,
+          COUNT(DISTINCT a.id)
+            FILTER (
+              WHERE a.pickup_confirmed_admin = true
+              AND p.verified_at IS NOT NULL
+              AND a.pickup_confirmed_admin_at <= p.verified_at + INTERVAL '48 hours'
+            ) as on_time_pickups
+        FROM vendors v
+        LEFT JOIN auctions a ON a.current_bidder = v.id
+        LEFT JOIN payments p ON p.auction_id = a.id AND p.vendor_id = v.id AND p.status = 'verified'
+        WHERE COALESCE(p.verified_at, a.updated_at) >= ${startDate}
+          AND COALESCE(p.verified_at, a.updated_at) <= ${endDate}
+        GROUP BY v.id
       )
       SELECT 
         v.id as vendor_id,
@@ -407,6 +475,10 @@ export class OperationalDataRepository {
           ELSE 0
         END as win_rate,
         COALESCE(vp.total_spent, 0) as total_spent,
+        COALESCE(vpu.completed_pickups, 0) as completed_pickups,
+        COALESCE(vpu.pending_pickups, 0) as pending_pickups,
+        COALESCE(vpu.avg_pickup_hours, 0) as avg_pickup_hours,
+        COALESCE(vpu.on_time_pickups, 0) as on_time_pickups,
         CASE 
           WHEN COUNT(b.id) > 0 
           THEN AVG(CAST(b.amount AS NUMERIC))
@@ -420,7 +492,8 @@ export class OperationalDataRepository {
         AND b.created_at <= ${endDate}
       LEFT JOIN auctions a ON b.auction_id = a.id AND a.current_bidder = v.id
       LEFT JOIN vendor_payments vp ON v.id = vp.vendor_id
-      GROUP BY v.id, v.business_name, u.full_name, v.tier, vp.total_spent, vp.paid_auctions
+      LEFT JOIN vendor_pickups vpu ON v.id = vpu.vendor_id
+      GROUP BY v.id, v.business_name, u.full_name, v.tier, vp.total_spent, vp.paid_auctions, vpu.completed_pickups, vpu.pending_pickups, vpu.avg_pickup_hours, vpu.on_time_pickups
       ORDER BY total_spent DESC, auctions_won DESC, total_bids DESC
       LIMIT 50
     `);
@@ -434,18 +507,27 @@ export class OperationalDataRepository {
 
     const totalAuctionCount = parseInt((totalAuctionsResult[0] as any)?.count || '0');
 
-    return (results as any[]).map(row => ({
-      vendorId: row.vendor_id,
-      vendorName: row.vendor_name || 'Unknown',
-      tier: row.tier || 'bronze',
-      totalBids: parseInt(row.total_bids || '0'),
-      totalWins: parseInt(row.auctions_won || '0'),
-      winRate: Math.round(parseFloat(row.win_rate || '0') * 100) / 100,
-      averageBidAmount: Math.round(parseFloat(row.avg_bid || '0') * 100) / 100,
-      totalSpent: Math.round(parseFloat(row.total_spent || '0') * 100) / 100,
-      participationRate: totalAuctionCount > 0 
-        ? Math.round((parseInt(row.auctions_participated || '0') / totalAuctionCount * 100) * 100) / 100
-        : 0,
-    }));
+    return (results as any[]).map(row => {
+      const completedPickups = parseInt(row.completed_pickups || '0');
+      const onTimePickups = parseInt(row.on_time_pickups || '0');
+
+      return {
+        vendorId: row.vendor_id,
+        vendorName: row.vendor_name || 'Unknown',
+        tier: row.tier || 'bronze',
+        totalBids: parseInt(row.total_bids || '0'),
+        totalWins: parseInt(row.auctions_won || '0'),
+        winRate: Math.round(parseFloat(row.win_rate || '0') * 100) / 100,
+        averageBidAmount: Math.round(parseFloat(row.avg_bid || '0') * 100) / 100,
+        totalSpent: Math.round(parseFloat(row.total_spent || '0') * 100) / 100,
+        participationRate: totalAuctionCount > 0 
+          ? Math.round((parseInt(row.auctions_participated || '0') / totalAuctionCount * 100) * 100) / 100
+          : 0,
+        completedPickups,
+        pendingPickups: parseInt(row.pending_pickups || '0'),
+        onTimePickupRate: completedPickups > 0 ? Math.round((onTimePickups / completedPickups) * 10000) / 100 : 0,
+        averagePickupHours: Math.round(parseFloat(row.avg_pickup_hours || '0') * 100) / 100,
+      };
+    });
   }
 }

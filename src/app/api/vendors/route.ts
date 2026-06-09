@@ -11,8 +11,6 @@ import { hasProviderVerificationStorage, PROVIDER_VERIFICATION_MIGRATION_MISSING
 const DOJAH_TIER2_REVIEW_STATUSES = [
   'pending',
   'review_required',
-  'passed',
-  'failed',
   'provider_unavailable',
   'completed',
   'submitted',
@@ -27,6 +25,9 @@ type ProviderEvidenceRow = {
   providerReference: string | null;
   verificationType: string;
   status: string;
+  finalDecision: string | null;
+  decisionReason: string | null;
+  reviewedAt: Date | null;
   riskLevel: string;
   checksCompleted: string[];
   pendingChecks: string[];
@@ -145,10 +146,28 @@ export async function GET(request: NextRequest) {
       
       const dbTier = tierMap[tierFilter] || tierFilter;
       
-      // For tier2_full filter, include legacy submissions and Dojah provider pending review
+      // For tier2_full filter, include approved, pending, rejected, and provider-backed Tier 2 history.
       if (dbTier === 'tier2_full') {
         const tier2Condition = or(
             eq(vendors.tier, 'tier2_full'),
+            isNotNull(vendors.tier2ApprovedAt),
+            isNotNull(vendors.tier2SubmittedAt),
+            isNotNull(vendors.tier2RejectionReason),
+            providerVerificationTableExists
+              ? inArray(
+                  vendors.id,
+                  db
+                    .select({ vendorId: providerVerificationRecords.vendorId })
+                    .from(providerVerificationRecords)
+                    .where(
+                      and(
+                        eq(providerVerificationRecords.provider, 'dojah'),
+                        eq(providerVerificationRecords.verificationType, 'tier2'),
+                        isNotNull(providerVerificationRecords.vendorId)
+                      )
+                    )
+                )
+              : undefined,
             and(
               eq(vendors.tier, 'tier1_bvn'),
               sql`${vendors.tier2ApprovedAt} IS NULL`,
@@ -264,6 +283,9 @@ export async function GET(request: NextRequest) {
             providerReference: providerVerificationRecords.providerReference,
             verificationType: providerVerificationRecords.verificationType,
             status: providerVerificationRecords.status,
+            finalDecision: providerVerificationRecords.finalDecision,
+            decisionReason: providerVerificationRecords.decisionReason,
+            reviewedAt: providerVerificationRecords.reviewedAt,
             riskLevel: providerVerificationRecords.riskLevel,
             checksCompleted: providerVerificationRecords.checksCompleted,
             pendingChecks: providerVerificationRecords.pendingChecks,
@@ -288,6 +310,7 @@ export async function GET(request: NextRequest) {
             eq(providerVerificationRecords.provider, 'dojah'),
             eq(providerVerificationRecords.verificationType, 'tier2'),
             inArray(providerVerificationRecords.status, [...DOJAH_TIER2_REVIEW_STATUSES]),
+            isNull(providerVerificationRecords.finalDecision),
             isNotNull(providerVerificationRecords.vendorId)
           )
         );
@@ -299,6 +322,32 @@ export async function GET(request: NextRequest) {
     // For Tier 2 pending applications, return verification statuses from database
     const vendorsWithVerification = data.map((vendor) => {
       const latestProviderEvidence = providerRows.find((record) => record.vendorId === vendor.id);
+      const providerDecision = resolveProviderDecision(latestProviderEvidence);
+      const evidenceCompleted = latestProviderEvidence?.checksCompleted ?? [];
+      const evidenceFailed = latestProviderEvidence?.failedChecks ?? [];
+      const evidencePending = latestProviderEvidence?.pendingChecks ?? [];
+      const latestNormalized = (latestProviderEvidence?.normalizedResult as Record<string, unknown> | null) ?? null;
+      const evidenceSummary = (latestNormalized?.dojahEvidenceSummary as Record<string, unknown> | null) ?? null;
+      const ninSummary = (evidenceSummary?.nin as Record<string, unknown> | null) ?? null;
+      const cacSummary = (evidenceSummary?.cac as Record<string, unknown> | null) ?? null;
+      const bvnVerifiedFromEvidence =
+        evidenceCompleted.includes('tier1_bvn_verified') ||
+        (
+          evidenceCompleted.includes('tier2_bvn_validation') &&
+          !evidenceFailed.includes('tier2_bvn_validation') &&
+          !evidencePending.includes('tier2_bvn_validation')
+        );
+      const ninVerifiedFromEvidence =
+        evidenceCompleted.includes('nin_lookup') &&
+        !evidenceFailed.includes('nin_lookup') &&
+        !evidencePending.includes('nin_lookup') &&
+        ninSummary?.nameMatched !== false &&
+        ninSummary?.dobMatched !== false;
+      const cacVerifiedFromEvidence =
+        evidenceCompleted.includes('business_registration_lookup') &&
+        !evidenceFailed.includes('business_registration_lookup') &&
+        !evidencePending.includes('business_registration_lookup') &&
+        cacSummary?.businessNameMatched !== false;
       // Determine KYC status based on the selected tier workflow.
       let kycStatus: 'pending' | 'approved' | 'rejected' = 'pending';
 
@@ -310,9 +359,9 @@ export async function GET(request: NextRequest) {
         } else {
           kycStatus = 'pending';
         }
-      } else if (vendor.tier2ApprovedAt || vendor.tier === 'tier2_full') {
+      } else if (vendor.tier2ApprovedAt || vendor.tier === 'tier2_full' || providerDecision?.decision === 'approve') {
         kycStatus = 'approved';
-      } else if (vendor.tier2RejectionReason) {
+      } else if (vendor.tier2RejectionReason || providerDecision?.decision === 'reject') {
         kycStatus = 'rejected';
       } else if (
         vendor.tier2SubmittedAt ||
@@ -329,14 +378,13 @@ export async function GET(request: NextRequest) {
         ...vendor,
         // KYC status and rejection reason
         kycStatus,
-        kycRejectionReason: vendor.tier2RejectionReason || undefined,
+        kycRejectionReason: vendor.tier2RejectionReason || (providerDecision?.decision === 'reject' ? providerDecision.reason : undefined) || undefined,
         // BVN is verified if bvnVerifiedAt is set
-        bvnVerified: !!vendor.bvnVerifiedAt,
+        bvnVerified: !!vendor.bvnVerifiedAt || bvnVerifiedFromEvidence,
         // NIN and bank account verification from database
-        ninVerified: !!vendor.ninVerified,
+        ninVerified: !!vendor.ninVerified || ninVerifiedFromEvidence,
         bankAccountVerified: !!vendor.bankAccountVerified,
-        // CAC verification is manual, so it's pending for review
-        cacVerified: false,
+        cacVerified: cacVerifiedFromEvidence,
         // Document URLs from database
         cacCertificateUrl: vendor.cacCertificateUrl || '',
         bankStatementUrl: vendor.bankStatementUrl || '',
@@ -356,6 +404,9 @@ export async function GET(request: NextRequest) {
               providerReference: latestProviderEvidence.providerReference,
               verificationType: latestProviderEvidence.verificationType,
               status: latestProviderEvidence.status,
+              finalDecision: latestProviderEvidence.finalDecision,
+              decisionReason: latestProviderEvidence.decisionReason,
+              reviewedAt: latestProviderEvidence.reviewedAt,
               riskLevel: latestProviderEvidence.riskLevel,
               checksCompleted: latestProviderEvidence.checksCompleted,
               pendingChecks: latestProviderEvidence.pendingChecks,
@@ -403,4 +454,39 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function recordFrom(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const text = value.trim();
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function resolveProviderDecision(evidence: {
+  finalDecision?: string | null;
+  decisionReason?: string | null;
+  normalizedResult?: unknown;
+} | null | undefined): { decision: 'approve' | 'reject'; reason?: string } | null {
+  const normalized = recordFrom(evidence?.normalizedResult);
+  const managerDecision = recordFrom(normalized?.managerDecision);
+  const decision = firstString(evidence?.finalDecision, managerDecision?.decision)?.toLowerCase();
+
+  if (decision === 'approve' || decision === 'approved') {
+    return { decision: 'approve', reason: firstString(evidence?.decisionReason, managerDecision?.reason) };
+  }
+
+  if (decision === 'reject' || decision === 'rejected') {
+    return { decision: 'reject', reason: firstString(evidence?.decisionReason, managerDecision?.reason) };
+  }
+
+  return null;
 }

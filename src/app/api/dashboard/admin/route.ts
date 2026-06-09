@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { users, auditLogs, auctions } from '@/lib/db/schema';
+import { users, auditLogs, auctions, payments, releaseForms } from '@/lib/db/schema';
 import { fraudAlerts } from '@/lib/db/schema/intelligence';
 import { eq, and, gte, lt, sql, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
@@ -151,14 +151,25 @@ async function calculateAdminStats(): Promise<DashboardStats> {
 
   // Pending pickup confirmations count
   const pendingPickupConfirmationsResult = await db
-    .select({ count: sql<number>`count(*)::int` })
+    .select({ count: sql<number>`count(DISTINCT ${auctions.id})::int` })
     .from(auctions)
-    .where(
+    .innerJoin(
+      payments,
       and(
-        eq(auctions.pickupConfirmedVendor, true),
-        eq(auctions.pickupConfirmedAdmin, false)
+        eq(payments.auctionId, auctions.id),
+        eq(payments.vendorId, auctions.currentBidder),
+        eq(payments.status, 'verified')
       )
-    );
+    )
+    .innerJoin(
+      releaseForms,
+      and(
+        eq(releaseForms.auctionId, auctions.id),
+        eq(releaseForms.vendorId, auctions.currentBidder),
+        eq(releaseForms.documentType, 'pickup_authorization')
+      )
+    )
+    .where(eq(auctions.pickupConfirmedAdmin, false));
 
   const pendingPickupConfirmations = pendingPickupConfirmationsResult[0]?.count || 0;
 

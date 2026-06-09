@@ -28,6 +28,7 @@ import {
   Brain,
   Database,
   Building2,
+  PackageCheck,
 } from 'lucide-react';
 import NotificationBell from '@/components/notifications/notification-bell';
 import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
@@ -121,6 +122,12 @@ const navigationItems: NavItem[] = [
     label: 'Vendors',
     href: '/manager/vendors',
     icon: Users,
+    roles: ['salvage_manager'],
+  },
+  {
+    label: 'Pickups',
+    href: '/manager/pickups',
+    icon: PackageCheck,
     roles: ['salvage_manager'],
   },
 
@@ -229,6 +236,12 @@ const navigationItems: NavItem[] = [
     label: 'Fraud Alerts',
     href: '/admin/fraud',
     icon: AlertTriangle,
+    roles: ['system_admin'],
+  },
+  {
+    label: 'Pickups',
+    href: '/admin/pickups',
+    icon: PackageCheck,
     roles: ['system_admin'],
   },
   {

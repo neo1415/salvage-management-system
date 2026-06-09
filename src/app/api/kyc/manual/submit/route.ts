@@ -12,6 +12,8 @@ import { getDojahService } from '@/features/kyc/services/dojah.service';
 import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
 import { buildDojahReference } from '@/features/kyc/utils/dojah-reference';
 import type { NormalizedVerificationResult } from '@/features/kyc/types/provider-verification.types';
+import { getIpAddress } from '@/lib/utils/audit-logger';
+import { extractTextFromDocument } from '@/lib/integrations/google-document-ai';
 
 /**
  * POST /api/kyc/manual/submit
@@ -101,6 +103,7 @@ export async function POST(request: NextRequest) {
     const bvn = (formData.get('bvn') as string | null)?.trim() || '';
     const businessDocumentType = (formData.get('businessDocumentType') as string | null) || 'cac_certificate';
     const governmentIdType = (formData.get('governmentIdType') as string | null) || 'nin_slip';
+    const clientIpAddress = (formData.get('clientIpAddress') as string | null)?.trim() || '';
     const needsBvn = !vendor.bvnVerifiedAt;
 
     // Validate required fields
@@ -255,9 +258,26 @@ export async function POST(request: NextRequest) {
       bvnSource: vendor.bvnVerifiedAt ? 'tier1_verified' : 'tier2_submitted',
     };
     const providerReference = buildDojahReference(vendor.id);
+    const documentOcr = await collectDocumentOcrEvidence({
+      businessDocument,
+      governmentIdDocument,
+      addressProof,
+      businessName,
+      businessType,
+      cacNumber,
+      fullName: vendor.fullName ?? session.user.name ?? businessName,
+      dateOfBirth: vendor.dateOfBirth ? new Date(vendor.dateOfBirth).toISOString().slice(0, 10) : undefined,
+      nin,
+      address,
+      city,
+      state,
+    });
     const providerEvidence = await collectHybridProviderEvidence({
       providerReference,
       fullName: vendor.fullName ?? session.user.name ?? businessName,
+      userId,
+      email: vendor.email ?? session.user.email ?? undefined,
+      phone: vendor.phone ?? session.user.phone ?? undefined,
       dateOfBirth: vendor.dateOfBirth ? new Date(vendor.dateOfBirth).toISOString().slice(0, 10) : undefined,
       nin,
       bvn,
@@ -272,7 +292,11 @@ export async function POST(request: NextRequest) {
         photoId: results.photo_id?.path,
         businessDocument: results.cac_certificate?.path,
       },
+      documentOcr,
       bvnAlreadyVerified: Boolean(vendor.bvnVerifiedAt),
+      ipAddress: clientIpAddress || getIpAddress(request.headers),
+      serverIpAddress: getIpAddress(request.headers),
+      userAgent: request.headers.get('user-agent') ?? undefined,
     });
 
     // Update vendor record in a transaction
@@ -317,6 +341,8 @@ export async function POST(request: NextRequest) {
       userId,
       vendorId: vendor.id,
       actorId: userId,
+      ipAddress: getIpAddress(request.headers),
+      userAgent: request.headers.get('user-agent') ?? undefined,
       result: providerEvidence,
       rawPayload: {
         source: 'nem_hybrid_tier2_submit',
@@ -375,6 +401,9 @@ export async function POST(request: NextRequest) {
 
 type HybridEvidenceInput = {
   providerReference: string;
+  userId: string;
+  email?: string;
+  phone?: string;
   fullName: string;
   dateOfBirth?: string;
   nin: string;
@@ -386,7 +415,24 @@ type HybridEvidenceInput = {
   governmentIdType: string;
   addressData: Record<string, unknown>;
   documents: Record<string, string | undefined>;
+  documentOcr?: DocumentOcrEvidence;
   bvnAlreadyVerified: boolean;
+  ipAddress?: string;
+  serverIpAddress?: string;
+  userAgent?: string;
+};
+
+type DocumentOcrCheck = {
+  status: 'matched' | 'needs_review' | 'unavailable' | 'not_provided';
+  confidence?: number;
+  signals?: Record<string, boolean | number | string | null>;
+  message?: string;
+};
+
+type DocumentOcrEvidence = {
+  governmentId: DocumentOcrCheck;
+  businessDocument: DocumentOcrCheck;
+  addressProof: DocumentOcrCheck;
 };
 
 function riskLevelFromFailures(failedChecks: string[]): NormalizedVerificationResult['riskLevel'] {
@@ -406,6 +452,301 @@ function splitName(fullName: string): { firstName: string; middleName?: string; 
   };
 }
 
+function deviceTypeFromUserAgent(userAgent?: string): string {
+  const value = String(userAgent ?? '').toLowerCase();
+  if (!value) return 'unknown';
+  if (/ipad|tablet/.test(value)) return 'tablet';
+  if (/mobi|android|iphone|phone/.test(value)) return 'mobile';
+  return 'desktop';
+}
+
+function summarizeUserAgent(userAgent?: string): string | null {
+  if (!userAgent) return null;
+  return userAgent.length > 220 ? `${userAgent.slice(0, 217)}...` : userAgent;
+}
+
+function parseBrowserInfo(userAgent?: string): {
+  os: string;
+  browser: string;
+  browserVersion: string;
+  model: string;
+  platform: string;
+} {
+  const ua = String(userAgent ?? '');
+  const os = /windows/i.test(ua)
+    ? 'Windows'
+    : /android/i.test(ua)
+      ? 'Android'
+      : /iphone|ipad|ios/i.test(ua)
+        ? 'iOS'
+        : /mac os|macintosh/i.test(ua)
+          ? 'macOS'
+          : /linux/i.test(ua)
+            ? 'Linux'
+            : 'Unknown';
+  const browserMatch =
+    ua.match(/Edg\/([\d.]+)/i) ??
+    ua.match(/Chrome\/([\d.]+)/i) ??
+    ua.match(/Firefox\/([\d.]+)/i) ??
+    ua.match(/Version\/([\d.]+).*Safari/i);
+  const browser = /Edg\//i.test(ua)
+    ? 'Edge'
+    : /Chrome\//i.test(ua)
+      ? 'Chrome'
+      : /Firefox\//i.test(ua)
+        ? 'Firefox'
+        : /Safari\//i.test(ua)
+          ? 'Safari'
+          : 'Unknown';
+
+  return {
+    os,
+    browser,
+    browserVersion: browserMatch?.[1] ?? 'Unknown',
+    model: /x64|win64|amd64/i.test(ua) ? 'x64' : /arm|aarch/i.test(ua) ? 'ARM' : 'Unknown',
+    platform: 'Web',
+  };
+}
+
+function recordFromPath(value: unknown, path: string[]): Record<string, unknown> | null {
+  let current: unknown = value;
+  for (const key of path) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current && typeof current === 'object' && !Array.isArray(current)
+    ? current as Record<string, unknown>
+    : null;
+}
+
+function firstRecordValue(
+  record: Record<string, unknown> | null | undefined,
+  keys: string[]
+): string | number | boolean | null {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'boolean') return value;
+  }
+  return null;
+}
+
+function normalizeForOcrMatch(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b(plc|ltd|limited|incorporated|inc|company|co|nigeria|ng|the|road|street|avenue)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function tokenCoverage(expected: string, actualText: string): number {
+  const expectedTokens = normalizeForOcrMatch(expected)
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
+  if (!expectedTokens.length) return 0;
+  const actualTokens = new Set(
+    normalizeForOcrMatch(actualText)
+      .split(/\s+/)
+      .filter((token) => token.length > 2)
+  );
+  const overlap = expectedTokens.filter((token) => actualTokens.has(token)).length;
+  return overlap / expectedTokens.length;
+}
+
+function businessTypeAliases(value: string): string[] {
+  const normalized = normalizeForOcrMatch(value);
+  if (!normalized || normalized.includes('individual')) return [];
+  if (normalized.includes('business name')) return ['business name', 'enterprise', 'ventures'];
+  if (normalized.includes('trust')) return ['incorporated trustees', 'trustees', 'trust'];
+  if (normalized.includes('liability partnership') || normalized.includes('llp')) {
+    return ['limited liability partnership', 'llp'];
+  }
+  if (normalized.includes('limited partnership')) return ['limited partnership', 'lp'];
+  if (normalized.includes('public') || /\bplc\b/i.test(value)) {
+    return ['public limited company', 'plc', 'company limited by shares', 'limited by shares'];
+  }
+  if (normalized.includes('guarantee')) return ['company limited by guarantee', 'limited by guarantee'];
+  if (normalized.includes('unlimited')) return ['unlimited company'];
+  return ['private limited company', 'limited company', 'incorporated company', 'company limited by shares', 'limited by shares'];
+}
+
+function businessTypeCoverageScore(expectedType: string, actualText: string): number {
+  const actual = normalizeForOcrMatch(actualText);
+  const aliases = businessTypeAliases(expectedType);
+  if (!aliases.length || !actual) return 0;
+  if (aliases.some((alias) => actual.includes(normalizeForOcrMatch(alias)))) return 1;
+  return Math.max(...aliases.map((alias) => tokenCoverage(alias, actualText)), 0);
+}
+
+function normalizeDateCandidate(value: string): string | null {
+  const trimmed = value.trim();
+  const iso = trimmed.match(/\b(19|20)\d{2}[-/.](0?[1-9]|1[0-2])[-/.](0?[1-9]|[12]\d|3[01])\b/);
+  if (iso) {
+    const [year, month, day] = iso[0].split(/[-/.]/);
+    return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  const local = trimmed.match(/\b(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])[-/.]((19|20)\d{2})\b/);
+  if (local) {
+    const [, day, month, year] = local;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  const named = trimmed.match(/\b(0?[1-9]|[12]\d|3[01])\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+((19|20)\d{2})\b/i);
+  if (named) {
+    const months: Record<string, string> = {
+      jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+      jul: '07', aug: '08', sep: '09', sept: '09', oct: '10', nov: '11', dec: '12',
+    };
+    const [, day, monthName, year] = named;
+    return `${year}-${months[monthName.slice(0, 3).toLowerCase()] ?? '01'}-${day.padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
+function extractDateCandidates(text: string): string[] {
+  const patterns = [
+    /\b(?:19|20)\d{2}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])\b/g,
+    /\b(?:0?[1-9]|[12]\d|3[01])[-/.](?:0?[1-9]|1[0-2])[-/.](?:(?:19|20)\d{2})\b/g,
+    /\b(?:0?[1-9]|[12]\d|3[01])\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(?:(?:19|20)\d{2})\b/gi,
+  ];
+  const dates = new Set<string>();
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const normalized = normalizeDateCandidate(match[0]);
+      if (normalized) dates.add(normalized);
+    }
+  }
+  return [...dates];
+}
+
+function extractGenderSignal(text: string): string | null {
+  const normalized = ` ${normalizeForOcrMatch(text)} `;
+  if (/\b(female|f)\b/.test(normalized)) return 'female';
+  if (/\b(male|m)\b/.test(normalized)) return 'male';
+  return null;
+}
+
+async function ocrFile(file: File | null): Promise<{ text: string; confidence: number } | null> {
+  if (!file) return null;
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return extractTextFromDocument(buffer, file.type);
+}
+
+async function collectDocumentOcrEvidence(input: {
+  businessDocument: File | null;
+  governmentIdDocument: File;
+  addressProof: File;
+  businessName: string;
+  businessType: string;
+  cacNumber?: string;
+  fullName: string;
+  dateOfBirth?: string;
+  nin: string;
+  address: string;
+  city: string;
+  state: string;
+}): Promise<DocumentOcrEvidence> {
+  const unavailable = (message: string): DocumentOcrCheck => ({
+    status: 'unavailable',
+    message,
+  });
+
+  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()) {
+    const message = 'Google OCR credentials are not configured';
+    return {
+      governmentId: unavailable(message),
+      businessDocument: input.businessDocument ? unavailable(message) : { status: 'not_provided' },
+      addressProof: unavailable(message),
+    };
+  }
+
+  try {
+    const [governmentId, businessDocument, addressProof] = await Promise.allSettled([
+      ocrFile(input.governmentIdDocument),
+      ocrFile(input.businessDocument),
+      ocrFile(input.addressProof),
+    ]);
+
+    const governmentText = governmentId.status === 'fulfilled' ? governmentId.value?.text ?? '' : '';
+    const governmentNinMatched = governmentText.includes(input.nin);
+    const governmentNameCoverage = tokenCoverage(input.fullName, governmentText);
+    const governmentDateCandidates = extractDateCandidates(governmentText);
+    const governmentDobMatched = input.dateOfBirth
+      ? governmentDateCandidates.length > 0
+        ? governmentDateCandidates.includes(input.dateOfBirth)
+        : null
+      : null;
+    const governmentGenderSeen = extractGenderSignal(governmentText);
+
+    const businessText = businessDocument.status === 'fulfilled' ? businessDocument.value?.text ?? '' : '';
+    const normalizedRc = String(input.cacNumber ?? '').replace(/^RC[-\s]*/i, '').replace(/\D/g, '');
+    const businessNumberMatched = normalizedRc ? businessText.replace(/\D/g, '').includes(normalizedRc) : false;
+    const businessNameCoverage = tokenCoverage(input.businessName, businessText);
+    const businessTypeCoverage = businessTypeCoverageScore(input.businessType, businessText);
+    const businessDateCandidates = extractDateCandidates(businessText);
+    const businessTypeCheckPassed = businessTypeAliases(input.businessType).length === 0 || businessTypeCoverage >= 0.45;
+
+    const addressText = addressProof.status === 'fulfilled' ? addressProof.value?.text ?? '' : '';
+    const addressCoverage = Math.max(
+      tokenCoverage(input.address, addressText),
+      tokenCoverage(`${input.city} ${input.state}`, addressText)
+    );
+
+    return {
+      governmentId: governmentId.status === 'rejected'
+        ? unavailable(governmentId.reason instanceof Error ? governmentId.reason.message : 'Government ID OCR unavailable')
+        : {
+            status: (governmentNinMatched || governmentNameCoverage >= 0.6) && governmentDobMatched !== false
+              ? 'matched'
+              : 'needs_review',
+            confidence: governmentId.value?.confidence ?? 0,
+            signals: {
+              ninMatched: governmentNinMatched,
+              nameTokenCoverage: Number(governmentNameCoverage.toFixed(2)),
+              dateOfBirthMatched: governmentDobMatched,
+              dateOfBirthCandidate: governmentDateCandidates[0] ?? null,
+              genderSeen: governmentGenderSeen,
+            },
+          },
+      businessDocument: !input.businessDocument
+        ? { status: 'not_provided', message: 'Business document not required for this business type.' }
+        : businessDocument.status === 'rejected'
+          ? unavailable(businessDocument.reason instanceof Error ? businessDocument.reason.message : 'Business document OCR unavailable')
+          : {
+              status: (businessNumberMatched || businessNameCoverage >= 0.6) && businessTypeCheckPassed ? 'matched' : 'needs_review',
+              confidence: businessDocument.value?.confidence ?? 0,
+              signals: {
+                registrationNumberMatched: businessNumberMatched,
+                businessNameTokenCoverage: Number(businessNameCoverage.toFixed(2)),
+                businessTypeCoverage: Number(businessTypeCoverage.toFixed(2)),
+                businessTypeMatched: businessTypeCheckPassed,
+                registrationDateCandidate: businessDateCandidates[0] ?? null,
+              },
+            },
+      addressProof: addressProof.status === 'rejected'
+        ? unavailable(addressProof.reason instanceof Error ? addressProof.reason.message : 'Address proof OCR unavailable')
+        : {
+            status: addressCoverage >= 0.45 ? 'matched' : 'needs_review',
+            confidence: addressProof.value?.confidence ?? 0,
+            signals: {
+              addressTokenCoverage: Number(addressCoverage.toFixed(2)),
+            },
+          },
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Document OCR unavailable';
+    return {
+      governmentId: unavailable(message),
+      businessDocument: input.businessDocument ? unavailable(message) : { status: 'not_provided' },
+      addressProof: unavailable(message),
+    };
+  }
+}
+
 async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promise<NormalizedVerificationResult> {
   const checksCompleted = new Set<string>([
     'nem_business_profile_submitted',
@@ -423,8 +764,113 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
   else if (input.bvn) pendingChecks.add('tier2_bvn_validation');
   else pendingChecks.add('tier1_bvn_verification');
 
+  if (input.documentOcr) {
+    dojahEvidenceSummary.documents = input.documentOcr;
+    const ocrChecks = Object.values(input.documentOcr);
+    if (ocrChecks.some((check) => check.status === 'matched' || check.status === 'needs_review')) {
+      checksCompleted.add('document_ocr');
+    }
+    if (ocrChecks.some((check) => check.status === 'needs_review')) {
+      reasonCodes.add('document_mismatch');
+      failedChecks.add('document_ocr');
+    }
+    if (ocrChecks.some((check) => check.status === 'unavailable')) {
+      pendingChecks.add('document_ocr');
+    }
+  }
+
   try {
     const dojah = getDojahService();
+    const deviceType = deviceTypeFromUserAgent(input.userAgent);
+    const browserInfo = parseBrowserInfo(input.userAgent);
+
+    if (input.ipAddress || input.userAgent) {
+      checksCompleted.add('ip_device_capture');
+      dojahEvidenceSummary.ipDevice = {
+        status: 'captured_locally',
+        ipAddress: input.ipAddress ?? null,
+        serverIpAddress: input.serverIpAddress ?? null,
+        deviceType,
+        os: browserInfo.os,
+        browser: browserInfo.browser,
+        browserVersion: browserInfo.browserVersion,
+        model: browserInfo.model,
+        platform: browserInfo.platform,
+        userAgent: summarizeUserAgent(input.userAgent),
+        easyDetectStatus: 'local_capture_only',
+        easyDetectMessage: 'Local request IP and browser device signals were captured for review.',
+      };
+
+      if (input.ipAddress && input.ipAddress !== '::1' && input.ipAddress !== '127.0.0.1') {
+        try {
+          const ipScreening = await dojah.screenIP(input.ipAddress);
+          const report = recordFromPath(ipScreening, ['entity', 'report']) ?? recordFromPath(ipScreening, ['report']);
+          const information = recordFromPath(report, ['information']);
+          const anonymity = recordFromPath(report, ['anonymity']);
+          const riskScore = recordFromPath(report, ['risk_score']);
+          const blacklists = recordFromPath(report, ['blacklists']);
+
+          checksCompleted.add('ip_screening');
+          dojahEvidenceSummary.ipDevice = {
+            ...(dojahEvidenceSummary.ipDevice as Record<string, unknown>),
+            ipScreeningStatus: 'completed',
+            ipScreeningProvider: 'dojah',
+            screenedIpAddress: firstRecordValue(report, ['ip']) ?? input.ipAddress,
+            country: firstRecordValue(information, ['country_name', 'countryName']),
+            region: firstRecordValue(information, ['region_name', 'regionName']),
+            city: firstRecordValue(information, ['city_name', 'cityName']),
+            latitude: firstRecordValue(information, ['latitude']),
+            longitude: firstRecordValue(information, ['longitude']),
+            isp: firstRecordValue(information, ['isp']),
+            asn: firstRecordValue(information, ['asn']),
+            vpn: firstRecordValue(anonymity, ['is_vpn', 'isVpn']),
+            proxy: firstRecordValue(anonymity, ['is_proxy', 'isProxy']),
+            hosting: firstRecordValue(anonymity, ['is_hosting', 'isHosting']),
+            tor: firstRecordValue(anonymity, ['is_tor', 'isTor']),
+            riskScore: firstRecordValue(riskScore, ['result']),
+            blacklistDetections: firstRecordValue(blacklists, ['detections']),
+            blacklistDetectionRate: firstRecordValue(blacklists, ['detection_rate', 'detectionRate']),
+          };
+        } catch (error) {
+          pendingChecks.add('ip_screening');
+          dojahEvidenceSummary.ipDevice = {
+            ...(dojahEvidenceSummary.ipDevice as Record<string, unknown>),
+            ipScreeningStatus: 'unavailable',
+            ipScreeningMessage: error instanceof Error ? error.message : 'Dojah IP screening unavailable',
+          };
+        }
+      }
+
+      if (process.env.DOJAH_EASYDETECT_INGEST_KEY?.trim()) {
+        try {
+          const easyDetect = await dojah.sendEasyDetectOnboardingEvent({
+            userId: input.userId,
+            email: input.email,
+            name: input.fullName,
+            mobile: input.phone,
+            registrationTime: new Date().toISOString(),
+            tier: 'tier2_manual',
+            ipAddress: input.ipAddress,
+            deviceType,
+          });
+
+          if (easyDetect) {
+            checksCompleted.add('ip_device_screening');
+            dojahEvidenceSummary.ipDevice = {
+              ...(dojahEvidenceSummary.ipDevice as Record<string, unknown>),
+              easyDetectStatus: 'submitted',
+              easyDetectResponseReceived: true,
+            };
+          }
+        } catch (error) {
+          dojahEvidenceSummary.ipDevice = {
+            ...(dojahEvidenceSummary.ipDevice as Record<string, unknown>),
+            easyDetectStatus: 'unavailable',
+            easyDetectMessage: error instanceof Error ? error.message : 'IP/device screening unavailable',
+          };
+        }
+      }
+    }
 
     if (!input.bvnAlreadyVerified && input.bvn) {
       try {
@@ -492,6 +938,31 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
         dobMatched,
         lastFour: input.nin.slice(-4),
       };
+      const documentOcr = input.documentOcr;
+      const governmentOcrSignals = documentOcr?.governmentId.signals;
+      if (governmentOcrSignals && providerBirthDate) {
+        const ocrBirthDate = typeof governmentOcrSignals.dateOfBirthCandidate === 'string'
+          ? governmentOcrSignals.dateOfBirthCandidate
+          : null;
+        governmentOcrSignals.providerDateOfBirthMatched = ocrBirthDate ? ocrBirthDate === providerBirthDate : null;
+        if (ocrBirthDate && ocrBirthDate !== providerBirthDate) {
+          documentOcr.governmentId.status = 'needs_review';
+          failedChecks.add('document_ocr');
+          reasonCodes.add('document_mismatch');
+        }
+      }
+      if (governmentOcrSignals && providerGender) {
+        const ocrGender = typeof governmentOcrSignals.genderSeen === 'string'
+          ? governmentOcrSignals.genderSeen.toLowerCase()
+          : null;
+        const normalizedProviderGender = providerGender.toLowerCase().startsWith('f') ? 'female' : providerGender.toLowerCase().startsWith('m') ? 'male' : null;
+        governmentOcrSignals.providerGenderMatched = ocrGender && normalizedProviderGender ? ocrGender === normalizedProviderGender : null;
+        if (ocrGender && normalizedProviderGender && ocrGender !== normalizedProviderGender) {
+          documentOcr.governmentId.status = 'needs_review';
+          failedChecks.add('document_ocr');
+          reasonCodes.add('document_mismatch');
+        }
+      }
       if (ninResult.status === false || (providerName && (!nameMatched || !dobMatched))) {
         failedChecks.add('nin_lookup');
         reasonCodes.add('dojah_nin_lookup_failed');
@@ -508,7 +979,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
 
     if (input.cacNumber?.trim()) {
       try {
-        const cacResult = await dojah.verifyCAC(input.cacNumber.trim(), input.businessName);
+        const cacResult = await dojah.verifyCAC(input.cacNumber.trim(), input.businessName, input.businessType);
         checksCompleted.add('business_registration_lookup');
         const providerError = providerErrorMessage(cacResult);
         const providerBusinessName = extractBusinessNameFromCACResult(cacResult);
@@ -524,6 +995,10 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
         const providerBusinessType = extractFirstStringFromProviderResult(cacResult, [
           'business_type',
           'businessType',
+          'type_of_company',
+          'typeOfCompany',
+          'company_type',
+          'companyType',
           'entity_type',
           'entityType',
           'type',
@@ -537,8 +1012,27 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
           'date',
         ]);
         const nameMatch = businessNameLooksClose(input.businessName, providerBusinessName);
+        const typeMatchScore = businessTypeCoverageScore(input.businessType, providerBusinessType ?? '');
+        const documentOcr = input.documentOcr;
+        const businessOcrSignals = documentOcr?.businessDocument.signals;
+        if (businessOcrSignals && providerRegistrationDate) {
+          const providerDate = normalizeDateCandidate(providerRegistrationDate) ?? providerRegistrationDate.slice(0, 10);
+          const ocrRegistrationDate = typeof businessOcrSignals.registrationDateCandidate === 'string'
+            ? businessOcrSignals.registrationDateCandidate
+            : null;
+          businessOcrSignals.providerRegistrationDateMatched = ocrRegistrationDate ? ocrRegistrationDate === providerDate : null;
+          if (ocrRegistrationDate && ocrRegistrationDate !== providerDate) {
+            documentOcr.businessDocument.status = 'needs_review';
+            failedChecks.add('document_ocr');
+            reasonCodes.add('document_mismatch');
+          }
+        }
+        if (businessOcrSignals && providerBusinessType) {
+          businessOcrSignals.providerBusinessTypeMatched = typeMatchScore >= 0.5 || Number(businessOcrSignals.businessTypeCoverage ?? 0) >= 0.45;
+          businessOcrSignals.providerBusinessTypeMatchScore = Number(typeMatchScore.toFixed(2));
+        }
         dojahEvidenceSummary.cac = {
-          status: cacResult.status ?? null,
+          status: providerBusinessName || providerBusinessNumber ? 'completed' : cacResult.status ?? null,
           message: cacResult.message ?? null,
           hasEntity: Boolean(cacResult.entity),
           providerBusinessName: providerBusinessName || null,
@@ -547,6 +1041,8 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
           providerCountry: providerCountry || null,
           providerRegistrationDate: providerRegistrationDate || null,
           businessNameMatched: nameMatch,
+          businessTypeMatchScore: Number(typeMatchScore.toFixed(2)),
+          businessTypeMatched: providerBusinessType ? typeMatchScore >= 0.5 : null,
           submittedBusinessName: input.businessName,
           submittedBusinessType: input.businessType,
           registrationNumberLastFour: input.cacNumber.trim().slice(-4),
@@ -575,21 +1071,22 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
 
     if (resolvedAmlDateOfBirth) {
       try {
-        const amlResult = await dojah.screenAML(resolvedAmlName, resolvedAmlDateOfBirth);
+        const amlResult = await dojah.screenAML(resolvedAmlName, resolvedAmlDateOfBirth, `${input.providerReference}-aml`);
         checksCompleted.add('aml_screening');
+        const hasPepHits = (amlResult.entity?.pep?.length ?? 0) > 0;
+        const hasSanctionHits = (amlResult.entity?.sanctions?.length ?? 0) > 0;
+        const hasAdverseMediaHits = (amlResult.entity?.adverse_media?.length ?? 0) > 0;
+        const hasAmlHits = hasPepHits || hasSanctionHits || hasAdverseMediaHits;
         dojahEvidenceSummary.aml = {
-          status: amlResult.status ?? null,
+          status: hasAmlHits || amlResult.status === false ? 'flagged' : 'completed',
+          providerStatus: amlResult.status ?? null,
           screenedName: resolvedAmlName,
           screenedDateOfBirth: resolvedAmlDateOfBirth,
-          hasPepHits: (amlResult.entity?.pep?.length ?? 0) > 0,
-          hasSanctionHits: (amlResult.entity?.sanctions?.length ?? 0) > 0,
-          hasAdverseMediaHits: (amlResult.entity?.adverse_media?.length ?? 0) > 0,
+          hasPepHits,
+          hasSanctionHits,
+          hasAdverseMediaHits,
         };
-        if (
-          (amlResult.entity?.pep?.length ?? 0) > 0 ||
-          (amlResult.entity?.sanctions?.length ?? 0) > 0 ||
-          (amlResult.entity?.adverse_media?.length ?? 0) > 0
-        ) {
+        if (hasAmlHits || amlResult.status === false) {
           failedChecks.add('aml_screening');
           reasonCodes.add('dojah_aml_flagged');
         }
@@ -645,6 +1142,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
         businessDocument: Boolean(input.documents.businessDocument),
         addressProof: Boolean(input.documents.addressProof),
         photoId: Boolean(input.documents.photoId),
+        ocr: input.documentOcr ?? null,
       },
       addressStatus: 'submitted_for_manual_review',
       addressData: input.addressData,

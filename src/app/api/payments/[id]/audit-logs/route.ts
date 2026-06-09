@@ -20,7 +20,7 @@ import { db } from '@/lib/db/drizzle';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { users } from '@/lib/db/schema/users';
 import { payments } from '@/lib/db/schema/payments';
-import { eq, and, or, desc } from 'drizzle-orm';
+import { eq, and, or, desc, inArray } from 'drizzle-orm';
 
 export async function GET(
   request: NextRequest,
@@ -67,22 +67,10 @@ export async function GET(
       );
     }
 
-    // 4. Fetch audit logs for this payment
-    // Include payment-related action types
-    const paymentActionTypes = [
-      'payment_initiated',
-      'payment_verified',
-      'payment_auto_verified',
-      'payment_rejected',
-      'wallet_funded',
-      'funds_frozen',
-      'funds_released',
-      'funds_unfrozen',
-      'document_signing_progress',
-      'document_signed',
-      'pickup_confirmed_vendor',
-      'pickup_confirmed_admin',
-    ];
+    // 4. Fetch audit logs for this payment and its auction handoff.
+    // Pickup events are recorded against the auction entity so the finance
+    // payment trail needs both IDs to show the full operational close-out.
+    const relatedEntityIds = payment.auctionId ? [paymentId, payment.auctionId] : [paymentId];
 
     const logs = await db
       .select({
@@ -101,11 +89,12 @@ export async function GET(
       .leftJoin(users, eq(auditLogs.userId, users.id))
       .where(
         and(
-          eq(auditLogs.entityId, paymentId),
+          inArray(auditLogs.entityId, relatedEntityIds),
           or(
             eq(auditLogs.entityType, 'payment'),
             eq(auditLogs.entityType, 'wallet'),
-            eq(auditLogs.entityType, 'document')
+            eq(auditLogs.entityType, 'document'),
+            eq(auditLogs.entityType, 'auction')
           )
         )
       )

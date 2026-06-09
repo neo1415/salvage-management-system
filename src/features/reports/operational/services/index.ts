@@ -44,6 +44,8 @@ export interface CaseProcessingReport {
       marketValue: number;
       salvageValue: number;
       processingDays: number;
+      possessingVendorName: string | null;
+      pickedUpAt: string | null;
       createdAt: string;
     }>;
   }>;
@@ -161,6 +163,8 @@ export class CaseProcessingService {
         marketValue: Math.round(parseFloat(c.marketValue || '0')),
         salvageValue: Math.round(parseFloat(c.estimatedSalvageValue || '0')),
         processingDays: c.processingTimeHours ? Math.round((c.processingTimeHours / 24) * 10) / 10 : 0,
+        possessingVendorName: c.possessingVendorName || null,
+        pickedUpAt: c.pickedUpAt ? new Date(c.pickedUpAt).toISOString().split('T')[0] : null,
         createdAt: new Date(c.createdAt).toISOString().split('T')[0],
       })).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); // Sort by date descending (latest first)
 
@@ -363,6 +367,10 @@ export interface AuctionPerformanceReport {
     reservePrice: number;
     status: string;
     isSuccessful: boolean;
+    pickupStatus: string;
+    pickedUpAt: string | null;
+    pickupVendorName: string | null;
+    paymentVerifiedAt: string | null;
   }>;
   insights: {
     bestPerforming: Array<{
@@ -683,6 +691,10 @@ export class AuctionPerformanceService {
       reservePrice: Math.round(parseFloat(a.reservePrice || '0')),
       status: a.status,
       isSuccessful: this.isSoldAuction(a),
+      pickupStatus: a.pickupStatus,
+      pickedUpAt: a.pickedUpAt ? new Date(a.pickedUpAt).toISOString() : null,
+      pickupVendorName: a.pickupVendorName || null,
+      paymentVerifiedAt: a.paymentVerifiedAt ? new Date(a.paymentVerifiedAt).toISOString() : null,
     })).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
   }
 
@@ -809,6 +821,10 @@ export interface VendorPerformanceReport {
     totalWins: number;
     winRate: number;
     participationRate: number;
+    completedPickups: number;
+    pendingPickups: number;
+    onTimePickupRate: number;
+    averagePickupHours: number;
   }>;
   byTier: Array<{
     tier: string;
@@ -866,6 +882,10 @@ export class VendorPerformanceService {
       totalWins: vendor.totalWins,
       winRate: vendor.winRate,
       participationRate: vendor.participationRate,
+      completedPickups: vendor.completedPickups,
+      pendingPickups: vendor.pendingPickups,
+      onTimePickupRate: vendor.onTimePickupRate,
+      averagePickupHours: vendor.averagePickupHours,
     })).slice(0, 20); // Top 20
   }
 

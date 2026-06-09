@@ -657,6 +657,7 @@ export default function ApprovalsPage() {
       approved: { label: 'Approved', color: 'bg-green-100 text-green-800' },
       active_auction: { label: 'Active Auction', color: 'bg-blue-100 text-blue-800' },
       awaiting_payment: { label: 'Payment Pending', color: 'bg-orange-100 text-orange-800' },
+      awaiting_pickup: { label: 'Awaiting Pickup', color: 'bg-amber-100 text-amber-800' },
       closed: { label: 'Auction Closed', color: 'bg-gray-100 text-gray-800' },
       sold: { label: 'Sold', color: 'bg-purple-100 text-purple-800' },
       cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800' },

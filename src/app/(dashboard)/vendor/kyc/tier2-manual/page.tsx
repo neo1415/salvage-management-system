@@ -30,7 +30,19 @@ import { isPendingTier2Review, type Tier2StatusLike } from '@/features/kyc/utils
 
 type PageState = 'idle' | 'loading' | 'submitting' | 'liveness' | 'pending_review' | 'approved' | 'rejected';
 type CheckState = 'idle' | 'checking' | 'verified' | 'review' | 'unavailable' | 'failed';
-type BusinessType = 'individual' | 'business_name' | 'incorporated_company' | 'limited_company';
+type BusinessType =
+  | 'individual'
+  | 'business_name'
+  | 'incorporated_company'
+  | 'limited_company'
+  | 'private_limited_company'
+  | 'public_limited_company'
+  | 'company_limited_by_shares'
+  | 'company_limited_by_guarantee'
+  | 'unlimited_company'
+  | 'incorporated_trustees'
+  | 'limited_liability_partnership'
+  | 'limited_partnership';
 type BusinessDocumentType = 'cac_certificate' | 'memorandum_articles' | 'business_registration';
 type GovernmentIdType = 'nin_slip' | 'drivers_license' | 'passport' | 'voters_card' | 'national_id';
 
@@ -126,6 +138,17 @@ function normalizeDigits(value: string, maxLength = 11): string {
 function getDojahConnectConstructor() {
   if (typeof window === 'undefined') return null;
   return (window as unknown as { Connect?: new (options: DojahWidgetOptions) => DojahConnect }).Connect ?? null;
+}
+
+async function fetchClientPublicIp(): Promise<string | null> {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null) as { ip?: unknown } | null;
+    return typeof data?.ip === 'string' && data.ip.trim() ? data.ip.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function Tier2ManualKYCPage() {
@@ -233,9 +256,9 @@ export default function Tier2ManualKYCPage() {
           }
         }
 
-        if (isPendingTier2Review(statusData)) setPageState('pending_review');
+        if (statusData?.status === 'rejected') setPageState('rejected');
         else if (statusData?.status === 'approved') setPageState('approved');
-        else if (statusData?.status === 'rejected') setPageState('rejected');
+        else if (isPendingTier2Review(statusData)) setPageState('pending_review');
         else setPageState('idle');
 
         fetch('/api/kyc/widget-config?mode=liveness')
@@ -518,6 +541,9 @@ export default function Tier2ManualKYCPage() {
         if (file) submitData.append(key, file);
       }
 
+      const publicIp = await fetchClientPublicIp();
+      if (publicIp) submitData.append('clientIpAddress', publicIp);
+
       const res = await fetch('/api/kyc/manual/submit', { method: 'POST', body: submitData });
       const data = await res.json();
 
@@ -683,9 +709,16 @@ export default function Tier2ManualKYCPage() {
                     value={formData.businessType}
                     onChange={(v) => handleInputChange('businessType', v)}
                     options={[
+                      { value: 'private_limited_company', label: 'Private limited company' },
+                      { value: 'public_limited_company', label: 'Public limited company / PLC' },
+                      { value: 'company_limited_by_shares', label: 'Company limited by shares' },
+                      { value: 'company_limited_by_guarantee', label: 'Company limited by guarantee' },
                       { value: 'business_name', label: 'Business name' },
                       { value: 'incorporated_company', label: 'Incorporated company' },
-                      { value: 'limited_company', label: 'Limited company' },
+                      { value: 'unlimited_company', label: 'Unlimited company' },
+                      { value: 'incorporated_trustees', label: 'Incorporated trustees' },
+                      { value: 'limited_liability_partnership', label: 'Limited liability partnership' },
+                      { value: 'limited_partnership', label: 'Limited partnership' },
                       { value: 'individual', label: 'Individual bidder' },
                     ]}
                   />

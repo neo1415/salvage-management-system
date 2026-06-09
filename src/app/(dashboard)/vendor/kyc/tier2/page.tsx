@@ -259,7 +259,7 @@ export default function Tier2KYCPage() {
       const statusRes = await fetch('/api/kyc/status');
       if (!statusRes.ok) return false;
       const status = (await statusRes.json()) as KYCStatus;
-      if (status.status === 'approved' || isPendingTier2Review(status)) {
+      if (status.status === 'approved' || status.status === 'rejected' || isPendingTier2Review(status)) {
         showSubmissionSuccess(status.status === 'approved' ? 'approved' : 'pending_review');
         return true;
       }
@@ -340,8 +340,8 @@ export default function Tier2KYCPage() {
 
           if (!allowRetest) {
             if (status.status === 'approved') { setPageState('approved'); return; }
-            if (isPendingTier2Review(status)) { setPageState('pending_review'); return; }
             if (status.status === 'rejected') { setPageState('rejected'); return; }
+            if (isPendingTier2Review(status)) { setPageState('pending_review'); return; }
             if (status.status === 'expired') { setPageState('expired'); return; }
           }
         }

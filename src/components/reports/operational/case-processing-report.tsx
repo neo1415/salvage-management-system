@@ -66,6 +66,8 @@ interface CaseProcessingData {
       salvageValue: number;
       processingDays: number;
       createdAt: string;
+      possessingVendorName: string | null;
+      pickedUpAt: string | null;
     }>;
   }>;
   trend: Array<{ date: string; count: number; approved: number; sold: number }>;
@@ -238,6 +240,8 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
                     <th className="text-right py-2 px-3">Market Value</th>
                     <th className="text-right py-2 px-3">Salvage Value</th>
                     <th className="text-right py-2 px-3">Processing Days</th>
+                    <th className="text-left py-2 px-3">Possessing Vendor</th>
+                    <th className="text-left py-2 px-3">Picked Up</th>
                     <th className="text-left py-2 px-3">Created</th>
                   </tr>
                 </thead>
@@ -259,6 +263,8 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
                       <td className="py-2 px-3 text-right font-medium">₦{caseItem.marketValue.toLocaleString()}</td>
                       <td className="py-2 px-3 text-right">₦{caseItem.salvageValue.toLocaleString()}</td>
                       <td className="py-2 px-3 text-right">{(caseItem.processingDays ?? 0).toFixed(1)}</td>
+                      <td className="py-2 px-3">{caseItem.possessingVendorName || '-'}</td>
+                      <td className="py-2 px-3">{caseItem.pickedUpAt || '-'}</td>
                       <td className="py-2 px-3">{caseItem.createdAt}</td>
                     </tr>
                   ))}

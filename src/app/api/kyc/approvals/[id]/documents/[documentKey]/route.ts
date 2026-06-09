@@ -81,7 +81,6 @@ function collectDocuments(approval: PendingApproval): DocumentEntry[] {
   addDocument(documents, { key: 'photo-id', label: 'Photo ID', url: approval.photoIdUrl });
   addDocument(documents, { key: 'nin-card', label: 'Government ID', url: approval.ninCardUrl });
   addDocument(documents, { key: 'address-proof', label: 'Address proof', url: approval.addressProofUrl });
-  addDocument(documents, { key: 'bank-statement', label: 'Bank statement', url: approval.bankStatementUrl });
   addDocument(documents, { key: 'business-registration', label: 'Business registration', url: approval.cacCertificateUrl });
   addDocument(documents, { key: 'selfie', label: 'Selfie', url: approval.selfieUrl });
 

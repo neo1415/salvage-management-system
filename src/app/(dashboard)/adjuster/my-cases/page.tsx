@@ -313,6 +313,11 @@ export default function AdjusterMyCasesPage() {
         className: 'bg-orange-100 text-orange-800',
         icon: Banknote
       },
+      awaiting_pickup: {
+        label: 'Awaiting Pickup',
+        className: 'bg-amber-100 text-amber-800',
+        icon: Package
+      },
       closed: {
         label: 'Closed',
         className: 'bg-gray-100 text-gray-800',

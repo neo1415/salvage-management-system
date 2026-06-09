@@ -294,38 +294,88 @@ export class DojahService {
   /**
    * AML Screening v2 — screens vendor against PEP, sanctions, adverse media lists.
    */
-  async screenAML(fullName: string, dateOfBirth: string): Promise<DojahAMLResult> {
-    const url = `${this.config.baseUrl}/api/v1/aml/screening`;
+  async screenAML(fullName: string, dateOfBirth: string, uniqueReference?: string): Promise<DojahAMLResult> {
+    const url = `${this.config.baseUrl}/api/v1/aml/v2/screening`;
     console.log('[DojahService] screenAML called');
 
     const res = await this.fetchWithRetry(url, {
       method: 'POST',
       headers: this.headers,
-      body: JSON.stringify({ full_name: fullName, date_of_birth: dateOfBirth }),
+      body: JSON.stringify({
+        schema: 'individual',
+        unique_reference: uniqueReference,
+        properties: {
+          names: fullName,
+          date_of_birth: dateOfBirth,
+          nationality: 'NG',
+        },
+        screening_options: {
+          pep_check: true,
+          sanction: true,
+          adverse_media_check: true,
+          watchlists: [],
+          match_threshold: 0.75,
+        },
+      }),
     });
     const json = await res.json();
+    const normalized = normalizeAmlScreeningResult(json);
 
-    const parsed = DojahAMLResultSchema.safeParse(json);
+    const parsed = DojahAMLResultSchema.safeParse(normalized);
     if (!parsed.success) {
       console.error('[DojahService] screenAML parse error', parsed.error.flatten());
       throw new Error('Dojah AML result failed schema validation');
+    }
+    if (!parsed.data.entity && parsed.data.status === undefined) {
+      console.error('[DojahService] screenAML empty response', {
+        topLevelKeys: json && typeof json === 'object' ? Object.keys(json as Record<string, unknown>) : [],
+      });
+      throw new Error('Dojah AML result was empty');
     }
     return parsed.data;
   }
 
   /**
+   * IP Screening - returns geolocation, ISP, proxy/VPN/hosting/Tor flags, and risk score.
+   */
+  async screenIP(ipAddress: string): Promise<Record<string, unknown>> {
+    const cleanedIp = ipAddress.trim();
+    if (!cleanedIp || cleanedIp === '::1' || cleanedIp === '127.0.0.1') {
+      throw new Error('A public IP address is required for Dojah IP screening');
+    }
+
+    const params = new URLSearchParams({ ip_address: cleanedIp });
+    const url = `${this.config.baseUrl}/api/v1/fraud/ip?${params.toString()}`;
+    console.log('[DojahService] screenIP called', {
+      ipAddress: maskIpAddress(cleanedIp),
+    });
+
+    const res = await this.fetchWithRetry(url, { method: 'GET', headers: this.headers });
+    const json = await res.json();
+    if (!isRecord(json)) {
+      throw new Error('Dojah IP screening returned an unexpected response');
+    }
+    return json;
+  }
+
+  /**
    * CAC Lookup — verifies company registration status.
    */
-  async verifyCAC(rcNumber: string, companyName?: string): Promise<DojahCACResult> {
-    const params = new URLSearchParams({ rc_number: rcNumber });
+  async verifyCAC(rcNumber: string, companyName?: string, companyType?: string): Promise<DojahCACResult> {
+    const normalizedRcNumber = rcNumber.replace(/^RC[-\s]*/i, '').trim();
+    const params = new URLSearchParams({
+      rc_number: normalizedRcNumber,
+      company_type: normalizeDojahCompanyType(companyType, companyName),
+    });
     if (companyName?.trim()) {
       params.set('company_name', companyName.trim());
     }
 
-    const url = `${this.config.baseUrl}/api/v1/kyc/cac?${params.toString()}`;
+    const url = `${this.config.baseUrl}/api/v1/kyc/cac/basic?${params.toString()}`;
     console.log('[DojahService] verifyCAC called', {
-      rcNumber: maskIdentifier(rcNumber),
+      rcNumber: maskIdentifier(normalizedRcNumber),
       hasCompanyName: Boolean(companyName?.trim()),
+      companyType: params.get('company_type'),
     });
 
     const res = await this.fetchWithRetry(url, { method: 'GET', headers: this.headers });
@@ -462,6 +512,144 @@ function sleep(ms: number): Promise<void> {
 function maskIdentifier(value: string): string {
   if (!value) return '';
   return value.length <= 4 ? '****' : `${'*'.repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
+}
+
+function maskIpAddress(value: string): string {
+  if (value.includes(':')) {
+    const parts = value.split(':').filter(Boolean);
+    return parts.length <= 2 ? '****' : `${parts[0]}:${parts[1]}:****`;
+  }
+  const parts = value.split('.');
+  return parts.length === 4 ? `${parts[0]}.${parts[1]}.***.***` : '****';
+}
+
+function normalizeAmlScreeningResult(value: unknown): DojahAMLResult {
+  const root = isRecord(value) ? value : {};
+  const entity = isRecord(root.entity) ? root.entity : root;
+  const result = isRecord(entity.result) ? entity.result : entity;
+
+  const pep = collectAmlMatches(result, ['pep', 'politically_exposed_person']);
+  const sanctions = collectAmlMatches(result, ['sanction', 'ofac', 'watchlist']);
+  const adverseMedia = collectAmlMatches(result, ['adverse', 'media', 'negative']);
+  const totalResults = toNumber(result.total_results ?? result.totalResults ?? entity.total_results ?? entity.totalResults);
+  const riskLevel = firstString(result, ['risk_level', 'riskLevel', 'risk']);
+  const matchStatus = firstString(result, ['match_status', 'matchStatus', 'status']);
+
+  if (totalResults > 0 && pep.length + sanctions.length + adverseMedia.length === 0) {
+    adverseMedia.push({
+      name: firstString(result, ['name', 'search_query', 'searchQuery']) ?? null,
+      type: riskLevel ?? matchStatus ?? 'watchlist_match',
+      score: toNumber(result.match_score ?? result.score ?? result.matchScore) || null,
+      categories: ['watchlist'],
+      source: 'dojah_aml_v2',
+    });
+  }
+
+  const status = typeof root.status === 'boolean'
+    ? root.status
+    : typeof entity.status === 'boolean'
+      ? entity.status
+      : undefined;
+
+  return {
+    status,
+    message: firstString(root, ['message', 'detail', 'error']) ?? firstString(entity, ['message', 'detail', 'error']),
+    entity: {
+      pep,
+      sanctions,
+      adverse_media: adverseMedia,
+    },
+  };
+}
+
+function collectAmlMatches(value: unknown, categoryTokens: string[]): NonNullable<DojahAMLResult['entity']>['pep'] {
+  const matches: NonNullable<DojahAMLResult['entity']>['pep'] = [];
+  const seen = new Set<unknown>();
+
+  function walk(node: unknown, inheritedCategory?: string) {
+    if (!node || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child, inheritedCategory);
+      return;
+    }
+
+    const record = node as Record<string, unknown>;
+    for (const [key, child] of Object.entries(record)) {
+      const lowerKey = key.toLowerCase();
+      const keyMatches = categoryTokens.some((token) => lowerKey.includes(token));
+      if (Array.isArray(child) && keyMatches) {
+        for (const item of child) {
+          const normalized = normalizeAmlMatch(item, key);
+          if (normalized) matches.push(normalized);
+        }
+      } else {
+        walk(child, keyMatches ? key : inheritedCategory);
+      }
+    }
+
+    if (inheritedCategory && categoryTokens.some((token) => inheritedCategory.toLowerCase().includes(token))) {
+      const normalized = normalizeAmlMatch(record, inheritedCategory);
+      if (normalized) matches.push(normalized);
+    }
+  }
+
+  walk(value);
+  return matches;
+}
+
+function normalizeAmlMatch(value: unknown, category: string) {
+  if (!isRecord(value)) return null;
+  const name = firstString(value, ['name', 'full_name', 'fullName', 'matched_name', 'matchedName', 'search_query', 'searchQuery']);
+  const source = firstString(value, ['source', 'list', 'watchlist', 'provider']);
+  const score = toNumber(value.score ?? value.match_score ?? value.matchScore ?? value.confidence);
+  if (!name && !source && !score) return null;
+  return {
+    name: name ?? null,
+    type: firstString(value, ['type', 'category', 'risk_level', 'riskLevel']) ?? category,
+    score: score || null,
+    categories: [category],
+    source: source ?? 'dojah_aml_v2',
+  };
+}
+
+function firstString(value: unknown, keys: string[]): string | null {
+  if (!isRecord(value)) return null;
+  for (const key of keys) {
+    const child = value[key];
+    if (typeof child === 'string' && child.trim()) return child.trim();
+  }
+  return null;
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return 0;
+}
+
+function normalizeDojahCompanyType(companyType?: string, companyName?: string): string {
+  const normalized = String(companyType ?? '').toLowerCase();
+  if (normalized.includes('business')) return 'BUSINESS_NAME';
+  if (normalized.includes('trust')) return 'INCORPORATED_TRUSTEES';
+  if (normalized.includes('limited_liability_partnership') || normalized.includes('llp')) {
+    return 'LIMITED_LIABILITY_PARTNERSHIP';
+  }
+  if (normalized.includes('limited_partnership') || normalized.includes('lp')) {
+    return 'LIMITED_PARTNERSHIP';
+  }
+  if (
+    normalized.includes('company') ||
+    normalized.includes('limited') ||
+    normalized.includes('incorporated')
+  ) {
+    return 'COMPANY';
+  }
+
+  const name = String(companyName ?? '').toLowerCase();
+  if (/\b(plc|limited|ltd|company|co\.?|incorporated)\b/.test(name)) return 'COMPANY';
+  return 'BUSINESS_NAME';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

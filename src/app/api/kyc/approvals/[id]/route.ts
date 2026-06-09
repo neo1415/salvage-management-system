@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { buildDojahEvidenceSections } from '@/features/kyc/utils/provider-evidence-display';
@@ -58,15 +58,7 @@ export async function GET(
           eq(providerVerificationRecords.verificationType, 'tier2')
         )
       )
-      .orderBy(
-        sql`CASE
-          WHEN ${providerVerificationRecords.workflowReference} = 'nem-hybrid-tier2'
-            OR ${providerVerificationRecords.normalizedResult}->>'verificationMode' = 'nem_hybrid_manual_review'
-          THEN 0
-          ELSE 1
-        END`,
-        desc(providerVerificationRecords.updatedAt)
-      )
+      .orderBy(desc(providerVerificationRecords.updatedAt))
       .limit(1);
 
     const normalized = (latestProviderRecord?.normalizedResult as Record<string, unknown> | null) ?? null;

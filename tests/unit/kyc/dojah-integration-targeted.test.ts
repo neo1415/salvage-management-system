@@ -138,6 +138,102 @@ describe('Tier 2 review mode rules', () => {
   });
 });
 
+describe('Dojah CAC lookup', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('DOJAH_APP_ID', 'app_test');
+    vi.stubEnv('DOJAH_API_KEY', 'secret_test');
+    vi.stubEnv('DOJAH_PUBLIC_KEY', 'public_test');
+    vi.stubEnv('DOJAH_BASE_URL', 'https://api.dojah.io');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('uses the CAC basic endpoint with normalized RC number and company type', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      entity: {
+        company_name: 'NEM INSURANCE PLC',
+        rc_number: '6971',
+        type_of_company: 'COMPANY',
+        status: 'Active',
+      },
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { DojahService } = await import('@/features/kyc/services/dojah.service');
+    const service = new DojahService();
+    const result = await service.verifyCAC('RC-6971', 'NEM Insurance PLC', 'incorporated_company');
+
+    expect(result.entity?.company_name).toBe('NEM INSURANCE PLC');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/v1/kyc/cac/basic?');
+    expect(String(url)).toContain('rc_number=6971');
+    expect(String(url)).toContain('company_type=COMPANY');
+    expect(String(url)).toContain('company_name=NEM+Insurance+PLC');
+    expect((options as RequestInit).headers).toMatchObject({
+      AppId: 'app_test',
+      Authorization: 'secret_test',
+    });
+  });
+});
+
+describe('Dojah AML screening', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('DOJAH_APP_ID', 'app_test');
+    vi.stubEnv('DOJAH_API_KEY', 'secret_test');
+    vi.stubEnv('DOJAH_PUBLIC_KEY', 'public_test');
+    vi.stubEnv('DOJAH_BASE_URL', 'https://api.dojah.io');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('uses the documented AML v2 endpoint and normalizes watchlist results into risk evidence', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      entity: {
+        total_results: 1,
+        risk_level: 'Medium',
+        search_query: 'Public PEP',
+        match_score: 89,
+      },
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { DojahService } = await import('@/features/kyc/services/dojah.service');
+    const service = new DojahService();
+    const result = await service.screenAML('Public PEP', '1952-03-29', 'aml-ref-1');
+
+    expect(result.entity?.adverse_media).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe('https://api.dojah.io/api/v1/aml/v2/screening');
+    expect((options as RequestInit).headers).toMatchObject({
+      AppId: 'app_test',
+      Authorization: 'secret_test',
+    });
+    expect(JSON.parse(String((options as RequestInit).body))).toMatchObject({
+      schema: 'individual',
+      unique_reference: 'aml-ref-1',
+      properties: {
+        names: 'Public PEP',
+        date_of_birth: '1952-03-29',
+      },
+      screening_options: {
+        pep_check: true,
+        sanction: true,
+        adverse_media_check: true,
+      },
+    });
+  });
+});
+
 describe('Dojah widget config route', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -484,7 +580,15 @@ describe('Provider verification service', () => {
     vi.doUnmock('@/features/kyc/services/provider-verification.service');
     mockBusinessPolicy();
 
-    const insert = vi.fn(() => makeChain());
+    const insertedValues: unknown[] = [];
+    const insert = vi.fn(() => {
+      const chain = makeChain();
+      chain.values = vi.fn((value: unknown) => {
+        insertedValues.push(value);
+        return chain;
+      });
+      return chain;
+    });
     const update = vi.fn(() => makeChain());
     const select = vi.fn(() => makeChain([{ id: 'admin-1' }]));
     const logAction = vi.fn(async () => undefined);
@@ -550,6 +654,8 @@ describe('Provider verification service', () => {
       userId: 'user-1',
       vendorId: 'vendor-1',
       actorId: 'admin-1',
+      ipAddress: '203.0.113.7',
+      userAgent: 'Mozilla/5.0 Test Browser',
       result: {
         provider: 'dojah',
         providerReference: 'dojah-ref-1',
@@ -562,7 +668,17 @@ describe('Provider verification service', () => {
         failedChecks: ['aml_screening'],
         reasonCodes: ['dojah_aml_flagged'],
         displayMessage: 'Review required',
-        normalizedResult: { amlStatus: false },
+        normalizedResult: {
+          amlStatus: false,
+          dojahEvidenceSummary: {
+            ipDevice: {
+              status: 'captured',
+              ipAddress: '203.0.113.7',
+              deviceType: 'desktop',
+              easyDetectStatus: 'submitted',
+            },
+          },
+        },
       },
       rawPayload: { sensitive: 'raw' },
     });
@@ -578,6 +694,177 @@ describe('Provider verification service', () => {
       entityType: 'fraud_flag',
       entityId: 'vendor-1',
     }));
+    expect(insertedValues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        entityType: 'vendor',
+        entityId: 'vendor-1',
+        metadata: expect.objectContaining({
+          source: 'dojah',
+          ipAddress: '203.0.113.7',
+          userAgent: 'Mozilla/5.0 Test Browser',
+          ipDevice: expect.objectContaining({
+            status: 'captured',
+            deviceType: 'desktop',
+            easyDetectStatus: 'submitted',
+          }),
+        }),
+      }),
+    ]));
+  });
+});
+
+describe('manual hybrid evidence display', () => {
+  it('shows clean AML, CAC registry, and local IP/device evidence as completed review signals', async () => {
+    const { buildDojahEvidenceSections } = await import('@/features/kyc/utils/provider-evidence-display');
+
+    const sections = buildDojahEvidenceSections(
+      {
+        verificationMode: 'nem_hybrid_manual_review',
+        verificationStatus: 'submitted_for_review',
+        maskedIdentityValue: '*******4438',
+        addressData: {
+          address: '9 Road A',
+          city: 'Ikorodu',
+          state: 'Lagos',
+          bvnSource: 'tier1_verified',
+        },
+        documentMetadata: {
+          photoId: true,
+          addressProof: true,
+          businessDocument: true,
+          governmentIdType: 'nin_slip',
+          businessDocumentType: 'cac_certificate',
+        },
+        nemSubmittedProfile: {
+          fullName: 'Daniel Ademola Oyeniyi',
+          businessName: 'NEM Insurance PLC',
+          businessType: 'public_limited_company',
+          businessRegistrationNumber: '****6971',
+        },
+        dojahEvidenceSummary: {
+          cac: {
+            status: 'completed',
+            providerBusinessName: 'NEM INSURANCE PLC',
+            providerBusinessNumber: '6971',
+            providerBusinessType: 'COMPANY',
+            providerRegistrationDate: '1970-04-01T01:00:00Z',
+            businessNameMatched: true,
+            businessTypeMatched: true,
+          },
+          nin: {
+            status: 'completed',
+            providerName: 'DANIEL ADEMOLA OYENIYI',
+            providerDateOfBirth: '1998-12-14',
+            providerGender: 'Male',
+            nameMatched: true,
+            dobMatched: true,
+            lastFour: '4438',
+          },
+          aml: {
+            status: 'completed',
+            screenedName: 'DANIEL ADEMOLA OYENIYI',
+            screenedDateOfBirth: '1998-12-14',
+            hasPepHits: false,
+            hasSanctionHits: false,
+            hasAdverseMediaHits: false,
+          },
+          ipDevice: {
+            status: 'captured_locally',
+            ipAddress: '203.0.113.10',
+            deviceType: 'desktop',
+            easyDetectStatus: 'local_capture_only',
+            ipScreeningStatus: 'completed',
+            screenedIpAddress: '203.0.113.10',
+            country: 'Nigeria',
+            region: 'Lagos',
+            city: 'Lagos',
+            latitude: 6.454,
+            longitude: 3.39472,
+            isp: 'Mtn Nigeria Communication Limited',
+            vpn: false,
+            proxy: false,
+            hosting: false,
+          },
+        },
+      },
+      {
+        providerReference: 'nem-vendor-1-ref',
+        workflowReference: 'nem-hybrid-tier2',
+        status: 'review_required',
+        riskLevel: 'low',
+        displayMessage: 'Submitted',
+        checksCompleted: [
+          'nem_business_profile_submitted',
+          'business_registration_lookup',
+          'nin_lookup',
+          'aml_screening',
+          'ip_device_capture',
+        ],
+        pendingChecks: ['manager_document_review'],
+        failedChecks: [],
+        reasonCodes: [],
+      }
+    );
+
+    expect(sections.business['Provider lookup']).toBe('Matched');
+    expect(sections.business['Registration date']).toBe('1 April 1970');
+    expect(sections.aml['AML screening']).toBe('No matches found');
+    expect(sections.aml['PEP hits']).toBe('No');
+    expect(sections.aml['Sanctions hits']).toBe('No');
+    expect(sections.aml['Adverse media hits']).toBe('No');
+    expect(sections.ipDevice['Capture status']).toBe('Captured locally');
+    expect(sections.ipDevice['Device signal']).toBe('Local capture only');
+    expect(sections.ipDevice['IP screening']).toBe('Completed');
+    expect(sections.ipDevice.Country).toBe('Nigeria');
+    expect(sections.ipDevice.City).toBe('Lagos');
+    expect(sections.ipDevice.ISP).toBe('Mtn Nigeria Communication Limited');
+    expect(sections.ipDevice.Proxy).toBe('No');
+  });
+
+  it('renders older manual evidence records without requiring resubmission', async () => {
+    const { buildDojahEvidenceSections } = await import('@/features/kyc/utils/provider-evidence-display');
+
+    const sections = buildDojahEvidenceSections(
+      {
+        verificationMode: 'nem_hybrid_manual_review',
+        dojahEvidenceSummary: {
+          cac: {
+            status: null,
+            providerBusinessName: 'NEM INSURANCE PLC',
+            providerRegistrationDate: '1970-04-01T01:00:00Z',
+            businessNameMatched: true,
+          },
+          aml: {
+            status: null,
+            screenedName: 'DANIEL ADEMOLA OYENIYI',
+            screenedDateOfBirth: '1998-12-14',
+            hasPepHits: false,
+            hasSanctionHits: false,
+            hasAdverseMediaHits: false,
+          },
+          ipDevice: {
+            status: 'captured',
+            ipAddress: '::1',
+            deviceType: 'desktop',
+            easyDetectStatus: 'not_configured_or_not_returned',
+          },
+        },
+      },
+      {
+        status: 'review_required',
+        riskLevel: 'low',
+        checksCompleted: ['business_registration_lookup'],
+        pendingChecks: [],
+        failedChecks: [],
+        reasonCodes: [],
+      }
+    );
+
+    expect(sections.business['Provider lookup']).toBe('Matched');
+    expect(sections.business['Registration date']).toBe('1 April 1970');
+    expect(sections.aml['AML screening']).toBe('No matches found');
+    expect(sections.ipDevice['Capture status']).toBe('Captured locally');
+    expect(sections.ipDevice['Device signal']).toBe('Local capture only');
   });
 });
 
@@ -1012,13 +1299,14 @@ describe('evidence export route', () => {
     expect(response.status).toBe(200);
     expect(text).toContain('Vendor Verification Evidence Packet');
     expect(text).toContain('*******6789');
-    expect(text).toContain('********4321');
-    expect(text).toContain('******6789');
     expect(text).toContain('Linked Fraud Alerts');
     expect(text).toContain('dojah_aml_flagged');
     expect(text).not.toContain('RC123456789');
     expect(text).not.toContain('TIN987654321');
     expect(text).not.toContain('0123456789');
+    expect(text).not.toContain('Bank Account');
+    expect(text).not.toContain('Bank Name');
+    expect(text).not.toContain('TIN,');
     expect(text.toLowerCase()).not.toContain('rawpayload');
   });
 });

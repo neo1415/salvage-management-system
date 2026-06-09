@@ -58,10 +58,6 @@ export function AdminPickupConfirmation({
   };
 
   const handleOpenModal = () => {
-    if (!vendorPickupStatus.confirmed) {
-      setError('Vendor must confirm pickup before admin confirmation');
-      return;
-    }
     setIsModalOpen(true);
   };
 
@@ -117,11 +113,11 @@ export function AdminPickupConfirmation({
       )}
 
       {/* Instructions */}
-      {!success && vendorPickupStatus.confirmed && (
+      {!success && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 mb-4" role="status" aria-live="polite">
           <p className="text-blue-800 font-semibold text-sm sm:text-base">Verify Pickup</p>
           <p className="text-xs sm:text-sm text-blue-700 mt-1">
-            Vendor has confirmed pickup. Add any observations and confirm to complete the transaction.
+            Confirm the vendor's pickup code and handoff details before completing the transaction.
           </p>
         </div>
       )}
@@ -135,7 +131,7 @@ export function AdminPickupConfirmation({
           id="admin-notes"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          disabled={isConfirming || success || !vendorPickupStatus.confirmed}
+          disabled={isConfirming || success}
           placeholder="Add any observations about the pickup (e.g., item condition, vendor behavior)"
           rows={4}
           className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] disabled:opacity-50 disabled:cursor-not-allowed resize-none"
@@ -151,20 +147,13 @@ export function AdminPickupConfirmation({
       <button
         type="button"
         onClick={handleOpenModal}
-        disabled={isConfirming || success || !vendorPickupStatus.confirmed}
+        disabled={isConfirming || success}
         className="w-full bg-[var(--brand-primary)] text-white py-3 sm:py-4 px-4 sm:px-6 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
         aria-label="Confirm pickup"
         data-testid="confirm-button"
       >
         {isConfirming ? 'Confirming...' : success ? 'Pickup Confirmed' : 'Confirm Pickup'}
       </button>
-
-      {/* Helper Text */}
-      {!vendorPickupStatus.confirmed && (
-        <p className="text-xs sm:text-sm text-gray-600 mt-4 text-center">
-          Waiting for vendor to confirm pickup first
-        </p>
-      )}
 
       {/* Confirmation Modal */}
       <ConfirmationModal

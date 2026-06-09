@@ -218,6 +218,10 @@ export default function VendorPerformancePage() {
                         <th className="text-right p-2">Bids</th>
                         <th className="text-right p-2">Wins</th>
                         <th className="text-right p-2">Win Rate</th>
+                        <th className="text-right p-2">Completed Pickups</th>
+                        <th className="text-right p-2">Pending Pickups</th>
+                        <th className="text-right p-2">On-Time Pickup</th>
+                        <th className="text-right p-2">Avg Pickup Time</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -229,6 +233,12 @@ export default function VendorPerformancePage() {
                           <td className="text-right p-2">{vendor.totalBids}</td>
                           <td className="text-right p-2">{vendor.totalWins}</td>
                           <td className="text-right p-2">{vendor.winRate}%</td>
+                          <td className="text-right p-2">{vendor.completedPickups ?? 0}</td>
+                          <td className="text-right p-2">{vendor.pendingPickups ?? 0}</td>
+                          <td className="text-right p-2">{vendor.onTimePickupRate ?? 0}%</td>
+                          <td className="text-right p-2">
+                            {vendor.averagePickupHours != null ? `${vendor.averagePickupHours}h` : '-'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

@@ -3,7 +3,6 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { payments } from '@/lib/db/schema/payments';
 import { auctions } from '@/lib/db/schema/auctions';
-import { salvageCases } from '@/lib/db/schema/cases';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { escrowService } from '@/features/payments/services/escrow.service';
@@ -21,7 +20,7 @@ import { logAction, AuditActionType, AuditEntityType, getDeviceTypeFromUserAgent
  * - Verify escrow status is 'frozen'
  * - Call escrowService.releaseFunds() to transfer funds
  * - Update payment status to 'verified'
- * - Update case status to 'sold'
+ * - Mark payment verified so pickup authorization can be used
  * - Create audit log entry with Finance Officer ID and reason
  * - Return transfer reference and updated payment status
  */
@@ -193,16 +192,8 @@ export async function POST(
       .where(eq(payments.id, paymentId))
       .returning();
 
-    // Update case status to sold
-    if (auction.caseId) {
-      await db
-        .update(salvageCases)
-        .set({
-          status: 'sold',
-          updatedAt: new Date(),
-        })
-        .where(eq(salvageCases.id, auction.caseId));
-    }
+    // Funds release/payment verification makes the asset ready for pickup.
+    // The case is marked sold only after staff validate the pickup code.
 
     // Log successful manual release
     await logAction({

@@ -106,6 +106,9 @@ export interface PendingApproval {
     providerReference?: string | null;
     workflowReference?: string | null;
     status: string;
+    finalDecision?: string | null;
+    decisionReason?: string | null;
+    reviewedAt?: Date | null;
     riskLevel: string;
     checksCompleted: string[];
     pendingChecks: string[];

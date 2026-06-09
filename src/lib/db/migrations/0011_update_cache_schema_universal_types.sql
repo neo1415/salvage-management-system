@@ -334,9 +334,9 @@ SELECT
       )
     )
   ),
-  (SELECT id FROM users WHERE role = 'super_admin' LIMIT 1),
+  (SELECT id FROM users WHERE role = 'system_admin' LIMIT 1),
   NOW()
-WHERE EXISTS (SELECT 1 FROM users WHERE role = 'super_admin');
+WHERE EXISTS (SELECT 1 FROM users WHERE role = 'system_admin');
 
 -- ============================================================================
 -- 9. Create sample data for testing new item types
