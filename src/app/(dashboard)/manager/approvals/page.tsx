@@ -108,6 +108,19 @@ type ApprovalAction = 'approve' | 'reject' | null;
 /**
  * Check if a photo URL is valid
  */
+const NEXT_IMAGE_REMOTE_HOSTS = new Set([
+  'res.cloudinary.com',
+  'identity.dojah.io',
+  'widget.dojah.io',
+  'maps.googleapis.com',
+  'www.googleapis.com',
+]);
+
+function isConfiguredNextImageHost(hostname: string): boolean {
+  const normalizedHostname = hostname.toLowerCase();
+  return NEXT_IMAGE_REMOTE_HOSTS.has(normalizedHostname) || normalizedHostname.endsWith('.cloudinary.com');
+}
+
 const isValidPhotoUrl = (url: any): url is string => {
   if (!url || typeof url !== 'string') return false;
   const trimmed = url.trim();
@@ -117,7 +130,7 @@ const isValidPhotoUrl = (url: any): url is string => {
   try {
     const parsed = new URL(trimmed);
     if (!['http:', 'https:'].includes(parsed.protocol)) return false;
-    return !['example.com', 'www.example.com'].includes(parsed.hostname.toLowerCase());
+    return isConfiguredNextImageHost(parsed.hostname);
   } catch {
     return false;
   }
