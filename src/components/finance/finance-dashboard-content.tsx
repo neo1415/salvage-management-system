@@ -21,6 +21,14 @@ interface DashboardStats {
     bank_transfer: number;
     escrow_wallet: number;
   };
+  settlementControl: {
+    verifiedRecovery: number;
+    pendingFinanceReview: number;
+    paidAwaitingPickup: number;
+    overdueSignedUnpaid: number;
+    frozenEscrowPayments: number;
+    averageDaysToPayment: number | null;
+  };
 }
 
 function FinanceDashboardContentInner() {
@@ -90,6 +98,14 @@ function FinanceDashboardContentInner() {
           bank_transfer: 0,
           escrow_wallet: 0,
         },
+        settlementControl: {
+          verifiedRecovery: 0,
+          pendingFinanceReview: 0,
+          paidAwaitingPickup: 0,
+          overdueSignedUnpaid: 0,
+          frozenEscrowPayments: 0,
+          averageDaysToPayment: null,
+        },
       };
       if (showFullPageLoader) {
         statsRef.current = fallback;
@@ -101,7 +117,13 @@ function FinanceDashboardContentInner() {
   };
 
   const formatCurrency = (amount: number) => {
-    return `₦${amount.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    return `\u20A6${amount.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  };
+
+  const formatDays = (days: number | null) => {
+    if (days === null) return 'No clean data';
+    if (days < 1) return `${Math.round(days * 24)}h`;
+    return `${days.toFixed(1)}d`;
   };
 
   if (status === 'loading' || loading || !stats) {
@@ -206,6 +228,60 @@ function FinanceDashboardContentInner() {
             <p className="text-sm text-gray-600 mt-1">
               {stats?.escrowWalletPercentage || 0}% of total
             </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex flex-col gap-1 mb-5">
+          <h2 className="text-xl font-bold text-gray-900">Settlement Control</h2>
+          <p className="text-sm text-gray-600">
+            Verified recovery, payment exceptions, and pickup handoff exposure.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
+          <div className="rounded-lg border border-gray-200 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Verified recovery</p>
+            <p className="mt-2 text-2xl font-bold text-emerald-700">
+              {formatCurrency(stats.settlementControl.verifiedRecovery)}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Cash confirmed by finance</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Finance queue</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {stats.settlementControl.pendingFinanceReview}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Payments needing review</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Paid awaiting pickup</p>
+            <p className="mt-2 text-2xl font-bold text-amber-700">
+              {stats.settlementControl.paidAwaitingPickup}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Assets still in handoff</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Overdue unpaid</p>
+            <p className="mt-2 text-2xl font-bold text-red-700">
+              {stats.settlementControl.overdueSignedUnpaid}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Signed documents past payment date</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Frozen escrow</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {stats.settlementControl.frozenEscrowPayments}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Wallet deposits held</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Avg payment cycle</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatDays(stats.settlementControl.averageDaysToPayment)}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Auction close to verified payment</p>
           </div>
         </div>
       </div>

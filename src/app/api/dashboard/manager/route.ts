@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
     const assetType = searchParams.get('assetType'); // Optional filter
 
     // Try to get cached data
-    const cacheKey = `dashboard:manager:${dateRange}:${assetType || 'all'}`;
+    const cacheKey = `dashboard:manager:v2:${dateRange}:${assetType || 'all'}`;
     const cachedData = await cache.get<DashboardData>(cacheKey);
 
     if (cachedData) {
@@ -288,7 +288,7 @@ async function calculateRecoveryControlTower(
       SELECT
         sc.id,
         sc.market_value,
-        COALESCE(sc.estimated_salvage_value::numeric, sc.reserve_price::numeric, 0) AS expected_recovery,
+        COALESCE(sc.reserve_price::numeric, sc.estimated_salvage_value::numeric, 0) AS expected_recovery,
         sc.created_at,
         sc.approved_at
       FROM salvage_cases sc
@@ -315,11 +315,16 @@ async function calculateRecoveryControlTower(
       COALESCE(SUM(CASE WHEN ps.status = ${VERIFIED_PAYMENT_STATUS} THEN ps.amount::numeric ELSE 0 END), 0)::numeric AS verified_recovery,
       COUNT(DISTINCT CASE WHEN ps.status = ${VERIFIED_PAYMENT_STATUS} AND COALESCE(ps.pickup_confirmed_admin, false) = false THEN ps.auction_id END)::int AS awaiting_pickup,
       (SELECT AVG(EXTRACT(EPOCH FROM (approved_at - created_at)) / 86400.0) FILTER (WHERE approved_at IS NOT NULL)::numeric FROM case_scope) AS avg_days_to_assessment,
-      AVG(EXTRACT(EPOCH FROM (ps.verified_at - ps.end_time)) / 86400.0) FILTER (WHERE ps.status = ${VERIFIED_PAYMENT_STATUS} AND ps.verified_at IS NOT NULL)::numeric AS avg_days_to_payment,
+      AVG(EXTRACT(EPOCH FROM (ps.verified_at - ps.end_time)) / 86400.0) FILTER (
+        WHERE ps.status = ${VERIFIED_PAYMENT_STATUS}
+        AND ps.verified_at IS NOT NULL
+        AND ps.verified_at >= ps.end_time
+      )::numeric AS avg_days_to_payment,
       AVG(EXTRACT(EPOCH FROM (ps.pickup_confirmed_admin_at - ps.verified_at)) / 86400.0) FILTER (
         WHERE ps.status = ${VERIFIED_PAYMENT_STATUS}
         AND ps.verified_at IS NOT NULL
         AND ps.pickup_confirmed_admin_at IS NOT NULL
+        AND ps.pickup_confirmed_admin_at >= ps.verified_at
       )::numeric AS avg_days_to_pickup
     FROM payment_scope ps
   `)) as any[];

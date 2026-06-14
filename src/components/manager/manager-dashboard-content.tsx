@@ -483,9 +483,9 @@ function ManagerDashboardContentInner() {
                 <p className="mt-1 text-xs text-gray-500">{controlTower.recoveryRate.toFixed(1)}% of claims value</p>
               </div>
               <div className="rounded-lg border border-gray-200 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Expected gap</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Reserve gap</p>
                 <p className="mt-2 text-2xl font-bold text-amber-700">{formatNaira(controlTower.expectedRecoveryGap)}</p>
-                <p className="mt-1 text-xs text-gray-500">Expected salvage less verified recovery</p>
+                <p className="mt-1 text-xs text-gray-500">Reserve target less verified recovery</p>
               </div>
               <div className="rounded-lg border border-gray-200 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Awaiting pickup</p>

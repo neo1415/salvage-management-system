@@ -28,6 +28,9 @@ interface DashboardStats {
   userGrowth: number;
   systemHealth: 'healthy' | 'warning' | 'critical';
   pendingPickupConfirmations: number;
+  expiredDocuments: number;
+  overdueSignedUnpaid: number;
+  healthReasons: string[];
 }
 
 export async function GET(request: NextRequest) {
@@ -51,7 +54,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Try to get cached data
-    const cacheKey = 'dashboard:admin';
+    const cacheKey = 'dashboard:admin:v2';
     const cachedData = await cache.get<DashboardStats>(cacheKey);
 
     if (cachedData) {
@@ -173,12 +176,63 @@ async function calculateAdminStats(): Promise<DashboardStats> {
 
   const pendingPickupConfirmations = pendingPickupConfirmationsResult[0]?.count || 0;
 
+  const [operationsRow] = (await db.execute(sql`
+    WITH verified_payments AS (
+      SELECT DISTINCT auction_id, vendor_id
+      FROM payments
+      WHERE status = 'verified'
+    ),
+    expired_documents AS (
+      SELECT DISTINCT auction_id
+      FROM release_forms
+      WHERE status = 'pending'
+        AND validity_deadline IS NOT NULL
+        AND validity_deadline < NOW()
+        AND COALESCE(disabled, false) = false
+    ),
+    overdue_signed_unpaid AS (
+      SELECT DISTINCT rf.auction_id
+      FROM release_forms rf
+      LEFT JOIN verified_payments p
+        ON p.auction_id = rf.auction_id
+        AND p.vendor_id = rf.vendor_id
+      WHERE rf.status = 'signed'
+        AND rf.payment_deadline IS NOT NULL
+        AND rf.payment_deadline < NOW()
+        AND COALESCE(rf.disabled, false) = false
+        AND p.auction_id IS NULL
+    )
+    SELECT
+      (SELECT COUNT(*)::int FROM expired_documents) AS expired_documents,
+      (SELECT COUNT(*)::int FROM overdue_signed_unpaid) AS overdue_signed_unpaid
+  `)) as any[];
+
+  const expiredDocuments = numberFrom(operationsRow?.expired_documents);
+  const overdueSignedUnpaid = numberFrom(operationsRow?.overdue_signed_unpaid);
+
   // System health (based on fraud alerts and system activity)
   let systemHealth: 'healthy' | 'warning' | 'critical' = 'healthy';
+  const healthReasons: string[] = [];
+
+  if (pendingFraudAlerts > 0) {
+    healthReasons.push(`${pendingFraudAlerts} pending fraud alert${pendingFraudAlerts === 1 ? '' : 's'}`);
+  }
+
+  if (pendingPickupConfirmations > 0) {
+    healthReasons.push(`${pendingPickupConfirmations} pickup confirmation${pendingPickupConfirmations === 1 ? '' : 's'} pending`);
+  }
+
+  if (expiredDocuments > 0) {
+    healthReasons.push(`${expiredDocuments} document deadline${expiredDocuments === 1 ? '' : 's'} expired`);
+  }
+
+  if (overdueSignedUnpaid > 0) {
+    healthReasons.push(`${overdueSignedUnpaid} signed payment${overdueSignedUnpaid === 1 ? '' : 's'} overdue`);
+  }
   
-  if (pendingFraudAlerts > 10) {
+  if (pendingFraudAlerts > 10 || overdueSignedUnpaid > 0) {
     systemHealth = 'critical';
-  } else if (pendingFraudAlerts > 5) {
+  } else if (pendingFraudAlerts > 5 || pendingPickupConfirmations > 0 || expiredDocuments > 0) {
     systemHealth = 'warning';
   }
 
@@ -190,7 +244,15 @@ async function calculateAdminStats(): Promise<DashboardStats> {
     userGrowth,
     systemHealth,
     pendingPickupConfirmations,
+    expiredDocuments,
+    overdueSignedUnpaid,
+    healthReasons,
   };
+}
+
+function numberFrom(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 /**

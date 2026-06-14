@@ -30,6 +30,14 @@ interface DashboardStats {
     bank_transfer: number;
     escrow_wallet: number;
   };
+  settlementControl: {
+    verifiedRecovery: number;
+    pendingFinanceReview: number;
+    paidAwaitingPickup: number;
+    overdueSignedUnpaid: number;
+    frozenEscrowPayments: number;
+    averageDaysToPayment: number | null;
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -57,7 +65,7 @@ export async function GET(request: NextRequest) {
     const bypassCache = searchParams.get('bypass') === 'true';
 
     // Try to get cached data (unless bypassed)
-    const cacheKey = 'dashboard:finance';
+    const cacheKey = 'dashboard:finance:v2';
     if (!bypassCache) {
       const cachedData = await cache.get<DashboardStats>(cacheKey);
 
@@ -175,6 +183,62 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
     escrow_wallet: escrowWalletPayments,
   };
 
+  const [settlementRow] = (await db.execute(sql`
+    WITH verified_payments AS (
+      SELECT id, auction_id, amount, verified_at
+      FROM payments
+      WHERE status = 'verified'
+    ),
+    pending_finance_review AS (
+      SELECT id
+      FROM payments
+      WHERE status = 'pending'
+        AND (
+          payment_method IS DISTINCT FROM 'escrow_wallet'
+          OR escrow_status IS DISTINCT FROM 'frozen'
+        )
+    ),
+    paid_awaiting_pickup AS (
+      SELECT DISTINCT a.id
+      FROM auctions a
+      INNER JOIN verified_payments p ON p.auction_id = a.id
+      WHERE COALESCE(a.pickup_confirmed_admin, false) = false
+    ),
+    overdue_signed_unpaid AS (
+      SELECT DISTINCT rf.auction_id
+      FROM release_forms rf
+      LEFT JOIN verified_payments p ON p.auction_id = rf.auction_id AND p.id IS NOT NULL
+      WHERE rf.status = 'signed'
+        AND rf.payment_deadline IS NOT NULL
+        AND rf.payment_deadline < NOW()
+        AND COALESCE(rf.disabled, false) = false
+        AND p.id IS NULL
+    ),
+    payment_cycles AS (
+      SELECT EXTRACT(EPOCH FROM (p.verified_at - a.end_time)) / 86400.0 AS days_to_payment
+      FROM verified_payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      WHERE p.verified_at IS NOT NULL
+        AND p.verified_at >= a.end_time
+    )
+    SELECT
+      (SELECT COALESCE(SUM(amount::numeric), 0)::numeric FROM verified_payments) AS verified_recovery,
+      (SELECT COUNT(*)::int FROM pending_finance_review) AS pending_finance_review,
+      (SELECT COUNT(*)::int FROM paid_awaiting_pickup) AS paid_awaiting_pickup,
+      (SELECT COUNT(*)::int FROM overdue_signed_unpaid) AS overdue_signed_unpaid,
+      (SELECT COUNT(*)::int FROM payments WHERE payment_method = 'escrow_wallet' AND escrow_status = 'frozen') AS frozen_escrow_payments,
+      (SELECT AVG(days_to_payment)::numeric FROM payment_cycles) AS average_days_to_payment
+  `)) as any[];
+
+  const settlementControl = {
+    verifiedRecovery: numberFrom(settlementRow?.verified_recovery),
+    pendingFinanceReview: numberFrom(settlementRow?.pending_finance_review),
+    paidAwaitingPickup: numberFrom(settlementRow?.paid_awaiting_pickup),
+    overdueSignedUnpaid: numberFrom(settlementRow?.overdue_signed_unpaid),
+    frozenEscrowPayments: numberFrom(settlementRow?.frozen_escrow_payments),
+    averageDaysToPayment: nullableNumberFrom(settlementRow?.average_days_to_payment),
+  };
+
   return {
     totalPayments,
     pendingVerification,
@@ -184,5 +248,17 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
     escrowWalletPayments,
     escrowWalletPercentage,
     paymentMethodBreakdown,
+    settlementControl,
   };
+}
+
+function numberFrom(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function nullableNumberFrom(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : null;
 }

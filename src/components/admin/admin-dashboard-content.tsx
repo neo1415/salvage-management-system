@@ -25,6 +25,9 @@ interface DashboardStats {
   userGrowth: number;
   systemHealth: 'healthy' | 'warning' | 'critical';
   pendingPickupConfirmations: number;
+  expiredDocuments: number;
+  overdueSignedUnpaid: number;
+  healthReasons: string[];
 }
 
 function AdminDashboardContentInner() {
@@ -89,6 +92,9 @@ function AdminDashboardContentInner() {
         userGrowth: 0,
         systemHealth: 'healthy',
         pendingPickupConfirmations: 0,
+        expiredDocuments: 0,
+        overdueSignedUnpaid: 0,
+        healthReasons: [],
       };
       if (showFullPageLoader) {
         statsRef.current = fallback;
@@ -107,8 +113,8 @@ function AdminDashboardContentInner() {
     stats.systemHealth === 'healthy'
       ? 'All systems operational. No issues detected.'
       : stats.systemHealth === 'warning'
-        ? 'Some queues need attention. Review pending fraud alerts and operational tasks.'
-        : 'Critical operational attention required. Review fraud alerts and system queues immediately.';
+        ? `Some queues need attention: ${stats.healthReasons.join(', ') || 'review operational tasks'}.`
+        : `Critical operational attention required: ${stats.healthReasons.join(', ') || 'review fraud and payment queues immediately'}.`;
 
   return (
     <div className="space-y-6">
@@ -280,6 +286,38 @@ function AdminDashboardContentInner() {
         <p className="text-sm text-gray-600 mt-2">
           {systemHealthMessage}
         </p>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex flex-col gap-1 mb-5">
+          <h2 className="text-xl font-bold text-gray-900">Operations Control</h2>
+          <p className="text-sm text-gray-600">
+            Cross-functional queues that can block recovery, settlement, or release.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <Link href="/admin/fraud" className="rounded-lg border border-gray-200 p-4 hover:border-[var(--brand-primary)] transition-colors">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Fraud queue</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.pendingFraudAlerts}</p>
+            <p className="mt-1 text-xs text-gray-500">Pending alerts to review</p>
+          </Link>
+          <Link href="/admin/pickups" className="rounded-lg border border-gray-200 p-4 hover:border-[var(--brand-primary)] transition-colors">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pickup queue</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.pendingPickupConfirmations}</p>
+            <p className="mt-1 text-xs text-gray-500">Paid assets awaiting confirmation</p>
+          </Link>
+          <Link href="/reports/operational/document-management" className="rounded-lg border border-gray-200 p-4 hover:border-[var(--brand-primary)] transition-colors">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Document exceptions</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.expiredDocuments}</p>
+            <p className="mt-1 text-xs text-gray-500">Expired signing windows</p>
+          </Link>
+          <Link href="/finance/payments" className="rounded-lg border border-gray-200 p-4 hover:border-[var(--brand-primary)] transition-colors">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment exceptions</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.overdueSignedUnpaid}</p>
+            <p className="mt-1 text-xs text-gray-500">Signed but unpaid past deadline</p>
+          </Link>
+        </div>
       </div>
 
       {/* Quick Actions */}
