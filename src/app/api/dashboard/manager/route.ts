@@ -281,6 +281,7 @@ async function calculateRecoveryControlTower(
 ): Promise<RecoveryControlTower> {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
+  const startDateISO = startDate.toISOString();
 
   const [valueRow] = (await db.execute(sql`
     WITH case_scope AS (
@@ -291,7 +292,7 @@ async function calculateRecoveryControlTower(
         sc.created_at,
         sc.approved_at
       FROM salvage_cases sc
-      WHERE sc.created_at >= ${startDate}
+      WHERE sc.created_at >= ${startDateISO}::timestamptz
       AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
     ),
     payment_scope AS (
@@ -328,7 +329,7 @@ async function calculateRecoveryControlTower(
       SELECT a.id, a.status, a.end_time, a.pickup_confirmed_admin, sc.asset_type
       FROM auctions a
       INNER JOIN salvage_cases sc ON sc.id = a.case_id
-      WHERE sc.created_at >= ${startDate}
+      WHERE sc.created_at >= ${startDateISO}::timestamptz
       AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
     ),
     verified_payments AS (
