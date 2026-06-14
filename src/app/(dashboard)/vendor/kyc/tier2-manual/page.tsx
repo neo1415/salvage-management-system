@@ -681,10 +681,10 @@ export default function Tier2ManualKYCPage() {
               <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-xl p-5 text-white">
                 <h2 className="text-lg font-bold mb-3">Controlled Tier 2 Review</h2>
                 <p className="mb-3 text-sm text-gray-100">
-                  NEM Salvage collects your evidence directly, runs available Dojah checks, and sends the full file to the review team.
+                  Your evidence is collected directly, checked where automated verification is available, and sent to the review team.
                 </p>
                 <ul className="space-y-2 text-sm text-gray-200">
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Provider checks support the review but do not hide your application inside a third-party widget.</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Automated checks support the review without hiding your application inside an external flow.</li>
                   <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Uploaded documents are stored privately for authorized manager review.</li>
                 </ul>
               </div>

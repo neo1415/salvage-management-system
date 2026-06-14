@@ -133,7 +133,7 @@ function providerLookupLabel(cac: Record<string, unknown> | null): string {
   if (!cac) return 'Not completed';
   const status = String(cac.status ?? '').toLowerCase();
   if (status === 'completed' || cac.providerBusinessName || cac.providerBusinessNumber) return 'Matched';
-  if (status === 'unavailable') return 'Provider unavailable';
+  if (status === 'unavailable') return 'Verification service unavailable';
   if (status === 'false') return 'Failed';
   return formatManualProviderStatus(cac.status);
 }
@@ -153,7 +153,7 @@ function amlScreeningLabel(aml: Record<string, unknown> | null, amlCompleted: bo
     return 'Flagged - manual review required';
   }
   if (status === 'completed' || status === 'true') return 'No matches found';
-  if (status === 'unavailable') return 'Provider unavailable';
+  if (status === 'unavailable') return 'Verification service unavailable';
   return 'No matches found';
 }
 
@@ -258,26 +258,26 @@ export function buildDojahEvidenceSections(
         'Submitted business name': displayOrFallback(submittedProfile?.businessName, 'Not provided'),
         'Submitted business type': displayOrFallback(submittedProfile?.businessType, 'Not provided'),
         'Submitted registration number': displayOrFallback(submittedProfile?.businessRegistrationNumber, 'Not provided'),
-        'Provider lookup': providerLookupLabel(cac),
-        'Provider business name': displayOrFallback(cac?.providerBusinessName, 'Not returned'),
-        'Provider business number': displayOrFallback(cac?.providerBusinessNumber, 'Not returned'),
-        'Provider business type': displayOrFallback(cac?.providerBusinessType, 'Not returned'),
+        'Registry lookup': providerLookupLabel(cac),
+        'Registry business name': displayOrFallback(cac?.providerBusinessName, 'Not returned'),
+        'Registry business number': displayOrFallback(cac?.providerBusinessNumber, 'Not returned'),
+        'Registry business type': displayOrFallback(cac?.providerBusinessType, 'Not returned'),
         'Business type match': cac?.businessTypeMatched === true
           ? 'Matched'
           : cac?.businessTypeMatched === false
             ? `Needs review (${displayOrFallback(cac?.businessTypeMatchScore, '0')})`
             : 'Not checked',
-        'Provider country': displayOrFallback(cac?.providerCountry, 'Not returned'),
+        'Registry country': displayOrFallback(cac?.providerCountry, 'Not returned'),
         'Registration date': formatDateForReview(cac?.providerRegistrationDate),
         'Business name match': cac?.businessNameMatched === true ? 'Matched' : cac?.businessNameMatched === false ? 'Needs manager review' : 'Not checked',
-        'Provider message': displayOrFallback(cac?.message, 'No provider message returned'),
+        'Registry message': displayOrFallback(cac?.message, 'No registry message returned'),
       },
       governmentData: {
         'Identity number': displayOrFallback(normalized?.maskedIdentityValue, 'Stored securely'),
         'Government ID type': displayOrFallback(documentMetadata?.governmentIdType, 'Not provided'),
         'NIN lookup': displayOrFallback(nin?.status, 'Not completed'),
         'NIN last four': displayOrFallback(nin?.lastFour, 'Stored securely'),
-        'Provider name': displayOrFallback(nin?.providerName, 'Not returned'),
+        'Verified name': displayOrFallback(nin?.providerName, 'Not returned'),
         'First name': displayOrFallback(nin?.providerFirstName, 'Not returned'),
         'Middle name': displayOrFallback(nin?.providerMiddleName, 'Not returned'),
         'Last name': displayOrFallback(nin?.providerLastName, 'Not returned'),

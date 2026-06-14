@@ -328,7 +328,7 @@ export function ProfileSettingsPanel() {
             <div className="mt-6 border-t border-gray-100 pt-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
-                  <h3 className="font-semibold text-gray-900">Dojah verification evidence</h3>
+                  <h3 className="font-semibold text-gray-900">Verification evidence</h3>
                   <p className="text-sm text-gray-600">
                     Safe summary only. Raw documents and sensitive identifiers are not shown here.
                   </p>

@@ -47,8 +47,29 @@ interface PaymentStatusBreakdown {
   percentage: number;
 }
 
+interface ControlTowerException {
+  key: string;
+  label: string;
+  count: number;
+  severity: 'low' | 'medium' | 'high';
+}
+
+interface RecoveryControlTower {
+  claimsValue: number;
+  expectedRecovery: number;
+  verifiedRecovery: number;
+  recoveryRate: number;
+  expectedRecoveryGap: number;
+  awaitingPickup: number;
+  averageDaysToAssessment: number | null;
+  averageDaysToPayment: number | null;
+  averageDaysToPickup: number | null;
+  exceptions: ControlTowerException[];
+}
+
 interface DashboardData {
   kpis: DashboardKPIs;
+  controlTower: RecoveryControlTower;
   charts: {
     recoveryRateTrend: RecoveryRateTrend[];
     topVendors: TopVendor[];
@@ -94,12 +115,14 @@ export async function GET(request: NextRequest) {
     const kpis = await calculateKPIs(assetType);
 
     // Generate charts data
+    const controlTower = await calculateRecoveryControlTower(parseInt(dateRange), assetType);
     const recoveryRateTrend = await calculateRecoveryRateTrend(parseInt(dateRange), assetType);
     const topVendors = await getTopVendors(assetType);
     const paymentStatusBreakdown = await getPaymentStatusBreakdown(assetType);
 
     const dashboardData: DashboardData = {
       kpis,
+      controlTower,
       charts: {
         recoveryRateTrend,
         topVendors,
@@ -250,6 +273,135 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
     averageRecoveryRate: Math.round(averageRecoveryRate * 100) / 100,
     casesPendingApproval,
   };
+}
+
+async function calculateRecoveryControlTower(
+  days: number,
+  assetType: string | null
+): Promise<RecoveryControlTower> {
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  const [valueRow] = (await db.execute(sql`
+    WITH case_scope AS (
+      SELECT
+        sc.id,
+        sc.market_value,
+        COALESCE(sc.estimated_salvage_value::numeric, sc.reserve_price::numeric, 0) AS expected_recovery,
+        sc.created_at,
+        sc.approved_at
+      FROM salvage_cases sc
+      WHERE sc.created_at >= ${startDate}
+      AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
+    ),
+    payment_scope AS (
+      SELECT
+        a.id AS auction_id,
+        a.case_id,
+        a.end_time,
+        a.pickup_confirmed_admin,
+        a.pickup_confirmed_admin_at,
+        p.status,
+        p.amount,
+        p.verified_at
+      FROM auctions a
+      INNER JOIN case_scope cs ON cs.id = a.case_id
+      LEFT JOIN payments p ON p.auction_id = a.id
+    )
+    SELECT
+      (SELECT COALESCE(SUM(market_value::numeric), 0)::numeric FROM case_scope) AS claims_value,
+      (SELECT COALESCE(SUM(expected_recovery::numeric), 0)::numeric FROM case_scope) AS expected_recovery,
+      COALESCE(SUM(CASE WHEN ps.status = ${VERIFIED_PAYMENT_STATUS} THEN ps.amount::numeric ELSE 0 END), 0)::numeric AS verified_recovery,
+      COUNT(DISTINCT CASE WHEN ps.status = ${VERIFIED_PAYMENT_STATUS} AND COALESCE(ps.pickup_confirmed_admin, false) = false THEN ps.auction_id END)::int AS awaiting_pickup,
+      (SELECT AVG(EXTRACT(EPOCH FROM (approved_at - created_at)) / 86400.0) FILTER (WHERE approved_at IS NOT NULL)::numeric FROM case_scope) AS avg_days_to_assessment,
+      AVG(EXTRACT(EPOCH FROM (ps.verified_at - ps.end_time)) / 86400.0) FILTER (WHERE ps.status = ${VERIFIED_PAYMENT_STATUS} AND ps.verified_at IS NOT NULL)::numeric AS avg_days_to_payment,
+      AVG(EXTRACT(EPOCH FROM (ps.pickup_confirmed_admin_at - ps.verified_at)) / 86400.0) FILTER (
+        WHERE ps.status = ${VERIFIED_PAYMENT_STATUS}
+        AND ps.verified_at IS NOT NULL
+        AND ps.pickup_confirmed_admin_at IS NOT NULL
+      )::numeric AS avg_days_to_pickup
+    FROM payment_scope ps
+  `)) as any[];
+
+  const [exceptionRow] = (await db.execute(sql`
+    WITH auction_scope AS (
+      SELECT a.id, a.status, a.end_time, a.pickup_confirmed_admin, sc.asset_type
+      FROM auctions a
+      INNER JOIN salvage_cases sc ON sc.id = a.case_id
+      WHERE sc.created_at >= ${startDate}
+      AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
+    ),
+    verified_payments AS (
+      SELECT DISTINCT p.auction_id
+      FROM payments p
+      WHERE p.status = ${VERIFIED_PAYMENT_STATUS}
+    )
+    SELECT
+      COUNT(DISTINCT CASE WHEN a.status IN ('active', 'extended') AND a.end_time < NOW() THEN a.id END)::int AS stalled_auctions,
+      COUNT(DISTINCT CASE WHEN p.auction_id IS NOT NULL AND COALESCE(a.pickup_confirmed_admin, false) = false THEN a.id END)::int AS awaiting_pickup,
+      COUNT(DISTINCT CASE WHEN rf.status = 'pending' AND rf.validity_deadline IS NOT NULL AND rf.validity_deadline < NOW() THEN rf.auction_id END)::int AS expired_documents,
+      COUNT(DISTINCT CASE WHEN rf.status = 'signed' AND rf.payment_deadline IS NOT NULL AND rf.payment_deadline < NOW() AND p.auction_id IS NULL THEN rf.auction_id END)::int AS overdue_payments
+    FROM auction_scope a
+    LEFT JOIN release_forms rf ON rf.auction_id = a.id AND COALESCE(rf.disabled, false) = false
+    LEFT JOIN verified_payments p ON p.auction_id = a.id
+  `)) as any[];
+
+  const claimsValue = numberFrom(valueRow?.claims_value);
+  const expectedRecovery = numberFrom(valueRow?.expected_recovery);
+  const verifiedRecovery = numberFrom(valueRow?.verified_recovery);
+  const recoveryRate = claimsValue > 0 ? (verifiedRecovery / claimsValue) * 100 : 0;
+  const expectedRecoveryGap = Math.max(0, expectedRecovery - verifiedRecovery);
+
+  const exceptions: ControlTowerException[] = [
+    {
+      key: 'stalled_auctions',
+      label: 'Auctions ended but still active',
+      count: numberFrom(exceptionRow?.stalled_auctions),
+      severity: 'high',
+    },
+    {
+      key: 'overdue_payments',
+      label: 'Signed documents with overdue payment',
+      count: numberFrom(exceptionRow?.overdue_payments),
+      severity: 'high',
+    },
+    {
+      key: 'expired_documents',
+      label: 'Document signing deadline expired',
+      count: numberFrom(exceptionRow?.expired_documents),
+      severity: 'medium',
+    },
+    {
+      key: 'awaiting_pickup',
+      label: 'Paid assets awaiting pickup confirmation',
+      count: numberFrom(exceptionRow?.awaiting_pickup),
+      severity: 'medium',
+    },
+  ];
+
+  return {
+    claimsValue,
+    expectedRecovery,
+    verifiedRecovery,
+    recoveryRate: Math.round(recoveryRate * 100) / 100,
+    expectedRecoveryGap,
+    awaitingPickup: numberFrom(valueRow?.awaiting_pickup),
+    averageDaysToAssessment: nullableNumberFrom(valueRow?.avg_days_to_assessment),
+    averageDaysToPayment: nullableNumberFrom(valueRow?.avg_days_to_payment),
+    averageDaysToPickup: nullableNumberFrom(valueRow?.avg_days_to_pickup),
+    exceptions,
+  };
+}
+
+function numberFrom(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function nullableNumberFrom(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : null;
 }
 
 /**

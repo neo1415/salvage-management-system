@@ -348,7 +348,7 @@ export default function KYCApprovalDetailPage() {
   const amlDecision =
     amlUnavailable
       ? approval.providerEvidence?.reasonCodes?.includes('dojah_aml_unavailable')
-        ? 'Provider unavailable'
+        ? 'Verification service unavailable'
         : 'Not completed'
       : /yes/i.test(`${pepHits} ${sanctionsHits} ${adverseHits}`)
       ? 'Needs review'
@@ -550,7 +550,7 @@ export default function KYCApprovalDetailPage() {
           title="Identity"
           fields={{
             'Submitted name': valueFrom(evidenceSections?.providerSummary, 'Submitted name', 'Not provided'),
-            'Verified name': valueFrom(identityFields, 'Provider name', 'Not returned'),
+            'Verified name': valueFrom(identityFields, 'Verified name', valueFrom(identityFields, 'Provider name', 'Not returned')),
             'Date of birth': valueFrom(identityFields, 'Date of birth', valueFrom(identityFields, 'Date of birth match', 'Not returned')),
             Gender: valueFrom(identityFields, 'Gender', 'Not returned'),
             NIN: valueFrom(identityFields, 'Identity number', valueFrom(identityFields, 'NIN', 'Stored securely')),
@@ -563,8 +563,8 @@ export default function KYCApprovalDetailPage() {
             'Business name': valueFrom(businessFields, 'Submitted business name', valueFrom(evidenceSections?.providerSummary, 'Submitted business', approval.vendorName)),
             'Business type': valueFrom(businessFields, 'Submitted business type', 'Not provided'),
             'Registration number': valueFrom(businessFields, 'Submitted registration number', valueFrom(evidenceSections?.providerSummary, 'Submitted business number', 'Not provided')),
-            'Registry name': valueFrom(businessFields, 'Provider business name', 'Not returned'),
-            'Registry result': valueFrom(businessFields, 'Provider lookup', 'Not completed'),
+            'Registry name': valueFrom(businessFields, 'Registry business name', valueFrom(businessFields, 'Provider business name', 'Not returned')),
+            'Registry result': valueFrom(businessFields, 'Registry lookup', valueFrom(businessFields, 'Provider lookup', 'Not completed')),
             'Registration date': valueFrom(businessFields, 'Registration date', 'Not returned'),
             'Name match': valueFrom(businessFields, 'Business name match', 'Needs manager review'),
           }}
@@ -644,7 +644,7 @@ export default function KYCApprovalDetailPage() {
             <div>
               <p className="text-gray-500">Source</p>
               <p className="font-semibold">
-                {verificationSource === 'manual_hybrid' ? 'NEM hybrid manual verification' : 'Identity verification'}
+                {verificationSource === 'manual_hybrid' ? 'Manual verification' : 'Identity verification'}
               </p>
             </div>
             <div>

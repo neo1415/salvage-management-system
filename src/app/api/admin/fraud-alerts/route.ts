@@ -307,7 +307,7 @@ export async function GET(request: NextRequest) {
         reasonCodes: metadata?.reasonCodes || alert.flagReasons,
         details: alert.flagReasons.map(reason => ({
           pattern: metadata?.source === 'dojah'
-            ? 'Dojah KYC risk'
+            ? 'KYC verification risk'
             : metadata?.source === 'ip_analysis' ? 'IP fraud detection' : 'Fraud detection',
           evidence: reason,
         })),

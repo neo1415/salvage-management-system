@@ -836,7 +836,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
           dojahEvidenceSummary.ipDevice = {
             ...(dojahEvidenceSummary.ipDevice as Record<string, unknown>),
             ipScreeningStatus: 'unavailable',
-            ipScreeningMessage: error instanceof Error ? error.message : 'Dojah IP screening unavailable',
+            ipScreeningMessage: error instanceof Error ? error.message : 'IP screening unavailable',
           };
         }
       }
@@ -1107,7 +1107,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
     reasonCodes.add('dojah_provider_unavailable');
     dojahEvidenceSummary.provider = {
       status: 'unavailable',
-      message: error instanceof Error ? error.message : 'Dojah provider unavailable',
+      message: error instanceof Error ? error.message : 'Verification provider unavailable',
     };
   }
 

@@ -84,8 +84,29 @@ interface PaymentStatusBreakdown {
   percentage: number;
 }
 
+interface ControlTowerException {
+  key: string;
+  label: string;
+  count: number;
+  severity: 'low' | 'medium' | 'high';
+}
+
+interface RecoveryControlTower {
+  claimsValue: number;
+  expectedRecovery: number;
+  verifiedRecovery: number;
+  recoveryRate: number;
+  expectedRecoveryGap: number;
+  awaitingPickup: number;
+  averageDaysToAssessment: number | null;
+  averageDaysToPayment: number | null;
+  averageDaysToPickup: number | null;
+  exceptions: ControlTowerException[];
+}
+
 interface DashboardData {
   kpis: DashboardKPIs;
+  controlTower?: RecoveryControlTower;
   charts: {
     recoveryRateTrend: RecoveryRateTrend[];
     topVendors: TopVendor[];
@@ -110,6 +131,18 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
   rejected: COLORS.danger,
   overdue: '#DC2626',
 };
+
+function formatNaira(value: number): string {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatDays(value: number | null): string {
+  return value === null ? 'N/A' : `${value.toFixed(1)}d`;
+}
 
 function ManagerDashboardContentInner() {
   const router = useRouter();
@@ -272,7 +305,7 @@ function ManagerDashboardContentInner() {
     return <PageLoadingSkeleton />;
   }
 
-  const { kpis, charts } = dashboardData;
+  const { kpis, charts, controlTower } = dashboardData;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
@@ -420,6 +453,77 @@ function ManagerDashboardContentInner() {
             <p className="text-sm text-gray-600 mt-1">Awaiting review</p>
           </div>
         </div>
+
+        {controlTower && (
+          <div className="bg-white rounded-lg shadow p-6 mb-8">
+            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between mb-5">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Recovery Control Tower</h2>
+                <p className="text-sm text-gray-600">
+                  Claims value, verified recovery, pickup exposure, and operational exceptions.
+                </p>
+              </div>
+              <button
+                onClick={() => router.push('/manager/reports')}
+                className="text-sm font-semibold text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)]"
+              >
+                Open reports
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+              <div className="rounded-lg border border-gray-200 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Claims value</p>
+                <p className="mt-2 text-2xl font-bold text-gray-900">{formatNaira(controlTower.claimsValue)}</p>
+                <p className="mt-1 text-xs text-gray-500">Case market value in range</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Verified recovery</p>
+                <p className="mt-2 text-2xl font-bold text-emerald-700">{formatNaira(controlTower.verifiedRecovery)}</p>
+                <p className="mt-1 text-xs text-gray-500">{controlTower.recoveryRate.toFixed(1)}% of claims value</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Expected gap</p>
+                <p className="mt-2 text-2xl font-bold text-amber-700">{formatNaira(controlTower.expectedRecoveryGap)}</p>
+                <p className="mt-1 text-xs text-gray-500">Expected salvage less verified recovery</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Awaiting pickup</p>
+                <p className="mt-2 text-2xl font-bold text-gray-900">{controlTower.awaitingPickup}</p>
+                <p className="mt-1 text-xs text-gray-500">Paid assets not yet released</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Avg cycle</p>
+                <p className="mt-2 text-lg font-bold text-gray-900">
+                  {formatDays(controlTower.averageDaysToPayment)} payment
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {formatDays(controlTower.averageDaysToAssessment)} assessment, {formatDays(controlTower.averageDaysToPickup)} pickup
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+              {controlTower.exceptions.map((exception) => (
+                <div
+                  key={exception.key}
+                  className={`rounded-lg border px-4 py-3 ${
+                    exception.count === 0
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : exception.severity === 'high'
+                        ? 'border-red-200 bg-red-50'
+                        : 'border-amber-200 bg-amber-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-800">{exception.label}</p>
+                    <span className="text-xl font-bold text-gray-900">{exception.count}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">

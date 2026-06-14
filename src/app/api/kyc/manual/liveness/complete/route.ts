@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
   if (!liveness.hasEvidence) {
     return NextResponse.json(
-      { error: 'Dojah did not return liveness evidence for this reference yet. Please wait a moment and retry.' },
+      { error: 'Liveness evidence is not available for this reference yet. Please wait a moment and retry.' },
       { status: 409 }
     );
   }

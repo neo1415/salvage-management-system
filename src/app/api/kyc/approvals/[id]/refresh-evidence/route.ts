@@ -78,7 +78,7 @@ export async function POST(
 
   if (isManualHybrid) {
     return NextResponse.json(
-      { error: 'Manual hybrid KYC evidence is reviewed from stored NEM evidence. Provider refresh is only available for full Dojah widget submissions.' },
+      { error: 'Manual KYC evidence is reviewed from stored application evidence. Provider refresh is only available for full hosted verification submissions.' },
       { status: 400 }
     );
   }

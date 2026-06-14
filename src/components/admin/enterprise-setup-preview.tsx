@@ -192,7 +192,7 @@ function VendorJourney({ policy }: { policy: BusinessPolicy }) {
     },
     {
       title: 'Complete Tier 1 verification',
-      detail: unverifiedGate.allowed ? 'BVN verification is not required' : 'BVN verification through Dojah',
+      detail: unverifiedGate.allowed ? 'BVN verification is not required' : 'BVN verification is required',
       decision: unverifiedGate.decision.rulePath,
     },
     {
@@ -212,7 +212,7 @@ function VendorJourney({ policy }: { policy: BusinessPolicy }) {
     {
       title: 'Complete full verification',
       detail: tier2Review.value === 'manual_review'
-        ? 'Dojah evidence goes to manual review'
+        ? 'Verification evidence goes to manual review'
         : 'Provider pass can unlock next step',
       decision: tier2Review.decision.rulePath,
     },
@@ -378,7 +378,7 @@ export function EnterpriseSetupPreview({
               ['SMS categories', policy.notifications.smsCategories.join(', ')],
               ['Required docs', policy.documents.requiredAuctionDocuments.join(', ')],
               ['Receipt in documents', boolLabel(policy.documents.attachPaymentReceiptToAuctionDocuments)],
-              ['Dojah risk alerts', boolLabel(policy.fraud.dojahRiskAlertsEnabled)],
+              ['Verification risk alerts', boolLabel(policy.fraud.dojahRiskAlertsEnabled)],
               ['IP fraud detection', boolLabel(policy.fraud.ipFraudDetectionEnabled)],
             ]}
           />

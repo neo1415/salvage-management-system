@@ -100,7 +100,7 @@ export class DojahService {
       const diagnostic = buildDojahDiagnostic(json, candidate, res.status, referenceId);
       console.warn('[DojahService] getVerificationResult missing details', diagnostic);
       throw new DojahVerificationLookupError(
-        'Dojah did not return verification details for this reference.',
+        'The verification provider did not return details for this reference.',
         referenceId,
         'not_found_or_invalid_reference',
         diagnostic
@@ -129,7 +129,7 @@ export class DojahService {
       throw new DojahVerificationLookupError(
         hasVerificationData
           ? 'Dojah returned an unexpected verification response shape.'
-          : 'Dojah did not return verification details for this reference.',
+          : 'The verification provider did not return details for this reference.',
         referenceId,
         hasVerificationData ? 'unexpected_response' : 'not_found_or_invalid_reference',
         diagnostic

@@ -2556,7 +2556,7 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             Choose which risk signals should require closer review.
           </p>
           <div className="grid gap-3">
-            <Toggle checked={policy.fraud.dojahRiskAlertsEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.dojahRiskAlertsEnabled = checked; })} label="Dojah risk alerts" />
+            <Toggle checked={policy.fraud.dojahRiskAlertsEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.dojahRiskAlertsEnabled = checked; })} label="Verification risk alerts" />
             <Toggle checked={policy.fraud.ipFraudDetectionEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.ipFraudDetectionEnabled = checked; })} label="IP/device fraud detection" />
             <Toggle checked={policy.fraud.biddingFraudDetectionEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.biddingFraudDetectionEnabled = checked; })} label="Bidding fraud detection" />
             <Toggle checked={policy.fraud.highRiskRequiresManualReview} onChange={(checked) => updatePolicy((draft) => { draft.fraud.highRiskRequiresManualReview = checked; })} label="High risk requires manual review" />

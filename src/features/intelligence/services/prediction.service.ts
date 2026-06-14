@@ -26,6 +26,7 @@ import { predictionLogs } from '@/lib/db/schema/ml-training';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { bids } from '@/lib/db/schema/bids';
+import { payments } from '@/lib/db/schema/payments';
 import { getCached, setCached, CACHE_KEYS, CACHE_TTL } from '@/lib/cache/redis';
 
 /**
@@ -58,6 +59,7 @@ export interface PredictionResult {
 interface SimilarAuction {
   auctionId: string;
   finalPrice: number;
+  outcomeSource: 'verified_payment';
   similarityScore: number;
   timeWeight: number;
   bidCount: number;
@@ -89,7 +91,7 @@ interface PredictionConfig {
 }
 
 export class PredictionService {
-  private readonly ALGORITHM_VERSION = 'v1.0';
+  private readonly ALGORITHM_VERSION = 'v1.1';
   private readonly CACHE_TTL_SECONDS = 300; // 5 minutes
 
   /**
@@ -106,7 +108,7 @@ export class PredictionService {
     }
 
     // Task 2.4.2: Check Redis cache first
-    const cacheKey = `${CACHE_KEYS.PREDICTION}:${auctionId}`;
+    const cacheKey = `${CACHE_KEYS.PREDICTION}:${this.ALGORITHM_VERSION}:${auctionId}`;
     const cachedPrediction = await getCached<PredictionResult>(cacheKey);
     
     if (cachedPrediction) {
@@ -352,7 +354,7 @@ export class PredictionService {
       WITH similar_auctions AS (
         SELECT 
           a.id AS auction_id,
-          a.current_bid AS final_price,
+          p.amount AS final_price,
           sc.asset_details,
           sc.damage_severity,
           sc.market_value,
@@ -364,10 +366,13 @@ export class PredictionService {
           EXP(-EXTRACT(EPOCH FROM (NOW() - a.end_time)) / (${config.timeDecayMonths} * 30 * 24 * 60 * 60)) AS time_weight
         FROM ${auctions} a
         INNER JOIN ${salvageCases} sc ON a.case_id = sc.id
+        INNER JOIN ${payments} p
+          ON p.auction_id = a.id
+         AND p.status = 'verified'
+         AND p.amount IS NOT NULL
         LEFT JOIN ${bids} b ON b.auction_id = a.id
         WHERE 
-          a.status = 'closed'
-          AND a.current_bid IS NOT NULL
+          a.status IN ('closed', 'awaiting_payment')
           AND sc.asset_type = ${assetType}
           AND a.end_time > ${twelveMonthsAgoISO}
           AND a.id != ${auctionData.auctionId}
@@ -384,6 +389,7 @@ export class PredictionService {
     return (results as any[]).map(row => ({
         auctionId: row.auction_id,
         finalPrice: parseFloat(row.final_price),
+        outcomeSource: 'verified_payment',
         similarityScore: parseFloat(row.similarity_score),
         timeWeight: parseFloat(row.time_weight),
         bidCount: parseInt(row.bid_count),
@@ -544,6 +550,7 @@ export class PredictionService {
       return 0;
     }
 
+    const robustPriceBounds = this.calculateRobustPriceBounds(similarAuctions);
     let totalWeightedPrice = 0;
     let totalWeight = 0;
 
@@ -551,12 +558,44 @@ export class PredictionService {
       // Normalize similarity score to 0-1.6 range
       const similarityWeight = auction.similarityScore / 100.0;
       const combinedWeight = similarityWeight * auction.timeWeight;
+      const boundedPrice = Math.min(
+        robustPriceBounds.max,
+        Math.max(robustPriceBounds.min, auction.finalPrice)
+      );
 
-      totalWeightedPrice += auction.finalPrice * combinedWeight;
+      totalWeightedPrice += boundedPrice * combinedWeight;
       totalWeight += combinedWeight;
     }
 
     return totalWeight > 0 ? totalWeightedPrice / totalWeight : 0;
+  }
+
+  private calculateRobustPriceBounds(similarAuctions: SimilarAuction[]): { min: number; max: number } {
+    const prices = similarAuctions
+      .map(auction => Number(auction.finalPrice))
+      .filter(price => Number.isFinite(price) && price > 0)
+      .sort((a, b) => a - b);
+
+    if (prices.length === 0) {
+      return { min: 0, max: Number.MAX_SAFE_INTEGER };
+    }
+
+    const median = prices[Math.floor(prices.length / 2)];
+    if (prices.length < 4 || median <= 0) {
+      return {
+        min: Math.max(0, median * 0.35),
+        max: median * 2.25,
+      };
+    }
+
+    const q1 = prices[Math.floor((prices.length - 1) * 0.25)];
+    const q3 = prices[Math.floor((prices.length - 1) * 0.75)];
+    const iqr = Math.max(q3 - q1, median * 0.25);
+
+    return {
+      min: Math.max(0, Math.min(q1 - (1.5 * iqr), median * 0.45)),
+      max: Math.max(q3 + (1.5 * iqr), median * 1.75),
+    };
   }
 
   private calculateCaseValueAnchor(auctionData: any): number {
@@ -624,34 +663,42 @@ export class PredictionService {
       WITH recent_auctions AS (
         SELECT 
           a.id,
-          a.current_bid,
+          p.amount AS final_price,
           COUNT(b.id) AS bid_count
         FROM ${auctions} a
+        INNER JOIN ${payments} p
+          ON p.auction_id = a.id
+         AND p.status = 'verified'
+         AND p.amount IS NOT NULL
         LEFT JOIN ${bids} b ON b.auction_id = a.id
         INNER JOIN ${salvageCases} sc ON a.case_id = sc.id
-        WHERE a.status = 'closed'
+        WHERE a.status IN ('closed', 'awaiting_payment')
           AND a.end_time > ${thirtyDaysAgoISO}
           AND sc.asset_type = ${assetType}
-        GROUP BY a.id
+        GROUP BY a.id, p.amount
       ),
       historical_auctions AS (
         SELECT 
           a.id,
-          a.current_bid,
+          p.amount AS final_price,
           COUNT(b.id) AS bid_count
         FROM ${auctions} a
+        INNER JOIN ${payments} p
+          ON p.auction_id = a.id
+         AND p.status = 'verified'
+         AND p.amount IS NOT NULL
         LEFT JOIN ${bids} b ON b.auction_id = a.id
         INNER JOIN ${salvageCases} sc ON a.case_id = sc.id
-        WHERE a.status = 'closed'
+        WHERE a.status IN ('closed', 'awaiting_payment')
           AND a.end_time BETWEEN ${ninetyDaysAgoISO} AND ${thirtyDaysAgoISO}
           AND sc.asset_type = ${assetType}
-        GROUP BY a.id
+        GROUP BY a.id, p.amount
       )
       SELECT 
         AVG(ra.bid_count) AS avg_bids_recent,
         (SELECT AVG(bid_count) FROM historical_auctions) AS avg_bids_historical,
-        AVG(ra.current_bid) AS avg_price_recent,
-        (SELECT AVG(current_bid) FROM historical_auctions) AS avg_price_historical
+        AVG(ra.final_price) AS avg_price_recent,
+        (SELECT AVG(final_price) FROM historical_auctions) AS avg_price_historical
       FROM recent_auctions ra
     `);
 
@@ -969,6 +1016,8 @@ export class PredictionService {
     if (anchorValue && anchorValue > 0) {
       notes.push('Prediction blended with this case valuation and reserve signals');
     }
+
+    notes.push('Historical sample uses verified paid auction outcomes');
 
     return notes;
   }

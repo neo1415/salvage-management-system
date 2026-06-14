@@ -806,7 +806,7 @@ describe('manual hybrid evidence display', () => {
       }
     );
 
-    expect(sections.business['Provider lookup']).toBe('Matched');
+    expect(sections.business['Registry lookup']).toBe('Matched');
     expect(sections.business['Registration date']).toBe('1 April 1970');
     expect(sections.aml['AML screening']).toBe('No matches found');
     expect(sections.aml['PEP hits']).toBe('No');
@@ -860,7 +860,7 @@ describe('manual hybrid evidence display', () => {
       }
     );
 
-    expect(sections.business['Provider lookup']).toBe('Matched');
+    expect(sections.business['Registry lookup']).toBe('Matched');
     expect(sections.business['Registration date']).toBe('1 April 1970');
     expect(sections.aml['AML screening']).toBe('No matches found');
     expect(sections.ipDevice['Capture status']).toBe('Captured locally');
