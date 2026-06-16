@@ -17,6 +17,7 @@
 
 import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -309,6 +310,7 @@ interface AIAssessmentResult {
 function NewCasePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const isOffline = useOffline();
   const { pendingCount } = useOfflineSync();
   const toast = useToast();
@@ -1666,12 +1668,16 @@ function NewCasePageContent() {
       });
 
       if (isOffline) {
+        if (!session?.user?.id) {
+          throw new Error('Your login session could not be confirmed. Please reconnect and sign in again before saving an offline case.');
+        }
+
         // Save to IndexedDB for offline sync
         await saveOfflineCase({
           ...caseData,
           marketValue: caseData.marketValue ?? 0,
           gpsLocation: caseData.gpsLocation ?? { latitude: 0, longitude: 0 },
-          createdBy: 'current-user-id', // TODO: Get from session
+          createdBy: session.user.id,
           syncStatus: 'pending',
         });
         

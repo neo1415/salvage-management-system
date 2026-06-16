@@ -51,6 +51,15 @@ interface PendingPickupConfirmation {
   };
 }
 
+interface VendorOperationsControl {
+  bidLimit?: number;
+  wonAwaitingPayment: number;
+  signedAwaitingPayment: number;
+  paidAwaitingPickup: number;
+  averagePaymentTimeHours: number | null;
+  averagePickupTimeHours: number | null;
+}
+
 export interface VendorDashboardData {
   performanceStats: PerformanceStats;
   badges: Badge[];
@@ -59,6 +68,7 @@ export interface VendorDashboardData {
   vendorTier: 'tier1_bvn' | 'tier2_full';
   bidLimit?: number;
   pendingPickupConfirmations: PendingPickupConfirmation[];
+  operationsControl: VendorOperationsControl;
 }
 
 /**

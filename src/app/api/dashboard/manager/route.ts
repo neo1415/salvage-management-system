@@ -295,6 +295,18 @@ async function calculateRecoveryControlTower(
       WHERE sc.created_at >= ${startDateISO}::timestamptz
       AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
     ),
+    verified_winner_payments AS (
+      SELECT DISTINCT ON (p.auction_id)
+        p.auction_id,
+        p.amount,
+        p.verified_at
+      FROM payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      WHERE p.status = ${VERIFIED_PAYMENT_STATUS}
+        AND p.auction_id IS NOT NULL
+        AND p.vendor_id = a.current_bidder
+      ORDER BY p.auction_id, p.verified_at DESC NULLS LAST, p.created_at DESC
+    ),
     payment_scope AS (
       SELECT
         a.id AS auction_id,
@@ -302,27 +314,24 @@ async function calculateRecoveryControlTower(
         a.end_time,
         a.pickup_confirmed_admin,
         a.pickup_confirmed_admin_at,
-        p.status,
         p.amount,
         p.verified_at
       FROM auctions a
       INNER JOIN case_scope cs ON cs.id = a.case_id
-      LEFT JOIN payments p ON p.auction_id = a.id
+      LEFT JOIN verified_winner_payments p ON p.auction_id = a.id
     )
     SELECT
       (SELECT COALESCE(SUM(market_value::numeric), 0)::numeric FROM case_scope) AS claims_value,
       (SELECT COALESCE(SUM(expected_recovery::numeric), 0)::numeric FROM case_scope) AS expected_recovery,
-      COALESCE(SUM(CASE WHEN ps.status = ${VERIFIED_PAYMENT_STATUS} THEN ps.amount::numeric ELSE 0 END), 0)::numeric AS verified_recovery,
-      COUNT(DISTINCT CASE WHEN ps.status = ${VERIFIED_PAYMENT_STATUS} AND COALESCE(ps.pickup_confirmed_admin, false) = false THEN ps.auction_id END)::int AS awaiting_pickup,
+      COALESCE(SUM(CASE WHEN ps.amount IS NOT NULL THEN ps.amount::numeric ELSE 0 END), 0)::numeric AS verified_recovery,
+      COUNT(DISTINCT CASE WHEN ps.amount IS NOT NULL AND COALESCE(ps.pickup_confirmed_admin, false) = false THEN ps.auction_id END)::int AS awaiting_pickup,
       (SELECT AVG(EXTRACT(EPOCH FROM (approved_at - created_at)) / 86400.0) FILTER (WHERE approved_at IS NOT NULL)::numeric FROM case_scope) AS avg_days_to_assessment,
       AVG(EXTRACT(EPOCH FROM (ps.verified_at - ps.end_time)) / 86400.0) FILTER (
-        WHERE ps.status = ${VERIFIED_PAYMENT_STATUS}
-        AND ps.verified_at IS NOT NULL
+        WHERE ps.verified_at IS NOT NULL
         AND ps.verified_at >= ps.end_time
       )::numeric AS avg_days_to_payment,
       AVG(EXTRACT(EPOCH FROM (ps.pickup_confirmed_admin_at - ps.verified_at)) / 86400.0) FILTER (
-        WHERE ps.status = ${VERIFIED_PAYMENT_STATUS}
-        AND ps.verified_at IS NOT NULL
+        WHERE ps.verified_at IS NOT NULL
         AND ps.pickup_confirmed_admin_at IS NOT NULL
         AND ps.pickup_confirmed_admin_at >= ps.verified_at
       )::numeric AS avg_days_to_pickup
@@ -340,7 +349,9 @@ async function calculateRecoveryControlTower(
     verified_payments AS (
       SELECT DISTINCT p.auction_id
       FROM payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
       WHERE p.status = ${VERIFIED_PAYMENT_STATUS}
+        AND p.vendor_id = a.current_bidder
     )
     SELECT
       COUNT(DISTINCT CASE WHEN a.status IN ('active', 'extended') AND a.end_time < NOW() THEN a.id END)::int AS stalled_auctions,
@@ -407,7 +418,7 @@ function numberFrom(value: unknown): number {
 function nullableNumberFrom(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : null;
+  return Number.isFinite(parsed) ? Math.round(parsed * 1000) / 1000 : null;
 }
 
 /**

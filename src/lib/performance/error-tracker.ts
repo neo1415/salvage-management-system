@@ -169,9 +169,6 @@ class ErrorTracker implements IErrorTracker {
       this.config.onError(report);
     }
 
-    // TODO: Send to error tracking service
-    // Example: Sentry.captureException(report);
-    
     return report;
   }
 

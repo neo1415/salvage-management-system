@@ -10,6 +10,7 @@ import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 
 export default function VendorPerformancePage() {
   const router = useRouter();
@@ -208,6 +209,8 @@ export default function VendorPerformancePage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Top Vendors</h3>
+                <PaginatedReportRows rows={reportData.rankings || []} label="vendors">
+                  {(rows) => (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -225,7 +228,7 @@ export default function VendorPerformancePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(reportData.rankings || []).slice(0, 10).map((vendor: any) => (
+                      {rows.map((vendor: any) => (
                         <tr key={vendor.vendorId} className="border-b">
                           <td className="p-2">{vendor.rank}</td>
                           <td className="p-2">{vendor.vendorName}</td>
@@ -244,6 +247,8 @@ export default function VendorPerformancePage() {
                     </tbody>
                   </table>
                 </div>
+                  )}
+                </PaginatedReportRows>
               </CardContent>
             </Card>
           </div>

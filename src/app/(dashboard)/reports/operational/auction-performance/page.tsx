@@ -10,6 +10,7 @@ import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle } from 'luc
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 
 export default function AuctionPerformancePage() {
   const router = useRouter();
@@ -447,6 +448,8 @@ export default function AuctionPerformancePage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Detailed Auction List</h3>
+                <PaginatedReportRows rows={reportData.auctionList} label="auctions">
+                  {(rows) => (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -466,7 +469,7 @@ export default function AuctionPerformancePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {reportData.auctionList.slice(0, 50).map((auction: any) => (
+                      {rows.map((auction: any) => (
                         <tr key={auction.auctionId} className="border-b hover:bg-muted/50">
                           <td className="p-2">{auction.claimReference}</td>
                           <td className="p-2 capitalize">{auction.assetType}</td>
@@ -493,6 +496,8 @@ export default function AuctionPerformancePage() {
                     </tbody>
                   </table>
                 </div>
+                  )}
+                </PaginatedReportRows>
               </CardContent>
             </Card>
           )}

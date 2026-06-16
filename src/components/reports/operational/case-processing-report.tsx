@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileText, Clock, CheckCircle } from 'lucide-react';
 import { Bar, Line } from 'react-chartjs-2';
 import { ChartFrame, MetricGrid, MetricValue, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -231,6 +232,8 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
             </div>
           </CardHeader>
           <CardContent>
+            <PaginatedReportRows rows={asset.cases} label="cases">
+              {(rows, startIndex) => (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -246,8 +249,8 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
                   </tr>
                 </thead>
                 <tbody>
-                  {asset.cases.map((caseItem, index) => (
-                    <tr key={`${asset.assetType}-${caseItem.claimReference}-${caseItem.createdAt}-${index}`} className="border-b hover:bg-gray-50">
+                  {rows.map((caseItem, index) => (
+                    <tr key={`${asset.assetType}-${caseItem.claimReference}-${caseItem.createdAt}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                       <td className="py-2 px-3 font-medium">{caseItem.claimReference}</td>
                       <td className="py-2 px-3">
                         <span className={`px-2 py-1 rounded text-xs ${
@@ -271,6 +274,8 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
                 </tbody>
               </table>
             </div>
+              )}
+            </PaginatedReportRows>
           </CardContent>
         </Card>
       ))}

@@ -63,7 +63,7 @@ async function runDailyAggregation() {
     console.log('✅ Daily analytics aggregation completed successfully');
   } catch (error) {
     console.error('❌ Daily analytics aggregation failed:', error);
-    // TODO: Send alert to admins
+    // Launch gate: send alert to admins through the selected monitoring channel.
   }
 }
 

@@ -1,32 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/cron/check-overdue-payments",
+      "path": "/api/cron/daily-maintenance",
       "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/check-document-deadlines",
-      "schedule": "30 0 * * *"
-    },
-    {
-      "path": "/api/cron/check-payment-deadlines",
-      "schedule": "0 1 * * *"
-    },
-    {
-      "path": "/api/cron/check-missing-documents",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/reconcile-wallets",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/reconcile-paystack-transactions",
-      "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/refresh-ledger-summary",
-      "schedule": "0 4 * * *"
     }
   ]
 }

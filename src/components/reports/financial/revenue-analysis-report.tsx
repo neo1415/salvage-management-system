@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, TrendingDown, Banknote, BarChart3 } from 'lucide-react';
 import { Line, Bar } from 'react-chartjs-2';
 import { ChartFrame, MetricGrid, MetricValue, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import {
   Chart as ChartJS,
@@ -338,6 +339,8 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <CardTitle>Detailed Item Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
+            <PaginatedReportRows rows={safeData.itemBreakdown} label="items">
+              {(rows, startIndex) => (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -353,8 +356,8 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                   </tr>
                 </thead>
                 <tbody>
-                  {safeData.itemBreakdown.map((item, index) => (
-                    <tr key={index} className="border-b hover:bg-gray-50">
+                  {rows.map((item, index) => (
+                    <tr key={startIndex + index} className="border-b hover:bg-gray-50">
                       <td className="p-2 font-medium">{item.claimReference}</td>
                       <td className="p-2 capitalize">{item.assetType}</td>
                       <td className="p-2 text-right">₦{item.marketValue.toLocaleString()}</td>
@@ -368,6 +371,8 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                 </tbody>
               </table>
             </div>
+              )}
+            </PaginatedReportRows>
           </CardContent>
         </Card>
       )}
@@ -379,6 +384,8 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <CardTitle>Registration Fees Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
+            <PaginatedReportRows rows={safeData.registrationFees} label="fees">
+              {(rows, startIndex) => (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -391,8 +398,8 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                   </tr>
                 </thead>
                 <tbody>
-                  {safeData.registrationFees.map((fee, index) => (
-                    <tr key={index} className="border-b hover:bg-gray-50">
+                  {rows.map((fee, index) => (
+                    <tr key={startIndex + index} className="border-b hover:bg-gray-50">
                       <td className="p-2 font-medium">{fee.vendorName}</td>
                       <td className="p-2 text-right text-green-600">₦{fee.amount.toLocaleString()}</td>
                       <td className="p-2 capitalize">{fee.paymentMethod}</td>
@@ -409,6 +416,8 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                 </tbody>
               </table>
             </div>
+              )}
+            </PaginatedReportRows>
           </CardContent>
         </Card>
       )}

@@ -10,6 +10,7 @@ import { db } from '@/lib/db/drizzle';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { auctions } from '@/lib/db/schema/auctions';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
+import { payments } from '@/lib/db/schema/payments';
 import { eq, and, sql, inArray, gt } from 'drizzle-orm';
 
 /**
@@ -153,6 +154,38 @@ export async function GET(request: NextRequest) {
 
     const sold = soldResult[0]?.count || 0;
 
+    const draftsResult = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(salvageCases)
+      .where(
+        and(
+          eq(salvageCases.createdBy, userId),
+          eq(salvageCases.status, 'draft')
+        )
+      );
+
+    const drafts = draftsResult[0]?.count || 0;
+
+    const [controlRow] = (await db.execute(sql`
+      WITH case_scope AS (
+        SELECT id, created_at, approved_at
+        FROM salvage_cases
+        WHERE created_by = ${userId}
+      )
+      SELECT
+        COALESCE(SUM(CASE WHEN p.status = 'verified' THEN p.amount::numeric ELSE 0 END), 0)::numeric AS verified_recovery,
+        AVG(EXTRACT(EPOCH FROM (cs.approved_at - cs.created_at)) / 86400.0) FILTER (
+          WHERE cs.approved_at IS NOT NULL
+          AND cs.approved_at >= cs.created_at
+        )::numeric AS avg_days_to_approval
+      FROM case_scope cs
+      LEFT JOIN auctions a ON a.case_id = cs.id
+      LEFT JOIN payments p ON p.auction_id = a.id
+    `)) as any[];
+
+    const verifiedRecovery = numberFrom(controlRow?.verified_recovery);
+    const averageDaysToApproval = nullableNumberFrom(controlRow?.avg_days_to_approval);
+
     return NextResponse.json(
       {
         success: true,
@@ -164,6 +197,15 @@ export async function GET(request: NextRequest) {
           cancelled,
           activeAuction,
           sold,
+          assessmentControl: {
+            drafts,
+            pendingManagerReview: pendingApproval,
+            returnedForRevision: rejected + cancelled,
+            activeAuctions: activeAuction,
+            soldCases: sold,
+            verifiedRecovery,
+            averageDaysToApproval,
+          },
         },
       },
       { status: 200 }
@@ -178,4 +220,15 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function numberFrom(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function nullableNumberFrom(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : null;
 }

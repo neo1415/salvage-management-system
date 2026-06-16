@@ -17,6 +17,8 @@
 # production
 /build
 socket-sidecar/dist
+/protected-backups
+/backups
 
 # misc
 .DS_Store

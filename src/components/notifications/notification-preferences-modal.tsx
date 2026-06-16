@@ -6,7 +6,7 @@ import { usePushNotifications } from '@/hooks/use-push-notifications';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Bell, BellOff, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Bell, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 
 interface NotificationPreferences {
   pushEnabled: boolean;
@@ -39,7 +39,10 @@ export function NotificationPreferencesModal({
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTestingPush, setIsTestingPush] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [pushTestStatus, setPushTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [pushTestMessage, setPushTestMessage] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -115,6 +118,32 @@ export function NotificationPreferencesModal({
     }
   };
 
+  const handleTestPush = async () => {
+    setIsTestingPush(true);
+    setPushTestStatus('idle');
+    setPushTestMessage(null);
+
+    try {
+      const response = await fetch('/api/notifications/push/health', {
+        method: 'POST',
+      });
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setPushTestStatus('success');
+        setPushTestMessage(`Test sent to ${result.sentCount} active subscription${result.sentCount === 1 ? '' : 's'}.`);
+      } else {
+        setPushTestStatus('error');
+        setPushTestMessage(result.error || result.errors?.join(', ') || 'Push test failed.');
+      }
+    } catch (error) {
+      setPushTestStatus('error');
+      setPushTestMessage(error instanceof Error ? error.message : 'Push test failed.');
+    } finally {
+      setIsTestingPush(false);
+    }
+  };
+
   if (!isOpen || !mounted || typeof document === 'undefined') return null;
 
   return createPortal(
@@ -187,6 +216,43 @@ export function NotificationPreferencesModal({
                       disabled={!pushNotifications.isSupported || pushNotifications.isLoading}
                     />
                   </div>
+
+                  {preferences.pushEnabled && pushNotifications.isSubscribed && (
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Device push test</p>
+                          <p className="mt-1 text-sm text-gray-600">
+                            Send a live notification to this signed-in device.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleTestPush}
+                          disabled={isTestingPush}
+                        >
+                          {isTestingPush ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Sending
+                            </>
+                          ) : (
+                            'Send Test'
+                          )}
+                        </Button>
+                      </div>
+                      {pushTestMessage && (
+                        <p
+                          className={`mt-3 text-sm ${
+                            pushTestStatus === 'success' ? 'text-green-700' : 'text-red-700'
+                          }`}
+                        >
+                          {pushTestMessage}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* SMS Notifications */}
                   <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">

@@ -212,9 +212,9 @@ export default function ReportsHubPage() {
       })).filter((category) => category.reports.length > 0)
     : visibleCategories;
 
-  // Load recent reports and favorites
+  // This hub currently shows the canonical report catalog. Recent/favorite reports
+  // are left empty until a persisted user preference API is enabled.
   useEffect(() => {
-    // TODO: Fetch from API
     setRecentReports([]);
     setFavorites([]);
   }, []);

@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, FileText, Clock, Award } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import { usePublicBranding } from '@/hooks/use-public-branding';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -169,6 +170,8 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
             <CardTitle>Team Breakdown by Adjuster</CardTitle>
           </CardHeader>
           <CardContent>
+            <PaginatedReportRows rows={data.teamBreakdown} label="adjusters">
+              {(rows) => (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -183,7 +186,7 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.teamBreakdown.map((adjuster) => (
+                  {rows.map((adjuster) => (
                     <tr key={adjuster.adjusterId} className="border-b hover:bg-gray-50">
                       <td className="p-2">{adjuster.adjusterName}</td>
                       <td className="text-right p-2">{adjuster.casesSubmitted}</td>
@@ -197,6 +200,8 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
                 </tbody>
               </table>
             </div>
+              )}
+            </PaginatedReportRows>
           </CardContent>
         </Card>
       )}

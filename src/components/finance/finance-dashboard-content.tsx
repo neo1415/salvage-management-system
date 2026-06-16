@@ -122,7 +122,11 @@ function FinanceDashboardContentInner() {
 
   const formatDays = (days: number | null) => {
     if (days === null) return 'No clean data';
-    if (days < 1) return `${Math.round(days * 24)}h`;
+    if (days === 0) return '0h';
+    if (days < 1) {
+      const hours = days * 24;
+      return hours < 1 ? '<1h' : `${Math.round(hours)}h`;
+    }
     return `${days.toFixed(1)}d`;
   };
 
@@ -236,7 +240,7 @@ function FinanceDashboardContentInner() {
         <div className="flex flex-col gap-1 mb-5">
           <h2 className="text-xl font-bold text-gray-900">Settlement Control</h2>
           <p className="text-sm text-gray-600">
-            Verified recovery, payment exceptions, and pickup handoff exposure.
+            Winner auction recovery, payment exceptions, and pickup handoff exposure.
           </p>
         </div>
 
@@ -246,7 +250,7 @@ function FinanceDashboardContentInner() {
             <p className="mt-2 text-2xl font-bold text-emerald-700">
               {formatCurrency(stats.settlementControl.verifiedRecovery)}
             </p>
-            <p className="mt-1 text-xs text-gray-500">Cash confirmed by finance</p>
+            <p className="mt-1 text-xs text-gray-500">Winner payments confirmed</p>
           </div>
           <div className="rounded-lg border border-gray-200 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Finance queue</p>

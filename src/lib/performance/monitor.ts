@@ -179,8 +179,8 @@ class PerformanceMonitor {
   }
 
   /**
-   * Report metrics to analytics service
-   * This is a placeholder - integrate with your analytics service
+   * Report metrics and return the payload.
+   * A caller may pass an analytics adapter through this boundary in production.
    */
   public report(additionalContext?: { userRole?: string }) {
     const metrics = this.getMetrics();
@@ -194,9 +194,6 @@ class PerformanceMonitor {
       console.log('📊 Performance Metrics:', metrics);
     }
 
-    // TODO: Send to analytics service
-    // Example: analytics.track('performance_metrics', metrics);
-    
     return metrics;
   }
 

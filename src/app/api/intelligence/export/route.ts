@@ -15,7 +15,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { MLDatasetService } from '@/features/intelligence/services/ml-dataset.service';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
+import { interactions } from '@/lib/db/schema/intelligence';
 import { db } from '@/lib/db';
+import { and, desc, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -97,10 +99,25 @@ export async function GET(request: NextRequest) {
         break;
 
       case 'interactions':
-        // For now, return a placeholder
-        exportedData = format === 'json' 
-          ? JSON.stringify({ message: 'Interactions export not yet implemented' })
-          : 'message\nInteractions export not yet implemented';
+        const interactionRows = await db
+          .select({
+            vendorId: interactions.vendorId,
+            auctionId: interactions.auctionId,
+            eventType: interactions.eventType,
+            timestamp: interactions.timestamp,
+            sessionId: interactions.sessionId,
+            metadata: interactions.metadata,
+          })
+          .from(interactions)
+          .where(and(
+            gte(interactions.timestamp, dateRangeStart),
+            lte(interactions.timestamp, dateRangeEnd)
+          ))
+          .orderBy(desc(interactions.timestamp));
+
+        exportedData = format === 'json'
+          ? JSON.stringify(interactionRows, null, 2)
+          : toCsv(interactionRows);
         break;
 
       default:
@@ -152,4 +169,25 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function toCsv(rows: Array<Record<string, unknown>>): string {
+  if (rows.length === 0) {
+    return '';
+  }
+
+  const headers = Object.keys(rows[0]);
+  const escapeValue = (value: unknown) => {
+    const raw = value instanceof Date
+      ? value.toISOString()
+      : typeof value === 'object' && value !== null
+        ? JSON.stringify(value)
+        : String(value ?? '');
+    return `"${raw.replace(/"/g, '""')}"`;
+  };
+
+  return [
+    headers.join(','),
+    ...rows.map((row) => headers.map((header) => escapeValue(row[header])).join(',')),
+  ].join('\n');
 }

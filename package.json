@@ -25,6 +25,8 @@
     "db:apply-mfa-columns": "tsx scripts/apply-mfa-columns.ts",
     "db:apply-legal-names": "tsx scripts/apply-legal-name-columns.ts",
     "db:bootstrap-staging": "tsx scripts/bootstrap-staging-database.ts",
+    "db:backup": "tsx scripts/backup-database.ts",
+    "db:launch-reset": "tsx scripts/launch-reset-preserve-admin.ts",
     "db:apply-optimized-indexes": "tsx scripts/apply-optimized-indexes.ts",
     "db:check-index-usage": "tsx scripts/check-index-usage.ts",
     "db:cleanup-redundant-indexes": "tsx scripts/cleanup-redundant-indexes.ts",
@@ -44,6 +46,7 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slider": "^1.3.6",
     "@radix-ui/react-tabs": "^1.1.13",
+    "@sentry/nextjs": "^10.58.0",
     "@supabase/supabase-js": "^2.105.3",
     "@tanstack/react-query": "^5.94.5",
     "@tanstack/react-query-devtools": "^5.94.5",
@@ -131,9 +134,8 @@
     "vitest-mock-extended": "^3.1.0"
   },
   "overrides": {
-    "@esbuild-kit/core-utils": {
-      "esbuild": "0.25.12"
-    },
+    "esbuild": "0.28.1",
+    "ws": "8.21.0",
     "next": {
       "postcss": "8.5.12"
     }

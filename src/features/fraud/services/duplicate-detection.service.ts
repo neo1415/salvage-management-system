@@ -226,7 +226,7 @@ Return ONLY valid JSON (no markdown):
 }`;
 
   // For now, return low confidence - AI photo comparison disabled
-  // TODO: Re-enable when AI services are properly configured
+  // Production extension: re-enable when AI services are configured for image hashing.
   return {
     confidence: 0,
     reasoning: 'AI photo comparison temporarily disabled - manual review required',

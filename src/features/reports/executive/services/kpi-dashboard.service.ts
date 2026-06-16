@@ -425,7 +425,7 @@ export class KPIDashboardService {
         sc.market_value as starting_bid,
         COALESCE(p.amount, '0') as winning_bid,
         COALESCE(v.business_name, winner.full_name) as winner_name,
-        CASE WHEN p.id IS NOT NULL THEN 'sold' ELSE a.status END as status
+        CASE WHEN p.id IS NOT NULL THEN 'sold' ELSE a.status::text END as status
       FROM auctions a
       JOIN salvage_cases sc ON a.case_id = sc.id
       LEFT JOIN bids b ON a.id = b.auction_id
@@ -556,7 +556,7 @@ export class KPIDashboardService {
       vendors: (vendorsResult as any[]).map(v => ({
         id: v.id,
         businessName: v.business_name,
-        tier: parseInt(v.tier),
+        tier: vendorTierToNumber(v.tier),
         auctionsParticipated: parseInt(v.auctions_participated),
         auctionsWon: parseInt(v.auctions_won),
         winRate: Math.round(parseFloat(v.win_rate) * 100) / 100,
@@ -566,4 +566,11 @@ export class KPIDashboardService {
       })),
     };
   }
+}
+
+function vendorTierToNumber(tier: unknown): number {
+  const value = String(tier ?? '').toLowerCase();
+  if (value.includes('2')) return 2;
+  if (value.includes('1')) return 1;
+  return 0;
 }

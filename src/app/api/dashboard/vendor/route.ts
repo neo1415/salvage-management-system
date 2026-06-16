@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { auctions, bids, payments, vendors, salvageCases, auctionWinners, releaseForms } from '@/lib/db/schema';
-import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
+import { auctions, bids, payments, vendors, salvageCases, releaseForms } from '@/lib/db/schema';
+import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 import { calculateAutoRating } from '@/features/vendors/services/auto-rating.service';
 import { formatRatingLabel } from '@/lib/metrics/dashboard-status';
@@ -58,6 +58,7 @@ interface VendorDashboardData {
   vendorTier: 'tier1_bvn' | 'tier2_full';
   bidLimit?: number;
   pendingPickupConfirmations: PendingPickupConfirmation[];
+  operationsControl: VendorOperationsControl;
 }
 
 interface PendingPickupConfirmation {
@@ -69,6 +70,15 @@ interface PendingPickupConfirmation {
     assetType: string;
     assetDetails: Record<string, unknown>;
   };
+}
+
+interface VendorOperationsControl {
+  bidLimit?: number;
+  wonAwaitingPayment: number;
+  signedAwaitingPayment: number;
+  paidAwaitingPickup: number;
+  averagePaymentTimeHours: number | null;
+  averagePickupTimeHours: number | null;
 }
 
 export async function GET() {
@@ -122,7 +132,7 @@ export async function GET() {
 
     // Try to get cached data. Include policy version so display-only policy changes
     // do not keep stale bid limits in the vendor dashboard cache.
-    const cacheKey = `dashboard:vendor:${vendor.id}`;
+    const cacheKey = `dashboard:vendor:v2:${vendor.id}`;
     try {
       const cachedData = await cache.get<VendorDashboardData>(cacheKey);
 
@@ -132,6 +142,14 @@ export async function GET() {
         return NextResponse.json({
           ...cachedData,
           pendingPickupConfirmations: cachedData.pendingPickupConfirmations ?? [],
+          operationsControl: cachedData.operationsControl ?? {
+            bidLimit: typeof bidLimitDecision.value === 'number' ? bidLimitDecision.value : undefined,
+            wonAwaitingPayment: 0,
+            signedAwaitingPayment: 0,
+            paidAwaitingPickup: cachedData.pendingPickupConfirmations?.length ?? 0,
+            averagePaymentTimeHours: null,
+            averagePickupTimeHours: null,
+          },
         });
       }
     } catch (cacheError) {
@@ -198,6 +216,12 @@ export async function GET() {
       pickupConfirmedAdmin: confirmation.pickupConfirmedAdmin ?? false,
     }));
 
+    const operationsControl = await calculateVendorOperationsControl(
+      vendor.id,
+      pendingPickupConfirmationsUnique.length,
+      typeof bidLimitDecision.value === 'number' ? bidLimitDecision.value : undefined
+    );
+
     const dashboardData: VendorDashboardData = {
       performanceStats,
       badges,
@@ -206,6 +230,7 @@ export async function GET() {
       vendorTier: vendor.tier as 'tier1_bvn' | 'tier2_full',
       bidLimit: typeof bidLimitDecision.value === 'number' ? bidLimitDecision.value : undefined,
       pendingPickupConfirmations: pendingPickupConfirmationsUnique,
+      operationsControl,
     };
 
     // Cache the data for 5 minutes (300 seconds)
@@ -243,35 +268,23 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
 
   const totalBids = totalBidsResult[0]?.count || 0;
 
-  // Get total wins from both legacy (currentBidder) and new (auction_winners) systems
-  // Legacy wins: auctions where vendor is currentBidder and status is closed
-  const legacyWinsResult = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(auctions)
-    .where(
-      and(
-        eq(auctions.currentBidder, vendorId),
-        eq(auctions.status, 'closed')
-      )
-    );
+  const [winsRow] = (await db.execute(sql`
+    WITH win_events AS (
+      SELECT id AS auction_id
+      FROM auctions
+      WHERE current_bidder = ${vendorId}
+        AND status IN ('closed', 'awaiting_payment')
+      UNION
+      SELECT auction_id
+      FROM auction_winners
+      WHERE vendor_id = ${vendorId}
+        AND rank = 1
+    )
+    SELECT COUNT(DISTINCT auction_id)::int AS total_wins
+    FROM win_events
+  `)) as any[];
 
-  const legacyWins = legacyWinsResult[0]?.count || 0;
-
-  // New deposit system wins: auction_winners where vendor has rank=1 and status is completed
-  const depositWinsResult = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(auctionWinners)
-    .where(
-      and(
-        eq(auctionWinners.vendorId, vendorId),
-        eq(auctionWinners.rank, 1)
-      )
-    );
-
-  const depositWins = depositWinsResult[0]?.count || 0;
-
-  // Total wins is the sum of both systems
-  const totalWins = legacyWins + depositWins;
+  const totalWins = numberFrom(winsRow?.total_wins);
 
   // Calculate win rate
   const winRate = totalBids > 0 ? (totalWins / totalBids) * 100 : 0;
@@ -291,19 +304,19 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
       )
     );
 
-  const totalVerifiedPayments = paymentTimesResult.length;
+  const cleanPaymentTimes = paymentTimesResult.filter((item) => {
+    if (!item.auctionEndTime || !item.paymentVerifiedTime) return false;
+    return new Date(item.paymentVerifiedTime).getTime() >= new Date(item.auctionEndTime).getTime();
+  });
+  const totalVerifiedPayments = cleanPaymentTimes.length;
   let avgPaymentTimeHours = 0;
-  if (paymentTimesResult.length > 0) {
-    const totalPaymentTime = paymentTimesResult.reduce((sum, item) => {
-      if (item.auctionEndTime && item.paymentVerifiedTime) {
-        const endTime = new Date(item.auctionEndTime).getTime();
-        const verifiedTime = new Date(item.paymentVerifiedTime).getTime();
-        const diffHours = (verifiedTime - endTime) / (1000 * 60 * 60);
-        return sum + diffHours;
-      }
-      return sum;
+  if (cleanPaymentTimes.length > 0) {
+    const totalPaymentTime = cleanPaymentTimes.reduce((sum, item) => {
+      const endTime = new Date(item.auctionEndTime!).getTime();
+      const verifiedTime = new Date(item.paymentVerifiedTime!).getTime();
+      return sum + ((verifiedTime - endTime) / (1000 * 60 * 60));
     }, 0);
-    avgPaymentTimeHours = totalPaymentTime / paymentTimesResult.length;
+    avgPaymentTimeHours = totalPaymentTime / cleanPaymentTimes.length;
   }
 
   // Calculate on-time pickup rate using staff-confirmed pickup, not payment as a proxy.
@@ -324,7 +337,10 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
 
   const pickupDeadlineHours = 48;
   const completedPickups = pickupTimingResult.filter(
-    (item) => item.paymentVerifiedTime && item.pickupConfirmedAt
+    (item) =>
+      item.paymentVerifiedTime
+      && item.pickupConfirmedAt
+      && new Date(item.pickupConfirmedAt).getTime() >= new Date(item.paymentVerifiedTime).getTime()
   );
   const onTimePickups = completedPickups.filter((item) => {
     const verifiedAt = new Date(item.paymentVerifiedTime!).getTime();
@@ -344,26 +360,30 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
   const autoRating = await calculateAutoRating(vendorId);
   const rating = formatRatingLabel(storedRating, autoRating, totalBids + totalVerifiedPayments);
 
-  // Calculate leaderboard position
-  // Get all vendors ordered by total wins (legacy + deposit system)
-  const allVendorsResult = await db
-    .select({
-      vendorId: vendors.id,
-      legacyWins: sql<number>`count(DISTINCT CASE WHEN ${auctions.currentBidder} = ${vendors.id} AND ${auctions.status} = 'closed' THEN ${auctions.id} END)::int`,
-      depositWins: sql<number>`count(DISTINCT CASE WHEN ${auctionWinners.vendorId} = ${vendors.id} AND ${auctionWinners.rank} = 1 THEN ${auctionWinners.auctionId} END)::int`,
-    })
-    .from(vendors)
-    .leftJoin(auctions, eq(auctions.currentBidder, vendors.id))
-    .leftJoin(auctionWinners, eq(auctionWinners.vendorId, vendors.id))
-    .groupBy(vendors.id);
+  const allVendorsResult = (await db.execute(sql`
+    WITH win_events AS (
+      SELECT current_bidder AS vendor_id, id AS auction_id
+      FROM auctions
+      WHERE current_bidder IS NOT NULL
+        AND status IN ('closed', 'awaiting_payment')
+      UNION
+      SELECT vendor_id, auction_id
+      FROM auction_winners
+      WHERE rank = 1
+    )
+    SELECT
+      v.id AS vendor_id,
+      COUNT(DISTINCT we.auction_id)::int AS total_wins
+    FROM vendors v
+    LEFT JOIN win_events we ON we.vendor_id = v.id
+    GROUP BY v.id
+    ORDER BY COUNT(DISTINCT we.auction_id) DESC, v.created_at ASC
+  `)) as any[];
 
-  // Calculate total wins for each vendor and sort
-  const vendorsWithTotalWins = allVendorsResult
-    .map(v => ({
-      vendorId: v.vendorId,
-      totalWins: v.legacyWins + v.depositWins,
-    }))
-    .sort((a, b) => b.totalWins - a.totalWins);
+  const vendorsWithTotalWins = allVendorsResult.map(v => ({
+    vendorId: v.vendor_id,
+    totalWins: numberFrom(v.total_wins),
+  }));
 
   const totalVendors = vendorsWithTotalWins.length;
   const leaderboardPosition = vendorsWithTotalWins.findIndex(v => v.vendorId === vendorId) + 1;
@@ -379,6 +399,66 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
     totalVendors,
     totalBids,
     totalWins,
+  };
+}
+
+async function calculateVendorOperationsControl(
+  vendorId: string,
+  paidAwaitingPickup: number,
+  bidLimit?: number
+): Promise<VendorOperationsControl> {
+  const [row] = (await db.execute(sql`
+    WITH verified_payments AS (
+      SELECT DISTINCT auction_id, vendor_id
+      FROM payments
+      WHERE status = 'verified'
+    )
+    SELECT
+      COUNT(DISTINCT CASE
+        WHEN a.current_bidder = ${vendorId}
+        AND a.status IN ('closed', 'awaiting_payment')
+        AND vp.auction_id IS NULL
+        THEN a.id
+      END)::int AS won_awaiting_payment,
+      COUNT(DISTINCT CASE
+        WHEN rf.vendor_id = ${vendorId}
+        AND rf.status = 'signed'
+        AND COALESCE(rf.disabled, false) = false
+        AND vp.auction_id IS NULL
+        THEN rf.auction_id
+      END)::int AS signed_awaiting_payment,
+      AVG(EXTRACT(EPOCH FROM (p.verified_at - a.end_time)) / 3600.0) FILTER (
+        WHERE p.status = 'verified'
+        AND p.vendor_id = ${vendorId}
+        AND p.verified_at IS NOT NULL
+        AND p.verified_at >= a.end_time
+      )::numeric AS avg_payment_hours,
+      AVG(EXTRACT(EPOCH FROM (a.pickup_confirmed_admin_at - p.verified_at)) / 3600.0) FILTER (
+        WHERE p.status = 'verified'
+        AND p.vendor_id = ${vendorId}
+        AND p.verified_at IS NOT NULL
+        AND a.pickup_confirmed_admin_at IS NOT NULL
+        AND a.pickup_confirmed_admin_at >= p.verified_at
+      )::numeric AS avg_pickup_hours
+    FROM auctions a
+    LEFT JOIN verified_payments vp
+      ON vp.auction_id = a.id
+      AND vp.vendor_id = ${vendorId}
+    LEFT JOIN payments p
+      ON p.auction_id = a.id
+      AND p.vendor_id = ${vendorId}
+    LEFT JOIN release_forms rf
+      ON rf.auction_id = a.id
+      AND rf.vendor_id = ${vendorId}
+  `)) as any[];
+
+  return {
+    bidLimit,
+    wonAwaitingPayment: numberFrom(row?.won_awaiting_payment),
+    signedAwaitingPayment: numberFrom(row?.signed_awaiting_payment),
+    paidAwaitingPickup,
+    averagePaymentTimeHours: nullableNumberFrom(row?.avg_payment_hours),
+    averagePickupTimeHours: nullableNumberFrom(row?.avg_pickup_hours),
   };
 }
 
@@ -466,69 +546,30 @@ async function calculateComparisons(
 
   const lastMonthBids = lastMonthBidsResult[0]?.count || 0;
 
-  // Get last month's total wins (legacy + deposit system)
-  const lastMonthLegacyWinsResult = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(auctions)
-    .where(
-      and(
-        eq(auctions.currentBidder, vendorId),
-        eq(auctions.status, 'closed'),
-        gte(auctions.updatedAt, lastMonthStart),
-        lte(auctions.updatedAt, lastMonthEnd)
-      )
-    );
+  const [lastMonthWinsRow] = (await db.execute(sql`
+    WITH win_events AS (
+      SELECT id AS auction_id
+      FROM auctions
+      WHERE current_bidder = ${vendorId}
+        AND status IN ('closed', 'awaiting_payment')
+        AND updated_at >= ${lastMonthStart.toISOString()}::timestamptz
+        AND updated_at <= ${lastMonthEnd.toISOString()}::timestamptz
+      UNION
+      SELECT auction_id
+      FROM auction_winners
+      WHERE vendor_id = ${vendorId}
+        AND rank = 1
+        AND created_at >= ${lastMonthStart.toISOString()}::timestamptz
+        AND created_at <= ${lastMonthEnd.toISOString()}::timestamptz
+    )
+    SELECT COUNT(DISTINCT auction_id)::int AS total_wins
+    FROM win_events
+  `)) as any[];
 
-  const lastMonthLegacyWins = lastMonthLegacyWinsResult[0]?.count || 0;
-
-  const lastMonthDepositWinsResult = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(auctionWinners)
-    .where(
-      and(
-        eq(auctionWinners.vendorId, vendorId),
-        eq(auctionWinners.rank, 1),
-        gte(auctionWinners.createdAt, lastMonthStart),
-        lte(auctionWinners.createdAt, lastMonthEnd)
-      )
-    );
-
-  const lastMonthDepositWins = lastMonthDepositWinsResult[0]?.count || 0;
-  const lastMonthWins = lastMonthLegacyWins + lastMonthDepositWins;
+  const lastMonthWins = numberFrom(lastMonthWinsRow?.total_wins);
 
   // Calculate last month's win rate
   const lastMonthWinRate = lastMonthBids > 0 ? (lastMonthWins / lastMonthBids) * 100 : 0;
-
-  // Get last month's payment times
-  const lastMonthPaymentTimesResult = await db
-    .select({
-      auctionEndTime: auctions.endTime,
-      paymentVerifiedTime: payments.verifiedAt,
-    })
-    .from(payments)
-    .innerJoin(auctions, eq(payments.auctionId, auctions.id))
-    .where(
-      and(
-        eq(payments.vendorId, vendorId),
-        eq(payments.status, 'verified'),
-        gte(payments.verifiedAt, lastMonthStart),
-        lte(payments.verifiedAt, lastMonthEnd)
-      )
-    );
-
-  let lastMonthAvgPaymentTime = 0;
-  if (lastMonthPaymentTimesResult.length > 0) {
-    const totalPaymentTime = lastMonthPaymentTimesResult.reduce((sum, item) => {
-      if (item.auctionEndTime && item.paymentVerifiedTime) {
-        const endTime = new Date(item.auctionEndTime).getTime();
-        const verifiedTime = new Date(item.paymentVerifiedTime).getTime();
-        const diffHours = (verifiedTime - endTime) / (1000 * 60 * 60);
-        return sum + diffHours;
-      }
-      return sum;
-    }, 0);
-    lastMonthAvgPaymentTime = totalPaymentTime / lastMonthPaymentTimesResult.length;
-  }
 
   // Calculate comparisons (excluding Average Payment Time for vendor view)
   const comparisons: Comparison[] = [
@@ -557,4 +598,15 @@ async function calculateComparisons(
   ];
 
   return comparisons;
+}
+
+function numberFrom(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function nullableNumberFrom(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : null;
 }

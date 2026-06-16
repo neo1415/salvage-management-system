@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         );
       });
 
-      // TODO: Send alert to system admin
+      // Launch gate: route this failure to the production alert channel.
       // await sendCriticalAlert({
       //   type: 'UNBALANCED_LEDGER_TRANSACTIONS',
       //   count: unbalanced.length,

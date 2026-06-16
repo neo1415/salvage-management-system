@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Try to get cached data
-    const cacheKey = 'dashboard:admin:v2';
+    const cacheKey = 'dashboard:admin:v3';
     const cachedData = await cache.get<DashboardStats>(cacheKey);
 
     if (cachedData) {
@@ -162,14 +162,6 @@ async function calculateAdminStats(): Promise<DashboardStats> {
         eq(payments.auctionId, auctions.id),
         eq(payments.vendorId, auctions.currentBidder),
         eq(payments.status, 'verified')
-      )
-    )
-    .innerJoin(
-      releaseForms,
-      and(
-        eq(releaseForms.auctionId, auctions.id),
-        eq(releaseForms.vendorId, auctions.currentBidder),
-        eq(releaseForms.documentType, 'pickup_authorization')
       )
     )
     .where(eq(auctions.pickupConfirmedAdmin, false));

@@ -17,6 +17,8 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { interactions } from '@/lib/db/schema/intelligence';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
+import { vendors } from '@/lib/db/schema/vendors';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 
@@ -75,8 +77,25 @@ export async function POST(request: NextRequest) {
     // Authorization: Ensure user can only track their own vendor's interactions
     // (unless they're an admin)
     if (session.user.role !== 'system_admin' && session.user.role !== 'salvage_manager') {
-      // TODO: Verify vendorId belongs to session.user.id
-      // For now, we'll allow it but log it
+      if (session.user.role !== 'vendor') {
+        return NextResponse.json(
+          { error: 'Forbidden' },
+          { status: 403 }
+        );
+      }
+
+      const [vendor] = await db
+        .select({ id: vendors.id, userId: vendors.userId })
+        .from(vendors)
+        .where(eq(vendors.id, eventData.vendorId))
+        .limit(1);
+
+      if (!vendor || vendor.userId !== session.user.id) {
+        return NextResponse.json(
+          { error: 'Forbidden: vendor does not belong to this user' },
+          { status: 403 }
+        );
+      }
     }
 
     // Task 7.3.2: Enrich event data

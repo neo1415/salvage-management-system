@@ -10,6 +10,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 
 export default function ProfitabilityPage() {
   const router = useRouter();
@@ -267,6 +268,8 @@ export default function ProfitabilityPage() {
               <Card>
                 <CardContent className="pt-6">
                   <h3 className="text-lg font-semibold mb-4">Detailed Item Breakdown</h3>
+                  <PaginatedReportRows rows={reportData.itemBreakdown} label="items">
+                    {(rows, startIndex) => (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
@@ -282,8 +285,8 @@ export default function ProfitabilityPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {reportData.itemBreakdown.map((item: any, index: number) => (
-                          <tr key={index} className="border-b hover:bg-gray-50">
+                        {rows.map((item: any, index: number) => (
+                          <tr key={startIndex + index} className="border-b hover:bg-gray-50">
                             <td className="p-2 font-medium">{item.claimReference}</td>
                             <td className="p-2 capitalize">{item.assetType}</td>
                             <td className="p-2 text-right">₦{item.marketValue.toLocaleString()}</td>
@@ -297,6 +300,8 @@ export default function ProfitabilityPage() {
                       </tbody>
                     </table>
                   </div>
+                    )}
+                  </PaginatedReportRows>
                 </CardContent>
               </Card>
             )}

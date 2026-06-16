@@ -10,6 +10,7 @@ import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 
 export default function AdjusterMetricsPage() {
   const router = useRouter();
@@ -208,6 +209,8 @@ export default function AdjusterMetricsPage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Top Performers</h3>
+                <PaginatedReportRows rows={reportData.adjusterPerformance || []} label="adjusters">
+                  {(rows) => (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -220,7 +223,7 @@ export default function AdjusterMetricsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(reportData.adjusterPerformance || []).slice(0, 10).map((adj: any) => (
+                      {rows.map((adj: any) => (
                         <tr key={adj.adjusterId} className="border-b">
                           <td className="p-2">{adj.adjusterName}</td>
                           <td className="text-right p-2">{adj.casesProcessed}</td>
@@ -232,6 +235,8 @@ export default function AdjusterMetricsPage() {
                     </tbody>
                   </table>
                 </div>
+                  )}
+                </PaginatedReportRows>
               </CardContent>
             </Card>
           </div>

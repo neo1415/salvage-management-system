@@ -10,6 +10,7 @@ import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 
 export default function VendorSpendingPage() {
   const router = useRouter();
@@ -208,6 +209,8 @@ export default function VendorSpendingPage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Top Vendors by Spending</h3>
+                <PaginatedReportRows rows={reportData.topSpenders || []} label="vendors">
+                  {(rows, startIndex) => (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -221,9 +224,9 @@ export default function VendorSpendingPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(reportData.topSpenders || []).slice(0, 10).map((vendor: any, index: number) => (
+                      {rows.map((vendor: any, index: number) => (
                         <tr key={vendor.vendorId} className="border-b">
-                          <td className="p-2">{index + 1}</td>
+                          <td className="p-2">{startIndex + index + 1}</td>
                           <td className="p-2">{vendor.vendorName}</td>
                           <td className="p-2 capitalize">{vendor.tier}</td>
                           <td className="text-right p-2">₦{(vendor.totalSpent || 0).toLocaleString()}</td>
@@ -234,6 +237,8 @@ export default function VendorSpendingPage() {
                     </tbody>
                   </table>
                 </div>
+                  )}
+                </PaginatedReportRows>
               </CardContent>
             </Card>
           </div>

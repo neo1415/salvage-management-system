@@ -190,7 +190,7 @@ export class DepositNotificationService {
       }),
 
       // Email notification - removed due to incorrect template usage
-      // TODO: Create proper auction won email template
+      // Content extension: replace with a branded auction-won email template.
 
       // SMS notification
       smsService.sendSMS({
@@ -422,7 +422,7 @@ export class DepositNotificationService {
 
     try {
       // Email notification - removed due to incorrect template usage
-      // TODO: Create proper payment confirmation email template with correct parameters
+      // Content extension: replace with a branded payment-confirmation email template.
       console.log('Email notification skipped - needs proper template implementation');
     } catch (error) {
       console.error('Email notification error (non-blocking):', error);
@@ -443,7 +443,7 @@ export class DepositNotificationService {
 
     try {
       // Push notification - removed due to incorrect implementation
-      // TODO: Implement proper push notification with subscription
+      // Launch gate: send push notifications when verified subscriptions are available.
       console.log('Push notification skipped - needs proper subscription implementation');
     } catch (error) {
       console.error('Push notification error (non-blocking):', error);

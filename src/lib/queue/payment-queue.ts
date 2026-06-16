@@ -258,8 +258,7 @@ export class PaymentQueueService {
   /**
    * Process next payment in queue
    * 
-   * This should be called by a background worker
-   * For now, it's a placeholder for the worker implementation
+   * This should be called by a background worker.
    * 
    * @returns Processed job or null if queue empty
    */

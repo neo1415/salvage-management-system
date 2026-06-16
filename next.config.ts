@@ -1,5 +1,8 @@
 // Next.js configuration file
 import type { NextConfig } from 'next';
+import { withSentryConfig } from '@sentry/nextjs';
+
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN || process.env.SENTRY_TOKEN;
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -167,4 +170,14 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: sentryAuthToken,
+  silent: !process.env.CI,
+  telemetry: false,
+  sourcemaps: {
+    disable: !sentryAuthToken,
+    deleteSourcemapsAfterUpload: true,
+  },
+});

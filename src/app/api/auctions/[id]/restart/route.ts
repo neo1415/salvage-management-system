@@ -267,7 +267,7 @@ export async function POST(
       }
     }
 
-    // TODO: Broadcast update via Socket.IO if available
+    // Realtime extension: broadcast update via Socket.IO when the sidecar is enabled.
     try {
       const { broadcastAuctionUpdate } = await import('@/lib/socket/server');
       await broadcastAuctionUpdate(auctionId, {

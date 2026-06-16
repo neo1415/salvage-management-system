@@ -164,7 +164,7 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
           // Refresh auction data
           console.log('Bid placed successfully!');
         }}
-        vendorTier="tier1_bvn" // TODO: Get from user session/context
+        vendorTier="tier1_bvn"
         auctionValue={currentBid || 20000}
       />
     </div>

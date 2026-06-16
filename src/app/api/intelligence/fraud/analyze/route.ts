@@ -15,7 +15,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { FraudDetectionService } from '@/features/intelligence/services/fraud-detection.service';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
+import { salvageCases } from '@/lib/db/schema/cases';
+import { vendors } from '@/lib/db/schema/vendors';
 import { db } from '@/lib/db';
+import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -96,13 +99,62 @@ export async function POST(request: NextRequest) {
         break;
 
       case 'user':
-        // Analyze user's cases for fraud patterns
-        // For now, return a placeholder
+        const [linkedVendor] = await db
+          .select({ id: vendors.id })
+          .from(vendors)
+          .where(eq(vendors.userId, entityId))
+          .limit(1);
+
+        const userCases = await db
+          .select({ id: salvageCases.id })
+          .from(salvageCases)
+          .where(eq(salvageCases.createdBy, entityId))
+          .orderBy(desc(salvageCases.createdAt))
+          .limit(20);
+
+        const userSignals: Array<{
+          scope: 'vendor' | 'case';
+          entityId: string;
+          riskScore: number;
+          flagReasons: string[];
+          result: unknown;
+        }> = [];
+
+        if (linkedVendor) {
+          const vendorResult = await fraudService.detectCollusion(linkedVendor.id);
+          userSignals.push({
+            scope: 'vendor',
+            entityId: linkedVendor.id,
+            riskScore: vendorResult.riskScore,
+            flagReasons: vendorResult.flagReasons,
+            result: vendorResult,
+          });
+        }
+
+        for (const userCase of userCases) {
+          const caseResult = await fraudService.analyzeClaimPatterns(userCase.id);
+          userSignals.push({
+            scope: 'case',
+            entityId: userCase.id,
+            riskScore: caseResult.riskScore,
+            flagReasons: caseResult.flagReasons,
+            result: caseResult,
+          });
+        }
+
+        riskScore = userSignals.length > 0
+          ? Math.max(...userSignals.map((signal) => signal.riskScore))
+          : 0;
+        flagReasons = Array.from(
+          new Set(userSignals.flatMap((signal) => signal.flagReasons))
+        );
         analysisResult = {
-          isFraudulent: false,
-          riskScore: 0,
-          flagReasons: [],
-          message: 'User fraud analysis not yet implemented',
+          isFraudulent: riskScore >= 50,
+          riskScore,
+          flagReasons,
+          linkedVendorId: linkedVendor?.id ?? null,
+          casesAnalyzed: userCases.length,
+          signals: userSignals,
         };
         break;
 

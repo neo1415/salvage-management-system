@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { getKycDocumentFolder, uploadFile } from '@/lib/storage/cloudinary';
+import { scanUploadedFile } from '@/lib/security/file-virus-scanner';
 
 /**
  * DocumentUploadService
@@ -12,7 +13,7 @@ import { getKycDocumentFolder, uploadFile } from '@/lib/storage/cloudinary';
  * - File size limits (5MB per file)
  * - Unique file naming to prevent overwrites
  * - Private bucket access (requires authentication)
- * - Virus scanning (TODO: integrate with ClamAV or similar)
+ * - Optional ClamAV virus scanning before storage
  */
 
 const BUCKET_NAME = 'kyc-documents';
@@ -34,7 +35,12 @@ export interface UploadResult {
 
 export interface UploadError {
   error: string;
-  code: 'FILE_TOO_LARGE' | 'INVALID_FILE_TYPE' | 'UPLOAD_FAILED' | 'VALIDATION_FAILED';
+  code:
+    | 'FILE_TOO_LARGE'
+    | 'INVALID_FILE_TYPE'
+    | 'UPLOAD_FAILED'
+    | 'VALIDATION_FAILED'
+    | 'VIRUS_DETECTED';
 }
 
 export class DocumentUploadService {
@@ -84,18 +90,32 @@ export class DocumentUploadService {
         };
       }
 
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const scanResult = await scanUploadedFile(buffer);
+      if (scanResult.status === 'infected') {
+        return {
+          error: `Upload blocked: file failed malware scan (${scanResult.signature})`,
+          code: 'VIRUS_DETECTED',
+        };
+      }
+
+      if (scanResult.status === 'error') {
+        return {
+          error: `Upload blocked: malware scan failed (${scanResult.error})`,
+          code: 'VALIDATION_FAILED',
+        };
+      }
+
       if (!this.supabase) {
-        return this.uploadDocumentToCloudinary(file, vendorId, documentType);
+        return this.uploadDocumentToCloudinary(file, vendorId, documentType, buffer);
       }
 
       // Generate unique file path
       const timestamp = Date.now();
       const fileExtension = file.name.split('.').pop() || 'bin';
       const fileName = `${vendorId}/${documentType}_${timestamp}.${fileExtension}`;
-
-      // Convert File to ArrayBuffer for upload
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = new Uint8Array(arrayBuffer);
 
       // Upload to Supabase Storage
       const { data, error } = await this.supabase.storage
@@ -109,7 +129,7 @@ export class DocumentUploadService {
         console.error('[DocumentUpload] Supabase upload error:', error);
         if (this.cloudinaryConfigured) {
           console.warn('[DocumentUpload] Falling back to Cloudinary for KYC document upload');
-          return this.uploadDocumentToCloudinary(file, vendorId, documentType);
+          return this.uploadDocumentToCloudinary(file, vendorId, documentType, buffer);
         }
 
         return {
@@ -141,7 +161,8 @@ export class DocumentUploadService {
   private async uploadDocumentToCloudinary(
     file: File,
     vendorId: string,
-    documentType: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id' | 'selfie'
+    documentType: 'cac_certificate' | 'nin_card' | 'utility_bill' | 'bank_statement' | 'photo_id' | 'selfie',
+    scannedBuffer?: Buffer
   ): Promise<UploadResult | UploadError> {
     if (!this.cloudinaryConfigured) {
       return {
@@ -151,8 +172,7 @@ export class DocumentUploadService {
     }
 
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      const base64 = (scannedBuffer || Buffer.from(await file.arrayBuffer())).toString('base64');
       const dataUri = `data:${file.type};base64,${base64}`;
       const extension = file.name.split('.').pop()?.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'document';
       const publicId = `${documentType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${extension}`;

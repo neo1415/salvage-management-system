@@ -11,6 +11,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useOffline } from '@/hooks/use-offline';
 import { CacheService } from '@/features/cache/services/cache.service';
 
+const LEADERBOARD_CACHE_KEY = 'leaderboard:v2';
+
 interface LeaderboardEntry {
   rank: number;
   vendorId: string;
@@ -51,7 +53,7 @@ export function useCachedLeaderboard(): UseCachedLeaderboardReturn {
 
   const loadFromCache = useCallback(async () => {
     try {
-      const cached = await CacheService.get('leaderboard');
+      const cached = await CacheService.get(LEADERBOARD_CACHE_KEY);
       if (cached) {
         setData(cached.data as LeaderboardResponse);
         setLastCached(cached.cachedAt);
@@ -82,7 +84,7 @@ export function useCachedLeaderboard(): UseCachedLeaderboardReturn {
       setLastCached(new Date());
 
       // Cache the data
-      await CacheService.set('leaderboard', leaderboardData);
+      await CacheService.set(LEADERBOARD_CACHE_KEY, leaderboardData);
     } catch (err) {
       console.error('Failed to fetch leaderboard:', err);
       setError(err as Error);

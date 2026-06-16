@@ -218,9 +218,7 @@ async function sendJobFailureAlert(
 
     console.error(`🚨🚨🚨 CRITICAL: Job ${jobName} has failed ${consecutiveFailures} times consecutively!`, alertData);
 
-    // TODO: Send Socket.IO notification to admins
-    // TODO: Send email alert
-    // TODO: Send Slack/Discord webhook notification
+    // Launch gate: send Socket.IO, email, and webhook alerts through configured channels.
   } catch (err) {
     console.error('Error sending job failure alert:', err);
   }

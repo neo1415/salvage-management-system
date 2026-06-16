@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     const bypassCache = searchParams.get('bypass') === 'true';
 
     // Try to get cached data (unless bypassed)
-    const cacheKey = 'dashboard:finance:v2';
+    const cacheKey = 'dashboard:finance:v3';
     if (!bypassCache) {
       const cachedData = await cache.get<DashboardStats>(cacheKey);
 
@@ -184,10 +184,20 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
   };
 
   const [settlementRow] = (await db.execute(sql`
-    WITH verified_payments AS (
-      SELECT id, auction_id, amount, verified_at
-      FROM payments
-      WHERE status = 'verified'
+    WITH verified_winner_payments AS (
+      SELECT DISTINCT ON (p.auction_id)
+        p.id,
+        p.auction_id,
+        p.vendor_id,
+        p.amount,
+        p.verified_at,
+        p.created_at
+      FROM payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      WHERE p.status = 'verified'
+        AND p.auction_id IS NOT NULL
+        AND p.vendor_id = a.current_bidder
+      ORDER BY p.auction_id, p.verified_at DESC NULLS LAST, p.created_at DESC
     ),
     pending_finance_review AS (
       SELECT id
@@ -201,13 +211,13 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
     paid_awaiting_pickup AS (
       SELECT DISTINCT a.id
       FROM auctions a
-      INNER JOIN verified_payments p ON p.auction_id = a.id
+      INNER JOIN verified_winner_payments p ON p.auction_id = a.id
       WHERE COALESCE(a.pickup_confirmed_admin, false) = false
     ),
     overdue_signed_unpaid AS (
       SELECT DISTINCT rf.auction_id
       FROM release_forms rf
-      LEFT JOIN verified_payments p ON p.auction_id = rf.auction_id AND p.id IS NOT NULL
+      LEFT JOIN verified_winner_payments p ON p.auction_id = rf.auction_id AND p.vendor_id = rf.vendor_id
       WHERE rf.status = 'signed'
         AND rf.payment_deadline IS NOT NULL
         AND rf.payment_deadline < NOW()
@@ -216,13 +226,13 @@ async function calculateFinanceStats(): Promise<DashboardStats> {
     ),
     payment_cycles AS (
       SELECT EXTRACT(EPOCH FROM (p.verified_at - a.end_time)) / 86400.0 AS days_to_payment
-      FROM verified_payments p
+      FROM verified_winner_payments p
       INNER JOIN auctions a ON a.id = p.auction_id
       WHERE p.verified_at IS NOT NULL
         AND p.verified_at >= a.end_time
     )
     SELECT
-      (SELECT COALESCE(SUM(amount::numeric), 0)::numeric FROM verified_payments) AS verified_recovery,
+      (SELECT COALESCE(SUM(amount::numeric), 0)::numeric FROM verified_winner_payments) AS verified_recovery,
       (SELECT COUNT(*)::int FROM pending_finance_review) AS pending_finance_review,
       (SELECT COUNT(*)::int FROM paid_awaiting_pickup) AS paid_awaiting_pickup,
       (SELECT COUNT(*)::int FROM overdue_signed_unpaid) AS overdue_signed_unpaid,
@@ -260,5 +270,5 @@ function numberFrom(value: unknown): number {
 function nullableNumberFrom(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : null;
+  return Number.isFinite(parsed) ? Math.round(parsed * 1000) / 1000 : null;
 }

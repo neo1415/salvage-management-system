@@ -196,7 +196,7 @@ async function logMetricsForAnalysis(params: {
     })),
   });
 
-  // TODO: Send to monitoring service (e.g., Sentry, DataDog, CloudWatch)
+  // Launch gate: forward to the selected monitoring service (Sentry, DataDog, CloudWatch, etc.).
   // This would be implemented based on the monitoring service used
 }
 

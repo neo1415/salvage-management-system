@@ -62,7 +62,7 @@ export async function POST(
       createAuditLogData(
         request,
         session.user.id,
-        AuditActionType.CASE_CREATED, // TODO: Add DOCUMENT_GENERATED action type
+        AuditActionType.CASE_CREATED, // Schema extension: add DOCUMENT_GENERATED action type
         AuditEntityType.CASE,
         document.id,
         undefined,

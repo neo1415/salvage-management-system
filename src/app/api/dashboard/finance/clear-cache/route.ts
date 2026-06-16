@@ -29,9 +29,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Clear the cache
-    const cacheKey = 'dashboard:finance';
-    await cache.del(cacheKey);
+    // Clear current and legacy keys so manual refreshes keep working after cache-version bumps.
+    await Promise.all([
+      cache.del('dashboard:finance:v3'),
+      cache.del('dashboard:finance:v2'),
+      cache.del('dashboard:finance'),
+    ]);
 
     console.log('Finance dashboard cache cleared by:', session.user.email);
 

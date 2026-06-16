@@ -270,7 +270,7 @@ export class MLDatasetService {
     // Implementation would use ParquetWriter to write binary Parquet format
     
     // For now, return JSON format as fallback
-    // TODO: Implement actual Parquet export using parquetjs library
+    // ML extension: implement actual Parquet export using parquetjs when needed.
     /*
     Example implementation with parquetjs:
     

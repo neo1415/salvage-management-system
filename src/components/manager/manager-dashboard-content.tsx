@@ -141,7 +141,13 @@ function formatNaira(value: number): string {
 }
 
 function formatDays(value: number | null): string {
-  return value === null ? 'N/A' : `${value.toFixed(1)}d`;
+  if (value === null) return 'N/A';
+  if (value === 0) return '0h';
+  if (value < 1) {
+    const hours = value * 24;
+    return hours < 1 ? '<1h' : `${Math.round(hours)}h`;
+  }
+  return `${value.toFixed(1)}d`;
 }
 
 function ManagerDashboardContentInner() {

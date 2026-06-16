@@ -25,6 +25,14 @@ interface PendingPickupConfirmation {
   };
 }
 
+function formatHours(value: number | null | undefined): string {
+  if (value === null || value === undefined) return 'No clean data';
+  if (value === 0) return '0h';
+  if (value < 1) return '<1h';
+  if (value < 24) return `${Math.round(value)}h`;
+  return `${(value / 24).toFixed(1)}d`;
+}
+
 function VendorDashboardContentInner() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
@@ -152,9 +160,25 @@ function VendorDashboardContentInner() {
     return <PageLoadingSkeleton />;
   }
 
-  const { performanceStats, badges, comparisons, vendorTier, bidLimit, pendingPickupConfirmations } = dashboardData;
+  const {
+    performanceStats,
+    badges,
+    comparisons,
+    vendorTier,
+    bidLimit,
+    pendingPickupConfirmations,
+    operationsControl,
+  } = dashboardData;
   const visiblePickups = pendingPickupConfirmations?.filter(p => !dismissedPickups.has(p.auctionId)) || [];
   const hasPendingPickups = visiblePickups.length > 0;
+  const buyerControl = operationsControl ?? {
+    bidLimit,
+    wonAwaitingPayment: 0,
+    signedAwaitingPayment: 0,
+    paidAwaitingPickup: pendingPickupConfirmations?.length ?? 0,
+    averagePaymentTimeHours: performanceStats.avgPaymentTimeHours || null,
+    averagePickupTimeHours: null,
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -248,6 +272,43 @@ function VendorDashboardContentInner() {
           </div>
         )}
 
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <div className="flex flex-col gap-1 mb-5">
+            <h2 className="text-xl font-bold text-gray-900">Buyer Operations</h2>
+            <p className="text-sm text-gray-600">
+              Payment obligations, pickup readiness, and reliability signals.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Won unpaid</p>
+              <p className="mt-2 text-2xl font-bold text-amber-700">{buyerControl.wonAwaitingPayment}</p>
+              <p className="mt-1 text-xs text-gray-500">Auctions needing payment</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Signed unpaid</p>
+              <p className="mt-2 text-2xl font-bold text-red-700">{buyerControl.signedAwaitingPayment}</p>
+              <p className="mt-1 text-xs text-gray-500">Documents signed, payment pending</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pickup ready</p>
+              <p className="mt-2 text-2xl font-bold text-emerald-700">{buyerControl.paidAwaitingPickup}</p>
+              <p className="mt-1 text-xs text-gray-500">Paid assets awaiting handoff</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment cycle</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">{formatHours(buyerControl.averagePaymentTimeHours)}</p>
+              <p className="mt-1 text-xs text-gray-500">Auction close to verified payment</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pickup cycle</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">{formatHours(buyerControl.averagePickupTimeHours)}</p>
+              <p className="mt-1 text-xs text-gray-500">Average payment to staff confirmation</p>
+            </div>
+          </div>
+        </div>
+
         {/* Performance Stats Cards - Mobile Optimized */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
           {/* Win Rate */}
@@ -304,7 +365,7 @@ function VendorDashboardContentInner() {
               </div>
             </div>
             <p className="text-3xl font-bold text-gray-900">{performanceStats.onTimePickupRate.toFixed(1)}%</p>
-            <p className="text-sm text-gray-600 mt-1">Reliability score</p>
+            <p className="text-sm text-gray-600 mt-1">Within 48h pickup SLA</p>
           </div>
 
           {/* Rating */}

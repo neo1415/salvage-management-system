@@ -15,6 +15,33 @@ interface DashboardStats {
   cancelled?: number;
   activeAuction: number;
   sold: number;
+  assessmentControl?: {
+    drafts: number;
+    pendingManagerReview: number;
+    returnedForRevision: number;
+    activeAuctions: number;
+    soldCases: number;
+    verifiedRecovery: number;
+    averageDaysToApproval: number | null;
+  };
+}
+
+function formatNaira(value: number): string {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatDays(value: number | null | undefined): string {
+  if (value === null || value === undefined) return 'No clean data';
+  if (value === 0) return '0h';
+  if (value < 1) {
+    const hours = value * 24;
+    return hours < 1 ? '<1h' : `${Math.round(hours)}h`;
+  }
+  return `${value.toFixed(1)}d`;
 }
 
 export default function AdjusterDashboardPage() {
@@ -76,6 +103,15 @@ export default function AdjusterDashboardPage() {
           rejected: 0,
           activeAuction: 0,
           sold: 0,
+          assessmentControl: {
+            drafts: 0,
+            pendingManagerReview: 0,
+            returnedForRevision: 0,
+            activeAuctions: 0,
+            soldCases: 0,
+            verifiedRecovery: 0,
+            averageDaysToApproval: null,
+          },
         });
       }
     } catch (error) {
@@ -87,6 +123,15 @@ export default function AdjusterDashboardPage() {
         rejected: 0,
         activeAuction: 0,
         sold: 0,
+        assessmentControl: {
+          drafts: 0,
+          pendingManagerReview: 0,
+          returnedForRevision: 0,
+          activeAuctions: 0,
+          soldCases: 0,
+          verifiedRecovery: 0,
+          averageDaysToApproval: null,
+        },
       });
     } finally {
       setLoading(false);
@@ -174,6 +219,50 @@ export default function AdjusterDashboardPage() {
           </div>
         </div>
       </div>
+
+      {stats.assessmentControl && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex flex-col gap-1 mb-5">
+            <h2 className="text-xl font-bold text-gray-900">Assessment Control</h2>
+            <p className="text-sm text-gray-600">
+              Submission queue, approval speed, active auction handoff, and recovered value from your cases.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Drafts</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">{stats.assessmentControl.drafts}</p>
+              <p className="mt-1 text-xs text-gray-500">Cases not submitted</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Manager review</p>
+              <p className="mt-2 text-2xl font-bold text-amber-700">{stats.assessmentControl.pendingManagerReview}</p>
+              <p className="mt-1 text-xs text-gray-500">Submitted and waiting</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Returned</p>
+              <p className="mt-2 text-2xl font-bold text-red-700">{stats.assessmentControl.returnedForRevision}</p>
+              <p className="mt-1 text-xs text-gray-500">Rejected or cancelled</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">In auction</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">{stats.assessmentControl.activeAuctions}</p>
+              <p className="mt-1 text-xs text-gray-500">Live buyer exposure</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Recovered value</p>
+              <p className="mt-2 text-2xl font-bold text-emerald-700">{formatNaira(stats.assessmentControl.verifiedRecovery)}</p>
+              <p className="mt-1 text-xs text-gray-500">Verified payments from your cases</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Approval cycle</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">{formatDays(stats.assessmentControl.averageDaysToApproval)}</p>
+              <p className="mt-1 text-xs text-gray-500">Case submission to approval</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h2>

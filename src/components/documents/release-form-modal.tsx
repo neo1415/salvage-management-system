@@ -9,6 +9,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import DOMPurify from 'isomorphic-dompurify';
 import { DigitalSignaturePad } from './digital-signature-pad';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
@@ -70,7 +71,11 @@ export function ReleaseFormModal({
 
       const data = await response.json();
       setDocumentTitle(data.title);
-      setDocumentContent(data.content);
+      setDocumentContent(DOMPurify.sanitize(data.content ?? '', {
+        USE_PROFILES: { html: true },
+        FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style'],
+      }));
       setAssetDescription(data.assetDescription);
     } catch (error) {
       console.error('Error fetching document:', error);

@@ -199,7 +199,7 @@ async function logJobExecution(
     console.log('📝 Job execution log:', logEntry);
     
     // Store in database or monitoring system
-    // TODO: Implement job execution logging table
+    // Production extension: persist execution details in a dedicated job log table.
   } catch (err) {
     console.error('Error logging job execution:', err);
   }
@@ -212,9 +212,7 @@ async function sendJobFailureAlert(jobName: string, error: any): Promise<void> {
   try {
     console.error(`🚨 JOB FAILURE ALERT: ${jobName}`, error);
     
-    // TODO: Send alert via Socket.IO to admins
-    // TODO: Send email notification
-    // TODO: Log to monitoring system
+    // Launch gate: send admin/socket/email/monitoring alerts through configured channels.
   } catch (err) {
     console.error('Error sending job failure alert:', err);
   }

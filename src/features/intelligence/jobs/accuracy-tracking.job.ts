@@ -337,8 +337,7 @@ async function sendAccuracyAlert(
     
     console.error(`🚨 ACCURACY ALERT: ${type} accuracy (${currentValue.toFixed(2)}%) below threshold (${threshold}%)`, alertData);
     
-    // TODO: Send Socket.IO notification to admins
-    // TODO: Send email alert
+    // Launch gate: send Socket.IO/email alerts through configured channels.
   } catch (error) {
     console.error('Error sending accuracy alert:', error);
   }

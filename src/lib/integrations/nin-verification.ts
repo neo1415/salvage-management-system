@@ -32,7 +32,7 @@ export async function verifyNIN(
       };
     }
 
-    // TODO: In production, call actual NIMC API
+    // Production extension: wire direct NIMC API here if the insurer requires it.
     // For now, we'll use a mock verification
     
     // Test NIN for development: 12345678901

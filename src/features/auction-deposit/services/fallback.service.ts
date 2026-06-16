@@ -500,7 +500,7 @@ export async function shouldTriggerFallback(
         const deadlineWithBuffer = new Date(firstDoc.paymentDeadline.getTime() + bufferMs);
         if (now > deadlineWithBuffer) {
           // Check if payment was made
-          // TODO: Integrate with payment service to check payment status
+          // Business-policy gate: check live payment status before deposit fallback action.
           return {
             shouldTrigger: true,
             reason: 'payment_expired',

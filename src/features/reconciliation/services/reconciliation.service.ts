@@ -1,8 +1,9 @@
 import { db } from '@/lib/db';
 import { escrowWallets, walletTransactions, reconciliationLogs, unmatchedTransactions, reconciliationAlerts } from '@/lib/db/schema';
-import { sql, eq, and, gte, lte, desc, isNull } from 'drizzle-orm';
+import { sql, eq, and, gte, lte, desc, isNull, inArray, notInArray } from 'drizzle-orm';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
+import { createNotification } from '@/features/notifications/services/notification.service';
 
 /**
  * Reconciliation Service
@@ -197,7 +198,24 @@ async function flagDiscrepancy(result: ReconciliationResult): Promise<void> {
     sentTo: alertRecipients,
   });
 
-  // TODO: Send actual email/Slack notifications
+  await Promise.allSettled(
+    alertRecipients.map((userId) =>
+      createNotification({
+        userId,
+        type: 'system_alert',
+        title: 'Reconciliation discrepancy detected',
+        message,
+        data: {
+          severity,
+          discrepancy: result.discrepancy,
+          paystackBalance: result.paystackBalance,
+          databaseBalance: result.databaseBalance,
+          url: '/finance/reconciliation',
+        },
+      })
+    )
+  );
+
   console.error('CRITICAL RECONCILIATION ALERT:', message);
 }
 
@@ -205,9 +223,17 @@ async function flagDiscrepancy(result: ReconciliationResult): Promise<void> {
  * Get finance officers and system admins for alerts
  */
 async function getFinanceOfficersAndAdmins(): Promise<string[]> {
-  // TODO: Implement query to get finance officers and admins
-  // For now, return empty array
-  return [];
+  const recipients = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        inArray(users.role, ['finance_officer', 'system_admin']),
+        notInArray(users.status, ['suspended', 'deleted'])
+      )
+    );
+
+  return recipients.map((recipient) => recipient.id);
 }
 
 /**

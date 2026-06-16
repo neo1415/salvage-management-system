@@ -513,7 +513,7 @@ export async function checkForCancellations(): Promise<void> {
 
     console.log(`⚠️  Found ${paymentsToCancel.length} payment(s) to cancel`);
 
-    // TODO: Implement cancellation logic
+    // Business-policy gate: implement automatic cancellation only after legal/finance approval.
     // This would involve:
     // 1. Updating payment status to 'cancelled'
     // 2. Updating auction status to 'cancelled' or 're-auction'

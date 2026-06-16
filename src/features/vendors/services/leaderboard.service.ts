@@ -30,20 +30,58 @@ export async function calculateLeaderboard(limit = 10): Promise<LeaderboardEntry
       FROM bids
       GROUP BY vendor_id
     ),
+    win_events AS (
+      SELECT current_bidder AS vendor_id, id AS auction_id
+      FROM auctions
+      WHERE current_bidder IS NOT NULL
+        AND status IN ('closed', 'awaiting_payment')
+      UNION
+      SELECT vendor_id, auction_id
+      FROM auction_winners
+      WHERE rank = 1
+    ),
+    verified_winner_payments AS (
+      SELECT DISTINCT ON (p.auction_id)
+        p.vendor_id,
+        p.auction_id,
+        p.amount,
+        p.verified_at
+      FROM payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      WHERE p.status = 'verified'
+        AND p.auction_id IS NOT NULL
+        AND p.vendor_id = a.current_bidder
+      ORDER BY p.auction_id, p.verified_at DESC NULLS LAST, p.created_at DESC
+    ),
+    pickup_stats AS (
+      SELECT
+        p.vendor_id,
+        COUNT(*) FILTER (
+          WHERE a.pickup_confirmed_admin_at IS NOT NULL
+          AND a.pickup_confirmed_admin_at >= p.verified_at
+        )::int AS completed_pickups,
+        COUNT(*) FILTER (
+          WHERE a.pickup_confirmed_admin_at IS NOT NULL
+          AND a.pickup_confirmed_admin_at >= p.verified_at
+          AND a.pickup_confirmed_admin_at <= p.verified_at + INTERVAL '48 hours'
+        )::int AS on_time_pickups
+      FROM verified_winner_payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      GROUP BY p.vendor_id
+    ),
     payment_stats AS (
       SELECT
         vendor_id,
-        COUNT(DISTINCT auction_id)::int AS wins,
         COALESCE(SUM(amount::numeric), 0)::numeric AS total_spent,
-        COUNT(*) FILTER (
-          WHERE verified_at IS NOT NULL
-          AND payment_deadline IS NOT NULL
-          AND verified_at <= payment_deadline
-        )::int AS on_time_payments,
         COUNT(*)::int AS verified_payments
-      FROM payments
-      WHERE status = 'verified'
-      AND auction_id IS NOT NULL
+      FROM verified_winner_payments
+      GROUP BY vendor_id
+    ),
+    win_stats AS (
+      SELECT
+        vendor_id,
+        COUNT(DISTINCT auction_id)::int AS wins
+      FROM win_events
       GROUP BY vendor_id
     )
     SELECT
@@ -56,14 +94,17 @@ export async function calculateLeaderboard(limit = 10): Promise<LeaderboardEntry
       v.rating,
       COALESCE(bs.total_bids, 0)::int AS total_bids,
       COALESCE(bs.auctions_participated, 0)::int AS auctions_participated,
-      COALESCE(ps.wins, 0)::int AS wins,
+      COALESCE(ws.wins, 0)::int AS wins,
       COALESCE(ps.total_spent, 0)::numeric AS total_spent,
-      COALESCE(ps.on_time_payments, 0)::int AS on_time_payments,
+      COALESCE(pus.on_time_pickups, 0)::int AS on_time_pickups,
+      COALESCE(pus.completed_pickups, 0)::int AS completed_pickups,
       COALESCE(ps.verified_payments, 0)::int AS verified_payments
     FROM vendors v
     INNER JOIN users u ON v.user_id = u.id
     LEFT JOIN bid_stats bs ON bs.vendor_id = v.id
+    LEFT JOIN win_stats ws ON ws.vendor_id = v.id
     LEFT JOIN payment_stats ps ON ps.vendor_id = v.id
+    LEFT JOIN pickup_stats pus ON pus.vendor_id = v.id
     WHERE v.status = 'approved'
       AND u.email NOT ILIKE '%test%'
       AND u.email NOT ILIKE '%demo%'
@@ -71,7 +112,7 @@ export async function calculateLeaderboard(limit = 10): Promise<LeaderboardEntry
       AND u.full_name NOT ILIKE '%test%'
       AND u.full_name NOT ILIKE '%demo%'
       AND u.full_name NOT ILIKE '%uat%'
-    ORDER BY COALESCE(ps.wins, 0) DESC, COALESCE(ps.total_spent, 0) DESC, COALESCE(bs.total_bids, 0) DESC
+    ORDER BY COALESCE(ws.wins, 0) DESC, COALESCE(ps.total_spent, 0) DESC, COALESCE(bs.total_bids, 0) DESC
     LIMIT ${limit}
   `);
 
@@ -80,10 +121,10 @@ export async function calculateLeaderboard(limit = 10): Promise<LeaderboardEntry
 
   for (const [index, vendor] of records.entries()) {
     const totalBids = Number(vendor.total_bids || 0);
-    const auctionsParticipated = Number(vendor.auctions_participated || 0);
     const wins = Number(vendor.wins || 0);
+    const completedPickups = Number(vendor.completed_pickups || 0);
+    const onTimePickups = Number(vendor.on_time_pickups || 0);
     const verifiedPayments = Number(vendor.verified_payments || 0);
-    const onTimePayments = Number(vendor.on_time_payments || 0);
     const activityCount = totalBids + verifiedPayments;
     const autoRating = await calculateAutoRating(vendor.id);
     const rating = formatRatingLabel(vendor.rating, autoRating, activityCount);
@@ -97,8 +138,8 @@ export async function calculateLeaderboard(limit = 10): Promise<LeaderboardEntry
       totalBids,
       wins,
       totalSpent: String(vendor.total_spent || '0'),
-      winRate: auctionsParticipated > 0 ? Math.round((wins / auctionsParticipated) * 10000) / 100 : 0,
-      onTimePickupRate: verifiedPayments > 0 ? Math.round((onTimePayments / verifiedPayments) * 10000) / 100 : 0,
+      winRate: totalBids > 0 ? Math.round((wins / totalBids) * 10000) / 100 : 0,
+      onTimePickupRate: completedPickups > 0 ? Math.round((onTimePickups / completedPickups) * 10000) / 100 : 0,
       rating: rating.value.toFixed(2),
       ratingLabel: rating.label,
       ratingSource: rating.source,

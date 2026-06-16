@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import { ChartFrame, MetricGrid, MetricValue, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -283,6 +284,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
             <CardTitle>Top Revenue Cases</CardTitle>
           </CardHeader>
           <CardContent>
+            <PaginatedReportRows rows={data.financial.revenue.topCases} label="cases">
+              {(rows, startIndex) => (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -293,8 +296,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.financial.revenue.topCases.map((c, i) => (
-                    <tr key={i} className="border-b hover:bg-gray-50">
+                  {rows.map((c, i) => (
+                    <tr key={startIndex + i} className="border-b hover:bg-gray-50">
                       <td className="py-2 px-4 font-medium">{c.claimRef}</td>
                       <td className="py-2 px-4 capitalize">{c.assetType}</td>
                       <td className="py-2 px-4 text-right font-bold">{formatCurrency(c.amount)}</td>
@@ -303,6 +306,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                 </tbody>
               </table>
             </div>
+              )}
+            </PaginatedReportRows>
           </CardContent>
         </Card>
 
@@ -481,6 +486,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
             <CardTitle>Top Performing Auctions</CardTitle>
           </CardHeader>
           <CardContent>
+            <PaginatedReportRows rows={data.operational.auctions.topAuctions} label="auctions">
+              {(rows, startIndex) => (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -492,8 +499,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.operational.auctions.topAuctions.map((a, i) => (
-                    <tr key={i} className="border-b hover:bg-gray-50">
+                  {rows.map((a, i) => (
+                    <tr key={startIndex + i} className="border-b hover:bg-gray-50">
                       <td className="py-2 px-4 font-medium">{a.claimRef}</td>
                       <td className="py-2 px-4 text-center">{a.bidders}</td>
                       <td className="py-2 px-4 text-center">{a.bids}</td>
@@ -503,6 +510,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                 </tbody>
               </table>
             </div>
+              )}
+            </PaginatedReportRows>
           </CardContent>
         </Card>
       </section>
@@ -543,6 +552,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
             <CardTitle>Claims Adjusters Performance</CardTitle>
           </CardHeader>
           <CardContent>
+            <PaginatedReportRows rows={data.performance.adjusters} label="adjusters">
+              {(rows, startIndex) => (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -556,8 +567,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.performance.adjusters.map((adj, i) => (
-                    <tr key={i} className="border-b hover:bg-gray-50">
+                  {rows.map((adj, i) => (
+                    <tr key={startIndex + i} className="border-b hover:bg-gray-50">
                       <td className="py-2 px-4 font-medium">{adj.name}</td>
                       <td className="py-2 px-4 text-center">{adj.casesProcessed}</td>
                       <td className="py-2 px-4 text-center">
@@ -580,6 +591,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                 </tbody>
               </table>
             </div>
+              )}
+            </PaginatedReportRows>
           </CardContent>
         </Card>
 
@@ -588,6 +601,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
             <CardTitle>Vendor Performance</CardTitle>
           </CardHeader>
           <CardContent>
+            <PaginatedReportRows rows={data.performance.vendors} label="vendors">
+              {(rows, startIndex) => (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -603,8 +618,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.performance.vendors.map((v, i) => (
-                    <tr key={i} className="border-b hover:bg-gray-50">
+                  {rows.map((v, i) => (
+                    <tr key={startIndex + i} className="border-b hover:bg-gray-50">
                       <td className="py-2 px-4 font-medium">{v.businessName}</td>
                       <td className="py-2 px-4 text-center">
                         <span className="px-2 py-1 bg-gray-100 rounded text-sm">Tier {v.tier}</span>
@@ -628,6 +643,8 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                 </tbody>
               </table>
             </div>
+              )}
+            </PaginatedReportRows>
           </CardContent>
         </Card>
       </section>

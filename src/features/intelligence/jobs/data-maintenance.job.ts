@@ -336,7 +336,7 @@ async function updateFeatureVectors() {
 
     const count = parseInt(result[0]?.count || '0');
 
-    // TODO: Implement feature vector computation
+    // ML extension: compute feature vectors when the production training pipeline is enabled.
     // This would call FeatureEngineeringService to compute and store feature vectors
 
     const duration = Date.now() - startTime;

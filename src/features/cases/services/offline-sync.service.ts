@@ -302,8 +302,8 @@ export async function resolveSyncConflict(
       break;
 
     case 'merge':
-      // Merge not implemented yet - would require custom logic
-      throw new Error('Merge conflict resolution not implemented');
+      // Automatic merge requires a domain-specific resolver.
+      throw new Error('Merge conflict resolution requires manual review');
   }
 }
 

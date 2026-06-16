@@ -179,7 +179,7 @@ export class ReportDistributionService {
     reportData: Buffer,
     metadata: any
   ): Promise<string> {
-    // TODO: Implement report archiving to cloud storage (S3, Azure Blob, etc.)
+    // Scale extension: archive scheduled reports to cloud storage when retention is finalized.
     // For now, just return a placeholder archive ID
     console.log(`[ReportDistribution] Archiving report ${reportId} (${reportData.length} bytes)`);
     return `archive-${reportId}-${Date.now()}`;

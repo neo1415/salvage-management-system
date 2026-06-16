@@ -105,8 +105,7 @@ export default function EscrowPerformanceReportPage() {
   const exportToPDF = async () => {
     setExporting(true);
     try {
-      // TODO: Implement PDF export
-      alert('PDF export will be implemented');
+      window.print();
     } catch (err) {
       console.error('Error exporting PDF:', err);
       alert('Failed to export PDF');

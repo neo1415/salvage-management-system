@@ -10,6 +10,7 @@ import { ArrowLeft, TrendingUp, TrendingDown } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 
 export default function KPIDashboardPage() {
   const router = useRouter();
@@ -287,6 +288,8 @@ export default function KPIDashboardPage() {
                 <Card>
                   <CardContent className="pt-6">
                     <h3 className="text-lg font-semibold mb-4">Cases Breakdown</h3>
+                    <PaginatedReportRows rows={reportData.breakdowns.cases} label="cases">
+                      {(rows, startIndex) => (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -301,8 +304,8 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.cases.map((c: any, index: number) => (
-                            <tr key={`case-${c.id}-${index}`} className="border-b hover:bg-gray-50">
+                          {rows.map((c: any, index: number) => (
+                            <tr key={`case-${c.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{c.claimReference}</td>
                               <td className="p-2">{c.adjusterName}</td>
                               <td className="p-2 capitalize">{c.assetType}</td>
@@ -323,6 +326,8 @@ export default function KPIDashboardPage() {
                         </tbody>
                       </table>
                     </div>
+                      )}
+                    </PaginatedReportRows>
                   </CardContent>
                 </Card>
               )}
@@ -332,6 +337,8 @@ export default function KPIDashboardPage() {
                 <Card>
                   <CardContent className="pt-6">
                     <h3 className="text-lg font-semibold mb-4">Auctions Breakdown</h3>
+                    <PaginatedReportRows rows={reportData.breakdowns.auctions} label="auctions">
+                      {(rows, startIndex) => (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -346,8 +353,8 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.auctions.map((a: any, index: number) => (
-                            <tr key={`auction-${a.id}-${index}`} className="border-b hover:bg-gray-50">
+                          {rows.map((a: any, index: number) => (
+                            <tr key={`auction-${a.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{a.caseReference}</td>
                               <td className="text-right p-2">{a.uniqueBidders}</td>
                               <td className="text-right p-2">{a.totalBids}</td>
@@ -368,6 +375,8 @@ export default function KPIDashboardPage() {
                         </tbody>
                       </table>
                     </div>
+                      )}
+                    </PaginatedReportRows>
                   </CardContent>
                 </Card>
               )}
@@ -377,6 +386,8 @@ export default function KPIDashboardPage() {
                 <Card>
                   <CardContent className="pt-6">
                     <h3 className="text-lg font-semibold mb-4">Adjusters Breakdown</h3>
+                    <PaginatedReportRows rows={reportData.breakdowns.adjusters} label="adjusters">
+                      {(rows, startIndex) => (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -392,8 +403,8 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.adjusters.map((adj: any, index: number) => (
-                            <tr key={`adjuster-${adj.id}-${index}`} className="border-b hover:bg-gray-50">
+                          {rows.map((adj: any, index: number) => (
+                            <tr key={`adjuster-${adj.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{adj.name}</td>
                               <td className="text-right p-2">{adj.totalCases}</td>
                               <td className="text-right p-2 text-green-600">{adj.approved}</td>
@@ -415,6 +426,8 @@ export default function KPIDashboardPage() {
                         </tbody>
                       </table>
                     </div>
+                      )}
+                    </PaginatedReportRows>
                   </CardContent>
                 </Card>
               )}
@@ -424,6 +437,8 @@ export default function KPIDashboardPage() {
                 <Card>
                   <CardContent className="pt-6">
                     <h3 className="text-lg font-semibold mb-4">Vendors Breakdown</h3>
+                    <PaginatedReportRows rows={reportData.breakdowns.vendors} label="vendors">
+                      {(rows, startIndex) => (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -439,8 +454,8 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.vendors.map((v: any, index: number) => (
-                            <tr key={`vendor-${v.id}-${index}`} className="border-b hover:bg-gray-50">
+                          {rows.map((v: any, index: number) => (
+                            <tr key={`vendor-${v.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{v.businessName}</td>
                               <td className="p-2">
                                 <span className={`px-2 py-1 rounded text-xs ${
@@ -470,6 +485,8 @@ export default function KPIDashboardPage() {
                         </tbody>
                       </table>
                     </div>
+                      )}
+                    </PaginatedReportRows>
                   </CardContent>
                 </Card>
               )}
