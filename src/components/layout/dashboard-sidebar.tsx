@@ -215,7 +215,7 @@ const navigationItems: NavItem[] = [
     roles: ['system_admin'],
   },
   {
-    label: 'Enterprise Setup',
+    label: 'Admin Setup',
     href: '/admin/enterprise-setup',
     icon: Building2,
     roles: ['system_admin'],

@@ -486,7 +486,7 @@ function ManagerDashboardContentInner() {
               <div className="rounded-lg border border-gray-200 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Verified recovery</p>
                 <p className="mt-2 text-2xl font-bold text-emerald-700">{formatNaira(controlTower.verifiedRecovery)}</p>
-                <p className="mt-1 text-xs text-gray-500">{controlTower.recoveryRate.toFixed(1)}% of claims value</p>
+                <p className="mt-1 text-xs text-gray-500">{controlTower.recoveryRate.toFixed(1)}% of claims value in range</p>
               </div>
               <div className="rounded-lg border border-gray-200 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Reserve gap</p>
@@ -496,7 +496,7 @@ function ManagerDashboardContentInner() {
               <div className="rounded-lg border border-gray-200 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Awaiting pickup</p>
                 <p className="mt-2 text-2xl font-bold text-gray-900">{controlTower.awaitingPickup}</p>
-                <p className="mt-1 text-xs text-gray-500">Paid assets not yet released</p>
+                <p className="mt-1 text-xs text-gray-500">All paid assets not yet released</p>
               </div>
               <div className="rounded-lg border border-gray-200 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Avg cycle</p>

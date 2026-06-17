@@ -6,6 +6,9 @@ export type AssetNameDetails = {
   propertyType?: unknown;
   address?: unknown;
   brand?: unknown;
+  storage?: unknown;
+  storageCapacity?: unknown;
+  color?: unknown;
   serialNumber?: unknown;
   machineryType?: unknown;
   type?: unknown;
@@ -19,9 +22,9 @@ export function formatAssetName(
   const details = assetDetails || {};
   const candidates = [
     [details.year, details.make, details.model],
-    [details.year, details.brand, details.model],
+    [details.year, details.brand, details.model, details.storage || details.storageCapacity],
     [details.make, details.model],
-    [details.brand, details.model],
+    [details.brand, details.model, details.storage || details.storageCapacity],
     [details.brand, details.machineryType],
     [details.propertyType, details.address],
     [details.type, details.brand],

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
-import { salvageCases, auctions, payments } from '@/lib/db/schema';
-import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { auth } from '@/lib/auth/next-auth.config';
 
 /**
@@ -74,31 +73,32 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Query cases with auctions and payments in date range
-    const casesWithAuctions = await db
-      .select({
-        caseId: salvageCases.id,
-        claimReference: salvageCases.claimReference,
-        assetType: salvageCases.assetType,
-        marketValue: salvageCases.marketValue,
-        estimatedSalvageValue: salvageCases.estimatedSalvageValue,
-        createdAt: salvageCases.createdAt,
-        auctionId: auctions.id,
-        currentBid: auctions.currentBid,
-        auctionStatus: auctions.status,
-        paymentAmount: payments.amount,
-        paymentStatus: payments.status,
-      })
-      .from(salvageCases)
-      .leftJoin(auctions, eq(salvageCases.id, auctions.caseId))
-      .leftJoin(payments, eq(auctions.id, payments.auctionId))
-      .where(
-        and(
-          gte(salvageCases.createdAt, start),
-          lte(salvageCases.createdAt, end),
-          eq(salvageCases.status, 'sold')
-        )
-      );
+    const startISO = start.toISOString();
+    const endISO = end.toISOString();
+
+    const casesWithAuctions = (await db.execute(sql`
+      WITH latest_case_recovery AS (
+        SELECT DISTINCT ON (sc.id)
+          sc.id AS case_id,
+          sc.claim_reference,
+          sc.asset_type,
+          sc.market_value,
+          sc.created_at,
+          p.amount AS payment_amount
+        FROM salvage_cases sc
+        INNER JOIN auctions a ON a.case_id = sc.id
+        INNER JOIN payments p ON p.auction_id = a.id
+        WHERE sc.created_at >= ${startISO}::timestamptz
+          AND sc.created_at <= ${endISO}::timestamptz
+          AND p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
+        ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
+      )
+      SELECT *
+      FROM latest_case_recovery
+      ORDER BY created_at DESC
+    `)) as any[];
 
     // Calculate summary statistics
     let totalMarketValue = 0;
@@ -112,14 +112,14 @@ export async function GET(request: NextRequest) {
     const dailyRecovery: Record<string, { marketValue: number; recoveryValue: number; count: number }> = {};
 
     for (const row of casesWithAuctions) {
-      const marketValue = parseFloat(row.marketValue || '0');
-      const recoveryValue = parseFloat(row.paymentAmount || row.currentBid || '0');
+      const marketValue = parseFloat(row.market_value || '0');
+      const recoveryValue = parseFloat(row.payment_amount || '0');
 
       totalMarketValue += marketValue;
       totalRecoveryValue += recoveryValue;
 
       // By asset type
-      const assetType = row.assetType as string;
+      const assetType = row.asset_type as string;
       if (casesByAssetType[assetType]) {
         casesByAssetType[assetType].count++;
         casesByAssetType[assetType].marketValue += marketValue;
@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Daily trend
-      const dateKey = row.createdAt.toISOString().split('T')[0];
+      const dateKey = new Date(row.created_at).toISOString().split('T')[0];
       if (!dailyRecovery[dateKey]) {
         dailyRecovery[dateKey] = { marketValue: 0, recoveryValue: 0, count: 0 };
       }

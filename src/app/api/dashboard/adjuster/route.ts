@@ -171,16 +171,28 @@ export async function GET(request: NextRequest) {
         SELECT id, created_at, approved_at
         FROM salvage_cases
         WHERE created_by = ${userId}
+      ),
+      verified_winner_payments AS (
+        SELECT DISTINCT ON (p.auction_id)
+          p.auction_id,
+          p.amount,
+          p.verified_at,
+          p.created_at
+        FROM payments p
+        INNER JOIN auctions a ON a.id = p.auction_id
+        INNER JOIN case_scope cs ON cs.id = a.case_id
+        WHERE p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
+        ORDER BY p.auction_id, p.verified_at DESC NULLS LAST, p.created_at DESC
       )
       SELECT
-        COALESCE(SUM(CASE WHEN p.status = 'verified' THEN p.amount::numeric ELSE 0 END), 0)::numeric AS verified_recovery,
+        (SELECT COALESCE(SUM(amount::numeric), 0)::numeric FROM verified_winner_payments) AS verified_recovery,
         AVG(EXTRACT(EPOCH FROM (cs.approved_at - cs.created_at)) / 86400.0) FILTER (
           WHERE cs.approved_at IS NOT NULL
           AND cs.approved_at >= cs.created_at
         )::numeric AS avg_days_to_approval
       FROM case_scope cs
-      LEFT JOIN auctions a ON a.case_id = cs.id
-      LEFT JOIN payments p ON p.auction_id = a.id
     `)) as any[];
 
     const verifiedRecovery = numberFrom(controlRow?.verified_recovery);

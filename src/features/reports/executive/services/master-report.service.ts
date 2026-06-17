@@ -188,11 +188,12 @@ export class MasterReportService {
         INNER JOIN salvage_cases sc ON a.case_id = sc.id
         WHERE p.status = 'verified'
           AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
           AND p.created_at >= ${startDate}
           AND p.created_at <= ${endDate}
           AND sc.status != 'draft'
           AND sc.claim_reference NOT LIKE 'TEST%'
-        ORDER BY sc.id, p.created_at DESC
+        ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
       ),
       registration_fees AS (
         SELECT amount, created_at
@@ -221,11 +222,12 @@ export class MasterReportService {
         INNER JOIN salvage_cases sc ON a.case_id = sc.id
         WHERE p.status = 'verified'
           AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
           AND p.created_at >= ${prevStart}
           AND p.created_at < ${prevEnd}
           AND sc.status != 'draft'
           AND sc.claim_reference NOT LIKE 'TEST%'
-        ORDER BY sc.id, p.created_at DESC
+        ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
       ),
       registration_fees AS (
         SELECT amount, created_at
@@ -253,7 +255,7 @@ export class MasterReportService {
           AVG(EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400) as avg_processing_days
         FROM salvage_cases sc
         LEFT JOIN auctions a ON sc.id = a.case_id
-        LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
+        LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified' AND p.vendor_id = a.current_bidder
         WHERE sc.created_at >= ${startDate} 
           AND sc.created_at <= ${endDate}
           AND sc.status != 'draft'
@@ -306,11 +308,12 @@ export class MasterReportService {
         INNER JOIN salvage_cases sc ON a.case_id = sc.id
         WHERE p.status = 'verified'
           AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
           AND p.created_at >= ${startDate}
           AND p.created_at <= ${endDate}
           AND sc.status != 'draft'
           AND sc.claim_reference NOT LIKE 'TEST%'
-        ORDER BY sc.id, p.created_at DESC
+        ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
       ),
       registration_fees AS (
         SELECT amount, created_at
@@ -337,35 +340,58 @@ export class MasterReportService {
 
     // Revenue by asset type (only for auction payments)
     const revenueByAssetType = await db.execute(sql`
-      SELECT 
-        sc.asset_type,
-        COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as amount
-      FROM payments p
-      JOIN auctions a ON p.auction_id = a.id
-      JOIN salvage_cases sc ON a.case_id = sc.id
-      WHERE p.status = 'verified' 
-        AND p.created_at >= ${startDate}
-        AND p.created_at <= ${endDate}
-        AND sc.status != 'draft'
-        AND sc.claim_reference NOT LIKE 'TEST%'
-      GROUP BY sc.asset_type
+      WITH latest_auction_payments AS (
+        SELECT DISTINCT ON (sc.id)
+          sc.asset_type,
+          p.amount,
+          p.verified_at,
+          p.created_at
+        FROM payments p
+        JOIN auctions a ON p.auction_id = a.id
+        JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
+          AND p.created_at >= ${startDate}
+          AND p.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+        ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
+      )
+      SELECT
+        asset_type,
+        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as amount
+      FROM latest_auction_payments
+      GROUP BY asset_type
       ORDER BY amount DESC
     `);
 
     // Top revenue cases (only auction payments)
     const topCases = await db.execute(sql`
-      SELECT 
-        sc.claim_reference,
-        sc.asset_type,
-        CAST(p.amount AS NUMERIC) as amount
-      FROM payments p
-      JOIN auctions a ON p.auction_id = a.id
-      JOIN salvage_cases sc ON a.case_id = sc.id
-      WHERE p.status = 'verified' 
-        AND p.created_at >= ${startDate}
-        AND p.created_at <= ${endDate}
-        AND sc.status != 'draft'
-        AND sc.claim_reference NOT LIKE 'TEST%'
+      WITH latest_auction_payments AS (
+        SELECT DISTINCT ON (sc.id)
+          sc.claim_reference,
+          sc.asset_type,
+          p.amount,
+          p.verified_at,
+          p.created_at
+        FROM payments p
+        JOIN auctions a ON p.auction_id = a.id
+        JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
+          AND p.created_at >= ${startDate}
+          AND p.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+        ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
+      )
+      SELECT
+        claim_reference,
+        asset_type,
+        CAST(amount AS NUMERIC) as amount
+      FROM latest_auction_payments
       ORDER BY amount DESC
       LIMIT 10
     `);
@@ -380,33 +406,56 @@ export class MasterReportService {
 
     // Recovery rate analysis
     const recoveryByAssetType = await db.execute(sql`
-      SELECT 
-        sc.asset_type,
-        AVG(CAST(p.amount AS NUMERIC) / NULLIF(CAST(sc.market_value AS NUMERIC), 0) * 100) as rate
-      FROM payments p
-      JOIN auctions a ON p.auction_id = a.id
-      JOIN salvage_cases sc ON a.case_id = sc.id
-      WHERE p.status = 'verified' 
-        AND p.created_at >= ${startDate}
-        AND p.created_at <= ${endDate}
-        AND sc.status != 'draft'
-        AND sc.claim_reference NOT LIKE 'TEST%'
-      GROUP BY sc.asset_type
+      WITH latest_auction_payments AS (
+        SELECT DISTINCT ON (sc.id)
+          sc.asset_type,
+          sc.market_value,
+          p.amount,
+          p.verified_at,
+          p.created_at
+        FROM payments p
+        JOIN auctions a ON p.auction_id = a.id
+        JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
+          AND p.created_at >= ${startDate}
+          AND p.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+        ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
+      )
+      SELECT
+        asset_type,
+        COALESCE(SUM(CAST(amount AS NUMERIC)) / NULLIF(SUM(CAST(market_value AS NUMERIC)), 0) * 100, 0) as rate
+      FROM latest_auction_payments
+      GROUP BY asset_type
     `);
 
     const recoveryTrend = await db.execute(sql`
-      SELECT 
-        TO_CHAR(p.created_at, 'YYYY-MM') as month,
-        AVG(CAST(p.amount AS NUMERIC) / NULLIF(CAST(sc.market_value AS NUMERIC), 0) * 100) as rate
-      FROM payments p
-      JOIN auctions a ON p.auction_id = a.id
-      JOIN salvage_cases sc ON a.case_id = sc.id
-      WHERE p.status = 'verified' 
-        AND p.created_at >= ${startDate}
-        AND p.created_at <= ${endDate}
-        AND sc.status != 'draft'
-        AND sc.claim_reference NOT LIKE 'TEST%'
-      GROUP BY TO_CHAR(p.created_at, 'YYYY-MM')
+      WITH latest_auction_payments AS (
+        SELECT DISTINCT ON (sc.id)
+          sc.market_value,
+          p.amount,
+          p.created_at,
+          p.verified_at
+        FROM payments p
+        JOIN auctions a ON p.auction_id = a.id
+        JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE p.status = 'verified'
+          AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
+          AND p.created_at >= ${startDate}
+          AND p.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+        ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
+      )
+      SELECT
+        TO_CHAR(created_at, 'YYYY-MM') as month,
+        COALESCE(SUM(CAST(amount AS NUMERIC)) / NULLIF(SUM(CAST(market_value AS NUMERIC)), 0) * 100, 0) as rate
+      FROM latest_auction_payments
+      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
       ORDER BY month DESC
       LIMIT 12
     `);

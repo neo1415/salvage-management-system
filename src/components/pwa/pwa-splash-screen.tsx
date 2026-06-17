@@ -6,6 +6,8 @@ import {
   isStandalonePwa,
   PWA_SPLASH_COMPLETE_EVENT,
   PWA_SPLASH_DONE_KEY,
+  PWA_SPLASH_RECENT_KEY,
+  PWA_SPLASH_RECENT_WINDOW_MS,
   PWA_SPLASH_SESSION_KEY,
 } from '@/lib/pwa/detect';
 import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
@@ -16,6 +18,11 @@ function shouldShowPwaSplash(): boolean {
   if (typeof window === 'undefined') return false;
   // Once per browser session (login/logout must not replay splash)
   if (sessionStorage.getItem(PWA_SPLASH_SESSION_KEY) === '1') {
+    return false;
+  }
+  const recentSplash = Number(localStorage.getItem(PWA_SPLASH_RECENT_KEY) || '0');
+  if (Number.isFinite(recentSplash) && Date.now() - recentSplash < PWA_SPLASH_RECENT_WINDOW_MS) {
+    sessionStorage.setItem(PWA_SPLASH_SESSION_KEY, '1');
     return false;
   }
   if (isStandalonePwa()) return true;
@@ -34,6 +41,7 @@ function removeInstantBootSplash(): void {
 function markSplashComplete(): void {
   sessionStorage.setItem(PWA_SPLASH_DONE_KEY, '1');
   sessionStorage.setItem(PWA_SPLASH_SESSION_KEY, '1');
+  localStorage.setItem(PWA_SPLASH_RECENT_KEY, String(Date.now()));
   window.dispatchEvent(new Event(PWA_SPLASH_COMPLETE_EVENT));
 }
 

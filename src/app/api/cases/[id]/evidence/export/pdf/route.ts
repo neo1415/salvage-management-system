@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { jsPDF } from 'jspdf';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { desc, eq, inArray } from 'drizzle-orm';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
@@ -34,11 +36,9 @@ function formatDate(value: Date | string | null | undefined): string {
 
 function formatMoney(value: string | number | null | undefined): string {
   const amount = Number(value ?? 0);
-  return new Intl.NumberFormat('en-NG', {
-    style: 'currency',
-    currency: 'NGN',
+  return `NGN ${new Intl.NumberFormat('en-NG', {
     maximumFractionDigits: 0,
-  }).format(Number.isFinite(amount) ? amount : 0);
+  }).format(Number.isFinite(amount) ? amount : 0)}`;
 }
 
 function text(value: unknown): string {
@@ -134,6 +134,21 @@ function addTable(doc: jsPDF, headers: string[], rows: Row[], y: number): number
   }
 
   return y + 4;
+}
+
+async function addBrandLogo(doc: jsPDF, logoPath: string | undefined, x: number, y: number): Promise<boolean> {
+  if (!logoPath || !logoPath.startsWith('/')) return false;
+
+  try {
+    const localPath = path.join(process.cwd(), 'public', logoPath.replace(/^\/+/, ''));
+    const bytes = await fs.readFile(localPath);
+    const extension = path.extname(localPath).toLowerCase();
+    const imageType = extension === '.jpg' || extension === '.jpeg' ? 'JPEG' : 'PNG';
+    doc.addImage(bytes.toString('base64'), imageType, x, y, 20, 20);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function GET(
@@ -267,13 +282,14 @@ export async function GET(
 
   doc.setFillColor(4, 0, 122);
   doc.rect(0, 0, 210, 32, 'F');
+  const hasLogo = await addBrandLogo(doc, branding.logoPath, 14, 6);
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
-  doc.text(`${branding.brandName} Evidence Packet`, 14, 16);
+  doc.text(`${branding.brandName} Evidence Packet`, hasLogo ? 39 : 14, 16);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Claim ${caseRecord.claimReference} | Generated ${formatDate(generatedAt)}`, 14, 24);
+  doc.text(`Claim ${caseRecord.claimReference} | Generated ${formatDate(generatedAt)}`, hasLogo ? 39 : 14, 24);
 
   let y = 42;
   y = addSectionTitle(doc, 'Packet Summary', y);
@@ -354,13 +370,6 @@ export async function GET(
     formatDate(audit.createdAt),
     audit.recordHash ? `${audit.recordHash.slice(0, 12)}...` : '-',
   ]), y);
-
-  y = addSectionTitle(doc, 'Security Notes', y);
-  y = addKeyValues(doc, [
-    ['Access control', 'Generated only for authorized staff. Claims adjusters can export only their own cases.'],
-    ['Excluded data', 'Raw document bodies, raw payment proof URLs, and private provider artifacts are excluded from this PDF.'],
-    ['Source of truth', 'Operational source records remain in the application database and protected document storage.'],
-  ], y);
 
   const pageCount = doc.getNumberOfPages();
   for (let page = 1; page <= pageCount; page++) {

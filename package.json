@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-next-dev-cache.ps1 && npm run dev",
     "dev:staging": "tsx scripts/dev-staging.ts",
     "dev:next": "next dev",
     "build": "next build",

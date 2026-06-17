@@ -94,6 +94,18 @@ interface FraudAlert {
     actorName?: string;
     createdAt: string;
   }>;
+  involvedVendors?: Array<{
+    id: string;
+    businessName: string | null;
+    tier: string;
+    status: string;
+    user: {
+      id: string;
+      fullName: string;
+      email: string;
+      phone: string;
+    } | null;
+  }>;
   flaggedAt: string;
   auction: {
     id: string;
@@ -783,6 +795,25 @@ export default function FraudAlertDashboard() {
                         <div key={idx} className="rounded border border-red-100 bg-red-50/80 p-3 text-sm">
                           <div className="font-medium text-red-900">{detail.pattern}</div>
                           <div className="text-red-800">{formatReasonCode(detail.evidence)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {selectedAlert.involvedVendors && selectedAlert.involvedVendors.length > 1 && (
+                  <section className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="font-semibold text-gray-900 mb-3">Involved vendor accounts ({selectedAlert.involvedVendors.length})</h4>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {selectedAlert.involvedVendors.map((vendor) => (
+                        <div key={vendor.id} className="rounded border border-orange-100 bg-orange-50/70 p-3 text-sm">
+                          <div className="font-semibold text-gray-900">{vendor.businessName || vendor.user?.fullName || 'Individual vendor'}</div>
+                          <div className="mt-1 text-gray-700">{vendor.user?.fullName || 'Name unavailable'}</div>
+                          <div className="break-all text-xs text-gray-600">{vendor.user?.email || 'Email unavailable'}</div>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                            <span className="rounded-full bg-white px-2 py-1 text-gray-700">{vendor.tier}</span>
+                            <span className="rounded-full bg-white px-2 py-1 text-gray-700">{vendor.status}</span>
+                          </div>
                         </div>
                       ))}
                     </div>

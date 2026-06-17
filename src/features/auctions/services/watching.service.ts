@@ -18,6 +18,9 @@ import { kv } from '@vercel/kv';
 import { getSocketServer } from '@/lib/socket/server';
 import { broadcastToSocketSidecar } from '@/lib/socket/sidecar-client';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
+import { db } from '@/lib/db/drizzle';
+import { bids } from '@/lib/db/schema/bids';
+import { eq } from 'drizzle-orm';
 
 // Redis key prefixes
 const WATCHING_KEY_PREFIX = 'auction:watching:';
@@ -25,6 +28,7 @@ const VIEWER_KEY_PREFIX = 'auction:viewer:';
 
 // Watching timeout (10 seconds)
 const WATCHING_THRESHOLD_MS = 10000;
+const WATCHING_SET_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 /**
  * Track vendor viewing an auction
@@ -87,8 +91,8 @@ export async function incrementWatchingCount(
     await kv.sadd(watchingKey, vendorId);
     await kv.set(viewerKey, Date.now(), { ex: 300 });
 
-    // Set expiry on watching set (24 hours for persistence across page refreshes)
-    await kv.expire(watchingKey, 86400);
+    // Keep explicit watches long enough for scheduled auctions to go live.
+    await kv.expire(watchingKey, WATCHING_SET_TTL_SECONDS);
 
     // Get updated count
     const count = await getWatchingCount(auctionId);
@@ -186,13 +190,41 @@ export async function getWatchingCount(auctionId: string): Promise<number> {
   try {
     const watchingKey = `${WATCHING_KEY_PREFIX}${auctionId}`;
 
-    // Get size of watching set
-    const count = await kv.scard(watchingKey);
+    // Get size of watching set and include vendors who have already bid.
+    const [watchingCount, bidderRows] = await Promise.all([
+      kv.scard(watchingKey),
+      db
+        .select({ vendorId: bids.vendorId })
+        .from(bids)
+        .where(eq(bids.auctionId, auctionId)),
+    ]);
 
-    return count || 0;
+    const activeParticipants = new Set<string>();
+    const watcherIds = await kv.smembers<string[]>(watchingKey).catch(() => []);
+    for (const watcherId of watcherIds || []) activeParticipants.add(watcherId);
+    for (const row of bidderRows) {
+      if (row.vendorId) activeParticipants.add(row.vendorId);
+    }
+
+    return Math.max(watchingCount || 0, activeParticipants.size);
   } catch (error) {
     console.error('Error getting watching count:', error);
     return 0;
+  }
+}
+
+/**
+ * Get vendor IDs currently watching or subscribed to an auction.
+ * This is used for scheduled-auction go-live notifications.
+ */
+export async function getWatchingVendorIds(auctionId: string): Promise<string[]> {
+  try {
+    const watchingKey = `${WATCHING_KEY_PREFIX}${auctionId}`;
+    const vendorIds = await kv.smembers<string[]>(watchingKey);
+    return Array.from(new Set((vendorIds || []).filter(Boolean)));
+  } catch (error) {
+    console.error('Error getting watching vendor IDs:', error);
+    return [];
   }
 }
 

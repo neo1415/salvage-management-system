@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions, bids, salvageCases, vendors, users } from '@/lib/db/schema';
 import { eq, desc, inArray } from 'drizzle-orm';
+import { getWatchingCount } from '@/features/auctions/services/watching.service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -61,14 +62,9 @@ export async function GET(request: NextRequest) {
       .where(inArray(bids.auctionId, auctionIds))
       .orderBy(desc(bids.createdAt));
 
-    // Get watching counts for each auction
-    const watchingData = await db
-      .select({
-        auctionId: auctions.id,
-        watchingCount: auctions.watchingCount,
-      })
-      .from(auctions)
-      .where(inArray(auctions.id, auctionIds));
+    const watchingEntries = await Promise.all(
+      auctionIds.map(async (auctionId) => [auctionId, await getWatchingCount(auctionId)] as const)
+    );
 
     // Group bid history by auction
     const bidsByAuction = bidHistory.reduce((acc, item) => {
@@ -96,8 +92,8 @@ export async function GET(request: NextRequest) {
     }, {} as Record<string, any[]>);
 
     // Group watching data by auction
-    const watchingByAuction = watchingData.reduce((acc, item) => {
-      acc[item.auctionId] = item.watchingCount;
+    const watchingByAuction = watchingEntries.reduce((acc, [auctionId, count]) => {
+      acc[auctionId] = count;
       return acc;
     }, {} as Record<string, number>);
 

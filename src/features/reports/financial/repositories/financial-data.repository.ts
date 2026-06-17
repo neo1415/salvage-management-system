@@ -87,9 +87,10 @@ export class FinancialDataRepository {
         AND p.created_at <= ${endDate}::timestamp
         AND p.status = 'verified'
         AND p.auction_id IS NOT NULL
+        AND p.vendor_id = a.current_bidder
         AND sc.status != 'draft'
         AND sc.claim_reference NOT LIKE 'TEST%'
-      ORDER BY sc.id, p.created_at DESC
+      ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
     `) as any[];
 
     return results.map((row: any) => {

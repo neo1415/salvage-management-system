@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
     const assetType = searchParams.get('assetType'); // Optional filter
 
     // Try to get cached data
-    const cacheKey = `dashboard:manager:v2:${dateRange}:${assetType || 'all'}`;
+    const cacheKey = `dashboard:manager:v3:${dateRange}:${assetType || 'all'}`;
     const cachedData = await cache.get<DashboardData>(cacheKey);
 
     if (cachedData) {
@@ -193,56 +193,37 @@ async function calculateKPIs(assetType: string | null): Promise<DashboardKPIs> {
   // Average recovery rate (last 30 days)
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
 
-  let recoveryRateQuery;
-  
-  if (assetType) {
-    recoveryRateQuery = db
-      .select({
-        marketValue: salvageCases.marketValue,
-        soldPrice: payments.amount,
-      })
-      .from(salvageCases)
-      .innerJoin(auctions, eq(salvageCases.id, auctions.caseId))
-      .innerJoin(payments, eq(payments.auctionId, auctions.id))
-      .where(
-        and(
-          eq(payments.status, VERIFIED_PAYMENT_STATUS),
-          gte(payments.verifiedAt, thirtyDaysAgo),
-          eq(salvageCases.assetType, assetType as any)
-        )
-      );
-  } else {
-    recoveryRateQuery = db
-      .select({
-        marketValue: salvageCases.marketValue,
-        soldPrice: payments.amount,
-      })
-      .from(salvageCases)
-      .innerJoin(auctions, eq(salvageCases.id, auctions.caseId))
-      .innerJoin(payments, eq(payments.auctionId, auctions.id))
-      .where(
-        and(
-          eq(payments.status, VERIFIED_PAYMENT_STATUS),
-          gte(payments.verifiedAt, thirtyDaysAgo)
-        )
-      );
-  }
+  const [recoveryRateRow] = (await db.execute(sql`
+    WITH verified_winner_payments AS (
+      SELECT DISTINCT ON (p.auction_id)
+        p.auction_id,
+        p.amount,
+        p.verified_at
+      FROM payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      INNER JOIN salvage_cases sc ON sc.id = a.case_id
+      WHERE p.status = ${VERIFIED_PAYMENT_STATUS}
+        AND p.auction_id IS NOT NULL
+        AND p.vendor_id = a.current_bidder
+        AND p.verified_at >= ${thirtyDaysAgoISO}::timestamptz
+        AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
+      ORDER BY p.auction_id, p.verified_at DESC NULLS LAST, p.created_at DESC
+    )
+    SELECT
+      COALESCE(SUM(p.amount::numeric), 0)::numeric AS recovered,
+      COALESCE(SUM(sc.market_value::numeric), 0)::numeric AS claims_value
+    FROM verified_winner_payments p
+    INNER JOIN auctions a ON a.id = p.auction_id
+    INNER JOIN salvage_cases sc ON sc.id = a.case_id
+  `)) as any[];
 
-  const recoveryRateData = await recoveryRateQuery;
-
-  let averageRecoveryRate = 0;
-  if (recoveryRateData.length > 0) {
-    const totalRecoveryRate = recoveryRateData.reduce((sum, item) => {
-      const marketValue = parseFloat(item.marketValue || '0');
-      const soldPrice = parseFloat(item.soldPrice || '0');
-      if (marketValue > 0) {
-        return sum + (soldPrice / marketValue) * 100;
-      }
-      return sum;
-    }, 0);
-    averageRecoveryRate = totalRecoveryRate / recoveryRateData.length;
-  }
+  const recovered = numberFrom(recoveryRateRow?.recovered);
+  const recoveryClaimsValue = numberFrom(recoveryRateRow?.claims_value);
+  const averageRecoveryRate = recoveryClaimsValue > 0
+    ? (recovered / recoveryClaimsValue) * 100
+    : 0;
 
   // Cases pending approval count
   let casesPendingQuery;
@@ -343,8 +324,7 @@ async function calculateRecoveryControlTower(
       SELECT a.id, a.status, a.end_time, a.pickup_confirmed_admin, sc.asset_type
       FROM auctions a
       INNER JOIN salvage_cases sc ON sc.id = a.case_id
-      WHERE sc.created_at >= ${startDateISO}::timestamptz
-      AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
+      WHERE ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
     ),
     verified_payments AS (
       SELECT DISTINCT p.auction_id
@@ -402,7 +382,7 @@ async function calculateRecoveryControlTower(
     verifiedRecovery,
     recoveryRate: Math.round(recoveryRate * 100) / 100,
     expectedRecoveryGap,
-    awaitingPickup: numberFrom(valueRow?.awaiting_pickup),
+    awaitingPickup: numberFrom(exceptionRow?.awaiting_pickup),
     averageDaysToAssessment: nullableNumberFrom(valueRow?.avg_days_to_assessment),
     averageDaysToPayment: nullableNumberFrom(valueRow?.avg_days_to_payment),
     averageDaysToPickup: nullableNumberFrom(valueRow?.avg_days_to_pickup),
@@ -430,80 +410,45 @@ async function calculateRecoveryRateTrend(
 ): Promise<RecoveryRateTrend[]> {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
+  const startDateISO = startDate.toISOString();
 
-  // Get closed auctions with their case data
-  let query;
-  
-  if (assetType) {
-    query = db
-      .select({
-        date: sql<string>`DATE(${payments.verifiedAt})`,
-        marketValue: salvageCases.marketValue,
-        soldPrice: payments.amount,
-      })
-      .from(auctions)
-      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
-      .innerJoin(payments, eq(payments.auctionId, auctions.id))
-      .where(
-        and(
-          eq(payments.status, VERIFIED_PAYMENT_STATUS),
-          gte(payments.verifiedAt, startDate),
-          eq(salvageCases.assetType, assetType as any)
-        )
-      );
-  } else {
-    query = db
-      .select({
-        date: sql<string>`DATE(${payments.verifiedAt})`,
-        marketValue: salvageCases.marketValue,
-        soldPrice: payments.amount,
-      })
-      .from(auctions)
-      .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
-      .innerJoin(payments, eq(payments.auctionId, auctions.id))
-      .where(
-        and(
-          eq(payments.status, VERIFIED_PAYMENT_STATUS),
-          gte(payments.verifiedAt, startDate)
-        )
-      );
-  }
+  const rows = (await db.execute(sql`
+    WITH verified_winner_payments AS (
+      SELECT DISTINCT ON (p.auction_id)
+        p.auction_id,
+        p.amount,
+        p.verified_at
+      FROM payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      INNER JOIN salvage_cases sc ON sc.id = a.case_id
+      WHERE p.status = ${VERIFIED_PAYMENT_STATUS}
+        AND p.auction_id IS NOT NULL
+        AND p.vendor_id = a.current_bidder
+        AND p.verified_at >= ${startDateISO}::timestamptz
+        AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
+      ORDER BY p.auction_id, p.verified_at DESC NULLS LAST, p.created_at DESC
+    )
+    SELECT
+      DATE(p.verified_at) AS date,
+      COUNT(*)::int AS total_cases,
+      COALESCE(SUM(p.amount::numeric), 0)::numeric AS recovered,
+      COALESCE(SUM(sc.market_value::numeric), 0)::numeric AS claims_value
+    FROM verified_winner_payments p
+    INNER JOIN auctions a ON a.id = p.auction_id
+    INNER JOIN salvage_cases sc ON sc.id = a.case_id
+    GROUP BY DATE(p.verified_at)
+    ORDER BY DATE(p.verified_at)
+  `)) as any[];
 
-  const data = await query;
-
-  // Group by date and calculate recovery rate
-  const groupedData = data.reduce((acc, item) => {
-    const date = item.date;
-    if (!acc[date]) {
-      acc[date] = {
-        totalRecoveryRate: 0,
-        count: 0,
-      };
-    }
-
-    const marketValue = parseFloat(item.marketValue || '0');
-    const soldPrice = parseFloat(item.soldPrice || '0');
-    
-    if (marketValue > 0) {
-      const recoveryRate = (soldPrice / marketValue) * 100;
-      acc[date].totalRecoveryRate += recoveryRate;
-      acc[date].count += 1;
-    }
-
-    return acc;
-  }, {} as Record<string, { totalRecoveryRate: number; count: number }>);
-
-  // Convert to array and calculate averages
-  const trend: RecoveryRateTrend[] = Object.entries(groupedData).map(([date, data]) => ({
-    date,
-    recoveryRate: Math.round((data.totalRecoveryRate / data.count) * 100) / 100,
-    totalCases: data.count,
-  }));
-
-  // Sort by date
-  trend.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-  return trend;
+  return rows.map((row) => {
+    const recovered = numberFrom(row.recovered);
+    const claimsValue = numberFrom(row.claims_value);
+    return {
+      date: String(row.date),
+      recoveryRate: claimsValue > 0 ? Math.round((recovered / claimsValue) * 10000) / 100 : 0,
+      totalCases: numberFrom(row.total_cases),
+    };
+  });
 }
 
 /**
@@ -523,16 +468,26 @@ async function getTopVendors(assetType: string | null): Promise<TopVendor[]> {
     ),
     payment_stats AS (
       SELECT
-        p.vendor_id,
-        COUNT(DISTINCT p.auction_id)::int AS total_wins,
-        COALESCE(SUM(p.amount::numeric), 0)::numeric AS total_spent
-      FROM payments p
-      INNER JOIN auctions a ON a.id = p.auction_id
-      INNER JOIN salvage_cases sc ON sc.id = a.case_id
-      WHERE p.status = ${VERIFIED_PAYMENT_STATUS}
-      AND p.auction_id IS NOT NULL
-      AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
-      GROUP BY p.vendor_id
+        winner.vendor_id,
+        COUNT(*)::int AS total_wins,
+        COALESCE(SUM(winner.amount::numeric), 0)::numeric AS total_spent
+      FROM (
+        SELECT DISTINCT ON (p.auction_id)
+          p.auction_id,
+          p.vendor_id,
+          p.amount,
+          p.verified_at,
+          p.created_at
+        FROM payments p
+        INNER JOIN auctions a ON a.id = p.auction_id
+        INNER JOIN salvage_cases sc ON sc.id = a.case_id
+        WHERE p.status = ${VERIFIED_PAYMENT_STATUS}
+          AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
+          AND ${assetType ? sql`sc.asset_type = ${assetType}` : sql`TRUE`}
+        ORDER BY p.auction_id, p.verified_at DESC NULLS LAST, p.created_at DESC
+      ) winner
+      GROUP BY winner.vendor_id
     )
     SELECT
       v.id AS vendor_id,

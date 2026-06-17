@@ -35,3 +35,5 @@ export const PWA_LAST_PATH_KEY = 'salvage-last-path';
 export const PWA_SPLASH_DONE_KEY = 'salvage-splash-complete';
 /** Set after first splash this browser session — prevents splash on login/logout navigation */
 export const PWA_SPLASH_SESSION_KEY = 'salvage-splash-session-v1';
+export const PWA_SPLASH_RECENT_KEY = 'salvage-splash-recent-v1';
+export const PWA_SPLASH_RECENT_WINDOW_MS = 10 * 60 * 1000;

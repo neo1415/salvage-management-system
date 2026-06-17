@@ -201,10 +201,11 @@ function FinanceDashboardContentInner() {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Total Amount</p>
+              <p className="text-sm text-gray-600">Verified Receipts</p>
               <p className="text-2xl font-bold text-gray-900 mt-2">
                 {formatCurrency(stats?.totalAmount || 0)}
               </p>
+              <p className="text-xs text-gray-500 mt-1">Includes registration fees</p>
             </div>
             <div className="p-3 bg-purple-100 rounded-lg">
               <Banknote className="w-8 h-8 text-purple-600" />

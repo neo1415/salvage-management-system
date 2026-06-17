@@ -19,11 +19,13 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, lte, arrayContains } from 'drizzle-orm';
+import { eq, and, lte, arrayContains, inArray } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { getAppUrl } from '@/features/notifications/templates/email-urls';
+import { createNotification } from '@/features/notifications/services/notification.service';
+import { getWatchingVendorIds } from '@/features/auctions/services/watching.service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -121,7 +123,7 @@ export async function POST(request: NextRequest) {
           )
         );
 
-        // Notify matching vendors
+        // Notify matching vendors and vendors who explicitly clicked Watch.
         const assetType = caseRecord.assetType;
         const matchingVendors = await db
           .select({
@@ -140,8 +142,34 @@ export async function POST(request: NextRequest) {
             )
           );
 
+        const watchedVendorIds = await getWatchingVendorIds(auction.id);
+        const watchedVendors = watchedVendorIds.length > 0
+          ? await db
+            .select({
+              vendorId: vendors.id,
+              userId: vendors.userId,
+              phone: users.phone,
+              email: users.email,
+              fullName: users.fullName,
+            })
+            .from(vendors)
+            .innerJoin(users, eq(vendors.userId, users.id))
+            .where(
+              and(
+                eq(vendors.status, 'approved'),
+                inArray(vendors.id, watchedVendorIds)
+              )
+            )
+          : [];
+
+        const watcherVendorIds = new Set(watchedVendors.map((vendor) => vendor.vendorId));
+        const vendorById = new Map<string, typeof matchingVendors[number]>();
+        for (const vendor of [...matchingVendors, ...watchedVendors]) {
+          vendorById.set(vendor.vendorId, vendor);
+        }
+
         // Filter out test vendors
-        const realVendors = matchingVendors.filter(vendor => {
+        const realVendors = Array.from(vendorById.values()).filter(vendor => {
           const isTestEmail = vendor.email.endsWith('@test.com') || vendor.email.endsWith('@example.com');
           return !isTestEmail;
         });
@@ -172,6 +200,21 @@ export async function POST(request: NextRequest) {
               location: caseRecord.locationName,
               appUrl: appUrl,
             });
+
+            if (watcherVendorIds.has(vendor.vendorId)) {
+              await createNotification({
+                userId: vendor.userId,
+                type: 'new_auction',
+                title: 'Watched auction is live',
+                message: `${caseRecord.claimReference} is now live. Open the auction to review details and bid.`,
+                data: {
+                  auctionId: auction.id,
+                  caseId: caseRecord.id,
+                  url: `/vendor/auctions/${auction.id}`,
+                  source: 'scheduled_watch',
+                },
+              });
+            }
 
             notifiedCount++;
           } catch (error) {

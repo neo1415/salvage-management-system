@@ -35,11 +35,27 @@ export function PaginatedReportRows<T>({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <div className="transition-opacity duration-150 ease-out">
+      <style jsx global>{`
+        body[data-report-exporting="true"] .report-paginated-page {
+          display: none !important;
+        }
+
+        body[data-report-exporting="true"] .report-export-all {
+          display: block !important;
+        }
+
+        body[data-report-exporting="true"] .report-pagination-controls {
+          display: none !important;
+        }
+      `}</style>
+      <div className="report-paginated-page transition-opacity duration-150 ease-out">
         {children(pageRows, start)}
       </div>
+      <div className="report-export-all hidden">
+        {children(rows, 0)}
+      </div>
       {rows.length > pageSize && (
-        <div className="flex flex-col gap-3 border-t border-gray-100 pt-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+        <div className="report-pagination-controls flex flex-col gap-3 border-t border-gray-100 pt-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
           <p>
             Showing <span className="font-semibold text-gray-900">{start + 1}</span> to{' '}
             <span className="font-semibold text-gray-900">{end}</span> of{' '}

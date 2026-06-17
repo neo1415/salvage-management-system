@@ -944,8 +944,11 @@ Return your assessment as JSON:
 /**
  * Construct electronics-specific damage assessment prompt
  */
-function constructElectronicsPrompt(brand: string, model: string, year: number): string {
-  return `You are an expert electronics damage assessor for insurance claims. Analyze the provided photos of a ${brand} ${model} (${year}) and provide an insurance-grade assessment.
+function constructElectronicsPrompt(brand: string, model: string, year?: number): string {
+  const yearContext = year ? ` (${year})` : '';
+  const providedDevice = `${brand} ${model}${yearContext}`.trim();
+
+  return `You are an expert electronics damage assessor for insurance claims. Analyze the provided photos of a ${providedDevice} and provide an insurance-grade assessment.
 
 **CRITICAL INSTRUCTIONS FOR RESPONSE FORMAT:**
 - Provide ONLY factual data in your JSON response
@@ -957,7 +960,8 @@ function constructElectronicsPrompt(brand: string, model: string, year: number):
 - NO parenthetical explanations, NO hedging language, NO reasoning text in any field values
 
 **DEVICE CONTEXT PROVIDED:**
-You have been told this is a ${brand} ${model} (${year}).
+You have been told this is a ${providedDevice}.
+${year ? '' : 'No submitted release year was provided. Do not say the user provided a year. If you can confidently identify the product release year from the model, you may include it as detectedYear only.'}
 
 **IMPORTANT - DEVICE VERIFICATION:**
 Compare what you see in the photos with the provided device information:
@@ -1670,9 +1674,11 @@ export async function assessDamageWithGemini(
     throw new Error(errorMsg);
   }
 
-  if (!vehicleContext || !vehicleContext.make || !vehicleContext.model || !vehicleContext.year) {
+  const requiresYear = !vehicleContext?.itemType || vehicleContext.itemType === 'vehicle' || vehicleContext.itemType === 'machinery' || vehicleContext.itemType === 'equipment';
+
+  if (!vehicleContext || !vehicleContext.make || !vehicleContext.model || (requiresYear && !vehicleContext.year)) {
     const errorMsg = 
-      `Item context (make/brand, model, year) is required for damage assessment. ` +
+      `Item context (make/brand, model${requiresYear ? ', year' : ''}) is required for damage assessment. ` +
       `Received: ${JSON.stringify(vehicleContext)}. Request ID: ${requestId}`;
     console.error(`[Gemini Service] ${errorMsg}`);
     throw new Error(errorMsg);
@@ -1680,7 +1686,7 @@ export async function assessDamageWithGemini(
 
   // Log assessment request (without exposing sensitive data)
   const itemDescription = vehicleContext.itemType 
-    ? `${vehicleContext.make} ${vehicleContext.model} ${vehicleContext.itemType} (${vehicleContext.year})`
+    ? `${vehicleContext.make} ${vehicleContext.model} ${vehicleContext.itemType}${vehicleContext.year ? ` (${vehicleContext.year})` : ''}`
     : `${vehicleContext.year} ${vehicleContext.make} ${vehicleContext.model}`;
   
   console.info(

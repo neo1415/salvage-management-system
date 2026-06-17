@@ -37,6 +37,7 @@ import { useToast } from '@/components/ui/toast';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 import { PredictionCard } from '@/components/intelligence/prediction-card';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { formatAssetName } from '@/lib/utils/asset-name';
 import type { DocumentType } from '@/lib/db/schema/release-forms';
 
 const DEFAULT_AUCTION_DOCUMENTS: DocumentType[] = ['bill_of_sale', 'liability_waiver'];
@@ -353,25 +354,46 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     setPaystackReturnMessage('Confirming your Paystack payment. This usually takes a few seconds.');
 
     const verifyReturnedPayment = async () => {
+      const markVerified = (message?: string) => {
+        setHasVerifiedPayment(true);
+        setShowVerifyButton(false);
+        setAuction(prev => prev ? { ...prev, hasVerifiedPayment: true } as AuctionDetails : prev);
+        setPaystackReturnStatus('verified');
+        setPaystackReturnMessage(message || 'Your payment has been verified and the auction record has been updated.');
+      };
+
+      const reconcileLocalPaymentStatus = async () => {
+        const statusResponse = await fetch(`/api/auctions/${auction.id}/payment/status`, {
+          cache: 'no-store',
+        });
+        const statusData = await statusResponse.json().catch(() => ({}));
+        if (statusResponse.ok && statusData.hasVerifiedPayment) {
+          markVerified('Your payment has been verified and the auction record has been updated.');
+          toast.success('Payment Verified', 'Your payment has been confirmed.');
+          return true;
+        }
+        return false;
+      };
+
       try {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 20000);
         const response = await fetch(`/api/auctions/${auction.id}/payment/verify`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
+          signal: controller.signal,
           body: JSON.stringify({
             source: 'paystack_return',
             reference: paystackReference,
           }),
         });
+        window.clearTimeout(timeoutId);
         const data = await response.json().catch(() => ({}));
 
         if (response.ok && data.success) {
-          setHasVerifiedPayment(true);
-          setShowVerifyButton(false);
-          setAuction(prev => prev ? { ...prev, hasVerifiedPayment: true } as AuctionDetails : prev);
-          setPaystackReturnStatus('verified');
-          setPaystackReturnMessage(data.message || 'Your payment has been verified and the auction record has been updated.');
+          markVerified(data.message);
           toast.success(
             'Payment Verified',
             'Your Paystack payment has been confirmed.'
@@ -388,6 +410,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         toast.warning('Payment Not Confirmed Yet', message);
       } catch (error) {
         console.error('Error confirming returned Paystack payment:', error);
+        if (await reconcileLocalPaymentStatus()) {
+          return;
+        }
         setPaystackReturnStatus('error');
         setPaystackReturnMessage('We could not confirm the payment automatically. Please retry verification or contact support.');
         setShowVerifyButton(true);
@@ -985,21 +1010,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Format asset name - wrapped in useCallback
   const getAssetName = useCallback(() => {
     if (!auction) return '';
-    const details = auction.case.assetDetails;
-    switch (auction.case.assetType) {
-      case 'vehicle':
-        return `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim() || 'Vehicle';
-      case 'property':
-        return `${details.propertyType || 'Property'}`;
-      case 'electronics':
-        return `${details.brand || ''} Electronics`.trim();
-      case 'machinery':
-        const machineryName = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
-        return machineryName || (details.machineryType ? String(details.machineryType) : 'Machinery');
-      default:
-        return 'Salvage Item';
-    }
-  }, [auction?.case.assetType, auction?.case.assetDetails]);
+    return formatAssetName(auction.case.assetType, auction.case.assetDetails, auction.case.claimReference);
+  }, [auction?.case.assetType, auction?.case.assetDetails, auction?.case.claimReference]);
 
   // Prepare bid history chart data - wrapped in useCallback
   const getBidHistoryData = useCallback(() => {

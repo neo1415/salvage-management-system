@@ -790,6 +790,67 @@ export class FraudDetectionService {
       // Don't fail the entire operation if Socket.IO fails
     }
 
+    try {
+      const [
+        { emailService },
+        { getEmailBranding },
+        { getAppUrl },
+        { isTestOrPlaceholderEmail },
+      ] = await Promise.all([
+        import('@/features/notifications/services/email.service'),
+        import('@/features/notifications/templates/email-branding'),
+        import('@/features/notifications/templates/email-urls'),
+        import('@/lib/utils/notification-recipients'),
+      ]);
+      const branding = await getEmailBranding();
+      const appUrl = getAppUrl();
+      const adminUsers = await db
+        .select({ email: users.email, fullName: users.fullName, status: users.status })
+        .from(users)
+        .where(eq(users.role, 'system_admin'));
+      const recipients = adminUsers.filter((admin) =>
+        admin.status !== 'suspended' &&
+        admin.status !== 'deleted' &&
+        !isTestOrPlaceholderEmail(admin.email)
+      );
+
+      await Promise.allSettled(recipients.map((admin) => emailService.sendEmail({
+        to: admin.email,
+        subject: `Fraud Alert Requires Review - ${branding.brandName}`,
+        html: `
+          <h2>Fraud Alert Requires Review</h2>
+          <p>Hello ${admin.fullName || 'Admin'},</p>
+          <p>A fraud alert was created with a risk score of <strong>${riskScore}/100</strong>.</p>
+          <ul>
+            <li><strong>Entity:</strong> ${entityType} ${entityId}</li>
+            <li><strong>Primary reason:</strong> ${flagReasons[0] || 'Suspicious activity detected'}</li>
+          </ul>
+          <p><a href="${appUrl}/admin/fraud">Open fraud review dashboard</a></p>
+        `,
+      })));
+    } catch (error) {
+      console.error('Failed to send fraud alert admin emails:', error);
+    }
+
+    try {
+      const { createRoleNotifications } = await import('@/features/notifications/services/notification.service');
+      await createRoleNotifications(['system_admin'], {
+        type: 'system_alert',
+        title: 'Fraud alert requires review',
+        message: `${flagReasons[0] || 'Suspicious activity detected'} (${riskScore}/100 risk score).`,
+        data: {
+          type: 'fraud_alert',
+          fraudAlertId: alert.id,
+          entityType,
+          entityId,
+          auctionId: entityType === 'auction' ? entityId : undefined,
+          url: '/admin/fraud',
+        },
+      }, { excludeTestRecipients: true });
+    } catch (error) {
+      console.error('Failed to send fraud alert role notifications:', error);
+    }
+
     return alert.id;
   }
 }

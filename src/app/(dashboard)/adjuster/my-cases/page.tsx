@@ -544,12 +544,12 @@ export default function AdjusterMyCasesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-3xl font-bold text-gray-900">My Cases</h1>
           <p className="text-gray-600 mt-2">View and manage all cases you've created</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-row items-center gap-3 sm:w-auto">
           {/* Export Dropdown */}
           <div className="relative export-menu-container">
             <button
@@ -559,7 +559,7 @@ export default function AdjusterMyCasesPage() {
                 setShowExportMenu(!showExportMenu);
               }}
               disabled={loading || filteredCases.length === 0}
-              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -606,7 +606,7 @@ export default function AdjusterMyCasesPage() {
           
           <Link
             href="/adjuster/cases/new"
-            className="px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors font-medium"
+            className="flex flex-1 items-center justify-center rounded-lg bg-[var(--brand-primary)] px-4 py-3 text-center font-medium text-white transition-colors hover:bg-[var(--brand-primary-hover)] sm:flex-none sm:px-6"
           >
             Create New Case
           </Link>

@@ -366,6 +366,8 @@ function NewCasePageContent() {
   const skipAddressGeocodeRef = useRef(false);
   const addressGeocodeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const locationName = watch('locationName');
+  const hasMapPinPicker = !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    && process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY !== 'your-google-maps-api-key';
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [aiAssessment, setAiAssessment] = useState<AIAssessmentResult | null>(null);
@@ -747,7 +749,9 @@ function NewCasePageContent() {
       // Log accuracy for debugging
       console.log(`GPS captured via ${result.source}, accuracy: ${result.accuracy}m`);
       if (result.accuracy > 100) {
-        setGpsError('GPS was captured, but accuracy is low. Please confirm the address before submitting.');
+        setGpsError(
+          `GPS captured at about ${Math.round(result.accuracy).toLocaleString()}m accuracy after waiting for the best available fix. Move closer to an open area and tap GPS again, or enter a precise address before submitting.`
+        );
       }
     } catch (error) {
       console.error('GPS capture error:', error);
@@ -2904,14 +2908,18 @@ function NewCasePageContent() {
             <p className="mt-1 text-sm text-red-600">{gpsError}</p>
           )}
           <p className="mt-1 text-xs text-gray-500">
-            Type a specific address, use device GPS, then confirm the exact inspection or pickup point on the map.
+            {hasMapPinPicker
+              ? 'Type a specific address, use device GPS, then confirm the exact inspection or pickup point on the map.'
+              : 'Type a specific address or use device GPS. A precise written address is accepted when map confirmation is unavailable.'}
           </p>
-          <LocationPinPicker
-            latitude={gpsLocation?.latitude}
-            longitude={gpsLocation?.longitude}
-            label={locationName}
-            onChange={confirmMapPinLocation}
-          />
+          {hasMapPinPicker && (
+            <LocationPinPicker
+              latitude={gpsLocation?.latitude}
+              longitude={gpsLocation?.longitude}
+              label={locationName}
+              onChange={confirmMapPinLocation}
+            />
+          )}
         </div>
 
         {/* Voice Notes - Unified Modern Interface */}
@@ -2969,6 +2977,16 @@ function NewCasePageContent() {
                 disabled={false}
                 className="flex justify-center"
               />
+
+              {isRecording && (
+                <button
+                  type="button"
+                  onClick={stopVoiceRecording}
+                  className="cursor-pointer rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                >
+                  Stop recording
+                </button>
+              )}
               
               {/* Mobile-friendly instructions */}
               <div className="text-center">

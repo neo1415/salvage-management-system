@@ -74,6 +74,8 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
   };
 
   const generateClientSidePDF = async () => {
+    let restoreReportExportState: (() => void) | null = null;
+
     try {
       // Find the report content element
       const reportElement = document.querySelector('[data-report-content]') as HTMLElement;
@@ -85,9 +87,19 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
 
       // Store original styles
       const originalOverflow = document.body.style.overflow;
+      const originalReportExporting = document.body.dataset.reportExporting;
+      restoreReportExportState = () => {
+        document.body.style.overflow = originalOverflow;
+        if (originalReportExporting === undefined) {
+          delete document.body.dataset.reportExporting;
+        } else {
+          document.body.dataset.reportExporting = originalReportExporting;
+        }
+      };
       
       // Temporarily adjust styles for full capture
       document.body.style.overflow = 'visible';
+      document.body.dataset.reportExporting = 'true';
 
       // Wait for any animations or lazy-loaded content
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -103,7 +115,8 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
       });
 
       // Restore original styles
-      document.body.style.overflow = originalOverflow;
+      restoreReportExportState();
+      restoreReportExportState = null;
 
       // Create PDF
       const imgData = canvas.toDataURL('image/png');
@@ -288,6 +301,7 @@ export function ExportButton({ reportType, reportData, filters, disabled }: Expo
       const filename = `${reportType}-${new Date().toISOString().split('T')[0]}.pdf`;
       pdf.save(filename);
     } catch (error) {
+      restoreReportExportState?.();
       console.error('PDF generation error:', error);
       throw error;
     }

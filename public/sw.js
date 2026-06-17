@@ -303,17 +303,21 @@ self.addEventListener('notificationclick', (event) => {
   const action = event.action;
 
   // Determine URL based on notification type and action
-  let url = '/';
+  let url = '/notifications';
 
   if (typeof data.url === 'string' && data.url.startsWith('/')) {
     url = data.url;
-  } else if (data.type === 'outbid' || data.type === 'auction-ending' || data.type === 'auction_closing_soon' || data.type === 'bidding_otp') {
+  } else if (
+    data.type === 'outbid' ||
+    data.type === 'auction-ending' ||
+    data.type === 'auction_closing_soon' ||
+    data.type === 'bidding_otp' ||
+    data.type === 'auction_won' ||
+    data.type === 'payment-confirmation' ||
+    data.type === 'payment_confirmation'
+  ) {
     if (!action || action === 'view' || action === 'bid') {
       url = data.auctionId ? `/vendor/auctions/${data.auctionId}` : '/vendor/auctions';
-    }
-  } else if (data.type === 'payment-confirmation') {
-    if (action === 'view') {
-      url = '/vendor/documents';
     }
   } else if (data.type === 'leaderboard-update') {
     if (action === 'view') {
@@ -321,18 +325,23 @@ self.addEventListener('notificationclick', (event) => {
     }
   }
 
+  const targetUrl = new URL(url, self.location.origin).href;
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       // Check if there's already a window open
       for (const client of clientList) {
-        if (client.url.includes(url) && 'focus' in client) {
-          return client.focus();
+        if ('focus' in client) {
+          const clientPath = new URL(client.url).pathname;
+          if (clientPath === new URL(targetUrl).pathname) {
+            return client.focus();
+          }
         }
       }
       
       // Open new window if no matching window found
       if (clients.openWindow) {
-        return clients.openWindow(url);
+        return clients.openWindow(targetUrl);
       }
     })
   );

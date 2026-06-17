@@ -351,10 +351,23 @@ export class PredictionService {
 
     // Build similarity query based on asset type
     const query = sql`
-      WITH similar_auctions AS (
+      WITH verified_winner_payments AS (
+        SELECT DISTINCT ON (p.auction_id)
+          p.auction_id,
+          p.amount,
+          p.verified_at,
+          p.created_at
+        FROM ${payments} p
+        INNER JOIN ${auctions} paid_a ON paid_a.id = p.auction_id
+        WHERE p.status = 'verified'
+          AND p.amount IS NOT NULL
+          AND p.vendor_id = paid_a.current_bidder
+        ORDER BY p.auction_id, p.verified_at DESC NULLS LAST, p.created_at DESC
+      ),
+      similar_auctions AS (
         SELECT 
           a.id AS auction_id,
-          p.amount AS final_price,
+          vwp.amount AS final_price,
           sc.asset_details,
           sc.damage_severity,
           sc.market_value,
@@ -366,17 +379,15 @@ export class PredictionService {
           EXP(-EXTRACT(EPOCH FROM (NOW() - a.end_time)) / (${config.timeDecayMonths} * 30 * 24 * 60 * 60)) AS time_weight
         FROM ${auctions} a
         INNER JOIN ${salvageCases} sc ON a.case_id = sc.id
-        INNER JOIN ${payments} p
-          ON p.auction_id = a.id
-         AND p.status = 'verified'
-         AND p.amount IS NOT NULL
+        INNER JOIN verified_winner_payments vwp
+          ON vwp.auction_id = a.id
         LEFT JOIN ${bids} b ON b.auction_id = a.id
         WHERE 
           a.status IN ('closed', 'awaiting_payment')
           AND sc.asset_type = ${assetType}
           AND a.end_time > ${twelveMonthsAgoISO}
           AND a.id != ${auctionData.auctionId}
-        GROUP BY a.id, sc.id
+        GROUP BY a.id, sc.id, vwp.amount
       )
       SELECT * FROM similar_auctions
       WHERE similarity_score >= ${config.similarityThreshold}

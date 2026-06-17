@@ -208,7 +208,12 @@ export default function VendorPerformancePage() {
 
             <Card>
               <CardContent className="pt-6">
-                <h3 className="text-lg font-semibold mb-4">Top Vendors</h3>
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold">Top Vendors</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Ranked by verified spend first, then wins, then bid volume. This prioritizes recovery value over raw bidding activity.
+                  </p>
+                </div>
                 <PaginatedReportRows rows={reportData.rankings || []} label="vendors">
                   {(rows) => (
                 <div className="overflow-x-auto">

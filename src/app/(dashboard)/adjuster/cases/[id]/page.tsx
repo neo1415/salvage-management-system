@@ -16,6 +16,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Image from 'next/image';
+import { Download } from 'lucide-react';
 import { formatNaira, formatAnalysisMethod } from '@/lib/utils/currency-formatter';
 import { LocationMap } from '@/components/ui/location-map';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
@@ -51,6 +52,7 @@ export default function CaseDetailsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  const [isExportingEvidence, setIsExportingEvidence] = useState(false);
 
   useEffect(() => {
     if (caseId) {
@@ -131,6 +133,39 @@ export default function CaseDetailsPage() {
     );
   };
 
+  const handleEvidencePdfExport = async () => {
+    if (!caseData || isExportingEvidence) return;
+
+    try {
+      setIsExportingEvidence(true);
+      setError(null);
+
+      const response = await fetch(`/api/cases/${caseData.id}/evidence/export/pdf`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || 'Failed to export evidence packet');
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const filenameMatch = disposition.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] || `case-evidence-${caseData.claimReference}.pdf`;
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error exporting evidence packet:', err);
+      setError(err instanceof Error ? err.message : 'Failed to export evidence packet');
+    } finally {
+      setIsExportingEvidence(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -198,10 +233,10 @@ export default function CaseDetailsPage() {
       <div className="p-4 space-y-4">
         {/* Case Header */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-start justify-between mb-2">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">{caseData.claimReference}</h2>
-              <p className="text-sm text-gray-600 mt-1">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-2">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">{caseData.claimReference}</h2>
+            <p className="text-sm text-gray-600 mt-1">
                 {caseData.assetType.charAt(0).toUpperCase() + caseData.assetType.slice(1)}
                 {/* Show item name, brand, and year if available */}
                 {caseData.assetDetails && typeof caseData.assetDetails === 'object' && (
@@ -214,7 +249,18 @@ export default function CaseDetailsPage() {
                 )}
               </p>
             </div>
-            {getStatusBadge(caseData.status)}
+            <div className="flex flex-wrap items-center gap-2">
+              {getStatusBadge(caseData.status)}
+              <button
+                type="button"
+                onClick={handleEvidencePdfExport}
+                disabled={isExportingEvidence}
+                className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Download className="h-4 w-4" />
+                {isExportingEvidence ? 'Exporting...' : 'Evidence PDF'}
+              </button>
+            </div>
           </div>
           <p className="text-xs text-gray-500 mt-2">
             Created: {new Date(caseData.createdAt).toLocaleString()}

@@ -170,7 +170,7 @@ export default function VendorLeaderboardPage() {
             </h1>
           </div>
           <p className="text-gray-600">
-            Top 10 vendors this month • Updated weekly
+            Top vendors by wins, then verified spend and bid activity. Updated weekly.
           </p>
         </div>
 

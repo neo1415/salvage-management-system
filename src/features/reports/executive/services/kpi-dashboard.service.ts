@@ -105,11 +105,12 @@ export class KPIDashboardService {
           INNER JOIN salvage_cases sc ON a.case_id = sc.id
           WHERE p.status = 'verified'
             AND p.auction_id IS NOT NULL
+            AND p.vendor_id = a.current_bidder
             AND p.created_at >= ${startDate}
             AND p.created_at <= ${endDate}
             AND sc.status != 'draft'
             AND sc.claim_reference NOT LIKE 'TEST%'
-          ORDER BY sc.id, p.created_at DESC
+          ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
         ),
         registration_fees AS (
           SELECT amount, created_at
@@ -128,17 +129,27 @@ export class KPIDashboardService {
         ) revenue
       ),
       recovery_data AS (
+        WITH latest_auction_payments AS (
+          SELECT DISTINCT ON (sc.id)
+            p.amount,
+            sc.market_value,
+            p.created_at
+          FROM payments p
+          INNER JOIN auctions a ON p.auction_id = a.id
+          INNER JOIN salvage_cases sc ON a.case_id = sc.id
+          WHERE p.status = 'verified'
+            AND p.auction_id IS NOT NULL
+            AND p.vendor_id = a.current_bidder
+            AND p.created_at >= ${startDate}
+            AND p.created_at <= ${endDate}
+            AND sc.status != 'draft'
+            AND sc.claim_reference NOT LIKE 'TEST%'
+          ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
+        )
         SELECT
-          COALESCE(AVG(CAST(p.amount AS NUMERIC) / NULLIF(CAST(sc.market_value AS NUMERIC), 0) * 100), 0) as avg_recovery_rate,
-          COUNT(DISTINCT p.id) as payment_count
-        FROM payments p
-        JOIN auctions a ON p.auction_id = a.id
-        JOIN salvage_cases sc ON a.case_id = sc.id
-        WHERE p.status = 'verified' 
-          AND p.created_at >= ${startDate}
-          AND p.created_at <= ${endDate}
-          AND sc.status != 'draft'
-          AND sc.claim_reference NOT LIKE 'TEST%'
+          COALESCE(SUM(CAST(amount AS NUMERIC)) / NULLIF(SUM(CAST(market_value AS NUMERIC)), 0) * 100, 0) as avg_recovery_rate,
+          COUNT(*) as payment_count
+        FROM latest_auction_payments
       ),
       previous_revenue AS (
         WITH latest_auction_payments AS (
@@ -150,11 +161,12 @@ export class KPIDashboardService {
           INNER JOIN salvage_cases sc ON a.case_id = sc.id
           WHERE p.status = 'verified'
             AND p.auction_id IS NOT NULL
+            AND p.vendor_id = a.current_bidder
             AND p.created_at >= ${startDate}::timestamp - INTERVAL '30 days'
             AND p.created_at < ${startDate}
             AND sc.status != 'draft'
             AND sc.claim_reference NOT LIKE 'TEST%'
-          ORDER BY sc.id, p.created_at DESC
+          ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
         ),
         registration_fees AS (
           SELECT amount, created_at
@@ -390,28 +402,33 @@ export class KPIDashboardService {
 
     // Cases breakdown - use DISTINCT ON to prevent duplicates
     const casesResult = await db.execute(sql`
-      SELECT DISTINCT ON (sc.id)
-        sc.id,
-        sc.claim_reference,
-        u.full_name as adjuster_name,
-        sc.asset_type,
-        sc.market_value,
-        EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400 as processing_days,
-        COALESCE(
-          (SELECT p.amount 
-           FROM payments p 
-           JOIN auctions a ON p.auction_id = a.id 
-           WHERE a.case_id = sc.id AND p.status = 'verified' 
-           ORDER BY p.created_at DESC 
-           LIMIT 1), 
-          '0'
-        ) as revenue,
-        sc.status
-      FROM salvage_cases sc
-      LEFT JOIN users u ON sc.created_by = u.id
-      WHERE sc.created_at >= ${startDate}
-        AND sc.created_at <= ${endDate}
-      ORDER BY sc.id, sc.created_at DESC
+      SELECT *
+      FROM (
+        SELECT DISTINCT ON (sc.id)
+          sc.id,
+          sc.claim_reference,
+          u.full_name as adjuster_name,
+          sc.asset_type,
+          sc.market_value,
+          EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400 as processing_days,
+          COALESCE(
+            (SELECT p.amount
+             FROM payments p
+             JOIN auctions a ON p.auction_id = a.id
+             WHERE a.case_id = sc.id AND p.status = 'verified'
+             ORDER BY p.created_at DESC
+             LIMIT 1),
+            '0'
+          ) as revenue,
+          sc.status,
+          sc.created_at
+        FROM salvage_cases sc
+        LEFT JOIN users u ON sc.created_by = u.id
+        WHERE sc.created_at >= ${startDate}
+          AND sc.created_at <= ${endDate}
+        ORDER BY sc.id, sc.created_at DESC
+      ) latest_cases
+      ORDER BY created_at DESC
       LIMIT 100
     `);
 

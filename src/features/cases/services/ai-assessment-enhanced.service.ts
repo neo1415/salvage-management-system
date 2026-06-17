@@ -122,6 +122,40 @@ export interface UniversalItemInfo {
   marketValue?: number; // Claims paid / user-provided asset value
 }
 
+export function shouldApplyTotalLossCap(input: {
+  itemType?: UniversalItemInfo['type'];
+  aiTotalLoss?: boolean;
+  damageCalculationTotalLoss?: boolean;
+  totalDeductionPercent?: number;
+  partPricesFound?: number;
+  damagePercentage?: number;
+}): { applyCap: boolean; aiOnlyNonVehicleReview: boolean; reason: 'damage_calculation' | 'ai_vehicle' | 'ai_unpriced_high_damage' | 'none' } {
+  const itemType = input.itemType || 'vehicle';
+  const isVehicle = itemType === 'vehicle';
+  const aiTotalLoss = input.aiTotalLoss === true;
+  const calculationTotalLoss = input.damageCalculationTotalLoss === true || (input.totalDeductionPercent ?? 0) >= 0.7;
+
+  if (calculationTotalLoss) {
+    return { applyCap: true, aiOnlyNonVehicleReview: false, reason: 'damage_calculation' };
+  }
+
+  if (isVehicle && aiTotalLoss) {
+    return { applyCap: true, aiOnlyNonVehicleReview: false, reason: 'ai_vehicle' };
+  }
+
+  const noPartEvidence = (input.partPricesFound ?? 0) === 0;
+  const veryHighDamage = (input.damagePercentage ?? 0) >= 80;
+  if (!isVehicle && aiTotalLoss && noPartEvidence && veryHighDamage) {
+    return { applyCap: true, aiOnlyNonVehicleReview: false, reason: 'ai_unpriced_high_damage' };
+  }
+
+  return {
+    applyCap: false,
+    aiOnlyNonVehicleReview: !isVehicle && aiTotalLoss,
+    reason: 'none',
+  };
+}
+
 // Backward compatibility alias
 export interface VehicleInfo {
   type?: 'vehicle';
@@ -329,6 +363,7 @@ export async function assessDamageEnhanced(params: {
   const photoRequirement = valuationPolicy.photoRequirements[assetTypeForPolicy]
     || valuationPolicy.photoRequirements.general_asset;
   const photoReviewReasons: string[] = [];
+  const valuationReviewReasons: string[] = [];
   if (photoRequirement && photos.length < photoRequirement.minimumPhotos) {
     photoReviewReasons.push(
       `${assetTypeForPolicy} assessment needs at least ${photoRequirement.minimumPhotos} photos for reliable AI review`
@@ -360,6 +395,7 @@ export async function assessDamageEnhanced(params: {
   
   // Step 2: Calculate damage scores
   const damageScore = damageAnalysis.damageScore;
+  const damagePercentage = calculateDamagePercentage(damageScore);
   
   // Step 3: Determine market value (with universal item support)
   const marketValueResult = await getUniversalMarketValue(itemInfo);
@@ -489,14 +525,28 @@ export async function assessDamageEnhanced(params: {
         salvageValue = conditionAdjustedMarketValue;
       }
       
-      // CRITICAL FIX: Use Gemini's total loss flag to override damage calculation
-      // Gemini is the authoritative source for total loss determination
-      const isActuallyTotalLoss = geminiTotalLoss === true || salvageCalc.isTotalLoss;
+      const partPricesFound = partPrices.filter(p => p.searchedPrice).length;
+      const totalLossDecision = shouldApplyTotalLossCap({
+        itemType: itemInfo?.type,
+        aiTotalLoss: geminiTotalLoss,
+        damageCalculationTotalLoss: salvageCalc.isTotalLoss,
+        totalDeductionPercent: salvageCalc.totalDeductionPercent,
+        partPricesFound,
+        damagePercentage,
+      });
+      const isActuallyTotalLoss = totalLossDecision.applyCap;
       
-      if (geminiTotalLoss === true && !salvageCalc.isTotalLoss) {
+      if (geminiTotalLoss === true && !salvageCalc.isTotalLoss && totalLossDecision.applyCap) {
         console.log(`🚨 AI TOTAL-LOSS OVERRIDE: ${damageAnalysis.method} detected total loss but damage calculation did not. Forcing total loss.`);
       }
       
+      if (geminiTotalLoss === true && !salvageCalc.isTotalLoss && totalLossDecision.aiOnlyNonVehicleReview) {
+        valuationReviewReasons.push(
+          `${damageAnalysis.method} flagged total loss, but non-vehicle repair/part pricing did not cross the total-loss threshold; review before applying a total-loss cap.`
+        );
+        console.log(`âš ï¸ AI total-loss flag retained as manual review only for ${itemInfo?.type || 'asset'}; repair math did not support the cap.`);
+      }
+
       // TOTAL LOSS OVERRIDE: Cap salvage value at 30% of condition-adjusted market value for total loss items
       const totalLossSalvageCapRatio = valuationPolicy.totalLossSalvageCapRatio;
       if (isActuallyTotalLoss && salvageValue > conditionAdjustedMarketValue * totalLossSalvageCapRatio) {
@@ -530,7 +580,7 @@ export async function assessDamageEnhanced(params: {
         totalDeduction: salvageCalc.totalDeductionPercent,
         salvageValue,
         isTotalLoss,
-        partPricesUsed: partPrices.filter(p => p.searchedPrice).length
+        partPricesUsed: partPricesFound
       });
     } catch (error) {
       console.error('❌ Damage calculation failed, using fallback:', error);
@@ -559,7 +609,6 @@ export async function assessDamageEnhanced(params: {
   const reservePrice = salvageValue * valuationPolicy.reservePriceRatio;
   
   // Step 5: Determine severity
-  const damagePercentage = calculateDamagePercentage(damageScore);
   let damageSeverity = determineSeverity(damagePercentage);
   
   // Use model severity as authoritative when available; percentage remains the deterministic fallback.
@@ -620,6 +669,7 @@ export async function assessDamageEnhanced(params: {
   });
   const reviewReasons = [
     ...photoReviewReasons,
+    ...valuationReviewReasons,
     ...manualReviewDecision.reasons,
   ];
   const manualReviewRequired = reviewReasons.length > 0;
@@ -766,7 +816,7 @@ async function analyzePhotosWithFallback(
           geminiContext = {
             make: universalItemInfo!.brand, // Use brand as "make"
             model: universalItemInfo!.model,
-            year: universalItemInfo!.year || new Date().getFullYear(), // Use current year if not specified
+            year: universalItemInfo!.year,
             itemType: universalItemInfo!.type, // Add item type for context
           };
           console.log(`   Universal item context: ${universalItemInfo!.brand} ${universalItemInfo!.model} (${universalItemInfo!.type})`);
@@ -2648,10 +2698,10 @@ function validateAssessment(params: {
   
   // Severity vs percentage mismatch
   if (params.damageSeverity === 'minor' && params.damagePercentage > 60) {
-    warnings.push('⚠️ Damage severity and percentage mismatch - review classification');
+    warnings.push(`Damage is labelled minor but calculated at ${params.damagePercentage}% - review damaged parts and severity classification`);
   }
   if (params.damageSeverity === 'severe' && params.damagePercentage < 70) {
-    warnings.push('⚠️ Damage severity and percentage mismatch - review classification');
+    warnings.push(`Damage is labelled severe but calculated at ${params.damagePercentage}% - confirm whether visible damage affects core functionality`);
   }
   
   // Low confidence warning

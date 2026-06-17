@@ -271,6 +271,26 @@ export async function GET(request: NextRequest) {
         ? alert.entityId
         : metadata?.vendorIds?.[0] || '';
       const vendor = vendorDetails.find(v => v.id === primaryVendorId);
+      const involvedVendors = (metadata?.vendorIds || [])
+        .map((vendorId) => {
+          const involvedVendor = vendorDetails.find(v => v.id === vendorId);
+          const involvedUser = involvedVendor
+            ? userDetails.find(u => u.id === involvedVendor.userId)
+            : undefined;
+          return involvedVendor ? {
+            id: involvedVendor.id,
+            businessName: involvedVendor.businessName,
+            tier: involvedVendor.tier,
+            status: involvedVendor.status,
+            user: involvedUser ? {
+              id: involvedUser.id,
+              fullName: involvedUser.fullName,
+              email: involvedUser.email,
+              phone: involvedUser.phone,
+            } : null,
+          } : null;
+        })
+        .filter(Boolean);
       const directUser = alert.entityType === 'user'
         ? userDetails.find(u => u.id === alert.entityId)
         : undefined;
@@ -346,6 +366,7 @@ export async function GET(request: NextRequest) {
         },
         timeline,
         reviewHistory: metadata?.reviewHistory || [],
+        involvedVendors,
         flaggedAt: alert.createdAt,
         auction: auction ? {
           id: auction.id,

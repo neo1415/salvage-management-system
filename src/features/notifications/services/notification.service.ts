@@ -122,12 +122,12 @@ function notificationUrl(data?: NotificationData): string | undefined {
     return explicitUrl;
   }
 
-  if (data?.paymentId) {
-    return `/vendor/payments/${data.paymentId}`;
-  }
-
   if (data?.auctionId) {
     return `/vendor/auctions/${data.auctionId}`;
+  }
+
+  if (data?.paymentId) {
+    return `/vendor/payments/${data.paymentId}`;
   }
 
   if (data?.caseId) {
