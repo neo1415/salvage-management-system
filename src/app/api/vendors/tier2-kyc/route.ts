@@ -21,6 +21,7 @@ import {
   logPolicyDecision,
   resolveTier2Access,
 } from '@/features/business-policy';
+import { recordImageUploadMetadataBatch } from '@/features/media/services/image-upload-metadata.service';
 
 /**
  * Tier 2 KYC API
@@ -232,6 +233,47 @@ export async function POST(request: NextRequest) {
     const cacUrl = cacUpload.secureUrl;
     const bankStatementUrl = bankStatementUpload.secureUrl;
     const ninCardUrl = ninCardUpload.secureUrl;
+
+    await recordImageUploadMetadataBatch([
+      {
+        file: cacCertificate,
+        buffer: cacBuffer,
+        url: cacUrl,
+        index: 0,
+        purpose: 'kyc_cac_certificate',
+      },
+      {
+        file: bankStatement,
+        buffer: bankStatementBuffer,
+        url: bankStatementUrl,
+        index: 1,
+        purpose: 'kyc_bank_statement',
+      },
+      {
+        file: ninCard,
+        buffer: ninCardBuffer,
+        url: ninCardUrl,
+        index: 2,
+        purpose: 'kyc_nin_card',
+      },
+    ].filter((document) => document.file.type.startsWith('image/')).map((document) => ({
+      entityType: 'kyc_document',
+      entityId: vendor.id,
+      imageUrl: document.url,
+      imageIndex: document.index,
+      purpose: document.purpose,
+      uploadedBy: userId,
+      serverBuffer: document.buffer,
+      fallbackMimeType: document.file.type,
+      clientMetadata: {
+        index: document.index,
+        name: document.file.name,
+        size: document.file.size,
+        type: document.file.type,
+        lastModified: document.file.lastModified,
+        captureSource: 'server_upload',
+      },
+    })));
 
     // Extract NIN from uploaded ID using Google Document AI
     let extractedNIN: string | null = null;

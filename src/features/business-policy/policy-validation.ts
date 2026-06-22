@@ -8,7 +8,24 @@ function issue(path: string, message: string, severity: PolicyValidationIssue['s
   return { path, message, severity };
 }
 
-const LIVE_CASE_ASSET_TYPES = new Set(['vehicle', 'property', 'electronics', 'machinery']);
+const LIVE_CASE_ASSET_TYPES = new Set([
+  'vehicle',
+  'property',
+  'electronics',
+  'machinery',
+  'appliance',
+  'furniture',
+  'jewelry',
+  'stock',
+  'goods_in_transit',
+  'building_materials',
+  'scrap',
+  'agriculture',
+  'medical_equipment',
+  'energy_equipment',
+  'aviation_equipment',
+  'other',
+]);
 
 export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidationResult {
   const issues: PolicyValidationIssue[] = [];
@@ -227,9 +244,50 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     }
   }
 
+  if (policy.fraud.vendorInactivityAlertsEnabled) {
+    if (policy.fraud.vendorInactivityDays < 7) {
+      issues.push(issue('fraud.vendorInactivityDays', 'Vendor inactivity threshold should be at least 7 days.'));
+    }
+
+    if (policy.fraud.vendorInactivityCooldownDays < 1) {
+      issues.push(issue('fraud.vendorInactivityCooldownDays', 'Vendor inactivity alert cooldown must be at least 1 day.'));
+    }
+
+    if (policy.fraud.vendorInactivityCooldownDays > policy.fraud.vendorInactivityDays) {
+      issues.push(
+        issue(
+          'fraud.vendorInactivityCooldownDays',
+          'Vendor inactivity alert cooldown is longer than the inactivity threshold; admins may miss stale vendors for too long.',
+          'warning'
+        )
+      );
+    }
+  }
+
   const enabledAssetTypes = Object.entries(policy.cases.enabledAssetTypes).filter(([, config]) => config.enabled);
   if (enabledAssetTypes.length === 0) {
     issues.push(issue('cases.enabledAssetTypes', 'At least one asset type must be enabled.'));
+  }
+
+  const enabledInsuranceClasses = Object.entries(policy.cases.insuranceClasses).filter(([, config]) => config.enabled);
+  if (enabledInsuranceClasses.length === 0) {
+    issues.push(issue('cases.insuranceClasses', 'At least one insurance class must be enabled.'));
+  }
+
+  for (const [classKey, config] of enabledInsuranceClasses) {
+    if (!config.label.trim()) {
+      issues.push(issue(`cases.insuranceClasses.${classKey}.label`, `Insurance class "${classKey}" needs a display label.`));
+    }
+
+    if (config.defaultAssetTypes.length === 0) {
+      issues.push(
+        issue(
+          `cases.insuranceClasses.${classKey}.defaultAssetTypes`,
+          `Insurance class "${classKey}" should map to at least one default asset type.`,
+          'warning'
+        )
+      );
+    }
   }
 
   for (const [assetType, config] of enabledAssetTypes) {
@@ -291,6 +349,14 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
 
   if (policy.documents.requiredAuctionDocuments.length === 0) {
     issues.push(issue('documents.requiredAuctionDocuments', 'At least one auction document type must be required.'));
+  }
+
+  if (
+    policy.documents.authorizedSignatureUrl &&
+    !policy.documents.authorizedSignatureUrl.startsWith('https://') &&
+    !policy.documents.authorizedSignatureUrl.startsWith('data:image/')
+  ) {
+    issues.push(issue('documents.authorizedSignatureUrl', 'Authorized signature must be an HTTPS URL or image data URL.'));
   }
 
   if (!policy.documents.billOfSaleDisclaimerTitle.trim()) {

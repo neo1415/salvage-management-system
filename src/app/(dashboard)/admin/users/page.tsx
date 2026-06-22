@@ -76,6 +76,7 @@ export default function AdminUserManagement() {
     fullName: '',
     email: '',
     phone: '',
+    branchName: '',
     role: 'claims_adjuster' as 'claims_adjuster' | 'salvage_manager' | 'finance_officer',
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -161,6 +162,10 @@ export default function AdminUserManagement() {
       errors.phone = 'Invalid phone number format (10-15 digits)';
     }
 
+    if (formData.branchName && formData.branchName.length > 150) {
+      errors.branchName = 'Branch name must be 150 characters or less';
+    }
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
@@ -198,6 +203,7 @@ export default function AdminUserManagement() {
         fullName: '',
         email: '',
         phone: '',
+        branchName: '',
         role: 'claims_adjuster',
       });
 
@@ -413,6 +419,9 @@ export default function AdminUserManagement() {
                         Role
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Branch
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -461,6 +470,9 @@ export default function AdminUserManagement() {
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getRoleColor(user.role)}`}>
                             {getRoleDisplayName(user.role)}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          {user.branchName || '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.displayStatus ?? user.status)}`}>
@@ -812,6 +824,26 @@ export default function AdminUserManagement() {
                   </div>
 
                   {/* Role */}
+                  <div className="mb-4">
+                    <label htmlFor="branchName" className="block text-sm font-medium text-gray-700 mb-2">
+                      Branch (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      id="branchName"
+                      value={formData.branchName}
+                      onChange={(e) => setFormData({ ...formData, branchName: e.target.value })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent ${
+                        formErrors.branchName ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      placeholder="Akure, Ibadan, Lagos Head Office..."
+                    />
+                    {formErrors.branchName && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.branchName}</p>
+                    )}
+                  </div>
+
+                  {/* Role */}
                   <div className="mb-6">
                     <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-2">
                       Role *
@@ -901,7 +933,7 @@ function UserRow({
 }) {
   return (
     <div className="border-b border-gray-200 hover:bg-gray-50 px-6 py-4">
-      <div className="grid grid-cols-7 gap-4 items-center">
+      <div className="grid grid-cols-8 gap-4 items-center">
         <div className="flex items-center gap-3">
           {/* Profile Picture */}
           <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 flex-shrink-0">
@@ -932,6 +964,9 @@ function UserRow({
           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getRoleColor(user.role)}`}>
             {getRoleDisplayName(user.role)}
           </span>
+        </div>
+        <div className="text-sm text-gray-700">
+          {user.branchName || '-'}
         </div>
         <div>
           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(user.displayStatus ?? user.status)}`}>

@@ -44,18 +44,12 @@ const ROLE_NAV: Record<AppRole, NavItem[]> = {
   salvage_manager: [
     { href: '/manager/dashboard', label: 'Home', icon: Home },
     { href: '/manager/approvals', label: 'Approvals', icon: ClipboardList },
+    { href: '/manager/cases', label: 'Cases', icon: FileText },
     { href: '/manager/pickups', label: 'Pickups', icon: PackageCheck },
-    {
-      href: '/settings/profile',
-      label: 'Settings',
-      icon: User,
-      match: (p) => p.startsWith('/settings'),
-    },
   ],
   claims_adjuster: [
     { href: '/adjuster/dashboard', label: 'Home', icon: Home },
     { href: '/adjuster/cases/new', label: 'New', icon: FileText },
-    { href: '/adjuster/my-cases', label: 'Cases', icon: ClipboardList },
     {
       href: '/settings/profile',
       label: 'Settings',

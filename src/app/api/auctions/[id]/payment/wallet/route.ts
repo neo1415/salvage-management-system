@@ -13,9 +13,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { paymentService } from '@/features/auction-deposit/services/payment.service';
 import { db } from '@/lib/db/drizzle';
-import { vendors, auctionWinners, auctions, escrowWallets, releaseForms } from '@/lib/db/schema';
+import { vendors, releaseForms } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
+import { ensurePaymentReadinessContext, PaymentReadinessError } from '@/features/auction-deposit/services/payment-readiness.service';
 import {
   businessPolicyService,
   getBusinessPolicyRuntimeMode,
@@ -102,40 +103,7 @@ export async function POST(
       );
     }
 
-    // Get winner record
-    const winner = await db.query.auctionWinners.findFirst({
-      where: and(
-        eq(auctionWinners.auctionId, auctionId),
-        eq(auctionWinners.status, 'active')
-      ),
-    });
-
-    if (!winner) {
-      return NextResponse.json(
-        { success: false, error: 'No active winner for this auction' },
-        { status: 404 }
-      );
-    }
-
-    // IDOR Protection: Verify user is the winner
-    if (winner.vendorId !== vendor.id) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden - You are not the winner of this auction' },
-        { status: 403 }
-      );
-    }
-
-    // Get auction details
-    const auction = await db.query.auctions.findFirst({
-      where: eq(auctions.id, auctionId),
-    });
-
-    if (!auction) {
-      return NextResponse.json(
-        { success: false, error: 'Auction not found' },
-        { status: 404 }
-      );
-    }
+    const { auction, winner, escrowWallet } = await ensurePaymentReadinessContext(auctionId, vendor.id);
 
     // Verify auction status allows payment
     const validStatuses = ['awaiting_payment', 'documents_signed'];
@@ -167,11 +135,6 @@ export async function POST(
         { status: 400 }
       );
     }
-
-    // Get escrow wallet for balance information
-    const escrowWallet = await db.query.escrowWallets.findFirst({
-      where: eq(escrowWallets.vendorId, vendor.id),
-    });
 
     if (!escrowWallet) {
       return NextResponse.json(
@@ -227,12 +190,19 @@ export async function POST(
     );
   } catch (error) {
     console.error('Wallet payment error:', error);
-    
+
+    if (error instanceof PaymentReadinessError) {
+      return NextResponse.json(
+        { success: false, error: error.message, message: error.message },
+        { status: error.statusCode }
+      );
+    }
+
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         error: 'Failed to process wallet payment. Please try again.',
-        message: 'Failed to process wallet payment. Please try again.'
+        message: 'Failed to process wallet payment. Please try again.',
       },
       { status: 500 }
     );

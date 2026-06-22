@@ -18,6 +18,7 @@ export interface User {
   email: string;
   phone: string;
   fullName: string;
+  branchName: string | null;
   role: string;
   status: string;
   /** KYC-derived status for vendors when users.status is stale */

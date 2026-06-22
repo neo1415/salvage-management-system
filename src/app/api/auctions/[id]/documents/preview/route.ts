@@ -10,9 +10,21 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq } from 'drizzle-orm';
+import { payments } from '@/lib/db/schema/payments';
+import { and, desc, eq } from 'drizzle-orm';
 import { businessPolicyService } from '@/features/business-policy';
 import { formatAssetName } from '@/lib/utils/asset-name';
+
+function formatPaymentMethod(method: string | null | undefined): string {
+  const labels: Record<string, string> = {
+    paystack: 'Paystack',
+    flutterwave: 'Flutterwave',
+    bank_transfer: 'Bank Transfer',
+    escrow_wallet: 'Escrow Wallet',
+  };
+
+  return method ? labels[method] ?? method.replace(/_/g, ' ') : 'To be determined';
+}
 
 export async function GET(
   request: NextRequest,
@@ -64,6 +76,24 @@ export async function GET(
     }
 
     const { auction, case: caseData, vendorUser } = auctionData;
+    const [verifiedPayment] = await db
+      .select({
+        id: payments.id,
+        amount: payments.amount,
+        paymentMethod: payments.paymentMethod,
+        paymentReference: payments.paymentReference,
+        verifiedAt: payments.verifiedAt,
+      })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.auctionId, auctionId),
+          eq(payments.vendorId, session.user.vendorId),
+          eq(payments.status, 'verified')
+        )
+      )
+      .orderBy(desc(payments.verifiedAt), desc(payments.updatedAt))
+      .limit(1);
     const effectivePolicy = await businessPolicyService.getEffectivePolicy();
     const { branding, legal, documents } = effectivePolicy;
     const sellerName = escapeHtml(branding.legalName || branding.brandName);
@@ -144,8 +174,9 @@ export async function GET(
 
             <div class="mb-6">
               <h3 class="text-lg font-bold mb-2">FINANCIAL INFORMATION</h3>
-              <p class="text-gray-700">Sale Price: ₦${Number(auction.currentBid || 0).toLocaleString()}</p>
-              <p class="text-gray-700">Payment Method: To be determined</p>
+              <p class="text-gray-700">Sale Price: ₦${Number(verifiedPayment?.amount ?? auction.currentBid ?? 0).toLocaleString()}</p>
+              <p class="text-gray-700">Payment Method: ${escapeHtml(formatPaymentMethod(verifiedPayment?.paymentMethod))}</p>
+              ${verifiedPayment?.paymentReference ? `<p class="text-gray-700">Payment Reference: ${escapeHtml(verifiedPayment.paymentReference)}</p>` : ''}
             </div>
 
             <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mt-6">
@@ -181,9 +212,10 @@ export async function GET(
 
             <div class="mb-6">
               <h3 class="text-lg font-bold mb-2">PAYMENT CONFIRMATION</h3>
-              <p class="text-gray-700">Amount Paid: ₦${Number(auction.currentBid || 0).toLocaleString()}</p>
-              <p class="text-gray-700">Payment Reference: To be updated</p>
-              <p class="text-gray-700">Payment Date: ${new Date().toLocaleDateString('en-NG')}</p>
+              <p class="text-gray-700">Amount Paid: ₦${Number(verifiedPayment?.amount ?? auction.currentBid ?? 0).toLocaleString()}</p>
+              <p class="text-gray-700">Payment Method: ${escapeHtml(formatPaymentMethod(verifiedPayment?.paymentMethod))}</p>
+              <p class="text-gray-700">Payment Reference: ${escapeHtml(verifiedPayment?.paymentReference || verifiedPayment?.id || 'Pending verification reference')}</p>
+              <p class="text-gray-700">Payment Date: ${(verifiedPayment?.verifiedAt ?? new Date()).toLocaleDateString('en-NG')}</p>
             </div>
 
             <div class="mb-6">

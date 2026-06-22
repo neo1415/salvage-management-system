@@ -34,6 +34,14 @@ export interface RevenueAnalysisReport {
     salvageRecovered: number;
     recoveryRate: number;
   }>;
+  byBranch?: Array<{
+    branchName: string;
+    count: number;
+    claimsPaid: number;
+    salvageRecovered: number;
+    netLoss: number;
+    recoveryRate: number;
+  }>;
   itemBreakdown: Array<{
     claimReference: string;
     assetType: string;
@@ -42,6 +50,7 @@ export interface RevenueAnalysisReport {
     netLoss: number;
     recoveryRate: number;
     region: string;
+    branchName: string;
     date: string;
   }>;
   registrationFees: Array<{
@@ -97,6 +106,9 @@ export class RevenueAnalysisService {
     // Group by region
     const byRegion = this.calculateByRegion(revenueData);
 
+    // Group by insurer branch
+    const byBranch = this.calculateByBranch(revenueData);
+
     // Create item breakdown - sorted by date descending (latest first)
     const itemBreakdown = revenueData
       .map(row => ({
@@ -107,6 +119,7 @@ export class RevenueAnalysisService {
         netLoss: row.netLoss,
         recoveryRate: row.recoveryRate,
         region: row.region || 'Unknown',
+        branchName: row.branchName || 'Unassigned',
         date: row.createdAt.toISOString().split('T')[0],
       }))
       .sort((a, b) => b.date.localeCompare(a.date)); // Sort by date descending
@@ -138,6 +151,7 @@ export class RevenueAnalysisService {
       },
       byAssetType,
       byRegion,
+      byBranch,
       itemBreakdown,
       registrationFees,
       trend,
@@ -186,6 +200,30 @@ export class RevenueAnalysisService {
         count: items.length,
         claimsPaid: Math.round(claimsPaid * 100) / 100,
         salvageRecovered: Math.round(salvageRecovered * 100) / 100,
+        recoveryRate: Math.round(recoveryRate * 100) / 100,
+      };
+    }).sort((a, b) => b.salvageRecovered - a.salvageRecovered);
+  }
+
+  /**
+   * Calculate metrics by insurer branch
+   */
+  private static calculateByBranch(data: any[]) {
+    const grouped = DataAggregationService.groupBy(data, 'branchName');
+    if (!grouped || Object.keys(grouped).length === 0) return [];
+
+    return Object.entries(grouped).map(([branchName, items]) => {
+      const claimsPaid = items.reduce((sum, item) => sum + parseFloat(item.marketValue), 0);
+      const salvageRecovered = items.reduce((sum, item) => sum + parseFloat(item.salvageRecovery), 0);
+      const netLoss = claimsPaid - salvageRecovered;
+      const recoveryRate = claimsPaid > 0 ? (salvageRecovered / claimsPaid) * 100 : 0;
+
+      return {
+        branchName: branchName || 'Unassigned',
+        count: items.length,
+        claimsPaid: Math.round(claimsPaid * 100) / 100,
+        salvageRecovered: Math.round(salvageRecovered * 100) / 100,
+        netLoss: Math.round(netLoss * 100) / 100,
         recoveryRate: Math.round(recoveryRate * 100) / 100,
       };
     }).sort((a, b) => b.salvageRecovered - a.salvageRecovered);

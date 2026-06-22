@@ -38,6 +38,7 @@ export interface KPIDashboardReport {
       claimReference: string;
       adjusterName: string;
       assetType: string;
+      branchName: string;
       marketValue: string;
       processingTime: number;
       revenue: string;
@@ -74,6 +75,14 @@ export interface KPIDashboardReport {
       totalSpent: number;
       avgBid: number;
       paymentRate: number;
+    }>;
+    branches: Array<{
+      branchName: string;
+      totalCases: number;
+      soldCases: number;
+      claimsValue: number;
+      verifiedRecovery: number;
+      recoveryRate: number;
     }>;
   };
 }
@@ -399,6 +408,9 @@ export class KPIDashboardService {
 
   private static async getDetailedBreakdowns(filters: ReportFilters) {
     const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
+    const branchFilter = filters.branches && filters.branches.length > 0
+      ? sql`AND COALESCE(sc.branch_name, 'Unassigned') IN (${sql.join(filters.branches.map(branch => sql`${branch}`), sql`, `)})`
+      : sql``;
 
     // Cases breakdown - use DISTINCT ON to prevent duplicates
     const casesResult = await db.execute(sql`
@@ -409,6 +421,7 @@ export class KPIDashboardService {
           sc.claim_reference,
           u.full_name as adjuster_name,
           sc.asset_type,
+          COALESCE(sc.branch_name, 'Unassigned') as branch_name,
           sc.market_value,
           EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400 as processing_days,
           COALESCE(
@@ -426,6 +439,7 @@ export class KPIDashboardService {
         LEFT JOIN users u ON sc.created_by = u.id
         WHERE sc.created_at >= ${startDate}
           AND sc.created_at <= ${endDate}
+          ${branchFilter}
         ORDER BY sc.id, sc.created_at DESC
       ) latest_cases
       ORDER BY created_at DESC
@@ -451,9 +465,45 @@ export class KPIDashboardService {
       LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
       WHERE a.created_at >= ${startDate}
         AND a.created_at <= ${endDate}
+        ${branchFilter}
       GROUP BY a.id, sc.claim_reference, sc.market_value, p.id, p.amount, v.business_name, winner.full_name, a.status
       ORDER BY a.created_at DESC
       LIMIT 100
+    `);
+
+    const branchesResult = await db.execute(sql`
+      WITH branch_cases AS (
+        SELECT
+          sc.id,
+          COALESCE(sc.branch_name, 'Unassigned') as branch_name,
+          COALESCE(CAST(sc.market_value AS NUMERIC), 0) as market_value,
+          COALESCE((
+            SELECT p.amount
+            FROM payments p
+            JOIN auctions a ON p.auction_id = a.id
+            WHERE a.case_id = sc.id
+              AND p.status = 'verified'
+              AND p.vendor_id = a.current_bidder
+            ORDER BY p.verified_at DESC NULLS LAST, p.created_at DESC
+            LIMIT 1
+          ), 0) as verified_recovery
+        FROM salvage_cases sc
+        WHERE sc.created_at >= ${startDate}
+          AND sc.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+          ${branchFilter}
+      )
+      SELECT
+        branch_name,
+        COUNT(*) as total_cases,
+        COUNT(*) FILTER (WHERE verified_recovery > 0) as sold_cases,
+        COALESCE(SUM(market_value), 0) as claims_value,
+        COALESCE(SUM(verified_recovery), 0) as verified_recovery
+      FROM branch_cases
+      GROUP BY branch_name
+      ORDER BY verified_recovery DESC, claims_value DESC
+      LIMIT 50
     `);
 
     // Adjusters breakdown with quality score
@@ -554,6 +604,7 @@ export class KPIDashboardService {
         claimReference: c.claim_reference || 'N/A',
         adjusterName: c.adjuster_name || 'Unknown',
         assetType: c.asset_type,
+        branchName: c.branch_name || 'Unassigned',
         marketValue: c.market_value || '0',
         processingTime: Math.round(parseFloat(c.processing_days || '0') * 100) / 100,
         revenue: c.revenue || '0',
@@ -581,6 +632,18 @@ export class KPIDashboardService {
         avgBid: Math.round(parseFloat(v.avg_bid) * 100) / 100,
         paymentRate: Math.round(parseFloat(v.payment_rate) * 100) / 100,
       })),
+      branches: (branchesResult as any[]).map(branch => {
+        const claimsValue = parseFloat(branch.claims_value || '0');
+        const verifiedRecovery = parseFloat(branch.verified_recovery || '0');
+        return {
+          branchName: branch.branch_name || 'Unassigned',
+          totalCases: parseInt(branch.total_cases || '0'),
+          soldCases: parseInt(branch.sold_cases || '0'),
+          claimsValue: Math.round(claimsValue * 100) / 100,
+          verifiedRecovery: Math.round(verifiedRecovery * 100) / 100,
+          recoveryRate: claimsValue > 0 ? Math.round((verifiedRecovery / claimsValue) * 10000) / 100 : 0,
+        };
+      }),
     };
   }
 }

@@ -15,6 +15,11 @@ export const caseStatusEnum = pgEnum('case_status', [
 export const salvageCases = pgTable('salvage_cases', {
   id: uuid('id').primaryKey().defaultRandom(),
   claimReference: varchar('claim_reference', { length: 100 }).notNull().unique(),
+  policyNumber: varchar('policy_number', { length: 120 }),
+  insuranceClass: varchar('insurance_class', { length: 80 }),
+  brokerName: varchar('broker_name', { length: 255 }),
+  agencyName: varchar('agency_name', { length: 255 }),
+  branchName: varchar('branch_name', { length: 150 }),
   assetType: assetTypeEnum('asset_type').notNull(),
   assetDetails: jsonb('asset_details')
     .notNull()
@@ -26,10 +31,24 @@ export const salvageCases = pgTable('salvage_cases', {
       vin?: string;
       // Property-specific
       propertyType?: string;
-      address?: string;
+      propertyUse?: string;
+      damageArea?: string;
       // Electronics-specific
       brand?: string;
       serialNumber?: string;
+      storage?: string;
+      color?: string;
+      // Insurance salvage general fields
+      type?: string;
+      description?: string;
+      quantity?: string;
+      unitOfMeasure?: string;
+      packagingType?: string;
+      batchOrSerial?: string;
+      consignmentReference?: string;
+      serialOrReference?: string;
+      declaredCondition?: string;
+      condition?: string;
     }>(),
   marketValue: numeric('market_value', { precision: 12, scale: 2 }).notNull(),
   estimatedSalvageValue: numeric('estimated_salvage_value', { precision: 12, scale: 2 }),

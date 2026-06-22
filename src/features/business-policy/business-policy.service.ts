@@ -91,7 +91,8 @@ export class BusinessPolicyService {
 
       if (!record) return null;
 
-      const validation = validateBusinessPolicy(record.policy);
+      const policy = sanitizeBusinessPolicy(record.policy);
+      const validation = validateBusinessPolicy(policy);
       if (!validation.valid) {
         console.error('[BusinessPolicy] Active policy is invalid; falling back to runtime default', {
           policyId: record.id,
@@ -101,7 +102,7 @@ export class BusinessPolicyService {
         return null;
       }
 
-      return record;
+      return { ...record, policy };
     } catch (error) {
       console.warn('[BusinessPolicy] Published policy unavailable; using runtime default', {
         error: error instanceof Error ? error.message : 'Unknown error',

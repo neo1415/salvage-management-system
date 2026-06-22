@@ -29,6 +29,7 @@ cloudinary.config({
 export const CLOUDINARY_FOLDERS = {
   SALVAGE_CASES: 'salvage-cases',
   KYC_DOCUMENTS: 'kyc-documents',
+  PICKUP_EVIDENCE: 'pickup-evidence',
   PROFILE_PICTURES: 'profile-pictures',
 } as const;
 
@@ -475,6 +476,10 @@ export function getSalvageCaseFolder(caseId: string): string {
  */
 export function getKycDocumentFolder(vendorId: string): string {
   return `${CLOUDINARY_FOLDERS.KYC_DOCUMENTS}/${vendorId}`;
+}
+
+export function getPickupEvidenceFolder(auctionId: string): string {
+  return `${CLOUDINARY_FOLDERS.PICKUP_EVIDENCE}/${auctionId}`;
 }
 
 /**

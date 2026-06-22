@@ -162,6 +162,7 @@ export enum AuditActionType {
   // Pickup actions
   PICKUP_CONFIRMED_VENDOR = 'pickup_confirmed_vendor',
   PICKUP_CONFIRMED_ADMIN = 'pickup_confirmed_admin',
+  PICKUP_EVIDENCE_SUBMITTED = 'pickup_evidence_submitted',
   
   // Reporting actions
   LEADERBOARD_VIEWED = 'leaderboard_viewed',

@@ -8,6 +8,7 @@ import { HOMEPAGE_TEMPLATE_OPTIONS, normalizeHomepageTemplate } from '@/componen
 import { WhiteLabelHomeTemplates } from '@/components/landing/home-templates';
 import { getReadableTextColor } from '@/features/branding/brand-colors';
 import { useToast } from '@/components/ui/toast';
+import { collectImageFileMetadata } from '@/features/media/client-image-metadata';
 
 type EnterprisePolicyEditorProps = {
   initialPolicy: BusinessPolicy;
@@ -136,13 +137,13 @@ function BrandAssetUploadCard({
   uploading,
   onUpload,
 }: {
-  target: 'logo' | 'favicon';
+  target: 'logo' | 'favicon' | 'authorized-signature';
   label: string;
   description: string;
   value: string;
   brandName: string;
   uploading: boolean;
-  onUpload: (file: File, target: 'logo' | 'favicon') => void;
+  onUpload: (file: File, target: 'logo' | 'favicon' | 'authorized-signature') => void;
 }) {
   const inputId = `brand-${target}-upload`;
 
@@ -155,7 +156,7 @@ function BrandAssetUploadCard({
               <img
                 src={value}
                 alt={`${brandName || 'Brand'} ${target} preview`}
-                className={`${target === 'favicon' ? 'h-9 w-9' : 'h-12 w-12'} object-contain`}
+                className={`${target === 'favicon' ? 'h-9 w-9' : target === 'authorized-signature' ? 'h-10 w-14' : 'h-12 w-12'} object-contain`}
               />
             ) : (
               <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
@@ -177,7 +178,9 @@ function BrandAssetUploadCard({
           <input
             id={inputId}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
+            accept={target === 'authorized-signature'
+              ? 'image/jpeg,image/png,image/webp'
+              : 'image/jpeg,image/png,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon'}
             disabled={uploading}
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -1343,7 +1346,7 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [uploadingBrandAsset, setUploadingBrandAsset] = useState<'logo' | 'favicon' | null>(null);
+  const [uploadingBrandAsset, setUploadingBrandAsset] = useState<'logo' | 'favicon' | 'authorized-signature' | null>(null);
   const [lastDraftId, setLastDraftId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<'success' | 'error' | 'info'>('info');
@@ -1457,11 +1460,19 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
     }
   };
 
-  const uploadBrandAsset = async (file: File, target: 'logo' | 'favicon') => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon'];
-    const allowedNames = /\.(jpe?g|png|webp|svg|ico)$/i;
+  const uploadBrandAsset = async (file: File, target: 'logo' | 'favicon' | 'authorized-signature') => {
+    const isSignature = target === 'authorized-signature';
+    const allowedTypes = isSignature
+      ? ['image/jpeg', 'image/png', 'image/webp']
+      : ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon'];
+    const allowedNames = isSignature ? /\.(jpe?g|png|webp)$/i : /\.(jpe?g|png|webp|svg|ico)$/i;
     if (!allowedTypes.includes(file.type) && !allowedNames.test(file.name)) {
-      showMessage('Brand assets must be JPG, PNG, WebP, SVG, or ICO files.', 'error');
+      showMessage(
+        isSignature
+          ? 'Authorized signatures must be JPG, PNG, or WebP files.'
+          : 'Brand assets must be JPG, PNG, WebP, SVG, or ICO files.',
+        'error'
+      );
       return;
     }
 
@@ -1474,6 +1485,7 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
     setMessage(null);
 
     try {
+      const clientMetadata = await collectImageFileMetadata(file, 0, `brand_${target}_upload`);
       const signResponse = await fetch('/api/upload/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1516,14 +1528,31 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
         throw new Error('Upload finished without a secure URL.');
       }
 
+      void fetch('/api/upload/metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entityType: 'brand_asset',
+          imageUrl: secureUrl,
+          imageIndex: 0,
+          purpose: `brand_${target}`,
+          clientMetadata,
+        }),
+      }).catch((metadataError) => {
+        console.warn('Brand asset metadata capture failed:', metadataError);
+      });
+
       updatePolicy((draft) => {
         if (target === 'logo') {
           draft.branding.logoPath = secureUrl;
-        } else {
+        } else if (target === 'favicon') {
           draft.branding.faviconPath = secureUrl;
+        } else {
+          draft.documents.authorizedSignatureUrl = secureUrl;
         }
       });
-      showMessage(`${target === 'logo' ? 'Logo' : 'Favicon'} uploaded. Save and publish when ready.`, 'success');
+      const label = target === 'logo' ? 'Logo' : target === 'favicon' ? 'Favicon' : 'Authorized signature';
+      showMessage(`${label} uploaded. Save and publish when ready.`, 'success');
     } catch (error) {
       showMessage(error instanceof Error ? error.message : 'Brand asset upload failed.', 'error');
     } finally {
@@ -2375,6 +2404,61 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
           </div>
         </div>
 
+        <div className={`space-y-4 rounded-lg border border-gray-200 p-4 xl:col-span-2 ${visibleStepClass('workflow')}`}>
+          <h3 className="font-bold text-gray-900">Classes of Insurance</h3>
+          <p className="text-sm text-gray-600">
+            Configure the insurance classes shown during case creation and the default asset categories each class usually maps to.
+          </p>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {Object.entries(policy.cases.insuranceClasses).map(([classKey, config]) => (
+              <div key={classKey} className="rounded-lg border border-gray-200 p-4">
+                <Toggle
+                  checked={config.enabled}
+                  onChange={(checked) => updatePolicy((draft) => {
+                    draft.cases.insuranceClasses[classKey] = {
+                      ...draft.cases.insuranceClasses[classKey],
+                      enabled: checked,
+                    };
+                  })}
+                  label={config.label || classKey}
+                />
+                <div className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  Default assets: {config.defaultAssetTypes.length > 0 ? config.defaultAssetTypes.join(', ') : 'none configured'}
+                </div>
+                <details className="mt-3 rounded-md border border-dashed border-gray-300 bg-white">
+                  <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-gray-700">
+                    Class details
+                  </summary>
+                  <div className="grid gap-3 border-t border-gray-100 p-3 sm:grid-cols-2">
+                    <Field label="Display label">
+                      <TextInput value={config.label} onChange={(event) => updatePolicy((draft) => { draft.cases.insuranceClasses[classKey].label = event.target.value; })} />
+                    </Field>
+                    <Field label="Default asset types" description="Comma-separated asset type keys used for reporting and AI context.">
+                      <TextInput
+                        value={config.defaultAssetTypes.join(', ')}
+                        onChange={(event) => updatePolicy((draft) => {
+                          draft.cases.insuranceClasses[classKey].defaultAssetTypes = event.target.value
+                            .split(',')
+                            .map((field) => field.trim())
+                            .filter(Boolean);
+                        })}
+                      />
+                    </Field>
+                    <div className="sm:col-span-2">
+                      <Field label="Description">
+                      <TextInput
+                        value={config.description || ''}
+                        onChange={(event) => updatePolicy((draft) => { draft.cases.insuranceClasses[classKey].description = event.target.value; })}
+                      />
+                      </Field>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className={`space-y-4 rounded-lg border border-gray-200 p-4 ${visibleStepClass('workflow')}`}>
           <h3 className="font-bold text-gray-900">Case Workflow</h3>
           <p className="text-sm text-gray-600">
@@ -2429,6 +2513,31 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
               <option value="last_90_days">Last 90 days</option>
             </SelectInput>
           </Field>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Field label="Authorized signer name">
+              <TextInput
+                value={policy.documents.authorizedSignerName ?? ''}
+                onChange={(event) => updatePolicy((draft) => { draft.documents.authorizedSignerName = event.target.value; })}
+                placeholder="e.g. Head of Claims"
+              />
+            </Field>
+            <Field label="Authorized signer title">
+              <TextInput
+                value={policy.documents.authorizedSignerTitle ?? ''}
+                onChange={(event) => updatePolicy((draft) => { draft.documents.authorizedSignerTitle = event.target.value; })}
+                placeholder="e.g. Salvage Manager"
+              />
+            </Field>
+          </div>
+          <BrandAssetUploadCard
+            target="authorized-signature"
+            label="Company authorized signature"
+            description="Used on generated Bill of Sale and Release/Waiver PDFs. Upload a transparent PNG/WebP when possible."
+            value={policy.documents.authorizedSignatureUrl ?? ''}
+            brandName={policy.branding.brandName}
+            uploading={uploadingBrandAsset === 'authorized-signature'}
+            onUpload={(file, target) => void uploadBrandAsset(file, target)}
+          />
           <Field label="Bill of Sale disclaimer title">
             <TextInput
               value={policy.documents.billOfSaleDisclaimerTitle}
@@ -2560,6 +2669,27 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             <Toggle checked={policy.fraud.ipFraudDetectionEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.ipFraudDetectionEnabled = checked; })} label="IP/device fraud detection" />
             <Toggle checked={policy.fraud.biddingFraudDetectionEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.biddingFraudDetectionEnabled = checked; })} label="Bidding fraud detection" />
             <Toggle checked={policy.fraud.highRiskRequiresManualReview} onChange={(checked) => updatePolicy((draft) => { draft.fraud.highRiskRequiresManualReview = checked; })} label="High risk requires manual review" />
+            <Toggle checked={policy.fraud.vendorInactivityAlertsEnabled} onChange={(checked) => updatePolicy((draft) => { draft.fraud.vendorInactivityAlertsEnabled = checked; })} label="Vendor inactivity alerts" />
+            {policy.fraud.vendorInactivityAlertsEnabled && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Inactive after days" description="Notify admins when an approved vendor has no login, bid, payment, or KYC activity after this many days.">
+                  <TextInput
+                    type="number"
+                    min={7}
+                    value={policy.fraud.vendorInactivityDays}
+                    onChange={(event) => updatePolicy((draft) => { draft.fraud.vendorInactivityDays = numberValue(event.target.value, draft.fraud.vendorInactivityDays); })}
+                  />
+                </Field>
+                <Field label="Alert cooldown days" description="Minimum days before the same inactive vendor can generate another reminder.">
+                  <TextInput
+                    type="number"
+                    min={1}
+                    value={policy.fraud.vendorInactivityCooldownDays}
+                    onChange={(event) => updatePolicy((draft) => { draft.fraud.vendorInactivityCooldownDays = numberValue(event.target.value, draft.fraud.vendorInactivityCooldownDays); })}
+                  />
+                </Field>
+              </div>
+            )}
           </div>
         </div>
 

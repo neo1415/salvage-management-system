@@ -6,6 +6,25 @@
  */
 
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import type { ImageUploadClientMetadata } from './schema/image-metadata';
+
+type OfflineAssetType =
+  | 'vehicle'
+  | 'property'
+  | 'electronics'
+  | 'machinery'
+  | 'appliance'
+  | 'furniture'
+  | 'jewelry'
+  | 'stock'
+  | 'goods_in_transit'
+  | 'building_materials'
+  | 'scrap'
+  | 'agriculture'
+  | 'medical_equipment'
+  | 'energy_equipment'
+  | 'aviation_equipment'
+  | 'other';
 
 /**
  * Offline case data structure
@@ -13,10 +32,11 @@ import { openDB, DBSchema, IDBPDatabase } from 'idb';
 export interface OfflineCase {
   id: string; // Temporary ID for offline case
   claimReference: string;
-  assetType: 'vehicle' | 'property' | 'electronics' | 'appliance' | 'jewelry' | 'furniture' | 'machinery';
+  assetType: OfflineAssetType;
   assetDetails: Record<string, unknown>;
   marketValue: number;
   photos: string[]; // Base64 encoded images
+  photoMetadata?: ImageUploadClientMetadata[];
   gpsLocation: {
     latitude: number;
     longitude: number;

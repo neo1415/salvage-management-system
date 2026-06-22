@@ -93,6 +93,12 @@ const navigationItems: NavItem[] = [
     roles: ['vendor'],
   },
   {
+    label: 'Pickups',
+    href: '/vendor/pickups',
+    icon: PackageCheck,
+    roles: ['vendor'],
+  },
+  {
     label: 'Leaderboard',
     href: '/vendor/leaderboard',
     icon: Trophy,
@@ -110,6 +116,12 @@ const navigationItems: NavItem[] = [
     label: 'Approvals',
     href: '/manager/approvals',
     icon: ClipboardList,
+    roles: ['salvage_manager'],
+  },
+  {
+    label: 'Cases',
+    href: '/manager/cases',
+    icon: FileText,
     roles: ['salvage_manager'],
   },
   {
@@ -145,16 +157,10 @@ const navigationItems: NavItem[] = [
     roles: ['claims_adjuster'],
   },
   {
-    label: 'My Cases',
-    href: '/adjuster/my-cases',
-    icon: ClipboardList,
-    roles: ['claims_adjuster'],
-  },
-  {
     label: 'Bid History',
     href: '/bid-history',
     icon: History,
-    roles: ['claims_adjuster'],
+    roles: [],
   },
 
   // Finance Navigation
@@ -248,7 +254,7 @@ const navigationItems: NavItem[] = [
     label: 'Reports',
     href: '/reports',
     icon: BarChart3,
-    roles: ['salvage_manager', 'system_admin', 'finance_officer', 'claims_adjuster'],
+    roles: ['salvage_manager', 'system_admin', 'finance_officer'],
   },
 ];
 

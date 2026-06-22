@@ -3,7 +3,6 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import {
   auditLogs,
-  auctionDocuments,
   auctionWinners,
   auctions,
   bids,
@@ -15,6 +14,7 @@ import {
   vendors,
   walletTransactions,
 } from '@/lib/db/schema';
+import { releaseForms } from '@/lib/db/schema/release-forms';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   AuditActionType,
@@ -102,8 +102,8 @@ export async function GET(
         ? countRows(
             db
               .select({ count: sql<number>`count(*)::int` })
-              .from(auctionDocuments)
-              .where(and(eq(auctionDocuments.vendorId, vendorId), eq(auctionDocuments.status, 'pending')))
+              .from(releaseForms)
+              .where(and(eq(releaseForms.vendorId, vendorId), eq(releaseForms.status, 'pending')))
           )
         : 0,
       vendorId

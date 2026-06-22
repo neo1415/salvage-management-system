@@ -24,6 +24,7 @@ const DAILY_JOBS: MaintenanceJob[] = [
   { name: 'kyc-expiry', path: '/api/cron/kyc-expiry', method: 'GET', required: false },
   { name: 'detect-fraud', path: '/api/cron/detect-fraud', method: 'GET', required: false },
   { name: 'fraud-auto-suspend', path: '/api/cron/fraud-auto-suspend', method: 'POST', required: false },
+  { name: 'vendor-inactivity', path: '/api/cron/vendor-inactivity', method: 'POST', required: false },
   { name: 'reconcile-wallets', path: '/api/cron/reconcile-wallets', method: 'GET', required: true },
   { name: 'verify-wallet-invariants', path: '/api/cron/verify-wallet-invariants', method: 'GET', required: false },
   { name: 'reconcile-paystack-transactions', path: '/api/cron/reconcile-paystack-transactions', method: 'GET', required: true },

@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
     const filters: ReportFilters = {
       startDate: searchParams.get('startDate') || undefined,
       endDate: searchParams.get('endDate') || undefined,
+      assetTypes: searchParams.get('assetTypes')?.split(',').filter(Boolean),
+      branches: searchParams.get('branches')?.split(',').filter(Boolean),
     };
 
     const report = await AuctionPerformanceService.generateReport(filters);

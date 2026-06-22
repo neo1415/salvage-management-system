@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { getKycDocumentFolder, uploadFile } from '@/lib/storage/cloudinary';
 import { scanUploadedFile } from '@/lib/security/file-virus-scanner';
+import { recordImageUploadMetadata } from '@/features/media/services/image-upload-metadata.service';
 
 /**
  * DocumentUploadService
@@ -143,6 +144,24 @@ export class DocumentUploadService {
         .from(BUCKET_NAME)
         .getPublicUrl(data.path);
 
+      if (file.type.startsWith('image/')) {
+        await recordImageUploadMetadata({
+          entityType: 'kyc_document',
+          entityId: vendorId,
+          imageUrl: urlData.publicUrl,
+          purpose: `kyc_${documentType}`,
+          serverBuffer: buffer,
+          fallbackMimeType: file.type,
+          clientMetadata: {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            lastModified: file.lastModified,
+            captureSource: 'server_upload',
+          },
+        });
+      }
+
       return {
         url: urlData.publicUrl,
         path: data.path,
@@ -184,6 +203,24 @@ export class DocumentUploadService {
         compress: false,
         tags: ['kyc-document', documentType, vendorId],
       });
+
+      if (file.type.startsWith('image/')) {
+        await recordImageUploadMetadata({
+          entityType: 'kyc_document',
+          entityId: vendorId,
+          imageUrl: result.secureUrl,
+          purpose: `kyc_${documentType}`,
+          serverBuffer: scannedBuffer || Buffer.from(await file.arrayBuffer()),
+          fallbackMimeType: file.type,
+          clientMetadata: {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            lastModified: file.lastModified,
+            captureSource: 'server_upload',
+          },
+        });
+      }
 
       return {
         url: result.secureUrl,

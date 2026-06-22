@@ -33,6 +33,7 @@ import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
 import { Star, Check, X, CheckCircle, Banknote } from 'lucide-react';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
+import { sanitizeAiAssessmentWarnings } from '@/features/cases/services/ai-warning-sanitization';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 
 /**
@@ -41,7 +42,12 @@ import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-di
 interface CaseData {
   id: string;
   claimReference: string;
-  assetType: 'vehicle' | 'property' | 'electronics';
+  policyNumber?: string | null;
+  assetType: string;
+  insuranceClass?: string | null;
+  brokerName?: string | null;
+  agencyName?: string | null;
+  branchName?: string | null;
   assetDetails: Record<string, string | number | undefined>;
   marketValue: string;
   estimatedSalvageValue: string;
@@ -53,6 +59,7 @@ interface CaseData {
     damagePercentage: number;
     processedAt: string;
     warnings?: string[];
+    reviewReasons?: string[];
     confidence?: {
       overall: number;
       vehicleDetection: number;
@@ -149,6 +156,23 @@ const CURRENCY_DETAIL_KEYS = new Set([
   'estimatedSalvageValue',
 ]);
 
+const INSURANCE_CLASS_LABELS: Record<string, string> = {
+  motor: 'Motor',
+  goods_in_transit: 'Goods in Transit (GIT)',
+  fire: 'Fire and Special Perils',
+  burglary: 'Burglary/Theft',
+  marine: 'Marine',
+  engineering: 'Engineering/Plant',
+  agriculture: 'Agriculture',
+  liability: 'Liability',
+  other: 'Other',
+};
+
+function formatInsuranceClass(value?: string | null): string {
+  if (!value) return 'Not set';
+  return INSURANCE_CLASS_LABELS[value] ?? value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function parseNumberLike(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -223,6 +247,9 @@ export default function ApprovalsPage() {
   const [overrideComment, setOverrideComment] = useState('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  const [brokerName, setBrokerName] = useState('');
+  const [agencyName, setAgencyName] = useState('');
+  const [branchName, setBranchName] = useState('');
   
   // Auction schedule state
   const [auctionSchedule, setAuctionSchedule] = useState<AuctionScheduleValue>({ 
@@ -348,6 +375,9 @@ export default function ApprovalsPage() {
     setOverrideComment('');
     setValidationErrors([]);
     setValidationWarnings([]);
+    setBrokerName(caseData.brokerName ?? '');
+    setAgencyName(caseData.agencyName ?? '');
+    setBranchName(caseData.branchName ?? '');
     // Reset auction schedule to default
     setAuctionSchedule({ 
       mode: 'now',
@@ -375,6 +405,28 @@ export default function ApprovalsPage() {
    * Handle approval action - Show confirmation modal
    */
   const handleApprovalAction = (action: 'approve' | 'reject') => {
+    if (action === 'approve') {
+      if (brokerName.trim() && agencyName.trim()) {
+        setResultModalData({
+          type: 'error',
+          title: 'Business Source Required',
+          message: 'Use either broker or agency for this case, not both.',
+        });
+        setShowResultModal(true);
+        return;
+      }
+
+      if (!brokerName.trim() && !agencyName.trim()) {
+        setResultModalData({
+          type: 'error',
+          title: 'Business Source Required',
+          message: 'Enter either a broker or an agency before approving this case.',
+        });
+        setShowResultModal(true);
+        return;
+      }
+    }
+
     setApprovalAction(action);
     
     // For approval, show confirmation modal immediately
@@ -569,6 +621,9 @@ export default function ApprovalsPage() {
         body: JSON.stringify({
           action: approvalAction,
           comment: comment.trim() || overrideComment.trim() || undefined,
+          brokerName: brokerName.trim() || undefined,
+          agencyName: agencyName.trim() || undefined,
+          branchName: branchName.trim() || undefined,
           priceOverrides: hasOverrides ? priceOverrides : undefined,
           scheduleData: approvalAction === 'approve' ? auctionSchedule : undefined,
         }),
@@ -777,6 +832,14 @@ export default function ApprovalsPage() {
                 <p className="font-medium capitalize">{selectedCase.assetType}</p>
               </div>
               <div>
+                <p className="text-gray-600">Insurance Class</p>
+                <p className="font-medium">{formatInsuranceClass(selectedCase.insuranceClass)}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Policy Number</p>
+                <p className="font-medium">{selectedCase.policyNumber || '-'}</p>
+              </div>
+              <div>
                 <p className="text-gray-600">Market Value</p>
                 <p className="font-medium">₦{parseFloat(selectedCase.marketValue).toLocaleString()}</p>
               </div>
@@ -797,6 +860,48 @@ export default function ApprovalsPage() {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Business Source */}
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <h3 className="font-bold text-gray-900 mb-3">Business Source</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Approval requires either a broker or an agency. Branch is used for reporting and recovery leakage analysis.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Branch</span>
+                <input
+                  value={branchName}
+                  onChange={(event) => setBranchName(event.target.value)}
+                  placeholder="e.g. Akure"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Broker</span>
+                <input
+                  value={brokerName}
+                  onChange={(event) => setBrokerName(event.target.value)}
+                  placeholder="Broker name"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Agency</span>
+                <input
+                  value={agencyName}
+                  onChange={(event) => setAgencyName(event.target.value)}
+                  placeholder="Agency name"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                />
+              </label>
+            </div>
+            {brokerName.trim() && agencyName.trim() ? (
+              <p className="mt-3 text-sm text-red-600">Use either broker or agency, not both.</p>
+            ) : !brokerName.trim() && !agencyName.trim() ? (
+              <p className="mt-3 text-sm text-amber-700">Enter broker or agency before approval.</p>
+            ) : null}
           </div>
 
           {/* Swipeable Photo Gallery */}
@@ -970,16 +1075,22 @@ export default function ApprovalsPage() {
                 )}
 
                 {/* AI Warnings */}
-                {selectedCase.aiAssessment.warnings && selectedCase.aiAssessment.warnings.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-gray-700">⚠️ AI Warnings:</p>
-                    {selectedCase.aiAssessment.warnings.map((warning, index) => (
-                      <div key={index} className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                        <p className="text-sm text-orange-800">{warning}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {(() => {
+                  const warnings = sanitizeAiAssessmentWarnings(
+                    selectedCase.aiAssessment.warnings,
+                    selectedCase.aiAssessment.reviewReasons
+                  );
+                  return warnings.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-700">Review Notes:</p>
+                      {warnings.map((warning, index) => (
+                        <div key={index} className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                          <p className="text-sm text-orange-800">{warning}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Damage Percentage */}
                 <div className="flex justify-between">
@@ -1233,10 +1344,7 @@ export default function ApprovalsPage() {
                 Cancel Edits
               </button>
               <button
-                onClick={() => {
-                  setApprovalAction('approve');
-                  setShowConfirmModal(true);
-                }}
+                onClick={() => handleApprovalAction('approve')}
                 disabled={!canApproveWithChanges || isSubmitting}
                 className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold hover:from-green-600 hover:to-green-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200 min-w-[200px] max-w-xs"
               >
@@ -1551,8 +1659,20 @@ export default function ApprovalsPage() {
                       <p className="font-medium capitalize">{caseData.assetType}</p>
                     </div>
                     <div>
+                      <p className="text-gray-600">Insurance Class</p>
+                      <p className="font-medium">{formatInsuranceClass(caseData.insuranceClass)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Policy Number</p>
+                      <p className="font-medium">{caseData.policyNumber || '-'}</p>
+                    </div>
+                    <div>
                       <p className="text-gray-600">Estimated Value</p>
                       <p className="font-medium">₦{parseFloat(caseData.estimatedSalvageValue).toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Branch</p>
+                      <p className="font-medium">{caseData.branchName || '-'}</p>
                     </div>
                   </div>
 

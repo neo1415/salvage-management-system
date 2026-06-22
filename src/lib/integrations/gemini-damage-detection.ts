@@ -26,7 +26,7 @@ import type { ItemIdentifier } from '@/features/internet-search/services/query-b
 export interface VehicleContext {
   make: string;
   model: string;
-  year: number;
+  year?: number;
   itemType?: string; // Optional field to support universal items
 }
 
@@ -398,7 +398,7 @@ const GEMINI_RESPONSE_SCHEMA = {
     },
     summary: { 
       type: "string", 
-      maxLength: 500,
+      maxLength: 1500,
       description: "Brief description of the damage"
     }
   },
@@ -561,12 +561,12 @@ export function validateSummary(summary: any, requestId: string): string {
     return 'Damage assessment completed. Please review detailed parts.';
   }
 
-  // Truncate if exceeds 500 characters
-  if (summary.length > 500) {
-    const truncated = summary.substring(0, 497) + '...';
+  // Truncate only if it becomes too long for the case review UI.
+  if (summary.length > 1500) {
+    const truncated = summary.substring(0, 1497) + '...';
     console.warn(
-      `[Gemini Service] Summary exceeds 500 characters (${summary.length}). ` +
-      `Truncated to 500 characters. Request ID: ${requestId}`
+      `[Gemini Service] Summary exceeds 1500 characters (${summary.length}). ` +
+      `Truncated to 1500 characters. Request ID: ${requestId}`
     );
     return truncated;
   }
@@ -788,6 +788,23 @@ export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext):
   const isVehicle = !itemType || itemType === 'vehicle';
   const isElectronics = itemType === 'electronics';
   const isMachinery = itemType === 'machinery' || itemType === 'equipment';
+  const isGeneralAsset = [
+    'property',
+    'appliance',
+    'jewelry',
+    'watch',
+    'furniture',
+    'artwork',
+    'agriculture',
+    'stock',
+    'goods_in_transit',
+    'building_materials',
+    'scrap',
+    'medical_equipment',
+    'energy_equipment',
+    'aviation_equipment',
+    'other',
+  ].includes(itemType || '');
 
   if (isVehicle) {
     return constructVehiclePrompt(year, make, model);
@@ -795,16 +812,17 @@ export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext):
     return constructElectronicsPrompt(make, model, year);
   } else if (isMachinery) {
     return constructMachineryPrompt(make, model, year);
+  } else if (isGeneralAsset) {
+    return constructGeneralAssetPrompt(make, model, itemType || 'other', year);
   } else {
-    // Fallback to vehicle prompt for unknown types
-    return constructVehiclePrompt(year, make, model);
+    return constructGeneralAssetPrompt(make, model, itemType || 'other', year);
   }
 }
 
 /**
  * Construct vehicle-specific damage assessment prompt
  */
-function constructVehiclePrompt(year: number, make: string, model: string): string {
+function constructVehiclePrompt(year: number | undefined, make: string, model: string): string {
   return `You are an expert vehicle damage assessor for insurance claims. Analyze the provided photos of a ${year} ${make} ${model} and provide an insurance-grade assessment.
 
 **CRITICAL INSTRUCTIONS FOR RESPONSE FORMAT:**
@@ -913,7 +931,7 @@ Set totalLoss to **false** if:
 
 **REMEMBER**: Body panel damage is ALWAYS repairable. Only mark as total loss if the vehicle is truly beyond economic repair or unsafe.
 
-**Summary**: Provide a brief, clear description (2-3 sentences, max 500 characters) including:
+**Summary**: Provide a brief, clear description (2-3 sentences, max 1200 characters) including:
 - Most significant damage areas
 - Whether airbags deployed
 - Overall assessment of repairability
@@ -1035,7 +1053,7 @@ Set totalLoss to **false** if:
 
 **IMPORTANT**: A cracked or shattered screen alone does NOT constitute a total loss. Screens are standard replaceable parts.
 
-**Summary**: Provide a brief, clear description (2-3 sentences, max 500 characters) including:
+**Summary**: Provide a brief, clear description (2-3 sentences, max 1200 characters) including:
 - Most significant damage areas
 - Device functionality status
 - Overall assessment of repairability
@@ -1065,7 +1083,7 @@ Return your assessment as JSON:
 /**
  * Construct machinery-specific damage assessment prompt
  */
-function constructMachineryPrompt(brand: string, model: string, year: number): string {
+function constructMachineryPrompt(brand: string, model: string, year?: number): string {
   return `You are an expert machinery damage assessor for insurance claims. Analyze the provided photos of a ${brand} ${model} (${year}) and provide an insurance-grade assessment.
 
 **CRITICAL INSTRUCTIONS FOR RESPONSE FORMAT:**
@@ -1147,7 +1165,7 @@ Set totalLoss to **false** if:
 - Repairable structural damage
 - Operational with repairs
 
-**Summary**: Provide a brief, clear description (2-3 sentences, max 500 characters) including:
+**Summary**: Provide a brief, clear description (2-3 sentences, max 1200 characters) including:
 - Most significant damage areas
 - Operational status
 - Overall assessment of repairability
@@ -1172,6 +1190,161 @@ Return your assessment as JSON:
   "summary": "Dented engine housing and cracked control panel display. Generator is operational and repairable with replacement parts."
 }`
 ;
+}
+
+/**
+ * Construct a general salvage prompt for non-vehicle/non-device asset classes.
+ * This is intentionally unit/condition oriented instead of forcing every asset
+ * into "damaged car part" semantics.
+ */
+function constructGeneralAssetPrompt(brandOrCategory: string, modelOrDescription: string, itemType: string, year?: number): string {
+  const assetDescription = [brandOrCategory, modelOrDescription].filter(Boolean).join(' ').trim() || itemType;
+  const yearContext = year ? ` (${year})` : '';
+  const assetProfile = getGeneralAssetPromptProfile(itemType);
+
+  return `You are an expert insurance salvage assessor for mixed asset classes. Analyze the provided photos of ${assetDescription}${yearContext} and provide an insurance-grade assessment.
+
+**CRITICAL INSTRUCTIONS FOR RESPONSE FORMAT:**
+- Provide ONLY factual data in your JSON response
+- DO NOT include reasoning, explanations, or uncertainty statements in field values
+- If you cannot determine a field with confidence, OMIT it entirely
+- Your response will be shown directly to insurance staff - it must be professional and concise
+- NO parenthetical explanations, NO hedging language, NO reasoning text in field values
+
+**ASSET CONTEXT PROVIDED:**
+You have been told this item is: ${assetDescription}
+Asset type/profile: ${itemType}
+${year ? '' : 'No submitted year was provided. Do not invent or say the user provided a year.'}
+
+**ASSET-SPECIFIC ASSESSMENT PROFILE:**
+${assetProfile}
+
+**SECTION 1: ASSET IDENTIFICATION**
+Identify what is visible:
+- detectedMake: brand/manufacturer/category if visible
+- detectedModel: model, product name, stock description, or asset description if visible
+- detectedYear: only if directly visible or confidently known from the product; otherwise omit
+- color/material/size/quantity details may go into notes if critical
+- overallCondition: Excellent, Good, Fair, or Poor
+- notes: only for mismatches, visible quantity/count, contamination, burn/water exposure, broken packaging, missing units, or critical observations
+
+**SECTION 2: CONDITION AND LOSS ANALYSIS**
+For non-vehicle salvage, "damagedParts" means "damaged components, units, packages, sections, or visible loss areas".
+Use asset-appropriate entries:
+- Bags/cartons/stock: "torn bags", "missing units", "water-stained cartons", "burnt packaging", "contaminated stock"
+- Building/property: "roof section", "wall section", "ceiling", "flooring", "electrical fittings", "doors/windows"
+- Furniture: "frame", "upholstery", "table top", "legs", "drawers", "hinges"
+- Jewelry/watch/art: "case", "strap", "stone setting", "canvas", "frame", "surface finish"
+- Agriculture/food items: "spoiled units", "wet bags", "mold contamination", "burnt stock"
+- Medical/special equipment: "control panel", "casing", "sensor", "motor", "sterility breach", "battery pack"
+- Energy/aviation equipment: "panel", "valve", "cable", "pump", "tank", "ground support unit", "avionics module"
+
+For each damaged item, provide:
+- part: specific component/unit/section/loss area
+- severity: minor, moderate, or severe
+- confidence: 0-100
+
+**Severity Guidelines:**
+- Minor: cosmetic or small localized damage; most value remains
+- Moderate: visible functional/quality damage; repair, sorting, cleaning, or partial disposal likely
+- Severe: major loss, contamination, missing quantity, unsafe/unusable stock, or structural compromise
+
+**IMPORTANT:**
+- Do not pretend bulk goods have mechanical "parts".
+- Count visible quantity where possible, but do not overstate certainty.
+- Only include visibly damaged components/units/sections.
+
+**Total Loss Determination (CONSERVATIVE):**
+Set totalLoss to true ONLY if:
+- the visible asset/stock is mostly destroyed, contaminated, missing, unsafe, or unusable; or
+- the majority of value appears unrecoverable; or
+- repair/sorting/salvage would clearly exceed recoverable value.
+For cement, food, pharmaceuticals, medical consumables, or regulated goods, water/fire/smoke contamination can make salvage value zero even when physical units remain visible.
+Set totalLoss to false if the asset can still be sold, sorted, repaired, cleaned, or partly recovered.
+
+**Airbag Deployment:** Always set to false for this asset type.
+
+**Summary:** 2-3 concise sentences, max 1200 characters, focused on visible condition, quantity/identity confidence, and recoverability.
+
+**RESPONSE FORMAT:**
+Return your assessment as JSON:
+{
+  "itemDetails": {
+    "detectedMake": "Dangote Cement",
+    "detectedModel": "50kg cement bags",
+    "overallCondition": "Poor",
+    "notes": "Visible wet and torn bags; quantity visible is lower than stated"
+  },
+  "damagedParts": [
+    {"part": "water-stained cement bags", "severity": "severe", "confidence": 88},
+    {"part": "torn packaging", "severity": "moderate", "confidence": 82}
+  ],
+  "severity": "severe",
+  "airbagDeployed": false,
+  "totalLoss": true,
+  "summary": "Cement bags show water exposure and torn packaging. Cement contaminated by water is not commercially recoverable for structural use; staff should verify quantity and disposal."
+}`;
+}
+
+function getGeneralAssetPromptProfile(itemType: string): string {
+  switch (itemType) {
+    case 'stock':
+      return [
+        '- Focus on stock identity, brand/manufacturer, visible quantity, unit size, packaging integrity, contamination, expiry/food-safety risk, and recoverable units.',
+        '- Do not use vehicle/electronic repair language. Use affected stock/loss evidence language.',
+        '- If units are contaminated by water, fire residue, chemicals, mold, soot, or broken seals, assess whether they are legally and commercially resalable.',
+      ].join('\n');
+    case 'goods_in_transit':
+      return [
+        '- Focus on consignment identity, visible package count, cartons/pallets/bags, crushed or missing units, transit water/fire damage, seal breaks, and contamination.',
+        '- Separate recoverable units from unsellable units where visible. If the photos cannot verify the full consignment, say quantity verification is required.',
+      ].join('\n');
+    case 'building_materials':
+      return [
+        '- Focus on material type, brand, unit size, count, exposure to water/fire, broken packaging, deformation, corrosion, hardening, or contamination.',
+        '- Cement/plaster/adhesives exposed to water may be a total commercial loss; metal, tiles, roofing sheets, and timber may retain scrap or partial resale value depending on condition.',
+      ].join('\n');
+    case 'property':
+      return [
+        '- Focus on building/fixture sections, affected area, visible structural compromise, smoke/fire/water damage, electrical risk, doors/windows/roofing/flooring, and repair scope.',
+        '- Use sections or fixtures as damaged entries, not vehicle parts.',
+      ].join('\n');
+    case 'furniture':
+      return [
+        '- Focus on frame integrity, upholstery, swelling, mold, burn damage, broken joints, missing pieces, and whether cleaning/repair can restore resale value.',
+      ].join('\n');
+    case 'jewelry':
+    case 'watch':
+      return [
+        '- Focus on authenticity markers if visible, material, stones, case/strap/movement, missing parts, deformation, scratches, and recoverable precious-metal or component value.',
+      ].join('\n');
+    case 'agriculture':
+      return [
+        '- Focus on produce/equipment type, quantity, spoilage, mold, moisture, pest contamination, feed/food safety, and whether sale is legal after damage.',
+      ].join('\n');
+    case 'scrap':
+      return [
+        '- Focus on material type, approximate quantity/weight, metal/plastic/electrical content, contamination, burn damage, and scrap recoverability rather than repairability.',
+      ].join('\n');
+    case 'medical_equipment':
+      return [
+        '- Focus on device identity, serial/model labels, electrical/mechanical function indicators, sterility or contamination risk, broken sensors/cables/panels, and regulatory resale concerns.',
+        '- Consumables or sterile items with broken seals/contamination should be treated as likely total commercial loss.',
+      ].join('\n');
+    case 'energy_equipment':
+      return [
+        '- Focus on pumps, panels, cables, valves, tanks, inverters, solar modules, generators, corrosion, fire/water exposure, oil/chemical contamination, and safety hazards.',
+      ].join('\n');
+    case 'aviation_equipment':
+      return [
+        '- Focus on part identity, serial/part labels, avionics or ground-support category, impact/fire/water damage, missing components, and airworthiness/regulatory resale concerns.',
+      ].join('\n');
+    default:
+      return [
+        '- Focus on asset identity, visible quantity, functional condition, missing units/components, contamination, and realistic recoverability.',
+        '- Use asset-appropriate damage terms and avoid vehicle-only language unless the asset is a vehicle.',
+      ].join('\n');
+  }
 }
 
 

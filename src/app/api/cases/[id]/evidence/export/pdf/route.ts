@@ -9,11 +9,13 @@ import { salvageCases } from '@/lib/db/schema/cases';
 import { auctions } from '@/lib/db/schema/auctions';
 import { bids } from '@/lib/db/schema/bids';
 import { payments } from '@/lib/db/schema/payments';
-import { auctionDocuments } from '@/lib/db/schema/auction-deposit';
+import { releaseForms } from '@/lib/db/schema/release-forms';
+import { pickupEvidence } from '@/lib/db/schema/pickup-evidence';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { getEmailBranding } from '@/features/notifications/templates/email-branding';
+import { listImageUploadMetadataForEntities } from '@/features/media/services/image-upload-metadata.service';
 
 const ALLOWED_ROLES = new Set([
   'claims_adjuster',
@@ -23,6 +25,89 @@ const ALLOWED_ROLES = new Set([
 ]);
 
 type Row = Array<string | number | null | undefined | Date | boolean>;
+type Rgb = [number, number, number];
+type AuctionRow = typeof auctions.$inferSelect;
+type PaymentRow = {
+  id: string;
+  auctionId: string | null;
+  vendorBusinessName: string | null;
+  amount: string;
+  paymentMethod: string;
+  paymentReference: string | null;
+  escrowStatus: string;
+  status: string;
+  verifiedAt: Date | null;
+  autoVerified: boolean;
+  paymentDeadline: Date;
+  createdAt: Date;
+};
+type ImageMetadataRow = {
+  entityType: string;
+  imageIndex: string | null;
+  source: string | null;
+  originalFilename: string | null;
+  mimeType: string | null;
+  uploadedAt: Date;
+  capturedAt: Date | null;
+  gpsLatitude: string | null;
+  gpsLongitude: string | null;
+  deviceMake: string | null;
+  deviceModel: string | null;
+  metadataStatus: string;
+  metadataWarnings: string[] | null;
+};
+type DocumentRow = {
+  auctionId: string;
+  vendorBusinessName: string | null;
+  title: string;
+  documentType: string;
+  status: string;
+  signedAt: Date | null;
+  validityDeadline: Date | null;
+  paymentDeadline: Date | null;
+  pdfUrl: string | null;
+  documentData: {
+    pickupDeadline?: string;
+    pickupAuthCode?: string;
+  };
+  createdAt: Date;
+};
+type PickupEvidenceRow = {
+  id: string;
+  auctionId: string;
+  vendorBusinessName: string | null;
+  photoUrls: string[];
+  comparisonStatus: string;
+  comparisonSummary: {
+    status?: string;
+    confidenceScore?: number;
+    overallMatchScore?: number;
+    assetIdentityScore?: number;
+    quantityMatchScore?: number;
+    conditionMatchScore?: number;
+    reviewBand?: string;
+    findings?: string[];
+    observedDifferences?: string[];
+    recommendedStaffAction?: string;
+    method?: string;
+  };
+  resolutionStatus: string;
+  adjustmentAmount: string | null;
+  reimbursementMethod: string | null;
+  reviewedAt: Date | null;
+  reviewNotes: string | null;
+  createdAt: Date;
+};
+
+function hexToRgb(hex: string | null | undefined, fallback: Rgb = [4, 0, 122]): Rgb {
+  const normalized = typeof hex === 'string' ? hex.trim().replace(/^#/, '') : '';
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return fallback;
+  return [
+    parseInt(normalized.slice(0, 2), 16),
+    parseInt(normalized.slice(2, 4), 16),
+    parseInt(normalized.slice(4, 6), 16),
+  ];
+}
 
 function formatDate(value: Date | string | null | undefined): string {
   if (!value) return '-';
@@ -39,6 +124,90 @@ function formatMoney(value: string | number | null | undefined): string {
   return `NGN ${new Intl.NumberFormat('en-NG', {
     maximumFractionDigits: 0,
   }).format(Number.isFinite(amount) ? amount : 0)}`;
+}
+
+function formatLabel(value: string | null | undefined): string {
+  if (!value) return '-';
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatScore(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+  return `${Math.round(value)}%`;
+}
+
+function chooseOfficialAuction(auctionRows: AuctionRow[]): AuctionRow | null {
+  const staffConfirmed = auctionRows
+    .filter((auction) => auction.pickupConfirmedAdmin)
+    .sort((a, b) => {
+      const aTime = a.pickupConfirmedAdminAt?.getTime() ?? 0;
+      const bTime = b.pickupConfirmedAdminAt?.getTime() ?? 0;
+      return bTime - aTime;
+    });
+
+  return staffConfirmed[0] ?? auctionRows[0] ?? null;
+}
+
+function latestForAuction<T extends { auctionId: string | null; createdAt: Date }>(
+  rows: T[],
+  auctionId: string | null | undefined
+): T[] {
+  if (!auctionId) return rows;
+  return rows
+    .filter((row) => row.auctionId === auctionId)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+}
+
+function deriveAuctionLifecycleLabel(auction: AuctionRow, paymentsForAuction: PaymentRow[]): string {
+  if (auction.pickupConfirmedAdmin) return 'Pickup confirmed';
+  if (auction.pickupConfirmedVendor) return 'Vendor pickup evidence submitted';
+  if (paymentsForAuction.some((payment) => payment.status === 'verified')) return 'Payment verified';
+  return formatLabel(auction.status);
+}
+
+function displayDocumentStatus(document: DocumentRow, officialAuction?: AuctionRow | null): string {
+  if (document.documentType === 'pickup_authorization') {
+    return officialAuction?.pickupConfirmedAdmin ? 'Used for confirmed pickup' : 'Issued';
+  }
+  return formatLabel(document.status);
+}
+
+function documentCompletedAt(document: DocumentRow, officialAuction?: AuctionRow | null): string {
+  if (document.documentType === 'pickup_authorization') {
+    return officialAuction?.pickupConfirmedAdminAt
+      ? formatDate(officialAuction.pickupConfirmedAdminAt)
+      : formatDate(document.createdAt);
+  }
+  return document.signedAt ? formatDate(document.signedAt) : '-';
+}
+
+function documentDeadline(document: DocumentRow): string {
+  if (document.documentType === 'pickup_authorization') {
+    return document.documentData?.pickupDeadline
+      ? formatDate(document.documentData.pickupDeadline)
+      : document.validityDeadline
+        ? formatDate(document.validityDeadline)
+        : '-';
+  }
+
+  if (document.paymentDeadline) return `Payment ${formatDate(document.paymentDeadline)}`;
+  if (document.validityDeadline) return formatDate(document.validityDeadline);
+  return '-';
+}
+
+function pickupEvidenceDisplayStatus(evidence: PickupEvidenceRow, officialAuction?: AuctionRow | null): string {
+  if (officialAuction?.pickupConfirmedAdmin) return 'Reviewed and release confirmed';
+  if (evidence.reviewedAt) return 'Reviewed';
+  return formatLabel(evidence.comparisonStatus);
+}
+
+function formatGps(latitude: string | null, longitude: string | null): string {
+  if (!latitude || !longitude) return '-';
+  return `${latitude}, ${longitude}`;
+}
+
+function formatDevice(make: string | null, model: string | null): string {
+  return [make, model].filter(Boolean).join(' ') || '-';
 }
 
 function text(value: unknown): string {
@@ -70,9 +239,9 @@ function addPageIfNeeded(doc: jsPDF, y: number, required = 18): number {
   return 18;
 }
 
-function addSectionTitle(doc: jsPDF, title: string, y: number): number {
+function addSectionTitle(doc: jsPDF, title: string, y: number, brandRgb: Rgb): number {
   y = addPageIfNeeded(doc, y, 16);
-  doc.setFillColor(4, 0, 122);
+  doc.setFillColor(...brandRgb);
   doc.rect(14, y, 182, 8, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
@@ -209,6 +378,14 @@ export async function GET(
     .from(auctions)
     .where(eq(auctions.caseId, caseId))
     .orderBy(desc(auctions.createdAt));
+  const officialAuction = chooseOfficialAuction(auctionRows);
+
+  if (caseRecord.status !== 'sold' || !officialAuction?.pickupConfirmedAdmin) {
+    return NextResponse.json(
+      { error: 'Evidence packet is only available after staff-confirmed pickup.' },
+      { status: 409 }
+    );
+  }
 
   const auctionIds = auctionRows.map((auction) => auction.id);
 
@@ -230,6 +407,7 @@ export async function GET(
           .orderBy(desc(bids.createdAt)),
         db
           .select({
+            id: payments.id,
             auctionId: payments.auctionId,
             vendorBusinessName: vendors.businessName,
             amount: payments.amount,
@@ -248,21 +426,55 @@ export async function GET(
           .orderBy(desc(payments.createdAt)),
         db
           .select({
-            auctionId: auctionDocuments.auctionId,
+            auctionId: releaseForms.auctionId,
             vendorBusinessName: vendors.businessName,
-            type: auctionDocuments.type,
-            status: auctionDocuments.status,
-            signedAt: auctionDocuments.signedAt,
-            validityDeadline: auctionDocuments.validityDeadline,
-            createdAt: auctionDocuments.createdAt,
+            title: releaseForms.title,
+            documentType: releaseForms.documentType,
+            status: releaseForms.status,
+            signedAt: releaseForms.signedAt,
+            validityDeadline: releaseForms.validityDeadline,
+            paymentDeadline: releaseForms.paymentDeadline,
+            pdfUrl: releaseForms.pdfUrl,
+            documentData: releaseForms.documentData,
+            createdAt: releaseForms.createdAt,
           })
-          .from(auctionDocuments)
-          .leftJoin(vendors, eq(auctionDocuments.vendorId, vendors.id))
-          .where(inArray(auctionDocuments.auctionId, auctionIds))
-          .orderBy(desc(auctionDocuments.createdAt)),
+          .from(releaseForms)
+          .leftJoin(vendors, eq(releaseForms.vendorId, vendors.id))
+          .where(inArray(releaseForms.auctionId, auctionIds))
+          .orderBy(desc(releaseForms.createdAt)),
       ])
     : [[], [], []];
 
+  const pickupEvidenceRows = auctionIds.length
+    ? await db
+        .select({
+          id: pickupEvidence.id,
+          auctionId: pickupEvidence.auctionId,
+          vendorBusinessName: vendors.businessName,
+          photoUrls: pickupEvidence.photoUrls,
+          comparisonStatus: pickupEvidence.comparisonStatus,
+          comparisonSummary: pickupEvidence.comparisonSummary,
+          resolutionStatus: pickupEvidence.resolutionStatus,
+          adjustmentAmount: pickupEvidence.adjustmentAmount,
+          reimbursementMethod: pickupEvidence.reimbursementMethod,
+          reviewedAt: pickupEvidence.reviewedAt,
+          reviewNotes: pickupEvidence.reviewNotes,
+          createdAt: pickupEvidence.createdAt,
+        })
+        .from(pickupEvidence)
+        .leftJoin(vendors, eq(pickupEvidence.vendorId, vendors.id))
+        .where(inArray(pickupEvidence.auctionId, auctionIds))
+        .orderBy(desc(pickupEvidence.createdAt))
+    : [];
+
+  const imageMetadataEntityIds = [
+    caseId,
+    ...pickupEvidenceRows.map((evidence) => evidence.id).filter(Boolean),
+    ...paymentRows.map((payment) => payment.id).filter(Boolean),
+  ];
+  const imageMetadataRows: ImageMetadataRow[] = await listImageUploadMetadataForEntities(imageMetadataEntityIds);
+
+  const auditEntityIds = [caseId, ...auctionIds];
   const auditRows = await db
     .select({
       actionType: auditLogs.actionType,
@@ -272,15 +484,23 @@ export async function GET(
       recordHash: auditLogs.recordHash,
     })
     .from(auditLogs)
-    .where(eq(auditLogs.entityId, caseId))
+    .where(inArray(auditLogs.entityId, auditEntityIds))
     .orderBy(desc(auditLogs.createdAt))
     .limit(60);
 
+  const officialAuctionIds = officialAuction ? [officialAuction.id] : auctionIds;
+  const displayAuctionRows = officialAuction ? [officialAuction] : auctionRows;
+  const displayBidRows = bidRows.filter((bid) => officialAuctionIds.includes(bid.auctionId));
+  const displayPaymentRows = latestForAuction(paymentRows, officialAuction?.id);
+  const displayDocumentRows = documentRows.filter((document) => officialAuctionIds.includes(document.auctionId));
+  const displayPickupEvidenceRows = latestForAuction(pickupEvidenceRows, officialAuction?.id).slice(0, 1);
+
   const branding = await getEmailBranding();
+  const brandRgb = hexToRgb(branding.primaryColor);
   const generatedAt = new Date();
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  doc.setFillColor(4, 0, 122);
+  doc.setFillColor(...brandRgb);
   doc.rect(0, 0, 210, 32, 'F');
   const hasLogo = await addBrandLogo(doc, branding.logoPath, 14, 6);
   doc.setTextColor(255, 255, 255);
@@ -292,17 +512,18 @@ export async function GET(
   doc.text(`Claim ${caseRecord.claimReference} | Generated ${formatDate(generatedAt)}`, hasLogo ? 39 : 14, 24);
 
   let y = 42;
-  y = addSectionTitle(doc, 'Packet Summary', y);
+  y = addSectionTitle(doc, 'Packet Summary', y, brandRgb);
   y = addKeyValues(doc, [
     ['Claim reference', caseRecord.claimReference],
     ['Case status', caseRecord.status],
+    ['Handover status', officialAuction?.pickupConfirmedAdmin ? `Pickup confirmed ${formatDate(officialAuction.pickupConfirmedAdminAt)}` : 'Pickup not staff-confirmed'],
     ['Asset type', caseRecord.assetType],
     ['Asset details', formatAssetDetails(caseRecord.assetDetails)],
     ['Generated by', `${session.user.email || session.user.id} (${session.user.role})`],
     ['Evidence scope', 'Case metadata, assessment, location, auction, bid, payment, pickup, document, and audit records. Protected files remain accessible only through secure download routes.'],
   ], y);
 
-  y = addSectionTitle(doc, 'Claim And Valuation', y);
+  y = addSectionTitle(doc, 'Claim And Valuation', y, brandRgb);
   y = addKeyValues(doc, [
     ['Market value / claim value', formatMoney(caseRecord.marketValue)],
     ['Estimated salvage value', formatMoney(caseRecord.estimatedSalvageValue)],
@@ -316,7 +537,7 @@ export async function GET(
     ['Approved', caseRecord.approvedAt],
   ], y);
 
-  y = addSectionTitle(doc, 'Location Evidence', y);
+  y = addSectionTitle(doc, 'Location Evidence', y, brandRgb);
   y = addKeyValues(doc, [
     ['Location name', caseRecord.locationName],
     ['GPS location', text(caseRecord.gpsLocation)],
@@ -326,17 +547,17 @@ export async function GET(
     ['Manual override', caseRecord.locationManualOverride],
   ], y);
 
-  y = addSectionTitle(doc, 'Auction Timeline', y);
-  y = addTable(doc, ['Status', 'Start', 'End', 'Current Bid', 'Pickup'], auctionRows.map((auction) => [
-    auction.status,
+  y = addSectionTitle(doc, 'Auction Timeline', y, brandRgb);
+  y = addTable(doc, ['Lifecycle', 'Start', 'End', 'Winning Bid', 'Pickup'], displayAuctionRows.map((auction) => [
+    deriveAuctionLifecycleLabel(auction, displayPaymentRows),
     formatDate(auction.startTime),
     formatDate(auction.endTime),
     formatMoney(auction.currentBid),
     auction.pickupConfirmedAdmin ? `Confirmed ${formatDate(auction.pickupConfirmedAdminAt)}` : 'Not confirmed',
   ]), y);
 
-  y = addSectionTitle(doc, 'Bid Evidence', y);
-  y = addTable(doc, ['Vendor', 'Amount', 'Status', 'OTP', 'Created'], bidRows.slice(0, 30).map((bid) => [
+  y = addSectionTitle(doc, 'Bid Evidence', y, brandRgb);
+  y = addTable(doc, ['Vendor', 'Amount', 'Status', 'OTP', 'Created'], displayBidRows.slice(0, 30).map((bid) => [
     bid.vendorBusinessName,
     formatMoney(bid.amount),
     bid.status,
@@ -344,31 +565,70 @@ export async function GET(
     formatDate(bid.createdAt),
   ]), y);
 
-  y = addSectionTitle(doc, 'Payment And Settlement Evidence', y);
-  y = addTable(doc, ['Vendor', 'Amount', 'Method', 'Status', 'Verified'], paymentRows.map((payment) => [
+  y = addSectionTitle(doc, 'Payment And Settlement Evidence', y, brandRgb);
+  y = addTable(doc, ['Vendor', 'Amount', 'Method', 'Reference', 'Verified'], displayPaymentRows.map((payment) => [
     payment.vendorBusinessName,
     formatMoney(payment.amount),
-    payment.paymentMethod,
-    `${payment.status}${payment.escrowStatus ? ` / ${payment.escrowStatus}` : ''}`,
+    formatLabel(payment.paymentMethod),
+    payment.paymentReference,
     payment.verifiedAt ? formatDate(payment.verifiedAt) : '-',
   ]), y);
 
-  y = addSectionTitle(doc, 'Document Evidence', y);
-  y = addTable(doc, ['Vendor', 'Document', 'Status', 'Signed', 'Deadline'], documentRows.map((document) => [
+  y = addSectionTitle(doc, 'Document Evidence', y, brandRgb);
+  y = addTable(doc, ['Vendor', 'Document', 'Status', 'Completed', 'Deadline'], displayDocumentRows.map((document) => [
     document.vendorBusinessName,
-    document.type,
-    document.status,
-    document.signedAt ? formatDate(document.signedAt) : '-',
-    document.validityDeadline ? formatDate(document.validityDeadline) : '-',
+    document.title || document.documentType,
+    displayDocumentStatus(document, officialAuction),
+    documentCompletedAt(document, officialAuction),
+    documentDeadline(document),
   ]), y);
 
-  y = addSectionTitle(doc, 'Audit Trail Extract', y);
-  y = addTable(doc, ['Action', 'Entity', 'Device', 'Time', 'Hash'], auditRows.map((audit) => [
+  y = addSectionTitle(doc, 'Pickup Evidence', y, brandRgb);
+  y = addTable(doc, ['Vendor', 'Photos', 'Review Outcome', 'Match', 'Resolution'], displayPickupEvidenceRows.map((evidence) => [
+    evidence.vendorBusinessName,
+    evidence.photoUrls?.length ?? 0,
+    pickupEvidenceDisplayStatus(evidence, officialAuction),
+    formatScore(evidence.comparisonSummary?.overallMatchScore ?? evidence.comparisonSummary?.confidenceScore),
+    formatLabel(evidence.resolutionStatus),
+  ]), y);
+
+  for (const evidence of displayPickupEvidenceRows) {
+    const findings = evidence.comparisonSummary?.findings ?? [];
+    const differences = evidence.comparisonSummary?.observedDifferences ?? [];
+    y = addKeyValues(doc, [
+      ['Identity score', formatScore(evidence.comparisonSummary?.assetIdentityScore)],
+      ['Quantity score', formatScore(evidence.comparisonSummary?.quantityMatchScore)],
+      ['Condition score', formatScore(evidence.comparisonSummary?.conditionMatchScore)],
+      ['Review method', formatLabel(evidence.comparisonSummary?.method)],
+      ['Review notes', evidence.reviewNotes || evidence.comparisonSummary?.recommendedStaffAction || '-'],
+      ['Findings', findings.length ? findings.join(' ') : '-'],
+      ['Observed differences', differences.length ? differences.join(' ') : 'None recorded'],
+    ], y);
+  }
+
+  y = addSectionTitle(doc, 'Image Metadata', y, brandRgb);
+  y = addTable(doc, ['Image', 'Uploaded', 'Captured', 'GPS', 'Device'], imageMetadataRows.slice(0, 30).map((metadata) => [
+    `${formatLabel(metadata.entityType)} #${metadata.imageIndex ?? '-'}`,
+    formatDate(metadata.uploadedAt),
+    metadata.capturedAt ? formatDate(metadata.capturedAt) : formatLabel(metadata.metadataStatus),
+    formatGps(metadata.gpsLatitude, metadata.gpsLongitude),
+    formatDevice(metadata.deviceMake, metadata.deviceModel),
+  ]), y);
+  const metadataWarningCount = imageMetadataRows.filter((metadata) => metadata.metadataWarnings?.length).length;
+  if (metadataWarningCount > 0) {
+    y = addKeyValues(doc, [
+      ['Metadata note', `${metadataWarningCount} image metadata record(s) include warnings. Full warning details are available in the JSON evidence export.`],
+    ], y);
+  }
+
+  y = addSectionTitle(doc, 'Audit Trail Extract', y, brandRgb);
+  y = addKeyValues(doc, [
+    ['Integrity note', 'Full audit hash-chain values are retained in the audit log and JSON export. This PDF shows the readable operational sequence only.'],
+  ], y);
+  y = addTable(doc, ['Action', 'Entity', 'Time'], [...auditRows].reverse().map((audit) => [
     audit.actionType,
     audit.entityType,
-    audit.deviceType,
     formatDate(audit.createdAt),
-    audit.recordHash ? `${audit.recordHash.slice(0, 12)}...` : '-',
   ]), y);
 
   const pageCount = doc.getNumberOfPages();

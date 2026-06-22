@@ -13,9 +13,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { paymentService } from '@/features/auction-deposit/services/payment.service';
 import { db } from '@/lib/db/drizzle';
-import { vendors, auctionWinners, auctions, releaseForms } from '@/lib/db/schema';
+import { vendors, releaseForms } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
+import { ensurePaymentReadinessContext, PaymentReadinessError } from '@/features/auction-deposit/services/payment-readiness.service';
 import {
   businessPolicyService,
   getBusinessPolicyRuntimeMode,
@@ -102,39 +103,7 @@ export async function POST(
       );
     }
 
-    // Get winner record
-    const winner = await db.query.auctionWinners.findFirst({
-      where: and(
-        eq(auctionWinners.auctionId, auctionId),
-        eq(auctionWinners.status, 'active')
-      ),
-    });
-
-    if (!winner) {
-      return NextResponse.json(
-        { success: false, error: 'No active winner for this auction' },
-        { status: 404 }
-      );
-    }
-
-    // IDOR Protection: Verify user is the winner
-    if (winner.vendorId !== vendor.id) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden - You are not the winner of this auction' },
-        { status: 403 }
-      );
-    }
-
-    const auction = await db.query.auctions.findFirst({
-      where: eq(auctions.id, auctionId),
-    });
-
-    if (!auction) {
-      return NextResponse.json(
-        { success: false, error: 'Auction not found' },
-        { status: 404 }
-      );
-    }
+    const { auction, winner } = await ensurePaymentReadinessContext(auctionId, vendor.id);
 
     const validStatuses = ['awaiting_payment', 'documents_signed'];
     if (!validStatuses.includes(auction.status)) {
@@ -196,9 +165,16 @@ export async function POST(
   } catch (error) {
     console.error('Paystack initialization error:', error);
 
+    if (error instanceof PaymentReadinessError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.statusCode }
+      );
+    }
+
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         error: 'Failed to initialize payment. Please try again.',
       },
       { status: 500 }

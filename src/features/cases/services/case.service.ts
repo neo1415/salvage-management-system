@@ -12,11 +12,32 @@ import { assessDamageEnhanced, type EnhancedDamageAssessment, type VehicleInfo, 
 import { uploadFile, getSalvageCaseFolder, TRANSFORMATION_PRESETS } from '@/lib/storage/cloudinary';
 import { logAction, AuditActionType, AuditEntityType, type DeviceType } from '@/lib/utils/audit-logger';
 import { mapQualityToUniversalCondition } from '@/features/valuations/services/condition-mapping.service';
+import {
+  recordImageUploadMetadataBatch,
+} from '@/features/media/services/image-upload-metadata.service';
+import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
 
 /**
  * Asset types (must match database assetTypeEnum)
  */
-export type AssetType = 'vehicle' | 'property' | 'electronics' | 'machinery';
+export type AssetType =
+  | 'vehicle'
+  | 'property'
+  | 'electronics'
+  | 'machinery'
+  | 'appliance'
+  | 'furniture'
+  | 'jewelry'
+  | 'stock'
+  | 'goods_in_transit'
+  | 'building_materials'
+  | 'scrap'
+  | 'agriculture'
+  | 'medical_equipment'
+  | 'energy_equipment'
+  | 'aviation_equipment'
+  | 'other';
+export type ExtendedAssetType = AssetType;
 
 /**
  * Vehicle-specific details
@@ -35,7 +56,9 @@ export interface VehicleDetails {
  */
 export interface PropertyDetails {
   propertyType: string;
-  address: string;
+  propertyUse?: string;
+  damageArea?: string;
+  condition?: string;
 }
 
 /**
@@ -65,6 +88,7 @@ export interface ApplianceDetails {
  * Asset details union type
  */
 export type AssetDetails = VehicleDetails | PropertyDetails | ElectronicsDetails | ApplianceDetails;
+export type ExtendedAssetDetails = Record<string, string | number | undefined>;
 
 /**
  * GPS coordinates
@@ -79,10 +103,16 @@ export interface GeoPoint {
  */
 export interface CreateCaseInput {
   claimReference: string;
-  assetType: AssetType;
-  assetDetails: AssetDetails;
+  policyNumber?: string;
+  insuranceClass?: string;
+  brokerName?: string;
+  agencyName?: string;
+  branchName?: string;
+  assetType: ExtendedAssetType;
+  assetDetails: ExtendedAssetDetails;
   marketValue: number;
   photos: Buffer[]; // Photo buffers to upload
+  photoMetadata?: ImageUploadClientMetadata[];
   gpsLocation: GeoPoint;
   locationName: string;
   locationAccuracyMeters?: number | null;
@@ -151,8 +181,13 @@ export interface CreateCaseInput {
 export interface CreateCaseResult {
   id: string;
   claimReference: string;
-  assetType: AssetType;
-  assetDetails: AssetDetails;
+  policyNumber?: string | null;
+  insuranceClass?: string | null;
+  brokerName?: string | null;
+  agencyName?: string | null;
+  branchName?: string | null;
+  assetType: ExtendedAssetType;
+  assetDetails: ExtendedAssetDetails;
   marketValue: number;
   estimatedSalvageValue: number;
   reservePrice: number;
@@ -207,15 +242,36 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
     }
   }
 
+  if (input.brokerName?.trim() && input.agencyName?.trim()) {
+    errors.push('Provide either broker or agency, not both');
+  }
+
   // Validate asset type
-  const validAssetTypes: AssetType[] = ['vehicle', 'property', 'electronics', 'machinery'];
+  const validAssetTypes: ExtendedAssetType[] = [
+    'vehicle',
+    'property',
+    'electronics',
+    'machinery',
+    'appliance',
+    'furniture',
+    'jewelry',
+    'stock',
+    'goods_in_transit',
+    'building_materials',
+    'scrap',
+    'agriculture',
+    'medical_equipment',
+    'energy_equipment',
+    'aviation_equipment',
+    'other',
+  ];
   if (!validAssetTypes.includes(input.assetType)) {
-    errors.push('Asset type must be one of: vehicle, property, electronics, machinery');
+    errors.push(`Asset type must be one of: ${validAssetTypes.join(', ')}`);
   }
 
   // Validate asset details based on type
   if (input.assetType === 'vehicle') {
-    const vehicleDetails = input.assetDetails as VehicleDetails;
+    const vehicleDetails = input.assetDetails as unknown as VehicleDetails;
     if (!vehicleDetails.make || vehicleDetails.make.trim() === '') {
       errors.push('Vehicle make is required');
     }
@@ -226,15 +282,27 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
       errors.push('Vehicle year must be valid');
     }
   } else if (input.assetType === 'property') {
-    const propertyDetails = input.assetDetails as PropertyDetails;
+    const propertyDetails = input.assetDetails as unknown as PropertyDetails;
     if (!propertyDetails.propertyType || propertyDetails.propertyType.trim() === '') {
       errors.push('Property type is required');
     }
-    if (!propertyDetails.address || propertyDetails.address.trim() === '') {
-      errors.push('Property address is required');
+  } else if (['stock', 'building_materials', 'scrap', 'agriculture'].includes(input.assetType)) {
+    const details = input.assetDetails as ExtendedAssetDetails;
+    if (!details.description || String(details.description).trim() === '') {
+      errors.push('Stock or goods description is required');
+    }
+  } else if (input.assetType === 'goods_in_transit') {
+    const details = input.assetDetails as ExtendedAssetDetails;
+    if (!details.description || String(details.description).trim() === '') {
+      errors.push('Cargo description is required');
+    }
+  } else if (['medical_equipment', 'energy_equipment', 'aviation_equipment', 'other'].includes(input.assetType)) {
+    const details = input.assetDetails as ExtendedAssetDetails;
+    if (!details.description || String(details.description).trim() === '') {
+      errors.push('Asset description is required');
     }
   } else if (input.assetType === 'electronics') {
-    const electronicsDetails = input.assetDetails as ElectronicsDetails;
+    const electronicsDetails = input.assetDetails as unknown as ElectronicsDetails;
     if (!electronicsDetails.brand || electronicsDetails.brand.trim() === '') {
       errors.push('Electronics brand is required');
     }
@@ -474,6 +542,11 @@ export async function createCase(
     
     const caseValues = {
       claimReference: input.claimReference,
+      policyNumber: input.policyNumber?.trim() || null,
+      insuranceClass: input.insuranceClass?.trim() || null,
+      brokerName: input.brokerName?.trim() || null,
+      agencyName: input.agencyName?.trim() || null,
+      branchName: input.branchName?.trim() || null,
       assetType: input.assetType,
       assetDetails: input.assetDetails,
       marketValue: input.marketValue.toString(),
@@ -518,8 +591,10 @@ export async function createCase(
     
     // DEBUG: Log what we're about to store in database
     console.log('💾 Storing case in database with values:', {
-      claimReference: caseValues.claimReference,
-      damageSeverity: caseValues.damageSeverity,
+        claimReference: caseValues.claimReference,
+        policyNumber: caseValues.policyNumber,
+        insuranceClass: caseValues.insuranceClass,
+        damageSeverity: caseValues.damageSeverity,
       estimatedSalvageValue: caseValues.estimatedSalvageValue,
       reservePrice: caseValues.reservePrice,
       aiAssessmentConfidence: caseValues.aiAssessment?.confidenceScore,
@@ -529,6 +604,18 @@ export async function createCase(
       .insert(salvageCases)
       .values(caseValues)
       .returning();
+
+    if (photoUrls.length > 0) {
+      await recordImageUploadMetadataBatch(photoUrls.map((imageUrl, index) => ({
+        entityType: 'salvage_case',
+        entityId: createdCase.id,
+        imageUrl,
+        imageIndex: index,
+        purpose: 'case_inspection',
+        uploadedBy: input.createdBy,
+        clientMetadata: input.photoMetadata?.[index],
+      })));
+    }
 
     if (aiAssessment?.valuationEvidence) {
       try {
@@ -577,6 +664,11 @@ export async function createCase(
       userAgent,
       afterState: {
         claimReference: createdCase.claimReference,
+        policyNumber: createdCase.policyNumber,
+        insuranceClass: createdCase.insuranceClass,
+        brokerName: createdCase.brokerName,
+        agencyName: createdCase.agencyName,
+        branchName: createdCase.branchName,
         assetType: createdCase.assetType,
         marketValue: createdCase.marketValue,
         status: createdCase.status,
@@ -614,8 +706,13 @@ export async function createCase(
     return {
       id: createdCase.id,
       claimReference: createdCase.claimReference,
-      assetType: createdCase.assetType as AssetType,
-      assetDetails: createdCase.assetDetails as AssetDetails,
+      policyNumber: createdCase.policyNumber,
+      insuranceClass: createdCase.insuranceClass,
+      brokerName: createdCase.brokerName,
+      agencyName: createdCase.agencyName,
+      branchName: createdCase.branchName,
+      assetType: createdCase.assetType as ExtendedAssetType,
+      assetDetails: createdCase.assetDetails as ExtendedAssetDetails,
       marketValue: parseFloat(createdCase.marketValue),
       // Handle nullable AI assessment fields for draft cases
       estimatedSalvageValue: createdCase.estimatedSalvageValue ? parseFloat(createdCase.estimatedSalvageValue) : 0,

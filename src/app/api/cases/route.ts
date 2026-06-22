@@ -6,7 +6,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
-import { createCase, ValidationError, type CreateCaseInput } from '@/features/cases/services/case.service';
+import {
+  createCase,
+  ValidationError,
+  type CreateCaseInput,
+} from '@/features/cases/services/case.service';
+import { sanitizeAiAssessmentWarnings } from '@/features/cases/services/ai-warning-sanitization';
 import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 import { createRoleNotifications } from '@/features/notifications/services/notification.service';
 import {
@@ -17,6 +22,11 @@ import {
   resolveCaseAssetTypeAllowed,
 } from '@/features/business-policy';
 import { geocodeAddress } from '@/lib/integrations/google-geocoding';
+import {
+  inspectImageSetIntegrityFromBuffers,
+  summarizeImageIntegrity,
+} from '@/features/media/services/image-integrity.service';
+import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
 
 /**
  * POST /api/cases
@@ -186,6 +196,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const imageIntegrityResults = await inspectImageSetIntegrityFromBuffers(photoBuffers);
+    const imageIntegritySummary = summarizeImageIntegrity(imageIntegrityResults, body.photoMetadata || []);
+    if (imageIntegritySummary.status === 'failed') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'One or more photos could not be verified as supported image evidence.',
+          details: imageIntegritySummary.warnings,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (imageIntegritySummary.warnings.length > 0) {
+      body.aiAssessmentResult = {
+        ...(body.aiAssessmentResult || {}),
+        warnings: [
+          ...((body.aiAssessmentResult?.warnings || []) as string[]),
+          ...imageIntegritySummary.warnings,
+        ],
+        manualReviewRequired: true,
+        reviewReasons: [
+          ...((body.aiAssessmentResult?.reviewReasons || []) as string[]),
+          'Photo integrity review produced evidence warnings.',
+        ],
+        photoIntegrity: {
+          status: imageIntegritySummary.status,
+          results: imageIntegrityResults,
+        },
+      };
+    }
+
     // CRITICAL: Check for duplicate vehicle BEFORE creating case
     // This prevents fraud by detecting if the same vehicle is being submitted twice
     if (body.assetType === 'vehicle') {
@@ -239,13 +281,52 @@ export async function POST(request: NextRequest) {
       console.log('✅ No duplicate detected - proceeding with case creation');
     }
 
+    const branchNameFromRequest = typeof body.branchName === 'string' ? body.branchName.trim() : '';
+    let staffBranchName = '';
+    if (!branchNameFromRequest) {
+      try {
+        const { db } = await import('@/lib/db/drizzle');
+        const { users } = await import('@/lib/db/schema/users');
+        const { eq } = await import('drizzle-orm');
+        const [staffUser] = await db
+          .select({ branchName: users.branchName })
+          .from(users)
+          .where(eq(users.id, session.user.id))
+          .limit(1);
+        staffBranchName = staffUser?.branchName?.trim() || '';
+      } catch (branchError) {
+        console.warn('Unable to resolve staff branch for case creation:', branchError);
+      }
+    }
+
+    const photoMetadata: ImageUploadClientMetadata[] | undefined = Array.isArray(body.photoMetadata)
+      ? body.photoMetadata.slice(0, body.photos.length).map((metadata: unknown, index: number) => {
+          const value = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata as ImageUploadClientMetadata
+            : {};
+          return {
+            ...value,
+            index,
+            rawExif: value.rawExif && typeof value.rawExif === 'object' && !Array.isArray(value.rawExif)
+              ? value.rawExif
+              : undefined,
+          };
+        })
+      : undefined;
+
     // Create case input
     const input: CreateCaseInput = {
       claimReference: body.claimReference,
+      policyNumber: typeof body.policyNumber === 'string' ? body.policyNumber.trim() || undefined : undefined,
+      insuranceClass: body.insuranceClass,
+      brokerName: body.brokerName,
+      agencyName: body.agencyName,
+      branchName: branchNameFromRequest || staffBranchName || undefined,
       assetType: body.assetType,
       assetDetails: body.assetDetails,
       marketValue: body.marketValue,
       photos: photoBuffers,
+      photoMetadata,
       gpsLocation: body.gpsLocation,
       locationName: body.locationName,
       locationAccuracyMeters: body.locationAccuracyMeters,
@@ -400,6 +481,11 @@ export async function GET(request: NextRequest) {
       .select({
         id: salvageCases.id,
         claimReference: salvageCases.claimReference,
+        policyNumber: salvageCases.policyNumber,
+        insuranceClass: salvageCases.insuranceClass,
+        brokerName: salvageCases.brokerName,
+        agencyName: salvageCases.agencyName,
+        branchName: salvageCases.branchName,
         assetType: salvageCases.assetType,
         assetDetails: salvageCases.assetDetails,
         marketValue: salvageCases.marketValue,
@@ -453,6 +539,11 @@ export async function GET(request: NextRequest) {
       whereConditions.push(
         or(
           sql`LOWER(${salvageCases.claimReference}) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(COALESCE(${salvageCases.policyNumber}, '')) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(COALESCE(${salvageCases.insuranceClass}, '')) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(COALESCE(${salvageCases.brokerName}, '')) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(COALESCE(${salvageCases.agencyName}, '')) LIKE ${`%${searchLower}%`}`,
+          sql`LOWER(COALESCE(${salvageCases.branchName}, '')) LIKE ${`%${searchLower}%`}`,
           sql`LOWER(${salvageCases.assetType}) LIKE ${`%${searchLower}%`}`,
           // Search in JSON assetDetails fields using PostgreSQL JSON operators
           sql`LOWER(CAST(${salvageCases.assetDetails}->>'make' AS TEXT)) LIKE ${`%${searchLower}%`}`,
@@ -510,6 +601,11 @@ export async function GET(request: NextRequest) {
         .select({
           id: salvageCases.id,
           claimReference: salvageCases.claimReference,
+          policyNumber: salvageCases.policyNumber,
+          insuranceClass: salvageCases.insuranceClass,
+          brokerName: salvageCases.brokerName,
+          agencyName: salvageCases.agencyName,
+          branchName: salvageCases.branchName,
           assetType: salvageCases.assetType,
           assetDetails: salvageCases.assetDetails,
           marketValue: salvageCases.marketValue,
@@ -619,9 +715,31 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const sanitizedCases = cases.map((caseRow) => {
+      if (!caseRow.aiAssessment || typeof caseRow.aiAssessment !== 'object') {
+        return caseRow;
+      }
+
+      const assessment = caseRow.aiAssessment as {
+        warnings?: string[];
+        reviewReasons?: string[];
+      };
+
+      return {
+        ...caseRow,
+        aiAssessment: {
+          ...(caseRow.aiAssessment as Record<string, unknown>),
+          warnings: sanitizeAiAssessmentWarnings(
+            assessment.warnings,
+            assessment.reviewReasons
+          ),
+        },
+      };
+    });
+
     const response = {
       success: true,
-      data: cases,
+      data: sanitizedCases,
       meta: {
         limit,
         offset,

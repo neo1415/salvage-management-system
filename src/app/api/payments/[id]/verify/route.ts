@@ -17,6 +17,7 @@ import { formatAssetName } from '@/lib/utils/asset-name';
 import { brandLegalName, brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 import { businessPolicyService } from '@/features/business-policy';
 import { generatePickupAuthorizationCode } from '@/features/pickups/services/pickup-confirmation.service';
+import { checkPaymentVerificationDocumentGate } from '@/features/payments/services/payment-document-gate.service';
 
 // SECURITY: Rate limiting for payment verification endpoint
 // Prevents notification spam and abuse
@@ -260,6 +261,23 @@ export async function POST(
       // This is a basic check - in production, you might want more sophisticated verification
       if (!vendor.bankAccountNumber || !vendor.bankName) {
         console.warn('Vendor bank details not found in registration');
+      }
+    }
+
+    if (action === 'approve') {
+      const documentGate = await checkPaymentVerificationDocumentGate(payment.auctionId, payment.vendorId);
+      if (!documentGate.allowed) {
+        return NextResponse.json(
+          {
+            error: 'Required auction documents must be signed before payment can be verified',
+            details: {
+              signedDocuments: documentGate.signedDocuments,
+              totalDocuments: documentGate.totalDocuments,
+              missingDocuments: documentGate.missingDocuments,
+            },
+          },
+          { status: 409 }
+        );
       }
     }
 

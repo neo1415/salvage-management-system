@@ -87,6 +87,24 @@ export class AuctionClosureService {
           throw new Error('Auction not found');
         }
 
+        const existingWinners = await tx
+          .select()
+          .from(auctionWinners)
+          .where(eq(auctionWinners.auctionId, auctionId))
+          .orderBy(auctionWinners.rank);
+
+        if (existingWinners.length > 0) {
+          const winner = existingWinners.find((record) => record.rank === 1) || existingWinners[0];
+          return {
+            success: true,
+            auctionId,
+            winnerId: winner.vendorId,
+            winningBid: parseFloat(winner.bidAmount),
+            topBiddersCount: existingWinners.length,
+            unfrozenBiddersCount: 0,
+          };
+        }
+
         // Check if auction has ended
         if (auction.status !== 'active' && auction.status !== 'extended') {
           throw new Error(`Auction is not active (status: ${auction.status})`);

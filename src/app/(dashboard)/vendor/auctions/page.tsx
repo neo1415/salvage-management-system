@@ -70,7 +70,7 @@ interface Auction {
   case: {
     id: string;
     claimReference: string;
-    assetType: 'vehicle' | 'property' | 'electronics' | 'machinery';
+    assetType: string;
     assetDetails: Record<string, unknown>;
     marketValue: string;
     estimatedSalvageValue: string;
@@ -390,7 +390,7 @@ function AuctionBrowsingContent() {
     }
     
     if (!name || name === auction.case.assetType) {
-      name = `${auction.case.assetType} - ${auction.case.claimReference}`;
+      name = auction.case.assetType.replace(/_/g, ' ');
     }
     
     return name;
@@ -1172,9 +1172,9 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
         name = 'Salvage Item';
     }
     
-    // Fallback to "{assetType} - {claimReference}" if no specific name
+    // Fallback to the asset type if no specific name is available.
     if (!name || name === auction.case.assetType) {
-      name = `${auction.case.assetType} - ${auction.case.claimReference}`;
+      name = auction.case.assetType.replace(/_/g, ' ');
     }
     
     // Truncate to 50 characters with ellipsis

@@ -70,6 +70,27 @@ export interface MachineryIdentifier {
   condition?: UniversalCondition;
 }
 
+export interface BulkGoodsIdentifier {
+  type: 'stock' | 'goods_in_transit' | 'building_materials' | 'scrap' | 'agriculture';
+  description?: string;
+  brand?: string;
+  model?: string;
+  quantity?: string;
+  unitOfMeasure?: string;
+  packagingType?: string;
+}
+
+export interface SpecialEquipmentIdentifier {
+  type: 'equipment' | 'medical_equipment' | 'energy_equipment' | 'aviation_equipment' | 'other';
+  description?: string;
+  brand?: string;
+  model?: string;
+  quantity?: string;
+  unitOfMeasure?: string;
+  year?: number;
+  condition?: UniversalCondition;
+}
+
 export type ItemIdentifier = 
   | VehicleIdentifier 
   | ElectronicsIdentifier 
@@ -77,7 +98,9 @@ export type ItemIdentifier =
   | PropertyIdentifier
   | JewelryIdentifier
   | FurnitureIdentifier
-  | MachineryIdentifier;
+  | MachineryIdentifier
+  | BulkGoodsIdentifier
+  | SpecialEquipmentIdentifier;
 
 export interface PartIdentifier {
   vehicleMake: string;
@@ -171,12 +194,26 @@ export class QueryBuilderService {
       case 'machinery':
         query = this.buildMachineryQuery(item);
         break;
+      case 'stock':
+      case 'goods_in_transit':
+      case 'building_materials':
+      case 'scrap':
+      case 'agriculture':
+        query = this.buildBulkGoodsQuery(item);
+        break;
+      case 'equipment':
+      case 'medical_equipment':
+      case 'energy_equipment':
+      case 'aviation_equipment':
+      case 'other':
+        query = this.buildSpecialEquipmentQuery(item);
+        break;
       default:
         throw new Error(`Unsupported item type: ${(item as any).type}`);
     }
     
     // Add condition terms - CRITICAL for accurate pricing
-    if (includeCondition && item.condition) {
+    if (includeCondition && 'condition' in item && item.condition) {
       const normalizedCondition = normalizeCondition(item.condition);
       if (normalizedCondition) {
         const conditionTerms = CONDITION_SEARCH_TERMS[normalizedCondition];
@@ -253,6 +290,28 @@ export class QueryBuilderService {
       case 'machinery':
         return this.sanitizeQuery(
           `${this.buildMachineryQuery(item)} ${normalizedPart}${damageContext} spare part replacement repair price Nigeria`
+        );
+
+      case 'stock':
+      case 'goods_in_transit':
+      case 'building_materials':
+      case 'agriculture':
+        return this.sanitizeQuery(
+          `${this.buildBulkGoodsQuery(item)} ${normalizedPart}${damageContext} damaged stock recoverable resale value Nigeria`
+        );
+
+      case 'scrap':
+        return this.sanitizeQuery(
+          `${this.buildBulkGoodsQuery(item)} ${normalizedPart}${damageContext} scrap value price per kg Nigeria`
+        );
+
+      case 'equipment':
+      case 'medical_equipment':
+      case 'energy_equipment':
+      case 'aviation_equipment':
+      case 'other':
+        return this.sanitizeQuery(
+          `${this.buildSpecialEquipmentQuery(item)} ${normalizedPart}${damageContext} spare part replacement repair price Nigeria`
         );
 
       default:
@@ -363,7 +422,7 @@ export class QueryBuilderService {
     variations.push(this.buildMarketQuery(item));
     
     // Condition-specific variations
-    if (item.condition && variations.length < maxVariations) {
+    if ('condition' in item && item.condition && variations.length < maxVariations) {
       const conditionQueries = this.buildConditionQuery(
         this.getBaseItemQuery(item), 
         item.condition
@@ -374,6 +433,11 @@ export class QueryBuilderService {
     // Marketplace-specific variation
     if (variations.length < maxVariations) {
       variations.push(this.buildMarketQuery(item, { includeMarketplace: true }));
+    }
+
+    for (const query of this.buildAssetSpecificVariations(item)) {
+      if (variations.length >= maxVariations) break;
+      if (!variations.includes(query)) variations.push(query);
     }
     
     return variations.slice(0, maxVariations);
@@ -538,9 +602,137 @@ export class QueryBuilderService {
         return this.buildFurnitureQuery(item);
       case 'machinery':
         return this.buildMachineryQuery(item);
+      case 'stock':
+      case 'goods_in_transit':
+      case 'building_materials':
+      case 'scrap':
+      case 'agriculture':
+        return this.buildBulkGoodsQuery(item);
+      case 'equipment':
+      case 'medical_equipment':
+      case 'energy_equipment':
+      case 'aviation_equipment':
+      case 'other':
+        return this.buildSpecialEquipmentQuery(item);
       default:
         return '';
     }
+  }
+
+  private buildBulkGoodsQuery(item: BulkGoodsIdentifier): string {
+    const description = this.compactTerms([
+      item.brand,
+      item.description,
+      item.model,
+      item.quantity,
+      item.unitOfMeasure,
+      item.packagingType,
+    ]);
+    const base = description || item.type.replace(/_/g, ' ');
+    const lower = base.toLowerCase();
+    const hasBagUnit = /\b(bags?|sacks?)\b/.test(lower);
+    const looksLikeDangoteCement =
+      /\bdangote\b/.test(lower)
+      && hasBagUnit
+      && !/\b(sugar|flour|rice|salt|pasta|noodles|feed)\b/.test(lower);
+
+    if (item.type === 'scrap' || /\b(scrap|copper|aluminium|aluminum)\b/.test(lower)) {
+      return `${base} scrap metal price per kg tonne Nigeria`;
+    }
+
+    if (looksLikeDangoteCement || /\bcement\b/.test(lower)) {
+      const normalizedBase = /\bcement\b/.test(lower) ? base : `${base} cement`;
+      const weightHint = /\b(25|50)\s*kg\b/.test(lower) ? '' : ' 50kg';
+      return `${normalizedBase}${weightHint} bag cement retail wholesale`;
+    }
+
+    if (item.type === 'building_materials' || /\b(roofing|tiles?|paint|blocks?|steel|rebar|iron rods?|plywood|plumbing|electrical cable)\b/.test(lower)) {
+      return `${base} building material unit price retail wholesale`;
+    }
+
+    if (item.type === 'agriculture' || /\b(rice|maize|beans|cassava|yam|grain|feed|fertilizer|seed|produce|livestock)\b/.test(lower)) {
+      return `${base} agricultural produce commodity market price per kg bag tonne`;
+    }
+
+    if (item.type === 'goods_in_transit') {
+      return `${base} cargo goods wholesale market value replacement cost`;
+    }
+
+    return `${base} wholesale retail market value`;
+  }
+
+  private buildSpecialEquipmentQuery(item: SpecialEquipmentIdentifier): string {
+    const description = this.compactTerms([
+      item.brand,
+      item.model,
+      item.description,
+      item.quantity,
+      item.unitOfMeasure,
+    ]);
+    const base = description || item.type.replace(/_/g, ' ');
+
+    if (item.type === 'medical_equipment') {
+      return `${base} medical equipment used`;
+    }
+
+    if (item.type === 'energy_equipment') {
+      return `${base} industrial energy oil gas equipment`;
+    }
+
+    if (item.type === 'aviation_equipment') {
+      return `${base} aviation ground support equipment aircraft part`;
+    }
+
+    return `${base} equipment used`;
+  }
+
+  private buildAssetSpecificVariations(item: ItemIdentifier): string[] {
+    switch (item.type) {
+      case 'building_materials': {
+        const base = this.buildBulkGoodsQuery(item);
+        return [
+          this.sanitizeQuery(`${base} Nigeria supplier price`),
+          this.sanitizeQuery(`${base} Lagos price`),
+          this.sanitizeQuery(`${base} site:buildingsandmoreng.com`),
+        ];
+      }
+      case 'stock':
+      case 'goods_in_transit':
+        return [
+          this.sanitizeQuery(`${this.buildBulkGoodsQuery(item)} Nigeria distributor price`),
+          this.sanitizeQuery(`${this.buildBulkGoodsQuery(item)} Nigeria wholesale price`),
+        ];
+      case 'agriculture':
+        return [
+          this.sanitizeQuery(`${this.buildBulkGoodsQuery(item)} Nigeria market price today`),
+          this.sanitizeQuery(`${this.buildBulkGoodsQuery(item)} Lagos commodity price`),
+        ];
+      case 'scrap':
+        return [
+          this.sanitizeQuery(`${this.buildBulkGoodsQuery(item)} Nigeria scrap dealer`),
+          this.sanitizeQuery(`${this.buildBulkGoodsQuery(item)} Lagos scrap price`),
+        ];
+      case 'medical_equipment':
+      case 'energy_equipment':
+      case 'aviation_equipment':
+      case 'equipment':
+      case 'other':
+        return [
+          this.sanitizeQuery(`${this.buildSpecialEquipmentQuery(item)} Nigeria used`),
+          this.sanitizeQuery(`${this.buildSpecialEquipmentQuery(item)} site:jiji.ng`),
+        ];
+      default:
+        return [];
+    }
+  }
+
+  private compactTerms(parts: Array<string | number | undefined | null>): string {
+    return parts
+      .map(part => String(part || '').trim())
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   private sanitizeQuery(query: string): string {

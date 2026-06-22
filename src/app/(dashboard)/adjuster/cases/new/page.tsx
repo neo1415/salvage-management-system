@@ -39,6 +39,8 @@ import { DraftList } from '@/components/cases/draft-list';
 import { AIAnalysisStatusBadge } from '@/components/cases/ai-analysis-status-badge';
 import { compressImage } from '@/utils/image-compression';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
+import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
 
 /**
  * Web Speech API types (not fully supported in TypeScript)
@@ -106,6 +108,135 @@ const LAUNCH_ASSET_TYPES = ASSET_TYPES.filter((type) =>
   ['vehicle', 'electronics', 'property', 'machinery'].includes(type.value)
 );
 
+const INSURANCE_SALVAGE_ASSET_TYPES = [
+  { value: 'vehicle', label: 'Vehicle', icon: 'Auto' },
+  { value: 'goods_in_transit', label: 'Goods in Transit / Cargo', icon: 'GIT' },
+  { value: 'stock', label: 'Warehouse Stock / Inventory', icon: 'Stock' },
+  { value: 'building_materials', label: 'Building Materials', icon: 'Mat' },
+  { value: 'property', label: 'Building / Fixtures', icon: 'Prop' },
+  { value: 'machinery', label: 'Machinery & Equipment', icon: 'Plant' },
+  { value: 'electronics', label: 'Electronics / ICT', icon: 'ICT' },
+  { value: 'appliance', label: 'Appliance', icon: 'Appl' },
+  { value: 'furniture', label: 'Furniture / Contents', icon: 'Furn' },
+  { value: 'scrap', label: 'Scrap / Recoverable Parts', icon: 'Scrap' },
+  { value: 'agriculture', label: 'Agricultural Stock / Equipment', icon: 'Agri' },
+  { value: 'medical_equipment', label: 'Medical Equipment', icon: 'Med' },
+  { value: 'energy_equipment', label: 'Energy / Oil & Gas Equipment', icon: 'Energy' },
+  { value: 'aviation_equipment', label: 'Aviation / Special Risk Equipment', icon: 'Air' },
+  { value: 'jewelry', label: 'Jewelry & Watches', icon: 'Gem' },
+  { value: 'other', label: 'Other Salvage Asset', icon: 'Other' },
+] as const;
+
+const INSURANCE_CLASSES = [
+  { value: 'motor', label: 'Motor' },
+  { value: 'goods_in_transit', label: 'Goods in Transit (GIT)' },
+  { value: 'fire', label: 'Fire and Special Perils' },
+  { value: 'burglary', label: 'Burglary/Theft' },
+  { value: 'marine', label: 'Marine' },
+  { value: 'engineering', label: 'Engineering/Plant' },
+  { value: 'agriculture', label: 'Agriculture' },
+  { value: 'liability', label: 'Liability' },
+  { value: 'other', label: 'Other' },
+] as const;
+
+const STOCK_LIKE_ASSET_TYPES = ['stock', 'building_materials', 'scrap', 'agriculture'] as const;
+const SPECIAL_EQUIPMENT_ASSET_TYPES = ['medical_equipment', 'energy_equipment', 'aviation_equipment', 'other'] as const;
+const BULK_ASSET_TYPES = ['stock', 'goods_in_transit', 'building_materials', 'scrap', 'agriculture'] as const;
+
+function isBulkAssetType(assetType?: string): boolean {
+  return Boolean(assetType && BULK_ASSET_TYPES.includes(assetType as typeof BULK_ASSET_TYPES[number]));
+}
+
+function getAssessmentDisplayLabels(assetType?: string) {
+  if (isBulkAssetType(assetType)) {
+    return {
+      make: 'Brand / Manufacturer',
+      model: 'Stock / Package',
+      condition: 'Visible Condition',
+      evidenceTitle: 'Affected Stock / Loss Evidence',
+      summaryTitle: 'Recovery Summary',
+      salvageValue: 'Estimated Recovery Value',
+      };
+  }
+
+  return {
+    make: 'Make',
+    model: 'Model',
+    condition: 'Condition',
+    evidenceTitle: 'Damaged Parts',
+    summaryTitle: 'AI Assessment Summary',
+    salvageValue: 'Estimated Salvage Value',
+  };
+}
+
+function getStockFormLabels(assetType?: string) {
+  if (assetType === 'scrap') {
+    return {
+      title: 'Scrap / Recoverable Material Details',
+      description: 'Capture material type and estimated quantity; AI will assess recoverable scrap grade from the photos',
+      itemLabel: 'Material Description',
+      itemPlaceholder: 'e.g., mixed ferrous scrap, copper cables, aluminium sheets',
+      brandLabel: 'Source / Grade (Optional)',
+      brandPlaceholder: 'e.g., HMS, copper, aluminium, mixed origin',
+      quantityLabel: 'Estimated Weight / Quantity',
+      quantityPlaceholder: 'e.g., 250',
+      unitPlaceholder: 'e.g., kg, tonnes, bundles',
+      packagingLabel: 'Contamination / Sorting Notes',
+      packagingPlaceholder: 'e.g., burnt coating, mixed with ash, unsorted pile',
+      referenceLabel: 'Yard / Lot Reference',
+    };
+  }
+
+  if (assetType === 'agriculture') {
+    return {
+      title: 'Agricultural Stock Details',
+      description: 'Capture produce type, quantity, and storage context; AI will assess spoilage and resale safety from the photos',
+      itemLabel: 'Produce / Asset Description',
+      itemPlaceholder: 'e.g., maize cobs, rice bags, cocoa sacks, irrigation pump',
+      brandLabel: 'Variety / Grade (Optional)',
+      brandPlaceholder: 'e.g., yellow maize, long grain rice, grade A cocoa',
+      quantityLabel: 'Quantity',
+      quantityPlaceholder: 'e.g., 120',
+      unitPlaceholder: 'e.g., bags, kg, tonnes, crates',
+      packagingLabel: 'Storage / Packaging',
+      packagingPlaceholder: 'e.g., woven sacks, open pile, sealed bags, pallets',
+      referenceLabel: 'Batch / Farm / Lot Reference',
+    };
+  }
+
+  if (assetType === 'building_materials') {
+    return {
+      title: 'Building Materials Details',
+      description: 'Capture material identity, brand, quantity, and packaging; AI will assess exposure and commercial usability',
+      itemLabel: 'Material Description',
+      itemPlaceholder: 'e.g., 50kg cement bags, roofing sheets, tiles, steel rods',
+      brandLabel: 'Brand / Manufacturer',
+      brandPlaceholder: 'e.g., Dangote, Lafarge, BUA',
+      quantityLabel: 'Quantity',
+      quantityPlaceholder: 'e.g., 10',
+      unitPlaceholder: 'e.g., bags, sheets, bundles, kg',
+      packagingLabel: 'Packaging / Storage',
+      packagingPlaceholder: 'e.g., paper sacks, wrapped bundles, pallets',
+      referenceLabel: 'Batch / Lot Reference',
+    };
+  }
+
+  return {
+    title: 'Stock / Recoverable Goods Details',
+    description: 'Identify the goods clearly; AI will assess visible damage from the photos',
+    itemLabel: 'Item / Stock Description',
+    itemPlaceholder: 'e.g., cartons of noodles, office stock, packaged goods',
+    brandLabel: 'Brand / Manufacturer',
+    brandPlaceholder: 'e.g., Indomie, Samsung, Nestle',
+    quantityLabel: 'Quantity',
+    quantityPlaceholder: 'e.g., 120',
+    unitPlaceholder: 'e.g., bags, cartons, pallets, kg',
+    packagingLabel: 'Packaging / Batch',
+    packagingPlaceholder: 'e.g., paper sacks, cartons, sealed pallets',
+    referenceLabel: 'Batch / Reference',
+  };
+}
+
 type PublicAssetTypePolicy = Record<string, {
   enabled: boolean;
   label?: string;
@@ -113,12 +244,24 @@ type PublicAssetTypePolicy = Record<string, {
   requiresAiAnalysis?: boolean;
 }>;
 
+type PublicInsuranceClassPolicy = Record<string, {
+  enabled: boolean;
+  label?: string;
+  description?: string;
+  defaultAssetTypes?: string[];
+}>;
+
 /**
  * Validation schema - Updated for universal item types
  */
 const caseFormSchema = z.object({
   claimReference: z.string().min(1, 'Claim reference is required'),
-  assetType: z.enum(['vehicle', 'property', 'electronics', 'appliance', 'jewelry', 'furniture', 'machinery']).refine((val) => val !== undefined, {
+  policyNumber: z.string().max(120, 'Policy number must be 120 characters or less').optional(),
+  insuranceClass: z.string().min(1, 'Insurance class is required'),
+  brokerName: z.string().optional(),
+  agencyName: z.string().optional(),
+  branchName: z.string().optional(),
+  assetType: z.enum(['vehicle', 'property', 'electronics', 'appliance', 'jewelry', 'furniture', 'machinery', 'stock', 'goods_in_transit', 'building_materials', 'scrap', 'agriculture', 'medical_equipment', 'energy_equipment', 'aviation_equipment', 'other']).refine((val) => val !== undefined, {
     message: 'Asset type is required',
   }),
   marketValue: z.preprocess(
@@ -158,7 +301,20 @@ const caseFormSchema = z.object({
   
   // Property-specific fields
   propertyType: z.string().optional(),
-  propertyAddress: z.string().optional(),
+  propertyDamageArea: z.string().optional(),
+  propertyUse: z.string().optional(),
+
+  // Stock/cargo/special salvage fields
+  stockDescription: z.string().optional(),
+  stockBrand: z.string().optional(),
+  cargoDescription: z.string().optional(),
+  cargoBrand: z.string().optional(),
+  equipmentDescription: z.string().optional(),
+  equipmentBrand: z.string().optional(),
+  quantity: z.string().optional(),
+  unitOfMeasure: z.string().optional(),
+  packagingType: z.string().optional(),
+  batchOrSerial: z.string().optional(),
   
   // Electronics-specific fields
   electronicsBrand: z.string().optional(),
@@ -207,13 +363,30 @@ const caseFormSchema = z.object({
   locationName: z.string().min(1, 'Location name is required'),
   unifiedVoiceContent: z.string().optional(),
 }).refine((data) => {
+  if (data.brokerName?.trim() && data.agencyName?.trim()) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Use either broker or agency, not both',
+  path: ['brokerName'],
+}).refine((data) => {
   // Validate vehicle-specific fields
   if (data.assetType === 'vehicle') {
     return data.vehicleMake && data.vehicleModel && data.vehicleYear;
   }
   // Validate property-specific fields
   if (data.assetType === 'property') {
-    return data.propertyType && data.propertyAddress;
+    return data.propertyType;
+  }
+  if (['stock', 'building_materials', 'scrap', 'agriculture'].includes(data.assetType)) {
+    return Boolean(data.stockDescription);
+  }
+  if (data.assetType === 'goods_in_transit') {
+    return Boolean(data.cargoDescription);
+  }
+  if (['medical_equipment', 'energy_equipment', 'aviation_equipment', 'other'].includes(data.assetType)) {
+    return Boolean(data.equipmentDescription);
   }
   // Validate electronics-specific fields
   if (data.assetType === 'electronics') {
@@ -263,6 +436,7 @@ interface AIAssessmentResult {
   marketValue?: number;
   estimatedRepairCost?: number;
   damagePercentage?: number;
+  isTotalLoss?: boolean;
   isRepairable?: boolean;
   recommendation?: string;
   warnings?: string[];
@@ -325,6 +499,8 @@ function NewCasePageContent() {
   } = useForm<CaseFormData>({
     resolver: zodResolver(caseFormSchema) as never,
     defaultValues: {
+      insuranceClass: 'motor',
+      policyNumber: '',
       photos: [],
       unifiedVoiceContent: '',
       marketValue: undefined, // Explicitly set to undefined to avoid NaN
@@ -332,6 +508,8 @@ function NewCasePageContent() {
   });
 
   const assetType = watch('assetType');
+  const assessmentDisplayLabels = getAssessmentDisplayLabels(assetType);
+  const stockFormLabels = getStockFormLabels(assetType);
   const photos = watch('photos');
   const vehicleMileage = watch('vehicleMileage');
   const vehicleCondition = watch('vehicleCondition');
@@ -368,9 +546,11 @@ function NewCasePageContent() {
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [aiAssessment, setAiAssessment] = useState<AIAssessmentResult | null>(null);
+  const [marketValueSource, setMarketValueSource] = useState<'manual' | 'ai' | null>(null);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [mileageWarning, setMileageWarning] = useState<string | null>(null);
   const [formStateRestored, setFormStateRestored] = useState(false);
+  const [photoMetadata, setPhotoMetadata] = useState<ImageUploadClientMetadata[]>([]);
   
   // CRITICAL FIX: Track if user has attempted to submit
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
@@ -384,6 +564,7 @@ function NewCasePageContent() {
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
   const { policy: publicPolicy } = usePublicBusinessPolicy();
   const enabledAssetTypesPolicy = publicPolicy?.cases.enabledAssetTypes as PublicAssetTypePolicy | undefined;
+  const insuranceClassesPolicy = publicPolicy?.cases.insuranceClasses as PublicInsuranceClassPolicy | undefined;
   
   // Search progress state
   const {
@@ -406,24 +587,39 @@ function NewCasePageContent() {
   const marketValue = watch('marketValue');
   const hasAIAnalysis = !!aiAssessment;
   const enabledAssetTypes = useMemo(() => {
-    if (!enabledAssetTypesPolicy) {
-      return LAUNCH_ASSET_TYPES;
-    }
-
-    const filteredTypes = ASSET_TYPES
-      .filter((type) => enabledAssetTypesPolicy[type.value]?.enabled)
-      .map((type) => ({
-        ...type,
-        label: enabledAssetTypesPolicy[type.value]?.label || type.label,
-      }));
-    return filteredTypes.length > 0 ? filteredTypes : LAUNCH_ASSET_TYPES;
+    return INSURANCE_SALVAGE_ASSET_TYPES.map((type) => ({
+      ...type,
+      label: enabledAssetTypesPolicy?.[type.value]?.label || type.label,
+    }));
   }, [enabledAssetTypesPolicy]);
+
+  const enabledInsuranceClasses = useMemo(() => {
+    return INSURANCE_CLASSES.map((insuranceClass) => ({
+      ...insuranceClass,
+      label: insuranceClassesPolicy?.[insuranceClass.value]?.label || insuranceClass.label,
+    }));
+  }, [insuranceClassesPolicy]);
+
+  useEffect(() => {
+    setAiAssessment(null);
+    if (marketValueSource === 'ai') {
+      setValue('marketValue', undefined);
+      setMarketValueSource(null);
+    }
+  }, [assetType]);
 
   const getConfiguredRequiredFields = (currentAssetType: string | undefined): string[] | null => {
     if (!currentAssetType) return null;
     const config = enabledAssetTypesPolicy?.[currentAssetType];
     if (!config || !Array.isArray(config.requiredFields)) return null;
-    return config.requiredFields;
+    const normalizedFields = config.requiredFields
+      .map((field) => {
+        if (field === 'propertyAddress') return 'propertyType';
+        if (field === 'declaredCondition') return null;
+        return field;
+      })
+      .filter((field): field is string => Boolean(field));
+    return normalizedFields.length > 0 ? normalizedFields : null;
   };
 
   const areConfiguredRequiredFieldsPresent = (requiredFields: string[]): boolean => {
@@ -496,6 +692,7 @@ function NewCasePageContent() {
           
           // Restore AI assessment if present
           if (draft.hasAIAnalysis && draft.marketValue) {
+            setMarketValueSource('ai');
             setAiAssessment({
               damageSeverity: 'moderate',
               confidenceScore: 0.85,
@@ -831,8 +1028,22 @@ function NewCasePageContent() {
         return !!(machineryBrand && machineryType);
         
       case 'property':
-        // Property only needs photos for AI assessment
-        return true;
+        return !!watch('propertyType');
+
+      case 'stock':
+      case 'building_materials':
+      case 'scrap':
+      case 'agriculture':
+        return !!watch('stockDescription');
+
+      case 'goods_in_transit':
+        return !!watch('cargoDescription');
+
+      case 'medical_equipment':
+      case 'energy_equipment':
+      case 'aviation_equipment':
+      case 'other':
+        return !!watch('equipmentDescription');
         
       default:
         return false;
@@ -850,9 +1061,17 @@ function NewCasePageContent() {
 
     console.log('📸 Processing', files.length, 'new photos');
     const newPhotos: string[] = [];
+    const successfulMetadata: ImageUploadClientMetadata[] = [];
+    const selectedFiles = Array.from(files);
+    const currentPhotos = photos || [];
+    const metadataStartIndex = currentPhotos.length;
+    const selectedMetadata = await collectImageFilesMetadata(
+      selectedFiles,
+      files.length > 0 && selectedFiles.some((file) => !file.name) ? 'browser_camera_input' : 'browser_file_input'
+    );
     
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
       
       console.log(`📸 Processing ${file.name}: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
       
@@ -867,6 +1086,7 @@ function NewCasePageContent() {
         });
         
         newPhotos.push(compressedBase64);
+        successfulMetadata.push(selectedMetadata[i]);
         console.log(`✅ Compressed ${file.name} successfully`);
       } catch (error) {
         console.error(`❌ Failed to compress ${file.name}:`, error);
@@ -875,9 +1095,15 @@ function NewCasePageContent() {
       }
     }
 
-    const currentPhotos = photos || [];
     const updatedPhotos = [...currentPhotos, ...newPhotos].slice(0, 10);
     setValue('photos', updatedPhotos);
+    setPhotoMetadata((current) => [
+      ...current,
+      ...successfulMetadata.map((metadata, index) => ({
+        ...metadata,
+        index: metadataStartIndex + index,
+      })),
+    ].slice(0, 10).map((metadata, index) => ({ ...metadata, index })));
 
     console.log('📸 Total photos now:', updatedPhotos.length);
     
@@ -952,6 +1178,7 @@ function NewCasePageContent() {
       const providedMarketValue = watch('marketValue');
       if (providedMarketValue && providedMarketValue > 0) {
         itemInfo.marketValue = providedMarketValue;
+        itemInfo.marketValueSource = 'manual';
       }
 
       switch (assetType) {
@@ -992,8 +1219,11 @@ function NewCasePageContent() {
         case 'jewelry':
           itemInfo = {
             ...itemInfo,
-            type: watch('jewelryType'),
+            description: [watch('jewelryType'), watch('jewelryMaterial'), watch('jewelryWeight')]
+              .filter(Boolean)
+              .join(' '),
             brand: watch('jewelryBrand'),
+            model: watch('jewelryType') || watch('jewelryMaterial'),
             material: watch('jewelryMaterial'),
             weight: watch('jewelryWeight'),
             condition: watch('itemCondition'),
@@ -1003,9 +1233,13 @@ function NewCasePageContent() {
         case 'furniture':
           itemInfo = {
             ...itemInfo,
-            type: watch('furnitureType'),
+            description: [watch('furnitureType'), watch('furnitureMaterial'), watch('furnitureSize')]
+              .filter(Boolean)
+              .join(' '),
             brand: watch('furnitureBrand'),
+            model: watch('furnitureType'),
             material: watch('furnitureMaterial'),
+            furnitureType: watch('furnitureType'),
             size: watch('furnitureSize'),
             condition: watch('itemCondition'),
           };
@@ -1015,7 +1249,10 @@ function NewCasePageContent() {
           itemInfo = {
             ...itemInfo,
             brand: watch('machineryBrand'),
-            type: watch('machineryType'),
+            machineryType: watch('machineryType'),
+            description: [watch('machineryBrand'), watch('machineryType'), watch('machineryModel')]
+              .filter(Boolean)
+              .join(' '),
             model: watch('machineryModel'),
             year: watch('machineryYear'),
             condition: watch('itemCondition'),
@@ -1026,8 +1263,60 @@ function NewCasePageContent() {
           itemInfo = {
             ...itemInfo,
             propertyType: watch('propertyType'),
-            address: watch('propertyAddress'),
-            location: watch('propertyAddress') || watch('locationName'),
+            propertyUse: watch('propertyUse'),
+            damageArea: watch('propertyDamageArea'),
+            location: watch('locationName'),
+            description: [watch('propertyType'), watch('propertyUse'), watch('propertyDamageArea')]
+              .filter(Boolean)
+              .join(' - '),
+            condition: watch('itemCondition'),
+          };
+          break;
+
+        case 'stock':
+        case 'building_materials':
+        case 'scrap':
+        case 'agriculture':
+          itemInfo = {
+            ...itemInfo,
+            description: watch('stockDescription'),
+            brand: watch('stockBrand'),
+            model: [watch('quantity'), watch('unitOfMeasure')].filter(Boolean).join(' '),
+            quantity: watch('quantity'),
+            unitOfMeasure: watch('unitOfMeasure'),
+            packagingType: watch('packagingType'),
+            batchOrSerial: watch('batchOrSerial'),
+            condition: watch('itemCondition'),
+          };
+          break;
+
+        case 'goods_in_transit':
+          itemInfo = {
+            ...itemInfo,
+            description: watch('cargoDescription'),
+            brand: watch('cargoBrand'),
+            model: [watch('quantity'), watch('unitOfMeasure')].filter(Boolean).join(' '),
+            quantity: watch('quantity'),
+            unitOfMeasure: watch('unitOfMeasure'),
+            packagingType: watch('packagingType'),
+            batchOrSerial: watch('batchOrSerial'),
+            condition: watch('itemCondition'),
+          };
+          break;
+
+        case 'medical_equipment':
+        case 'energy_equipment':
+        case 'aviation_equipment':
+        case 'other':
+          itemInfo = {
+            ...itemInfo,
+            description: watch('equipmentDescription'),
+            brand: watch('equipmentBrand'),
+            model: watch('batchOrSerial') || [watch('quantity'), watch('unitOfMeasure')].filter(Boolean).join(' '),
+            quantity: watch('quantity'),
+            unitOfMeasure: watch('unitOfMeasure'),
+            batchOrSerial: watch('batchOrSerial'),
+            condition: watch('itemCondition'),
           };
           break;
       }
@@ -1039,9 +1328,14 @@ function NewCasePageContent() {
       updateProgress({ progress: 10 });
 
       // Simulate market search progress (the API handles this internally)
-      const searchQuery = assetType === 'vehicle' 
+      const itemSearchName = [itemInfo.brand, itemInfo.description || itemInfo.propertyType || itemInfo.type]
+        .filter(Boolean)
+        .join(' ');
+      const searchQuery = assetType === 'vehicle'
         ? `${itemInfo.make} ${itemInfo.model} ${itemInfo.year} ${itemInfo.condition || 'used'} price Nigeria`
-        : `${itemInfo.brand || itemInfo.type} ${itemInfo.model || ''} ${itemInfo.condition || 'used'} price Nigeria`;
+        : isBulkAssetType(assetType)
+          ? `${itemSearchName} ${itemInfo.quantity || ''} ${itemInfo.unitOfMeasure || ''} market price Nigeria`
+          : `${itemSearchName} ${itemInfo.model || itemInfo.quantity || ''} ${itemInfo.condition || 'used'} market price Nigeria`;
       
       startMarketSearch(searchQuery);
       updateProgress({ progress: 30 });
@@ -1061,6 +1355,7 @@ function NewCasePageContent() {
         body: JSON.stringify({
           photos: photosToAssess,
           itemInfo, // Updated from vehicleInfo to itemInfo
+          forceRefresh: Boolean(aiAssessment),
         }),
       });
 
@@ -1108,8 +1403,9 @@ function NewCasePageContent() {
         // Preserve a manually-entered claims paid/asset value. If left empty,
         // fill it from the valuation search/AI result.
         const existingMarketValue = watch('marketValue');
-        if (!existingMarketValue || existingMarketValue <= 0) {
+        if (marketValueSource !== 'manual' || !existingMarketValue || existingMarketValue <= 0) {
           setValue('marketValue', result.data.marketValue || result.data.estimatedSalvageValue);
+          setMarketValueSource('ai');
         }
         
         // Show completion with confidence and data source
@@ -1159,6 +1455,11 @@ function NewCasePageContent() {
   const removePhoto = (index: number) => {
     const updatedPhotos = photos.filter((_, i) => i !== index);
     setValue('photos', updatedPhotos);
+    setPhotoMetadata((current) =>
+      current
+        .filter((_, metadataIndex) => metadataIndex !== index)
+        .map((metadata, metadataIndex) => ({ ...metadata, index: metadataIndex }))
+    );
   };
 
   /**
@@ -1409,6 +1710,7 @@ function NewCasePageContent() {
         // Note: We don't have the full AI assessment stored in the draft
         // So we just restore the market value
         setValue('marketValue', draft.marketValue);
+        setMarketValueSource('ai');
       }
       
       // Close the draft list
@@ -1548,7 +1850,38 @@ function NewCasePageContent() {
       } else if (data.assetType === 'property') {
         assetDetails = {
           propertyType: data.propertyType,
-          address: data.propertyAddress,
+          propertyUse: data.propertyUse,
+          damageArea: data.propertyDamageArea,
+          condition: data.itemCondition,
+        };
+      } else if (['stock', 'building_materials', 'scrap', 'agriculture'].includes(data.assetType)) {
+        assetDetails = {
+          description: data.stockDescription,
+          brand: data.stockBrand,
+          quantity: data.quantity,
+          unitOfMeasure: data.unitOfMeasure,
+          packagingType: data.packagingType,
+          batchOrSerial: data.batchOrSerial,
+          condition: data.itemCondition,
+        };
+      } else if (data.assetType === 'goods_in_transit') {
+        assetDetails = {
+          description: data.cargoDescription,
+          brand: data.cargoBrand,
+          quantity: data.quantity,
+          unitOfMeasure: data.unitOfMeasure,
+          packagingType: data.packagingType,
+          consignmentReference: data.batchOrSerial,
+          condition: data.itemCondition,
+        };
+      } else if (['medical_equipment', 'energy_equipment', 'aviation_equipment', 'other'].includes(data.assetType)) {
+        assetDetails = {
+          description: data.equipmentDescription,
+          brand: data.equipmentBrand,
+          quantity: data.quantity,
+          unitOfMeasure: data.unitOfMeasure,
+          serialOrReference: data.batchOrSerial,
+          condition: data.itemCondition,
         };
       } else if (data.assetType === 'electronics') {
         assetDetails = {
@@ -1602,10 +1935,16 @@ function NewCasePageContent() {
 
       const caseData = {
         claimReference: data.claimReference,
+        policyNumber: data.policyNumber?.trim() || undefined,
+        insuranceClass: data.insuranceClass,
+        brokerName: data.brokerName,
+        agencyName: data.agencyName,
+        branchName: data.branchName,
         assetType: data.assetType,
         assetDetails,
         marketValue: data.marketValue,
         photos: data.photos,
+        photoMetadata: photoMetadata.slice(0, data.photos.length).map((metadata, index) => ({ ...metadata, index })),
         gpsLocation: gpsLocation || undefined, // Optional when offline
         locationName: data.locationName || (isOffline ? 'Location unavailable (offline)' : 'Unknown location'),
         locationAccuracyMeters: gpsAccuracy,
@@ -1626,6 +1965,7 @@ function NewCasePageContent() {
           marketValue: aiAssessment.marketValue,
           estimatedRepairCost: aiAssessment.estimatedRepairCost,
           damagePercentage: aiAssessment.damagePercentage,
+          isTotalLoss: aiAssessment.isTotalLoss,
           isRepairable: aiAssessment.isRepairable,
           recommendation: aiAssessment.recommendation,
           warnings: aiAssessment.warnings,
@@ -1672,7 +2012,7 @@ function NewCasePageContent() {
         }
         
         toast.success('Case saved offline', 'It will be synced when connection is restored.');
-        router.push('/adjuster/my-cases');
+        router.push('/adjuster/dashboard');
       } else {
         // Submit to API (AI assessment already completed during photo upload)
         const response = await fetch('/api/cases', {
@@ -1713,7 +2053,7 @@ function NewCasePageContent() {
           isDraft ? 'Case saved as draft' : 'Case submitted for approval',
           isDraft ? 'You can continue editing later.' : 'Manager will review your submission.'
         );
-        router.push('/adjuster/my-cases');
+        router.push('/adjuster/dashboard');
       }
     } catch (error) {
       console.error('Error submitting case:', error);
@@ -1913,6 +2253,7 @@ function NewCasePageContent() {
             label="Claim Reference"
             required={true}
             error={errors.claimReference?.message}
+            description="Manual for now; later this can hydrate claim details from the insurer core system"
           >
             <ModernInput
               {...register('claimReference')}
@@ -1922,15 +2263,87 @@ function NewCasePageContent() {
               className="font-mono tracking-wide"
             />
           </FormField>
+
+          <FormField
+            label="Policy Number"
+            error={errors.policyNumber?.message}
+            description="Staff-only policy identifier for insurer reconciliation"
+          >
+            <ModernInput
+              {...register('policyNumber')}
+              variant="filled"
+              size="lg"
+              placeholder="Enter policy number"
+              className="font-mono tracking-wide"
+            />
+          </FormField>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <FormField
+              label="Class of Insurance"
+              required={true}
+              error={errors.insuranceClass?.message}
+              description="Used for insurer reporting and recovery analysis"
+            >
+              <select
+                {...register('insuranceClass')}
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 shadow-sm outline-none transition focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+              >
+                {enabledInsuranceClasses.map((insuranceClass) => (
+                  <option key={insuranceClass.value} value={insuranceClass.value}>
+                    {insuranceClass.label}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+
+            <FormField
+              label="Branch"
+              error={errors.branchName?.message}
+              description="Optional insurer branch or office responsible for the claim"
+            >
+              <ModernInput
+                {...register('branchName')}
+                variant="filled"
+                placeholder="e.g., Akure Branch"
+              />
+            </FormField>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <FormField
+              label="Broker"
+              error={errors.brokerName?.message}
+              description="Fill broker or agency, not both"
+            >
+              <ModernInput
+                {...register('brokerName')}
+                variant="filled"
+                placeholder="Broker name, if applicable"
+              />
+            </FormField>
+
+            <FormField
+              label="Agency"
+              error={errors.agencyName?.message}
+              description="Fill only if this claim came through an agency"
+            >
+              <ModernInput
+                {...register('agencyName')}
+                variant="filled"
+                placeholder="Agency name, if applicable"
+              />
+            </FormField>
+          </div>
         </FormSection>
 
         {/* Asset Type - Enhanced Selection */}
-        <FormSection variant="card" title="Asset Classification" description="Select the type of item being assessed">
+        <FormSection variant="card" title="Asset Category For AI" description="Select the physical item type being assessed">
           <FormField
-            label="Asset Type"
+            label="Asset Category"
             required={true}
             error={errors.assetType?.message}
-            description="Universal AI search supports all item types with real-time market pricing"
+            description="Used by AI valuation, vendor matching, and auction presentation"
           >
             <Controller
               name="assetType"
@@ -2098,17 +2511,25 @@ function NewCasePageContent() {
             description="Property information for accurate assessment"
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <FormField label="Property Type" required={true}>
+              <FormField label="Property / Fixture Type" required={true}>
                 <ModernInput
                   {...register('propertyType')}
                   variant="filled"
-                  placeholder="e.g., Residential, Commercial, Industrial"
+                  placeholder="e.g., warehouse racks, roofing sheets, doors, windows"
                 />
               </FormField>
 
-              <FormField label="Address" required={true} className="md:col-span-2">
+              <FormField label="Building Use">
+                <ModernInput
+                  {...register('propertyUse')}
+                  variant="filled"
+                  placeholder="e.g., warehouse, office, shop, factory"
+                />
+              </FormField>
+
+              <FormField label="Damaged Area / Scope" className="md:col-span-2">
                 <textarea
-                  {...register('propertyAddress')}
+                  {...register('propertyDamageArea')}
                   rows={3}
                   className={cn(
                     'w-full px-4 py-3 border-transparent bg-gray-100 text-gray-900 rounded-xl',
@@ -2116,8 +2537,136 @@ function NewCasePageContent() {
                     'transition-all duration-200 ease-out resize-none',
                     'placeholder:text-gray-600'
                   )}
-                  placeholder="Full property address with landmarks"
+                  placeholder="e.g., smoke-damaged storage bay, burnt roofing, flooded ground-floor fixtures"
                 />
+              </FormField>
+            </div>
+          </FormSection>
+        )}
+
+        {assetType && STOCK_LIKE_ASSET_TYPES.includes(assetType as typeof STOCK_LIKE_ASSET_TYPES[number]) && (
+          <FormSection
+            variant="highlighted"
+            title={stockFormLabels.title}
+            description={stockFormLabels.description}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField label={stockFormLabels.itemLabel} required={true} className="md:col-span-2">
+                <textarea
+                  {...register('stockDescription')}
+                  rows={3}
+                  className={cn(
+                    'w-full px-4 py-3 border-transparent bg-gray-100 text-gray-900 rounded-xl',
+                    'hover:bg-gray-200 focus:bg-white focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-focus-ring)]',
+                    'transition-all duration-200 ease-out resize-none',
+                    'placeholder:text-gray-600'
+                  )}
+                  placeholder={stockFormLabels.itemPlaceholder}
+                />
+              </FormField>
+
+              <FormField label={stockFormLabels.brandLabel}>
+                <ModernInput {...register('stockBrand')} variant="filled" placeholder={stockFormLabels.brandPlaceholder} />
+              </FormField>
+
+              <FormField label={stockFormLabels.quantityLabel}>
+                <ModernInput {...register('quantity')} variant="filled" placeholder={stockFormLabels.quantityPlaceholder} />
+              </FormField>
+
+              <FormField label="Unit of Measure">
+                <ModernInput {...register('unitOfMeasure')} variant="filled" placeholder={stockFormLabels.unitPlaceholder} />
+              </FormField>
+
+              <FormField label={stockFormLabels.packagingLabel}>
+                <ModernInput {...register('packagingType')} variant="filled" placeholder={stockFormLabels.packagingPlaceholder} />
+              </FormField>
+
+              <FormField label={stockFormLabels.referenceLabel}>
+                <ModernInput {...register('batchOrSerial')} variant="filled" placeholder="Batch, waybill, serial, or lot reference" />
+              </FormField>
+            </div>
+          </FormSection>
+        )}
+
+        {assetType === 'goods_in_transit' && (
+          <FormSection
+            variant="highlighted"
+            title="Goods in Transit / Cargo Details"
+            description="Capture consignment identity, packaging, and quantity; AI will assess visible transit damage"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField label="Cargo Description" required={true} className="md:col-span-2">
+                <textarea
+                  {...register('cargoDescription')}
+                  rows={3}
+                  className={cn(
+                    'w-full px-4 py-3 border-transparent bg-gray-100 text-gray-900 rounded-xl',
+                    'hover:bg-gray-200 focus:bg-white focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-focus-ring)]',
+                    'transition-all duration-200 ease-out resize-none',
+                    'placeholder:text-gray-600'
+                  )}
+                  placeholder="e.g., cartons of imported electronics, water-damaged during transit"
+                />
+              </FormField>
+
+              <FormField label="Brand / Manufacturer">
+                <ModernInput {...register('cargoBrand')} variant="filled" placeholder="e.g., Samsung, LG, Dangote, Nestle" />
+              </FormField>
+
+              <FormField label="Quantity">
+                <ModernInput {...register('quantity')} variant="filled" placeholder="e.g., 48" />
+              </FormField>
+
+              <FormField label="Unit of Measure">
+                <ModernInput {...register('unitOfMeasure')} variant="filled" placeholder="e.g., cartons, units, pallets" />
+              </FormField>
+
+              <FormField label="Packaging">
+                <ModernInput {...register('packagingType')} variant="filled" placeholder="e.g., shrink-wrapped pallets" />
+              </FormField>
+
+              <FormField label="Waybill / Container / Batch Ref">
+                <ModernInput {...register('batchOrSerial')} variant="filled" placeholder="Reference number" />
+              </FormField>
+            </div>
+          </FormSection>
+        )}
+
+        {assetType && SPECIAL_EQUIPMENT_ASSET_TYPES.includes(assetType as typeof SPECIAL_EQUIPMENT_ASSET_TYPES[number]) && (
+          <FormSection
+            variant="highlighted"
+            title="Special Asset Details"
+            description="Describe the recoverable asset clearly for AI identification and valuation"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField label="Asset Description" required={true} className="md:col-span-2">
+                <textarea
+                  {...register('equipmentDescription')}
+                  rows={3}
+                  className={cn(
+                    'w-full px-4 py-3 border-transparent bg-gray-100 text-gray-900 rounded-xl',
+                    'hover:bg-gray-200 focus:bg-white focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-focus-ring)]',
+                    'transition-all duration-200 ease-out resize-none',
+                    'placeholder:text-gray-600'
+                  )}
+                  placeholder="e.g., hospital bed with damaged control module, solar inverter bank, aircraft ground support unit"
+                />
+              </FormField>
+
+              <FormField label="Brand / Manufacturer">
+                <ModernInput {...register('equipmentBrand')} variant="filled" placeholder="e.g., Siemens, CAT, Perkins, Huawei" />
+              </FormField>
+
+              <FormField label="Quantity">
+                <ModernInput {...register('quantity')} variant="filled" placeholder="e.g., 1, 12, 4 sets" />
+              </FormField>
+
+              <FormField label="Unit / Capacity">
+                <ModernInput {...register('unitOfMeasure')} variant="filled" placeholder="e.g., units, kva, hp, beds" />
+              </FormField>
+
+              <FormField label="Serial / Reference">
+                <ModernInput {...register('batchOrSerial')} variant="filled" placeholder="Serial, asset tag, or reference" />
               </FormField>
             </div>
           </FormSection>
@@ -2413,7 +2962,11 @@ function NewCasePageContent() {
         )}
 
         {/* Universal Condition Field */}
-        {assetType && assetType !== 'vehicle' && (
+        {assetType
+          && assetType !== 'vehicle'
+          && assetType !== 'property'
+          && assetType !== 'goods_in_transit'
+          && !STOCK_LIKE_ASSET_TYPES.includes(assetType as typeof STOCK_LIKE_ASSET_TYPES[number]) && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
               Item Condition (Optional - Recommended)
@@ -2434,10 +2987,10 @@ function NewCasePageContent() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 >
                   <option value="">Select condition</option>
-                  <option value="Brand New">Brand New</option>
-                  <option value="Foreign Used (Tokunbo)">Foreign Used (Tokunbo)</option>
-                  <option value="Nigerian Used">Nigerian Used</option>
-                  <option value="Heavily Used">Heavily Used</option>
+                  <option value="Brand New">Brand New / Excellent</option>
+                  <option value="Foreign Used (Tokunbo)">Clean Used / Good</option>
+                  <option value="Nigerian Used">Locally Used / Fair</option>
+                  <option value="Heavily Used">Heavy Use / Poor</option>
                 </select>
               )}
             />
@@ -2461,7 +3014,8 @@ function NewCasePageContent() {
             <input
               type="number"
               {...register('marketValue', { 
-                setValueAs: (v) => v === '' || v === null ? undefined : parseFloat(v)
+                setValueAs: (v) => v === '' || v === null ? undefined : parseFloat(v),
+                onChange: () => setMarketValueSource('manual'),
               })}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent bg-white"
               placeholder="Enter claims paid amount or leave blank for AI estimate"
@@ -2469,7 +3023,7 @@ function NewCasePageContent() {
           </div>
           {aiAssessment && (
             <p className="mt-1 text-xs text-green-600">
-              {aiAssessment.priceSource === 'user_provided'
+              {marketValueSource === 'manual' || aiAssessment.priceSource === 'user_provided'
                 ? 'Used the claims paid value you entered.'
                 : 'Estimated from market evidence. You can still edit it if claims paid differs.'}
             </p>
@@ -2737,13 +3291,30 @@ function NewCasePageContent() {
               )}
               
               <div className="flex justify-between items-center gap-2 p-3 bg-white rounded-lg overflow-hidden">
-                <span className="text-sm md:text-base text-gray-700 font-medium truncate">Estimated Salvage Value:</span>
+                <span className="text-sm md:text-base text-gray-700 font-medium truncate">{assessmentDisplayLabels.salvageValue}:</span>
                 <span className="text-base md:text-lg font-bold text-green-600 whitespace-nowrap flex-shrink-0">₦{aiAssessment.estimatedSalvageValue.toLocaleString()}</span>
               </div>
+              {aiAssessment.isTotalLoss && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                  AI classified this asset as a commercial total loss. Recovery value is set to zero unless a manager confirms recoverable resale value.
+                </div>
+              )}
               <div className="flex justify-between items-center gap-2 p-3 bg-white rounded-lg overflow-hidden">
                 <span className="text-sm md:text-base text-gray-700 font-medium truncate">Reserve Price:</span>
                 <span className="text-base md:text-lg font-bold text-[var(--brand-primary)] whitespace-nowrap flex-shrink-0">₦{aiAssessment.reservePrice.toLocaleString()}</span>
               </div>
+              {aiAssessment.manualReviewRequired && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+                  <div className="font-semibold mb-1">Manual review required before approval</div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {(aiAssessment.reviewReasons?.length ? aiAssessment.reviewReasons : aiAssessment.warnings || [])
+                      .slice(0, 4)
+                      .map((reason, index) => (
+                        <li key={index}>{reason.replace(/^Manual review:\s*/i, '')}</li>
+                      ))}
+                  </ul>
+                </div>
+              )}
               
               {/* NEW: Detailed Item Identification (from Gemini) */}
               {aiAssessment.itemDetails && (
@@ -2751,10 +3322,10 @@ function NewCasePageContent() {
                   <div className="text-sm md:text-base font-bold text-gray-900 mb-2">🔍 Item Identification</div>
                   <div className="grid grid-cols-2 gap-2 text-xs md:text-sm">
                     {aiAssessment.itemDetails.detectedMake && (
-                      <div><span className="text-gray-600">Make:</span> <span className="font-semibold">{aiAssessment.itemDetails.detectedMake}</span></div>
+                      <div><span className="text-gray-600">{assessmentDisplayLabels.make}:</span> <span className="font-semibold">{aiAssessment.itemDetails.detectedMake}</span></div>
                     )}
                     {aiAssessment.itemDetails.detectedModel && (
-                      <div><span className="text-gray-600">Model:</span> <span className="font-semibold">{aiAssessment.itemDetails.detectedModel}</span></div>
+                      <div><span className="text-gray-600">{assessmentDisplayLabels.model}:</span> <span className="font-semibold">{aiAssessment.itemDetails.detectedModel}</span></div>
                     )}
                     {aiAssessment.itemDetails.detectedYear && (
                       <div><span className="text-gray-600">Year:</span> <span className="font-semibold">{aiAssessment.itemDetails.detectedYear}</span></div>
@@ -2779,7 +3350,7 @@ function NewCasePageContent() {
                     )}
                     {/* Universal fields (shown for all types) */}
                     {aiAssessment.itemDetails.overallCondition && (
-                      <div className="col-span-2"><span className="text-gray-600">Condition:</span> <span className="font-semibold">{aiAssessment.itemDetails.overallCondition}</span></div>
+                      <div className="col-span-2"><span className="text-gray-600">{assessmentDisplayLabels.condition}:</span> <span className="font-semibold">{aiAssessment.itemDetails.overallCondition}</span></div>
                     )}
                   </div>
                   {aiAssessment.itemDetails.notes && (
@@ -2791,7 +3362,7 @@ function NewCasePageContent() {
               {/* NEW: Detailed Damaged Parts List (from Gemini) */}
               {aiAssessment.damagedParts && aiAssessment.damagedParts.length > 0 && (
                 <div className="w-full max-w-full overflow-hidden p-3 bg-white rounded-lg border-l-4 border-red-400">
-                  <div className="text-sm md:text-base font-bold text-gray-900 mb-2">🔧 Damaged Parts ({aiAssessment.damagedParts.length})</div>
+                  <div className="text-sm md:text-base font-bold text-gray-900 mb-2">🔧 {assessmentDisplayLabels.evidenceTitle} ({aiAssessment.damagedParts.length})</div>
                   <div className="space-y-2">
                     {aiAssessment.damagedParts.map((part, index) => (
                       <div key={index} className="flex items-center justify-between gap-2 p-2 bg-gray-50 rounded">
@@ -2815,7 +3386,7 @@ function NewCasePageContent() {
               {/* NEW: AI Summary/Recommendation (from Gemini) */}
               {aiAssessment.recommendation && (
                 <div className="w-full max-w-full overflow-hidden p-4 bg-purple-50 rounded-lg border-l-4 border-purple-500">
-                  <div className="text-sm md:text-base font-bold text-purple-900 mb-2">💡 AI Assessment Summary</div>
+                  <div className="text-sm md:text-base font-bold text-purple-900 mb-2">💡 {assessmentDisplayLabels.summaryTitle}</div>
                   <p className="text-xs md:text-sm text-gray-700 leading-relaxed">{aiAssessment.recommendation}</p>
                 </div>
               )}

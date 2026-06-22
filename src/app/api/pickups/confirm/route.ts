@@ -16,6 +16,11 @@ export async function POST(request: NextRequest) {
       pickupAuthCode: typeof body.pickupAuthCode === 'string' ? body.pickupAuthCode : undefined,
       auctionId: typeof body.auctionId === 'string' ? body.auctionId : undefined,
       notes: typeof body.notes === 'string' ? body.notes : undefined,
+      resolutionStatus: typeof body.resolutionStatus === 'string' ? body.resolutionStatus : undefined,
+      adjustmentAmount: typeof body.adjustmentAmount === 'number' || typeof body.adjustmentAmount === 'string'
+        ? body.adjustmentAmount
+        : undefined,
+      reimbursementMethod: typeof body.reimbursementMethod === 'string' ? body.reimbursementMethod : undefined,
       actor: {
         userId: session.user.id,
         userName: session.user.name,

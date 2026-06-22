@@ -10,6 +10,7 @@ import {
   PROFILE_PICTURE_PRESETS,
   validateFile 
 } from '@/lib/storage/cloudinary';
+import { recordImageUploadMetadata } from '@/features/media/services/image-upload-metadata.service';
 
 /**
  * POST /api/users/profile-picture
@@ -93,6 +94,25 @@ export async function POST(request: NextRequest) {
       tags: ['profile-picture', currentUser.role],
       compress: true,
       compressionPreset: 'MOBILE',
+    });
+
+    await recordImageUploadMetadata({
+      entityType: 'profile_picture',
+      entityId: session.user.id,
+      imageUrl: uploadResult.secureUrl,
+      imageIndex: 0,
+      purpose: 'profile_picture',
+      uploadedBy: session.user.id,
+      serverBuffer: buffer,
+      fallbackMimeType: file.type,
+      clientMetadata: {
+        index: 0,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified,
+        captureSource: 'server_upload',
+      },
     });
 
     // Update user record

@@ -15,6 +15,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { Download } from 'lucide-react';
 import { formatNaira, formatAnalysisMethod } from '@/lib/utils/currency-formatter';
@@ -24,7 +25,12 @@ import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-di
 interface Case {
   id: string;
   claimReference: string;
-  assetType: 'vehicle' | 'property' | 'electronics';
+  policyNumber?: string | null;
+  assetType: string;
+  insuranceClass?: string | null;
+  brokerName?: string | null;
+  agencyName?: string | null;
+  branchName?: string | null;
   assetDetails: Record<string, unknown>;
   marketValue: number;
   estimatedSalvageValue: number | null;
@@ -36,16 +42,36 @@ interface Case {
   photos: string[];
   voiceNotes?: string[];
   status: 'draft' | 'pending_approval' | 'approved' | 'active_auction' | 'sold' | 'cancelled';
+  evidencePacketAvailable?: boolean;
   createdAt: string;
   updatedAt: string;
+  createdBy: string;
   adjusterName: string | null;
   approvedBy: string | null;
   approvedAt: string | null;
 }
 
+const INSURANCE_CLASS_LABELS: Record<string, string> = {
+  motor: 'Motor',
+  goods_in_transit: 'Goods in Transit (GIT)',
+  fire: 'Fire and Special Perils',
+  burglary: 'Burglary/Theft',
+  marine: 'Marine',
+  engineering: 'Engineering/Plant',
+  agriculture: 'Agriculture',
+  liability: 'Liability',
+  other: 'Other',
+};
+
+function formatInsuranceClass(value?: string | null): string {
+  if (!value) return '-';
+  return INSURANCE_CLASS_LABELS[value] ?? value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export default function CaseDetailsPage() {
   const router = useRouter();
   const params = useParams();
+  const { data: session } = useSession();
   const caseId = params.id as string;
 
   const [caseData, setCaseData] = useState<Case | null>(null);
@@ -53,6 +79,10 @@ export default function CaseDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [isExportingEvidence, setIsExportingEvidence] = useState(false);
+  const canManageDraft =
+    session?.user?.role === 'claims_adjuster' &&
+    caseData?.createdBy === session.user.id;
+  const canExportEvidencePacket = caseData?.evidencePacketAvailable === true;
 
   useEffect(() => {
     if (caseId) {
@@ -251,15 +281,17 @@ export default function CaseDetailsPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {getStatusBadge(caseData.status)}
-              <button
-                type="button"
-                onClick={handleEvidencePdfExport}
-                disabled={isExportingEvidence}
-                className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Download className="h-4 w-4" />
-                {isExportingEvidence ? 'Exporting...' : 'Evidence PDF'}
-              </button>
+              {canExportEvidencePacket && (
+                <button
+                  type="button"
+                  onClick={handleEvidencePdfExport}
+                  disabled={isExportingEvidence}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Download className="h-4 w-4" />
+                  {isExportingEvidence ? 'Exporting...' : 'Evidence PDF'}
+                </button>
+              )}
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-2">
@@ -467,6 +499,27 @@ export default function CaseDetailsPage() {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <h3 className="font-bold text-gray-900 mb-3">Asset Details</h3>
           <div className="space-y-2">
+            <div className="grid gap-2 rounded-lg bg-gray-50 p-3 text-sm md:grid-cols-4">
+              <div>
+                <p className="text-xs text-gray-500">Policy Number</p>
+                <p className="font-medium text-gray-900">{caseData.policyNumber || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Insurance Class</p>
+                <p className="font-medium text-gray-900">{formatInsuranceClass(caseData.insuranceClass)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Branch</p>
+                <p className="font-medium text-gray-900">{caseData.branchName || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Business Source</p>
+                <p className="font-medium text-gray-900">
+                  {caseData.brokerName ? `Broker: ${caseData.brokerName}` : caseData.agencyName ? `Agency: ${caseData.agencyName}` : '-'}
+                </p>
+              </div>
+            </div>
+
             {/* Market Value with Currency Formatting */}
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">Market Value</span>
@@ -540,7 +593,7 @@ export default function CaseDetailsPage() {
         )}
 
         {/* Draft Actions */}
-        {caseData.status === 'draft' && (
+        {caseData.status === 'draft' && canManageDraft && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h3 className="font-bold text-blue-900 mb-2">📝 Draft Case</h3>
             <p className="text-sm text-blue-800 mb-4">

@@ -54,6 +54,15 @@ export interface CaseProcessingReport {
     count: number;
     percentage: number;
   }>;
+  byBranch: Array<{
+    branchName: string;
+    casesProcessed: number;
+    soldCases: number;
+    approvalRate: number;
+    averageProcessingTime: number;
+    totalMarketValue: number;
+    totalSalvageValue: number;
+  }>;
   byAdjuster: Array<{
     adjusterId: string;
     adjusterName: string;
@@ -81,11 +90,12 @@ export class CaseProcessingService {
     const summary = this.calculateSummary(data);
     const byAssetType = this.calculateByAssetType(data) || [];
     const byStatus = this.calculateByStatus(data) || [];
+    const byBranch = this.calculateByBranch(data) || [];
     const byAdjuster = this.calculateByAdjuster(data) || [];
     const trend = this.calculateTrend(data) || [];
     const bottlenecks = this.identifyBottlenecks(data) || [];
 
-    return { summary, byAssetType, byStatus, byAdjuster, trend, bottlenecks };
+    return { summary, byAssetType, byStatus, byBranch, byAdjuster, trend, bottlenecks };
   }
 
   private static calculateSummary(data: any[]) {
@@ -194,6 +204,35 @@ export class CaseProcessingService {
       count: items.length,
       percentage: Math.round((items.length / data.length) * 10000) / 100,
     }));
+  }
+
+  private static calculateByBranch(data: any[]) {
+    if (data.length === 0) return [];
+
+    const grouped = DataAggregationService.groupBy(data, 'branchName');
+    if (!grouped || Object.keys(grouped).length === 0) return [];
+
+    return Object.entries(grouped).map(([branchName, items]) => {
+      const approved = items.filter(c => ['approved', 'active_auction', 'awaiting_payment', 'sold'].includes(c.status)).length;
+      const sold = items.filter(c => c.status === 'sold').length;
+      const approvalRate = items.length > 0 ? (approved / items.length) * 100 : 0;
+      const withTime = items.filter(c => c.processingTimeHours !== null && c.processingTimeHours !== undefined);
+      const avgHours = withTime.length > 0
+        ? withTime.reduce((sum, c) => sum + (c.processingTimeHours || 0), 0) / withTime.length
+        : 0;
+      const totalMarketValue = items.reduce((sum, c) => sum + parseFloat(c.marketValue || '0'), 0);
+      const totalSalvageValue = items.reduce((sum, c) => sum + parseFloat(c.estimatedSalvageValue || '0'), 0);
+
+      return {
+        branchName: branchName || 'Unassigned',
+        casesProcessed: items.length,
+        soldCases: sold,
+        approvalRate: Math.round(approvalRate * 100) / 100,
+        averageProcessingTime: Math.round((avgHours / 24) * 100) / 100,
+        totalMarketValue: Math.round(totalMarketValue),
+        totalSalvageValue: Math.round(totalSalvageValue),
+      };
+    }).sort((a, b) => b.totalSalvageValue - a.totalSalvageValue);
   }
 
   private static calculateByAdjuster(data: any[]) {
@@ -306,6 +345,15 @@ export interface AuctionPerformanceReport {
     count: number;
     percentage: number;
   }>;
+  byBranch: Array<{
+    branchName: string;
+    auctionCount: number;
+    successfulAuctions: number;
+    successRate: number;
+    totalRevenue: number;
+    averageWinningBid: number;
+    averageBids: number;
+  }>;
   bidding: {
     totalBids: number;
     averageBidsPerAuction: number;
@@ -358,6 +406,7 @@ export interface AuctionPerformanceReport {
     auctionId: string;
     claimReference: string;
     assetType: string;
+    branchName: string;
     startTime: string;
     endTime: string;
     durationHours: number;
@@ -399,6 +448,7 @@ export class AuctionPerformanceService {
       summary: this.calculateSummary(data),
       byAssetType: this.calculateByAssetType(data) || [],
       byStatus: this.calculateByStatus(data) || [],
+      byBranch: this.calculateByBranch(data) || [],
       bidding: this.calculateBiddingMetrics(data),
       timing: this.calculateTimingMetrics(data),
       vendorParticipation: this.calculateVendorParticipation(data),
@@ -490,6 +540,29 @@ export class AuctionPerformanceService {
         competitiveAuctions: competitive,
       };
     });
+  }
+
+  private static calculateByBranch(data: any[]) {
+    if (data.length === 0) return [];
+
+    const grouped = DataAggregationService.groupBy(data, 'branchName');
+    if (!grouped || Object.keys(grouped).length === 0) return [];
+
+    return Object.entries(grouped).map(([branchName, items]) => {
+      const soldAuctions = items.filter(a => this.isSoldAuction(a));
+      const totalRevenue = soldAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
+      const totalBids = items.reduce((sum, a) => sum + (a.bidCount || 0), 0);
+
+      return {
+        branchName: branchName || 'Unassigned',
+        auctionCount: items.length,
+        successfulAuctions: soldAuctions.length,
+        successRate: items.length > 0 ? Math.round((soldAuctions.length / items.length) * 10000) / 100 : 0,
+        totalRevenue: Math.round(totalRevenue),
+        averageWinningBid: soldAuctions.length > 0 ? Math.round(totalRevenue / soldAuctions.length) : 0,
+        averageBids: items.length > 0 ? Math.round((totalBids / items.length) * 100) / 100 : 0,
+      };
+    }).sort((a, b) => b.totalRevenue - a.totalRevenue);
   }
 
   private static calculateByStatus(data: any[]) {
@@ -682,6 +755,7 @@ export class AuctionPerformanceService {
       auctionId: a.auctionId,
       claimReference: a.claimReference,
       assetType: a.assetType,
+      branchName: a.branchName || 'Unassigned',
       startTime: new Date(a.startTime).toISOString(),
       endTime: new Date(a.endTime).toISOString(),
       durationHours: Math.round(a.durationHours * 100) / 100,

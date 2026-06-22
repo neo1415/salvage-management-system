@@ -11,10 +11,28 @@
 
 import { useQuery } from '@tanstack/react-query';
 
+export type SalvageAssetType =
+  | 'vehicle'
+  | 'property'
+  | 'electronics'
+  | 'machinery'
+  | 'appliance'
+  | 'furniture'
+  | 'jewelry'
+  | 'stock'
+  | 'goods_in_transit'
+  | 'building_materials'
+  | 'scrap'
+  | 'agriculture'
+  | 'medical_equipment'
+  | 'energy_equipment'
+  | 'aviation_equipment'
+  | 'other';
+
 export interface Case {
   id: string;
   claimReference: string;
-  assetType: 'vehicle' | 'property' | 'electronics';
+  assetType: SalvageAssetType;
   assetDetails: Record<string, unknown>;
   marketValue: number;
   estimatedSalvageValue: number | null;

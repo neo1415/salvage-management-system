@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const assetTypes = searchParams.get('assetTypes')?.split(',').filter(Boolean);
+    const branches = searchParams.get('branches')?.split(',').filter(Boolean);
 
     // Validate date range
     const { start, end } = ReportService.validateDateRange(startDate, endDate);
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
       startDate: start.toISOString(),
       endDate: end.toISOString(),
       assetTypes,
+      branches,
     };
 
     // Generate report with caching

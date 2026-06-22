@@ -21,6 +21,7 @@ export interface RevenueData {
   netLoss: number; // ACV - Salvage Recovery
   createdAt: Date;
   region?: string;
+  branchName: string;
 }
 
 export interface PaymentData {
@@ -67,6 +68,12 @@ export class FinancialDataRepository {
    */
   static async getRevenueData(filters: ReportFilters): Promise<RevenueData[]> {
     const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
+    const branchFilter = filters.branches && filters.branches.length > 0
+      ? sql`AND COALESCE(sc.branch_name, 'Unassigned') IN (${sql.join(filters.branches.map(branch => sql`${branch}`), sql`, `)})`
+      : sql``;
+    const assetTypeFilter = filters.assetTypes && filters.assetTypes.length > 0
+      ? sql`AND sc.asset_type IN (${sql.join(filters.assetTypes.map(assetType => sql`${assetType}`), sql`, `)})`
+      : sql``;
 
     // Use raw SQL with DISTINCT ON to handle duplicate payments per case
     // Get the LATEST verified payment per case
@@ -76,6 +83,7 @@ export class FinancialDataRepository {
         sc.claim_reference,
         sc.asset_type,
         sc.market_value,
+        COALESCE(sc.branch_name, 'Unassigned') as branch_name,
         sc.created_at,
         sc.location_name,
         p.amount as payment_amount,
@@ -90,6 +98,8 @@ export class FinancialDataRepository {
         AND p.vendor_id = a.current_bidder
         AND sc.status != 'draft'
         AND sc.claim_reference NOT LIKE 'TEST%'
+        ${branchFilter}
+        ${assetTypeFilter}
       ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
     `) as any[];
 
@@ -121,6 +131,7 @@ export class FinancialDataRepository {
         netLoss: Math.round(netLoss * 100) / 100,
         createdAt: new Date(row.created_at),
         region,
+        branchName: row.branch_name || 'Unassigned',
       };
     });
   }

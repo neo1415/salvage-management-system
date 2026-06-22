@@ -3,7 +3,24 @@ import { users } from './users';
 
 export const vendorTierEnum = pgEnum('vendor_tier', ['tier0', 'tier1_bvn', 'tier2_full']);
 export const vendorStatusEnum = pgEnum('vendor_status', ['pending', 'approved', 'suspended']);
-export const assetTypeEnum = pgEnum('asset_type', ['vehicle', 'property', 'electronics', 'machinery']);
+export const assetTypeEnum = pgEnum('asset_type', [
+  'vehicle',
+  'property',
+  'electronics',
+  'machinery',
+  'appliance',
+  'furniture',
+  'jewelry',
+  'stock',
+  'goods_in_transit',
+  'building_materials',
+  'scrap',
+  'agriculture',
+  'medical_equipment',
+  'energy_equipment',
+  'aviation_equipment',
+  'other',
+]);
 
 export const vendors = pgTable('vendors', {
   id: uuid('id').primaryKey().defaultRandom(),

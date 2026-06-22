@@ -67,7 +67,7 @@ export interface CacheMetrics {
 }
 
 export class CacheIntegrationService {
-  private readonly CACHE_VERSION = 'v2'; // Increment to invalidate old cache
+  private readonly CACHE_VERSION = 'v3'; // Increment to invalidate old cache when valuation guards change
   private readonly CACHE_TTL = 24 * 60 * 60; // 24 hours in seconds
   private readonly METRICS_TTL = 7 * 24 * 60 * 60; // 7 days for metrics
   

@@ -63,6 +63,14 @@ interface RevenueAnalysisData {
     salvageRecovered: number;
     recoveryRate: number;
   }>;
+  byBranch?: Array<{
+    branchName: string;
+    count: number;
+    claimsPaid: number;
+    salvageRecovered: number;
+    netLoss: number;
+    recoveryRate: number;
+  }>;
   itemBreakdown: Array<{
     claimReference: string;
     assetType: string;
@@ -71,6 +79,7 @@ interface RevenueAnalysisData {
     netLoss: number;
     recoveryRate: number;
     region: string;
+    branchName?: string;
     date: string;
   }>;
   registrationFees: Array<{
@@ -112,6 +121,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
     },
     byAssetType: data.byAssetType || [],
     byRegion: data.byRegion || [],
+    byBranch: data.byBranch || [],
     itemBreakdown: data.itemBreakdown || [],
     registrationFees: data.registrationFees || [],
     trend: data.trend || [],
@@ -332,6 +342,47 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
         </CardContent>
       </Card>
 
+      {/* Branch Breakdown */}
+      {safeData.byBranch.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Salvage Recovery by Branch</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PaginatedReportRows rows={safeData.byBranch} label="branches">
+              {(rows, startIndex) => (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-2 font-medium">Branch</th>
+                        <th className="text-right p-2 font-medium">Cases</th>
+                        <th className="text-right p-2 font-medium">Claims Paid</th>
+                        <th className="text-right p-2 font-medium">Salvage Recovered</th>
+                        <th className="text-right p-2 font-medium">Net Loss</th>
+                        <th className="text-right p-2 font-medium">Recovery Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((branch, index) => (
+                        <tr key={`${branch.branchName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
+                          <td className="p-2 font-medium">{branch.branchName || 'Unassigned'}</td>
+                          <td className="p-2 text-right">{branch.count}</td>
+                          <td className="p-2 text-right">â‚¦{branch.claimsPaid.toLocaleString()}</td>
+                          <td className="p-2 text-right text-green-600">â‚¦{branch.salvageRecovered.toLocaleString()}</td>
+                          <td className="p-2 text-right text-red-600">â‚¦{branch.netLoss.toLocaleString()}</td>
+                          <td className="p-2 text-right">{branch.recoveryRate.toFixed(2)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedReportRows>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Item Breakdown Table */}
       {safeData.itemBreakdown.length > 0 && (
         <Card>
@@ -352,6 +403,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                     <th className="text-right p-2 font-medium">Net Loss</th>
                     <th className="text-right p-2 font-medium">Recovery Rate</th>
                     <th className="text-left p-2 font-medium">Region</th>
+                    <th className="text-left p-2 font-medium">Branch</th>
                     <th className="text-left p-2 font-medium">Date</th>
                   </tr>
                 </thead>
@@ -365,6 +417,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                       <td className="p-2 text-right text-red-600">₦{item.netLoss.toLocaleString()}</td>
                       <td className="p-2 text-right">{item.recoveryRate.toFixed(2)}%</td>
                       <td className="p-2">{item.region}</td>
+                      <td className="p-2">{item.branchName || 'Unassigned'}</td>
                       <td className="p-2">{new Date(item.date).toLocaleDateString()}</td>
                     </tr>
                   ))}

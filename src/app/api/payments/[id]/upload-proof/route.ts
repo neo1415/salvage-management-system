@@ -11,6 +11,7 @@ import { emailService } from '@/features/notifications/services/email.service';
 import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
 import { appPath } from '@/features/notifications/templates/email-urls';
 import { brandLegalName, brandTeamName, getEmailBranding } from '@/features/notifications/templates/email-branding';
+import { recordImageUploadMetadata } from '@/features/media/services/image-upload-metadata.service';
 
 const MAX_FILE_SIZE_MB = 5;
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
@@ -185,6 +186,27 @@ export async function POST(
       })
       .where(eq(payments.id, paymentId))
       .returning();
+
+    if (file.type.startsWith('image/')) {
+      await recordImageUploadMetadata({
+        entityType: 'payment_proof',
+        entityId: paymentId,
+        imageUrl: uploadResult.secureUrl,
+        imageIndex: 0,
+        purpose: 'payment_proof',
+        uploadedBy: vendor.userId,
+        serverBuffer: buffer,
+        fallbackMimeType: file.type,
+        clientMetadata: {
+          index: 0,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          lastModified: file.lastModified,
+          captureSource: 'server_upload',
+        },
+      });
+    }
 
     // Log activity
     await logAction({

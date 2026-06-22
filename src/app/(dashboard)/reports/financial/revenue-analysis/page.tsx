@@ -46,6 +46,7 @@ export default function RevenueAnalysisPage() {
       const extraParams: Record<string, string> = {};
       if (filters.assetTypes?.length) extraParams.assetTypes = filters.assetTypes.join(',');
       if (filters.regions?.length) extraParams.regions = filters.regions.join(',');
+      if (filters.branches?.length) extraParams.branches = filters.branches.join(',');
       if (filters.groupBy) extraParams.groupBy = filters.groupBy;
 
       const result = await loadReportFromApi(
@@ -243,6 +244,7 @@ export default function RevenueAnalysisPage() {
             onReset={handleResetFilters}
             showAssetTypes={true}
             showRegions={true}
+            showBranches={true}
             showStatus={false}
             showGroupBy={true}
           />

@@ -135,9 +135,9 @@ export default function BidHistoryPage() {
       return;
     }
 
-    const allowedRoles = ['salvage_manager', 'claims_adjuster', 'system_admin'];
+    const allowedRoles = ['salvage_manager', 'system_admin'];
     if (!allowedRoles.includes(user?.role || '')) {
-      setError('Access denied. Salvage manager, claims adjuster, or system admin role required.');
+      setError('Access denied. Salvage manager or system admin role required.');
       return;
     }
   }, [isAuthenticated, isLoading, user, router]);

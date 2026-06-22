@@ -44,6 +44,14 @@ export interface MasterReportData {
       byStatus: Array<{ status: string; count: number; percentage: number }>;
       byAssetType: Array<{ assetType: string; count: number; avgTime: number }>;
     };
+    branches: Array<{
+      branchName: string;
+      totalCases: number;
+      soldCases: number;
+      claimsValue: number;
+      verifiedRecovery: number;
+      recoveryRate: number;
+    }>;
     auctions: {
       total: number;
       active: number;
@@ -149,7 +157,7 @@ export class MasterReportService {
     ] = await Promise.all([
       this.getExecutiveSummary(startDate, endDate, prevStart, prevEnd),
       this.getFinancialData(startDate, endDate),
-      this.getOperationalData(startDate, endDate),
+      this.getOperationalData(startDate, endDate, filters.branches),
       this.getPerformanceData(startDate, endDate),
       this.getAuctionIntelligence(startDate, endDate),
       this.getSystemHealth(startDate, endDate),
@@ -501,17 +509,22 @@ export class MasterReportService {
     };
   }
 
-  private static async getOperationalData(startDate: string, endDate: string) {
+  private static async getOperationalData(startDate: string, endDate: string, branches?: string[]) {
+    const branchFilter = branches && branches.length > 0
+      ? sql`AND COALESCE(sc.branch_name, 'Unassigned') IN (${sql.join(branches.map(branch => sql`${branch}`), sql`, `)})`
+      : sql``;
+
     // Cases overview - EXCLUDE DRAFTS
     const casesByStatus = await db.execute(sql`
       SELECT 
         status,
         COUNT(*) as count
-      FROM salvage_cases
-      WHERE created_at >= ${startDate} 
-        AND created_at <= ${endDate}
-        AND status != 'draft'
-        AND claim_reference NOT LIKE 'TEST%'
+      FROM salvage_cases sc
+      WHERE sc.created_at >= ${startDate} 
+        AND sc.created_at <= ${endDate}
+        AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
+        ${branchFilter}
       GROUP BY status
     `);
 
@@ -522,12 +535,48 @@ export class MasterReportService {
         asset_type,
         COUNT(*) as count,
         AVG(EXTRACT(EPOCH FROM (approved_at - created_at)) / 86400) as avg_time
-      FROM salvage_cases
-      WHERE created_at >= ${startDate} 
-        AND created_at <= ${endDate}
-        AND status != 'draft'
-        AND claim_reference NOT LIKE 'TEST%'
+      FROM salvage_cases sc
+      WHERE sc.created_at >= ${startDate} 
+        AND sc.created_at <= ${endDate}
+        AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
+        ${branchFilter}
       GROUP BY asset_type
+    `);
+
+    const branchesResult = await db.execute(sql`
+      WITH branch_cases AS (
+        SELECT
+          sc.id,
+          COALESCE(sc.branch_name, 'Unassigned') as branch_name,
+          COALESCE(CAST(sc.market_value AS NUMERIC), 0) as market_value,
+          COALESCE((
+            SELECT p.amount
+            FROM payments p
+            JOIN auctions a ON p.auction_id = a.id
+            WHERE a.case_id = sc.id
+              AND p.status = 'verified'
+              AND p.vendor_id = a.current_bidder
+            ORDER BY p.verified_at DESC NULLS LAST, p.created_at DESC
+            LIMIT 1
+          ), 0) as verified_recovery
+        FROM salvage_cases sc
+        WHERE sc.created_at >= ${startDate}
+          AND sc.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+          ${branchFilter}
+      )
+      SELECT
+        branch_name,
+        COUNT(*) as total_cases,
+        COUNT(*) FILTER (WHERE verified_recovery > 0) as sold_cases,
+        COALESCE(SUM(market_value), 0) as claims_value,
+        COALESCE(SUM(verified_recovery), 0) as verified_recovery
+      FROM branch_cases
+      GROUP BY branch_name
+      ORDER BY verified_recovery DESC, claims_value DESC
+      LIMIT 25
     `);
 
     // Auctions overview - FIX: Count truly active auctions (status='active' AND end_time > NOW())
@@ -599,6 +648,18 @@ export class MasterReportService {
           avgTime: Math.round(parseFloat(a.avg_time || '0') * 100) / 100,
         })),
       },
+      branches: (branchesResult as any[]).map(branch => {
+        const claimsValue = parseFloat(branch.claims_value || '0');
+        const verifiedRecovery = parseFloat(branch.verified_recovery || '0');
+        return {
+          branchName: branch.branch_name || 'Unassigned',
+          totalCases: parseInt(branch.total_cases || '0'),
+          soldCases: parseInt(branch.sold_cases || '0'),
+          claimsValue: Math.round(claimsValue * 100) / 100,
+          verifiedRecovery: Math.round(verifiedRecovery * 100) / 100,
+          recoveryRate: claimsValue > 0 ? Math.round((verifiedRecovery / claimsValue) * 10000) / 100 : 0,
+        };
+      }),
       auctions: {
         total: totalAuctions,
         active: parseInt(auctionRow?.active || '0'),

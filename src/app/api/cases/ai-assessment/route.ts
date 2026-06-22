@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
     }
     
     const body = await request.json();
-    const { photos, vehicleInfo, itemInfo } = body;
+    const { photos, vehicleInfo, itemInfo, forceRefresh } = body;
 
     // Validate photos
     if (!photos || !Array.isArray(photos) || photos.length < 3) {
@@ -170,7 +170,11 @@ export async function POST(request: NextRequest) {
 
     // Build universal item info object from request (support both vehicleInfo and itemInfo formats)
     const universalItemData: UniversalItemInfo | undefined = (() => {
-      const providedMarketValue = parseOptionalPositiveNumber(vehicleInfo?.marketValue ?? itemInfo?.marketValue);
+      const itemMarketValueIsManual = itemInfo?.marketValueSource === 'manual';
+      const providedMarketValue = parseOptionalPositiveNumber(
+        vehicleInfo?.marketValue ?? (itemMarketValueIsManual ? itemInfo?.marketValue : undefined)
+      );
+      const marketValueSource = providedMarketValue ? 'manual' : undefined;
       // Try vehicleInfo first (legacy format)
       if (vehicleInfo) {
         return {
@@ -180,6 +184,7 @@ export async function POST(request: NextRequest) {
           year: vehicleInfo.year,
           mileage: vehicleInfo.mileage,
           marketValue: providedMarketValue,
+          marketValueSource,
           condition: vehicleInfo.condition || 'Nigerian Used',
           age: vehicleInfo.year ? new Date().getFullYear() - vehicleInfo.year : undefined,
           brandPrestige: getLuxuryBrandPrestige(vehicleInfo.make),
@@ -193,6 +198,11 @@ export async function POST(request: NextRequest) {
           condition: itemInfo.condition || 'Nigerian Used',
           description: itemInfo.description,
           marketValue: providedMarketValue,
+          marketValueSource,
+          quantity: itemInfo.quantity,
+          unitOfMeasure: itemInfo.unitOfMeasure,
+          packagingType: itemInfo.packagingType,
+          batchOrSerial: itemInfo.batchOrSerial,
         };
 
         // Add type-specific fields
@@ -225,7 +235,23 @@ export async function POST(request: NextRequest) {
               ...baseItem,
               propertyType: itemInfo.propertyType || itemInfo.type || 'property',
               location: itemInfo.location || itemInfo.address,
+              description: itemInfo.description || [itemInfo.propertyType, itemInfo.propertyUse, itemInfo.damageArea]
+                .filter(Boolean)
+                .join(' - '),
               bedrooms: itemInfo.bedrooms,
+              age: itemInfo.age,
+            };
+
+          case 'stock':
+          case 'goods_in_transit':
+          case 'building_materials':
+          case 'scrap':
+          case 'agriculture':
+            return {
+              ...baseItem,
+              brand: itemInfo.brand,
+              model: itemInfo.model || [itemInfo.quantity, itemInfo.unitOfMeasure].filter(Boolean).join(' ') || itemInfo.packagingType,
+              description: itemInfo.description,
               age: itemInfo.age,
             };
           
@@ -239,12 +265,15 @@ export async function POST(request: NextRequest) {
             };
 
           case 'machinery':
+          case 'medical_equipment':
+          case 'energy_equipment':
+          case 'aviation_equipment':
             return {
               ...baseItem,
               brand: itemInfo.brand,
-              model: itemInfo.model,
+              model: itemInfo.model || itemInfo.batchOrSerial || itemInfo.unitOfMeasure,
               year: itemInfo.year,
-              machineryType: itemInfo.type || itemInfo.machineryType || 'equipment',
+              machineryType: itemInfo.machineryType || itemInfo.type || 'equipment',
               age: itemInfo.age || (itemInfo.year ? new Date().getFullYear() - itemInfo.year : undefined),
               brandPrestige: itemInfo.brandPrestige,
             };
@@ -254,11 +283,22 @@ export async function POST(request: NextRequest) {
             return {
               ...baseItem,
               brand: itemInfo.brand,
-              model: itemInfo.model,
+              model: itemInfo.model || itemInfo.description || itemInfo.material,
+              description: itemInfo.description,
               material: itemInfo.material,
               movementType: itemInfo.movementType,
               age: itemInfo.age || (itemInfo.year ? new Date().getFullYear() - itemInfo.year : undefined),
               brandPrestige: getWatchBrandPrestige(itemInfo.brand),
+            };
+
+          case 'furniture':
+            return {
+              ...baseItem,
+              brand: itemInfo.brand,
+              model: itemInfo.model || itemInfo.description || itemInfo.material,
+              description: itemInfo.description,
+              material: itemInfo.material,
+              age: itemInfo.age || (itemInfo.year ? new Date().getFullYear() - itemInfo.year : undefined),
             };
           
           default:
@@ -310,6 +350,7 @@ export async function POST(request: NextRequest) {
       photos,
       vehicleInfo: vehicleData, // For backward compatibility
       universalItemInfo: universalItemData, // New universal support
+      forceRefresh: forceRefresh === true,
     });
     
     console.log('Enhanced AI Assessment Result:', {

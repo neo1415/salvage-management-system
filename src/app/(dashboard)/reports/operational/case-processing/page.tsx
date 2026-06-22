@@ -168,6 +168,7 @@ export default function CaseProcessingPage() {
               onFiltersChange={setFilters}
               onApply={fetchReport}
               onReset={() => setFilters(defaultReportFilters())}
+              showBranches={true}
             />
           </CardContent>
         </Card>

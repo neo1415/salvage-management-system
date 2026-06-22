@@ -8,10 +8,39 @@
 
 import { serperApi } from '@/lib/integrations/serper-api';
 import { queryBuilder, type ItemIdentifier } from './query-builder.service';
-import { priceExtractor, type PriceExtractionResult } from './price-extraction.service';
+import { priceExtractor, type ExtractedPrice, type PriceExtractionResult } from './price-extraction.service';
 import { performanceMonitor, createSearchTimer } from '../utils/performance-monitor';
 import { cacheIntegrationService } from './cache-integration.service';
 import { getValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
+import {
+  priceAdjudicationService,
+  type PriceAdjudicationResult,
+} from '@/features/valuations/services/price-adjudication.service';
+
+const LUXURY_JEWELRY_PRICE_FLOORS_NGN: Record<string, number> = {
+  rolex: 8_000_000,
+  cartier: 3_500_000,
+  'patek philippe': 20_000_000,
+  audemars: 14_000_000,
+  'audemars piguet': 14_000_000,
+  omega: 2_500_000,
+  'vacheron constantin': 18_000_000,
+  'van cleef': 2_500_000,
+  tiffany: 1_500_000,
+  bvlgari: 2_000_000,
+  bulgari: 2_000_000,
+  chopard: 2_500_000,
+};
+
+const LOW_TRUST_LUXURY_MARKETPLACE_DOMAINS = [
+  'jumia',
+  'konga',
+  'jiji',
+  'instagram',
+  'facebook',
+  'tiktok',
+  'ong.ng',
+];
 
 export interface SearchMarketPriceOptions {
   /** Item to search for */
@@ -22,6 +51,8 @@ export interface SearchMarketPriceOptions {
   timeout?: number;
   /** Include part-specific searches for salvage calculations */
   includeParts?: boolean;
+  /** Skip cached pricing and fetch fresh market evidence */
+  forceRefresh?: boolean;
 }
 
 export interface SearchPartPriceOptions {
@@ -35,6 +66,8 @@ export interface SearchPartPriceOptions {
   maxResults?: number;
   /** Search timeout in milliseconds (default: 3000) */
   timeout?: number;
+  /** Skip cached pricing and fetch fresh part evidence */
+  forceRefresh?: boolean;
 }
 
 export interface MarketPriceResult {
@@ -52,6 +85,8 @@ export interface MarketPriceResult {
   success: boolean;
   /** Error message if search failed */
   error?: string;
+  /** Enterprise adjudication decision over search and AI evidence */
+  adjudication?: PriceAdjudicationResult;
 }
 
 export interface PartPriceResult {
@@ -71,6 +106,8 @@ export interface PartPriceResult {
   success: boolean;
   /** Error message if search failed */
   error?: string;
+  /** Enterprise adjudication decision over search and AI evidence */
+  adjudication?: PriceAdjudicationResult;
 }
 
 export class InternetSearchService {
@@ -87,6 +124,112 @@ export class InternetSearchService {
       return true;
     });
   }
+
+  private luxuryJewelryFloor(item: ItemIdentifier): number | null {
+    if (item.type !== 'jewelry') return null;
+    const text = [
+      item.brand,
+      item.jewelryType,
+      item.material,
+      item.weight,
+    ].filter(Boolean).join(' ').toLowerCase();
+    const matches = Object.keys(LUXURY_JEWELRY_PRICE_FLOORS_NGN).filter((brand) => text.includes(brand));
+    if (matches.length === 0) return null;
+    return Math.max(
+      matches.reduce((sum, brand) => sum + LUXURY_JEWELRY_PRICE_FLOORS_NGN[brand], 0),
+      /\b(18k|18ct|750|gold|diamond|platinum)\b/.test(text) ? 1_500_000 : 0
+    );
+  }
+
+  private recalculatePriceData(prices: ExtractedPrice[], source: PriceExtractionResult): PriceExtractionResult {
+    if (prices.length === 0) {
+      return {
+        ...source,
+        prices: [],
+        averagePrice: undefined,
+        medianPrice: undefined,
+        priceRange: undefined,
+        confidence: 0,
+        evidenceSummary: {
+          uniqueSourceCount: 0,
+          priceSpreadPercent: 0,
+          highQualitySourceCount: 0,
+          noYearPriceCount: 0,
+        },
+      };
+    }
+
+    const values = prices.map((price) => price.price).sort((a, b) => a - b);
+    const averagePrice = Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+    const medianPrice = values.length % 2 === 0
+      ? Math.round((values[values.length / 2 - 1] + values[values.length / 2]) / 2)
+      : values[Math.floor(values.length / 2)];
+    const uniqueSources = new Set(prices.map((price) => price.source)).size;
+    const spreadPercent = medianPrice > 0 ? Math.round(((values[values.length - 1] - values[0]) / medianPrice) * 100) : 0;
+
+    return {
+      ...source,
+      prices,
+      averagePrice,
+      medianPrice,
+      priceRange: {
+        min: values[0],
+        max: values[values.length - 1],
+      },
+      confidence: Math.min(source.confidence, Math.round(prices.reduce((sum, price) => sum + price.confidence, 0) / prices.length)),
+      evidenceSummary: {
+        uniqueSourceCount: uniqueSources,
+        priceSpreadPercent: spreadPercent,
+        highQualitySourceCount: prices.filter((price) => price.sourceQuality === 'high').length,
+        noYearPriceCount: prices.filter((price) => price.extractedYear == null).length,
+      },
+    };
+  }
+
+  private applyItemSpecificPriceGuards(priceData: PriceExtractionResult, item: ItemIdentifier): PriceExtractionResult {
+    const luxuryFloor = this.luxuryJewelryFloor(item);
+    if (!luxuryFloor) return priceData;
+
+    const rejectedForLuxury: Array<ExtractedPrice & { rejectionReason: string }> = [];
+    const guardedPrices = priceData.prices.filter((price) => {
+      const source = price.source.toLowerCase();
+      if (LOW_TRUST_LUXURY_MARKETPLACE_DOMAINS.some((domain) => source.includes(domain))) {
+        rejectedForLuxury.push({ ...price, rejectionReason: 'Low-trust marketplace source is not accepted for luxury jewelry valuation' });
+        return false;
+      }
+      if (price.price < luxuryFloor) {
+        rejectedForLuxury.push({ ...price, rejectionReason: `Luxury jewelry price below specialist appraisal floor of NGN ${luxuryFloor.toLocaleString()}` });
+        return false;
+      }
+      return true;
+    });
+
+    return {
+      ...this.recalculatePriceData(guardedPrices, priceData),
+      rejectedPrices: [
+        ...(priceData.rejectedPrices || []),
+        ...rejectedForLuxury,
+      ],
+    };
+  }
+
+  private async adjudicatePriceData(input: {
+    item: ItemIdentifier;
+    mode: 'market' | 'part';
+    priceData: PriceExtractionResult;
+    partName?: string;
+    damageType?: string;
+  }): Promise<PriceAdjudicationResult> {
+    const valuationPolicy = await getValuationPolicyConfig();
+    return priceAdjudicationService.adjudicate({
+      item: input.item,
+      mode: input.mode,
+      priceData: input.priceData,
+      policy: valuationPolicy,
+      partName: input.partName,
+      damageType: input.damageType,
+    });
+  }
   
   /**
    * Search for market price of an item using internet search
@@ -95,13 +238,20 @@ export class InternetSearchService {
     const timer = createSearchTimer();
     // Increase maxResults for machinery to get more Nigerian marketplace results
     const defaultMaxResults = options.item.type === 'machinery' ? 15 : 10;
-    const { item, maxResults = defaultMaxResults, timeout = 3000 } = options;
+    const { item, maxResults = defaultMaxResults, timeout = 3000, forceRefresh = false } = options;
     
     try {
       // Check cache first
-      const cachedResult = await cacheIntegrationService.getCachedMarketPrice(item);
+      const cachedResult = forceRefresh ? null : await cacheIntegrationService.getCachedMarketPrice(item);
       if (cachedResult) {
         const executionTime = timer.end();
+        cachedResult.priceData = this.applyItemSpecificPriceGuards(cachedResult.priceData, item);
+        const adjudication = await this.adjudicatePriceData({
+          item,
+          mode: 'market',
+          priceData: cachedResult.priceData,
+        });
+        cachedResult.priceData = adjudication.priceData;
         
         console.log('💾 Using CACHED market price data');
         console.log(`📊 Cached prices: ${cachedResult.priceData.prices.length} prices`);
@@ -181,7 +331,8 @@ export class InternetSearchService {
               resultsProcessed: cachedResult.resultsProcessed,
               executionTime,
               dataSource: 'internet_search',
-              success: true
+              success: true,
+              adjudication,
             };
           }
         } else {
@@ -205,7 +356,8 @@ export class InternetSearchService {
             resultsProcessed: cachedResult.resultsProcessed,
             executionTime,
             dataSource: 'internet_search',
-            success: true
+            success: true,
+            adjudication,
           };
         }
       }
@@ -256,7 +408,7 @@ export class InternetSearchService {
       }).join(', ')}`);
       
       // Extract prices from results with year filtering
-      const priceData = priceExtractor.extractPrices(
+      const priceData = this.applyItemSpecificPriceGuards(priceExtractor.extractPrices(
         organicResults, 
         item.type,
         item.type === 'vehicle' ? item.year : undefined,
@@ -264,7 +416,12 @@ export class InternetSearchService {
           exchangeRates: valuationPolicy.exchangeRates,
           pricePlausibility: valuationPolicy.pricePlausibility,
         }
-      );
+      ), item);
+      const adjudication = await this.adjudicatePriceData({
+        item,
+        mode: 'market',
+        priceData,
+      });
       
       // Log extracted prices with sources
       console.log(`💰 Prices Extracted: ${priceData.prices.length} prices found`);
@@ -278,12 +435,13 @@ export class InternetSearchService {
       const executionTime = timer.end();
       
       const result: MarketPriceResult = {
-        priceData,
+        priceData: adjudication.priceData,
         query,
         resultsProcessed: organicResults.length,
         executionTime,
         dataSource: 'internet_search',
-        success: true
+        success: true,
+        adjudication,
       };
       
       // Cache the result for future use
@@ -343,22 +501,30 @@ export class InternetSearchService {
    */
   async searchPartPrice(options: SearchPartPriceOptions): Promise<PartPriceResult> {
     const startTime = Date.now();
-    const { item, partName, damageType, maxResults = 10, timeout = 3000 } = options;
+    const { item, partName, damageType, maxResults = 10, timeout = 3000, forceRefresh = false } = options;
     
     try {
       // Check cache first
-      const cachedResult = await cacheIntegrationService.getCachedPartPrice(item, partName, damageType);
+      const cachedResult = forceRefresh ? null : await cacheIntegrationService.getCachedPartPrice(item, partName, damageType);
       if (cachedResult) {
         const executionTime = Date.now() - startTime;
+        const adjudication = await this.adjudicatePriceData({
+          item,
+          mode: 'part',
+          priceData: cachedResult.priceData,
+          partName,
+          damageType,
+        });
         
         return {
           partName: cachedResult.partName,
-          priceData: cachedResult.priceData,
+          priceData: adjudication.priceData,
           query: cachedResult.query,
           resultsProcessed: 0, // From cache
           executionTime,
           dataSource: 'internet_search',
-          success: true
+          success: true,
+          adjudication,
         };
       }
       
@@ -407,17 +573,25 @@ export class InternetSearchService {
           pricePlausibility: valuationPolicy.pricePlausibility,
         }
       );
+      const adjudication = await this.adjudicatePriceData({
+        item,
+        mode: 'part',
+        priceData,
+        partName,
+        damageType,
+      });
       
       const executionTime = Date.now() - startTime;
       
       const result: PartPriceResult = {
         partName,
-        priceData,
+        priceData: adjudication.priceData,
         query,
         resultsProcessed: organicResults.length,
         executionTime,
         dataSource: 'internet_search',
-        success: true
+        success: true,
+        adjudication,
       };
       
       // Cache the result for future use

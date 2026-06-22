@@ -17,6 +17,12 @@ export async function loadReportFromApi(
   const params = new URLSearchParams();
   if (filters.startDate) params.append('startDate', filters.startDate.toISOString());
   if (filters.endDate) params.append('endDate', filters.endDate.toISOString());
+  const extraParams = options?.extraParams || {};
+  if (filters.assetTypes?.length && !extraParams.assetTypes) params.append('assetTypes', filters.assetTypes.join(','));
+  if (filters.regions?.length && !extraParams.regions) params.append('regions', filters.regions.join(','));
+  if (filters.branches?.length && !extraParams.branches) params.append('branches', filters.branches.join(','));
+  if (filters.status?.length && !extraParams.status) params.append('status', filters.status.join(','));
+  if (filters.groupBy && !extraParams.groupBy) params.append('groupBy', filters.groupBy);
   if (options?.extraParams) {
     for (const [key, value] of Object.entries(options.extraParams)) {
       if (value) params.append(key, value);

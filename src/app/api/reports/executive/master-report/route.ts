@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
       searchParams.get('startDate'),
       searchParams.get('endDate')
     );
-    const filters = { startDate, endDate };
+    const branches = searchParams.get('branches')?.split(',').filter(Boolean);
+    const filters = { startDate, endDate, branches };
 
     const cached = await ReportCacheService.getCachedReport(MASTER_REPORT_CACHE_TYPE, filters);
     if (cached) {

@@ -174,6 +174,7 @@ export default function ProfitabilityPage() {
               onReset={() => setFilters(defaultReportFilters())}
               showAssetTypes={true}
               showRegions={false}
+              showBranches={true}
             />
           </CardContent>
         </Card>

@@ -19,6 +19,7 @@ export interface ReportFilters {
   endDate?: Date;
   assetTypes?: string[];
   regions?: string[];
+  branches?: string[];
   status?: string[];
   groupBy?: string;
 }
@@ -30,6 +31,7 @@ interface ReportFiltersProps {
   onReset: () => void;
   showAssetTypes?: boolean;
   showRegions?: boolean;
+  showBranches?: boolean;
   showStatus?: boolean;
   showGroupBy?: boolean;
 }
@@ -51,6 +53,7 @@ export function ReportFiltersComponent({
   onReset,
   showAssetTypes = true,
   showRegions = true,
+  showBranches = false,
   showStatus = false,
   showGroupBy = true,
 }: ReportFiltersProps) {
@@ -75,6 +78,7 @@ export function ReportFiltersComponent({
   const hasActiveFilters = 
     filters.assetTypes?.length || 
     filters.regions?.length || 
+    filters.branches?.length ||
     filters.status?.length ||
     filters.groupBy;
 
@@ -144,7 +148,7 @@ export function ReportFiltersComponent({
         {showFilters ? 'Hide' : 'Show'} Advanced Filters
         {hasActiveFilters && (
           <span className="ml-2 bg-[var(--brand-primary)] text-[var(--brand-primary-foreground)] text-xs px-2 py-0.5 rounded-full">
-            {(filters.assetTypes?.length || 0) + (filters.regions?.length || 0) + (filters.status?.length || 0)}
+            {(filters.assetTypes?.length || 0) + (filters.regions?.length || 0) + (filters.branches?.length || 0) + (filters.status?.length || 0)}
           </span>
         )}
       </Button>
@@ -197,6 +201,32 @@ export function ReportFiltersComponent({
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Branches */}
+          {showBranches && (
+            <div>
+              <label htmlFor="report-branches" className="block text-sm font-medium text-gray-700 mb-2">
+                Branches
+              </label>
+              <input
+                id="report-branches"
+                type="text"
+                value={(filters.branches || []).join(', ')}
+                onChange={(event) => onFiltersChange({
+                  ...filters,
+                  branches: event.target.value
+                    .split(',')
+                    .map((branch) => branch.trim())
+                    .filter(Boolean),
+                })}
+                placeholder="e.g. Lagos, Akure, Ibadan"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Separate multiple insurer branches with commas. Leave blank for all branches.
+              </p>
             </div>
           )}
 

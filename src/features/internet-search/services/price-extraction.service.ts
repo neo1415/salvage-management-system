@@ -64,8 +64,8 @@ const CURRENCY_PATTERNS = {
 };
 
 const SOURCE_QUALITY: Record<'high' | 'medium' | 'low', string[]> = {
-  high: ['jiji.ng', 'cars45', 'autochek', 'cars.ng', 'carlots.ng', 'betacar.ng', 'cheki'],
-  medium: ['jumia', 'konga', '234drive', 'nairaland', 'facebook.com/marketplace'],
+  high: ['jiji.ng', 'cars45', 'autochek', 'cars.ng', 'carlots.ng', 'betacar.ng', 'cheki', 'buildingsandmoreng.com'],
+  medium: ['jumia', 'konga', '234drive', 'nairaland', 'facebook.com/marketplace', 'tradeford.com', 'alibaba.com'],
   low: ['tiktok.com', 'instagram.com', 'facebook.com', 'youtube.com', 'pinterest'],
 };
 

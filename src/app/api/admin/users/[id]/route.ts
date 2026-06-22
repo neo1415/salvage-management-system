@@ -12,6 +12,7 @@ const updateUserSchema = z.object({
   fullName: z.string().min(2).max(255).optional(),
   email: z.string().email().optional(),
   phone: z.string().regex(/^\+?[0-9]{10,15}$/).optional(),
+  branchName: z.string().trim().max(150).nullable().optional(),
   role: z.enum(['vendor', 'claims_adjuster', 'salvage_manager', 'finance_officer', 'system_admin']).optional(),
   status: z.enum(['unverified_tier_0', 'phone_verified_tier_0', 'verified_tier_1', 'verified_tier_2', 'suspended', 'deleted']).optional(),
 });

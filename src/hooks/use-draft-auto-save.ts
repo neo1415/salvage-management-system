@@ -49,6 +49,7 @@ export function useDraftAutoSave(
   const formDataRef = useRef(formData);
   const hasAIAnalysisRef = useRef(hasAIAnalysis);
   const marketValueRef = useRef(marketValue);
+  const formDataSnapshot = JSON.stringify(formData);
 
   // Update refs when props change
   useEffect(() => {
@@ -142,7 +143,7 @@ export function useDraftAutoSave(
       valid: validation.valid,
       errors: validation.errors,
     });
-  }, [currentDraftId, hasAIAnalysis, marketValue]); // Re-validate when AI analysis completes or market value changes
+  }, [currentDraftId, hasAIAnalysis, marketValue, formDataSnapshot]); // Re-validate when visible form fields change
 
   // Manual save
   const saveDraft = useCallback(async () => {

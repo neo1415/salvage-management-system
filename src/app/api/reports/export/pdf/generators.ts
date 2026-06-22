@@ -80,6 +80,37 @@ export function generateMasterReportContent(data: any, formatCurrency: Function,
       </div>
     </div>
 
+    ${data.operational?.branches && data.operational.branches.length > 0 ? `
+    <!-- Branch Recovery Performance -->
+    <div class="card">
+      <h3 class="card-title">Branch Recovery Performance</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Branch</th>
+            <th class="text-right">Cases</th>
+            <th class="text-right">Sold</th>
+            <th class="text-right">Claims Value</th>
+            <th class="text-right">Verified Recovery</th>
+            <th class="text-right">Recovery Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.operational.branches.map((branch: any) => `
+            <tr>
+              <td class="font-semibold">${branch.branchName || 'Unassigned'}</td>
+              <td class="text-right">${branch.totalCases || 0}</td>
+              <td class="text-right">${branch.soldCases || 0}</td>
+              <td class="text-right">${formatCurrency(branch.claimsValue || 0)}</td>
+              <td class="text-right">${formatCurrency(branch.verifiedRecovery || 0)}</td>
+              <td class="text-right">${formatPercent(branch.recoveryRate || 0)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+
     ${data.trends && data.trends.length > 0 ? `
     <!-- Key Trends -->
     <div class="card">
@@ -306,6 +337,47 @@ export function generateGenericContent(data: any, formatCurrency: Function, form
           `;
         }).join('')}
       </div>
+    </div>
+    `;
+  }
+
+  const branchRows =
+    Array.isArray(data.byBranch) ? data.byBranch :
+    Array.isArray(data.breakdowns?.branches) ? data.breakdowns.branches :
+    Array.isArray(data.operational?.branches) ? data.operational.branches :
+    [];
+
+  if (branchRows.length > 0) {
+    content += `
+    <div class="card">
+      <h3 class="card-title">Branch Performance</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Branch</th>
+            <th class="text-right">Cases</th>
+            <th class="text-right">Claims Value</th>
+            <th class="text-right">Verified Recovery</th>
+            <th class="text-right">Recovery Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${branchRows.map((branch: any) => {
+            const cases = branch.totalCases ?? branch.count ?? branch.casesProcessed ?? branch.auctionCount ?? 0;
+            const claimsValue = branch.claimsValue ?? branch.claimsPaid ?? branch.totalMarketValue ?? 0;
+            const recovery = branch.verifiedRecovery ?? branch.salvageRecovered ?? branch.totalSalvageValue ?? branch.totalRevenue ?? 0;
+            return `
+              <tr>
+                <td class="font-semibold">${branch.branchName || 'Unassigned'}</td>
+                <td class="text-right">${cases}</td>
+                <td class="text-right">${formatCurrency(claimsValue)}</td>
+                <td class="text-right">${formatCurrency(recovery)}</td>
+                <td class="text-right">${formatPercent(branch.recoveryRate ?? branch.successRate ?? branch.approvalRate ?? 0)}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
     </div>
     `;
   }

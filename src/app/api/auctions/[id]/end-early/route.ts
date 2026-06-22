@@ -51,6 +51,22 @@ export async function POST(
       return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
     }
 
+    if (auction.status === 'closed' || auction.status === 'awaiting_payment') {
+      return NextResponse.json({
+        success: true,
+        message: 'Auction has already been ended. Documents and payment flow are already in progress.',
+        auction: {
+          id: auctionId,
+          status: auction.status,
+          endTime: auction.endTime,
+          winner: {
+            vendorId: auction.currentBidder,
+            finalBid: auction.currentBid ? parseFloat(auction.currentBid) : undefined,
+          },
+        },
+      });
+    }
+
     // Check if auction can be ended early
     if (auction.status !== 'active' && auction.status !== 'extended') {
       return NextResponse.json(

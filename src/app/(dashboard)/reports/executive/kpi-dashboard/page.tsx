@@ -190,6 +190,7 @@ export default function KPIDashboardPage() {
               onReset={() => setFilters(defaultReportFilters())}
               showAssetTypes={false}
               showRegions={false}
+              showBranches={true}
             />
           </CardContent>
         </Card>
@@ -296,6 +297,7 @@ export default function KPIDashboardPage() {
                           <tr className="border-b">
                             <th className="text-left p-2">Claim Ref</th>
                             <th className="text-left p-2">Adjuster</th>
+                            <th className="text-left p-2">Branch</th>
                             <th className="text-left p-2">Asset Type</th>
                             <th className="text-right p-2">Market Value</th>
                             <th className="text-right p-2">Processing Time</th>
@@ -308,6 +310,7 @@ export default function KPIDashboardPage() {
                             <tr key={`case-${c.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{c.claimReference}</td>
                               <td className="p-2">{c.adjusterName}</td>
+                              <td className="p-2">{c.branchName || 'Unassigned'}</td>
                               <td className="p-2 capitalize">{c.assetType}</td>
                               <td className="text-right p-2">₦{parseFloat(c.marketValue || '0').toLocaleString()}</td>
                               <td className="text-right p-2">{c.processingTime}h</td>
@@ -326,6 +329,45 @@ export default function KPIDashboardPage() {
                         </tbody>
                       </table>
                     </div>
+                      )}
+                    </PaginatedReportRows>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Branches Breakdown */}
+              {reportData.breakdowns.branches && reportData.breakdowns.branches.length > 0 && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="text-lg font-semibold mb-4">Branch Recovery Breakdown</h3>
+                    <PaginatedReportRows rows={reportData.breakdowns.branches} label="branches">
+                      {(rows, startIndex) => (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b">
+                                <th className="text-left p-2">Branch</th>
+                                <th className="text-right p-2">Cases</th>
+                                <th className="text-right p-2">Sold</th>
+                                <th className="text-right p-2">Claims Value</th>
+                                <th className="text-right p-2">Verified Recovery</th>
+                                <th className="text-right p-2">Recovery Rate</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map((branch: any, index: number) => (
+                                <tr key={`branch-${branch.branchName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
+                                  <td className="p-2 font-medium">{branch.branchName || 'Unassigned'}</td>
+                                  <td className="text-right p-2">{branch.totalCases || 0}</td>
+                                  <td className="text-right p-2">{branch.soldCases || 0}</td>
+                                  <td className="text-right p-2">â‚¦{parseFloat(branch.claimsValue || '0').toLocaleString()}</td>
+                                  <td className="text-right p-2 font-semibold">â‚¦{parseFloat(branch.verifiedRecovery || '0').toLocaleString()}</td>
+                                  <td className="text-right p-2">{branch.recoveryRate || 0}%</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
                     </PaginatedReportRows>
                   </CardContent>

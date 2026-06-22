@@ -11,6 +11,7 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { salvageCases } from '@/lib/db/schema/cases';
+import { payments } from '@/lib/db/schema/payments';
 import { eq, and, desc } from 'drizzle-orm';
 import { uploadFile, CLOUDINARY_FOLDERS } from '@/lib/storage/cloudinary';
 import {
@@ -73,6 +74,77 @@ function optionalNumber(value: unknown): number | undefined {
 
 function normalizeAssetDetails(details: unknown): AssetDetails {
   return typeof details === 'object' && details !== null ? (details as AssetDetails) : {};
+}
+
+function formatPaymentMethod(method: string | null | undefined): string {
+  const labels: Record<string, string> = {
+    paystack: 'Paystack',
+    flutterwave: 'Flutterwave',
+    bank_transfer: 'Bank Transfer',
+    escrow_wallet: 'Escrow Wallet',
+  };
+
+  return method ? labels[method] ?? method.replace(/_/g, ' ') : 'To be determined';
+}
+
+async function getLatestVerifiedAuctionPayment(auctionId: string, vendorId: string) {
+  const [payment] = await db
+    .select({
+      id: payments.id,
+      amount: payments.amount,
+      paymentMethod: payments.paymentMethod,
+      paymentReference: payments.paymentReference,
+      verifiedAt: payments.verifiedAt,
+    })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.auctionId, auctionId),
+        eq(payments.vendorId, vendorId),
+        eq(payments.status, 'verified')
+      )
+    )
+    .orderBy(desc(payments.verifiedAt), desc(payments.updatedAt))
+    .limit(1);
+
+  return payment;
+}
+
+const DOCUMENT_STATUS_PRIORITY: Record<ReleaseForm['status'], number> = {
+  signed: 4,
+  pending: 3,
+  expired: 2,
+  voided: 1,
+};
+
+function documentTimestamp(document: ReleaseForm): number {
+  const createdAt = document.createdAt instanceof Date
+    ? document.createdAt
+    : new Date(document.createdAt);
+  return Number.isFinite(createdAt.getTime()) ? createdAt.getTime() : 0;
+}
+
+export function dedupeReleaseFormsByType(documents: ReleaseForm[]): ReleaseForm[] {
+  const byType = new Map<DocumentType, ReleaseForm>();
+
+  for (const document of documents) {
+    const current = byType.get(document.documentType);
+    if (!current) {
+      byType.set(document.documentType, document);
+      continue;
+    }
+
+    const documentScore = DOCUMENT_STATUS_PRIORITY[document.status] ?? 0;
+    const currentScore = DOCUMENT_STATUS_PRIORITY[current.status] ?? 0;
+    if (
+      documentScore > currentScore ||
+      (documentScore === currentScore && documentTimestamp(document) > documentTimestamp(current))
+    ) {
+      byType.set(document.documentType, document);
+    }
+  }
+
+  return Array.from(byType.values()).sort((a, b) => documentTimestamp(b) - documentTimestamp(a));
 }
 
 /**
@@ -142,6 +214,9 @@ export async function generateDocument(
     const sellerContact = policy.branding.supportPhone || policy.branding.supportEmail;
     const sellerAddress = [policy.legal.addressLine1, policy.legal.addressLine2].filter(Boolean).join(', ');
     const pickupLocation = caseData.locationName || sellerAddress || `${policy.branding.brandName} pickup location`;
+    const authorizedSignerName = policy.documents.authorizedSignerName || policy.branding.legalName;
+    const authorizedSignerTitle = policy.documents.authorizedSignerTitle || 'Authorized Signatory';
+    const authorizedSignatureUrl = policy.documents.authorizedSignatureUrl || undefined;
 
     // Prepare document data based on type
     let pdfBuffer: Buffer;
@@ -199,6 +274,10 @@ export async function generateDocument(
           paymentMethod: 'To be determined',
           pickupLocation,
           pickupDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG'),
+          sellerSignatureData: authorizedSignatureUrl,
+          sellerSignerName: authorizedSignerName,
+          sellerSignerTitle: authorizedSignerTitle,
+          sellerSignedDate: new Date().toLocaleDateString('en-NG'),
           verificationUrl,
         };
         pdfBuffer = await generateBillOfSalePDF(billOfSaleData);
@@ -215,6 +294,10 @@ export async function generateDocument(
           assetCondition: caseData.vehicleCondition || 'salvage',
           auctionId,
           transactionDate: new Date().toLocaleDateString('en-NG'),
+          companySignatureData: authorizedSignatureUrl,
+          companySignerName: authorizedSignerName,
+          companySignerTitle: authorizedSignerTitle,
+          companySignedDate: new Date().toLocaleDateString('en-NG'),
           verificationUrl,
         };
         pdfBuffer = await generateLiabilityWaiverPDF(waiverData);
@@ -223,6 +306,7 @@ export async function generateDocument(
       case 'pickup_authorization':
         title = 'Pickup Authorization';
         const authCode = generatePickupAuthorizationCode(auctionId);
+        const verifiedPayment = await getLatestVerifiedAuctionPayment(auctionId, vendorId);
         const pickupAuthData: PickupAuthorizationData = {
           authorizationCode: authCode,
           auctionId,
@@ -232,9 +316,10 @@ export async function generateDocument(
           pickupLocation,
           pickupDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG'),
           pickupContact: sellerContact,
-          paymentAmount: Number(auction.currentBid || 0),
-          paymentReference: 'To be updated',
-          paymentDate: new Date().toLocaleDateString('en-NG'),
+          paymentAmount: Number(verifiedPayment?.amount ?? auction.currentBid ?? 0),
+          paymentMethod: formatPaymentMethod(verifiedPayment?.paymentMethod),
+          paymentReference: verifiedPayment?.paymentReference || verifiedPayment?.id || 'Pending verification reference',
+          paymentDate: (verifiedPayment?.verifiedAt ?? new Date()).toLocaleDateString('en-NG'),
           verificationUrl,
         };
         pdfBuffer = await generatePickupAuthorizationPDF(pickupAuthData);
@@ -447,6 +532,10 @@ export async function signDocument(
           const policy = await businessPolicyService.getEffectivePolicy();
           const sellerName = policy.branding.legalName;
           const sellerContact = policy.branding.supportPhone || policy.branding.supportEmail;
+          const sellerAddress = [policy.legal.addressLine1, policy.legal.addressLine2].filter(Boolean).join(', ');
+          const authorizedSignerName = policy.documents.authorizedSignerName || policy.branding.legalName;
+          const authorizedSignerTitle = policy.documents.authorizedSignerTitle || 'Authorized Signatory';
+          const authorizedSignatureUrl = policy.documents.authorizedSignatureUrl || undefined;
           const assetDetails = normalizeAssetDetails(caseData.assetDetails);
           const assetDescription = formatAssetName(caseData.assetType, assetDetails, caseData.claimReference);
           
@@ -466,6 +555,10 @@ export async function signDocument(
               transactionDate: new Date().toLocaleDateString('en-NG'),
               signatureData, // Include the signature
               signedDate: new Date().toLocaleDateString('en-NG'),
+              companySignatureData: authorizedSignatureUrl,
+              companySignerName: authorizedSignerName,
+              companySignerTitle: authorizedSignerTitle,
+              companySignedDate: new Date().toLocaleDateString('en-NG'),
               verificationUrl: `${APP_URL}/verify-document/${existingDoc.auctionId}`,
             };
             
@@ -481,7 +574,7 @@ export async function signDocument(
               buyerPhone: vendorUser.phone,
               buyerBvn: vendor.bvnEncrypted ? '****' : undefined,
               sellerName,
-              sellerAddress: '199 Ikorodu Road, Obanikoro, Lagos, Nigeria',
+              sellerAddress,
               sellerContact,
               assetType: caseData.assetType,
               assetDescription,
@@ -491,11 +584,17 @@ export async function signDocument(
               model: optionalString(assetDetails.model),
               year: optionalNumber(assetDetails.year),
               salePrice: Number(auction.currentBid || 0),
-              paymentMethod: 'Escrow Wallet',
+              paymentMethod: formatPaymentMethod(
+                (existingDoc.documentData as { paymentMethod?: string } | null | undefined)?.paymentMethod
+              ),
               pickupLocation: caseData.locationName || 'Configured pickup location',
               pickupDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toLocaleDateString('en-NG'),
               signatureData, // Include the signature
               signedDate: new Date().toLocaleDateString('en-NG'),
+              sellerSignatureData: authorizedSignatureUrl,
+              sellerSignerName: authorizedSignerName,
+              sellerSignerTitle: authorizedSignerTitle,
+              sellerSignedDate: new Date().toLocaleDateString('en-NG'),
               verificationUrl: `${APP_URL}/verify-document/${existingDoc.auctionId}`,
             };
             
@@ -740,7 +839,7 @@ export async function getAuctionDocuments(
       )
       .orderBy(desc(releaseForms.createdAt));
 
-    return documents;
+    return dedupeReleaseFormsByType(documents);
   } catch (error) {
     console.error('Error fetching auction documents:', error);
     throw new Error('Failed to fetch auction documents');
@@ -1369,8 +1468,12 @@ export async function triggerFundReleaseOnDocumentCompletion(
       console.log(`✅ Case status updated to 'sold'`);
     }
 
-    // Step 8: Generate pickup authorization code
+    // Step 8: Generate pickup authorization document and code before notifying the vendor.
+    // generateDocument is idempotent for active pickup_authorization rows, so this also
+    // repairs older document-completion flows that only sent a code without a PDF record.
+    const pickupAuthDocument = await generateDocument(auctionId, vendorId, 'pickup_authorization', 'system');
     const pickupAuthCode = generatePickupAuthorizationCode(auctionId);
+    console.log(`✅ Pickup authorization document ready: ${pickupAuthDocument.id}`);
 
     // Step 9: Send notifications to vendor with pickup details
     // Step 9: Send notifications to vendor with pickup details
@@ -1410,8 +1513,8 @@ export async function triggerFundReleaseOnDocumentCompletion(
           paymentId: payment.id,
           assetName,
           paymentAmount: parseFloat(payment.amount),
-          paymentMethod: 'Escrow Wallet',
-          paymentReference: `ESCROW_${auctionId.substring(0, 8)}`,
+          paymentMethod: formatPaymentMethod(payment.paymentMethod),
+          paymentReference: payment.paymentReference || payment.id,
           pickupAuthCode,
           pickupLocation,
           pickupDeadline,

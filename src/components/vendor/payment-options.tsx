@@ -92,13 +92,19 @@ export function PaymentOptions({
   const fetchPaymentBreakdown = async () => {
     try {
       setLoading(true);
+      setError(null);
       const response = await fetch(`/api/auctions/${auctionId}/payment/calculate`);
-      if (response.ok) {
-        const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success && data.breakdown) {
         setBreakdown(data.breakdown);
+      } else {
+        setBreakdown(null);
+        setError(data.error || data.message || 'Failed to load payment information');
       }
     } catch (error) {
       console.error('Failed to fetch payment breakdown:', error);
+      setBreakdown(null);
+      setError('Failed to load payment information. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -283,7 +289,7 @@ export function PaymentOptions({
       <div className={`bg-white rounded-lg shadow-sm p-6 ${className}`}>
         <div className="text-center py-12">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-          <p className="text-gray-600">Failed to load payment information</p>
+          <p className="text-gray-600">{error || 'Failed to load payment information'}</p>
         </div>
       </div>
     );

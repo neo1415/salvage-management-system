@@ -73,6 +73,7 @@ export interface ReportFilters {
   endDate?: string;
   assetTypes?: string[];
   regions?: string[];
+  branches?: string[];
   userIds?: string[];
   vendorIds?: string[];
   status?: string[];

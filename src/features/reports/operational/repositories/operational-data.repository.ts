@@ -15,6 +15,7 @@ export interface CaseProcessingData {
   caseId: string;
   claimReference: string;
   assetType: string;
+  branchName: string;
   status: string;
   createdAt: Date;
   approvedAt: Date | null;
@@ -34,6 +35,7 @@ export interface AuctionPerformanceData {
   caseId: string;
   claimReference: string;
   assetType: string;
+  branchName: string;
   status: string;
   currentBid: string;
   reservePrice: string;
@@ -90,6 +92,12 @@ export class OperationalDataRepository {
    */
   static async getCaseProcessingData(filters: ReportFilters): Promise<CaseProcessingData[]> {
     const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
+    const branchFilter = filters.branches && filters.branches.length > 0
+      ? sql`AND COALESCE(sc.branch_name, 'Unassigned') IN (${sql.join(filters.branches.map(branch => sql`${branch}`), sql`, `)})`
+      : sql``;
+    const assetTypeFilter = filters.assetTypes && filters.assetTypes.length > 0
+      ? sql`AND sc.asset_type IN (${sql.join(filters.assetTypes.map(assetType => sql`${assetType}`), sql`, `)})`
+      : sql``;
 
     // Use raw SQL to get correct status by joining with auctions and payments
     const results = await db.execute(sql`
@@ -97,6 +105,7 @@ export class OperationalDataRepository {
         sc.id as case_id,
         sc.claim_reference,
         sc.asset_type,
+        COALESCE(sc.branch_name, 'Unassigned') as branch_name,
         sc.status as case_status,
         sc.created_at,
         sc.approved_at,
@@ -124,6 +133,8 @@ export class OperationalDataRepository {
         AND sc.created_at <= ${endDate}::timestamp
         AND sc.status != 'draft'
         AND sc.claim_reference NOT LIKE 'TEST%'
+        ${branchFilter}
+        ${assetTypeFilter}
       ORDER BY sc.created_at DESC
     `) as any[];
 
@@ -170,6 +181,7 @@ export class OperationalDataRepository {
         caseId: row.case_id,
         claimReference: row.claim_reference,
         assetType: row.asset_type,
+        branchName: row.branch_name || 'Unassigned',
         status: displayStatus,
         createdAt: new Date(row.created_at),
         approvedAt: row.approved_at ? new Date(row.approved_at) : null,
@@ -195,6 +207,12 @@ export class OperationalDataRepository {
    */
   static async getAuctionPerformanceData(filters: ReportFilters): Promise<AuctionPerformanceData[]> {
     const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
+    const branchFilter = filters.branches && filters.branches.length > 0
+      ? sql`AND COALESCE(sc.branch_name, 'Unassigned') IN (${sql.join(filters.branches.map(branch => sql`${branch}`), sql`, `)})`
+      : sql``;
+    const assetTypeFilter = filters.assetTypes && filters.assetTypes.length > 0
+      ? sql`AND sc.asset_type IN (${sql.join(filters.assetTypes.map(assetType => sql`${assetType}`), sql`, `)})`
+      : sql``;
 
     // FIX: Use raw SQL with proper DISTINCT ON to handle duplicate payments
     // Get the LATEST payment per auction (highest created_at)
@@ -206,6 +224,7 @@ export class OperationalDataRepository {
         a.case_id,
         sc.claim_reference,
         sc.asset_type,
+        COALESCE(sc.branch_name, 'Unassigned') as branch_name,
         a.status as auction_status,
         a.current_bid,
         sc.reserve_price,
@@ -238,6 +257,8 @@ export class OperationalDataRepository {
         AND a.status IN ('active', 'closed', 'awaiting_payment')
         AND sc.status != 'draft'
         AND sc.claim_reference NOT LIKE 'TEST%'
+        ${branchFilter}
+        ${assetTypeFilter}
       ORDER BY a.id, p.created_at DESC NULLS LAST
     `) as any[];
 
@@ -399,6 +420,7 @@ export class OperationalDataRepository {
         caseId: row.case_id,
         claimReference: row.claim_reference || 'Unknown',
         assetType: row.asset_type || 'unknown',
+        branchName: row.branch_name || 'Unassigned',
         status: displayStatus,
         currentBid: row.current_bid || '0',
         reservePrice: row.reserve_price || '0',

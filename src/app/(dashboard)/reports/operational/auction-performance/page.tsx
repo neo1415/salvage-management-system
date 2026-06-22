@@ -176,8 +176,9 @@ export default function AuctionPerformancePage() {
               onFiltersChange={setFilters}
               onApply={fetchReport}
               onReset={() => setFilters(defaultReportFilters())}
-              showAssetTypes={false}
+              showAssetTypes={true}
               showRegions={false}
+              showBranches={true}
             />
           </CardContent>
         </Card>
@@ -278,6 +279,47 @@ export default function AuctionPerformancePage() {
                     </tbody>
                   </table>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Branch Performance */}
+          {reportData.byBranch && reportData.byBranch.length > 0 && (
+            <Card>
+              <CardContent className="pt-6">
+                <h3 className="text-lg font-semibold mb-4">Performance by Branch</h3>
+                <PaginatedReportRows rows={reportData.byBranch} label="branches">
+                  {(rows, startIndex) => (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left p-2">Branch</th>
+                            <th className="text-right p-2">Auctions</th>
+                            <th className="text-right p-2">Successful</th>
+                            <th className="text-right p-2">Success Rate</th>
+                            <th className="text-right p-2">Revenue</th>
+                            <th className="text-right p-2">Avg Winning Bid</th>
+                            <th className="text-right p-2">Avg Bids</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((branch: any, index: number) => (
+                            <tr key={`${branch.branchName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
+                              <td className="p-2 font-medium">{branch.branchName || 'Unassigned'}</td>
+                              <td className="text-right p-2">{branch.auctionCount || 0}</td>
+                              <td className="text-right p-2">{branch.successfulAuctions || 0}</td>
+                              <td className="text-right p-2">{branch.successRate || 0}%</td>
+                              <td className="text-right p-2 font-semibold">{formatCurrency(branch.totalRevenue || 0)}</td>
+                              <td className="text-right p-2">{formatCurrency(branch.averageWinningBid || 0)}</td>
+                              <td className="text-right p-2">{branch.averageBids || 0}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </PaginatedReportRows>
               </CardContent>
             </Card>
           )}
@@ -455,6 +497,7 @@ export default function AuctionPerformancePage() {
                     <thead>
                       <tr className="border-b">
                         <th className="text-left p-2">Claim Ref</th>
+                        <th className="text-left p-2">Branch</th>
                         <th className="text-left p-2">Asset Type</th>
                         <th className="text-left p-2">Start Time</th>
                         <th className="text-right p-2">Duration (h)</th>
@@ -471,8 +514,9 @@ export default function AuctionPerformancePage() {
                     <tbody>
                       {rows.map((auction: any) => (
                         <tr key={auction.auctionId} className="border-b hover:bg-muted/50">
-                          <td className="p-2">{auction.claimReference}</td>
-                          <td className="p-2 capitalize">{auction.assetType}</td>
+                        <td className="p-2">{auction.claimReference}</td>
+                        <td className="p-2">{auction.branchName || 'Unassigned'}</td>
+                        <td className="p-2 capitalize">{auction.assetType}</td>
                           <td className="p-2">{new Date(auction.startTime).toLocaleDateString()}</td>
                           <td className="text-right p-2">{auction.durationHours}</td>
                           <td className="text-right p-2">{auction.bidCount}</td>

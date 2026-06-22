@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth/use-auth';
 import { KYCStatusCard, type VendorTier } from '@/components/vendor/kyc-status-card';
@@ -10,6 +11,8 @@ import { useVendorDashboard } from '@/hooks/queries/use-vendor-dashboard';
 import { Check, Star, Trophy, Rocket, ClipboardList } from 'lucide-react';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
 import { PageLoadingSkeleton } from '@/components/ui/loading-states';
+import { formatAssetName as formatCaseAssetName } from '@/lib/utils/asset-name';
+import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
 
 const PaymentUnlockedModal = dynamic(
   () => import('@/components/modals/payment-unlocked-modal'),
@@ -25,6 +28,15 @@ interface PendingPickupConfirmation {
   };
 }
 
+type PickupEvidenceFormState = {
+  pickupAuthCode: string;
+  notes: string;
+  files: File[];
+  submitting: boolean;
+  message: string | null;
+  error: string | null;
+};
+
 function formatHours(value: number | null | undefined): string {
   if (value === null || value === undefined) return 'No clean data';
   if (value === 0) return '0h';
@@ -37,6 +49,7 @@ function VendorDashboardContentInner() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [dismissedPickups, setDismissedPickups] = useState<Set<string>>(new Set());
+  const [pickupEvidenceForms, setPickupEvidenceForms] = useState<Record<string, PickupEvidenceFormState>>({});
 
   // Payment unlocked modal
   const {
@@ -110,14 +123,7 @@ function VendorDashboardContentInner() {
 
   // Format asset name for display
   const formatAssetName = (pickup: PendingPickupConfirmation) => {
-    const details = pickup.case.assetDetails;
-    if (pickup.case.assetType === 'vehicle' && details) {
-      const year = typeof details.year === 'string' ? details.year : '';
-      const make = typeof details.make === 'string' ? details.make : '';
-      const model = typeof details.model === 'string' ? details.model : '';
-      return `${year} ${make} ${model}`.trim() || pickup.case.claimReference;
-    }
-    return pickup.case.claimReference;
+    return formatCaseAssetName(pickup.case.assetType, pickup.case.assetDetails, 'Auction item');
   };
 
   // Handle dismiss pickup card
@@ -130,6 +136,127 @@ function VendorDashboardContentInner() {
       localStorage.setItem('dismissedPickups', JSON.stringify(Array.from(newDismissed)));
     } catch (error) {
       console.error('Failed to save dismissed pickups:', error);
+    }
+  };
+
+  const evidenceFormFor = (auctionId: string): PickupEvidenceFormState => pickupEvidenceForms[auctionId] || {
+    pickupAuthCode: '',
+    notes: '',
+    files: [],
+    submitting: false,
+    message: null,
+    error: null,
+  };
+
+  const updateEvidenceForm = (auctionId: string, patch: Partial<PickupEvidenceFormState>) => {
+    setPickupEvidenceForms((current) => ({
+      ...current,
+      [auctionId]: {
+        ...evidenceFormFor(auctionId),
+        ...patch,
+      },
+    }));
+  };
+
+  const uploadPickupEvidenceFile = async (auctionId: string, file: File): Promise<string> => {
+    const signResponse = await fetch('/api/upload/sign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entityType: 'pickup-evidence',
+        entityId: auctionId,
+        transformation: 'compressed',
+      }),
+    });
+
+    if (!signResponse.ok) {
+      throw new Error('Could not prepare pickup evidence upload.');
+    }
+
+    const signData = await signResponse.json();
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('signature', signData.signature);
+    formData.append('timestamp', String(signData.timestamp));
+    formData.append('folder', signData.folder);
+    formData.append('api_key', signData.apiKey);
+    if (signData.transformation) {
+      formData.append('transformation', signData.transformation);
+    }
+
+    const uploadResponse = await fetch(signData.uploadUrl, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Upload failed for ${file.name}.`);
+    }
+
+    const uploadResult = await uploadResponse.json();
+    if (!uploadResult.secure_url) {
+      throw new Error(`Upload response for ${file.name} did not include a secure URL.`);
+    }
+
+    return uploadResult.secure_url;
+  };
+
+  const submitPickupEvidence = async (pickup: PendingPickupConfirmation) => {
+    const form = evidenceFormFor(pickup.auctionId);
+    const pickupAuthCode = form.pickupAuthCode.trim();
+
+    if (!user?.vendorId) {
+      updateEvidenceForm(pickup.auctionId, { error: 'Vendor account is not loaded yet.', message: null });
+      return;
+    }
+
+    if (pickupAuthCode.length < 6) {
+      updateEvidenceForm(pickup.auctionId, { error: 'Enter the pickup authorization code first.', message: null });
+      return;
+    }
+
+    if (form.files.length < 3) {
+      updateEvidenceForm(pickup.auctionId, { error: 'Upload at least 3 pickup photos from different angles.', message: null });
+      return;
+    }
+
+    try {
+      updateEvidenceForm(pickup.auctionId, { submitting: true, error: null, message: null });
+      const photoMetadata = await collectImageFilesMetadata(form.files, 'dashboard_file_input');
+      const photoUrls = [];
+      for (const file of form.files) {
+        photoUrls.push(await uploadPickupEvidenceFile(pickup.auctionId, file));
+      }
+
+      const response = await fetch(`/api/auctions/${pickup.auctionId}/pickup-evidence`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vendorId: user.vendorId,
+          pickupAuthCode,
+          photoUrls,
+          photoMetadata,
+          notes: form.notes,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Pickup evidence submission failed.');
+      }
+
+      updateEvidenceForm(pickup.auctionId, {
+        submitting: false,
+        message: data.message || 'Pickup evidence submitted.',
+        error: null,
+        files: [],
+      });
+    } catch (error) {
+      updateEvidenceForm(pickup.auctionId, {
+        submitting: false,
+        error: error instanceof Error ? error.message : 'Pickup evidence submission failed.',
+        message: null,
+      });
     }
   };
 
@@ -223,7 +350,10 @@ function VendorDashboardContentInner() {
             </div>
 
             <div className="space-y-3">
-              {visiblePickups.map((pickup) => (
+              {visiblePickups.map((pickup) => {
+                const evidenceForm = evidenceFormFor(pickup.auctionId);
+
+                return (
                 <div
                   key={pickup.auctionId}
                   className="bg-white rounded-lg p-4"
@@ -266,8 +396,88 @@ function VendorDashboardContentInner() {
                       <li>Pickup must be completed within 48 hours</li>
                     </ol>
                   </div>
+
+                  <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="mb-3">
+                      <p className="text-sm font-semibold text-gray-900">Pickup evidence</p>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Submit at least 3 photos from the pickup point so staff can compare handoff condition with the original inspection.
+                      </p>
+                      <Link href="/vendor/pickups" className="mt-2 inline-flex text-xs font-semibold text-[var(--brand-primary)]">
+                        Open full pickups page
+                      </Link>
+                    </div>
+                    {evidenceForm.message && (
+                      <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs font-medium text-emerald-800">
+                        {evidenceForm.message}
+                      </div>
+                    )}
+                    {evidenceForm.error && (
+                      <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-xs font-medium text-red-800">
+                        {evidenceForm.error}
+                      </div>
+                    )}
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="block text-xs font-medium text-gray-700">
+                        Pickup authorization code
+                        <input
+                          type="text"
+                          value={evidenceForm.pickupAuthCode}
+                          onChange={(event) => updateEvidenceForm(pickup.auctionId, {
+                            pickupAuthCode: event.target.value.toUpperCase(),
+                            error: null,
+                            message: null,
+                          })}
+                          placeholder="AUTH-..."
+                          className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono uppercase focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                        />
+                      </label>
+                      <label className="block text-xs font-medium text-gray-700">
+                        Photos
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/heic"
+                          multiple
+                          onChange={(event) => updateEvidenceForm(pickup.auctionId, {
+                            files: Array.from(event.target.files || []).slice(0, 12),
+                            error: null,
+                            message: null,
+                          })}
+                          className="mt-1 block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[var(--brand-primary)] hover:file:bg-gray-100"
+                        />
+                        <span className="mt-1 block text-[11px] text-gray-500">
+                          {evidenceForm.files.length > 0
+                            ? `${evidenceForm.files.length} selected`
+                            : '3 to 12 photos'}
+                        </span>
+                      </label>
+                    </div>
+                    <label className="mt-3 block text-xs font-medium text-gray-700">
+                      Notes
+                      <textarea
+                        value={evidenceForm.notes}
+                        onChange={(event) => updateEvidenceForm(pickup.auctionId, {
+                          notes: event.target.value,
+                          error: null,
+                          message: null,
+                        })}
+                        rows={2}
+                        placeholder="Condition observed at pickup, missing parts, quantity notes, or handoff remarks"
+                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void submitPickupEvidence(pickup)}
+                      disabled={evidenceForm.submitting}
+                      className="mt-3 rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--brand-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {evidenceForm.submitting ? 'Submitting evidence...' : 'Submit Evidence'}
+                    </button>
+                  </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}

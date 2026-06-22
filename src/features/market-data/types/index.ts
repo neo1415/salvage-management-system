@@ -101,6 +101,7 @@ export interface MarketPrice {
   
   // Data source indicator (Requirement 5.5)
   dataSource?: 'database' | 'cache' | 'scraping' | 'internet_search';
+  adjudication?: unknown;
 }
 
 /**

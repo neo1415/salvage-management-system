@@ -31,6 +31,7 @@ export function toPublicBusinessPolicy(policy: BusinessPolicy): PublicBusinessPo
     },
     cases: {
       enabledAssetTypes: policy.cases.enabledAssetTypes,
+      insuranceClasses: policy.cases.insuranceClasses,
       voiceNotesEnabled: policy.cases.voiceNotesEnabled,
     },
     documents: {

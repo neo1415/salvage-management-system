@@ -47,7 +47,7 @@ export interface GeminiDamageDisplayProps {
   summary?: string;
   className?: string;
   showTitle?: boolean;
-  assetType?: 'vehicle' | 'electronics' | 'machinery' | 'equipment' | 'property';
+  assetType?: string;
 }
 
 /**
@@ -66,6 +66,40 @@ const getSeverityColor = (severity: 'minor' | 'moderate' | 'severe'): string => 
   }
 };
 
+const BULK_ASSET_TYPES = new Set([
+  'stock',
+  'goods_in_transit',
+  'building_materials',
+  'scrap',
+  'agriculture',
+]);
+
+function isBulkAsset(assetType?: string): boolean {
+  return Boolean(assetType && BULK_ASSET_TYPES.has(assetType));
+}
+
+function getDisplayLabels(assetType?: string) {
+  if (isBulkAsset(assetType)) {
+    return {
+      make: 'Brand / Manufacturer',
+      model: 'Stock / Package',
+      condition: 'Visible Condition',
+      damageTitle: 'Affected Stock / Loss Evidence',
+      summaryTitle: 'Recovery Summary',
+      title: 'AI Stock Assessment',
+    };
+  }
+
+  return {
+    make: 'Make',
+    model: 'Model',
+    condition: 'Overall Condition',
+    damageTitle: 'Damaged Parts',
+    summaryTitle: 'Damage Summary',
+    title: 'AI Damage Analysis',
+  };
+}
+
 /**
  * Gemini Damage Display Component
  */
@@ -81,6 +115,7 @@ export function GeminiDamageDisplay({
   const hasItemDetails = itemDetails && Object.keys(itemDetails).some(key => itemDetails[key as keyof ItemDetails]);
   const hasDamagedParts = damagedParts && damagedParts.length > 0;
   const hasSummary = summary && summary.trim().length > 0;
+  const displayLabels = getDisplayLabels(assetType);
 
   // If no data, don't render anything
   if (!hasItemDetails && !hasDamagedParts && !hasSummary) {
@@ -126,7 +161,7 @@ export function GeminiDamageDisplay({
           <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
           </svg>
-          <span>AI Damage Analysis</span>
+          <span>{displayLabels.title}</span>
         </h3>
       )}
 
@@ -140,7 +175,7 @@ export function GeminiDamageDisplay({
               </svg>
             </div>
             <div className="flex-1">
-              <p className="text-sm font-bold text-purple-900 mb-1">Damage Summary</p>
+              <p className="text-sm font-bold text-purple-900 mb-1">{displayLabels.summaryTitle}</p>
               <p className="text-sm text-gray-800 leading-relaxed">{summary}</p>
             </div>
           </div>
@@ -159,13 +194,13 @@ export function GeminiDamageDisplay({
           <div className="grid grid-cols-2 gap-3 text-sm">
             {itemDetails.detectedMake && shouldShowField('detectedMake') && (
               <div>
-                <span className="text-gray-600">Make:</span>{' '}
+                <span className="text-gray-600">{displayLabels.make}:</span>{' '}
                 <span className="font-semibold text-gray-900">{itemDetails.detectedMake}</span>
               </div>
             )}
             {itemDetails.detectedModel && shouldShowField('detectedModel') && (
               <div>
-                <span className="text-gray-600">Model:</span>{' '}
+                <span className="text-gray-600">{displayLabels.model}:</span>{' '}
                 <span className="font-semibold text-gray-900">{itemDetails.detectedModel}</span>
               </div>
             )}
@@ -201,7 +236,7 @@ export function GeminiDamageDisplay({
             )}
             {itemDetails.overallCondition && shouldShowField('overallCondition') && (
               <div className="col-span-2">
-                <span className="text-gray-600">Overall Condition:</span>{' '}
+                <span className="text-gray-600">{displayLabels.condition}:</span>{' '}
                 <span className="font-semibold text-gray-900">{itemDetails.overallCondition}</span>
               </div>
             )}
@@ -221,7 +256,7 @@ export function GeminiDamageDisplay({
             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
-            <span>Damaged Parts ({damagedParts.length})</span>
+            <span>{displayLabels.damageTitle} ({damagedParts.length})</span>
           </p>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {damagedParts.map((part, index) => (
@@ -258,6 +293,7 @@ export function GeminiDamageDisplayCompact({
   const hasItemDetails = itemDetails && Object.keys(itemDetails).some(key => itemDetails[key as keyof ItemDetails]);
   const hasDamagedParts = damagedParts && damagedParts.length > 0;
   const hasSummary = summary && summary.trim().length > 0;
+  const displayLabels = getDisplayLabels(assetType);
 
   if (!hasItemDetails && !hasDamagedParts && !hasSummary) {
     return null;
@@ -299,7 +335,7 @@ export function GeminiDamageDisplayCompact({
       {/* Summary - Compact */}
       {hasSummary && (
         <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
-          <p className="text-xs font-bold text-purple-900 mb-1">AI Summary</p>
+          <p className="text-xs font-bold text-purple-900 mb-1">{displayLabels.summaryTitle}</p>
           <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">{summary}</p>
         </div>
       )}
@@ -310,10 +346,10 @@ export function GeminiDamageDisplayCompact({
           <p className="text-xs font-bold text-gray-900 mb-2">🔍 Item ID</p>
           <div className="grid grid-cols-2 gap-2 text-xs">
             {itemDetails.detectedMake && shouldShowField('detectedMake') && (
-              <div><span className="text-gray-600">Make:</span> <span className="font-semibold">{itemDetails.detectedMake}</span></div>
+              <div><span className="text-gray-600">{displayLabels.make}:</span> <span className="font-semibold">{itemDetails.detectedMake}</span></div>
             )}
             {itemDetails.detectedModel && shouldShowField('detectedModel') && (
-              <div><span className="text-gray-600">Model:</span> <span className="font-semibold">{itemDetails.detectedModel}</span></div>
+              <div><span className="text-gray-600">{displayLabels.model}:</span> <span className="font-semibold">{itemDetails.detectedModel}</span></div>
             )}
             {itemDetails.detectedYear && shouldShowField('detectedYear') && (
               <div><span className="text-gray-600">Year:</span> <span className="font-semibold">{itemDetails.detectedYear}</span></div>
@@ -328,7 +364,7 @@ export function GeminiDamageDisplayCompact({
       {/* Damaged Parts - Compact */}
       {hasDamagedParts && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-xs font-bold text-gray-900 mb-2">🔧 Damaged Parts ({damagedParts.length})</p>
+          <p className="text-xs font-bold text-gray-900 mb-2">🔧 {displayLabels.damageTitle} ({damagedParts.length})</p>
           <div className="space-y-1.5 max-h-40 overflow-y-auto">
             {damagedParts.map((part, index) => (
               <div key={index} className="flex items-center justify-between gap-2 p-2 bg-white rounded text-xs">

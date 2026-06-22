@@ -154,7 +154,7 @@ function photoRequirementsValue(
 }
 
 function stringArrayValue(value: unknown, fallback: string[]): string[] {
-  if (!Array.isArray(value)) return fallback;
+  if (!Array.isArray(value)) return fallback ?? [];
   return value.filter((item): item is string => typeof item === 'string');
 }
 
@@ -192,6 +192,11 @@ function sanitizeAssetTypeKey(key: string): string | null {
   return /^[a-z][a-z0-9_-]{1,40}$/.test(normalized) ? normalized : null;
 }
 
+function sanitizeInsuranceClassKey(key: string): string | null {
+  const normalized = key.trim().toLowerCase();
+  return /^[a-z][a-z0-9_-]{1,60}$/.test(normalized) ? normalized : null;
+}
+
 export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
   const source = asRecord(input);
   const fallback = DEFAULT_BUSINESS_POLICY;
@@ -214,7 +219,7 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
 
   const enabledAssetTypes: BusinessPolicy['cases']['enabledAssetTypes'] = {};
   const assetSource = asRecord(cases.enabledAssetTypes);
-  const assetFallback = fallback.cases.enabledAssetTypes;
+  const assetFallback = fallback.cases.enabledAssetTypes ?? {};
   const assetEntries = Object.keys(assetSource).length > 0 ? Object.entries(assetSource) : Object.entries(assetFallback);
 
   for (const [rawKey, rawConfig] of assetEntries) {
@@ -237,6 +242,44 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       requiresAiAnalysis: booleanValue(config.requiresAiAnalysis, defaultAsset.requiresAiAnalysis),
       requiresMarketValue: booleanValue(config.requiresMarketValue, defaultAsset.requiresMarketValue),
       requiresInspectionLocation: booleanValue(config.requiresInspectionLocation, defaultAsset.requiresInspectionLocation),
+    };
+  }
+
+  const insuranceClasses: BusinessPolicy['cases']['insuranceClasses'] = {};
+  const classSource = asRecord(cases.insuranceClasses);
+  const classFallback = fallback.cases.insuranceClasses ?? {};
+  const classEntries = Object.keys(classSource).length > 0 ? Object.entries(classSource) : Object.entries(classFallback);
+
+  for (const [rawKey, rawConfig] of classEntries) {
+    const key = sanitizeInsuranceClassKey(rawKey);
+    if (!key) continue;
+
+    const config = asRecord(rawConfig);
+    const defaultClass = classFallback[key] ?? {
+      enabled: false,
+      label: key,
+      description: '',
+      defaultAssetTypes: ['other'],
+    };
+
+    const defaultAssetTypes = stringArrayValue(config.defaultAssetTypes, defaultClass.defaultAssetTypes ?? ['other'])
+      .map((assetType) => sanitizeAssetTypeKey(assetType))
+      .filter((assetType): assetType is string => Boolean(assetType));
+
+    insuranceClasses[key] = {
+      enabled: booleanValue(config.enabled, defaultClass.enabled),
+      label: stringValue(config.label, defaultClass.label ?? key),
+      description: optionalStringValue(config.description, defaultClass.description),
+      defaultAssetTypes: defaultAssetTypes.length > 0 ? defaultAssetTypes : ['other'],
+    };
+  }
+
+  if (Object.values(insuranceClasses).every((config) => !config.enabled)) {
+    insuranceClasses.other = {
+      enabled: true,
+      label: 'Other',
+      description: 'Fallback insurance class.',
+      defaultAssetTypes: ['other'],
     };
   }
 
@@ -372,6 +415,7 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
     },
     cases: {
       enabledAssetTypes,
+      insuranceClasses,
       voiceNotesEnabled: booleanValue(cases.voiceNotesEnabled, fallback.cases.voiceNotesEnabled),
       claimsAdjusterTranscriptEditable: booleanValue(cases.claimsAdjusterTranscriptEditable, fallback.cases.claimsAdjusterTranscriptEditable),
       salvageManagerTranscriptReviewRequired: booleanValue(cases.salvageManagerTranscriptReviewRequired, fallback.cases.salvageManagerTranscriptReviewRequired),
@@ -407,6 +451,9 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       requiredAuctionDocuments: enumArrayValue(documents.requiredAuctionDocuments, DOCUMENT_TYPES, fallback.documents.requiredAuctionDocuments),
       attachPaymentReceiptToAuctionDocuments: booleanValue(documents.attachPaymentReceiptToAuctionDocuments, fallback.documents.attachPaymentReceiptToAuctionDocuments),
       useBrandLetterhead: booleanValue(documents.useBrandLetterhead, fallback.documents.useBrandLetterhead),
+      authorizedSignerName: optionalStringValue(documents.authorizedSignerName, fallback.documents.authorizedSignerName),
+      authorizedSignerTitle: optionalStringValue(documents.authorizedSignerTitle, fallback.documents.authorizedSignerTitle),
+      authorizedSignatureUrl: optionalStringValue(documents.authorizedSignatureUrl, fallback.documents.authorizedSignatureUrl),
       billOfSaleDisclaimerTitle: stringValue(documents.billOfSaleDisclaimerTitle, fallback.documents.billOfSaleDisclaimerTitle),
       billOfSaleDisclaimerBody: stringValue(documents.billOfSaleDisclaimerBody, fallback.documents.billOfSaleDisclaimerBody),
       liabilityWaiverClauses: documentClauseArrayValue(documents.liabilityWaiverClauses, fallback.documents.liabilityWaiverClauses),
@@ -425,6 +472,9 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       ipFraudDetectionEnabled: booleanValue(fraud.ipFraudDetectionEnabled, fallback.fraud.ipFraudDetectionEnabled),
       biddingFraudDetectionEnabled: booleanValue(fraud.biddingFraudDetectionEnabled, fallback.fraud.biddingFraudDetectionEnabled),
       highRiskRequiresManualReview: booleanValue(fraud.highRiskRequiresManualReview, fallback.fraud.highRiskRequiresManualReview),
+      vendorInactivityAlertsEnabled: booleanValue(fraud.vendorInactivityAlertsEnabled, fallback.fraud.vendorInactivityAlertsEnabled),
+      vendorInactivityDays: Math.round(boundedNumberValue(fraud.vendorInactivityDays, fallback.fraud.vendorInactivityDays, 7, 730)),
+      vendorInactivityCooldownDays: Math.round(boundedNumberValue(fraud.vendorInactivityCooldownDays, fallback.fraud.vendorInactivityCooldownDays, 1, 365)),
     },
     reports: {
       defaultDateRange: enumValue(reports.defaultDateRange, REPORT_DATE_RANGES, fallback.reports.defaultDateRange),

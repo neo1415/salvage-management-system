@@ -52,6 +52,15 @@ interface CaseProcessingData {
     averageSalvageValue: number;
   };
   byStatus: Array<{ status: string; count: number; percentage: number }>;
+  byBranch?: Array<{
+    branchName: string;
+    casesProcessed: number;
+    soldCases: number;
+    approvalRate: number;
+    averageProcessingTime: number;
+    totalMarketValue: number;
+    totalSalvageValue: number;
+  }>;
   byAssetType: Array<{
     assetType: string;
     count: number;
@@ -207,6 +216,48 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
           </CardContent>
         </Card>
       </div>
+
+      {data.byBranch && data.byBranch.length > 0 && (
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader>
+            <CardTitle>Branch Processing Performance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PaginatedReportRows rows={data.byBranch} label="branches">
+              {(rows, startIndex) => (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 px-3">Branch</th>
+                        <th className="text-right py-2 px-3">Cases</th>
+                        <th className="text-right py-2 px-3">Sold</th>
+                        <th className="text-right py-2 px-3">Approval Rate</th>
+                        <th className="text-right py-2 px-3">Avg Processing</th>
+                        <th className="text-right py-2 px-3">Market Value</th>
+                        <th className="text-right py-2 px-3">Salvage Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((branch, index) => (
+                        <tr key={`${branch.branchName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
+                          <td className="py-2 px-3 font-medium">{branch.branchName || 'Unassigned'}</td>
+                          <td className="py-2 px-3 text-right">{branch.casesProcessed}</td>
+                          <td className="py-2 px-3 text-right">{branch.soldCases}</td>
+                          <td className="py-2 px-3 text-right">{branch.approvalRate.toFixed(1)}%</td>
+                          <td className="py-2 px-3 text-right">{branch.averageProcessingTime.toFixed(1)}d</td>
+                          <td className="py-2 px-3 text-right font-medium">â‚¦{branch.totalMarketValue.toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right">â‚¦{branch.totalSalvageValue.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedReportRows>
+          </CardContent>
+        </Card>
+      )}
 
       {data.byAssetType.map((asset) => (
         <Card key={asset.assetType} className="min-w-0 overflow-hidden">

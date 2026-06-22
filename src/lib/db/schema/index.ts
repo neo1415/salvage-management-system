@@ -15,6 +15,8 @@ export * from './seed-registry';
 export * from './notifications';
 export * from './push-subscriptions';
 export * from './release-forms';
+export * from './pickup-evidence';
+export * from './image-metadata';
 export * from './verification-costs';
 export * from './provider-verifications';
 export * from './auction-deposit';

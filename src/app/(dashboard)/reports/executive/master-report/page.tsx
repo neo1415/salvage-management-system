@@ -27,6 +27,12 @@ export default function MasterReportPage() {
   const defaultRange = defaultReportFilters();
   const [startDate, setStartDate] = useState<Date | undefined>(defaultRange.startDate);
   const [endDate, setEndDate] = useState<Date | undefined>(defaultRange.endDate);
+  const [branchText, setBranchText] = useState('');
+
+  const selectedBranches = branchText
+    .split(',')
+    .map((branch) => branch.trim())
+    .filter(Boolean);
 
   useEffect(() => {
     fetchMasterReport();
@@ -37,7 +43,7 @@ export default function MasterReportPage() {
     try {
       const result = await loadReportFromApi(
         '/api/reports/executive/master-report',
-        { startDate, endDate },
+        { startDate, endDate, branches: selectedBranches },
         { force }
       );
 
@@ -237,6 +243,14 @@ export default function MasterReportPage() {
                 </div>
               </PopoverContent>
             </Popover>
+            <input
+              type="text"
+              value={branchText}
+              onChange={(event) => setBranchText(event.target.value)}
+              placeholder="Branches"
+              className="h-9 w-48 rounded-md border border-gray-300 bg-white px-3 text-sm outline-none transition focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+              aria-label="Filter by branches"
+            />
             <Button onClick={() => fetchMasterReport()} variant="outline" size="sm" disabled={isBusy}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
@@ -245,7 +259,7 @@ export default function MasterReportPage() {
               <ExportButton
                 reportType="master-report"
                 reportData={reportData}
-                filters={{ startDate, endDate }}
+                filters={{ startDate, endDate, branches: selectedBranches }}
                 disabled={isBusy}
               />
             )}

@@ -20,6 +20,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const pickup = await confirmPickupByStaff({
       auctionId,
       notes: typeof body.notes === 'string' ? body.notes : undefined,
+      resolutionStatus: typeof body.resolutionStatus === 'string' ? body.resolutionStatus : undefined,
+      adjustmentAmount: typeof body.adjustmentAmount === 'number' || typeof body.adjustmentAmount === 'string'
+        ? body.adjustmentAmount
+        : undefined,
+      reimbursementMethod: typeof body.reimbursementMethod === 'string' ? body.reimbursementMethod : undefined,
       actor: {
         userId: session.user.id,
         userName: session.user.name,

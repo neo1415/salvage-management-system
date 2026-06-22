@@ -142,9 +142,9 @@ export default function AuctionDetailPage() {
       return;
     }
 
-    const allowedRoles = ['salvage_manager', 'claims_adjuster', 'system_admin'];
+    const allowedRoles = ['salvage_manager', 'system_admin'];
     if (!allowedRoles.includes(user?.role || '')) {
-      setError('Access denied. Manager, adjuster, or admin role required.');
+      setError('Access denied. Manager or admin role required.');
       return;
     }
   }, [isAuthenticated, isLoading, user, router]);

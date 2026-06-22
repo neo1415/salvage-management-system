@@ -98,7 +98,8 @@ function convertToItemIdentifier(property: PropertyIdentifier): ItemIdentifier |
  * - 7.4: Return error when no cached data exists
  */
 export async function getMarketPrice(
-  property: PropertyIdentifier
+  property: PropertyIdentifier,
+  options: { forceRefresh?: boolean } = {}
 ): Promise<MarketPrice> {
   const startTime = Date.now();
 
@@ -117,7 +118,8 @@ export async function getMarketPrice(
         const searchResult = await internetSearchService.searchMarketPrice({
           item: itemIdentifier,
           maxResults: 15, // Increased for better results
-          timeout: 5000   // Increased timeout for reliability
+          timeout: 5000,   // Increased timeout for reliability
+          forceRefresh: options.forceRefresh,
         });
 
         if (searchResult.success && searchResult.priceData.prices.length > 0) {
@@ -161,6 +163,7 @@ export async function getMarketPrice(
             isFresh: true,
             cacheAge: 0,
             dataSource: 'internet_search', // PRIMARY source
+            adjudication: searchResult.adjudication,
           };
         }
 

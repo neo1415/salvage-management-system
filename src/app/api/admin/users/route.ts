@@ -18,6 +18,7 @@ const createStaffSchema = z.object({
   fullName: z.string().min(2, 'Full name must be at least 2 characters').max(255),
   email: z.string().email('Invalid email format'),
   phone: z.string().regex(/^\+?[0-9]{10,15}$/, 'Invalid phone number format'),
+  branchName: z.string().trim().max(150, 'Branch name must be 150 characters or less').optional(),
   role: z.enum(['claims_adjuster', 'salvage_manager', 'finance_officer'], {
     message: 'Invalid role. Must be claims_adjuster, salvage_manager, or finance_officer',
   }),
@@ -181,7 +182,8 @@ export async function GET(request: NextRequest) {
         or(
           ilike(users.fullName, `%${searchQuery}%`),
           ilike(users.email, `%${searchQuery}%`),
-          ilike(users.phone, `%${searchQuery}%`)
+          ilike(users.phone, `%${searchQuery}%`),
+          ilike(users.branchName, `%${searchQuery}%`)
         )
       );
     }
@@ -197,6 +199,7 @@ export async function GET(request: NextRequest) {
         email: users.email,
         phone: users.phone,
         fullName: users.fullName,
+        branchName: users.branchName,
         role: users.role,
         status: users.status,
         profilePictureUrl: users.profilePictureUrl,
@@ -235,6 +238,7 @@ export async function GET(request: NextRequest) {
         email: row.email,
         phone: row.phone,
         fullName: row.fullName,
+        branchName: row.branchName,
         role: row.role,
         status: row.status,
         displayStatus,
@@ -316,7 +320,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { fullName, email, phone, role } = validationResult.data;
+    const { fullName, email, phone, role, branchName } = validationResult.data;
 
     // Check if email already exists
     const existingUserByEmail = await db.query.users.findFirst({
@@ -357,6 +361,7 @@ export async function POST(request: NextRequest) {
         phone,
         passwordHash,
         fullName,
+        branchName: branchName?.trim() || null,
         dateOfBirth: new Date('1990-01-01'), // Placeholder for staff accounts
         role,
         status: 'phone_verified_tier_0', // Staff don't need vendor tiers
@@ -383,6 +388,7 @@ export async function POST(request: NextRequest) {
         staffUserId: newUser.id,
         staffEmail: email,
         staffRole: role,
+        staffBranchName: branchName?.trim() || null,
         createdBy: session.user.id,
         createdByEmail: session.user.email,
       },
@@ -406,6 +412,7 @@ export async function POST(request: NextRequest) {
           id: newUser.id,
           email: newUser.email,
           fullName: newUser.fullName,
+          branchName: newUser.branchName,
           role: newUser.role,
           status: newUser.status,
           createdAt: newUser.createdAt,

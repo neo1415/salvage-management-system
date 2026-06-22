@@ -251,7 +251,13 @@ export class FormIntegrationTester {
         'vehicleMileage',
         'vehicleCondition',
         'propertyType',
-        'propertyAddress',
+        'propertyUse',
+        'propertyDamageArea',
+        'stockDescription',
+        'cargoDescription',
+        'equipmentDescription',
+        'quantity',
+        'unitOfMeasure',
         // ... other conditional fields
       ];
 

@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { bids, payments, vendors, auctions, salvageCases, escrowWallets, walletTransactions } from '@/lib/db/schema';
 import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 /**
  * GET /api/vendor/settings/transactions
@@ -176,16 +177,13 @@ export async function GET(request: NextRequest) {
         let description = 'Bid placed';
         
         // Check if case exists and has valid data (must check for null BEFORE typeof check)
-        if (record.caseClaimReference) {
-          if (record.caseAssetType === 'vehicle' && assetDetails !== null && typeof assetDetails === 'object') {
-            const year = (assetDetails as any)?.year || '';
-            const make = (assetDetails as any)?.make || '';
-            const model = (assetDetails as any)?.model || '';
-            const vehicleDesc = `${year} ${make} ${model}`.trim();
-            description = vehicleDesc ? `Bid on ${vehicleDesc}` : `Bid on ${record.caseClaimReference}`;
-          } else {
-            description = `Bid on ${record.caseClaimReference}`;
-          }
+        if (record.caseAssetType) {
+          const assetName = formatAssetName(
+            record.caseAssetType,
+            assetDetails !== null && typeof assetDetails === 'object' ? assetDetails : null,
+            'auction item',
+          );
+          description = `Bid on ${assetName}`;
         }
 
         // Determine bid status
@@ -209,7 +207,7 @@ export async function GET(request: NextRequest) {
           amount: parseFloat(record.amount),
           type: 'debit' as const,
           status: bidStatus,
-          reference: record.caseClaimReference || undefined,
+          reference: record.auctionId || undefined,
         };
       });
 
@@ -270,16 +268,13 @@ export async function GET(request: NextRequest) {
           description = 'Vendor Registration Fee';
         }
         // Check if case exists and has valid data (must check for null BEFORE typeof check)
-        else if (record.caseClaimReference) {
-          if (record.caseAssetType === 'vehicle' && assetDetails !== null && typeof assetDetails === 'object') {
-            const year = (assetDetails as any)?.year || '';
-            const make = (assetDetails as any)?.make || '';
-            const model = (assetDetails as any)?.model || '';
-            const vehicleDesc = `${year} ${make} ${model}`.trim();
-            description = vehicleDesc ? `Payment for ${vehicleDesc}` : `Payment for ${record.caseClaimReference}`;
-          } else {
-            description = `Payment for ${record.caseClaimReference}`;
-          }
+        else if (record.caseAssetType) {
+          const assetName = formatAssetName(
+            record.caseAssetType,
+            assetDetails !== null && typeof assetDetails === 'object' ? assetDetails : null,
+            'auction item',
+          );
+          description = `Payment for ${assetName}`;
         }
 
         // Check if payment is overdue
@@ -298,7 +293,7 @@ export async function GET(request: NextRequest) {
           amount: parseFloat(record.amount),
           type: 'debit' as const,
           status: paymentStatus,
-          reference: record.paymentReference || record.caseClaimReference || undefined,
+          reference: record.paymentReference || record.auctionId || undefined,
         };
       });
 

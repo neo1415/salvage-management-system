@@ -89,7 +89,26 @@ function determineQualityTier(
 // Universal Item Information (replaces VehicleInfo)
 export interface UniversalItemInfo {
   // Universal fields
-  type: 'vehicle' | 'electronics' | 'appliance' | 'property' | 'watch' | 'jewelry' | 'furniture' | 'artwork' | 'equipment' | 'machinery' | 'other';
+  type:
+    | 'vehicle'
+    | 'electronics'
+    | 'appliance'
+    | 'property'
+    | 'watch'
+    | 'jewelry'
+    | 'furniture'
+    | 'artwork'
+    | 'equipment'
+    | 'machinery'
+    | 'stock'
+    | 'goods_in_transit'
+    | 'building_materials'
+    | 'scrap'
+    | 'agriculture'
+    | 'medical_equipment'
+    | 'energy_equipment'
+    | 'aviation_equipment'
+    | 'other';
   condition: 'Brand New' | 'Foreign Used (Tokunbo)' | 'Nigerian Used' | 'Heavily Used';
 
   // Vehicle-specific fields
@@ -120,7 +139,32 @@ export interface UniversalItemInfo {
   brandPrestige?: 'luxury' | 'premium' | 'standard' | 'budget';
   description?: string;
   marketValue?: number; // Claims paid / user-provided asset value
+  marketValueSource?: 'manual' | 'ai';
+  quantity?: string;
+  unitOfMeasure?: string;
+  packagingType?: string;
+  batchOrSerial?: string;
+  declaredCondition?: string;
 }
+
+const REPAIRABLE_TOTAL_LOSS_ASSET_TYPES = new Set<UniversalItemInfo['type']>([
+  'vehicle',
+  'electronics',
+  'appliance',
+  'machinery',
+  'equipment',
+  'medical_equipment',
+  'energy_equipment',
+  'aviation_equipment',
+]);
+
+const BULK_RECOVERY_ASSET_TYPES = new Set<UniversalItemInfo['type']>([
+  'stock',
+  'goods_in_transit',
+  'building_materials',
+  'scrap',
+  'agriculture',
+]);
 
 export function shouldApplyTotalLossCap(input: {
   itemType?: UniversalItemInfo['type'];
@@ -132,8 +176,14 @@ export function shouldApplyTotalLossCap(input: {
 }): { applyCap: boolean; aiOnlyNonVehicleReview: boolean; reason: 'damage_calculation' | 'ai_vehicle' | 'ai_unpriced_high_damage' | 'none' } {
   const itemType = input.itemType || 'vehicle';
   const isVehicle = itemType === 'vehicle';
+  const repairableTotalLossType = REPAIRABLE_TOTAL_LOSS_ASSET_TYPES.has(itemType);
   const aiTotalLoss = input.aiTotalLoss === true;
-  const calculationTotalLoss = input.damageCalculationTotalLoss === true || (input.totalDeductionPercent ?? 0) >= 0.7;
+  const calculationTotalLoss = repairableTotalLossType && (
+    input.damageCalculationTotalLoss === true || (input.totalDeductionPercent ?? 0) >= 0.7
+  ) && (
+    (input.partPricesFound ?? 0) > 0 ||
+    ((input.totalDeductionPercent ?? 0) >= 0.85 && (input.damagePercentage ?? 0) >= 95)
+  );
 
   if (calculationTotalLoss) {
     return { applyCap: true, aiOnlyNonVehicleReview: false, reason: 'damage_calculation' };
@@ -260,6 +310,313 @@ function convertDamagedPartsToScores(damagedParts: Array<{ part: string; severit
   return scores;
 }
 
+function hasUsableUniversalContext(itemInfo?: UniversalItemInfo): boolean {
+  if (!itemInfo) return false;
+  return Boolean(
+    (itemInfo.brand && itemInfo.model) ||
+    itemInfo.description ||
+    itemInfo.propertyType ||
+    itemInfo.machineryType ||
+    itemInfo.material ||
+    itemInfo.quantity ||
+    itemInfo.batchOrSerial
+  );
+}
+
+export function buildUniversalProviderContext(itemInfo: UniversalItemInfo): {
+  make: string;
+  model: string;
+  year?: number;
+  itemType: string;
+} {
+  const quantityContext = [itemInfo.quantity, itemInfo.unitOfMeasure].filter(Boolean).join(' ');
+  const isBulk = isBulkRecoveryAsset(itemInfo);
+  const make =
+    itemInfo.brand ||
+    itemInfo.make ||
+    (isBulk ? itemInfo.description : undefined) ||
+    itemInfo.propertyType ||
+    itemInfo.machineryType ||
+    itemInfo.material ||
+    itemInfo.type;
+
+  const model =
+    itemInfo.description ||
+    (!isBulk ? itemInfo.model : undefined) ||
+    quantityContext ||
+    itemInfo.packagingType ||
+    itemInfo.batchOrSerial ||
+    itemInfo.model ||
+    itemInfo.type;
+
+  return {
+    make,
+    model,
+    year: itemInfo.year,
+    itemType: itemInfo.type,
+  };
+}
+
+function isBulkRecoveryAsset(itemInfo?: UniversalItemInfo): boolean {
+  return Boolean(itemInfo?.type && BULK_RECOVERY_ASSET_TYPES.has(itemInfo.type));
+}
+
+const LUXURY_JEWELRY_BRAND_FLOORS_NGN: Record<string, number> = {
+  rolex: 8_000_000,
+  cartier: 3_500_000,
+  'patek philippe': 20_000_000,
+  audemars: 14_000_000,
+  'audemars piguet': 14_000_000,
+  omega: 2_500_000,
+  'vacheron constantin': 18_000_000,
+  'van cleef': 2_500_000,
+  'van cleef & arpels': 2_500_000,
+  tiffany: 1_500_000,
+  bvlgari: 2_000_000,
+  bulgari: 2_000_000,
+  chopard: 2_500_000,
+};
+
+function itemSearchText(itemInfo?: UniversalItemInfo): string {
+  return [
+    itemInfo?.brand,
+    itemInfo?.make,
+    itemInfo?.model,
+    itemInfo?.description,
+    itemInfo?.material,
+    itemInfo?.batchOrSerial,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function luxuryJewelryBrandMatches(itemInfo?: UniversalItemInfo): string[] {
+  const text = itemSearchText(itemInfo);
+  return Object.keys(LUXURY_JEWELRY_BRAND_FLOORS_NGN).filter((brand) => text.includes(brand));
+}
+
+function isLuxuryJewelryValuation(itemInfo?: UniversalItemInfo): boolean {
+  return Boolean(
+    itemInfo &&
+    (itemInfo.type === 'jewelry' || itemInfo.type === 'watch') &&
+    luxuryJewelryBrandMatches(itemInfo).length > 0
+  );
+}
+
+function isMultiItemJewelryValuation(itemInfo?: UniversalItemInfo): boolean {
+  if (!itemInfo || (itemInfo.type !== 'jewelry' && itemInfo.type !== 'watch')) return false;
+  const text = [
+    itemInfo.brand,
+    itemInfo.model,
+    itemInfo.description,
+  ].filter(Boolean).join(' ');
+  return /[,;+/&]|\band\b/i.test(text) || luxuryJewelryBrandMatches(itemInfo).length > 1;
+}
+
+function estimateLuxuryJewelryManualReviewValue(itemInfo: UniversalItemInfo): number {
+  const matches = luxuryJewelryBrandMatches(itemInfo);
+  const matchedFloor = matches.reduce((sum, brand) => sum + LUXURY_JEWELRY_BRAND_FLOORS_NGN[brand], 0);
+  const materialFloor = /\b(18k|18ct|750|gold|diamond|platinum)\b/i.test(itemSearchText(itemInfo)) ? 1_500_000 : 0;
+  return Math.max(matchedFloor, materialFloor, 1_000_000);
+}
+
+export function enrichItemInfoWithAiIdentification(
+  itemInfo: UniversalItemInfo | undefined,
+  damageAnalysis: {
+    itemDetails?: {
+      detectedMake?: string;
+      detectedModel?: string;
+      notes?: string;
+    };
+  }
+): UniversalItemInfo | undefined {
+  if (!itemInfo || !damageAnalysis.itemDetails) return itemInfo;
+
+  const details = damageAnalysis.itemDetails;
+  const enriched: UniversalItemInfo = { ...itemInfo };
+
+  if (!enriched.brand && details.detectedMake) {
+    enriched.brand = details.detectedMake;
+  }
+
+  if ((!enriched.description || /^\d+(?:\s+\w+)?$/.test(enriched.description)) && details.detectedModel) {
+    enriched.description = details.detectedModel;
+  }
+
+  if (isBulkRecoveryAsset(enriched)) {
+    const combined = [
+      enriched.description,
+      enriched.model,
+      details.detectedModel,
+      details.notes,
+    ].filter(Boolean).join(' ');
+
+    if (combined) {
+      enriched.description = combined;
+    }
+
+    if (!enriched.unitOfMeasure && /\bbags?\b/i.test(combined)) {
+      enriched.unitOfMeasure = 'bags';
+    }
+
+    if (!/\b\d+\b/.test(enriched.quantity || '') && /\b(?:approximately\s*)?(\d{1,5})\s*(?:bags?|cartons?|units?|kg|tonnes?)\b/i.test(combined)) {
+      enriched.quantity = combined.match(/\b(?:approximately\s*)?(\d{1,5})\s*(?:bags?|cartons?|units?|kg|tonnes?)\b/i)?.[1] || enriched.quantity;
+    }
+  }
+
+  return enriched;
+}
+
+export function parseQuantityValue(value?: string): number | undefined {
+  if (!value) return undefined;
+  const match = value.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return undefined;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+export function estimateKnownBulkUnitMarketValue(itemInfo: UniversalItemInfo): number | null {
+  const quantity = parseQuantityValue(itemInfo.quantity || itemInfo.model);
+  if (!quantity) return null;
+
+  const text = [
+    itemInfo.brand,
+    itemInfo.model,
+    itemInfo.description,
+    itemInfo.unitOfMeasure,
+    itemInfo.packagingType,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const unitText = `${itemInfo.unitOfMeasure || ''} ${itemInfo.model || ''}`.toLowerCase();
+  const looksLikeBaggedDangoteCement =
+    /\bdangote\b/.test(text)
+    && /\bbags?\b|\bsacks?\b/.test(`${text} ${unitText}`)
+    && !/\b(sugar|flour|rice|salt|pasta|noodles|feed)\b/.test(text);
+
+  if ((/\bcement\b/.test(text) || looksLikeBaggedDangoteCement) && /\bbag|sack/.test(`${text} ${unitText}`)) {
+    const isHalfBag = /\b25\s*kg\b/.test(text);
+    const estimatedBagPrice = isHalfBag ? 6000 : 11000;
+    return Math.round(quantity * estimatedBagPrice);
+  }
+
+  return null;
+}
+
+function calculateBulkDamagePercentage(
+  damagedParts: Array<{ part: string; severity: 'minor' | 'moderate' | 'severe'; confidence: number }> | undefined,
+  fallbackDamageScore: DamageScore
+): number {
+  if (!damagedParts || damagedParts.length === 0) {
+    return calculateDamagePercentage(fallbackDamageScore);
+  }
+
+  const severityWeights = {
+    minor: 25,
+    moderate: 55,
+    severe: 90,
+  } as const;
+
+  const weighted = damagedParts.reduce((sum, part) => {
+    const confidence = Math.max(0.35, Math.min(1, part.confidence / 100));
+    return sum + severityWeights[part.severity] * confidence;
+  }, 0) / damagedParts.length;
+
+  return Math.round(Math.max(0, Math.min(100, weighted)));
+}
+
+function calculateBulkRecoverySalvage(
+  marketValue: number,
+  damagedParts: Array<{ part: string; severity: 'minor' | 'moderate' | 'severe'; confidence: number }> | undefined,
+  damageScore: DamageScore,
+  itemInfo?: UniversalItemInfo,
+  aiTotalLoss?: boolean
+): {
+  salvageValue: number;
+  repairCost: number;
+  damageBreakdown: Array<{
+    component: string;
+    damageLevel: 'minor' | 'moderate' | 'severe';
+    repairCost: number;
+    deductionPercent: number;
+    deductionAmount: number;
+  }>;
+  damageRatio: number;
+  reviewReason: string;
+} {
+  const severityWeights = {
+    minor: 0.18,
+    moderate: 0.45,
+    severe: 0.72,
+  } as const;
+
+  if (aiTotalLoss) {
+    const parts = damagedParts && damagedParts.length > 0
+      ? damagedParts
+      : [{
+          part: itemInfo?.description || itemInfo?.type || 'visible stock',
+          severity: 'severe' as const,
+          confidence: 70,
+        }];
+
+    return {
+      salvageValue: 0,
+      repairCost: Math.round(marketValue),
+      damageBreakdown: parts.map((part) => ({
+        component: part.part,
+        damageLevel: part.severity,
+        repairCost: Math.round(marketValue),
+        deductionPercent: 1,
+        deductionAmount: Math.round(marketValue),
+      })),
+      damageRatio: 1,
+      reviewReason: 'AI classified this bulk/cargo stock as a commercial total loss. Salvage value is set to zero unless a manager confirms recoverable resale value.',
+    };
+  }
+
+  const visibleDamageRatio = damagedParts && damagedParts.length > 0
+    ? damagedParts.reduce((total, part) => {
+        const confidenceWeight = Math.max(0.4, Math.min(1, part.confidence / 100));
+        return total + severityWeights[part.severity] * confidenceWeight;
+      }, 0) / damagedParts.length
+    : Math.max(damageScore.structural, damageScore.mechanical, damageScore.cosmetic, damageScore.electrical, damageScore.interior) / 100;
+
+  const declaredConditionPenalty = itemInfo?.declaredCondition
+    ? /contaminat|mould|mold|unsafe|burn|soak|flood|wet|harden/i.test(itemInfo.declaredCondition)
+      ? 0.08
+      : 0.03
+    : 0;
+
+  const rawDamageRatio = visibleDamageRatio + declaredConditionPenalty + (aiTotalLoss ? 0.08 : 0);
+  const damageRatio = Math.max(0.1, Math.min(0.85, rawDamageRatio));
+  const salvageValue = Math.round(marketValue * (1 - damageRatio));
+  const repairCost = Math.round(marketValue - salvageValue);
+
+  const parts = damagedParts && damagedParts.length > 0
+    ? damagedParts
+    : [{
+        part: itemInfo?.description || itemInfo?.type || 'visible stock',
+        severity: (damageRatio >= 0.65 ? 'severe' : damageRatio >= 0.35 ? 'moderate' : 'minor') as 'minor' | 'moderate' | 'severe',
+        confidence: 60,
+      }];
+
+  const damageBreakdown = parts.map((part) => {
+    const deductionPercent = severityWeights[part.severity];
+    return {
+      component: part.part,
+      damageLevel: part.severity,
+      repairCost: Math.round(marketValue * deductionPercent),
+      deductionPercent,
+      deductionAmount: Math.round(marketValue * deductionPercent),
+    };
+  });
+
+  return {
+    salvageValue,
+    repairCost,
+    damageBreakdown,
+    damageRatio,
+    reviewReason: 'Bulk/cargo salvage uses recoverable-quantity and contamination logic. Verify visible quantity, safety, and resale legality before approval.',
+  };
+}
+
 export interface AssessmentConfidence {
   overall: number;
   vehicleDetection: number;
@@ -345,8 +702,9 @@ export async function assessDamageEnhanced(params: {
   photos: string[];
   vehicleInfo?: VehicleInfo; // For backward compatibility
   universalItemInfo?: UniversalItemInfo; // New universal support
+  forceRefresh?: boolean;
 }): Promise<EnhancedDamageAssessment> {
-  const { photos, vehicleInfo, universalItemInfo } = params;
+  const { photos, vehicleInfo, universalItemInfo, forceRefresh = false } = params;
   
   // Use universal item info if provided, otherwise fall back to vehicle info
   const itemInfo = universalItemInfo || (vehicleInfo ? {
@@ -395,13 +753,20 @@ export async function assessDamageEnhanced(params: {
   
   // Step 2: Calculate damage scores
   const damageScore = damageAnalysis.damageScore;
-  const damagePercentage = calculateDamagePercentage(damageScore);
+  const damagePercentage = isBulkRecoveryAsset(itemInfo)
+    ? calculateBulkDamagePercentage(damageAnalysis.damagedParts, damageScore)
+    : calculateDamagePercentage(damageScore);
   
   // Step 3: Determine market value (with universal item support)
-  const marketValueResult = await getUniversalMarketValue(itemInfo);
+  const marketLookupItemInfo = enrichItemInfoWithAiIdentification(itemInfo, damageAnalysis);
+  const marketValueResult = await getUniversalMarketValue(marketLookupItemInfo, { forceRefresh });
   const marketValue = marketValueResult.value;
   const marketDataConfidence = marketValueResult.confidence;
   const priceSource = marketValueResult.source;
+  const marketReviewReasons = Array.isArray(marketValueResult.evidence?.reviewReasons)
+    ? marketValueResult.evidence.reviewReasons.filter((reason): reason is string => typeof reason === 'string')
+    : [];
+  valuationReviewReasons.push(...marketReviewReasons);
   
   // Step 4: Calculate damage-adjusted salvage value using database (Requirements 6.2, 6.3)
   let salvageValue: number;
@@ -416,16 +781,15 @@ export async function assessDamageEnhanced(params: {
   let isTotalLoss: boolean | undefined;
   let partPrices: Awaited<ReturnType<typeof searchUniversalPartPrices>> = [];
   
-  // ELECTRONICS FIX: For electronics, use Gemini's specific parts directly instead of generic scores
-  // This preserves part names like "front screen display" instead of converting to "body"
+  // For item classes with specific AI evidence, use the model's exact loss items
+  // instead of collapsing them into generic body/mechanical buckets.
   let damages: DamageInput[];
-  if (itemInfo?.type === 'electronics' && damageAnalysis.damagedParts && damageAnalysis.damagedParts.length > 0) {
-    // Use Gemini's specific parts directly for electronics
+  if ((itemInfo?.type === 'electronics' || itemInfo?.type === 'jewelry' || itemInfo?.type === 'watch' || isBulkRecoveryAsset(itemInfo)) && damageAnalysis.damagedParts && damageAnalysis.damagedParts.length > 0) {
     damages = damageAnalysis.damagedParts.map(part => ({
-      component: part.part, // Use the specific part name from Gemini
+      component: part.part,
       damageLevel: part.severity
     }));
-    console.log('📱 Using specific electronics parts from Gemini:', damages.map(d => d.component).join(', '));
+    console.log(`Using asset-specific AI loss evidence for ${itemInfo?.type}:`, damages.map(d => d.component).join(', '));
   } else {
     // For other item types, use the traditional score-based approach
     damages = identifyDamagedComponents(damageScore);
@@ -483,7 +847,7 @@ export async function assessDamageEnhanced(params: {
       // 3. Foreign Used items retain more value than Nigerian Used
       let conditionAdjustedMarketValue = marketValue;
       
-      if (itemInfo && priceSource !== 'internet_search' && priceSource !== 'user_provided') {
+      if (itemInfo && !isBulkRecoveryAsset(itemInfo) && priceSource !== 'internet_search' && priceSource !== 'user_provided') {
         // Only apply condition adjustment if NOT from internet search (which already includes condition)
         const conditionAdjustment = getConditionAdjustment(itemInfo.condition);
         conditionAdjustedMarketValue = marketValue * conditionAdjustment;
@@ -493,8 +857,32 @@ export async function assessDamageEnhanced(params: {
         console.log(`ℹ️ Skipping condition adjustment - already included in ${priceSource} price`);
       }
       
+      let calculationDeductionPercent = 0;
+      if (isBulkRecoveryAsset(itemInfo)) {
+        const bulkCalc = calculateBulkRecoverySalvage(
+          conditionAdjustedMarketValue,
+          damageAnalysis.damagedParts,
+          damageScore,
+          itemInfo,
+          geminiTotalLoss
+        );
+
+        salvageValue = bulkCalc.salvageValue;
+        repairCost = bulkCalc.repairCost;
+        damageBreakdown = bulkCalc.damageBreakdown;
+        calculationDeductionPercent = bulkCalc.damageRatio;
+        isTotalLoss = geminiTotalLoss === true && bulkCalc.damageRatio >= 0.8;
+        valuationReviewReasons.push(bulkCalc.reviewReason);
+        console.log('Bulk/cargo salvage calculation complete:', {
+          assetType: itemInfo?.type,
+          damageRatio: bulkCalc.damageRatio,
+          salvageValue,
+          repairCost,
+          isTotalLoss,
+        });
+      } else {
       // NEW: Search for part prices to enhance salvage calculations (Task 7.4)
-      partPrices = await searchUniversalPartPrices(itemInfo, damages);
+      partPrices = await searchUniversalPartPrices(itemInfo, damages, { forceRefresh });
       console.log(`🔍 Part price search results: ${partPrices.filter(p => p.searchedPrice).length}/${partPrices.length} found`);
       
       // Extract item make/brand for make-specific deductions (Requirement 6.1)
@@ -516,8 +904,31 @@ export async function assessDamageEnhanced(params: {
         })),
         itemMake // Pass item make/brand for make-specific deductions
       );
+      calculationDeductionPercent = salvageCalc.totalDeductionPercent;
       
       salvageValue = Math.round(salvageCalc.salvageValue);
+      const partPricesFound = partPrices.filter(p => p.searchedPrice).length;
+
+      if (partPricesFound === 0 && salvageCalc.totalDeductionPercent >= 0.9) {
+        const evidenceAdjustedDeduction = Math.min(
+          0.82,
+          Math.max(0.35, (damagePercentage / 100) * 0.85)
+        );
+        const originalSalvageValue = salvageValue;
+        calculationDeductionPercent = evidenceAdjustedDeduction;
+        salvageValue = Math.round(conditionAdjustedMarketValue * (1 - evidenceAdjustedDeduction));
+        repairCost = Math.round(conditionAdjustedMarketValue - salvageValue);
+        valuationReviewReasons.push(
+          'No reliable part-price evidence was found, so the AI-only repair deduction was prevented from saturating at the 10% salvage floor. Review photos and market evidence before approval.'
+        );
+        console.log('Prevented unpriced damage deduction from saturating at the 10% salvage floor:', {
+          originalSalvageValue,
+          adjustedSalvageValue: salvageValue,
+          originalDeduction: salvageCalc.totalDeductionPercent,
+          adjustedDeduction: evidenceAdjustedDeduction,
+          damagePercentage,
+        });
+      }
       
       // CRITICAL: Ensure salvage value never exceeds condition-adjusted market value
       if (salvageValue > conditionAdjustedMarketValue) {
@@ -525,12 +936,11 @@ export async function assessDamageEnhanced(params: {
         salvageValue = conditionAdjustedMarketValue;
       }
       
-      const partPricesFound = partPrices.filter(p => p.searchedPrice).length;
       const totalLossDecision = shouldApplyTotalLossCap({
         itemType: itemInfo?.type,
         aiTotalLoss: geminiTotalLoss,
-        damageCalculationTotalLoss: salvageCalc.isTotalLoss,
-        totalDeductionPercent: salvageCalc.totalDeductionPercent,
+        damageCalculationTotalLoss: calculationDeductionPercent >= 0.85,
+        totalDeductionPercent: calculationDeductionPercent,
         partPricesFound,
         damagePercentage,
       });
@@ -574,13 +984,14 @@ export async function assessDamageEnhanced(params: {
           deductionAmount: d.deductionAmount || 0,
         };
       });
+      }
       
       console.log('✅ Salvage calculation complete:', {
         basePrice: marketValue,
-        totalDeduction: salvageCalc.totalDeductionPercent,
+        totalDeduction: calculationDeductionPercent,
         salvageValue,
         isTotalLoss,
-        partPricesUsed: partPricesFound
+        partPricesUsed: partPrices.filter(p => p.searchedPrice).length
       });
     } catch (error) {
       console.error('❌ Damage calculation failed, using fallback:', error);
@@ -638,7 +1049,9 @@ export async function assessDamageEnhanced(params: {
     damagePercentage,
     damageSeverity,
     confidence: confidence.overall,
-    reservePriceRatio: valuationPolicy.reservePriceRatio
+    reservePriceRatio: valuationPolicy.reservePriceRatio,
+    suppressSeverityPercentageMismatch:
+      isLuxuryJewelryValuation(itemInfo) || isMultiItemJewelryValuation(itemInfo),
   });
   
   // Step 9: Determine quality tier based on damage and item context
@@ -659,17 +1072,29 @@ export async function assessDamageEnhanced(params: {
         })),
       }
     : { searchedParts: [] };
-  const manualReviewDecision = shouldRequireManualReview({
-    policy: valuationPolicy,
-    overallConfidence: confidence.overall,
-    marketConfidence: marketDataConfidence,
-    damageConfidence: confidence.damageDetection,
-    uniqueSourceCount: marketValueResult.uniqueSourceCount ?? 0,
-    priceSpreadPercent: marketValueResult.priceSpreadPercent ?? 0,
+  const partAdjudicationReviewReasons = partEvidence.searchedParts.flatMap((part) => {
+    const adjudication = part.evidence && typeof part.evidence === 'object'
+      ? (part.evidence as { adjudication?: { reviewReasons?: string[] } }).adjudication
+      : undefined;
+    return adjudication?.reviewReasons || [];
   });
+  const specialistAppraisalRequired =
+    typeof marketValueResult.evidence?.reason === 'string' &&
+    marketValueResult.evidence.reason === 'luxury_jewelry_specialist_appraisal_required';
+  const manualReviewDecision = specialistAppraisalRequired
+    ? { required: true, reasons: [] }
+    : shouldRequireManualReview({
+        policy: valuationPolicy,
+        overallConfidence: confidence.overall,
+        marketConfidence: marketDataConfidence,
+        damageConfidence: confidence.damageDetection,
+        uniqueSourceCount: marketValueResult.uniqueSourceCount ?? 0,
+        priceSpreadPercent: marketValueResult.priceSpreadPercent ?? 0,
+      });
   const reviewReasons = [
     ...photoReviewReasons,
     ...valuationReviewReasons,
+    ...partAdjudicationReviewReasons,
     ...manualReviewDecision.reasons,
   ];
   const manualReviewRequired = reviewReasons.length > 0;
@@ -788,7 +1213,7 @@ async function analyzePhotosWithFallback(
   
   // Support both vehicle and universal item contexts
   const hasVehicleContext = vehicleInfo?.make && vehicleInfo?.model && vehicleInfo?.year;
-  const hasUniversalContext = universalItemInfo?.brand && universalItemInfo?.model;
+  const hasUniversalContext = hasUsableUniversalContext(universalItemInfo);
   const hasItemContext = hasVehicleContext || hasUniversalContext;
   
   // ATTEMPT 1: Try Gemini FIRST (FREE - if enabled, rate limit allows, and item context provided)
@@ -812,14 +1237,8 @@ async function analyzePhotosWithFallback(
           };
           console.log(`   Vehicle context: ${vehicleInfo!.make} ${vehicleInfo!.model} ${vehicleInfo!.year}`);
         } else if (hasUniversalContext) {
-          // For universal items, adapt to Gemini's expected format
-          geminiContext = {
-            make: universalItemInfo!.brand, // Use brand as "make"
-            model: universalItemInfo!.model,
-            year: universalItemInfo!.year,
-            itemType: universalItemInfo!.type, // Add item type for context
-          };
-          console.log(`   Universal item context: ${universalItemInfo!.brand} ${universalItemInfo!.model} (${universalItemInfo!.type})`);
+          geminiContext = buildUniversalProviderContext(universalItemInfo!);
+          console.log(`   Universal item context: ${geminiContext.make} ${geminiContext.model} (${geminiContext.itemType})`);
         }
         
         const geminiResult = await assessDamageWithGemini(photos, geminiContext);
@@ -834,8 +1253,12 @@ async function analyzePhotosWithFallback(
         // Convert Gemini's damagedParts array to legacy DamageScore format
         const damageScore: DamageScore = convertDamagedPartsToScores(geminiResult.damagedParts);
         
-        console.log(`   Converted scores - Structural: ${damageScore.structural}, Mechanical: ${damageScore.mechanical}`);
-        console.log(`   Cosmetic: ${damageScore.cosmetic}, Electrical: ${damageScore.electrical}, Interior: ${damageScore.interior}`);
+        if (isBulkRecoveryAsset(universalItemInfo)) {
+          console.log(`   Bulk loss evidence score: ${calculateBulkDamagePercentage(geminiResult.damagedParts, damageScore)}%`);
+        } else {
+          console.log(`   Converted scores - Structural: ${damageScore.structural}, Mechanical: ${damageScore.mechanical}`);
+          console.log(`   Cosmetic: ${damageScore.cosmetic}, Electrical: ${damageScore.electrical}, Interior: ${damageScore.interior}`);
+        }
         
         // Create mock vision results for backward compatibility
         const visionResults = {
@@ -895,13 +1318,8 @@ async function analyzePhotosWithFallback(
           };
           console.log(`   Vehicle context: ${vehicleInfo!.make} ${vehicleInfo!.model} ${vehicleInfo!.year}`);
         } else if (hasUniversalContext) {
-          claudeContext = {
-            make: universalItemInfo!.brand,
-            model: universalItemInfo!.model,
-            year: universalItemInfo!.year || new Date().getFullYear(),
-            itemType: universalItemInfo!.type,
-          };
-          console.log(`   Universal item context: ${universalItemInfo!.brand} ${universalItemInfo!.model} (${universalItemInfo!.type})`);
+          claudeContext = buildUniversalProviderContext(universalItemInfo!);
+          console.log(`   Universal item context: ${claudeContext.make} ${claudeContext.model} (${claudeContext.itemType})`);
         }
         
         const claudeResult = await assessDamageWithClaude(photos, claudeContext);
@@ -916,8 +1334,12 @@ async function analyzePhotosWithFallback(
         // Convert Claude's damagedParts array to legacy DamageScore format
         const damageScore: DamageScore = convertDamagedPartsToScores(claudeResult.damagedParts);
         
-        console.log(`   Converted scores - Structural: ${damageScore.structural}, Mechanical: ${damageScore.mechanical}`);
-        console.log(`   Cosmetic: ${damageScore.cosmetic}, Electrical: ${damageScore.electrical}, Interior: ${damageScore.interior}`);
+        if (isBulkRecoveryAsset(universalItemInfo)) {
+          console.log(`   Bulk loss evidence score: ${calculateBulkDamagePercentage(claudeResult.damagedParts, damageScore)}%`);
+        } else {
+          console.log(`   Converted scores - Structural: ${damageScore.structural}, Mechanical: ${damageScore.mechanical}`);
+          console.log(`   Cosmetic: ${damageScore.cosmetic}, Electrical: ${damageScore.electrical}, Interior: ${damageScore.interior}`);
+        }
         
         // Create mock vision results for backward compatibility
         const visionResults = {
@@ -1234,6 +1656,7 @@ async function getMarketValueWithScraping(vehicleInfo?: VehicleInfo): Promise<{
       const confidencePercent = Math.round(marketPrice.confidence * 100);
       const source = marketPrice.dataSource === 'internet_search' ? 'internet_search' : 
                     marketPrice.dataSource === 'database' ? 'database' : 'scraping';
+      const adjudication = (marketPrice as { adjudication?: { reviewReasons?: string[] } }).adjudication;
       
       return {
         value: Math.round(adjustedPrice),
@@ -1321,6 +1744,7 @@ async function searchPartPrices(
             query: partResult.query,
             resultsProcessed: partResult.resultsProcessed,
             priceData: partResult.priceData,
+            adjudication: partResult.adjudication,
           },
         };
       } else {
@@ -2014,7 +2438,7 @@ function calculateConfidence(
 /**
  * Get universal market value for any item type
  */
-async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
+async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { forceRefresh?: boolean } = {}): Promise<{
   value: number;
   confidence: number;
   source: 'database' | 'user_provided' | 'internet_search' | 'scraping' | 'estimated';
@@ -2033,7 +2457,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
     };
   }
 
-  if (itemInfo.marketValue && itemInfo.marketValue > 0) {
+  if (itemInfo.marketValueSource === 'manual' && itemInfo.marketValue && itemInfo.marketValue > 0) {
     console.log('Using user-provided claims paid / asset value:', itemInfo.marketValue);
     return {
       value: Math.round(itemInfo.marketValue),
@@ -2046,6 +2470,36 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
         source: 'user_provided',
         value: Math.round(itemInfo.marketValue),
         confidence: 95,
+        skippedMarketSearch: true,
+      },
+    };
+  }
+
+  if (isLuxuryJewelryValuation(itemInfo) || isMultiItemJewelryValuation(itemInfo)) {
+    const provisionalValue = estimateLuxuryJewelryManualReviewValue(itemInfo);
+    const brandMatches = luxuryJewelryBrandMatches(itemInfo);
+    const reviewReasons = [
+      'Luxury or multi-item jewelry/watch valuation requires declared insured value, purchase receipt, hallmark/serial verification, and specialist appraisal.',
+      'Generic marketplace prices are not accepted for Rolex, Cartier, diamond, gold, or mixed jewelry lots.',
+    ];
+    console.warn('Luxury jewelry valuation requires specialist appraisal; skipping generic internet market price.', {
+      itemType: itemInfo.type,
+      brand: itemInfo.brand || itemInfo.make,
+      model: itemInfo.model,
+      provisionalValue,
+      brandMatches,
+    });
+    return {
+      value: provisionalValue,
+      confidence: 15,
+      source: 'estimated',
+      uniqueSourceCount: 0,
+      priceSpreadPercent: 0,
+      evidence: {
+        reason: 'luxury_jewelry_specialist_appraisal_required',
+        provisionalValue,
+        brandMatches,
+        reviewReasons,
         skippedMarketSearch: true,
       },
     };
@@ -2086,7 +2540,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
         condition: searchCondition
       };
       
-      const marketPrice = await getMarketPrice(property);
+      const marketPrice = await getMarketPrice(property, { forceRefresh: options.forceRefresh });
       
       console.log('✅ Vehicle market data result:', {
         median: marketPrice.median,
@@ -2098,6 +2552,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
       const confidencePercent = Math.round(marketPrice.confidence * 100);
       const source = marketPrice.dataSource === 'internet_search' ? 'internet_search' : 
                     marketPrice.dataSource === 'database' ? 'database' : 'scraping';
+      const adjudication = (marketPrice as { adjudication?: { reviewReasons?: string[] } }).adjudication;
       
       return {
         value: Math.round(marketPrice.median),
@@ -2110,6 +2565,8 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
           median: marketPrice.median,
           count: marketPrice.count,
           confidence: confidencePercent,
+          adjudication,
+          reviewReasons: adjudication?.reviewReasons || [],
         },
       };
     } catch (error) {
@@ -2131,10 +2588,12 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
           condition: itemInfo.condition as UniversalCondition
         },
         maxResults: 10,
-        timeout: 5000
+        timeout: 5000,
+        forceRefresh: options.forceRefresh,
       });
 
       if (searchResult.success && searchResult.priceData.averagePrice) {
+        const adjudicationReviewReasons = searchResult.adjudication?.reviewReasons || [];
         return {
           value: Math.round(searchResult.priceData.medianPrice || searchResult.priceData.averagePrice),
           confidence: Math.round(searchResult.priceData.confidence),
@@ -2145,11 +2604,70 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
             query: searchResult.query,
             resultsProcessed: searchResult.resultsProcessed,
             priceData: searchResult.priceData,
+            adjudication: searchResult.adjudication,
+            reviewReasons: adjudicationReviewReasons,
           },
         };
       }
     } catch (error) {
       console.error('❌ Property market search failed, using estimation:', error);
+    }
+  }
+
+  const searchIdentifier = buildUniversalSearchIdentifier(itemInfo);
+  if (searchIdentifier) {
+    try {
+      console.log(`Searching for ${itemInfo.type} market price with category-specific search terms...`);
+
+      const searchResult = await internetSearchService.searchMarketPrice({
+        item: searchIdentifier,
+        maxResults: isBulkRecoveryAsset(itemInfo) ? 15 : 10,
+        timeout: 5000,
+        forceRefresh: options.forceRefresh,
+      });
+
+      if (searchResult.success && searchResult.priceData.averagePrice) {
+        const marketValue = Math.round(searchResult.priceData.medianPrice || searchResult.priceData.averagePrice);
+        const adjudicationReviewReasons = searchResult.adjudication?.reviewReasons || [];
+
+        console.log(`Found ${itemInfo.type} price: NGN ${marketValue.toLocaleString()}`);
+
+        return {
+          value: marketValue,
+          confidence: Math.round(searchResult.priceData.confidence),
+          source: 'internet_search',
+          uniqueSourceCount: searchResult.priceData.evidenceSummary?.uniqueSourceCount,
+          priceSpreadPercent: searchResult.priceData.evidenceSummary?.priceSpreadPercent,
+          evidence: {
+            query: searchResult.query,
+            resultsProcessed: searchResult.resultsProcessed,
+            priceData: searchResult.priceData,
+            adjudication: searchResult.adjudication,
+            reviewReasons: adjudicationReviewReasons,
+          },
+        };
+      }
+    } catch (error) {
+      console.error(`Category-specific internet search failed for ${itemInfo.type}:`, error);
+    }
+  }
+
+  if (isBulkRecoveryAsset(itemInfo)) {
+    const knownUnitMarketValue = estimateKnownBulkUnitMarketValue(itemInfo);
+    if (knownUnitMarketValue !== null) {
+      return {
+        value: knownUnitMarketValue,
+        confidence: 55,
+        source: 'estimated',
+        evidence: {
+          reason: 'known_bulk_unit_price_estimation',
+          itemType: itemInfo.type,
+          brand: itemInfo.brand,
+          model: itemInfo.model,
+          quantity: itemInfo.quantity,
+          unitOfMeasure: itemInfo.unitOfMeasure,
+        },
+      };
     }
   }
 
@@ -2202,12 +2720,14 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
       const searchResult = await internetSearchService.searchMarketPrice({
         item: itemIdentifier,
         maxResults: 10,
-        timeout: 5000
+        timeout: 5000,
+        forceRefresh: options.forceRefresh,
       });
 
       if (searchResult.success && searchResult.priceData.averagePrice) {
         // Use the market price directly - internet search already accounts for condition
         const marketValue = Math.round(searchResult.priceData.averagePrice);
+        const adjudicationReviewReasons = searchResult.adjudication?.reviewReasons || [];
         
         console.log(`✅ Found ${itemInfo.type} price: ₦${marketValue.toLocaleString()}`);
         
@@ -2221,6 +2741,8 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
             query: searchResult.query,
             resultsProcessed: searchResult.resultsProcessed,
             priceData: searchResult.priceData,
+            adjudication: searchResult.adjudication,
+            reviewReasons: adjudicationReviewReasons,
           },
         };
       } else {
@@ -2247,10 +2769,106 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo): Promise<{
   };
 }
 
+function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdentifier | null {
+  const brand = itemInfo.brand || itemInfo.make;
+  const description = itemInfo.description || itemInfo.propertyType || itemInfo.machineryType || itemInfo.model;
+
+  switch (itemInfo.type) {
+    case 'electronics':
+      if (!brand || !itemInfo.model) return null;
+      return {
+        type: 'electronics',
+        brand,
+        model: itemInfo.model,
+        storage: itemInfo.storageCapacity,
+        condition: itemInfo.condition as UniversalCondition,
+      };
+    case 'appliance':
+      if (!brand || !itemInfo.model) return null;
+      return {
+        type: 'appliance',
+        brand,
+        model: itemInfo.model,
+        condition: itemInfo.condition as UniversalCondition,
+      };
+    case 'machinery':
+      if (!brand && !description) return null;
+      return {
+        type: 'machinery',
+        brand: brand || description || 'industrial',
+        machineryType: itemInfo.machineryType || description || 'equipment',
+        model: itemInfo.model,
+        year: itemInfo.year,
+        condition: itemInfo.condition as UniversalCondition,
+      };
+    case 'furniture':
+      if (!description && !itemInfo.model && !brand) return null;
+      return {
+        type: 'furniture',
+        furnitureType: itemInfo.model || description || 'furniture',
+        brand,
+        material: itemInfo.material,
+        size: itemInfo.quantity || itemInfo.unitOfMeasure,
+        condition: itemInfo.condition as UniversalCondition,
+      };
+    case 'jewelry':
+    case 'watch':
+      if (!description && !itemInfo.model && !brand && !itemInfo.material) return null;
+      return {
+        type: 'jewelry',
+        jewelryType: itemInfo.model || description || itemInfo.type,
+        brand,
+        material: itemInfo.material,
+        weight: itemInfo.quantity || itemInfo.unitOfMeasure,
+        condition: itemInfo.condition as UniversalCondition,
+      };
+    case 'stock':
+    case 'goods_in_transit':
+    case 'building_materials':
+    case 'scrap':
+    case 'agriculture':
+      if (!brand && !description && !itemInfo.model) return null;
+      return {
+        type: itemInfo.type,
+        description,
+        brand,
+        model: itemInfo.model,
+        quantity: itemInfo.quantity,
+        unitOfMeasure: itemInfo.unitOfMeasure,
+        packagingType: itemInfo.packagingType,
+      };
+    case 'equipment':
+    case 'medical_equipment':
+    case 'energy_equipment':
+    case 'aviation_equipment':
+    case 'other':
+      if (!brand && !description && !itemInfo.model) return null;
+      return {
+        type: itemInfo.type,
+        description,
+        brand,
+        model: itemInfo.model,
+        quantity: itemInfo.quantity,
+        unitOfMeasure: itemInfo.unitOfMeasure,
+        year: itemInfo.year,
+        condition: itemInfo.condition as UniversalCondition,
+      };
+    default:
+      return null;
+  }
+}
+
 /**
  * Estimate market value for universal items
  */
 function estimateUniversalMarketValue(itemInfo: UniversalItemInfo): number {
+  if (isBulkRecoveryAsset(itemInfo)) {
+    const knownUnitMarketValue = estimateKnownBulkUnitMarketValue(itemInfo);
+    if (knownUnitMarketValue !== null) {
+      return knownUnitMarketValue;
+    }
+  }
+
   // Base values by item type (in Naira) - Updated to reflect realistic Nigerian market prices
   const baseValues: Record<string, number> = {
     'vehicle': 8000000,      // 8M default for vehicles
@@ -2263,6 +2881,14 @@ function estimateUniversalMarketValue(itemInfo: UniversalItemInfo): number {
     'artwork': 500000,       // 500K default for artwork (increased from 200K)
     'equipment': 1500000,    // 1.5M default for equipment (increased from 1M)
     'machinery': 2500000,    // 2.5M default for machinery/equipment
+    'stock': 250000,         // conservative fallback; claims paid or market search should override
+    'goods_in_transit': 250000,
+    'building_materials': 250000,
+    'scrap': 150000,
+    'agriculture': 250000,
+    'medical_equipment': 2500000,
+    'energy_equipment': 3000000,
+    'aviation_equipment': 5000000,
     'other': 800000,         // 800K default for other items (increased from 500K)
   };
 
@@ -2311,8 +2937,10 @@ function estimateUniversalMarketValue(itemInfo: UniversalItemInfo): number {
     }
   }
 
-  // Apply condition adjustment
-  baseValue *= getConditionAdjustment(itemInfo.condition);
+  // Apply condition adjustment only for item classes where "new/used" is meaningful.
+  if (!isBulkRecoveryAsset(itemInfo)) {
+    baseValue *= getConditionAdjustment(itemInfo.condition);
+  }
 
   return Math.round(Math.max(50000, baseValue)); // Minimum 50K Naira
 }
@@ -2322,7 +2950,8 @@ function estimateUniversalMarketValue(itemInfo: UniversalItemInfo): number {
  */
 async function searchUniversalPartPrices(
   itemInfo: UniversalItemInfo | undefined,
-  damages: DamageInput[]
+  damages: DamageInput[],
+  options: { forceRefresh?: boolean } = {}
 ): Promise<Array<{
   component: string;
   searchedPrice?: number;
@@ -2330,12 +2959,24 @@ async function searchUniversalPartPrices(
   source: 'internet_search' | 'not_found';
   evidence?: Record<string, unknown>;
 }>> {
-  if ((!itemInfo?.brand && !itemInfo?.make && !(itemInfo?.type === 'property' && itemInfo.propertyType && itemInfo.location)) || damages.length === 0) {
+  if (!itemInfo || damages.length === 0) {
     return [];
   }
 
+  if (isLuxuryJewelryValuation(itemInfo) || isMultiItemJewelryValuation(itemInfo)) {
+    console.warn('Skipping internet part-price search for luxury or multi-item jewelry; specialist repair/appraisal required.');
+    return damages.map((damage) => ({
+      component: damage.component,
+      source: 'not_found' as const,
+      evidence: {
+        reason: 'specialist_jewelry_repair_pricing_required',
+        damageLevel: damage.damageLevel,
+      },
+    }));
+  }
+
   // Build ItemIdentifier based on item type with all required fields
-  let itemIdentifier: ItemIdentifier;
+  let itemIdentifier: ItemIdentifier | null = buildUniversalSearchIdentifier(itemInfo);
   
   if (itemInfo.type === 'vehicle') {
     itemIdentifier = {
@@ -2373,7 +3014,7 @@ async function searchUniversalPartPrices(
       year: itemInfo.year,
       condition: itemInfo.condition as UniversalCondition
     };
-  } else {
+  } else if (!itemIdentifier) {
     // For watch, artwork, equipment, other - use machinery as fallback
     itemIdentifier = {
       type: 'machinery',
@@ -2382,6 +3023,8 @@ async function searchUniversalPartPrices(
       model: itemInfo.model
     };
   }
+
+  if (!itemIdentifier) return [];
 
   // Map damage components to searchable part names by item type
   const getPartMapping = (itemType: string): Record<string, string> => {
@@ -2471,7 +3114,8 @@ async function searchUniversalPartPrices(
         partName,
         damageType: damage.damageLevel,
         maxResults: 5,
-        timeout: 2000
+        timeout: 2000,
+        forceRefresh: options.forceRefresh,
       });
 
       if (partResult.success && partResult.priceData.averagePrice) {
@@ -2486,6 +3130,7 @@ async function searchUniversalPartPrices(
             query: partResult.query,
             resultsProcessed: partResult.resultsProcessed,
             priceData: partResult.priceData,
+            adjudication: partResult.adjudication,
           },
         };
       } else {
@@ -2677,6 +3322,7 @@ function validateAssessment(params: {
   damageSeverity: string;
   confidence: number;
   reservePriceRatio?: number;
+  suppressSeverityPercentageMismatch?: boolean;
 }): string[] {
   const warnings: string[] = [];
   
@@ -2697,10 +3343,10 @@ function validateAssessment(params: {
   }
   
   // Severity vs percentage mismatch
-  if (params.damageSeverity === 'minor' && params.damagePercentage > 60) {
+  if (!params.suppressSeverityPercentageMismatch && params.damageSeverity === 'minor' && params.damagePercentage > 60) {
     warnings.push(`Damage is labelled minor but calculated at ${params.damagePercentage}% - review damaged parts and severity classification`);
   }
-  if (params.damageSeverity === 'severe' && params.damagePercentage < 70) {
+  if (!params.suppressSeverityPercentageMismatch && params.damageSeverity === 'severe' && params.damagePercentage < 70) {
     warnings.push(`Damage is labelled severe but calculated at ${params.damagePercentage}% - confirm whether visible damage affects core functionality`);
   }
   

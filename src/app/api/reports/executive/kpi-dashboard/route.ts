@@ -12,10 +12,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate') || undefined;
     const endDate = searchParams.get('endDate') || undefined;
+    const branches = searchParams.get('branches')?.split(',').filter(Boolean);
 
     const report = await KPIDashboardService.generateReport({
       startDate,
       endDate,
+      branches,
     });
 
     return NextResponse.json({

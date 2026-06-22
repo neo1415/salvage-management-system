@@ -262,6 +262,9 @@ export function EnterpriseSetupPreview({
   const enabledAssetTypes = Object.entries(policy.cases.enabledAssetTypes)
     .filter(([, config]) => config.enabled)
     .map(([, config]) => `${config.label} (${config.promptProfile})`);
+  const enabledInsuranceClasses = Object.entries(policy.cases.insuranceClasses)
+    .filter(([, config]) => config.enabled)
+    .map(([, config]) => config.label);
 
   return (
     <div className="space-y-6">
@@ -358,6 +361,7 @@ export function EnterpriseSetupPreview({
           <DefinitionList
             rows={[
               ['Enabled assets', enabledAssetTypes.join(', ') || 'None'],
+              ['Insurance classes', enabledInsuranceClasses.join(', ') || 'None'],
               ['Voice notes', boolLabel(policy.cases.voiceNotesEnabled)],
               ['Transcript review', boolLabel(policy.cases.salvageManagerTranscriptReviewRequired)],
               ['AI valuation', boolLabel(policy.aiValuation.enabled)],

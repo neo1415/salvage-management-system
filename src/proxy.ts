@@ -12,7 +12,20 @@ import {
   isApiAllowedForRole,
   isPathAllowedForRole,
   isProtectedPage,
+  normalizeRole,
 } from '@/lib/auth/rbac';
+
+function getManagerCaseDetailRedirect(pathname: string, role: string | undefined): string | null {
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole !== 'salvage_manager' && normalizedRole !== 'system_admin') {
+    return null;
+  }
+
+  const match = pathname.match(
+    /^\/adjuster\/cases\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+  );
+  return match ? `/manager/cases/${match[1]}` : null;
+}
 
 /**
  * Proxy: IP forwarding, BVN onboarding, and server-side RBAC (JWT from httpOnly cookie).
@@ -45,6 +58,11 @@ export async function proxy(request: NextRequest) {
     }
 
     if (!isPathAllowedForRole(pathname, role)) {
+      const managerCaseRedirect = getManagerCaseDetailRedirect(pathname, role);
+      if (managerCaseRedirect) {
+        return NextResponse.redirect(new URL(managerCaseRedirect, request.url));
+      }
+
       const denied = new URL('/unauthorized', request.url);
       denied.searchParams.set('from', pathname);
       return NextResponse.redirect(denied);

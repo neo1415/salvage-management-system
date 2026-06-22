@@ -538,10 +538,6 @@ export default function PaymentPage() {
               <p className="font-semibold text-gray-900">{assetName}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-600">Claim Reference</p>
-              <p className="font-semibold text-gray-900">{payment.auction.case.claimReference}</p>
-            </div>
-            <div>
               <p className="text-sm text-gray-600">Asset Type</p>
               <p className="font-semibold text-gray-900 capitalize">
                 {payment.auction.case.assetType}

@@ -124,10 +124,16 @@ class DraftServiceClass {
     }
 
     // Check required fields in formData
-    const requiredFields = ['claimReference', 'assetType', 'locationName'];
+    const requiredFields: Array<{ key: string; label: string }> = [
+      { key: 'claimReference', label: 'Claim reference' },
+      { key: 'assetType', label: 'Asset type' },
+      { key: 'locationName', label: 'Location name' },
+    ];
     for (const field of requiredFields) {
-      if (!draft.formData[field]) {
-        errors.push(`${field} is required`);
+      const value = draft.formData[field.key];
+      const isBlankString = typeof value === 'string' && value.trim().length === 0;
+      if (value === null || value === undefined || value === '' || isBlankString) {
+        errors.push(`${field.label} is required`);
       }
     }
 

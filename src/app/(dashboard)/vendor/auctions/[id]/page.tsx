@@ -98,7 +98,7 @@ interface AuctionDetails {
   case: {
     id: string;
     claimReference: string;
-    assetType: 'vehicle' | 'property' | 'electronics' | 'machinery';
+    assetType: string;
     assetDetails: Record<string, unknown>;
     marketValue: string;
     estimatedSalvageValue: string;
@@ -1010,8 +1010,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   // Format asset name - wrapped in useCallback
   const getAssetName = useCallback(() => {
     if (!auction) return '';
-    return formatAssetName(auction.case.assetType, auction.case.assetDetails, auction.case.claimReference);
-  }, [auction?.case.assetType, auction?.case.assetDetails, auction?.case.claimReference]);
+    return formatAssetName(auction.case.assetType, auction.case.assetDetails, 'Auction item');
+  }, [auction?.case.assetType, auction?.case.assetDetails]);
 
   // Prepare bid history chart data - wrapped in useCallback
   const getBidHistoryData = useCallback(() => {
@@ -1603,12 +1603,6 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                   <p className="text-sm text-gray-600 mb-1">Asset Type</p>
                   <p className="text-lg font-semibold text-gray-900 capitalize">
                     {auction.case.assetType}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Claim Reference</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {auction.case.claimReference}
                   </p>
                 </div>
                 {auction.case.approvedAt && (

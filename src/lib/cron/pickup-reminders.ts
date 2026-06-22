@@ -15,13 +15,26 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { eq, and, lte, gte, isNull } from 'drizzle-orm';
+import { releaseForms } from '@/lib/db/schema/release-forms';
+import { eq, and, lte, gte } from 'drizzle-orm';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { businessPolicyService } from '@/features/business-policy';
+import { generatePickupAuthorizationCode } from '@/features/pickups/services/pickup-confirmation.service';
 
 export interface PickupReminderResults {
   remindersSent: number;
   errors: string[];
+}
+
+function getPickupAuthorizationCode(documentData: unknown, auctionId: string): string {
+  if (documentData && typeof documentData === 'object' && !Array.isArray(documentData)) {
+    const pickupAuthCode = (documentData as { pickupAuthCode?: unknown }).pickupAuthCode;
+    if (typeof pickupAuthCode === 'string' && pickupAuthCode.trim()) {
+      return pickupAuthCode;
+    }
+  }
+
+  return generatePickupAuthorizationCode(auctionId);
 }
 
 /**
@@ -60,12 +73,21 @@ export async function sendPickupReminders(): Promise<PickupReminderResults> {
         vendor: vendors,
         user: users,
         case: salvageCases,
+        pickupAuthorizationData: releaseForms.documentData,
       })
       .from(payments)
       .innerJoin(auctions, eq(payments.auctionId, auctions.id))
       .innerJoin(vendors, eq(payments.vendorId, vendors.id))
       .innerJoin(users, eq(vendors.userId, users.id))
       .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+      .leftJoin(
+        releaseForms,
+        and(
+          eq(releaseForms.auctionId, auctions.id),
+          eq(releaseForms.vendorId, vendors.id),
+          eq(releaseForms.documentType, 'pickup_authorization')
+        )
+      )
       .where(
         and(
           eq(payments.status, 'verified'),
@@ -76,7 +98,7 @@ export async function sendPickupReminders(): Promise<PickupReminderResults> {
         )
       );
 
-    for (const { payment, auction, vendor: _vendor, user, case: salvageCase } of paymentsNeedingReminders) {
+    for (const { payment, auction, vendor: _vendor, user, case: salvageCase, pickupAuthorizationData } of paymentsNeedingReminders) {
       try {
         // Calculate pickup deadline (documentValidityHours from verification)
         const pickupDeadline = new Date(
@@ -90,8 +112,7 @@ export async function sendPickupReminders(): Promise<PickupReminderResults> {
           minute: '2-digit',
         });
 
-        // Get pickup authorization code from payment reference or generate placeholder
-        const pickupAuthCode = payment.paymentReference || 'AUTH-PENDING';
+        const pickupAuthCode = getPickupAuthorizationCode(pickupAuthorizationData, auction.id);
 
         // Get pickup location
         const pickupLocation = salvageCase.locationName || fallbackPickupLocation;

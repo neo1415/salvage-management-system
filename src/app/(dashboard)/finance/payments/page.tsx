@@ -1649,7 +1649,7 @@ export default function FinancePaymentsPage() {
         <div className="fixed inset-0" style={{ zIndex: 999999 }}>
           <div className="fixed inset-0 bg-black/50" onClick={closeModal} />
           <div className="fixed inset-0 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white rounded-lg max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 {action === 'approve' ? 'Approve Payment' : 'Reject Payment'}
               </h3>
@@ -1672,6 +1672,35 @@ export default function FinancePaymentsPage() {
                   <p className="font-medium text-gray-900">
                     {selectedPayment.vendor.businessName || selectedPayment.vendor.contactPersonName || 'Individual Vendor'}
                   </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-sm text-gray-500">Payment Source</p>
+                    <p className="font-medium text-gray-900">
+                      {getPaymentSourceLabel(selectedPayment.paymentMethod)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Reference</p>
+                    <p className="break-all font-mono text-xs text-gray-900">
+                      {selectedPayment.paymentReference || 'No reference recorded'}
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <p className="text-sm text-gray-500">Proof</p>
+                    {selectedPayment.paymentProofUrl ? (
+                      <a
+                        href={selectedPayment.paymentProofUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-[var(--brand-primary)] underline-offset-2 hover:underline"
+                      >
+                        Open uploaded proof
+                      </a>
+                    ) : (
+                      <p className="text-sm text-gray-700">No proof file attached</p>
+                    )}
+                  </div>
                 </div>
               </div>
 

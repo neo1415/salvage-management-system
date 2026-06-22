@@ -5,11 +5,13 @@ import { salvageCases } from '@/lib/db/schema/cases';
 import { auctions } from '@/lib/db/schema/auctions';
 import { bids } from '@/lib/db/schema/bids';
 import { payments } from '@/lib/db/schema/payments';
-import { auctionDocuments } from '@/lib/db/schema/auction-deposit';
+import { releaseForms } from '@/lib/db/schema/release-forms';
+import { pickupEvidence } from '@/lib/db/schema/pickup-evidence';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { desc, eq, inArray } from 'drizzle-orm';
+import { listImageUploadMetadataForEntities } from '@/features/media/services/image-upload-metadata.service';
 
 const ALLOWED_ROLES = new Set([
   'claims_adjuster',
@@ -17,6 +19,32 @@ const ALLOWED_ROLES = new Set([
   'finance_officer',
   'system_admin',
 ]);
+
+function sanitizeDocumentData(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const documentData = { ...(value as Record<string, unknown>) };
+  if (documentData.pickupAuthCode) {
+    documentData.pickupAuthCode = '[redacted]';
+  }
+  return documentData;
+}
+
+function chooseOfficialAuction<T extends {
+  id: string;
+  pickupConfirmedAdmin?: boolean | null;
+  pickupConfirmedAdminAt?: Date | null;
+  createdAt: Date;
+}>(auctionRows: T[]): T | null {
+  const staffConfirmed = auctionRows
+    .filter((auction) => auction.pickupConfirmedAdmin)
+    .sort((a, b) => {
+      const aTime = a.pickupConfirmedAdminAt?.getTime() ?? 0;
+      const bTime = b.pickupConfirmedAdminAt?.getTime() ?? 0;
+      return bTime - aTime;
+    });
+
+  return staffConfirmed[0] ?? auctionRows[0] ?? null;
+}
 
 export async function GET(
   _request: NextRequest,
@@ -77,6 +105,14 @@ export async function GET(
     .where(eq(auctions.caseId, caseId))
     .orderBy(desc(auctions.createdAt));
 
+  const officialAuction = chooseOfficialAuction(auctionRows);
+  if (caseRecord.status !== 'sold' || !officialAuction?.pickupConfirmedAdmin) {
+    return NextResponse.json(
+      { error: 'Evidence packet is only available after staff-confirmed pickup.' },
+      { status: 409 }
+    );
+  }
+
   const auctionIds = auctionRows.map((auction) => auction.id);
 
   const [bidRows, paymentRows, documentRows] = auctionIds.length
@@ -120,24 +156,59 @@ export async function GET(
           .orderBy(desc(payments.createdAt)),
         db
           .select({
-            id: auctionDocuments.id,
-            auctionId: auctionDocuments.auctionId,
-            vendorId: auctionDocuments.vendorId,
+            id: releaseForms.id,
+            auctionId: releaseForms.auctionId,
+            vendorId: releaseForms.vendorId,
             vendorBusinessName: vendors.businessName,
-            type: auctionDocuments.type,
-            status: auctionDocuments.status,
-            signedAt: auctionDocuments.signedAt,
-            validityDeadline: auctionDocuments.validityDeadline,
-            createdAt: auctionDocuments.createdAt,
-            updatedAt: auctionDocuments.updatedAt,
+            documentType: releaseForms.documentType,
+            title: releaseForms.title,
+            status: releaseForms.status,
+            disabled: releaseForms.disabled,
+            validityDeadline: releaseForms.validityDeadline,
+            paymentDeadline: releaseForms.paymentDeadline,
+            signedAt: releaseForms.signedAt,
+            pdfUrl: releaseForms.pdfUrl,
+            documentData: releaseForms.documentData,
+            generatedAt: releaseForms.generatedAt,
+            createdAt: releaseForms.createdAt,
+            updatedAt: releaseForms.updatedAt,
           })
-          .from(auctionDocuments)
-          .leftJoin(vendors, eq(auctionDocuments.vendorId, vendors.id))
-          .where(inArray(auctionDocuments.auctionId, auctionIds))
-          .orderBy(desc(auctionDocuments.createdAt)),
+          .from(releaseForms)
+          .leftJoin(vendors, eq(releaseForms.vendorId, vendors.id))
+          .where(inArray(releaseForms.auctionId, auctionIds))
+          .orderBy(desc(releaseForms.createdAt)),
       ])
     : [[], [], []];
 
+  const pickupEvidenceRows = auctionIds.length
+    ? await db
+        .select({
+          id: pickupEvidence.id,
+          auctionId: pickupEvidence.auctionId,
+          caseId: pickupEvidence.caseId,
+          vendorId: pickupEvidence.vendorId,
+          vendorBusinessName: vendors.businessName,
+          submittedBy: pickupEvidence.submittedBy,
+          photoUrls: pickupEvidence.photoUrls,
+          notes: pickupEvidence.notes,
+          comparisonStatus: pickupEvidence.comparisonStatus,
+          comparisonSummary: pickupEvidence.comparisonSummary,
+          reviewedBy: pickupEvidence.reviewedBy,
+          reviewedAt: pickupEvidence.reviewedAt,
+          reviewNotes: pickupEvidence.reviewNotes,
+          resolutionStatus: pickupEvidence.resolutionStatus,
+          adjustmentAmount: pickupEvidence.adjustmentAmount,
+          reimbursementMethod: pickupEvidence.reimbursementMethod,
+          createdAt: pickupEvidence.createdAt,
+          updatedAt: pickupEvidence.updatedAt,
+        })
+        .from(pickupEvidence)
+        .leftJoin(vendors, eq(pickupEvidence.vendorId, vendors.id))
+        .where(inArray(pickupEvidence.auctionId, auctionIds))
+        .orderBy(desc(pickupEvidence.createdAt))
+    : [];
+
+  const auditEntityIds = [caseId, ...auctionIds];
   const auditRows = await db
     .select({
       id: auditLogs.id,
@@ -150,9 +221,25 @@ export async function GET(
       recordHash: auditLogs.recordHash,
     })
     .from(auditLogs)
-    .where(eq(auditLogs.entityId, caseId))
+    .where(inArray(auditLogs.entityId, auditEntityIds))
     .orderBy(desc(auditLogs.createdAt))
     .limit(200);
+
+  const sanitizedDocumentRows = documentRows.map((document) => ({
+    ...document,
+    documentData: sanitizeDocumentData(document.documentData),
+  }));
+  const officialPickupEvidence = officialAuction
+    ? pickupEvidenceRows
+        .filter((evidence) => evidence.auctionId === officialAuction.id)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ?? null
+    : null;
+  const imageMetadataEntityIds = [
+    caseId,
+    ...pickupEvidenceRows.map((evidence) => evidence.id),
+    ...paymentRows.map((payment) => payment.id),
+  ];
+  const imageMetadataRows = await listImageUploadMetadataForEntities(imageMetadataEntityIds);
 
   const packet = {
     generatedAt: new Date().toISOString(),
@@ -165,10 +252,25 @@ export async function GET(
     auctions: auctionRows,
     bids: bidRows,
     payments: paymentRows,
-    documents: documentRows,
+    documents: sanitizedDocumentRows,
+    pickupEvidence: pickupEvidenceRows,
+    imageMetadata: imageMetadataRows,
+    officialHandover: officialAuction
+      ? {
+          auctionId: officialAuction.id,
+          pickupConfirmedVendor: officialAuction.pickupConfirmedVendor,
+          pickupConfirmedVendorAt: officialAuction.pickupConfirmedVendorAt,
+          pickupConfirmedAdmin: officialAuction.pickupConfirmedAdmin,
+          pickupConfirmedAdminAt: officialAuction.pickupConfirmedAdminAt,
+          pickupEvidenceId: officialPickupEvidence?.id ?? null,
+          pickupEvidenceResolutionStatus: officialPickupEvidence?.resolutionStatus ?? null,
+          pickupEvidenceReviewedAt: officialPickupEvidence?.reviewedAt ?? null,
+        }
+      : null,
     auditTrail: auditRows,
     notes: [
-      'This evidence packet intentionally excludes document body content and raw payment proof URLs.',
+      'This evidence packet includes release form metadata, pickup evidence metadata, and audit references.',
+      'It intentionally excludes raw payment proof URLs and private document body content.',
       'Use protected document download routes for underlying files.',
     ],
   };

@@ -54,6 +54,9 @@ interface PriceOverrides {
 interface ApprovalRequest {
   action: 'approve' | 'reject';
   comment?: string;
+  brokerName?: string;
+  agencyName?: string;
+  branchName?: string;
   priceOverrides?: PriceOverrides;
   scheduleData?: {
     mode: 'now' | 'scheduled';
@@ -147,6 +150,26 @@ export async function POST(
       );
     }
 
+    const brokerName = typeof body.brokerName === 'string' ? body.brokerName.trim() : caseRecord.brokerName?.trim();
+    const agencyName = typeof body.agencyName === 'string' ? body.agencyName.trim() : caseRecord.agencyName?.trim();
+    const branchName = typeof body.branchName === 'string' ? body.branchName.trim() : caseRecord.branchName?.trim();
+
+    if (body.action === 'approve') {
+      if (brokerName && agencyName) {
+        return NextResponse.json(
+          { error: 'Use either broker or agency, not both' },
+          { status: 400 }
+        );
+      }
+
+      if (!brokerName && !agencyName) {
+        return NextResponse.json(
+          { error: 'Broker or agency is required before approving this case' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Check if case is in pending_approval status
     if (caseRecord.status !== 'pending_approval') {
       return NextResponse.json(
@@ -238,6 +261,9 @@ export async function POST(
           marketValue: finalMarketValue.toString(),
           estimatedSalvageValue: finalSalvageValue.toString(),
           reservePrice: finalReservePrice.toString(),
+          brokerName: brokerName || null,
+          agencyName: agencyName || null,
+          branchName: branchName || null,
           // Store original AI estimates for audit trail (Requirement: 6.4, 11.4)
           aiEstimates: aiEstimates,
           // Store manager overrides if any (Requirement: 6.4, 11.4)

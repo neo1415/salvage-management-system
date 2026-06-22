@@ -79,6 +79,17 @@ export interface PaymentResult {
   paystackAmount?: number;
 }
 
+function formatPaymentMethod(method: string | null | undefined): string {
+  const labels: Record<string, string> = {
+    paystack: 'Paystack',
+    flutterwave: 'Flutterwave',
+    bank_transfer: 'Bank Transfer',
+    escrow_wallet: 'Escrow Wallet',
+  };
+
+  return method ? labels[method] ?? method.replace(/_/g, ' ') : 'Verified payment';
+}
+
 /**
  * Payment Service
  * Handles payment processing for auction deposit system
@@ -1380,6 +1391,22 @@ export class PaymentService {
       const policy = await businessPolicyService.getEffectivePolicy();
       const pickupDeadlineHours = Math.max(1, policy.auctions.documentValidityHours);
       const pickupDeadline = new Date(Date.now() + pickupDeadlineHours * 60 * 60 * 1000);
+      const [verifiedPayment] = await db
+        .select({
+          id: payments.id,
+          paymentMethod: payments.paymentMethod,
+          paymentReference: payments.paymentReference,
+        })
+        .from(payments)
+        .where(
+          and(
+            eq(payments.auctionId, paymentInfo.auctionId),
+            eq(payments.vendorId, paymentInfo.vendorId),
+            eq(payments.status, 'verified')
+          )
+        )
+        .orderBy(desc(payments.verifiedAt), desc(payments.updatedAt))
+        .limit(1);
       
       // Send SMS with pickup code (wrapped in try-catch to prevent blocking)
       try {
@@ -1408,8 +1435,8 @@ export class PaymentService {
             paymentId: 'PAYMENT-' + paymentInfo.auctionId.substring(0, 8),
             assetName,
             paymentAmount: paymentInfo.amount,
-            paymentMethod: 'Wallet/Paystack',
-            paymentReference: '',
+            paymentMethod: formatPaymentMethod(verifiedPayment?.paymentMethod),
+            paymentReference: verifiedPayment?.paymentReference || verifiedPayment?.id || '',
             pickupAuthCode,
             pickupLocation: locationName,
             pickupDeadline: pickupDeadline.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),

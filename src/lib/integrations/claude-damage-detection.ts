@@ -34,7 +34,7 @@ import Anthropic from '@anthropic-ai/sdk';
 export interface VehicleContext {
   make: string;
   model: string;
-  year: number;
+  year?: number;
   itemType?: string; // Optional field to support universal items
 }
 
@@ -163,6 +163,18 @@ export function isClaudeEnabled(): boolean {
 }
 
 /**
+ * Get the Claude client instance for adjacent multimodal workflows.
+ * Keep usage server-side only; never expose the API key or client to the browser.
+ */
+export function getClaudeClient(): Anthropic | null {
+  return claudeClient;
+}
+
+export function getClaudeModelName(): string {
+  return serviceConfig.model;
+}
+
+/**
  * Get the current service configuration (for testing/monitoring)
  */
 export function getClaudeServiceConfig(): {
@@ -215,7 +227,7 @@ const CLAUDE_RESPONSE_SCHEMA = {
     severity: { type: "string", enum: ["minor", "moderate", "severe"] },
     airbagDeployed: { type: "boolean" },
     totalLoss: { type: "boolean" },
-    summary: { type: "string", maxLength: 500 }
+    summary: { type: "string", maxLength: 1500 }
   },
   required: ["itemDetails", "damagedParts", "severity", "airbagDeployed", "totalLoss", "summary"]
 };
@@ -311,9 +323,9 @@ export function parseAndValidateClaudeResponse(responseText: string, requestId: 
 
   // Validate summary
   let summary = typeof parsedResponse.summary === 'string' ? parsedResponse.summary : 'Damage assessment completed. Please review detailed parts.';
-  if (summary.length > 500) {
-    summary = summary.substring(0, 497) + '...';
-    console.warn(`[Claude Service] Summary exceeds 500 characters. Truncated. Request ID: ${requestId}`);
+  if (summary.length > 1500) {
+    summary = summary.substring(0, 1497) + '...';
+    console.warn(`[Claude Service] Summary exceeds 1500 characters. Truncated. Request ID: ${requestId}`);
   }
 
   // Parse itemDetails if present
@@ -390,7 +402,7 @@ export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext):
   } else if (isMachinery) {
     return constructMachineryPrompt(make, model, year);
   } else {
-    return constructVehiclePrompt(year, make, model);
+    return constructGeneralAssetPrompt(make, model, itemType || 'other', year);
   }
 }
 
@@ -400,16 +412,20 @@ import {
 } from './gemini-damage-detection';
 
 // Use Gemini's prompt construction directly
-const constructVehiclePrompt = (year: number, make: string, model: string) => {
+const constructVehiclePrompt = (year: number | undefined, make: string, model: string) => {
   return geminiConstructPrompt({ year, make, model }).replace(/Gemini/g, 'Claude');
 };
 
-const constructElectronicsPrompt = (brand: string, model: string, year: number) => {
+const constructElectronicsPrompt = (brand: string, model: string, year?: number) => {
   return geminiConstructPrompt({ year, make: brand, model, itemType: 'electronics' }).replace(/Gemini/g, 'Claude');
 };
 
-const constructMachineryPrompt = (brand: string, model: string, year: number) => {
+const constructMachineryPrompt = (brand: string, model: string, year?: number) => {
   return geminiConstructPrompt({ year, make: brand, model, itemType: 'machinery' }).replace(/Gemini/g, 'Claude');
+};
+
+const constructGeneralAssetPrompt = (category: string, description: string, itemType: string, year?: number) => {
+  return geminiConstructPrompt({ year, make: category, model: description, itemType }).replace(/Gemini/g, 'Claude');
 };
 
 /**
@@ -610,16 +626,18 @@ export async function assessDamageWithClaude(
     throw new Error(errorMsg);
   }
 
-  if (!vehicleContext || !vehicleContext.make || !vehicleContext.model || !vehicleContext.year) {
+  const requiresYear = !vehicleContext?.itemType || vehicleContext.itemType === 'vehicle' || vehicleContext.itemType === 'machinery' || vehicleContext.itemType === 'equipment';
+
+  if (!vehicleContext || !vehicleContext.make || !vehicleContext.model || (requiresYear && !vehicleContext.year)) {
     const errorMsg = 
-      `Item context (make/brand, model, year) is required for damage assessment. ` +
+      `Item context (make/brand, model${requiresYear ? ', year' : ''}) is required for damage assessment. ` +
       `Received: ${JSON.stringify(vehicleContext)}. Request ID: ${requestId}`;
     console.error(`[Claude Service] ${errorMsg}`);
     throw new Error(errorMsg);
   }
 
   const itemDescription = vehicleContext.itemType 
-    ? `${vehicleContext.make} ${vehicleContext.model} ${vehicleContext.itemType} (${vehicleContext.year})`
+    ? `${vehicleContext.make} ${vehicleContext.model} ${vehicleContext.itemType}${vehicleContext.year ? ` (${vehicleContext.year})` : ''}`
     : `${vehicleContext.year} ${vehicleContext.make} ${vehicleContext.model}`;
 
   console.info(

@@ -1335,7 +1335,7 @@ export class RecommendationService {
 
       // Category match boost
       const assetType = String(auction.asset_type ?? '');
-      if (vendorCategories.includes(assetType as 'vehicle' | 'property' | 'electronics' | 'machinery')) {
+      if ((vendorCategories as readonly string[]).includes(assetType)) {
         matchScore += 30;
       }
 

@@ -1,0 +1,12 @@
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'appliance';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'furniture';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'jewelry';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'stock';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'goods_in_transit';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'building_materials';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'scrap';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'agriculture';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'medical_equipment';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'energy_equipment';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'aviation_equipment';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'other';

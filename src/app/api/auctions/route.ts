@@ -128,9 +128,9 @@ export async function GET(request: NextRequest) {
     if (assetType) {
       const assetTypes = assetType.split(',').map(t => t.trim()).filter(Boolean);
       if (assetTypes.length === 1) {
-        conditions.push(eq(salvageCases.assetType, assetTypes[0] as 'vehicle' | 'property' | 'electronics'));
+        conditions.push(eq(salvageCases.assetType, assetTypes[0] as any));
       } else if (assetTypes.length > 1) {
-        conditions.push(inArray(salvageCases.assetType, assetTypes as ('vehicle' | 'property' | 'electronics')[]));
+        conditions.push(inArray(salvageCases.assetType, assetTypes as any[]));
       }
     }
 

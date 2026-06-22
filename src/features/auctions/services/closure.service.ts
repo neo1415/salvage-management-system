@@ -16,7 +16,7 @@ import { payments } from '@/lib/db/schema/payments';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { eq, and, lte } from 'drizzle-orm';
+import { eq, and, lte, sql } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
@@ -66,6 +66,27 @@ async function getEffectiveDocumentDeadlineHours(legacyHours: number): Promise<n
 
   const policy = await businessPolicyService.getEffectivePolicy();
   return resolveDocumentDeadlineHours(policy).value ?? legacyHours;
+}
+
+function firstRow<T>(result: unknown): T | undefined {
+  if (Array.isArray(result)) return result[0] as T | undefined;
+  const rows = (result as { rows?: T[] })?.rows;
+  return rows?.[0];
+}
+
+async function tryAcquireAuctionClosureLock(auctionId: string): Promise<boolean> {
+  const lockKey = `auction-closure:${auctionId}`;
+  const result = await db.execute(sql`SELECT pg_try_advisory_lock(hashtext(${lockKey})) AS acquired`);
+  return firstRow<{ acquired: boolean }>(result)?.acquired === true;
+}
+
+async function releaseAuctionClosureLock(auctionId: string): Promise<void> {
+  const lockKey = `auction-closure:${auctionId}`;
+  try {
+    await db.execute(sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`);
+  } catch (error) {
+    console.error(`Failed to release auction closure lock for ${auctionId}:`, error);
+  }
 }
 
 /**
@@ -147,7 +168,16 @@ export class AuctionClosureService {
    * @returns Auction closure result
    */
   async closeAuction(auctionId: string): Promise<AuctionClosureResult> {
+    let lockAcquired = false;
     try {
+      lockAcquired = await tryAcquireAuctionClosureLock(auctionId);
+      if (!lockAcquired) {
+        return await this.resolveExistingClosureResult(
+          auctionId,
+          'Auction closure is already in progress. Refresh the auction in a few seconds.'
+        );
+      }
+
       // Get auction details
       const [auction] = await db
         .select()
@@ -570,7 +600,48 @@ export class AuctionClosureService {
         auctionId,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
+    } finally {
+      if (lockAcquired) {
+        await releaseAuctionClosureLock(auctionId);
+      }
     }
+  }
+
+  private async resolveExistingClosureResult(
+    auctionId: string,
+    inProgressMessage = 'Auction closure has already been processed.'
+  ): Promise<AuctionClosureResult> {
+    const [auction] = await db
+      .select()
+      .from(auctions)
+      .where(eq(auctions.id, auctionId))
+      .limit(1);
+
+    if (!auction) {
+      return { success: false, auctionId, error: 'Auction not found' };
+    }
+
+    const [payment] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.auctionId, auctionId))
+      .limit(1);
+
+    if (auction.status === 'closed' || auction.status === 'awaiting_payment') {
+      return {
+        success: true,
+        auctionId,
+        winnerId: auction.currentBidder || undefined,
+        winningBid: auction.currentBid ? parseFloat(auction.currentBid) : undefined,
+        paymentId: payment?.id,
+      };
+    }
+
+    return {
+      success: false,
+      auctionId,
+      error: inProgressMessage,
+    };
   }
 
   /**

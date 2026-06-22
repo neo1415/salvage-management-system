@@ -7,6 +7,7 @@ import { db } from '@/lib/db';
 import { pushSubscriptions, notificationPreferences } from '@/lib/db/schema/push-subscriptions';
 import { eq, and } from 'drizzle-orm';
 import webpush from 'web-push';
+import { businessPolicyService } from '@/features/business-policy';
 
 // Configure VAPID details
 if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
@@ -41,6 +42,25 @@ export interface NotificationPayload {
 }
 
 type PreferenceToggle = 'bidAlerts' | 'auctionEnding' | 'paymentReminders' | 'leaderboardUpdates';
+
+async function getPolicyPushAssets(): Promise<{ icon: string; badge: string }> {
+  try {
+    const policy = await businessPolicyService.getPublicPolicy();
+    const icon = policy.branding.faviconPath || policy.branding.logoPath || '/icons/icon-192.png';
+    return {
+      icon,
+      badge: icon,
+    };
+  } catch (error) {
+    console.warn('[Push] Business policy unavailable; using default push assets', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return {
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+    };
+  }
+}
 
 function preferenceKeyForType(type?: string): PreferenceToggle | null {
   switch (type) {
@@ -148,6 +168,8 @@ export async function sendPushToUser(
       return { success: false, sentCount: 0, errors: ['Notification type disabled'] };
     }
 
+    const policyAssets = await getPolicyPushAssets();
+
     // Send to all subscriptions
     const results = await Promise.allSettled(
       subscriptions.map((subscription) =>
@@ -162,8 +184,8 @@ export async function sendPushToUser(
           JSON.stringify({
             title: payload.title,
             body: payload.body,
-            icon: payload.icon || '/icons/icon-192.png',
-            badge: payload.badge || '/icons/icon-192.png',
+            icon: payload.icon || policyAssets.icon,
+            badge: payload.badge || policyAssets.badge,
             data: payload.data || {},
             tag: payload.tag || 'default',
             requireInteraction: payload.requireInteraction || false,

@@ -14,6 +14,7 @@ interface User {
   email: string;
   phone: string;
   fullName: string;
+  branchName?: string | null;
   role: string;
   status: string;
   createdAt: string;
@@ -227,6 +228,10 @@ export default function ActionModal({ actionModal, selectedUser, onClose, onSucc
                 <div>
                   <p className="text-sm text-gray-500">Phone</p>
                   <p className="text-base font-medium">{selectedUser.phone}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Branch</p>
+                  <p className="text-base font-medium">{selectedUser.branchName || '-'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Role</p>

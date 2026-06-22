@@ -18,6 +18,7 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { bids } from '@/lib/db/schema/bids';
 import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
+import { sanitizeAiAssessmentWarnings } from '@/features/cases/services/ai-warning-sanitization';
 
 export async function GET(
   _request: NextRequest,
@@ -25,10 +26,8 @@ export async function GET(
 ) {
   try {
     const { id: caseId } = await params;
-    console.log('Fetching case with ID:', caseId);
     
     const session = await auth();
-    console.log('Session:', { userId: session?.user?.id, role: session?.user?.role });
 
     if (!session?.user?.id) {
       return NextResponse.json(
@@ -38,11 +37,15 @@ export async function GET(
     }
 
     // Fetch the case with adjuster info
-    console.log('Querying database for case:', caseId);
     const caseResult = await db
       .select({
         id: salvageCases.id,
         claimReference: salvageCases.claimReference,
+        policyNumber: salvageCases.policyNumber,
+        insuranceClass: salvageCases.insuranceClass,
+        brokerName: salvageCases.brokerName,
+        agencyName: salvageCases.agencyName,
+        branchName: salvageCases.branchName,
         assetType: salvageCases.assetType,
         assetDetails: salvageCases.assetDetails,
         marketValue: salvageCases.marketValue,
@@ -66,9 +69,6 @@ export async function GET(
       .leftJoin(users, eq(salvageCases.createdBy, users.id))
       .where(eq(salvageCases.id, caseId))
       .limit(1);
-
-    console.log('Query result:', { found: caseResult.length > 0 });
-
     if (caseResult.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Case not found' },
@@ -77,12 +77,13 @@ export async function GET(
     }
 
     const caseData = caseResult[0];
-    console.log('Case data:', { 
-      id: caseData.id, 
-      createdBy: caseData.createdBy,
-      status: caseData.status,
-      damageSeverity: caseData.damageSeverity, // DEBUG: Log severity
+
+    const auctionRows = await db.query.auctions.findMany({
+      where: eq(auctions.caseId, caseId),
     });
+    const evidencePacketAvailable =
+      caseData.status === 'sold' &&
+      auctionRows.some((auction) => auction.pickupConfirmedAdmin === true);
 
     // Check if user has permission to view this case
     // Adjusters can only view their own cases
@@ -91,8 +92,6 @@ export async function GET(
     const isAdjuster = userRole === 'claims_adjuster';
     const isOwner = caseData.createdBy === session.user.id;
 
-    console.log('Permission check:', { userRole, isAdjuster, isOwner });
-
     if (isAdjuster && !isOwner) {
       return NextResponse.json(
         { success: false, error: 'You do not have permission to view this case' },
@@ -100,9 +99,23 @@ export async function GET(
       );
     }
 
+    const sanitizedAiAssessment = caseData.aiAssessment && typeof caseData.aiAssessment === 'object'
+      ? {
+          ...(caseData.aiAssessment as Record<string, unknown>),
+          warnings: sanitizeAiAssessmentWarnings(
+            (caseData.aiAssessment as { warnings?: string[] }).warnings,
+            (caseData.aiAssessment as { reviewReasons?: string[] }).reviewReasons
+          ),
+        }
+      : caseData.aiAssessment;
+
     return NextResponse.json({
       success: true,
-      data: caseData,
+      data: {
+        ...caseData,
+        aiAssessment: sanitizedAiAssessment,
+        evidencePacketAvailable,
+      },
     });
   } catch (error) {
     console.error('Error fetching case:', error);

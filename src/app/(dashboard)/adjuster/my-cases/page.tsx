@@ -16,7 +16,9 @@ import {
   MapPin,
   ChevronDown,
   ChevronUp,
-  Trash2
+  Trash2,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
 import {
@@ -40,10 +42,32 @@ const CASE_STATUS_SWIPE_ORDER: StatusFilter[] = [
   'sold',
 ];
 
+const INSURANCE_CLASS_LABELS: Record<string, string> = {
+  motor: 'Motor',
+  goods_in_transit: 'Goods in Transit (GIT)',
+  fire: 'Fire and Special Perils',
+  burglary: 'Burglary/Theft',
+  marine: 'Marine',
+  engineering: 'Engineering/Plant',
+  agriculture: 'Agriculture',
+  liability: 'Liability',
+  other: 'Other',
+};
+
+function formatInsuranceClass(value?: string | null): string {
+  if (!value) return '-';
+  return INSURANCE_CLASS_LABELS[value] ?? value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 interface Case {
   id: string;
   claimReference: string;
+  policyNumber?: string | null;
   assetType: string;
+  insuranceClass?: string | null;
+  brokerName?: string | null;
+  agencyName?: string | null;
+  branchName?: string | null;
   estimatedValue: string;
   locationName: string;
   status: string;
@@ -73,7 +97,7 @@ type StatusFilter =
   | 'active_auction'
   | 'sold';
 
-export default function AdjusterMyCasesPage() {
+export function CasePortfolioPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const isOffline = useOffline();
@@ -82,6 +106,7 @@ export default function AdjusterMyCasesPage() {
   const [offlineCases, setOfflineCases] = useState<OfflineCase[]>([]);
   const [filteredCases, setFilteredCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,6 +114,10 @@ export default function AdjusterMyCasesPage() {
   // Export states
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const userRole = session?.user?.role;
+  const isClaimsAdjuster = userRole === 'claims_adjuster';
+  const isSalvageManager = userRole === 'salvage_manager';
+  const isManagerPortfolio = isSalvageManager;
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -99,9 +128,12 @@ export default function AdjusterMyCasesPage() {
     }
 
     if (status === 'authenticated') {
-      const userRole = session?.user?.role;
-      
-      if (userRole !== 'claims_adjuster') {
+      if (isClaimsAdjuster) {
+        router.push('/adjuster/cases/new');
+        return;
+      }
+
+      if (!isSalvageManager) {
         router.push('/login');
         return;
       }
@@ -109,7 +141,7 @@ export default function AdjusterMyCasesPage() {
       // Only fetch once on mount, not on every navigation
       fetchMyCases();
     }
-  }, [status]); // Removed session and router from dependencies to prevent auto-refresh
+  }, [status, isClaimsAdjuster, isSalvageManager]); // Keep role-aware routing stable after session hydration
 
   useEffect(() => {
     filterCases();
@@ -135,16 +167,21 @@ export default function AdjusterMyCasesPage() {
   const fetchMyCases = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       
-      // Always load drafts and offline cases from IndexedDB
-      try {
-        const localDrafts = await getAllDrafts();
-        setDrafts(localDrafts);
-        
-        const localOfflineCases = await getAllOfflineCases();
-        setOfflineCases(localOfflineCases);
-      } catch (error) {
-        console.error('Failed to load local data from IndexedDB:', error);
+      if (isClaimsAdjuster) {
+        try {
+          const localDrafts = await getAllDrafts();
+          setDrafts(localDrafts);
+          
+          const localOfflineCases = await getAllOfflineCases();
+          setOfflineCases(localOfflineCases);
+        } catch (error) {
+          console.error('Failed to load local data from IndexedDB:', error);
+          setDrafts([]);
+          setOfflineCases([]);
+        }
+      } else {
         setDrafts([]);
         setOfflineCases([]);
       }
@@ -153,12 +190,22 @@ export default function AdjusterMyCasesPage() {
       if (!isOffline) {
         // Add timestamp to bust cache
         const timestamp = Date.now();
+        const casesPath = isSalvageManager
+          ? `/api/cases?limit=500&_t=${timestamp}`
+          : `/api/cases?createdByMe=true&limit=500&_t=${timestamp}`;
         const response = await fetch(
-          `/api/cases?createdByMe=true&limit=500&_t=${timestamp}`
+          casesPath
         );
         
         if (!response.ok) {
-          throw new Error('Failed to fetch cases');
+          let errorMessage = 'Failed to fetch cases';
+          try {
+            const errorResult = await response.json();
+            errorMessage = errorResult?.error || errorResult?.message || errorMessage;
+          } catch {
+            errorMessage = `${errorMessage} (${response.status})`;
+          }
+          throw new Error(errorMessage);
         }
 
         const result = await response.json();
@@ -186,6 +233,7 @@ export default function AdjusterMyCasesPage() {
           setCases(Array.from(uniqueCases.values()));
         } else {
           console.error('API returned error:', result.error);
+          setLoadError(result.error || 'Cases could not be loaded.');
           setCases([]);
         }
       } else {
@@ -194,6 +242,7 @@ export default function AdjusterMyCasesPage() {
       }
     } catch (error) {
       console.error('Failed to fetch cases:', error);
+      setLoadError(error instanceof Error ? error.message : 'Cases could not be loaded.');
       setCases([]);
     } finally {
       setLoading(false);
@@ -264,10 +313,15 @@ export default function AdjusterMyCasesPage() {
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(c => 
+      filtered = filtered.filter(c =>
         c.claimReference.toLowerCase().includes(query) ||
+        (c.policyNumber ?? '').toLowerCase().includes(query) ||
         c.assetType.toLowerCase().includes(query) ||
-        c.locationName.toLowerCase().includes(query)
+        c.locationName.toLowerCase().includes(query) ||
+        (c.insuranceClass ?? '').toLowerCase().includes(query) ||
+        (c.branchName ?? '').toLowerCase().includes(query) ||
+        (c.brokerName ?? '').toLowerCase().includes(query) ||
+        (c.agencyName ?? '').toLowerCase().includes(query)
       );
     }
 
@@ -377,6 +431,9 @@ export default function AdjusterMyCasesPage() {
       // Use filtered cases for export (respects status filters and search)
       const exportData = filteredCases.map(caseItem => ({
         claimReference: caseItem.claimReference,
+        insuranceClass: formatInsuranceClass(caseItem.insuranceClass),
+        branchName: caseItem.branchName ?? '',
+        source: caseItem.brokerName ? `Broker: ${caseItem.brokerName}` : caseItem.agencyName ? `Agency: ${caseItem.agencyName}` : '',
         assetType: caseItem.assetType,
         status: caseItem.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
         createdDate: new Date(caseItem.createdAt).toLocaleDateString('en-NG', {
@@ -391,12 +448,15 @@ export default function AdjusterMyCasesPage() {
       }));
 
       // Generate CSV content
-      const headers = ['Claim Reference', 'Asset Type', 'Status', 'Created Date', 'Market Value', 'Reserve Price', 'Location', 'Damage Severity'];
+      const headers = ['Claim Reference', 'Insurance Class', 'Branch', 'Business Source', 'Asset Type', 'Status', 'Created Date', 'Market Value', 'Reserve Price', 'Location', 'Damage Severity'];
       const csvRows = [headers.join(',')];
       
       exportData.forEach(row => {
         const values = [
           escapeCSVField(row.claimReference),
+          escapeCSVField(row.insuranceClass),
+          escapeCSVField(row.branchName),
+          escapeCSVField(row.source),
           escapeCSVField(row.assetType),
           escapeCSVField(row.status),
           escapeCSVField(row.createdDate),
@@ -417,7 +477,7 @@ export default function AdjusterMyCasesPage() {
       const date = new Date().toISOString().split('T')[0];
       
       link.setAttribute('href', url);
-      link.setAttribute('download', `my-cases-${date}.csv`);
+      link.setAttribute('download', `${isManagerPortfolio ? 'case-portfolio' : 'my-cases'}-${date}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -441,6 +501,7 @@ export default function AdjusterMyCasesPage() {
       const exportData = filteredCases.map(caseItem => ({
         claimRef: caseItem.claimReference.substring(0, 15),
         assetType: caseItem.assetType.substring(0, 12),
+        branchName: (caseItem.branchName ?? '').substring(0, 12),
         status: caseItem.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).substring(0, 12),
         createdDate: new Date(caseItem.createdAt).toLocaleDateString('en-NG', {
           year: 'numeric',
@@ -458,7 +519,7 @@ export default function AdjusterMyCasesPage() {
       const doc = new jsPDF();
       
       // Add letterhead
-      await PDFTemplateService.addLetterhead(doc, 'MY CASES REPORT');
+      await PDFTemplateService.addLetterhead(doc, isManagerPortfolio ? 'CASE PORTFOLIO REPORT' : 'MY CASES REPORT');
       
       // Add table data
       let y = 65; // Start below letterhead
@@ -470,10 +531,10 @@ export default function AdjusterMyCasesPage() {
       doc.setFont('helvetica', 'bold');
       doc.text('Claim Ref', 15, y);
       doc.text('Asset Type', 50, y);
-      doc.text('Status', 85, y);
-      doc.text('Created', 115, y);
-      doc.text('Value', 145, y);
-      doc.text('Location', 170, y);
+      doc.text('Branch', 80, y);
+      doc.text('Status', 110, y);
+      doc.text('Created', 138, y);
+      doc.text('Value', 162, y);
       
       y += 5;
       doc.setFont('helvetica', 'normal');
@@ -485,7 +546,7 @@ export default function AdjusterMyCasesPage() {
           PDFTemplateService.addFooter(doc);
           // Start new page
           doc.addPage();
-          await PDFTemplateService.addLetterhead(doc, 'MY CASES REPORT');
+          await PDFTemplateService.addLetterhead(doc, isManagerPortfolio ? 'CASE PORTFOLIO REPORT' : 'MY CASES REPORT');
           y = 65;
           
           // Re-add headers on new page
@@ -493,20 +554,20 @@ export default function AdjusterMyCasesPage() {
           doc.setFont('helvetica', 'bold');
           doc.text('Claim Ref', 15, y);
           doc.text('Asset Type', 50, y);
-          doc.text('Status', 85, y);
-          doc.text('Created', 115, y);
-          doc.text('Value', 145, y);
-          doc.text('Location', 170, y);
+          doc.text('Branch', 80, y);
+          doc.text('Status', 110, y);
+          doc.text('Created', 138, y);
+          doc.text('Value', 162, y);
           y += 5;
           doc.setFont('helvetica', 'normal');
         }
         
         doc.text(item.claimRef, 15, y);
         doc.text(item.assetType, 50, y);
-        doc.text(item.status, 85, y);
-        doc.text(item.createdDate, 115, y);
-        doc.text(item.marketValue, 145, y);
-        doc.text(item.location, 170, y);
+        doc.text(item.branchName || '-', 80, y);
+        doc.text(item.status, 110, y);
+        doc.text(item.createdDate, 138, y);
+        doc.text(item.marketValue, 162, y);
         y += 5;
       }
       
@@ -515,7 +576,7 @@ export default function AdjusterMyCasesPage() {
       
       // Download PDF
       const date = new Date().toISOString().split('T')[0];
-      doc.save(`my-cases-${date}.pdf`);
+      doc.save(`${isManagerPortfolio ? 'case-portfolio' : 'my-cases'}-${date}.pdf`);
       
       alert(`Successfully exported ${filteredCases.length} case records to PDF`);
     } catch (err) {
@@ -540,14 +601,32 @@ export default function AdjusterMyCasesPage() {
   }
 
   const statusCounts = getStatusCounts();
+  const statusTabs = [
+    { key: 'all', label: 'All Cases', count: statusCounts.all },
+    ...(isClaimsAdjuster ? [{ key: 'draft' as const, label: 'Draft', count: statusCounts.draft }] : []),
+    { key: 'pending_approval', label: 'Pending', count: statusCounts.pending_approval },
+    { key: 'rejected', label: 'Rejected', count: statusCounts.rejected },
+    { key: 'approved', label: 'Approved', count: statusCounts.approved },
+    { key: 'active_auction', label: 'Active Auction', count: statusCounts.active_auction },
+    { key: 'sold', label: 'Sold', count: statusCounts.sold },
+  ] satisfies Array<{ key: StatusFilter; label: string; count: number }>;
+  const swipeOrder = isClaimsAdjuster
+    ? CASE_STATUS_SWIPE_ORDER
+    : CASE_STATUS_SWIPE_ORDER.filter((tab) => tab !== 'draft');
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-3xl font-bold text-gray-900">My Cases</h1>
-          <p className="text-gray-600 mt-2">View and manage all cases you've created</p>
+          <h1 className="text-3xl font-bold text-gray-900">
+            {isManagerPortfolio ? 'Case Portfolio' : 'My Cases'}
+          </h1>
+          <p className="text-gray-600 mt-2">
+            {isManagerPortfolio
+              ? 'Review submitted, approved, auctioned, and sold salvage cases across adjusters'
+              : "View the cases you've reported and their review status"}
+          </p>
         </div>
         <div className="flex w-full flex-row items-center gap-3 sm:w-auto">
           {/* Export Dropdown */}
@@ -604,14 +683,41 @@ export default function AdjusterMyCasesPage() {
             )}
           </div>
           
-          <Link
-            href="/adjuster/cases/new"
-            className="flex flex-1 items-center justify-center rounded-lg bg-[var(--brand-primary)] px-4 py-3 text-center font-medium text-white transition-colors hover:bg-[var(--brand-primary-hover)] sm:flex-none sm:px-6"
-          >
-            Create New Case
-          </Link>
+          {isClaimsAdjuster && (
+            <Link
+              href="/adjuster/cases/new"
+              className="flex flex-1 items-center justify-center rounded-lg bg-[var(--brand-primary)] px-4 py-3 text-center font-medium text-white transition-colors hover:bg-[var(--brand-primary-hover)] sm:flex-none sm:px-6"
+            >
+              Create New Case
+            </Link>
+          )}
         </div>
       </div>
+
+      {loadError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-900">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 flex-none text-red-600" />
+              <div>
+                <h2 className="font-semibold">Cases could not be loaded</h2>
+                <p className="mt-1 text-sm text-red-800">
+                  {loadError}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={fetchMyCases}
+              disabled={loading}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-800 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Search and Filter */}
       <div className="bg-white rounded-lg shadow p-6">
@@ -633,15 +739,7 @@ export default function AdjusterMyCasesPage() {
       <div className="bg-white rounded-lg shadow">
         <div className="border-b border-gray-200">
           <nav className="flex overflow-x-auto">
-            {[
-              { key: 'all', label: 'All Cases', count: statusCounts.all },
-              { key: 'draft', label: 'Draft', count: statusCounts.draft },
-              { key: 'pending_approval', label: 'Pending', count: statusCounts.pending_approval },
-              { key: 'rejected', label: 'Rejected', count: statusCounts.rejected },
-              { key: 'approved', label: 'Approved', count: statusCounts.approved },
-              { key: 'active_auction', label: 'Active Auction', count: statusCounts.active_auction },
-              { key: 'sold', label: 'Sold', count: statusCounts.sold },
-            ].map((tab) => (
+            {statusTabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setStatusFilter(tab.key as StatusFilter)}
@@ -662,7 +760,7 @@ export default function AdjusterMyCasesPage() {
 
         {/* Cases List */}
         <SwipeTabsBody
-          tabs={CASE_STATUS_SWIPE_ORDER}
+          tabs={swipeOrder}
           activeTab={statusFilter}
           onTabChange={setStatusFilter}
           className="p-6"
@@ -676,12 +774,14 @@ export default function AdjusterMyCasesPage() {
                 <p className="text-gray-600 mb-6">
                   Drafts are auto-saved as you work on the case creation form.
                 </p>
-                <Link
-                  href="/adjuster/cases/new"
-                  className="inline-flex items-center px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors font-medium"
-                >
-                  Create New Case
-                </Link>
+                {isClaimsAdjuster && (
+                  <Link
+                    href="/adjuster/cases/new"
+                    className="inline-flex items-center px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors font-medium"
+                  >
+                    Create New Case
+                  </Link>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -702,10 +802,12 @@ export default function AdjusterMyCasesPage() {
                   : statusFilter === 'rejected'
                     ? 'No rejected cases yet. Cases returned by a salvage manager will show the rejection reason here.'
                     : statusFilter === 'all'
-                      ? "You haven't created any cases yet."
+                      ? isManagerPortfolio
+                        ? 'No submitted cases are available yet.'
+                        : "You haven't created any cases yet."
                       : `No cases with status "${statusFilter.replace('_', ' ')}".`}
               </p>
-              {statusFilter === 'all' && !searchQuery && (
+              {isClaimsAdjuster && statusFilter === 'all' && !searchQuery && (
                 <Link
                   href="/adjuster/cases/new"
                   className="inline-flex items-center px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors font-medium"
@@ -738,6 +840,7 @@ export default function AdjusterMyCasesPage() {
                     showRejectionReason={statusFilter === 'rejected' || Boolean(caseItem.rejectionReason)}
                     getStatusBadge={getStatusBadge}
                     isOfflineCase={isOfflineCase}
+                    detailsBasePath={isManagerPortfolio ? '/manager/cases' : '/adjuster/cases'}
                   />
                 );
               })}
@@ -747,6 +850,10 @@ export default function AdjusterMyCasesPage() {
       </div>
     </div>
   );
+}
+
+export default function AdjusterMyCasesPage() {
+  return <CasePortfolioPage />;
 }
 
 // Draft Card Component for IndexedDB drafts
@@ -868,6 +975,7 @@ interface CaseCardProps {
   getStatusBadge: (caseItem: Case) => ReactElement;
   isOfflineCase?: boolean;
   showRejectionReason?: boolean;
+  detailsBasePath?: '/adjuster/cases' | '/manager/cases';
 }
 
 function CaseCard({
@@ -876,6 +984,7 @@ function CaseCard({
   getStatusBadge,
   isOfflineCase = false,
   showRejectionReason = false,
+  detailsBasePath = '/adjuster/cases',
 }: CaseCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const router = useRouter();
@@ -907,7 +1016,7 @@ function CaseCard({
   return (
     <div className="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
       <Link
-        href={`/adjuster/cases/${caseItem.id}`}
+        href={`${detailsBasePath}/${caseItem.id}`}
         className="block p-4"
       >
         {/* Header: Claim Reference + Status Badge */}
@@ -970,6 +1079,29 @@ function CaseCard({
             </div>
           </div>
         </div>
+
+        {(caseItem.policyNumber || caseItem.insuranceClass || caseItem.branchName || caseItem.brokerName || caseItem.agencyName) && (
+          <div className="mb-3 grid gap-2 rounded-lg bg-gray-50 p-3 text-sm md:grid-cols-4">
+            <div>
+              <p className="text-xs text-gray-500">Policy Number</p>
+              <p className="font-medium text-gray-900">{caseItem.policyNumber || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Insurance Class</p>
+              <p className="font-medium text-gray-900">{formatInsuranceClass(caseItem.insuranceClass)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Branch</p>
+              <p className="font-medium text-gray-900">{caseItem.branchName || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Business Source</p>
+              <p className="font-medium text-gray-900">
+                {caseItem.brokerName ? `Broker: ${caseItem.brokerName}` : caseItem.agencyName ? `Agency: ${caseItem.agencyName}` : '-'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {showRejectionReason && caseItem.rejectionReason && (
           <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3">

@@ -481,6 +481,46 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
           </CardContent>
         </Card>
 
+        {data.operational.branches && data.operational.branches.length > 0 && (
+          <Card className="mb-4 min-w-0 overflow-hidden">
+            <CardHeader>
+              <CardTitle>Branch Recovery Performance</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PaginatedReportRows rows={data.operational.branches} label="branches">
+                {(rows, startIndex) => (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-4">Branch</th>
+                          <th className="text-center py-2 px-4">Cases</th>
+                          <th className="text-center py-2 px-4">Sold</th>
+                          <th className="text-right py-2 px-4">Claims Value</th>
+                          <th className="text-right py-2 px-4">Verified Recovery</th>
+                          <th className="text-right py-2 px-4">Recovery Rate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((branch, index) => (
+                          <tr key={`${branch.branchName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
+                            <td className="py-2 px-4 font-medium">{branch.branchName}</td>
+                            <td className="py-2 px-4 text-center">{branch.totalCases}</td>
+                            <td className="py-2 px-4 text-center">{branch.soldCases}</td>
+                            <td className="py-2 px-4 text-right">{formatCurrency(branch.claimsValue)}</td>
+                            <td className="py-2 px-4 text-right font-semibold">{formatCurrency(branch.verifiedRecovery)}</td>
+                            <td className="py-2 px-4 text-right">{formatPercent(branch.recoveryRate)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </PaginatedReportRows>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle>Top Performing Auctions</CardTitle>

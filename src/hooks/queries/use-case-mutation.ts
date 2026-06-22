@@ -10,14 +10,16 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Case } from './use-cases';
+import type { Case, SalvageAssetType } from './use-cases';
+import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
 
 interface CreateCaseInput {
   claimReference: string;
-  assetType: 'vehicle' | 'property' | 'electronics';
+  assetType: SalvageAssetType;
   assetDetails: Record<string, unknown>;
   marketValue: number;
   photos: string[];
+  photoMetadata?: ImageUploadClientMetadata[];
   gpsLocation: { latitude: number; longitude: number };
   locationName: string;
   voiceNotes?: string[];

@@ -25,7 +25,24 @@ export interface VendorOutreachContext {
   appUrl: string;
 }
 
-const SUPPORTED_VENDOR_CATEGORIES = ['vehicle', 'property', 'electronics', 'machinery'] as const;
+const SUPPORTED_VENDOR_CATEGORIES = [
+  'vehicle',
+  'property',
+  'electronics',
+  'machinery',
+  'appliance',
+  'furniture',
+  'jewelry',
+  'stock',
+  'goods_in_transit',
+  'building_materials',
+  'scrap',
+  'agriculture',
+  'medical_equipment',
+  'energy_equipment',
+  'aviation_equipment',
+  'other',
+] as const;
 type VendorCategory = typeof SUPPORTED_VENDOR_CATEGORIES[number];
 
 function isVendorCategory(value: string): value is VendorCategory {

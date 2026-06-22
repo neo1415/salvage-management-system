@@ -21,6 +21,13 @@ export type AssetTypePolicy = {
   requiresInspectionLocation: boolean;
 };
 
+export type InsuranceClassPolicy = {
+  enabled: boolean;
+  label: string;
+  description?: string;
+  defaultAssetTypes: string[];
+};
+
 export type BrandingPolicy = {
   brandName: string;
   legalName: string;
@@ -167,6 +174,7 @@ export type AuctionPolicy = {
 
 export type CasePolicy = {
   enabledAssetTypes: Record<string, AssetTypePolicy>;
+  insuranceClasses: Record<string, InsuranceClassPolicy>;
   voiceNotesEnabled: boolean;
   claimsAdjusterTranscriptEditable: boolean;
   salvageManagerTranscriptReviewRequired: boolean;
@@ -223,6 +231,9 @@ export type DocumentPolicy = {
   requiredAuctionDocuments: Array<'bill_of_sale' | 'liability_waiver'>;
   attachPaymentReceiptToAuctionDocuments: boolean;
   useBrandLetterhead: boolean;
+  authorizedSignerName?: string;
+  authorizedSignerTitle?: string;
+  authorizedSignatureUrl?: string;
   billOfSaleDisclaimerTitle: string;
   billOfSaleDisclaimerBody: string;
   liabilityWaiverClauses: Array<{
@@ -246,6 +257,9 @@ export type FraudPolicy = {
   ipFraudDetectionEnabled: boolean;
   biddingFraudDetectionEnabled: boolean;
   highRiskRequiresManualReview: boolean;
+  vendorInactivityAlertsEnabled: boolean;
+  vendorInactivityDays: number;
+  vendorInactivityCooldownDays: number;
 };
 
 export type ReportPolicy = {
@@ -364,6 +378,6 @@ export type PublicBusinessPolicy = Pick<BusinessPolicy, 'version' | 'branding'> 
     | 'paymentDeadlineAfterSigningHours'
   >;
   auctions: Pick<AuctionPolicy, 'minimumBidIncrement'>;
-  cases: Pick<CasePolicy, 'enabledAssetTypes' | 'voiceNotesEnabled'>;
+  cases: Pick<CasePolicy, 'enabledAssetTypes' | 'insuranceClasses' | 'voiceNotesEnabled'>;
   documents: Pick<DocumentPolicy, 'requiredAuctionDocuments'>;
 };

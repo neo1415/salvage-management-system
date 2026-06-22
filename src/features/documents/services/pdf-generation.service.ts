@@ -21,6 +21,7 @@ import { PDFTemplateService } from './pdf-template.service';
 const CONTENT_MARGIN_X = 20;
 const SIGNATURE_WIDTH = 65;
 const SIGNATURE_HEIGHT = 28;
+const SIGNATURE_BLOCK_WIDTH = 78;
 
 function addWrappedText(doc: jsPDF, text: string, x: number, y: number, maxWidth: number, lineHeight = 5): number {
   const lines = doc.splitTextToSize(text, maxWidth);
@@ -47,6 +48,84 @@ function hexToRgb(hex: string): [number, number, number] {
 function readableTextColor([r, g, b]: [number, number, number]): [number, number, number] {
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.58 ? [17, 24, 39] : [255, 255, 255];
+}
+
+function getImageFormat(dataUrl: string): 'PNG' | 'JPEG' | 'WEBP' {
+  if (/^data:image\/jpe?g/i.test(dataUrl)) return 'JPEG';
+  if (/^data:image\/webp/i.test(dataUrl)) return 'WEBP';
+  return 'PNG';
+}
+
+async function resolveImageDataUrl(value?: string): Promise<string | undefined> {
+  if (!value) return undefined;
+  if (value.startsWith('data:image/')) return value;
+  if (!value.startsWith('https://')) return undefined;
+
+  try {
+    const response = await fetch(value);
+    if (!response.ok) return undefined;
+
+    const contentType = response.headers.get('content-type') || 'image/png';
+    if (!contentType.startsWith('image/')) return undefined;
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return `data:${contentType};base64,${bytes.toString('base64')}`;
+  } catch (error) {
+    console.error('Error loading configured signature image:', error);
+    return undefined;
+  }
+}
+
+function addSignatureBlock(
+  doc: jsPDF,
+  options: {
+    x: number;
+    y: number;
+    title: string;
+    lineLabel: string;
+    signatureData?: string;
+    signerName?: string;
+    signerTitle?: string;
+    date?: string;
+  }
+): number {
+  const { x, y, title, lineLabel, signatureData, signerName, signerTitle, date } = options;
+  let cursor = y;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text(title, x, cursor);
+  cursor += 6;
+
+  if (signatureData) {
+    try {
+      doc.addImage(signatureData, getImageFormat(signatureData), x, cursor, SIGNATURE_WIDTH, SIGNATURE_HEIGHT);
+    } catch (error) {
+      console.error(`Error adding ${lineLabel} signature to PDF:`, error);
+    }
+  }
+
+  cursor += SIGNATURE_HEIGHT + 4;
+  doc.line(x, cursor, x + SIGNATURE_BLOCK_WIDTH, cursor);
+  cursor += 5;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(lineLabel, x, cursor);
+
+  if (signerName) {
+    cursor += 5;
+    doc.text(`Name: ${signerName}`, x, cursor);
+  }
+
+  if (signerTitle) {
+    cursor += 5;
+    doc.text(`Title: ${signerTitle}`, x, cursor);
+  }
+
+  cursor += 5;
+  doc.text(date ? `Date: ${date}` : 'Date: ___/___/______', x, cursor);
+
+  return cursor;
 }
 
 export interface BillOfSaleData {
@@ -86,6 +165,10 @@ export interface BillOfSaleData {
   // Signature information (optional - added when signed)
   signatureData?: string;
   signedDate?: string;
+  sellerSignatureData?: string;
+  sellerSignerName?: string;
+  sellerSignerTitle?: string;
+  sellerSignedDate?: string;
   
   // Verification
   verificationUrl: string;
@@ -111,6 +194,10 @@ export interface LiabilityWaiverData {
   // Signature information (optional - added when signed)
   signatureData?: string;
   signedDate?: string;
+  companySignatureData?: string;
+  companySignerName?: string;
+  companySignerTitle?: string;
+  companySignedDate?: string;
   
   // Verification
   verificationUrl: string;
@@ -139,6 +226,7 @@ export interface PickupAuthorizationData {
   
   // Payment information
   paymentAmount: number;
+  paymentMethod?: string;
   paymentReference: string;
   paymentDate: string;
   
@@ -178,6 +266,9 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
   const policy = await businessPolicyService.getEffectivePolicy();
   const disclaimerTitle = data.disclaimerTitle || policy.documents.billOfSaleDisclaimerTitle;
   const disclaimerBody = data.disclaimerBody || policy.documents.billOfSaleDisclaimerBody;
+  const sellerSignatureData = await resolveImageDataUrl(data.sellerSignatureData || policy.documents.authorizedSignatureUrl);
+  const sellerSignerName = data.sellerSignerName || policy.documents.authorizedSignerName || data.sellerName;
+  const sellerSignerTitle = data.sellerSignerTitle || policy.documents.authorizedSignerTitle || 'Authorized Signatory';
   
   // Add professional letterhead with logo using PDFTemplateService
   await PDFTemplateService.addLetterhead(doc, 'BILL OF SALE');
@@ -298,38 +389,33 @@ export async function generateBillOfSalePDF(data: BillOfSaleData): Promise<Buffe
   // Signature section
   yPos += 20;
 
-  const requiredSpace = data.signatureData ? 55 : 45;
+  const requiredSpace = 70;
   if (yPos + requiredSpace > maxContentY) {
     yPos = await moveToNewDocumentPage(doc, 'BILL OF SALE');
   }
 
-  if (data.signatureData) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('Buyer Signature:', 20, yPos);
-    yPos += 6;
-    
-    try {
-      doc.addImage(data.signatureData, 'PNG', 20, yPos, SIGNATURE_WIDTH, SIGNATURE_HEIGHT);
-      yPos += SIGNATURE_HEIGHT + 4;
-    } catch (error) {
-      console.error('Error adding signature to PDF:', error);
-      // Fallback to signature line if image fails
-      yPos += SIGNATURE_HEIGHT + 4;
-    }
-    
-    // Signature line and label
-    doc.line(20, yPos, 100, yPos);
-    yPos += 5;
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Buyer Signature', 20, yPos);
-    
-    // Add signed date
-    if (data.signedDate) {
-      doc.text(`Date: ${data.signedDate}`, 20, yPos + 5);
-    }
-  }
+  const buyerSignatureY = addSignatureBlock(doc, {
+    x: 20,
+    y: yPos,
+    title: 'Buyer Signature:',
+    lineLabel: 'Buyer Signature',
+    signatureData: data.signatureData,
+    signerName: data.signatureData ? data.buyerName : undefined,
+    date: data.signedDate,
+  });
+
+  const sellerSignatureY = addSignatureBlock(doc, {
+    x: pageWidth - CONTENT_MARGIN_X - SIGNATURE_BLOCK_WIDTH,
+    y: yPos,
+    title: 'Seller Authorization:',
+    lineLabel: 'Authorized Signature',
+    signatureData: sellerSignatureData,
+    signerName: sellerSignerName,
+    signerTitle: sellerSignerTitle,
+    date: data.sellerSignedDate || data.transactionDate,
+  });
+
+  yPos = Math.max(buyerSignatureY, sellerSignatureY);
   
   // Add professional footer using PDFTemplateService (anchored at bottom)
   await PDFTemplateService.addFooter(doc);
@@ -348,6 +434,9 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   const textWidth = pageWidth - CONTENT_MARGIN_X * 2;
   const policy = await businessPolicyService.getEffectivePolicy();
   const clauses = data.clauses?.length ? data.clauses : policy.documents.liabilityWaiverClauses;
+  const companySignatureData = await resolveImageDataUrl(data.companySignatureData || policy.documents.authorizedSignatureUrl);
+  const companySignerName = data.companySignerName || policy.documents.authorizedSignerName || policy.branding.legalName;
+  const companySignerTitle = data.companySignerTitle || policy.documents.authorizedSignerTitle || 'Authorized Signatory';
   
   // Add professional letterhead with logo using PDFTemplateService
   await PDFTemplateService.addLetterhead(doc, 'RELEASE & WAIVER OF LIABILITY');
@@ -381,52 +470,33 @@ export async function generateLiabilityWaiverPDF(data: LiabilityWaiverData): Pro
   // Signature section. Move to a fresh page when the legal text reaches the footer.
   yPos += 20;
 
-  const requiredSpace = data.signatureData ? 70 : 75;
+  const requiredSpace = 85;
   if (yPos + requiredSpace > maxContentY) {
     yPos = await moveToNewDocumentPage(doc, 'RELEASE & WAIVER OF LIABILITY');
   }
-  
-  // If signature data is provided, add the signature image
-  if (data.signatureData) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('Vendor Signature:', 20, yPos);
-    yPos += 6;
-    
-    try {
-      doc.addImage(data.signatureData, 'PNG', 20, yPos, SIGNATURE_WIDTH, SIGNATURE_HEIGHT);
-      yPos += SIGNATURE_HEIGHT + 4;
-    } catch (error) {
-      console.error('Error adding signature to PDF:', error);
-      // Fallback to signature line if image fails
-      yPos += SIGNATURE_HEIGHT + 4;
-    }
-    
-    // Signature line and label
-    doc.line(20, yPos, 100, yPos);
-    yPos += 5;
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Vendor Signature', 20, yPos);
-    
-    // Add signed date
-    if (data.signedDate) {
-      doc.text(`Date: ${data.signedDate}`, 20, yPos + 5);
-    }
-  } else {
-    // No signature yet - show signature line
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('Vendor Signature:', 20, yPos);
-    yPos += 45;
-    
-    doc.line(20, yPos, 100, yPos);
-    yPos += 5;
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Vendor Signature', 20, yPos);
-    doc.text('Date: ___/___/______', 20, yPos + 5);
-  }
+
+  const vendorSignatureY = addSignatureBlock(doc, {
+    x: 20,
+    y: yPos,
+    title: 'Vendor Signature:',
+    lineLabel: 'Vendor Signature',
+    signatureData: data.signatureData,
+    signerName: data.signatureData ? data.vendorName : undefined,
+    date: data.signedDate,
+  });
+
+  const companySignatureY = addSignatureBlock(doc, {
+    x: pageWidth - CONTENT_MARGIN_X - SIGNATURE_BLOCK_WIDTH,
+    y: yPos,
+    title: 'Company Authorization:',
+    lineLabel: 'Authorized Signature',
+    signatureData: companySignatureData,
+    signerName: companySignerName,
+    signerTitle: companySignerTitle,
+    date: data.companySignedDate || data.transactionDate,
+  });
+
+  yPos = Math.max(vendorSignatureY, companySignatureY);
   
   // Vendor details below signature (with proper spacing)
   yPos += 10;
@@ -509,6 +579,8 @@ export async function generatePickupAuthorizationPDF(data: PickupAuthorizationDa
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.text(`Amount Paid: NGN ${data.paymentAmount.toLocaleString()}`, 20, yPos);
+  yPos += 6;
+  doc.text(`Payment Method: ${data.paymentMethod || 'To be determined'}`, 20, yPos);
   yPos += 6;
   doc.text(`Payment Reference: ${data.paymentReference}`, 20, yPos);
   yPos += 6;

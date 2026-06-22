@@ -163,7 +163,7 @@ describe('DraftService', () => {
       expect(result.errors).toHaveLength(0);
     });
 
-    it('should return invalid when AI analysis missing', () => {
+    it('should allow submission without AI analysis when a market value is present', () => {
       const draft = {
         id: 'draft-123',
         formData: {
@@ -176,12 +176,13 @@ describe('DraftService', () => {
         updatedAt: new Date(),
         autoSavedAt: new Date(),
         hasAIAnalysis: false,
+        marketValue: 5000,
       };
 
       const result = DraftService.canSubmit(draft);
 
-      expect(result.valid).toBe(false);
-      expect(result.errors).toContain('AI analysis is required before submission');
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
     });
 
     it('should return invalid when market value missing', () => {
@@ -202,7 +203,7 @@ describe('DraftService', () => {
       const result = DraftService.canSubmit(draft);
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('Market value must be determined by AI analysis');
+      expect(result.errors).toContain('Claims paid / asset value is required. Enter it manually or run AI analysis to estimate it.');
     });
 
     it('should return invalid when required fields missing', () => {
@@ -221,6 +222,28 @@ describe('DraftService', () => {
 
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it('should treat whitespace-only required fields as missing', () => {
+      const draft = {
+        id: 'draft-123',
+        formData: {
+          claimReference: '   ',
+          assetType: 'vehicle',
+          locationName: 'Lagos',
+        },
+        status: 'draft' as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        autoSavedAt: new Date(),
+        hasAIAnalysis: true,
+        marketValue: 5000,
+      };
+
+      const result = DraftService.canSubmit(draft);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain('Claim reference is required');
     });
   });
 });

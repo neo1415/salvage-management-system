@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
       startDate: start.toISOString(),
       endDate: end.toISOString(),
       assetTypes: searchParams.get('assetTypes')?.split(',').filter(Boolean),
+      branches: searchParams.get('branches')?.split(',').filter(Boolean),
     };
 
     const result = await ReportService.generateReport(

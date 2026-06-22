@@ -26,6 +26,50 @@ describe('InternetSearchService Unit Tests', () => {
     });
   });
 
+  describe('luxury jewelry price guards', () => {
+    it('rejects low-trust and implausibly low Rolex/Cartier jewelry prices', () => {
+      const guarded = (service as any).applyItemSpecificPriceGuards({
+        prices: [
+          {
+            price: 52_005,
+            currency: 'NGN',
+            originalText: 'NGN52,005.20',
+            confidence: 92,
+            sourceQuality: 'medium',
+            source: 'www.jumia.com.ng',
+            url: 'https://www.jumia.com.ng/example',
+            title: 'Rolex Cartier watch bracelet',
+            snippet: '₦52,005',
+          },
+          {
+            price: 15_000_000,
+            currency: 'NGN',
+            originalText: 'NGN15,000,000',
+            confidence: 85,
+            sourceQuality: 'medium',
+            source: 'pololuxury.com',
+            url: 'https://pololuxury.com/example',
+            title: 'Rolex Submariner Cartier Love Bracelet',
+            snippet: '₦15,000,000',
+          },
+        ],
+        confidence: 92,
+        currency: 'NGN',
+        extractedAt: new Date(),
+      }, {
+        type: 'jewelry',
+        jewelryType: 'Watch, Bracelet',
+        brand: 'Rolex, Cartier',
+        material: 'Gold',
+        condition: 'Brand New',
+      });
+
+      expect(guarded.prices).toHaveLength(1);
+      expect(guarded.prices[0].price).toBe(15_000_000);
+      expect(guarded.rejectedPrices?.[0].rejectionReason).toContain('Low-trust marketplace');
+    });
+  });
+
   describe('getCommonPartsForVehicle (private method behavior)', () => {
     it('should return empty array for non-vehicle items', async () => {
       // Test indirectly through getAggregatedMarketPrice

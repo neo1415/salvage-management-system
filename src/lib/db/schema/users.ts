@@ -39,6 +39,7 @@ export const users = pgTable('users', {
   role: userRoleEnum('role').notNull(),
   status: userStatusEnum('status').notNull().default('unverified_tier_0'),
   fullName: varchar('full_name', { length: 255 }).notNull(),
+  branchName: varchar('branch_name', { length: 150 }),
   dateOfBirth: timestamp('date_of_birth').notNull(),
   profilePictureUrl: varchar('profile_picture_url', { length: 500 }),
   requirePasswordChange: varchar('require_password_change', { length: 10 }).default('false'),

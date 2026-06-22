@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
           assetDetails: offlineCase.assetDetails,
           marketValue: offlineCase.marketValue,
           photos: photoBuffers,
+          photoMetadata: Array.isArray(offlineCase.photoMetadata) ? offlineCase.photoMetadata : undefined,
           gpsLocation: offlineCase.gpsLocation,
           locationName: offlineCase.locationName,
           locationAccuracyMeters: offlineCase.locationAccuracyMeters,

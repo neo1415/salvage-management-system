@@ -18,7 +18,9 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { salvageCases } from '@/lib/db/schema/cases';
+import { releaseForms } from '@/lib/db/schema/release-forms';
 import { smsService } from '@/features/notifications/services/sms.service';
+import { sql } from 'drizzle-orm';
 
 // Mock SMS service
 vi.mock('@/features/notifications/services/sms.service', () => ({
@@ -27,9 +29,70 @@ vi.mock('@/features/notifications/services/sms.service', () => ({
   },
 }));
 
+const testRunId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const phoneSeed = Date.now().toString().slice(-8);
+const testEmail = (index: number) => `pickup-reminder-${index}-${testRunId}@example.com`;
+const testPhone = (index: number) => `+23480${index}${phoneSeed}`;
+const testClaimReference = (index: number) => `CLAIM-${testRunId}-${index}`;
+const testCaseValues = (index: number, createdBy: string, locationName = 'Lagos Salvage Yard') => ({
+  claimReference: testClaimReference(index),
+  assetType: 'vehicle' as const,
+  assetDetails: {
+    make: 'Toyota',
+    model: 'Camry',
+    year: 2020,
+  },
+  marketValue: '700000',
+  estimatedSalvageValue: '500000',
+  reservePrice: '350000',
+  damageSeverity: 'moderate' as const,
+  gpsLocation: [3.3792, 6.5244] as [number, number],
+  locationName,
+  photos: ['test-photo-1.jpg', 'test-photo-2.jpg', 'test-photo-3.jpg'],
+  status: 'sold' as const,
+  createdBy,
+});
+
 describe('Integration Test: Pickup Reminder Notifications', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    const pickupEmailPattern = 'pickup-reminder-%@example.com';
+    const legacyEmailPattern = 'vendor%@example.com';
+    const claimPattern = 'CLAIM-%';
+
+    await db.execute(sql`
+      DELETE FROM payments
+      WHERE vendor_id IN (
+        SELECT v.id FROM vendors v
+        INNER JOIN users u ON u.id = v.user_id
+        WHERE u.email LIKE ${pickupEmailPattern} OR u.email LIKE ${legacyEmailPattern}
+      )
+    `);
+    await db.execute(sql`
+      DELETE FROM release_forms
+      WHERE vendor_id IN (
+        SELECT v.id FROM vendors v
+        INNER JOIN users u ON u.id = v.user_id
+        WHERE u.email LIKE ${pickupEmailPattern} OR u.email LIKE ${legacyEmailPattern}
+      )
+    `);
+    await db.execute(sql`
+      DELETE FROM auctions
+      WHERE case_id IN (
+        SELECT id FROM salvage_cases WHERE claim_reference LIKE ${claimPattern}
+      )
+    `);
+    await db.execute(sql`
+      DELETE FROM vendors
+      WHERE user_id IN (
+        SELECT id FROM users WHERE email LIKE ${pickupEmailPattern} OR email LIKE ${legacyEmailPattern}
+      )
+    `);
+    await db.execute(sql`DELETE FROM salvage_cases WHERE claim_reference LIKE ${claimPattern}`);
+    await db.execute(sql`
+      DELETE FROM users
+      WHERE email LIKE ${pickupEmailPattern} OR email LIKE ${legacyEmailPattern}
+    `);
   });
 
   it('should send reminder SMS 24 hours before pickup deadline', async () => {
@@ -41,8 +104,8 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     const [user] = await db
       .insert(users)
       .values({
-        email: 'vendor@example.com',
-        phone: '+2348012345678',
+        email: testEmail(1),
+        phone: testPhone(1),
         passwordHash: 'hashed_password',
         fullName: 'John Doe',
         dateOfBirth: new Date('1990-01-01'),
@@ -55,7 +118,7 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
       .insert(vendors)
       .values({
         userId: user.id,
-        businessName: 'Test Vendor',
+        businessName: 'Test Vendor 1',
         status: 'approved',
       })
       .returning();
@@ -63,14 +126,7 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     // Create salvage case
     const [salvageCase] = await db
       .insert(salvageCases)
-      .values({
-        caseNumber: 'CASE-001',
-        vehicleMake: 'Toyota',
-        vehicleModel: 'Camry',
-        vehicleYear: 2020,
-        status: 'sold',
-        locationName: 'Lagos Salvage Yard',
-      })
+      .values(testCaseValues(1, user.id, 'Lagos Salvage Yard'))
       .returning();
 
     // Create auction
@@ -98,7 +154,33 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
       status: 'verified',
       verifiedAt: twentyFourHoursAgo,
       paymentDeadline: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-      paymentReference: 'AUTH-ABC123',
+      paymentReference: 'PAYSTACK-REFERENCE-NOT-PICKUP-CODE',
+    });
+
+    await db.insert(releaseForms).values({
+      auctionId: auction.id,
+      vendorId: vendor.id,
+      documentType: 'pickup_authorization',
+      title: 'Pickup Authorization',
+      status: 'pending',
+      documentData: {
+        buyerName: user.fullName,
+        buyerEmail: user.email,
+        buyerPhone: user.phone,
+        sellerName: 'Test Insurer',
+        sellerAddress: 'Configured address',
+        sellerContact: 'Configured contact',
+        assetType: 'vehicle',
+        assetDescription: 'Toyota Camry 2020',
+        assetCondition: 'salvage',
+        salePrice: 500000,
+        paymentMethod: 'Escrow Wallet',
+        paymentReference: 'PAYSTACK-REFERENCE-NOT-PICKUP-CODE',
+        transactionDate: now.toISOString(),
+        pickupLocation: 'Lagos Salvage Yard',
+        pickupDeadline: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        pickupAuthCode: 'AUTH-REAL123',
+      },
     });
 
     // Act: Run the cron job
@@ -111,9 +193,10 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     // Assert: SMS was sent with correct content
     expect(smsService.sendSMS).toHaveBeenCalledTimes(1);
     const smsCall = vi.mocked(smsService.sendSMS).mock.calls[0][0];
-    expect(smsCall.to).toBe('+2348012345678');
+    expect(smsCall.to).toBe(user.phone);
     expect(smsCall.message).toContain('Reminder');
-    expect(smsCall.message).toContain('AUTH-ABC123');
+    expect(smsCall.message).toContain('AUTH-REAL123');
+    expect(smsCall.message).not.toContain('PAYSTACK-REFERENCE-NOT-PICKUP-CODE');
     expect(smsCall.message).toContain('Lagos Salvage Yard');
     expect(smsCall.userId).toBe(user.id);
   });
@@ -126,8 +209,8 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     const [user] = await db
       .insert(users)
       .values({
-        email: 'vendor2@example.com',
-        phone: '+2348012345679',
+        email: testEmail(2),
+        phone: testPhone(2),
         passwordHash: 'hashed_password',
         fullName: 'Jane Smith',
         dateOfBirth: new Date('1990-01-01'),
@@ -146,14 +229,7 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
 
     const [salvageCase] = await db
       .insert(salvageCases)
-      .values({
-        caseNumber: 'CASE-002',
-        vehicleMake: 'Honda',
-        vehicleModel: 'Accord',
-        vehicleYear: 2019,
-        status: 'sold',
-        locationName: 'Abuja Salvage Yard',
-      })
+      .values(testCaseValues(2, user.id, 'Abuja Salvage Yard'))
       .returning();
 
     const [auction] = await db
@@ -198,8 +274,8 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     const [user] = await db
       .insert(users)
       .values({
-        email: 'vendor3@example.com',
-        phone: '+2348012345680',
+        email: testEmail(3),
+        phone: testPhone(3),
         passwordHash: 'hashed_password',
         fullName: 'Bob Johnson',
         dateOfBirth: new Date('1990-01-01'),
@@ -218,13 +294,7 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
 
     const [salvageCase] = await db
       .insert(salvageCases)
-      .values({
-        caseNumber: 'CASE-003',
-        vehicleMake: 'Ford',
-        vehicleModel: 'Focus',
-        vehicleYear: 2018,
-        status: 'sold',
-      })
+      .values(testCaseValues(3, user.id))
       .returning();
 
     const [auction] = await db
@@ -268,8 +338,8 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     const [user1] = await db
       .insert(users)
       .values({
-        email: 'vendor4@example.com',
-        phone: '+2348012345681',
+        email: testEmail(4),
+        phone: testPhone(4),
         passwordHash: 'hashed_password',
         fullName: 'Alice Williams',
         dateOfBirth: new Date('1990-01-01'),
@@ -288,13 +358,7 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
 
     const [case1] = await db
       .insert(salvageCases)
-      .values({
-        caseNumber: 'CASE-004',
-        vehicleMake: 'Nissan',
-        vehicleModel: 'Altima',
-        vehicleYear: 2021,
-        status: 'sold',
-      })
+      .values(testCaseValues(4, user1.id))
       .returning();
 
     const [auction1] = await db
@@ -326,8 +390,8 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     const [user2] = await db
       .insert(users)
       .values({
-        email: 'vendor5@example.com',
-        phone: '+2348012345682',
+        email: testEmail(5),
+        phone: testPhone(5),
         passwordHash: 'hashed_password',
         fullName: 'Charlie Brown',
         dateOfBirth: new Date('1990-01-01'),
@@ -346,13 +410,7 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
 
     const [case2] = await db
       .insert(salvageCases)
-      .values({
-        caseNumber: 'CASE-005',
-        vehicleMake: 'Mazda',
-        vehicleModel: 'CX-5',
-        vehicleYear: 2020,
-        status: 'sold',
-      })
+      .values(testCaseValues(5, user2.id))
       .returning();
 
     const [auction2] = await db
@@ -398,8 +456,8 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     const [user] = await db
       .insert(users)
       .values({
-        email: 'vendor6@example.com',
-        phone: '+2348012345683',
+        email: testEmail(6),
+        phone: testPhone(6),
         passwordHash: 'hashed_password',
         fullName: 'David Miller',
         dateOfBirth: new Date('1990-01-01'),
@@ -418,13 +476,7 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
 
     const [salvageCase] = await db
       .insert(salvageCases)
-      .values({
-        caseNumber: 'CASE-006',
-        vehicleMake: 'Chevrolet',
-        vehicleModel: 'Malibu',
-        vehicleYear: 2019,
-        status: 'sold',
-      })
+      .values(testCaseValues(6, user.id))
       .returning();
 
     const [auction] = await db
@@ -469,8 +521,8 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     const [user] = await db
       .insert(users)
       .values({
-        email: 'vendor7@example.com',
-        phone: '+2348012345684',
+        email: testEmail(7),
+        phone: testPhone(7),
         passwordHash: 'hashed_password',
         fullName: 'Emma Davis',
         dateOfBirth: new Date('1990-01-01'),
@@ -489,14 +541,7 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
 
     const [salvageCase] = await db
       .insert(salvageCases)
-      .values({
-        caseNumber: 'CASE-007',
-        vehicleMake: 'Hyundai',
-        vehicleModel: 'Elantra',
-        vehicleYear: 2020,
-        status: 'sold',
-        locationName: 'Port Harcourt Salvage Yard',
-      })
+      .values(testCaseValues(7, user.id, 'Port Harcourt Salvage Yard'))
       .returning();
 
     const [auction] = await db
@@ -522,7 +567,33 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
       status: 'verified',
       verifiedAt: twentyFourHoursAgo,
       paymentDeadline: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-      paymentReference: 'AUTH-TEST123',
+      paymentReference: 'PAYSTACK-DEADLINE-REFERENCE',
+    });
+
+    await db.insert(releaseForms).values({
+      auctionId: auction.id,
+      vendorId: vendor.id,
+      documentType: 'pickup_authorization',
+      title: 'Pickup Authorization',
+      status: 'pending',
+      documentData: {
+        buyerName: user.fullName,
+        buyerEmail: user.email,
+        buyerPhone: user.phone,
+        sellerName: 'Test Insurer',
+        sellerAddress: 'Configured address',
+        sellerContact: 'Configured contact',
+        assetType: 'vehicle',
+        assetDescription: 'Hyundai Elantra 2020',
+        assetCondition: 'salvage',
+        salePrice: 520000,
+        paymentMethod: 'Escrow Wallet',
+        paymentReference: 'PAYSTACK-DEADLINE-REFERENCE',
+        transactionDate: now.toISOString(),
+        pickupLocation: 'Port Harcourt Salvage Yard',
+        pickupDeadline: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        pickupAuthCode: 'AUTH-TEST123',
+      },
     });
 
     // Act
@@ -538,6 +609,7 @@ describe('Integration Test: Pickup Reminder Notifications', () => {
     // Check that message contains key components
     expect(smsCall.message).toContain('Reminder');
     expect(smsCall.message).toContain('AUTH-TEST123');
+    expect(smsCall.message).not.toContain('PAYSTACK-DEADLINE-REFERENCE');
     expect(smsCall.message).toContain('Port Harcourt Salvage Yard');
     
     // Verify deadline is approximately correct (within the message)

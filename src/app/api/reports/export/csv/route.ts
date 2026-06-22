@@ -57,6 +57,9 @@ function generateCSV(reportType: string, data: any, filters: any): string {
     if (filters.regions && filters.regions.length > 0) {
       csv += `Regions,"${filters.regions.join(', ')}"\n`;
     }
+    if (filters.branches && filters.branches.length > 0) {
+      csv += `Branches,"${filters.branches.join(', ')}"\n`;
+    }
   }
   csv += '\n';
 
@@ -213,9 +216,18 @@ function generateRevenueAnalysisCSV(csv: string, data: any): string {
   // Revenue by asset type
   if (data.byAssetType && data.byAssetType.length > 0) {
     csv += 'REVENUE BY ASSET TYPE\n';
-    csv += 'Asset Type,Revenue,Count,Average Recovery Rate\n';
+    csv += 'Asset Type,Claims Paid,Salvage Recovered,Count,Average Recovery Rate\n';
     data.byAssetType.forEach((asset: any) => {
-      csv += `${asset.assetType || 'Unknown'},${asset.revenue || 0},${asset.count || 0},${asset.recoveryRate || 0}%\n`;
+      csv += `${asset.assetType || 'Unknown'},${asset.claimsPaid || 0},${asset.salvageRecovered || asset.revenue || 0},${asset.count || 0},${asset.recoveryRate || 0}%\n`;
+    });
+    csv += '\n';
+  }
+
+  if (data.byBranch && data.byBranch.length > 0) {
+    csv += 'REVENUE BY BRANCH\n';
+    csv += 'Branch,Claims Paid,Salvage Recovered,Net Loss,Count,Recovery Rate\n';
+    data.byBranch.forEach((branch: any) => {
+      csv += `"${branch.branchName || 'Unassigned'}",${branch.claimsPaid || 0},${branch.salvageRecovered || 0},${branch.netLoss || 0},${branch.count || 0},${branch.recoveryRate || 0}%\n`;
     });
     csv += '\n';
   }
@@ -270,9 +282,18 @@ function generateKPIDashboardCSV(csv: string, data: any): string {
   // Cases breakdown
   if (data.breakdowns?.cases && data.breakdowns.cases.length > 0) {
     csv += 'CASES BREAKDOWN\n';
-    csv += 'Claim Reference,Adjuster,Asset Type,Market Value,Processing Time,Revenue,Status\n';
+    csv += 'Claim Reference,Adjuster,Branch,Asset Type,Market Value,Processing Time,Revenue,Status\n';
     data.breakdowns.cases.forEach((c: any) => {
-      csv += `${c.claimReference || ''},"${c.adjusterName || ''}",${c.assetType || ''},${c.marketValue || 0},${c.processingTime || 0},${c.revenue || 0},${c.status || ''}\n`;
+      csv += `${c.claimReference || ''},"${c.adjusterName || ''}","${c.branchName || 'Unassigned'}",${c.assetType || ''},${c.marketValue || 0},${c.processingTime || 0},${c.revenue || 0},${c.status || ''}\n`;
+    });
+    csv += '\n';
+  }
+
+  if (data.breakdowns?.branches && data.breakdowns.branches.length > 0) {
+    csv += 'BRANCH RECOVERY BREAKDOWN\n';
+    csv += 'Branch,Total Cases,Sold Cases,Claims Value,Verified Recovery,Recovery Rate\n';
+    data.breakdowns.branches.forEach((branch: any) => {
+      csv += `"${branch.branchName || 'Unassigned'}",${branch.totalCases || 0},${branch.soldCases || 0},${branch.claimsValue || 0},${branch.verifiedRecovery || 0},${branch.recoveryRate || 0}%\n`;
     });
     csv += '\n';
   }
@@ -336,12 +357,30 @@ function generateCaseProcessingCSV(csv: string, data: any): string {
     csv += '\n';
   }
 
+  if (data.byBranch && data.byBranch.length > 0) {
+    csv += 'BRANCH PROCESSING PERFORMANCE\n';
+    csv += 'Branch,Cases Processed,Approved,Rejected,Approval Rate,Average Processing Days,Total Market Value,Total Salvage Value\n';
+    data.byBranch.forEach((branch: any) => {
+      csv += csvRow([
+        branch.branchName || 'Unassigned',
+        branch.casesProcessed || 0,
+        branch.approvedCases || 0,
+        branch.rejectedCases || 0,
+        `${branch.approvalRate || 0}%`,
+        branch.avgProcessingDays || 0,
+        branch.totalMarketValue || 0,
+        branch.totalSalvageValue || 0,
+      ]);
+    });
+    csv += '\n';
+  }
+
   if (data.byAssetType && data.byAssetType.length > 0) {
     csv += 'CASE DETAILS BY ASSET TYPE\n';
-    csv += 'Asset Type,Claim Reference,Status,Market Value,Salvage Value,Processing Days,Created Date\n';
+    csv += 'Asset Type,Claim Reference,Branch,Status,Market Value,Salvage Value,Processing Days,Created Date\n';
     data.byAssetType.forEach((asset: any) => {
       (asset.cases || []).forEach((c: any) => {
-        csv += csvRow([asset.assetType || 'Unknown', c.claimReference || '', c.status || '', c.marketValue || 0, c.salvageValue || 0, c.processingDays || 0, c.createdAt || '']);
+        csv += csvRow([asset.assetType || 'Unknown', c.claimReference || '', c.branchName || 'Unassigned', c.status || '', c.marketValue || 0, c.salvageValue || 0, c.processingDays || 0, c.createdAt || '']);
       });
     });
   }
@@ -393,13 +432,30 @@ function generateAuctionPerformanceCSV(csv: string, data: any): string {
     csv += '\n';
   }
 
+  if (data.byBranch && data.byBranch.length > 0) {
+    csv += 'BRANCH AUCTION PERFORMANCE\n';
+    csv += 'Branch,Auctions,Successful,Success Rate,Total Revenue,Average Winning Bid,Average Bids\n';
+    data.byBranch.forEach((branch: any) => {
+      csv += csvRow([
+        branch.branchName || 'Unassigned',
+        branch.auctionCount || 0,
+        branch.successfulAuctions || 0,
+        `${branch.successRate || 0}%`,
+        branch.totalRevenue || 0,
+        branch.avgWinningBid || 0,
+        branch.avgBids || 0,
+      ]);
+    });
+    csv += '\n';
+  }
+
   if (data.auctionList && data.auctionList.length > 0) {
     csv += 'AUCTION DETAILS\n';
-    csv += 'Auction ID,Claim Reference,Asset Type,Start Time,End Time,Duration Hours,Reserve Price,Winning Bid,Unique Bidders,Total Bids,Status,Successful\n';
+    csv += 'Auction ID,Claim Reference,Branch,Asset Type,Start Time,End Time,Duration Hours,Reserve Price,Winning Bid,Unique Bidders,Total Bids,Status,Successful\n';
     data.auctionList.forEach((a: any) => {
-      csv += csvRow([a.auctionId || '', a.claimReference || '', a.assetType || '', a.startTime || '', a.endTime || '', a.durationHours || 0, a.reservePrice || 0, a.winningBid || 0, a.uniqueBidders || 0, a.bidCount || 0, a.status || '', a.isSuccessful ? 'Yes' : 'No']);
+      csv += csvRow([a.auctionId || '', a.claimReference || '', a.branchName || 'Unassigned', a.assetType || '', a.startTime || '', a.endTime || '', a.durationHours || 0, a.reservePrice || 0, a.winningBid || 0, a.uniqueBidders || 0, a.bidCount || 0, a.status || '', a.isSuccessful ? 'Yes' : 'No']);
     });
-    csv += csvRow(['TOTAL', '', '', '', '', '', '', data.auctionList.reduce((sum: number, a: any) => sum + (a.winningBid || 0), 0), '', data.auctionList.reduce((sum: number, a: any) => sum + (a.bidCount || 0), 0), '', '']);
+    csv += csvRow(['TOTAL', '', '', '', '', '', '', '', data.auctionList.reduce((sum: number, a: any) => sum + (a.winningBid || 0), 0), '', data.auctionList.reduce((sum: number, a: any) => sum + (a.bidCount || 0), 0), '', '']);
   }
 
   return csv;
@@ -452,6 +508,30 @@ function generateUserPerformanceCSV(csv: string, data: any, reportType: string):
 }
 
 function generateGenericCSV(csv: string, data: any): string {
+  const branchRows =
+    Array.isArray(data.byBranch) ? data.byBranch :
+    Array.isArray(data.breakdowns?.branches) ? data.breakdowns.branches :
+    Array.isArray(data.operational?.branches) ? data.operational.branches :
+    [];
+
+  if (branchRows.length > 0) {
+    csv += 'BRANCH PERFORMANCE\n';
+    csv += 'Branch,Cases,Claims Value,Verified Recovery,Recovery Rate\n';
+    branchRows.forEach((branch: any) => {
+      const cases = branch.totalCases ?? branch.count ?? branch.casesProcessed ?? branch.auctionCount ?? 0;
+      const claimsValue = branch.claimsValue ?? branch.claimsPaid ?? branch.totalMarketValue ?? 0;
+      const recovery = branch.verifiedRecovery ?? branch.salvageRecovered ?? branch.totalSalvageValue ?? branch.totalRevenue ?? 0;
+      csv += csvRow([
+        branch.branchName || 'Unassigned',
+        cases,
+        claimsValue,
+        recovery,
+        `${branch.recoveryRate ?? branch.successRate ?? branch.approvalRate ?? 0}%`,
+      ]);
+    });
+    csv += '\n';
+  }
+
   // Fallback for unknown report types
   csv += 'REPORT DATA\n';
   csv += JSON.stringify(data, null, 2);

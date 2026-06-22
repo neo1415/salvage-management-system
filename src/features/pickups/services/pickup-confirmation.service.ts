@@ -1,5 +1,5 @@
 import { randomUUID, timingSafeEqual } from 'crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
   auctions,
@@ -9,6 +9,7 @@ import {
   users,
   vendors,
   featureVectors,
+  pickupEvidence,
 } from '@/lib/db/schema';
 import {
   AuditActionType,
@@ -64,6 +65,12 @@ export interface PickupAuditRequestContext {
 }
 
 const STAFF_PICKUP_ROLES = new Set(['salvage_manager', 'system_admin']);
+const PICKUP_RESOLUTION_STATUSES = new Set([
+  'confirmed_no_adjustment',
+  'external_reimbursement_required',
+  'external_reimbursement_completed',
+  'price_adjustment_recorded',
+]);
 
 export function canConfirmPickup(role: string | undefined | null): boolean {
   return !!role && STAFF_PICKUP_ROLES.has(role);
@@ -322,6 +329,9 @@ export async function confirmPickupByStaff(input: {
   pickupAuthCode?: string;
   auctionId?: string;
   notes?: string;
+  resolutionStatus?: string;
+  adjustmentAmount?: number | string | null;
+  reimbursementMethod?: string | null;
   actor: PickupAuditRequestContext;
 }): Promise<PickupContext> {
   if (!canConfirmPickup(input.actor.role)) {
@@ -350,6 +360,48 @@ export async function confirmPickupByStaff(input: {
     throw new Error('Pickup authorization document is not ready for this auction.');
   }
 
+  const [latestEvidence] = await db
+    .select({
+      id: pickupEvidence.id,
+      comparisonStatus: pickupEvidence.comparisonStatus,
+    })
+    .from(pickupEvidence)
+    .where(eq(pickupEvidence.auctionId, context.auctionId))
+    .orderBy(desc(pickupEvidence.createdAt))
+    .limit(1);
+
+  const evidenceNeedsReview =
+    latestEvidence?.comparisonStatus === 'review_needed'
+    || latestEvidence?.comparisonStatus === 'material_discrepancy';
+  const reviewNotes = input.notes?.trim() || '';
+  const requestedResolutionStatus = input.resolutionStatus?.trim() || '';
+  const resolutionStatus = evidenceNeedsReview
+    ? PICKUP_RESOLUTION_STATUSES.has(requestedResolutionStatus)
+      ? requestedResolutionStatus
+      : 'confirmed_no_adjustment'
+    : 'not_required';
+  const parsedAdjustmentAmount =
+    input.adjustmentAmount === null || input.adjustmentAmount === undefined || input.adjustmentAmount === ''
+      ? null
+      : Number(input.adjustmentAmount);
+  const adjustmentAmount =
+    parsedAdjustmentAmount !== null && Number.isFinite(parsedAdjustmentAmount) && parsedAdjustmentAmount >= 0
+      ? parsedAdjustmentAmount
+      : null;
+  const reimbursementMethod = input.reimbursementMethod?.trim() || null;
+
+  if (evidenceNeedsReview && reviewNotes.length < 20) {
+    throw new Error('Pickup evidence needs review. Add review notes before confirming this pickup.');
+  }
+
+  if (
+    evidenceNeedsReview
+    && (resolutionStatus === 'external_reimbursement_required' || resolutionStatus === 'external_reimbursement_completed' || resolutionStatus === 'price_adjustment_recorded')
+    && (!adjustmentAmount || adjustmentAmount <= 0)
+  ) {
+    throw new Error('Enter the agreed adjustment amount for this discrepancy resolution.');
+  }
+
   const now = new Date();
 
   await db.transaction(async (tx) => {
@@ -372,6 +424,21 @@ export async function confirmPickupByStaff(input: {
         updatedAt: now,
       })
       .where(eq(salvageCases.id, context.caseId));
+
+    if (evidenceNeedsReview && latestEvidence?.id) {
+      await tx
+        .update(pickupEvidence)
+        .set({
+          reviewedBy: input.actor.userId,
+          reviewedAt: now,
+          reviewNotes,
+          resolutionStatus,
+          adjustmentAmount: adjustmentAmount === null ? null : adjustmentAmount.toFixed(2),
+          reimbursementMethod,
+          updatedAt: now,
+        })
+        .where(eq(pickupEvidence.id, latestEvidence.id));
+    }
   });
 
   const updated = await getPickupContextByAuction(context.auctionId);
@@ -419,6 +486,14 @@ export async function confirmPickupByStaff(input: {
         codeProvided: !!input.pickupAuthCode,
         pickupCodeRedacted: input.pickupAuthCode ? redactPickupCode(input.pickupAuthCode) : undefined,
         notes: input.notes?.trim() || null,
+        pickupEvidenceResolution: evidenceNeedsReview
+          ? {
+              resolutionStatus,
+              adjustmentAmount,
+              reimbursementMethod,
+              pickupEvidenceId: latestEvidence?.id,
+            }
+          : undefined,
         caseStatus: 'sold',
       },
     }),

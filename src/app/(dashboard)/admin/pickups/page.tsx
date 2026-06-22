@@ -13,13 +13,17 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { AdminPickupConfirmation } from '@/components/admin/admin-pickup-confirmation';
+import {
+  AdminPickupConfirmation,
+  type PickupConfirmationSubmitInput,
+} from '@/components/admin/admin-pickup-confirmation';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import { PickupConfirmationDesk } from '@/components/pickups/pickup-confirmation-desk';
 
 interface PickupConfirmation {
   auctionId: string;
   claimReference: string;
+  policyNumber?: string | null;
   assetType: string;
   assetDetails: Record<string, unknown>;
   amount: string;
@@ -48,6 +52,25 @@ interface PickupConfirmation {
   } | null;
   pickupStatus?: 'not_ready' | 'ready_for_pickup' | 'vendor_confirmed' | 'staff_confirmed';
   pickupDeadline?: string | null;
+  pickupEvidence: {
+    id: string;
+    status: 'not_reviewed' | 'matches_expected' | 'review_needed' | 'material_discrepancy' | string;
+    photoCount: number | null;
+    findings: string[];
+    observedDifferences?: string[];
+    confidenceScore?: number | null;
+    overallMatchScore?: number | null;
+    assetIdentityScore?: number | null;
+    quantityMatchScore?: number | null;
+    conditionMatchScore?: number | null;
+    reviewBand?: string | null;
+    method?: string | null;
+    recommendedStaffAction?: string | null;
+    resolutionStatus?: string | null;
+    adjustmentAmount?: string | null;
+    reimbursementMethod?: string | null;
+    submittedAt: string | null;
+  } | null;
   auctionStatus: string;
   caseStatus: string;
   auctionEndTime: string;
@@ -64,7 +87,7 @@ export default function AdminPickupsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Filter states
-  const [statusFilter, setStatusFilter] = useState<'pending' | 'all'>('pending');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'evidence_issues' | 'all'>('pending');
   const [sortBy, setSortBy] = useState<'confirmedAt' | 'amount' | 'claimRef'>('confirmedAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [searchQuery, setSearchQuery] = useState('');
@@ -118,10 +141,15 @@ export default function AdminPickupsPage() {
   }, [fetchPickups]);
 
   const pickups = useMemo(() => {
-    let list =
-      statusFilter === 'pending'
-        ? allPickups.filter((p) => !p.adminConfirmation.confirmed)
-        : [...allPickups];
+    let list = [...allPickups];
+    if (statusFilter === 'pending') {
+      list = list.filter((p) => !p.adminConfirmation.confirmed);
+    } else if (statusFilter === 'evidence_issues') {
+      list = list.filter((p) =>
+        p.pickupEvidence?.status === 'review_needed'
+        || p.pickupEvidence?.status === 'material_discrepancy'
+      );
+    }
 
     const sorted = [...list];
     if (sortBy === 'amount') {
@@ -150,7 +178,7 @@ export default function AdminPickupsPage() {
   }, [allPickups, statusFilter, sortBy, sortOrder]);
 
   // Handle admin confirmation
-  const handleConfirmPickup = async (notes: string) => {
+  const handleConfirmPickup = async (input: PickupConfirmationSubmitInput) => {
     if (!selectedPickup) return;
 
     try {
@@ -163,7 +191,10 @@ export default function AdminPickupsPage() {
           },
           body: JSON.stringify({
             adminId: session?.user.id,
-            notes,
+            notes: input.notes,
+            resolutionStatus: input.resolutionStatus,
+            adjustmentAmount: input.adjustmentAmount,
+            reimbursementMethod: input.reimbursementMethod,
           }),
         }
       );
@@ -191,6 +222,28 @@ export default function AdminPickupsPage() {
     return pickup.assetType;
   };
 
+  const evidenceTone = (status?: string | null) => {
+    if (status === 'material_discrepancy') return 'bg-red-50 border-red-200 text-red-800';
+    if (status === 'review_needed' || status === 'not_reviewed') return 'bg-amber-50 border-amber-200 text-amber-800';
+    if (status === 'matches_expected') return 'bg-emerald-50 border-emerald-200 text-emerald-800';
+    return 'bg-gray-50 border-gray-200 text-gray-700';
+  };
+
+  const evidenceLabel = (status?: string | null) => {
+    if (status === 'material_discrepancy') return 'Discrepancy';
+    if (status === 'review_needed') return 'Review needed';
+    if (status === 'not_reviewed') return 'Not reviewed';
+    if (status === 'matches_expected') return 'Evidence ok';
+    return 'No evidence';
+  };
+
+  const scoreTone = (score?: number | null) => {
+    if (score == null) return 'text-gray-500';
+    if (score >= 85) return 'text-emerald-700';
+    if (score >= 70) return 'text-amber-700';
+    return 'text-red-700';
+  };
+
   // Filter pickups by search query
   const filteredPickups = pickups.filter((pickup) => {
     if (!searchQuery) return true;
@@ -199,7 +252,9 @@ export default function AdminPickupsPage() {
       pickup.claimReference.toLowerCase().includes(query) ||
       pickup.vendor.businessName.toLowerCase().includes(query) ||
       pickup.vendor.fullName.toLowerCase().includes(query) ||
-      formatAssetName(pickup).toLowerCase().includes(query)
+      formatAssetName(pickup).toLowerCase().includes(query) ||
+      (pickup.pickupEvidence?.findings || []).some((finding) => finding.toLowerCase().includes(query)) ||
+      (pickup.pickupEvidence?.observedDifferences || []).some((difference) => difference.toLowerCase().includes(query))
     );
   });
 
@@ -233,7 +288,7 @@ export default function AdminPickupsPage() {
               <input
                 type="text"
                 id="search"
-                placeholder="Search by claim ref, vendor, or asset..."
+                placeholder="Search by claim ref, vendor, asset, or evidence note..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
@@ -248,10 +303,11 @@ export default function AdminPickupsPage() {
               <select
                 id="statusFilter"
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as 'pending' | 'all')}
+                onChange={(e) => setStatusFilter(e.target.value as 'pending' | 'evidence_issues' | 'all')}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
               >
                 <option value="pending">Pending Only</option>
+                <option value="evidence_issues">Evidence Issues</option>
                 <option value="all">All Pickups</option>
               </select>
             </div>
@@ -328,6 +384,12 @@ export default function AdminPickupsPage() {
                         <span className="text-gray-600">Claim:</span>{' '}
                         <span className="font-medium">{pickup.claimReference}</span>
                       </p>
+                      {pickup.policyNumber && (
+                        <p>
+                          <span className="text-gray-600">Policy:</span>{' '}
+                          <span className="font-medium">{pickup.policyNumber}</span>
+                        </p>
+                      )}
                       <p>
                         <span className="text-gray-600">Asset:</span>{' '}
                         <span className="font-medium">{formatAssetName(pickup)}</span>
@@ -422,12 +484,64 @@ export default function AdminPickupsPage() {
                           </p>
                         </div>
                       )}
+
+                      <div className={`p-2 rounded-lg border ${evidenceTone(pickup.pickupEvidence?.status)}`}>
+                        <p className="text-xs font-medium">
+                          Evidence: {pickup.pickupEvidence ? evidenceLabel(pickup.pickupEvidence.status) : 'Not submitted'}
+                        </p>
+                        {pickup.pickupEvidence && (
+                          <div className="mt-1 space-y-1 text-xs opacity-90">
+                            <p>
+                              {pickup.pickupEvidence.photoCount ?? 0} photo{pickup.pickupEvidence.photoCount === 1 ? '' : 's'}
+                              {pickup.pickupEvidence.submittedAt
+                                ? ` submitted ${new Date(pickup.pickupEvidence.submittedAt).toLocaleString()}`
+                                : ''}
+                            </p>
+                            <p className={scoreTone(pickup.pickupEvidence.overallMatchScore)}>
+                              Match: {pickup.pickupEvidence.overallMatchScore ?? pickup.pickupEvidence.confidenceScore ?? 'N/A'}%
+                              {pickup.pickupEvidence.reviewBand ? ` (${pickup.pickupEvidence.reviewBand.replace('_', ' ')})` : ''}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   {/* Actions */}
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-2">Actions</h3>
+                    {pickup.pickupEvidence && (
+                      <div className={`mb-3 rounded-lg border p-3 text-xs ${evidenceTone(pickup.pickupEvidence.status)}`}>
+                        <p className="font-semibold">Evidence review</p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <p>Identity: <span className={scoreTone(pickup.pickupEvidence.assetIdentityScore)}>{pickup.pickupEvidence.assetIdentityScore ?? 'N/A'}%</span></p>
+                          <p>Quantity: <span className={scoreTone(pickup.pickupEvidence.quantityMatchScore)}>{pickup.pickupEvidence.quantityMatchScore ?? 'N/A'}%</span></p>
+                          <p>Condition: <span className={scoreTone(pickup.pickupEvidence.conditionMatchScore)}>{pickup.pickupEvidence.conditionMatchScore ?? 'N/A'}%</span></p>
+                          <p>Method: {pickup.pickupEvidence.method || 'unknown'}</p>
+                        </div>
+                        {pickup.pickupEvidence.findings?.length > 0 && (
+                          <ul className="mt-2 list-disc space-y-1 pl-4">
+                            {pickup.pickupEvidence.findings.slice(0, 3).map((finding, index) => (
+                              <li key={index}>{finding}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {pickup.pickupEvidence.recommendedStaffAction && (
+                          <p className="mt-2 font-medium">{pickup.pickupEvidence.recommendedStaffAction}</p>
+                        )}
+                        {pickup.pickupEvidence.resolutionStatus && pickup.pickupEvidence.resolutionStatus !== 'not_required' && (
+                          <div className="mt-2 rounded-md bg-white/70 p-2 text-xs">
+                            <p className="font-semibold">Resolution: {pickup.pickupEvidence.resolutionStatus.replace(/_/g, ' ')}</p>
+                            {pickup.pickupEvidence.adjustmentAmount && (
+                              <p>Adjustment: NGN {Number(pickup.pickupEvidence.adjustmentAmount).toLocaleString('en-NG')}</p>
+                            )}
+                            {pickup.pickupEvidence.reimbursementMethod && (
+                              <p>Method: {pickup.pickupEvidence.reimbursementMethod}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {!pickup.adminConfirmation.confirmed ? (
                       <button
                         onClick={() => {
@@ -488,6 +602,59 @@ export default function AdminPickupsPage() {
                     </p>
                   </div>
 
+                  {selectedPickup.pickupEvidence && (
+                    <div className={`mb-6 rounded-lg border p-4 ${evidenceTone(selectedPickup.pickupEvidence.status)}`}>
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm font-semibold">
+                          Pickup Evidence: {evidenceLabel(selectedPickup.pickupEvidence.status)}
+                        </p>
+                        <p className="text-xs">
+                          {selectedPickup.pickupEvidence.photoCount ?? 0} photo{selectedPickup.pickupEvidence.photoCount === 1 ? '' : 's'}
+                          {typeof selectedPickup.pickupEvidence.confidenceScore === 'number'
+                            ? ` | ${selectedPickup.pickupEvidence.confidenceScore}% confidence`
+                            : ''}
+                          {selectedPickup.pickupEvidence.method
+                            ? ` | ${selectedPickup.pickupEvidence.method.replace(/_/g, ' ')}`
+                            : ''}
+                        </p>
+                      </div>
+                      {selectedPickup.pickupEvidence.findings.length > 0 && (
+                        <ul className="mt-3 list-disc space-y-1 pl-5 text-xs">
+                          {selectedPickup.pickupEvidence.findings.map((finding, index) => (
+                            <li key={`${selectedPickup.pickupEvidence?.id}-${index}`}>{finding}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {!!selectedPickup.pickupEvidence.observedDifferences?.length && (
+                        <div className="mt-3 rounded-md bg-white/60 p-3 text-xs">
+                          <p className="font-semibold">Observed differences</p>
+                          <ul className="mt-2 list-disc space-y-1 pl-5">
+                            {selectedPickup.pickupEvidence.observedDifferences.map((difference, index) => (
+                              <li key={`${selectedPickup.pickupEvidence?.id}-difference-${index}`}>{difference}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {selectedPickup.pickupEvidence.recommendedStaffAction && (
+                        <p className="mt-3 text-xs font-medium">
+                          Action: {selectedPickup.pickupEvidence.recommendedStaffAction}
+                        </p>
+                      )}
+                      {selectedPickup.pickupEvidence.resolutionStatus && selectedPickup.pickupEvidence.resolutionStatus !== 'not_required' && (
+                        <div className="mt-3 rounded-md bg-white/70 p-3 text-xs">
+                          <p className="font-semibold">Recorded resolution</p>
+                          <p>{selectedPickup.pickupEvidence.resolutionStatus.replace(/_/g, ' ')}</p>
+                          {selectedPickup.pickupEvidence.adjustmentAmount && (
+                            <p>Adjustment: NGN {Number(selectedPickup.pickupEvidence.adjustmentAmount).toLocaleString('en-NG')}</p>
+                          )}
+                          {selectedPickup.pickupEvidence.reimbursementMethod && (
+                            <p>Method: {selectedPickup.pickupEvidence.reimbursementMethod}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* AdminPickupConfirmation Component */}
                   <AdminPickupConfirmation
                     auctionId={selectedPickup.auctionId}
@@ -496,6 +663,10 @@ export default function AdminPickupsPage() {
                       confirmed: selectedPickup.vendorConfirmation.confirmed,
                       confirmedAt: selectedPickup.vendorConfirmation.confirmedAt,
                     }}
+                    evidenceNeedsReview={
+                      selectedPickup.pickupEvidence?.status === 'review_needed'
+                      || selectedPickup.pickupEvidence?.status === 'material_discrepancy'
+                    }
                     onConfirm={handleConfirmPickup}
                   />
                 </div>

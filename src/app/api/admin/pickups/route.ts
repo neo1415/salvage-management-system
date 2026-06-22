@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
         case: {
           id: salvageCases.id,
           claimReference: salvageCases.claimReference,
+          policyNumber: salvageCases.policyNumber,
           assetType: salvageCases.assetType,
           assetDetails: salvageCases.assetDetails,
           status: salvageCases.status,
@@ -77,6 +78,133 @@ export async function GET(request: NextRequest) {
         pickupDocument: {
           id: releaseForms.id,
           deadline: sql<string | null>`${releaseForms.documentData}->>'pickupDeadline'`,
+        },
+        pickupEvidence: {
+          id: sql<string | null>`(
+            SELECT pe.id
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          status: sql<string | null>`(
+            SELECT pe.comparison_status
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          photoCount: sql<number | null>`(
+            SELECT cardinality(pe.photo_urls)
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          findings: sql<string[] | null>`(
+            SELECT COALESCE(
+              ARRAY(SELECT jsonb_array_elements_text(pe.comparison_summary->'findings')),
+              ARRAY[]::text[]
+            )
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          observedDifferences: sql<string[] | null>`(
+            SELECT COALESCE(
+              ARRAY(SELECT jsonb_array_elements_text(pe.comparison_summary->'observedDifferences')),
+              ARRAY[]::text[]
+            )
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          confidenceScore: sql<number | null>`(
+            SELECT (pe.comparison_summary->>'confidenceScore')::int
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          overallMatchScore: sql<number | null>`(
+            SELECT (pe.comparison_summary->>'overallMatchScore')::int
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          assetIdentityScore: sql<number | null>`(
+            SELECT (pe.comparison_summary->>'assetIdentityScore')::int
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          quantityMatchScore: sql<number | null>`(
+            SELECT (pe.comparison_summary->>'quantityMatchScore')::int
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          conditionMatchScore: sql<number | null>`(
+            SELECT (pe.comparison_summary->>'conditionMatchScore')::int
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          reviewBand: sql<string | null>`(
+            SELECT pe.comparison_summary->>'reviewBand'
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          method: sql<string | null>`(
+            SELECT pe.comparison_summary->>'method'
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          recommendedStaffAction: sql<string | null>`(
+            SELECT pe.comparison_summary->>'recommendedStaffAction'
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          resolutionStatus: sql<string | null>`(
+            SELECT pe.resolution_status
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          adjustmentAmount: sql<string | null>`(
+            SELECT pe.adjustment_amount
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          reimbursementMethod: sql<string | null>`(
+            SELECT pe.reimbursement_method
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
+          submittedAt: sql<string | null>`(
+            SELECT pe.created_at
+            FROM pickup_evidence pe
+            WHERE pe.auction_id = ${auctions.id}
+            ORDER BY pe.created_at DESC
+            LIMIT 1
+          )`,
         },
       })
       .from(auctions)
@@ -118,6 +246,7 @@ export async function GET(request: NextRequest) {
     ).map((pickup) => ({
       auctionId: pickup.auction.id,
       claimReference: pickup.case.claimReference,
+      policyNumber: pickup.case.policyNumber,
       assetType: pickup.case.assetType,
       assetDetails: pickup.case.assetDetails,
       amount: pickup.auction.currentBid,
@@ -144,6 +273,27 @@ export async function GET(request: NextRequest) {
         pickupConfirmedAdmin: pickup.auction.pickupConfirmedAdmin,
       }),
       pickupDeadline: pickup.pickupDocument?.deadline || null,
+      pickupEvidence: pickup.pickupEvidence?.id
+        ? {
+            id: pickup.pickupEvidence.id,
+            status: pickup.pickupEvidence.status,
+            photoCount: pickup.pickupEvidence.photoCount,
+            findings: pickup.pickupEvidence.findings || [],
+            observedDifferences: pickup.pickupEvidence.observedDifferences || [],
+            confidenceScore: pickup.pickupEvidence.confidenceScore,
+            overallMatchScore: pickup.pickupEvidence.overallMatchScore,
+            assetIdentityScore: pickup.pickupEvidence.assetIdentityScore,
+            quantityMatchScore: pickup.pickupEvidence.quantityMatchScore,
+            conditionMatchScore: pickup.pickupEvidence.conditionMatchScore,
+            reviewBand: pickup.pickupEvidence.reviewBand,
+            method: pickup.pickupEvidence.method,
+            recommendedStaffAction: pickup.pickupEvidence.recommendedStaffAction,
+            resolutionStatus: pickup.pickupEvidence.resolutionStatus,
+            adjustmentAmount: pickup.pickupEvidence.adjustmentAmount,
+            reimbursementMethod: pickup.pickupEvidence.reimbursementMethod,
+            submittedAt: pickup.pickupEvidence.submittedAt,
+          }
+        : null,
       payment: pickup.payment
         ? {
             id: pickup.payment.id,
