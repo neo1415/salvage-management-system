@@ -39,6 +39,7 @@ import { DraftList } from '@/components/cases/draft-list';
 import { AIAnalysisStatusBadge } from '@/components/cases/ai-analysis-status-badge';
 import { compressImage } from '@/utils/image-compression';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { getEnabledCaseAssetTypeOptions } from '@/features/business-policy/case-asset-type-options';
 import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
 import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
 
@@ -107,25 +108,6 @@ const ASSET_TYPES = [
 const LAUNCH_ASSET_TYPES = ASSET_TYPES.filter((type) =>
   ['vehicle', 'electronics', 'property', 'machinery'].includes(type.value)
 );
-
-const INSURANCE_SALVAGE_ASSET_TYPES = [
-  { value: 'vehicle', label: 'Vehicle', icon: 'Auto' },
-  { value: 'goods_in_transit', label: 'Goods in Transit / Cargo', icon: 'GIT' },
-  { value: 'stock', label: 'Warehouse Stock / Inventory', icon: 'Stock' },
-  { value: 'building_materials', label: 'Building Materials', icon: 'Mat' },
-  { value: 'property', label: 'Building / Fixtures', icon: 'Prop' },
-  { value: 'machinery', label: 'Machinery & Equipment', icon: 'Plant' },
-  { value: 'electronics', label: 'Electronics / ICT', icon: 'ICT' },
-  { value: 'appliance', label: 'Appliance', icon: 'Appl' },
-  { value: 'furniture', label: 'Furniture / Contents', icon: 'Furn' },
-  { value: 'scrap', label: 'Scrap / Recoverable Parts', icon: 'Scrap' },
-  { value: 'agriculture', label: 'Agricultural Stock / Equipment', icon: 'Agri' },
-  { value: 'medical_equipment', label: 'Medical Equipment', icon: 'Med' },
-  { value: 'energy_equipment', label: 'Energy / Oil & Gas Equipment', icon: 'Energy' },
-  { value: 'aviation_equipment', label: 'Aviation / Special Risk Equipment', icon: 'Air' },
-  { value: 'jewelry', label: 'Jewelry & Watches', icon: 'Gem' },
-  { value: 'other', label: 'Other Salvage Asset', icon: 'Other' },
-] as const;
 
 const INSURANCE_CLASSES = [
   { value: 'motor', label: 'Motor' },
@@ -586,12 +568,10 @@ function NewCasePageContent() {
   const formData = watch();
   const marketValue = watch('marketValue');
   const hasAIAnalysis = !!aiAssessment;
-  const enabledAssetTypes = useMemo(() => {
-    return INSURANCE_SALVAGE_ASSET_TYPES.map((type) => ({
-      ...type,
-      label: enabledAssetTypesPolicy?.[type.value]?.label || type.label,
-    }));
-  }, [enabledAssetTypesPolicy]);
+  const enabledAssetTypes = useMemo(
+    () => getEnabledCaseAssetTypeOptions(enabledAssetTypesPolicy),
+    [enabledAssetTypesPolicy]
+  );
 
   const enabledInsuranceClasses = useMemo(() => {
     return INSURANCE_CLASSES.map((insuranceClass) => ({
@@ -599,6 +579,14 @@ function NewCasePageContent() {
       label: insuranceClassesPolicy?.[insuranceClass.value]?.label || insuranceClass.label,
     }));
   }, [insuranceClassesPolicy]);
+
+  useEffect(() => {
+    if (!assetType || enabledAssetTypes.length === 0) return;
+    const stillAllowed = enabledAssetTypes.some((type) => type.value === assetType);
+    if (!stillAllowed) {
+      setValue('assetType', undefined as never);
+    }
+  }, [assetType, enabledAssetTypes, setValue]);
 
   useEffect(() => {
     setAiAssessment(null);

@@ -23,6 +23,9 @@ import {
   isValidQualityTier,
   validateQualityTier,
   mapAnyConditionToQuality,
+  resolveMarketSearchCondition,
+  resolveRealisticMarketSearchCondition,
+  isBrandNewMarketRealistic,
 } from "@/features/valuations/services/condition-mapping.service";
 
 describe("Condition Mapping Service", () => {
@@ -409,5 +412,44 @@ describe("Condition Mapping Service", () => {
       
       consoleWarnSpy.mockRestore();
     });
+  });
+});
+
+describe("Market search condition pricing", () => {
+  it("searches each user tier directly without post-search multipliers", () => {
+    expect(resolveMarketSearchCondition("excellent", { assetType: "vehicle", vehicleYear: 2016 })).toBe(
+      "Foreign Used (Tokunbo)"
+    );
+    expect(resolveMarketSearchCondition("good", { assetType: "vehicle", vehicleYear: 2016 })).toBe(
+      "Foreign Used (Tokunbo)"
+    );
+    expect(resolveMarketSearchCondition("fair", { assetType: "vehicle", vehicleYear: 2016 })).toBe(
+      "Nigerian Used"
+    );
+    expect(resolveMarketSearchCondition("poor", { assetType: "vehicle", vehicleYear: 2016 })).toBe(
+      "Heavily Used"
+    );
+  });
+
+  it("adjusts unrealistic brand new requests for older vehicles", () => {
+    const resolution = resolveRealisticMarketSearchCondition("excellent", {
+      assetType: "vehicle",
+      vehicleYear: 2010,
+    });
+    expect(resolution.searchCondition).toBe("Foreign Used (Tokunbo)");
+    expect(resolution.conditionAdjusted).toBe(true);
+  });
+
+  it("allows brand new search for recent vehicles", () => {
+    const currentYear = new Date().getFullYear();
+    expect(
+      resolveMarketSearchCondition("excellent", { assetType: "vehicle", vehicleYear: currentYear })
+    ).toBe("Brand New");
+  });
+
+  it("treats old iPhone models as not brand new", () => {
+    expect(isBrandNewMarketRealistic({ assetType: "electronics", model: "iPhone X" })).toBe(false);
+    expect(isBrandNewMarketRealistic({ assetType: "electronics", model: "iPhone 11 Pro" })).toBe(false);
+    expect(isBrandNewMarketRealistic({ assetType: "electronics", model: "iPhone 16 Pro Max" })).toBe(true);
   });
 });

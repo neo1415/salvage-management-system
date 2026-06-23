@@ -260,13 +260,17 @@ function coerceAiOpinion(provider: AiProvider, text: string): AiPriceOpinion {
 
 function promptForAdjudication(input: PriceAdjudicationInput, filteredPrices: ExtractedPrice[], rejectedPrices: Array<ExtractedPrice & { rejectionReason: string }>): string {
   const itemText = textForItem(input.item, input.partName);
+  const noSerperEvidence = filteredPrices.length === 0;
   return JSON.stringify({
     instruction: [
       'You are an insurance salvage valuation adjudicator.',
       'Use live web search where available. Do not rely on training data alone.',
-      'Compare the supplied Serper evidence with current web evidence.',
+      noSerperEvidence
+        ? 'No usable Serper listings were supplied. Search the web directly for current Nigeria/Naira prices for the exact item, year, and condition.'
+        : 'Compare the supplied Serper evidence with current web evidence.',
       'Reject counterfeit, replica, accessory-only, irrelevant, stale, low-trust, or implausible prices.',
       'For specialist/luxury assets, prefer appraisal/authorized dealer/auction-house evidence and require manual review when evidence is not definitive.',
+      'When estimating without listings, provide a conservative market price grounded in current web evidence.',
       'Return JSON only with keys: recommendedPrice, confidence, manualReviewRequired, reasons, acceptedSources, rejectedSources.',
     ],
     mode: input.mode,
@@ -469,7 +473,14 @@ export class PriceAdjudicationService {
       : [];
 
     const selectedAiOpinion = this.selectAiOpinion(aiOpinions, deterministic.filteredPrices);
-    const selectedPrice = selectedAiOpinion?.recommendedPrice || guardedPriceData.medianPrice || guardedPriceData.averagePrice;
+    const serperCount = deterministic.filteredPrices.length;
+    const minSerperSources = input.mode === 'market'
+      ? input.policy.minimumMarketSourceCount
+      : 1;
+    const preferAi = serperCount === 0 || serperCount < minSerperSources;
+    const selectedPrice = preferAi && selectedAiOpinion?.recommendedPrice
+      ? selectedAiOpinion.recommendedPrice
+      : (selectedAiOpinion?.recommendedPrice || guardedPriceData.medianPrice || guardedPriceData.averagePrice);
     const selectedSource = selectedAiOpinion?.provider || (selectedPrice ? 'serper' : 'none');
     const aiReviewReasons = aiOpinions.flatMap((opinion) => opinion.manualReviewRequired ? opinion.reasons : []);
     const reviewReasons = Array.from(new Set([

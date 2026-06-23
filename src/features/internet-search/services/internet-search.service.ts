@@ -213,6 +213,40 @@ export class InternetSearchService {
     };
   }
 
+  private buildEmptyPriceData(): PriceExtractionResult {
+    return {
+      prices: [],
+      confidence: 0,
+      currency: 'NGN',
+      extractedAt: new Date(),
+    };
+  }
+
+  private async tryAiPriceEstimate(input: {
+    item: ItemIdentifier;
+    mode: 'market' | 'part';
+    partName?: string;
+    damageType?: string;
+    query: string;
+  }): Promise<PriceAdjudicationResult | null> {
+    const adjudication = await this.adjudicatePriceData({
+      item: input.item,
+      mode: input.mode,
+      priceData: this.buildEmptyPriceData(),
+      partName: input.partName,
+      damageType: input.damageType,
+    });
+
+    if (!adjudication.selectedPrice) {
+      return null;
+    }
+
+    console.log(
+      `🤖 AI price estimate (${adjudication.selectedSource}): ₦${adjudication.selectedPrice.toLocaleString()} for ${input.mode}`
+    );
+    return adjudication;
+  }
+
   private async adjudicatePriceData(input: {
     item: ItemIdentifier;
     mode: 'market' | 'part';
@@ -394,6 +428,20 @@ export class InternetSearchService {
       const organicResults = this.dedupeOrganicResults(searchBatches.flatMap(batch => batch.organic || [])).slice(0, maxResults);
       
       if (organicResults.length === 0) {
+        console.warn('No Serper market results; falling back to Claude/Gemini web price search');
+        const aiAdjudication = await this.tryAiPriceEstimate({ item, mode: 'market', query });
+        if (aiAdjudication) {
+          const executionTime = timer.end();
+          return {
+            priceData: aiAdjudication.priceData,
+            query,
+            resultsProcessed: 0,
+            executionTime,
+            dataSource: 'internet_search',
+            success: true,
+            adjudication: aiAdjudication,
+          };
+        }
         throw new Error('No search results returned');
       }
       
@@ -417,6 +465,22 @@ export class InternetSearchService {
           pricePlausibility: valuationPolicy.pricePlausibility,
         }
       ), item);
+      if (priceData.prices.length === 0) {
+        console.warn('Serper returned listings but no usable prices; falling back to Claude/Gemini');
+        const aiAdjudication = await this.tryAiPriceEstimate({ item, mode: 'market', query });
+        if (aiAdjudication) {
+          const executionTime = timer.end();
+          return {
+            priceData: aiAdjudication.priceData,
+            query,
+            resultsProcessed: organicResults.length,
+            executionTime,
+            dataSource: 'internet_search',
+            success: true,
+            adjudication: aiAdjudication,
+          };
+        }
+      }
       const adjudication = await this.adjudicatePriceData({
         item,
         mode: 'market',
@@ -559,6 +623,26 @@ export class InternetSearchService {
       const organicResults = this.dedupeOrganicResults(searchBatches.flatMap(batch => batch.organic || [])).slice(0, maxResults);
       
       if (organicResults.length === 0) {
+        const aiAdjudication = await this.tryAiPriceEstimate({
+          item,
+          mode: 'part',
+          partName,
+          damageType,
+          query: primaryQuery,
+        });
+        if (aiAdjudication) {
+          const executionTime = Date.now() - startTime;
+          return {
+            partName,
+            priceData: aiAdjudication.priceData,
+            query,
+            resultsProcessed: 0,
+            executionTime,
+            dataSource: 'internet_search',
+            success: true,
+            adjudication: aiAdjudication,
+          };
+        }
         throw new Error('No search results returned');
       }
       
@@ -573,6 +657,28 @@ export class InternetSearchService {
           pricePlausibility: valuationPolicy.pricePlausibility,
         }
       );
+      if (priceData.prices.length === 0) {
+        const aiAdjudication = await this.tryAiPriceEstimate({
+          item,
+          mode: 'part',
+          partName,
+          damageType,
+          query: primaryQuery,
+        });
+        if (aiAdjudication) {
+          const executionTime = Date.now() - startTime;
+          return {
+            partName,
+            priceData: aiAdjudication.priceData,
+            query,
+            resultsProcessed: organicResults.length,
+            executionTime,
+            dataSource: 'internet_search',
+            success: true,
+            adjudication: aiAdjudication,
+          };
+        }
+      }
       const adjudication = await this.adjudicatePriceData({
         item,
         mode: 'part',
@@ -601,7 +707,32 @@ export class InternetSearchService {
       
     } catch (error) {
       const executionTime = Date.now() - startTime;
-      
+      const fallbackQuery = queryBuilder.buildPartPriceQuery(item, partName, damageType);
+
+      try {
+        const aiAdjudication = await this.tryAiPriceEstimate({
+          item,
+          mode: 'part',
+          partName,
+          damageType,
+          query: fallbackQuery,
+        });
+        if (aiAdjudication) {
+          return {
+            partName,
+            priceData: aiAdjudication.priceData,
+            query: fallbackQuery,
+            resultsProcessed: 0,
+            executionTime,
+            dataSource: 'internet_search',
+            success: true,
+            adjudication: aiAdjudication,
+          };
+        }
+      } catch (aiError) {
+        console.warn('AI part price estimate failed after Serper error:', aiError);
+      }
+
       return {
         partName,
         priceData: {

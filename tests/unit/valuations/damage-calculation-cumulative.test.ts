@@ -35,11 +35,11 @@ describe('Property 8: Cumulative Damage Deduction Calculation', () => {
           // Calculate expected total from individual deductions
           const sumOfDeductions = result.deductions.reduce((sum, d) => sum + d.deductionPercent, 0);
 
-          // If sum is under 90%, total should equal sum
+          // Minimum severe floors and evidence floors can raise total above raw sum
           if (sumOfDeductions <= 0.90) {
-            expect(Math.abs(result.totalDeductionPercent - sumOfDeductions)).toBeLessThan(0.0001);
+            expect(result.totalDeductionPercent).toBeGreaterThanOrEqual(sumOfDeductions - 0.0001);
+            expect(result.totalDeductionPercent).toBeLessThanOrEqual(0.90);
           } else {
-            // If sum exceeds 90%, total should be capped at 90%
             expect(result.totalDeductionPercent).toBe(0.90);
           }
         }

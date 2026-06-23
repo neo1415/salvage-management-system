@@ -37,7 +37,11 @@ import { assessDamageWithVision } from '@/lib/integrations/vision-damage-detecti
 import { isGeminiEnabled } from '@/lib/integrations/gemini-damage-detection';
 import { getClaudeRateLimiter } from '@/lib/integrations/claude-rate-limiter';
 import { getGeminiRateLimiter } from '@/lib/integrations/gemini-rate-limiter';
-import { type QualityTier, mapAnyConditionToQuality } from '@/features/valuations/services/condition-mapping.service';
+import {
+  type QualityTier,
+  mapAnyConditionToQuality,
+  resolveRealisticMarketSearchCondition,
+} from '@/features/valuations/services/condition-mapping.service';
 import { getValuationPolicyConfig, shouldRequireManualReview } from '@/features/valuations/services/valuation-policy.service';
 
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
@@ -190,6 +194,10 @@ export function shouldApplyTotalLossCap(input: {
   }
 
   if (isVehicle && aiTotalLoss) {
+    return { applyCap: true, aiOnlyNonVehicleReview: false, reason: 'ai_vehicle' };
+  }
+
+  if (isVehicle && (input.damagePercentage ?? 0) >= 55 && (input.partPricesFound ?? 0) < 3) {
     return { applyCap: true, aiOnlyNonVehicleReview: false, reason: 'ai_vehicle' };
   }
 
@@ -435,6 +443,26 @@ export function enrichItemInfoWithAiIdentification(
 
   if (!enriched.brand && details.detectedMake) {
     enriched.brand = details.detectedMake;
+  }
+
+  if (enriched.type === 'vehicle' && details.detectedMake) {
+    enriched.make = details.detectedMake;
+    enriched.brand = enriched.brand || details.detectedMake;
+  }
+
+  if (details.detectedModel) {
+    enriched.model = details.detectedModel;
+    if (enriched.type === 'vehicle') {
+      enriched.description = details.detectedModel;
+    }
+  }
+
+  const detectedYear = (details as { detectedYear?: string | number }).detectedYear;
+  if (enriched.type === 'vehicle' && !enriched.year && detectedYear) {
+    const parsedYear = parseInt(String(detectedYear), 10);
+    if (parsedYear > 1980 && parsedYear <= new Date().getFullYear() + 1) {
+      enriched.year = parsedYear;
+    }
   }
 
   if ((!enriched.description || /^\d+(?:\s+\w+)?$/.test(enriched.description)) && details.detectedModel) {
@@ -781,17 +809,15 @@ export async function assessDamageEnhanced(params: {
   let isTotalLoss: boolean | undefined;
   let partPrices: Awaited<ReturnType<typeof searchUniversalPartPrices>> = [];
   
-  // For item classes with specific AI evidence, use the model's exact loss items
-  // instead of collapsing them into generic body/mechanical buckets.
+  // Use AI-identified damaged parts for every asset type when available.
   let damages: DamageInput[];
-  if ((itemInfo?.type === 'electronics' || itemInfo?.type === 'jewelry' || itemInfo?.type === 'watch' || isBulkRecoveryAsset(itemInfo)) && damageAnalysis.damagedParts && damageAnalysis.damagedParts.length > 0) {
+  if (damageAnalysis.damagedParts && damageAnalysis.damagedParts.length > 0) {
     damages = damageAnalysis.damagedParts.map(part => ({
       component: part.part,
       damageLevel: part.severity
     }));
-    console.log(`Using asset-specific AI loss evidence for ${itemInfo?.type}:`, damages.map(d => d.component).join(', '));
+    console.log(`Using AI loss evidence for ${itemInfo?.type || 'asset'}:`, damages.map(d => d.component).join(', '));
   } else {
-    // For other item types, use the traditional score-based approach
     damages = identifyDamagedComponents(damageScore);
   }
   
@@ -882,7 +908,7 @@ export async function assessDamageEnhanced(params: {
         });
       } else {
       // NEW: Search for part prices to enhance salvage calculations (Task 7.4)
-      partPrices = await searchUniversalPartPrices(itemInfo, damages, { forceRefresh });
+      partPrices = await searchUniversalPartPrices(marketLookupItemInfo ?? itemInfo, damages, { forceRefresh });
       console.log(`🔍 Part price search results: ${partPrices.filter(p => p.searchedPrice).length}/${partPrices.length} found`);
       
       // Extract item make/brand for make-specific deductions (Requirement 6.1)
@@ -900,7 +926,9 @@ export async function assessDamageEnhanced(params: {
           component: p.component,
           partPrice: p.searchedPrice,
           confidence: p.confidence,
-          source: p.searchedPrice ? 'internet_search' as const : 'not_found' as const
+          source: p.searchedPrice
+            ? (p.source === 'ai_estimate' ? 'ai_estimate' as const : 'internet_search' as const)
+            : 'not_found' as const
         })),
         itemMake // Pass item make/brand for make-specific deductions
       );
@@ -908,26 +936,31 @@ export async function assessDamageEnhanced(params: {
       
       salvageValue = Math.round(salvageCalc.salvageValue);
       const partPricesFound = partPrices.filter(p => p.searchedPrice).length;
+      const partPriceCoverage = damages.length > 0 ? partPricesFound / damages.length : 0;
 
-      if (partPricesFound === 0 && salvageCalc.totalDeductionPercent >= 0.9) {
-        const evidenceAdjustedDeduction = Math.min(
-          0.82,
-          Math.max(0.35, (damagePercentage / 100) * 0.85)
+      if (partPriceCoverage < 0.35 && damages.length >= 5) {
+        const severeCount = damages.filter((d) => d.damageLevel === 'severe').length;
+        const evidenceMinDeduction = Math.min(
+          0.85,
+          0.22 + (damages.length / 18) * 0.42 + (severeCount / damages.length) * 0.32
         );
-        const originalSalvageValue = salvageValue;
-        calculationDeductionPercent = evidenceAdjustedDeduction;
-        salvageValue = Math.round(conditionAdjustedMarketValue * (1 - evidenceAdjustedDeduction));
-        repairCost = Math.round(conditionAdjustedMarketValue - salvageValue);
-        valuationReviewReasons.push(
-          'No reliable part-price evidence was found, so the AI-only repair deduction was prevented from saturating at the 10% salvage floor. Review photos and market evidence before approval.'
-        );
-        console.log('Prevented unpriced damage deduction from saturating at the 10% salvage floor:', {
-          originalSalvageValue,
-          adjustedSalvageValue: salvageValue,
-          originalDeduction: salvageCalc.totalDeductionPercent,
-          adjustedDeduction: evidenceAdjustedDeduction,
-          damagePercentage,
-        });
+        if (calculationDeductionPercent < evidenceMinDeduction) {
+          const originalSalvageValue = salvageValue;
+          calculationDeductionPercent = evidenceMinDeduction;
+          salvageValue = Math.round(conditionAdjustedMarketValue * (1 - evidenceMinDeduction));
+          repairCost = Math.round(conditionAdjustedMarketValue - salvageValue);
+          valuationReviewReasons.push(
+            `Only ${partPricesFound}/${damages.length} part prices found; applied evidence-based minimum deduction of ${(evidenceMinDeduction * 100).toFixed(0)}%. Review photos and pricing evidence before approval.`
+          );
+          console.log('Applied evidence minimum deduction for thin part-price coverage:', {
+            originalSalvageValue,
+            adjustedSalvageValue: salvageValue,
+            originalDeduction: salvageCalc.totalDeductionPercent,
+            adjustedDeduction: evidenceMinDeduction,
+            partPriceCoverage,
+            damageParts: damages.length,
+          });
+        }
       }
       
       // CRITICAL: Ensure salvage value never exceeds condition-adjusted market value
@@ -1695,7 +1728,7 @@ async function searchPartPrices(
   component: string;
   searchedPrice?: number;
   confidence?: number;
-  source: 'internet_search' | 'not_found';
+  source: 'internet_search' | 'ai_estimate' | 'not_found';
   evidence?: Record<string, unknown>;
 }>> {
   if (!vehicleInfo?.make || !vehicleInfo?.model || damages.length === 0) {
@@ -1728,23 +1761,26 @@ async function searchPartPrices(
         item: itemIdentifier,
         partName,
         damageType: damage.damageLevel,
-        maxResults: 5,
-        timeout: 2000 // Shorter timeout for part searches
+        maxResults: 8,
+        timeout: 5000,
       });
 
-      if (partResult.success && partResult.priceData.averagePrice) {
-        console.log(`✅ Found part price for ${partName}: ₦${partResult.priceData.averagePrice.toLocaleString()}`);
-        
+      const resolved = resolvePartPriceFromSearchResult(partResult);
+
+      if (resolved.price) {
+        console.log(`✅ Found part price for ${partName}: ₦${resolved.price.toLocaleString()} (${resolved.source})`);
+
         return {
           component: damage.component,
-          searchedPrice: partResult.priceData.averagePrice,
-          confidence: partResult.priceData.confidence,
-          source: 'internet_search' as const,
+          searchedPrice: resolved.price,
+          confidence: resolved.confidence,
+          source: resolved.source,
           evidence: {
             query: partResult.query,
             resultsProcessed: partResult.resultsProcessed,
             priceData: partResult.priceData,
             adjudication: partResult.adjudication,
+            priceSource: resolved.source,
           },
         };
       } else {
@@ -2224,19 +2260,24 @@ function getConditionAdjustment(condition: string): number {
  * Estimate repair cost based on damage scores
  */
 function estimateRepairCost(damageScore: DamageScore, marketValue: number): number {
-  // Cost multipliers for each category
   const costs = {
-    structural: damageScore.structural * 50000,  // ₦50k per point
-    mechanical: damageScore.mechanical * 30000,  // ₦30k per point
-    cosmetic: damageScore.cosmetic * 10000,      // ₦10k per point
-    electrical: damageScore.electrical * 20000,  // ₦20k per point
-    interior: damageScore.interior * 15000,      // ₦15k per point
+    structural: damageScore.structural * 50000,
+    mechanical: damageScore.mechanical * 30000,
+    cosmetic: damageScore.cosmetic * 10000,
+    electrical: damageScore.electrical * 20000,
+    interior: damageScore.interior * 15000,
   };
-  
+
   const totalCost = Object.values(costs).reduce((sum, cost) => sum + cost, 0);
-  
-  // Cap repair cost at 90% of market value
-  return Math.min(totalCost, marketValue * 0.9);
+  const weightedDamage =
+    damageScore.structural * 0.4 +
+    damageScore.mechanical * 0.3 +
+    damageScore.cosmetic * 0.1 +
+    damageScore.electrical * 0.1 +
+    damageScore.interior * 0.1;
+  const evidenceFloor = marketValue * Math.min(0.85, Math.max(0.25, (weightedDamage / 100) * 0.9));
+
+  return Math.min(marketValue * 0.9, Math.max(totalCost, evidenceFloor));
 }
 
 /**
@@ -2435,9 +2476,19 @@ function calculateConfidence(
   return confidence;
 }
 
-/**
- * Get universal market value for any item type
- */
+function resolveSearchConditionForItem(
+  itemInfo: UniversalItemInfo,
+  assetType: string,
+  year?: number,
+  model?: string
+): UniversalCondition {
+  return resolveRealisticMarketSearchCondition(itemInfo.condition, {
+    assetType,
+    year,
+    model,
+  }).searchCondition as UniversalCondition;
+}
+
 async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { forceRefresh?: boolean } = {}): Promise<{
   value: number;
   confidence: number;
@@ -2510,34 +2561,13 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
     try {
       console.log('🌐 Using vehicle market data service...');
       
-      // CRITICAL FIX: Convert quality tiers to universal conditions for search
-      let searchCondition: 'Brand New' | 'Foreign Used (Tokunbo)' | 'Nigerian Used' | 'Heavily Used' = 'Nigerian Used';
-      if (itemInfo.condition) {
-        // Map quality tiers to universal conditions for accurate search results
-        const qualityToUniversalMapping: Record<string, 'Brand New' | 'Foreign Used (Tokunbo)' | 'Nigerian Used' | 'Heavily Used'> = {
-          'excellent': 'Brand New',
-          'good': 'Foreign Used (Tokunbo)', 
-          'fair': 'Nigerian Used',
-          'poor': 'Heavily Used',
-          'Brand New': 'Brand New',
-          'Foreign Used (Tokunbo)': 'Foreign Used (Tokunbo)',
-          'Nigerian Used': 'Nigerian Used',
-          'Heavily Used': 'Heavily Used'
-        };
-        
-        searchCondition = qualityToUniversalMapping[itemInfo.condition] || 'Nigerian Used';
-        if (qualityToUniversalMapping[itemInfo.condition] !== itemInfo.condition) {
-          console.log(`🔄 Converted quality tier "${itemInfo.condition}" → "${searchCondition}" for search`);
-        }
-      }
-      
       const property: PropertyIdentifier = {
         type: 'vehicle',
         make: itemInfo.make,
         model: itemInfo.model,
         year: itemInfo.year,
         mileage: itemInfo.mileage,
-        condition: searchCondition
+        condition: itemInfo.condition,
       };
       
       const marketPrice = await getMarketPrice(property, { forceRefresh: options.forceRefresh });
@@ -2585,7 +2615,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
           propertyType: itemInfo.propertyType,
           location: itemInfo.location,
           bedrooms: itemInfo.bedrooms,
-          condition: itemInfo.condition as UniversalCondition
+          condition: resolveSearchConditionForItem(itemInfo, 'property', undefined, itemInfo.propertyType),
         },
         maxResults: 10,
         timeout: 5000,
@@ -2594,8 +2624,9 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
 
       if (searchResult.success && searchResult.priceData.averagePrice) {
         const adjudicationReviewReasons = searchResult.adjudication?.reviewReasons || [];
+        const rawPrice = searchResult.priceData.medianPrice || searchResult.priceData.averagePrice;
         return {
-          value: Math.round(searchResult.priceData.medianPrice || searchResult.priceData.averagePrice),
+          value: Math.round(rawPrice),
           confidence: Math.round(searchResult.priceData.confidence),
           source: 'internet_search',
           uniqueSourceCount: searchResult.priceData.evidenceSummary?.uniqueSourceCount,
@@ -2627,7 +2658,8 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
       });
 
       if (searchResult.success && searchResult.priceData.averagePrice) {
-        const marketValue = Math.round(searchResult.priceData.medianPrice || searchResult.priceData.averagePrice);
+        const rawPrice = searchResult.priceData.medianPrice || searchResult.priceData.averagePrice;
+        const marketValue = Math.round(rawPrice);
         const adjudicationReviewReasons = searchResult.adjudication?.reviewReasons || [];
 
         console.log(`Found ${itemInfo.type} price: NGN ${marketValue.toLocaleString()}`);
@@ -2683,7 +2715,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
           brand: itemInfo.brand || '',
           model: itemInfo.model || '',
           storage: itemInfo.storageCapacity,
-          condition: itemInfo.condition as UniversalCondition
+          condition: resolveSearchConditionForItem(itemInfo, 'electronics', undefined, itemInfo.model),
         };
       } else if (itemInfo.type === 'vehicle') {
         itemIdentifier = {
@@ -2705,7 +2737,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
           machineryType: itemInfo.machineryType || 'equipment',
           model: itemInfo.model,
           year: itemInfo.year,
-          condition: itemInfo.condition as UniversalCondition
+          condition: resolveSearchConditionForItem(itemInfo, 'machinery', itemInfo.year, itemInfo.model),
         };
       } else {
         // For watch, artwork, equipment, other - use machinery as fallback
@@ -2725,8 +2757,8 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
       });
 
       if (searchResult.success && searchResult.priceData.averagePrice) {
-        // Use the market price directly - internet search already accounts for condition
-        const marketValue = Math.round(searchResult.priceData.averagePrice);
+        const rawPrice = searchResult.priceData.medianPrice || searchResult.priceData.averagePrice;
+        const marketValue = Math.round(rawPrice);
         const adjudicationReviewReasons = searchResult.adjudication?.reviewReasons || [];
         
         console.log(`✅ Found ${itemInfo.type} price: ₦${marketValue.toLocaleString()}`);
@@ -2774,6 +2806,25 @@ function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdenti
   const description = itemInfo.description || itemInfo.propertyType || itemInfo.machineryType || itemInfo.model;
 
   switch (itemInfo.type) {
+    case 'vehicle':
+      const vehicleMake = itemInfo.make || itemInfo.brand;
+      if (!vehicleMake || !itemInfo.model) return null;
+      return {
+        type: 'vehicle',
+        make: vehicleMake,
+        model: itemInfo.model,
+        year: itemInfo.year,
+        condition: resolveSearchConditionForItem(itemInfo, 'vehicle', itemInfo.year, itemInfo.model),
+      };
+    case 'property':
+      if (!itemInfo.propertyType || !itemInfo.location) return null;
+      return {
+        type: 'property',
+        propertyType: itemInfo.propertyType,
+        location: itemInfo.location,
+        bedrooms: itemInfo.bedrooms,
+        condition: resolveSearchConditionForItem(itemInfo, 'property', undefined, itemInfo.propertyType),
+      };
     case 'electronics':
       if (!brand || !itemInfo.model) return null;
       return {
@@ -2781,7 +2832,7 @@ function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdenti
         brand,
         model: itemInfo.model,
         storage: itemInfo.storageCapacity,
-        condition: itemInfo.condition as UniversalCondition,
+        condition: resolveSearchConditionForItem(itemInfo, 'electronics', undefined, itemInfo.model),
       };
     case 'appliance':
       if (!brand || !itemInfo.model) return null;
@@ -2789,7 +2840,7 @@ function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdenti
         type: 'appliance',
         brand,
         model: itemInfo.model,
-        condition: itemInfo.condition as UniversalCondition,
+        condition: resolveSearchConditionForItem(itemInfo, 'appliance', undefined, itemInfo.model),
       };
     case 'machinery':
       if (!brand && !description) return null;
@@ -2799,7 +2850,7 @@ function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdenti
         machineryType: itemInfo.machineryType || description || 'equipment',
         model: itemInfo.model,
         year: itemInfo.year,
-        condition: itemInfo.condition as UniversalCondition,
+        condition: resolveSearchConditionForItem(itemInfo, 'machinery', itemInfo.year, itemInfo.model),
       };
     case 'furniture':
       if (!description && !itemInfo.model && !brand) return null;
@@ -2809,7 +2860,7 @@ function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdenti
         brand,
         material: itemInfo.material,
         size: itemInfo.quantity || itemInfo.unitOfMeasure,
-        condition: itemInfo.condition as UniversalCondition,
+        condition: resolveSearchConditionForItem(itemInfo, 'furniture', undefined, itemInfo.model),
       };
     case 'jewelry':
     case 'watch':
@@ -2820,7 +2871,7 @@ function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdenti
         brand,
         material: itemInfo.material,
         weight: itemInfo.quantity || itemInfo.unitOfMeasure,
-        condition: itemInfo.condition as UniversalCondition,
+        condition: resolveSearchConditionForItem(itemInfo, 'jewelry', undefined, itemInfo.model),
       };
     case 'stock':
     case 'goods_in_transit':
@@ -2851,7 +2902,7 @@ function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdenti
         quantity: itemInfo.quantity,
         unitOfMeasure: itemInfo.unitOfMeasure,
         year: itemInfo.year,
-        condition: itemInfo.condition as UniversalCondition,
+        condition: resolveSearchConditionForItem(itemInfo, itemInfo.type, itemInfo.year, itemInfo.model),
       };
     default:
       return null;
@@ -2948,6 +2999,36 @@ function estimateUniversalMarketValue(itemInfo: UniversalItemInfo): number {
 /**
  * Search for universal part prices
  */
+function resolvePartPriceFromSearchResult(
+  partResult: Awaited<ReturnType<typeof internetSearchService.searchPartPrice>>
+): {
+  price?: number;
+  confidence?: number;
+  source: 'internet_search' | 'ai_estimate' | 'not_found';
+} {
+  const adjudication = partResult.adjudication;
+  const aiSources = new Set(['gemini_grounded', 'claude_web_search']);
+
+  if (adjudication?.selectedPrice && adjudication.selectedPrice > 0) {
+    return {
+      price: adjudication.selectedPrice,
+      confidence: adjudication.confidence ?? partResult.priceData.confidence,
+      source: aiSources.has(adjudication.selectedSource) ? 'ai_estimate' : 'internet_search',
+    };
+  }
+
+  const extractedPrice = partResult.priceData.medianPrice || partResult.priceData.averagePrice;
+  if (partResult.success && extractedPrice && extractedPrice > 0) {
+    return {
+      price: extractedPrice,
+      confidence: partResult.priceData.confidence,
+      source: 'internet_search',
+    };
+  }
+
+  return { source: 'not_found' };
+}
+
 async function searchUniversalPartPrices(
   itemInfo: UniversalItemInfo | undefined,
   damages: DamageInput[],
@@ -2956,7 +3037,7 @@ async function searchUniversalPartPrices(
   component: string;
   searchedPrice?: number;
   confidence?: number;
-  source: 'internet_search' | 'not_found';
+  source: 'internet_search' | 'ai_estimate' | 'not_found';
   evidence?: Record<string, unknown>;
 }>> {
   if (!itemInfo || damages.length === 0) {
@@ -2975,55 +3056,7 @@ async function searchUniversalPartPrices(
     }));
   }
 
-  // Build ItemIdentifier based on item type with all required fields
-  let itemIdentifier: ItemIdentifier | null = buildUniversalSearchIdentifier(itemInfo);
-  
-  if (itemInfo.type === 'vehicle') {
-    itemIdentifier = {
-      type: 'vehicle',
-      make: itemInfo.make || '',
-      model: itemInfo.model || '',
-      year: itemInfo.year
-    };
-  } else if (itemInfo.type === 'electronics') {
-    itemIdentifier = {
-      type: 'electronics',
-      brand: itemInfo.brand || itemInfo.make || '',
-      model: itemInfo.model || ''
-    };
-  } else if (itemInfo.type === 'appliance') {
-    itemIdentifier = {
-      type: 'appliance',
-      brand: itemInfo.brand || itemInfo.make || '',
-      model: itemInfo.model || ''
-    };
-  } else if (itemInfo.type === 'property' && itemInfo.propertyType && itemInfo.location) {
-    itemIdentifier = {
-      type: 'property',
-      propertyType: itemInfo.propertyType,
-      location: itemInfo.location,
-      bedrooms: itemInfo.bedrooms,
-      condition: itemInfo.condition as UniversalCondition
-    };
-  } else if (itemInfo.type === 'machinery') {
-    itemIdentifier = {
-      type: 'machinery',
-      brand: itemInfo.brand || itemInfo.make || '',
-      machineryType: itemInfo.machineryType || 'equipment',
-      model: itemInfo.model,
-      year: itemInfo.year,
-      condition: itemInfo.condition as UniversalCondition
-    };
-  } else if (!itemIdentifier) {
-    // For watch, artwork, equipment, other - use machinery as fallback
-    itemIdentifier = {
-      type: 'machinery',
-      brand: itemInfo.brand || itemInfo.make || '',
-      machineryType: itemInfo.type,
-      model: itemInfo.model
-    };
-  }
-
+  const itemIdentifier = buildUniversalSearchIdentifier(itemInfo);
   if (!itemIdentifier) return [];
 
   // Map damage components to searchable part names by item type
@@ -3113,24 +3146,29 @@ async function searchUniversalPartPrices(
         item: itemIdentifier,
         partName,
         damageType: damage.damageLevel,
-        maxResults: 5,
-        timeout: 2000,
+        maxResults: 8,
+        timeout: 7500,
         forceRefresh: options.forceRefresh,
       });
 
-      if (partResult.success && partResult.priceData.averagePrice) {
-        console.log(`✅ Found ${itemInfo.type} part price for ${partName}: ₦${partResult.priceData.averagePrice.toLocaleString()}`);
-        
+      const resolved = resolvePartPriceFromSearchResult(partResult);
+
+      if (resolved.price) {
+        console.log(
+          `✅ Found ${itemInfo.type} part price for ${partName}: ₦${resolved.price.toLocaleString()} (${resolved.source})`
+        );
+
         return {
           component: damage.component,
-          searchedPrice: partResult.priceData.averagePrice,
-          confidence: partResult.priceData.confidence,
-          source: 'internet_search' as const,
+          searchedPrice: resolved.price,
+          confidence: resolved.confidence,
+          source: resolved.source,
           evidence: {
             query: partResult.query,
             resultsProcessed: partResult.resultsProcessed,
             priceData: partResult.priceData,
             adjudication: partResult.adjudication,
+            priceSource: resolved.source,
           },
         };
       } else {

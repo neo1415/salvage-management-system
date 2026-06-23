@@ -29,6 +29,9 @@ import { enqueueScrapingJob } from './background-job.service';
 import { ValuationQueryService } from '@/features/valuations/services/valuation-query.service';
 import { internetSearchService } from '@/features/internet-search/services/internet-search.service';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
+import {
+  resolveRealisticMarketSearchCondition,
+} from '@/features/valuations/services/condition-mapping.service';
 
 /**
  * Convert PropertyIdentifier to ItemIdentifier for internet search
@@ -108,9 +111,23 @@ export async function getMarketPrice(
     throw new Error(`Unsupported property type: ${property.type}`);
   }
 
+  const userCondition = property.condition;
+  const conditionResolution = resolveRealisticMarketSearchCondition(userCondition, {
+    assetType: property.type,
+    year: property.year,
+    model: property.model,
+    vehicleYear: property.year,
+  });
+  const searchCondition = conditionResolution.searchCondition;
+
   try {
+    const searchProperty: PropertyIdentifier = {
+      ...property,
+      condition: searchCondition,
+    };
+
     // Step 1: PRIMARY - Try Internet Search first for all item types
-    const itemIdentifier = convertToItemIdentifier(property);
+    const itemIdentifier = convertToItemIdentifier(searchProperty);
     if (itemIdentifier) {
       try {
         console.log('🌐 PRIMARY: Attempting internet search for:', itemIdentifier);
@@ -134,9 +151,13 @@ export async function getMarketPrice(
           const prices = searchResult.priceData.prices;
           const conditionSpecificPrice = searchResult.priceData.medianPrice || searchResult.priceData.averagePrice;
           
-          // For condition-specific searches, use the search service's median
-          // This preserves the condition differentiation from search queries
-          const median = conditionSpecificPrice ?? prices[0]?.price ?? 0;
+          const median = Math.round(conditionSpecificPrice ?? prices[0]?.price ?? 0);
+          const reviewReasons = [
+            ...(searchResult.adjudication?.reviewReasons || []),
+            ...(conditionResolution.conditionAdjusted && conditionResolution.adjustmentReason
+              ? [conditionResolution.adjustmentReason]
+              : []),
+          ];
           const sortedPrices = prices.map(p => p.price).sort((a, b) => a - b);
           const min = Math.min(...sortedPrices);
           const max = Math.max(...sortedPrices);
@@ -163,7 +184,11 @@ export async function getMarketPrice(
             isFresh: true,
             cacheAge: 0,
             dataSource: 'internet_search', // PRIMARY source
-            adjudication: searchResult.adjudication,
+            adjudication: searchResult.adjudication
+              ? { ...searchResult.adjudication, reviewReasons }
+              : conditionResolution.conditionAdjusted
+                ? { reviewReasons, manualReviewRequired: true }
+                : undefined,
           };
         }
 
@@ -199,7 +224,7 @@ export async function getMarketPrice(
 
           // Return database result as fallback
           return {
-            median: dbResult.valuation.averagePrice,
+            median: Math.round(dbResult.valuation.averagePrice),
             min: dbResult.valuation.lowPrice,
             max: dbResult.valuation.highPrice,
             count: 1,
@@ -249,7 +274,7 @@ export async function getMarketPrice(
       });
 
       return {
-        median: cached.medianPrice,
+        median: Math.round(cached.medianPrice),
         min: Math.min(...cached.prices.map(p => p.price)),
         max: Math.max(...cached.prices.map(p => p.price)),
         count: cached.prices.length,
@@ -352,7 +377,7 @@ export async function getMarketPrice(
         });
 
         return {
-          median: aggregated.median,
+          median: Math.round(aggregated.median),
           min: aggregated.min,
           max: aggregated.max,
           count: aggregated.count,
@@ -388,7 +413,7 @@ export async function getMarketPrice(
       });
 
       return {
-        median: cached.medianPrice,
+        median: Math.round(cached.medianPrice),
         min: Math.min(...cached.prices.map(p => p.price)),
         max: Math.max(...cached.prices.map(p => p.price)),
         count: cached.prices.length,

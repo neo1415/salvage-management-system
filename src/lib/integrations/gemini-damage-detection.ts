@@ -106,7 +106,7 @@ async function searchPartPricesForDamage(
   component: string;
   partPrice?: number;
   confidence?: number;
-  source: 'internet_search' | 'not_found';
+  source: 'internet_search' | 'ai_estimate' | 'not_found';
 }>> {
   if (!vehicleInfo.make || !vehicleInfo.model || damagedComponents.length === 0) {
     return [];
@@ -132,9 +132,9 @@ async function searchPartPricesForDamage(
   try {
     // Use the optimized multiple part search with performance settings
     const searchOptions = {
-      maxResults: 3, // Reduced for faster searches
-      timeout: 1500, // Quick timeout for real-time damage detection
-      concurrencyLimit: 2, // Conservative limit for damage detection context
+      maxResults: 6,
+      timeout: 5000,
+      concurrencyLimit: 3,
       enableBatching: true,
       prioritizeCommonParts: true
     };
@@ -145,16 +145,34 @@ async function searchPartPricesForDamage(
       searchOptions
     );
 
+    const aiSources = new Set(['gemini_grounded', 'claude_web_search']);
+
     // Convert results to the expected format
     const mappedResults = partResults.map((result, index) => {
       const originalComponent = damagedComponents[index]?.component || 'unknown';
-      
-      if (result.success && result.priceData.averagePrice) {
-        console.log(`✅ Found part price for ${result.partName}: ₦${result.priceData.averagePrice.toLocaleString()}`);
+      const adjudication = result.adjudication;
+      const adjudicatedPrice = adjudication?.selectedPrice;
+      const extractedPrice = result.priceData.medianPrice || result.priceData.averagePrice;
+
+      if (adjudicatedPrice && adjudicatedPrice > 0) {
+        const source = adjudication && aiSources.has(adjudication.selectedSource)
+          ? 'ai_estimate' as const
+          : 'internet_search' as const;
+        console.log(`✅ Found part price for ${result.partName}: ₦${adjudicatedPrice.toLocaleString()} (${source})`);
+        return {
+          component: originalComponent,
+          partPrice: adjudicatedPrice,
+          confidence: adjudication?.confidence ?? result.priceData.confidence,
+          source,
+        };
+      }
+
+      if (result.success && extractedPrice && extractedPrice > 0) {
+        console.log(`✅ Found part price for ${result.partName}: ₦${extractedPrice.toLocaleString()}`);
         
         return {
           component: originalComponent,
-          partPrice: result.priceData.averagePrice,
+          partPrice: extractedPrice,
           confidence: result.priceData.confidence,
           source: 'internet_search' as const
         };
@@ -1970,7 +1988,7 @@ export async function detectDamageWithGemini(
     component: string;
     partPrice?: number;
     confidence?: number;
-    source: 'internet_search' | 'not_found';
+    source: 'internet_search' | 'ai_estimate' | 'not_found';
   }>;
   salvageCalculation?: {
     totalPartsCost?: number;
@@ -2015,7 +2033,7 @@ export async function detectDamageWithGemini(
       component: string;
       partPrice?: number;
       confidence?: number;
-      source: 'internet_search' | 'not_found';
+      source: 'internet_search' | 'ai_estimate' | 'not_found';
     }> | undefined;
 
     let salvageCalculation: {
@@ -2038,27 +2056,22 @@ export async function detectDamageWithGemini(
         partPrices = await searchPartPricesForDamage(vehicleInfo, damagedComponentsForSearch);
         
         // Aggregate part prices for salvage calculations
-        const partsWithPrices = partPrices.filter(p => p.partPrice && p.confidence);
+        const partsWithPrices = partPrices.filter(p => p.partPrice && (p.confidence || p.source === 'ai_estimate'));
         const totalPartsCost = partsWithPrices.reduce((sum, part) => sum + (part.partPrice || 0), 0);
         const averageConfidence = partsWithPrices.length > 0 
           ? partsWithPrices.reduce((sum, part) => sum + (part.confidence || 0), 0) / partsWithPrices.length
           : 0;
-
-        // Calculate salvage value estimate based on part costs
-        // Salvage value is typically 10-30% of total part replacement cost
-        const salvageMultiplier = result.totalLoss ? 0.1 : 0.2; // Lower for total loss
-        const salvageValueEstimate = totalPartsCost * salvageMultiplier;
 
         salvageCalculation = {
           totalPartsCost,
           averageConfidence,
           partsFound: partsWithPrices.length,
           totalParts: partPrices.length,
-          salvageValueEstimate
+          salvageValueEstimate: totalPartsCost,
         };
         
         console.log(`✅ Part price search completed: ${partsWithPrices.length}/${partPrices.length} prices found`);
-        console.log(`💰 Salvage calculation: Total parts cost: ₦${totalPartsCost.toLocaleString()}, Estimated salvage value: ₦${salvageValueEstimate.toLocaleString()}`);
+        console.log(`💰 Part repair cost evidence total: ₦${totalPartsCost.toLocaleString()} (used in salvage workflow, not salvage value directly)`);
       } catch (error) {
         console.error('❌ Part price search failed:', error);
         // Don't fail the entire damage detection if part search fails

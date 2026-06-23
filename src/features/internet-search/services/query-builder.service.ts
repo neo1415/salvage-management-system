@@ -5,6 +5,12 @@
  * and search scenarios, optimized for Nigerian market conditions.
  */
 
+import {
+  resolveMarketSearchCondition,
+  isUniversalMarketSearchCondition,
+  isBrandNewMarketRealistic,
+} from '@/features/valuations/services/condition-mapping.service';
+
 // Types for different item categories
 export interface VehicleIdentifier {
   type: 'vehicle';
@@ -212,16 +218,31 @@ export class QueryBuilderService {
         throw new Error(`Unsupported item type: ${(item as any).type}`);
     }
     
-    // Add condition terms - CRITICAL for accurate pricing
+    // Add condition terms — search the realistic condition directly (no post-search multipliers)
     if (includeCondition && 'condition' in item && item.condition) {
-      const normalizedCondition = normalizeCondition(item.condition);
-      if (normalizedCondition) {
-        const conditionTerms = CONDITION_SEARCH_TERMS[normalizedCondition];
-        if (conditionTerms && conditionTerms.length > 0) {
-          // Use the primary condition term for better search accuracy
-          query += ` ${conditionTerms[0]}`;
-          console.log(`🔍 Including condition in search: "${conditionTerms[0]}" for ${normalizedCondition}`);
+      const assetYear = item.type === 'vehicle' || item.type === 'machinery' ? item.year : undefined;
+      const model = 'model' in item ? item.model : undefined;
+      let searchCondition: string;
+      if (isUniversalMarketSearchCondition(item.condition)) {
+        searchCondition = item.condition;
+        if (
+          searchCondition === 'Brand New' &&
+          !isBrandNewMarketRealistic({ assetType: item.type, year: assetYear, model })
+        ) {
+          searchCondition = 'Foreign Used (Tokunbo)';
         }
+      } else {
+        searchCondition = resolveMarketSearchCondition(item.condition, {
+          assetType: item.type,
+          vehicleYear: assetYear,
+          year: assetYear,
+          model,
+        });
+      }
+      const conditionTerms = CONDITION_SEARCH_TERMS[searchCondition as keyof typeof CONDITION_SEARCH_TERMS];
+      if (conditionTerms && conditionTerms.length > 0) {
+        query += ` ${conditionTerms[0]}`;
+        console.log(`🔍 Including condition in search: "${conditionTerms[0]}" for ${searchCondition} (user: ${item.condition})`);
       }
     }
     

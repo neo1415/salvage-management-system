@@ -6,7 +6,7 @@
  * Validates: Requirements 4.5
  * 
  * For any component not found in the damage deduction table, the system should apply
- * default deductions: 5% for minor, 15% for moderate, and 30% for severe damage.
+ * default deductions: 6% for minor, 18% for moderate, and 35% for severe damage.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
@@ -36,9 +36,9 @@ describe('Property 11: Default Deduction Fallback', () => {
 
           // Verify default deductions are applied
           const expectedDeductions = {
-            minor: 0.05,
-            moderate: 0.15,
-            severe: 0.30,
+            minor: 0.06,
+            moderate: 0.18,
+            severe: 0.35,
           };
 
           expect(deduction.component).toBe(uniqueComponent.toLowerCase());

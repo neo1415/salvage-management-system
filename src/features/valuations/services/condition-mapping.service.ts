@@ -340,9 +340,147 @@ export function getUniversalConditionCategories(): UniversalCondition[] {
  * mapQualityToUniversalCondition("excellent") // returns "Brand New"
  * mapQualityToUniversalCondition("good") // returns "Foreign Used (Tokunbo)"
  */
+export type MarketSearchCondition =
+  | 'Brand New'
+  | 'Foreign Used (Tokunbo)'
+  | 'Nigerian Used'
+  | 'Heavily Used';
+
+export function mapUniversalConditionToQualityTier(
+  condition: MarketSearchCondition
+): QualityTier {
+  switch (condition) {
+    case 'Brand New':
+      return 'excellent';
+    case 'Foreign Used (Tokunbo)':
+      return 'good';
+    case 'Nigerian Used':
+      return 'fair';
+    case 'Heavily Used':
+      return 'poor';
+    default:
+      return 'good';
+  }
+}
+
+const UNIVERSAL_MARKET_SEARCH_CONDITIONS: MarketSearchCondition[] = [
+  'Brand New',
+  'Foreign Used (Tokunbo)',
+  'Nigerian Used',
+  'Heavily Used',
+];
+
+export function isUniversalMarketSearchCondition(value: string | undefined): value is MarketSearchCondition {
+  return Boolean(value && UNIVERSAL_MARKET_SEARCH_CONDITIONS.includes(value as MarketSearchCondition));
+}
+
+export interface MarketSearchConditionResolution {
+  searchCondition: MarketSearchCondition;
+  userConditionTier: QualityTier;
+  conditionAdjusted: boolean;
+  adjustmentReason?: string;
+  requestedSearchCondition?: MarketSearchCondition;
+}
+
+const YEAR_BEARING_ASSET_TYPES = new Set([
+  'vehicle',
+  'electronics',
+  'appliance',
+  'machinery',
+  'equipment',
+  'medical_equipment',
+  'energy_equipment',
+  'aviation_equipment',
+]);
+
+/**
+ * Whether brand-new listings are realistic for market search (age / model aware).
+ */
+export function isBrandNewMarketRealistic(
+  options: { assetType?: string; year?: number; model?: string } = {}
+): boolean {
+  const currentYear = new Date().getFullYear();
+  const assetType = options.assetType;
+  const year = options.year;
+  const model = (options.model || '').toLowerCase();
+
+  if (assetType === 'vehicle' || assetType === 'machinery') {
+    if (year && year < currentYear - 1) return false;
+    return true;
+  }
+
+  if (assetType === 'electronics') {
+    const iphoneMatch = model.match(/iphone\s*(?:pro\s*max|pro\s*plus|pro|plus|mini|se)?\s*(\d+|x|xs|xr)/i);
+    if (iphoneMatch) {
+      const generation = iphoneMatch[1].toLowerCase();
+      if (generation === 'x' || generation === 'xs' || generation === 'xr') return false;
+      const generationNumber = parseInt(generation, 10);
+      if (generationNumber && generationNumber < 14) return false;
+    }
+    if (year && year < currentYear - 1) return false;
+  }
+
+  if (assetType === 'appliance') {
+    if (year && year < currentYear - 2) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Pick the condition phrase used in internet search queries.
+ * Search results are the market value — no post-search percentage multipliers.
+ */
+export function resolveRealisticMarketSearchCondition(
+  userCondition: string | undefined,
+  options: { assetType?: string; year?: number; model?: string; vehicleYear?: number } = {}
+): MarketSearchConditionResolution {
+  const year = options.year ?? options.vehicleYear;
+  const assetType = options.assetType;
+  const model = options.model;
+
+  const userTier = isUniversalMarketSearchCondition(userCondition)
+    ? mapUniversalConditionToQualityTier(userCondition)
+    : mapAnyConditionToQuality(userCondition || 'good', 'market search');
+
+  let requestedSearchCondition: MarketSearchCondition = isUniversalMarketSearchCondition(userCondition)
+    ? userCondition
+    : mapQualityToUniversalCondition(userTier);
+
+  if (
+    YEAR_BEARING_ASSET_TYPES.has(assetType || '') &&
+    requestedSearchCondition === 'Brand New' &&
+    !isBrandNewMarketRealistic({ assetType, year, model })
+  ) {
+    return {
+      searchCondition: 'Foreign Used (Tokunbo)',
+      userConditionTier: userTier,
+      conditionAdjusted: true,
+      adjustmentReason: `Brand new listings are unlikely for this ${assetType || 'asset'}; searching foreign used instead.`,
+      requestedSearchCondition: 'Brand New',
+    };
+  }
+
+  return {
+    searchCondition: requestedSearchCondition,
+    userConditionTier: userTier,
+    conditionAdjusted: false,
+  };
+}
+
+/**
+ * Pick the condition used for internet market search (search phrase only).
+ */
+export function resolveMarketSearchCondition(
+  userCondition: string | undefined,
+  options: { assetType?: string; vehicleYear?: number; year?: number; model?: string } = {}
+): MarketSearchCondition {
+  return resolveRealisticMarketSearchCondition(userCondition, options).searchCondition;
+}
+
 export function mapQualityToUniversalCondition(
   quality: QualityTier | undefined
-): 'Brand New' | 'Foreign Used (Tokunbo)' | 'Nigerian Used' | 'Heavily Used' {
+): MarketSearchCondition {
   if (!quality) return 'Nigerian Used'; // Default
   
   switch (quality) {
