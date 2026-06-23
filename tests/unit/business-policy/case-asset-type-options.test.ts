@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   CASE_ASSET_TYPE_CATALOG,
+  CASE_ASSET_TYPE_KEYS,
   getEnabledCaseAssetTypeOptions,
+  getOrderedAssetTypeKeys,
 } from '@/features/business-policy/case-asset-type-options';
 import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
 
@@ -32,5 +34,24 @@ describe('getEnabledCaseAssetTypeOptions', () => {
       ])
     );
     expect(getEnabledCaseAssetTypeOptions(disabled)).toEqual([]);
+  });
+
+  it('orders asset type keys by catalog with custom types last', () => {
+    const keys = getOrderedAssetTypeKeys({
+      ...DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes,
+      boats: {
+        enabled: true,
+        label: 'Boats',
+        promptProfile: 'general_asset',
+        requiredFields: [],
+        requiresAiAnalysis: true,
+        requiresMarketValue: true,
+        requiresInspectionLocation: true,
+      },
+    });
+
+    expect(keys[0]).toBe('vehicle');
+    expect(keys).toEqual([...CASE_ASSET_TYPE_KEYS, 'boats']);
+    expect(keys.length).toBe(CASE_ASSET_TYPE_KEYS.length + 1);
   });
 });

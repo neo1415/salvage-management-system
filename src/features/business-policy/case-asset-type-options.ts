@@ -6,7 +6,6 @@ export type CaseAssetTypeOption = {
   icon: string;
 };
 
-/** Catalog shown on case creation — values must match case form Zod enum. */
 export const CASE_ASSET_TYPE_CATALOG: CaseAssetTypeOption[] = [
   { value: 'vehicle', label: 'Vehicle', icon: 'Auto' },
   { value: 'goods_in_transit', label: 'Goods in Transit / Cargo', icon: 'GIT' },
@@ -25,6 +24,22 @@ export const CASE_ASSET_TYPE_CATALOG: CaseAssetTypeOption[] = [
   { value: 'jewelry', label: 'Jewelry & Watches', icon: 'Gem' },
   { value: 'other', label: 'Other Salvage Asset', icon: 'Other' },
 ];
+
+/** Canonical asset type keys in display order (case creation + policy editor). */
+export const CASE_ASSET_TYPE_KEYS = CASE_ASSET_TYPE_CATALOG.map((type) => type.value);
+
+/**
+ * Asset type keys for policy UI — catalog order first, then any custom enterprise types.
+ */
+export function getOrderedAssetTypeKeys(
+  enabledAssetTypes: Record<string, AssetTypePolicy>
+): string[] {
+  const known = CASE_ASSET_TYPE_KEYS.filter((key) => key in enabledAssetTypes);
+  const custom = Object.keys(enabledAssetTypes)
+    .filter((key) => !CASE_ASSET_TYPE_KEYS.includes(key))
+    .sort();
+  return [...known, ...custom];
+}
 
 /**
  * Asset types available on case creation — only those enabled in business policy.

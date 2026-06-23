@@ -4,6 +4,8 @@ import { useMemo, useState, type MouseEvent } from 'react';
 import { AlertTriangle, CheckCircle2, MonitorSmartphone, Rocket, Save, ShieldAlert, Upload } from 'lucide-react';
 import type { BusinessPolicy, PolicyValidationResult } from '@/features/business-policy/types';
 import { validateBusinessPolicy } from '@/features/business-policy/policy-validation';
+import { sanitizeBusinessPolicy } from '@/features/business-policy/policy-sanitization';
+import { getOrderedAssetTypeKeys } from '@/features/business-policy/case-asset-type-options';
 import { HOMEPAGE_TEMPLATE_OPTIONS, normalizeHomepageTemplate } from '@/components/landing/template-config';
 import { WhiteLabelHomeTemplates } from '@/components/landing/home-templates';
 import { getReadableTextColor } from '@/features/branding/brand-colors';
@@ -1342,7 +1344,7 @@ function applyOnboardingPreset(draft: BusinessPolicy, mode: BusinessPolicy['onbo
 
 export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditorProps) {
   const toast = useToast();
-  const [policy, setPolicy] = useState(() => clonePolicy(initialPolicy));
+  const [policy, setPolicy] = useState(() => clonePolicy(sanitizeBusinessPolicy(initialPolicy)));
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -1353,6 +1355,10 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
   const [activeStep, setActiveStep] = useState<SetupStepId>('welcome');
 
   const validation = useMemo(() => validateBusinessPolicy(policy), [policy]);
+  const orderedAssetTypeKeys = useMemo(
+    () => getOrderedAssetTypeKeys(policy.cases.enabledAssetTypes),
+    [policy.cases.enabledAssetTypes]
+  );
   const errors = validation.issues.filter((issue) => issue.severity === 'error');
   const warnings = validation.issues.filter((issue) => issue.severity === 'warning');
   const normalizedTemplate = normalizeHomepageTemplate(policy.branding.homepageTemplate);
@@ -2345,7 +2351,9 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             Choose the asset categories that should appear when a new case is created.
           </p>
           <div className="grid gap-3 lg:grid-cols-2">
-            {Object.entries(policy.cases.enabledAssetTypes).map(([assetType, config]) => (
+            {orderedAssetTypeKeys.map((assetType) => {
+              const config = policy.cases.enabledAssetTypes[assetType];
+              return (
               <div key={assetType} className="rounded-lg border border-gray-200 p-4">
                 <Toggle
                   checked={config.enabled}
@@ -2400,7 +2408,8 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
                   </div>
                 </details>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
 

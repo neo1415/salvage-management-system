@@ -64,6 +64,36 @@ describe('sanitizeBusinessPolicy', () => {
     expect(JSON.stringify(sanitized)).not.toMatch(/secret|webhook|paystackSecretKey|internalRiskFormula|promptSecret/i);
   });
 
+  it('merges missing catalog asset types from defaults for legacy stored policies', () => {
+    const legacyAssetTypes = {
+      vehicle: DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes.vehicle,
+      property: DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes.property,
+      electronics: DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes.electronics,
+      appliance: DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes.appliance,
+      furniture: DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes.furniture,
+      machinery: DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes.machinery,
+      jewelry: DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes.jewelry,
+    };
+
+    const sanitized = sanitizeBusinessPolicy({
+      ...DEFAULT_BUSINESS_POLICY,
+      cases: {
+        ...DEFAULT_BUSINESS_POLICY.cases,
+        enabledAssetTypes: legacyAssetTypes,
+      },
+    });
+
+    expect(sanitized.cases.enabledAssetTypes.goods_in_transit).toEqual(
+      DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes.goods_in_transit
+    );
+    expect(sanitized.cases.enabledAssetTypes.medical_equipment).toEqual(
+      DEFAULT_BUSINESS_POLICY.cases.enabledAssetTypes.medical_equipment
+    );
+    expect(Object.keys(sanitized.cases.enabledAssetTypes).length).toBeGreaterThan(
+      Object.keys(legacyAssetTypes).length
+    );
+  });
+
   it('falls back from unsupported enum values to current NEM defaults', () => {
     const sanitized = sanitizeBusinessPolicy({
       ...DEFAULT_BUSINESS_POLICY,

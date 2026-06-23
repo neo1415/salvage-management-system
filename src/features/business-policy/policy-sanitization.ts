@@ -220,15 +220,20 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
   const enabledAssetTypes: BusinessPolicy['cases']['enabledAssetTypes'] = {};
   const assetSource = asRecord(cases.enabledAssetTypes);
   const assetFallback = fallback.cases.enabledAssetTypes ?? {};
-  const assetEntries = Object.keys(assetSource).length > 0 ? Object.entries(assetSource) : Object.entries(assetFallback);
 
-  for (const [rawKey, rawConfig] of assetEntries) {
+  const assetKeySet = new Set<string>(Object.keys(assetFallback));
+  for (const rawKey of Object.keys(assetSource)) {
     const key = sanitizeAssetTypeKey(rawKey);
-    if (!key) continue;
+    if (key) assetKeySet.add(key);
+  }
 
-    const config = asRecord(rawConfig);
+  for (const key of assetKeySet) {
+    const config = asRecord(assetSource[key]);
     const defaultAsset = assetFallback[key] ?? {
       enabled: false,
+      label: key.replace(/_/g, ' '),
+      promptProfile: 'general_asset',
+      requiredFields: [],
       requiresAiAnalysis: true,
       requiresMarketValue: true,
       requiresInspectionLocation: true,
