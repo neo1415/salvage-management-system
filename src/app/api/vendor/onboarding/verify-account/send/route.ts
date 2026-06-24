@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, ne } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { otpService } from '@/features/auth/services/otp.service';
 import { hasRealVendorPhone, isProvisionalVendorPhone } from '@/lib/auth/vendor-phone';
 import { phoneSchema } from '@/lib/utils/validation';
 import { parseFullNameBvnOrder } from '@/lib/utils/person-name';
+import {
+  findActiveUserWithPhone,
+  releasePhoneHeldByDeletedUsers,
+} from '@/lib/utils/user-contact-release';
 
 const ADMIN_PLACEHOLDER_DOB = '1990-01-01';
 
@@ -92,11 +96,8 @@ export async function POST(request: NextRequest) {
     if (parsed.data.phone) {
       const phone = parsed.data.phone;
       if (phone !== user.phone || isProvisionalVendorPhone(user.phone)) {
-        const [conflict] = await db
-          .select({ id: users.id })
-          .from(users)
-          .where(and(eq(users.phone, phone), ne(users.id, user.id), ne(users.status, 'deleted')))
-          .limit(1);
+        await releasePhoneHeldByDeletedUsers(phone);
+        const conflict = await findActiveUserWithPhone(phone, user.id);
 
         if (conflict) {
           return NextResponse.json(
@@ -124,7 +125,37 @@ export async function POST(request: NextRequest) {
     }
 
     if (Object.keys(updates).length > 1) {
-      await db.update(users).set(updates).where(eq(users.id, user.id));
+      try {
+        await db.update(users).set(updates).where(eq(users.id, user.id));
+      } catch (updateError) {
+        const pgCode =
+          updateError instanceof Error &&
+          'cause' in updateError &&
+          updateError.cause &&
+          typeof updateError.cause === 'object' &&
+          'code' in updateError.cause
+            ? String(updateError.cause.code)
+            : null;
+
+        if (pgCode === '23505' && updates.phone) {
+          const released = await releasePhoneHeldByDeletedUsers(updates.phone);
+          if (released > 0) {
+            await db.update(users).set(updates).where(eq(users.id, user.id));
+          } else {
+            return NextResponse.json(
+              { error: 'This phone number is already registered to another account' },
+              { status: 409 }
+            );
+          }
+        } else if (pgCode === '23505') {
+          return NextResponse.json(
+            { error: 'This phone number is already registered to another account' },
+            { status: 409 }
+          );
+        } else {
+          throw updateError;
+        }
+      }
     }
 
     const fullName = updates.fullName ?? user.fullName;

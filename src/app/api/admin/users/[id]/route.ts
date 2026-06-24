@@ -5,6 +5,7 @@ import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq } from 'drizzle-orm';
 import { tombstoneEmail, tombstonePhone } from '@/lib/utils/user-tombstone';
+import { tombstoneUserContactFields } from '@/lib/utils/user-contact-release';
 import { z } from 'zod';
 
 // Validation schema for user updates
@@ -95,12 +96,22 @@ export async function PATCH(
     }
 
     // Update user
+    const updatePayload: Record<string, unknown> = {
+      ...validationResult.data,
+      updatedAt: new Date(),
+    };
+
+    if (
+      validationResult.data.status === 'deleted' &&
+      existingUser.status !== 'deleted'
+    ) {
+      updatePayload.email = tombstoneEmail(id);
+      updatePayload.phone = tombstonePhone(id);
+    }
+
     const [updatedUser] = await db
       .update(users)
-      .set({
-        ...validationResult.data,
-        updatedAt: new Date(),
-      })
+      .set(updatePayload)
       .where(eq(users.id, id))
       .returning();
 
@@ -157,12 +168,11 @@ export async function DELETE(
     }
 
     // Soft delete: tombstone email/phone so the originals can be re-registered (e.g. testing)
+    await tombstoneUserContactFields(id);
     const [deletedUser] = await db
       .update(users)
       .set({
         status: 'deleted',
-        email: tombstoneEmail(id),
-        phone: tombstonePhone(id),
         updatedAt: new Date(),
       })
       .where(eq(users.id, id))

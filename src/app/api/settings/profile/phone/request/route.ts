@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema';
-import { eq, and, ne } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import {
+  findActiveUserWithPhone,
+  releasePhoneHeldByDeletedUsers,
+} from '@/lib/utils/user-contact-release';
 import { z } from 'zod';
 import { phoneSchema } from '@/lib/utils/validation';
 import { otpService } from '@/features/auth/services/otp.service';
@@ -59,11 +63,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'This is already your phone number' }, { status: 400 });
     }
 
-    const [conflict] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(eq(users.phone, phone), ne(users.id, userId), ne(users.status, 'deleted')))
-      .limit(1);
+    await releasePhoneHeldByDeletedUsers(phone);
+    const conflict = await findActiveUserWithPhone(phone, userId);
 
     if (conflict) {
       return NextResponse.json(
