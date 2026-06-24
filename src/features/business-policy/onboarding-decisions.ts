@@ -170,11 +170,18 @@ export function resolveVendorBidEligibility(
   };
 }
 
+export function isRegistrationFeeRequiredForPolicy(policy: BusinessPolicy): boolean {
+  return (
+    policy.onboarding.registrationFeeRequired &&
+    policy.onboarding.mode !== 'no_registration_fee'
+  );
+}
+
 export function resolveRegistrationFeePaymentAccess(
   policy: BusinessPolicy,
   vendor: Pick<VendorPolicySnapshot, 'tier' | 'bvnVerified' | 'registrationFeePaid'>
 ): PolicyDecision<'fee_not_required' | 'already_paid' | 'bvn_required' | 'payment_available'> {
-  if (!policy.onboarding.registrationFeeRequired || policy.onboarding.mode === 'no_registration_fee') {
+  if (!isRegistrationFeeRequiredForPolicy(policy)) {
     return {
       allowed: false,
       value: 'fee_not_required',
@@ -303,7 +310,7 @@ export function resolveTier2Access(
     };
   }
 
-  const feeRequiredBeforeTier2 = policy.onboarding.registrationFeeRequired && policy.onboarding.mode !== 'no_registration_fee';
+  const feeRequiredBeforeTier2 = isRegistrationFeeRequiredForPolicy(policy);
   if (feeRequiredBeforeTier2 && !vendor.registrationFeePaid) {
     return {
       allowed: false,

@@ -19,6 +19,7 @@ import {
   fullVerificationLabel,
   usesSingleFullKycFlow,
 } from '@/lib/vendor/onboarding-policy-ui';
+import { isRegistrationFeeRequiredForPolicy } from '@/features/business-policy/onboarding-decisions';
 
 export {
   CHANGE_PASSWORD_PATH,
@@ -62,7 +63,7 @@ export function resolveVendorOnboardingPath(
   const mode = policy.onboarding.mode;
 
   if (mode === 'single_full_kyc') {
-    if (policy.onboarding.registrationFeeRequired && !vendor.registrationFeePaid) {
+    if (isRegistrationFeeRequiredForPolicy(policy) && !vendor.registrationFeePaid) {
       return VENDOR_REGISTRATION_FEE_PATH;
     }
     return '/vendor/kyc/tier2';
@@ -78,7 +79,7 @@ export function resolveVendorOnboardingPath(
   }
 
   if (mode === 'full_kyc_before_bidding') {
-    if (policy.onboarding.registrationFeeRequired && !vendor.registrationFeePaid) {
+    if (isRegistrationFeeRequiredForPolicy(policy) && !vendor.registrationFeePaid) {
       return VENDOR_REGISTRATION_FEE_PATH;
     }
     return '/vendor/kyc/tier2';
@@ -86,7 +87,7 @@ export function resolveVendorOnboardingPath(
 
   if (
     mode === 'fee_before_tier1' &&
-    policy.onboarding.registrationFeeRequired &&
+    isRegistrationFeeRequiredForPolicy(policy) &&
     !vendor.registrationFeePaid &&
     policy.onboarding.allowBidAfterTier1
   ) {

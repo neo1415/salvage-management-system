@@ -18,6 +18,7 @@ import { eq, and, isNull } from 'drizzle-orm';
 import crypto from 'crypto';
 import { appPath } from '@/features/notifications/templates/email-urls';
 import { businessPolicyService } from '@/features/business-policy';
+import { isRegistrationFeeRequiredForPolicy } from '@/features/business-policy/onboarding-decisions';
 import { brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 
@@ -40,6 +41,8 @@ export interface RegistrationFeeStatus {
   amount: number | null;
   paidAt: Date | null;
   reference: string | null;
+  required: boolean;
+  feeAmount: number;
 }
 
 export class RegistrationFeeService {
@@ -326,6 +329,10 @@ export class RegistrationFeeService {
    * @returns Registration fee status
    */
   async checkRegistrationFeePaid(vendorId: string): Promise<RegistrationFeeStatus> {
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const required = isRegistrationFeeRequiredForPolicy(policy);
+    const feeAmount = policy.onboarding.registrationFeeAmount;
+
     const [vendor] = await db
       .select({
         registrationFeePaid: vendors.registrationFeePaid,
@@ -341,8 +348,35 @@ export class RegistrationFeeService {
       throw new Error(`Vendor not found: ${vendorId}`);
     }
 
+    if (!required) {
+      if (!vendor.registrationFeePaid) {
+        const now = new Date();
+        await db
+          .update(vendors)
+          .set({
+            registrationFeePaid: true,
+            registrationFeeAmount: '0',
+            registrationFeePaidAt: now,
+            registrationFeeReference: 'POLICY_WAIVED',
+            updatedAt: now,
+          })
+          .where(eq(vendors.id, vendorId));
+      }
+
+      return {
+        paid: true,
+        required: false,
+        feeAmount,
+        amount: 0,
+        paidAt: vendor.registrationFeePaidAt ?? new Date(),
+        reference: vendor.registrationFeeReference ?? 'POLICY_WAIVED',
+      };
+    }
+
     return {
       paid: vendor.registrationFeePaid,
+      required: true,
+      feeAmount,
       amount: vendor.registrationFeeAmount ? parseFloat(vendor.registrationFeeAmount) : null,
       paidAt: vendor.registrationFeePaidAt,
       reference: vendor.registrationFeeReference,

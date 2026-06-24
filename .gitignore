@@ -46,3 +46,6 @@ google-cloud-credentials.example.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Sentry Config File
+.env.sentry-build-plugin

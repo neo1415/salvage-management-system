@@ -4,7 +4,10 @@
 export function isProvisionalVendorPhone(phone: string | null | undefined): boolean {
   const trimmed = phone?.trim() ?? '';
   if (!trimmed) return true;
-  return /^\+8\d{10,}$/.test(trimmed.replace(/\s/g, ''));
+  const normalized = trimmed.replace(/\s/g, '');
+  // Admin placeholder uses +8 + UUID fragment (hex digits, not only 0-9)
+  if (/^\+8[0-9a-f]{10,}$/i.test(normalized)) return true;
+  return false;
 }
 
 export function hasRealVendorPhone(phone: string | null | undefined): boolean {

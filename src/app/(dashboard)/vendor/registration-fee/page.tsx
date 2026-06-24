@@ -39,7 +39,12 @@ function RegistrationFeePageContent() {
     try {
       const response = await fetch('/api/vendors/registration-fee/status');
       const result = await response.json();
-      
+
+      if (!result.data?.required) {
+        router.push('/vendor/kyc/tier2');
+        return;
+      }
+
       if (result.data?.paid) {
         setStatus('paid');
         // Redirect to full verification after 2 seconds

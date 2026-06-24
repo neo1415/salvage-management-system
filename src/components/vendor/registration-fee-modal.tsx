@@ -15,7 +15,8 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [feeAmount, setFeeAmount] = useState<number>(12500); // Default fallback
+  const [feeAmount, setFeeAmount] = useState<number>(0);
+  const [feeRequired, setFeeRequired] = useState(true);
   const [loadingFee, setLoadingFee] = useState(true);
 
   useEffect(() => {
@@ -31,8 +32,14 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
       const response = await fetch('/api/vendors/registration-fee/status');
       if (response.ok) {
         const data = await response.json();
-        if (data.success && data.data && data.data.feeAmount) {
-          setFeeAmount(data.data.feeAmount);
+        if (data.success && data.data) {
+          setFeeRequired(Boolean(data.data.required));
+          if (typeof data.data.feeAmount === 'number') {
+            setFeeAmount(data.data.feeAmount);
+          }
+          if (!data.data.required) {
+            onClose();
+          }
         }
       }
     } catch (error) {
@@ -66,7 +73,7 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
     }
   };
 
-  if (!mounted || typeof document === 'undefined') {
+  if (!mounted || typeof document === 'undefined' || !feeRequired) {
     return null;
   }
 

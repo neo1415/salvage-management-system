@@ -285,7 +285,8 @@ export default function Tier2KYCPage() {
       fetch('/api/vendors/registration-fee/status')
         .then(res => res.json())
         .then(data => {
-          if (!data?.data?.paid) {
+          const feeRequired = data?.data?.required ?? true;
+          if (feeRequired && !data?.data?.paid) {
             router.push('/vendor/registration-fee');
           } else if (TIER2_KYC_PROVIDER === 'manual') {
             router.push('/vendor/kyc/tier2-manual');
@@ -331,10 +332,10 @@ export default function Tier2KYCPage() {
         // Check registration fee first
         if (feeRes.ok) {
           const feeData = await feeRes.json();
+          const feeRequired = feeData?.data?.required ?? true;
           setRegistrationFeePaid(feeData?.data?.paid ?? false);
-          
-          // If registration fee not paid, redirect to payment page
-          if (!feeData?.data?.paid) {
+
+          if (feeRequired && !feeData?.data?.paid) {
             router.push('/vendor/registration-fee');
             return;
           }

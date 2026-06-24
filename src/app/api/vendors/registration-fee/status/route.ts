@@ -7,14 +7,13 @@ import { registrationFeeService } from '@/features/vendors/services/registration
 
 /**
  * GET /api/vendors/registration-fee/status
- * 
+ *
  * Check registration fee payment status for current vendor
  */
 export async function GET(request: NextRequest) {
   try {
-    // 1. Authenticate user
     const session = await auth();
-    
+
     if (!session || !session.user) {
       return NextResponse.json(
         { error: 'Unauthorized. Please login to continue.' },
@@ -24,7 +23,6 @@ export async function GET(request: NextRequest) {
 
     const userId = session.user.id;
 
-    // 2. Get vendor record
     const [vendor] = await db
       .select()
       .from(vendors)
@@ -38,34 +36,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 3. Check registration fee status
     const status = await registrationFeeService.checkRegistrationFeePaid(vendor.id);
 
-    // 4. Get current registration fee amount from published business policy
-    const { businessPolicyService } = await import('@/features/business-policy/business-policy.service');
-    const policy = await businessPolicyService.getEffectivePolicy();
-    const feeAmount = policy.onboarding.registrationFeeAmount;
-
-    // 5. Return status
     return NextResponse.json(
       {
         success: true,
         data: {
           paid: status.paid,
+          required: status.required,
           amount: status.amount,
           paidAt: status.paidAt,
           reference: status.reference,
-          feeAmount: feeAmount,
+          feeAmount: status.feeAmount,
         },
       },
       { status: 200 }
     );
-
   } catch (error) {
     console.error('Registration fee status check error:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Failed to check payment status',
       },

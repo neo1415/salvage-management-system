@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { Loader2, Mail, Phone, ShieldCheck } from 'lucide-react';
 import { GENERIC_NAME_BVN_ORDER_EXAMPLE } from '@/lib/kyc/kyc-user-messages';
+import { hasRealVendorPhone } from '@/lib/auth/vendor-phone';
 
 type VerifyState = {
   fullName: string;
@@ -177,7 +178,7 @@ export default function VendorVerifyAccountPage() {
             </p>
           </div>
 
-          {(state?.needsPhone || !phone) && (
+          {(state?.needsPhone || !hasRealVendorPhone(phone)) && (
             <div>
               <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                 <Phone className="w-4 h-4" />
@@ -216,7 +217,7 @@ export default function VendorVerifyAccountPage() {
           <button
             type="button"
             onClick={sendCode}
-            disabled={sending || !fullName.trim() || (state?.needsPhone && !phone.trim())}
+            disabled={sending || !fullName.trim() || ((state?.needsPhone || !hasRealVendorPhone(phone)) && !phone.trim())}
             className="w-full px-4 py-2.5 bg-[var(--brand-primary)] text-white rounded-lg font-medium hover:bg-[var(--brand-primary-hover)] disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}

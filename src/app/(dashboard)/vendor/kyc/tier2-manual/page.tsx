@@ -226,7 +226,8 @@ export default function Tier2ManualKYCPage() {
       try {
         const feeRes = await fetch('/api/vendors/registration-fee/status');
         const feeData = await feeRes.json();
-        if (!feeData?.data?.paid) {
+        const feeRequired = feeData?.data?.required ?? true;
+        if (feeRequired && !feeData?.data?.paid) {
           router.push('/vendor/registration-fee');
           return;
         }
