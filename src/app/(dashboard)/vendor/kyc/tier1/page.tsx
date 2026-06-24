@@ -33,6 +33,9 @@ export default function Tier1KYCPage() {
     dateOfBirth: string;
     phone: string;
   } | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [nameMessage, setNameMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -45,17 +48,20 @@ export default function Tier1KYCPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data) {
-          setUserProfile({
-            fullName: data.fullName || session?.user?.name || '',
-            dateOfBirth: data.dateOfBirth || session?.user?.dateOfBirth || '',
-            phone: data.phone || session?.user?.phone || '',
-          });
+          const profile = {
+            fullName: data.user?.fullName || session?.user?.name || '',
+            dateOfBirth: data.user?.dateOfBirth || session?.user?.dateOfBirth || '',
+            phone: data.user?.phone || session?.user?.phone || '',
+          };
+          setUserProfile(profile);
+          setNameDraft(profile.fullName);
         } else if (session?.user) {
           setUserProfile({
             fullName: session.user.name || '',
             dateOfBirth: session.user.dateOfBirth || '',
             phone: session.user.phone || '',
           });
+          setNameDraft(session.user.name || '');
         }
       })
       .catch(() => {
@@ -65,6 +71,7 @@ export default function Tier1KYCPage() {
             dateOfBirth: session.user.dateOfBirth || '',
             phone: session.user.phone || '',
           });
+          setNameDraft(session.user.name || '');
         }
       });
   }, [status, session, router]);
@@ -75,6 +82,28 @@ export default function Tier1KYCPage() {
       setBvn(digitsOnly);
       setVerificationError(null);
       setErrorDialogOpen(false);
+    }
+  };
+
+  const saveLegalName = async () => {
+    setNameMessage(null);
+    setSavingName(true);
+    try {
+      const res = await fetch('/api/settings/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fullName: nameDraft.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update name');
+
+      setUserProfile((prev) => (prev ? { ...prev, fullName: data.user.fullName } : prev));
+      setNameMessage('Legal name updated.');
+      await update();
+    } catch (e) {
+      setNameMessage(e instanceof Error ? e.message : 'Failed to update name');
+    } finally {
+      setSavingName(false);
     }
   };
 
@@ -194,16 +223,37 @@ export default function Tier1KYCPage() {
               )}
 
               {userProfile && (
-                <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm space-y-2">
-                  <p className="text-gray-600 font-medium mb-2">Profile used for verification</p>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-gray-500">Name (registered)</span>
-                    <span className="text-gray-900 text-right">{userProfile.fullName}</span>
+                <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm space-y-3">
+                  <p className="text-gray-600 font-medium">Profile used for verification</p>
+                  <div>
+                    <label htmlFor="legalName" className="block text-gray-500 text-xs mb-1">
+                      Legal name
+                    </label>
+                    <input
+                      id="legalName"
+                      type="text"
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      placeholder={`e.g. ${GENERIC_NAME_BVN_ORDER_EXAMPLE}`}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      First name, middle name (if any), then surname — same order as on your bank ID.
+                    </p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <button
+                        type="button"
+                        onClick={saveLegalName}
+                        disabled={savingName || nameDraft.trim() === userProfile.fullName}
+                        className="text-sm px-3 py-1.5 border border-[var(--brand-primary)] text-[var(--brand-primary)] rounded-lg hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {savingName ? 'Saving...' : 'Save name'}
+                      </button>
+                      {nameMessage && (
+                        <span className="text-xs text-gray-600">{nameMessage}</span>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    We match this against your BVN as first, middle (if any), and surname — plus date of birth and
-                    BVN-linked phone. Use BVN order when you registered (e.g. {GENERIC_NAME_BVN_ORDER_EXAMPLE}).
-                  </p>
                   {userProfile.dateOfBirth && (
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-500">Date of birth</span>

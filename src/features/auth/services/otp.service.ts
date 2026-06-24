@@ -89,7 +89,12 @@ export class OTPService {
     context: OTPContext = 'authentication',
     auctionId?: string,
     pushUserId?: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{
+    success: boolean;
+    message: string;
+    smsDelivered?: boolean;
+    emailDelivered?: boolean;
+  }> {
     try {
       const normalizedPhone = this.normalizePhoneNumber(phone);
 
@@ -142,6 +147,8 @@ export class OTPService {
       const branding = await getEmailBranding();
       const message = `Your ${branding.brandName} verification code is: ${otp}. Valid for 5 minutes. Do not share this code.`;
 
+      let smsDelivered = false;
+
       try {
         if (this.termiiApiKey) {
           const smsResult = await smsService.sendSMS({
@@ -154,6 +161,8 @@ export class OTPService {
             throw new Error(smsResult.error || 'Failed to send OTP SMS');
           }
 
+          smsDelivered = !smsResult.skipped;
+
           if (smsResult.skipped) {
             console.warn(`📱 OTP SMS skipped for ${normalizedPhone}: ${smsResult.messageId}`);
           } else {
@@ -162,35 +171,29 @@ export class OTPService {
                 'Check Termii inbox for Sent vs Failed — "Successfully Sent" is not handset delivery.'
             );
           }
+        } else if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+          console.log(`[DEV] OTP for ${phone}: ${otp}`);
+          smsDelivered = true;
         } else {
-          // In development/test mode without Termii, just log
-          if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
-            console.log(`[DEV] OTP for ${phone}: ${otp}`);
-            // Don't throw error in dev/test mode
-          } else {
-            throw new Error('Termii API key not configured');
-          }
+          throw new Error('Termii API key not configured');
         }
       } catch (termiiError) {
         console.error('Termii SMS send error:', termiiError);
-        
-        // In development/test, log OTP to console
+
         if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
           console.log(`[DEV] OTP for ${phone}: ${otp}`);
-          // Return success in dev/test mode even if SMS fails
-          // OTP is already stored in Redis
+          // Continue to email backup below
+        } else if (!email?.trim()) {
+          await otpCache.del(normalizedPhone);
           return {
-            success: true,
-            message: 'OTP sent successfully (dev mode)',
+            success: false,
+            message: 'Failed to send OTP. Please try again.',
           };
+        } else {
+          console.warn(
+            `[OTP] SMS failed for ${normalizedPhone}; will attempt email delivery with the same code.`
+          );
         }
-        
-        // In production, if SMS fails, delete the OTP and return error
-        await otpCache.del(normalizedPhone);
-        return {
-          success: false,
-          message: 'Failed to send OTP. Please try again.',
-        };
       }
 
       // Create audit log entry (optional - only if user exists)
@@ -222,19 +225,31 @@ export class OTPService {
       }
 
       // Send OTP via email as backup (if email provided)
+      let emailDelivered = false;
       if (email && fullName) {
         try {
           const { emailService } = await import('@/features/notifications/services/email.service');
           const emailResult = await emailService.sendOTPEmail(email, fullName, otp, 5);
           if (emailResult.success) {
+            emailDelivered = true;
             console.log(`✅ OTP email sent successfully to ${email}`);
           } else {
             console.warn(`⚠️ OTP email failed (non-critical): ${emailResult.error}`);
           }
         } catch (emailError) {
           console.warn('⚠️ OTP email backup failed (non-critical):', emailError);
-          // Don't fail if email sending fails - SMS is primary
         }
+      }
+
+      const devMode =
+        process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+
+      if (!smsDelivered && !emailDelivered && !devMode) {
+        await otpCache.del(normalizedPhone);
+        return {
+          success: false,
+          message: 'Failed to send verification code. Please try again.',
+        };
       }
 
       if (context === 'bidding' && pushUserId) {
@@ -245,7 +260,16 @@ export class OTPService {
 
       return {
         success: true,
-        message: 'OTP sent successfully',
+        message:
+          smsDelivered && emailDelivered
+            ? 'Verification code sent to your phone and email.'
+            : emailDelivered
+              ? 'Verification code sent to your email. SMS delivery may be delayed — check your inbox.'
+              : smsDelivered
+                ? 'Verification code sent to your phone.'
+                : 'Verification code sent (dev mode).',
+        emailDelivered,
+        smsDelivered,
       };
     } catch (error) {
       console.error('Send OTP error:', error);

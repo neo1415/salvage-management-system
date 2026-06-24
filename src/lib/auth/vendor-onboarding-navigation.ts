@@ -51,11 +51,7 @@ export function resolveVendorOnboardingPath(
     return CHANGE_PASSWORD_PATH;
   }
 
-  if (vendor.needsPhoneNumber) {
-    return VENDOR_PROFILE_PHONE_PATH;
-  }
-
-  if (vendor.needsAccountVerification) {
+  if (vendor.needsPhoneNumber || vendor.needsAccountVerification) {
     return VENDOR_VERIFY_ACCOUNT_PATH;
   }
 

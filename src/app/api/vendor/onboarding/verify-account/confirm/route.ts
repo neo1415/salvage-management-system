@@ -9,13 +9,12 @@ import { otpService } from '@/features/auth/services/otp.service';
 import { hasRealVendorPhone } from '@/lib/auth/vendor-phone';
 
 const bodySchema = z.object({
-  phoneOtp: z.string().length(6, 'Enter the 6-digit phone code'),
-  emailOtp: z.string().length(6, 'Enter the 6-digit email code'),
+  otp: z.string().length(6, 'Enter the 6-digit verification code'),
 });
 
 /**
  * POST /api/vendor/onboarding/verify-account/confirm
- * Confirm phone and email OTP codes and mark account as phone-verified.
+ * Confirm the shared OTP and mark account as phone-verified.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -59,18 +58,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Add a phone number before verifying your account.' }, { status: 400 });
     }
 
-    const phoneCheck = await otpService.verifyOTPCode(user.phone, parsed.data.phoneOtp);
-    if (!phoneCheck.success) {
+    const otpCheck = await otpService.verifyOTPCode(user.phone, parsed.data.otp);
+    if (!otpCheck.success) {
       return NextResponse.json(
-        { error: phoneCheck.message, field: 'phoneOtp', attemptsRemaining: phoneCheck.attemptsRemaining },
-        { status: 400 }
-      );
-    }
-
-    const emailCheck = await otpService.verifyEmailOTPCode(user.email, parsed.data.emailOtp);
-    if (!emailCheck.success) {
-      return NextResponse.json(
-        { error: emailCheck.message, field: 'emailOtp', attemptsRemaining: emailCheck.attemptsRemaining },
+        { error: otpCheck.message, attemptsRemaining: otpCheck.attemptsRemaining },
         { status: 400 }
       );
     }

@@ -300,7 +300,7 @@ export async function POST(request: NextRequest) {
         {
           error: 'BVN details do not match',
           message:
-            'The name, date of birth, or phone number on your account does not match this BVN. Use the same first name, middle name (if any), surname, date of birth, and BVN-linked phone as on your bank records.',
+            'Your account details do not match this BVN. Check your legal name order, date of birth, and BVN-linked phone on your profile, then try again.',
           matchScore: verificationResult.matchScore,
           mismatches: verificationResult.mismatches,
           errorSource: 'app',

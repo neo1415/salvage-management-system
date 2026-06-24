@@ -47,6 +47,10 @@ function isLikelyProviderFailure(errorCode: string | undefined, rawMessage: stri
   );
 }
 
+export function isNameMismatchMessage(message: string): boolean {
+  return /name|first name|last name|middle name|surname/i.test(message);
+}
+
 export function resolveTier1VerificationError(payload: {
   error?: string;
   message?: string;
@@ -54,13 +58,22 @@ export function resolveTier1VerificationError(payload: {
   mismatches?: string[];
 }): ResolvedVerificationError {
   const mismatches = payload.mismatches?.filter(Boolean);
+  const hasNameMismatch =
+    mismatches?.some((m) => isNameMismatchMessage(m)) ||
+    payload.error === 'BVN details do not match' &&
+      mismatches?.some((m) => isNameMismatchMessage(m));
 
   if (payload.error === 'BVN details do not match' || (mismatches && mismatches.length > 0)) {
+    const nameOnlyMismatch =
+      (mismatches?.length ?? 0) > 0 && mismatches!.every((m) => isNameMismatchMessage(m));
+
     return {
       title: 'Details do not match your records',
       message:
-        payload.message ??
-        'The name, date of birth, or phone number on your account does not match this BVN. Update your profile to match your BVN exactly (first name, middle name if any, then surname), then try again.',
+        nameOnlyMismatch || hasNameMismatch
+          ? 'Your registered name does not match your BVN records. This is often because your first, middle, and surname are in the wrong order on your profile. Update your legal name to match your bank ID, then try again.'
+          : payload.message ??
+            'The name, date of birth, or phone number on your account does not match this BVN. Update your profile details to match your bank records, then try again.',
       source: 'app',
       mismatches,
     };

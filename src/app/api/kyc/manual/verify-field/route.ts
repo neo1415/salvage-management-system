@@ -4,19 +4,9 @@ import { db } from '@/lib/db/drizzle';
 import { users, vendors } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { getDojahService } from '@/features/kyc/services/dojah.service';
+import { parseFullNameBvnOrder } from '@/lib/utils/person-name';
 
 type CheckState = 'verified' | 'review' | 'unavailable' | 'failed';
-
-function splitName(fullName: string): { firstName: string; middleName?: string; lastName: string } {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return { firstName: 'Unknown', lastName: 'Unknown' };
-  if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
-  return {
-    firstName: parts[0],
-    middleName: parts.length > 2 ? parts.slice(1, -1).join(' ') : undefined,
-    lastName: parts[parts.length - 1],
-  };
-}
 
 function normalizeName(value: string): string {
   return value
@@ -324,7 +314,7 @@ export async function POST(request: NextRequest) {
       if (row.bvnVerifiedAt) return response('verified', 'BVN already verified from Tier 1.');
       const bvn = String(body?.bvn ?? '').replace(/\D/g, '');
       if (!/^\d{11}$/.test(bvn)) return response('failed', 'BVN must be exactly 11 digits.');
-      const name = splitName(row.fullName ?? session.user.name ?? '');
+      const name = parseFullNameBvnOrder(row.fullName ?? session.user.name ?? '');
       try {
         const result = await dojah.validateBVN({
           bvn,
@@ -341,7 +331,10 @@ export async function POST(request: NextRequest) {
         if (result.status !== false && bvnValid && dobValid && firstName >= 70 && lastName >= 70) {
           return response('verified', 'BVN matches the name and date of birth on your profile.');
         }
-        return response('review', 'BVN check completed, but one or more details need manager review.');
+        return response(
+          'review',
+          'BVN details did not fully match your profile. Your legal name order may be wrong — update your profile name to match your bank ID, then try again.'
+        );
       } catch {
         return response('unavailable', 'BVN provider check is unavailable. You can still submit for manager review.');
       }
@@ -369,7 +362,10 @@ export async function POST(request: NextRequest) {
         if (result.status !== false && providerName && nameMatched && dobMatches) {
           return response('verified', 'NIN matches the name and date of birth on your profile.');
         }
-        return response('review', 'NIN lookup completed, but the details need manager review.');
+        return response(
+          'review',
+          'NIN details did not match your profile. Your legal name order may be wrong — update your profile name to match your government ID, then try again.'
+        );
       } catch {
         return response('unavailable', 'NIN provider check is unavailable. You can still submit for manager review.');
       }

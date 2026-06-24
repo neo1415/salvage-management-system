@@ -162,6 +162,7 @@ function matchDojahBVNDetails(input: {
 }): { verified: boolean; matchScore: number; mismatches: string[] } {
   const mismatches: string[] = [];
   let totalScore = 0;
+  let nameStructureMismatch = false;
 
   if (input.bvnValid) totalScore += 35;
   else mismatches.push('BVN could not be validated');
@@ -172,10 +173,10 @@ function matchDojahBVNDetails(input: {
   totalScore += Math.min(100, Math.max(0, lastNameScore)) * 0.2;
 
   if (!input.firstNameValid || firstNameScore < 70) {
-    mismatches.push('First name did not match BVN records');
+    nameStructureMismatch = true;
   }
   if (!input.lastNameValid || lastNameScore < 70) {
-    mismatches.push('Last name did not match BVN records');
+    nameStructureMismatch = true;
   }
 
   if (input.hasMiddleNameInput) {
@@ -184,10 +185,14 @@ function matchDojahBVNDetails(input: {
       : input.middleNameConfidence ?? 0;
     totalScore += Math.min(100, Math.max(0, middleScore)) * 0.1;
     if (!input.middleNameValid || middleScore < 70) {
-      mismatches.push('Middle name did not match BVN records');
+      nameStructureMismatch = true;
     }
   } else {
     totalScore += 10;
+  }
+
+  if (nameStructureMismatch) {
+    mismatches.push('Registered name did not match BVN records');
   }
 
   if (input.dobValid) totalScore += 15;
