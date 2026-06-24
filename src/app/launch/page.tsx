@@ -10,10 +10,10 @@ import {
   PWA_SPLASH_DONE_KEY,
 } from '@/lib/pwa/detect';
 
-function getRoleHome(role?: string, bvnVerified?: boolean): string {
+function getRoleHome(role?: string): string {
   switch (role) {
     case 'vendor':
-      return bvnVerified ? '/vendor/dashboard' : '/vendor/kyc/tier1';
+      return '/dashboard';
     case 'salvage_manager':
       return '/manager/dashboard';
     case 'claims_adjuster':
@@ -65,9 +65,7 @@ export default function LaunchPage() {
         return;
       }
 
-      router.replace(
-        getRoleHome(session.user.role, session.user.bvnVerified as boolean | undefined)
-      );
+      router.replace(getRoleHome(session.user.role));
     };
 
     if (sessionStorage.getItem(PWA_SPLASH_DONE_KEY) === '1') {

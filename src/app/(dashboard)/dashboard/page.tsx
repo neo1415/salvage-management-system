@@ -1,5 +1,9 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import {
+  CHANGE_PASSWORD_PATH,
+  resolveVendorOnboardingRedirectForUser,
+} from '@/lib/auth/vendor-onboarding-navigation';
 
 export default async function DashboardRedirectPage() {
   const session = await auth();
@@ -8,12 +12,18 @@ export default async function DashboardRedirectPage() {
     redirect('/login');
   }
 
+  if (session.user.requirePasswordChange) {
+    redirect(CHANGE_PASSWORD_PATH);
+  }
+
   switch (session.user.role) {
-    case 'vendor':
-      if (!session.user.bvnVerified) {
-        redirect('/vendor/kyc/tier1');
+    case 'vendor': {
+      const onboardingPath = await resolveVendorOnboardingRedirectForUser(session.user.id);
+      if (onboardingPath) {
+        redirect(onboardingPath);
       }
       redirect('/vendor/dashboard');
+    }
     case 'salvage_manager':
       redirect('/manager/dashboard');
     case 'claims_adjuster':

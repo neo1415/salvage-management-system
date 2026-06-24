@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { phoneSchema } from '@/lib/utils/validation';
 import { otpService } from '@/features/auth/services/otp.service';
 import { cache } from '@/lib/redis/client';
+import { isProvisionalVendorPhone } from '@/lib/auth/vendor-phone';
 
 const bodySchema = z.object({ phone: phoneSchema });
 
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Account cannot be updated' }, { status: 403 });
     }
 
-    if (current.phone === phone) {
+    if (current.phone === phone && !isProvisionalVendorPhone(current.phone)) {
       return NextResponse.json({ error: 'This is already your phone number' }, { status: 400 });
     }
 

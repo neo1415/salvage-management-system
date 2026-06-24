@@ -41,10 +41,10 @@ export async function GET(request: NextRequest) {
     // 3. Check registration fee status
     const status = await registrationFeeService.checkRegistrationFeePaid(vendor.id);
 
-    // 4. Get current registration fee amount from config
-    const { configService } = await import('@/features/auction-deposit/services/config.service');
-    const config = await configService.getConfig();
-    const feeAmount = config.registrationFee;
+    // 4. Get current registration fee amount from published business policy
+    const { businessPolicyService } = await import('@/features/business-policy/business-policy.service');
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const feeAmount = policy.onboarding.registrationFeeAmount;
 
     // 5. Return status
     return NextResponse.json(

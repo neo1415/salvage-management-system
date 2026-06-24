@@ -15,8 +15,8 @@ import { db } from '@/lib/db/drizzle';
 import { configChangeHistory } from '@/lib/db/schema/auction-deposit';
 import { businessPolicyVersions } from '@/lib/db/schema/business-policies';
 import { users } from '@/lib/db/schema/users';
-import { businessPolicyService } from '@/features/business-policy/business-policy.service';
 import { policyToLegacyAuctionConfig } from '@/features/business-policy/legacy-auction-config-bridge';
+import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import type { BusinessPolicy } from '@/features/business-policy/types';
 
@@ -185,7 +185,7 @@ async function getEnterprisePolicyHistory(filters: {
     .filter((row) => row.publishedAt)
     .sort((a, b) => (a.publishedAt?.getTime() ?? 0) - (b.publishedAt?.getTime() ?? 0));
 
-  const runtimePolicy = await businessPolicyService.getRuntimeDefaultPolicy();
+  const baselinePolicy = structuredClone(DEFAULT_BUSINESS_POLICY);
   const entries: ConfigHistoryEntry[] = [];
   for (let index = 0; index < publishedRows.length; index += 1) {
     const row = publishedRows[index];
@@ -201,17 +201,17 @@ async function getEnterprisePolicyHistory(filters: {
     const actorId = row.publishedBy || row.createdBy || 'unknown';
     if (filters.changedBy && actorId !== filters.changedBy) continue;
 
-    const previousPolicy = previous?.policy ?? runtimePolicy;
+    const previousPolicy = previous?.policy ?? baselinePolicy;
     const oldConfig = policyToHistoryConfig(previousPolicy);
     const newConfig = policyToHistoryConfig(row.policy);
-    let changedAuctionConfigFields = 0;
+    let changedFields = 0;
 
     for (const [parameter, newValue] of Object.entries(newConfig)) {
       const oldValue = oldConfig[parameter];
       if (oldValue === newValue) continue;
       if (filters.parameter && parameter !== filters.parameter) continue;
 
-      changedAuctionConfigFields += 1;
+      changedFields += 1;
       entries.push({
         id: `${row.id}:${parameter}`,
         parameter,
@@ -225,11 +225,11 @@ async function getEnterprisePolicyHistory(filters: {
       });
     }
 
-    if (changedAuctionConfigFields === 0 && (!filters.parameter || filters.parameter === 'enterprise_setup')) {
+    if (changedFields === 0 && !filters.parameter) {
       entries.push({
-        id: `${row.id}:enterprise_setup`,
-        parameter: 'enterprise_setup',
-        oldValue: previous?.version ?? runtimePolicy.version,
+        id: `${row.id}:policy_publish`,
+        parameter: 'policy_publish',
+        oldValue: previous?.version ?? baselinePolicy.version,
         newValue: row.version,
         changedBy: actorId,
         changedByName: row.actorName || row.actorEmail || undefined,
@@ -243,22 +243,45 @@ async function getEnterprisePolicyHistory(filters: {
   return entries;
 }
 
+const ONBOARDING_MODE_LABELS: Record<string, string> = {
+  tiered_bvn_fee_tier2: 'Tiered (BVN → fee → Tier 2)',
+  single_full_kyc: 'Single full KYC',
+  full_kyc_before_bidding: 'Full KYC before bidding',
+  fee_before_tier1: 'Fee before Tier 1',
+};
+
 function policyToHistoryConfig(policy: BusinessPolicy): Record<string, string> {
   const config = policyToLegacyAuctionConfig(policy);
 
-  return {
-    registration_fee: String(config.registrationFee),
-    deposit_rate: String(config.depositRate),
-    minimum_deposit_floor: String(config.minimumDepositFloor),
-    tier_1_limit: String(config.tier1Limit),
-    minimum_bid_increment: String(config.minimumBidIncrement),
-    document_validity_period: String(config.documentValidityPeriod),
+  const auctionFields: Record<string, string> = {
+    registration_fee: formatNaira(config.registrationFee),
+    deposit_rate: `${config.depositRate}%`,
+    minimum_deposit_floor: formatNaira(config.minimumDepositFloor),
+    tier_1_limit: formatNaira(config.tier1Limit),
+    minimum_bid_increment: formatNaira(config.minimumBidIncrement),
+    document_validity_period: `${config.documentValidityPeriod} hours`,
     max_grace_extensions: String(config.maxGraceExtensions),
-    grace_extension_duration: String(config.graceExtensionDuration),
-    fallback_buffer_period: String(config.fallbackBufferPeriod),
+    grace_extension_duration: `${config.graceExtensionDuration} hours`,
+    fallback_buffer_period: `${config.fallbackBufferPeriod} hours`,
     top_bidders_to_keep_frozen: String(config.topBiddersToKeepFrozen),
-    forfeiture_percentage: String(config.forfeiturePercentage),
-    payment_deadline_after_signing: String(config.paymentDeadlineAfterSigning),
-    deposit_system_enabled: String(policy.escrow.depositSystemEnabled),
+    forfeiture_percentage: `${config.forfeiturePercentage}%`,
+    payment_deadline_after_signing: `${config.paymentDeadlineAfterSigning} hours`,
+    deposit_system_enabled: policy.escrow.depositSystemEnabled ? 'Enabled' : 'Disabled',
   };
+
+  const enterpriseFields: Record<string, string> = {
+    onboarding_mode:
+      ONBOARDING_MODE_LABELS[policy.onboarding.mode] ?? policy.onboarding.mode,
+    registration_fee_required: policy.onboarding.registrationFeeRequired ? 'Yes' : 'No',
+    allow_bid_after_tier1: policy.onboarding.allowBidAfterTier1 ? 'Yes' : 'No',
+    staff_mfa_required: policy.auth.staffMfaRequired ? 'Yes' : 'No',
+    vendor_mfa_required: policy.auth.vendorMfaRequired ? 'Yes' : 'No',
+    user_managed_mfa_allowed: policy.auth.userManagedMfaAllowed ? 'Yes' : 'No',
+  };
+
+  return { ...auctionFields, ...enterpriseFields };
+}
+
+function formatNaira(amount: number): string {
+  return `₦${amount.toLocaleString('en-NG')}`;
 }

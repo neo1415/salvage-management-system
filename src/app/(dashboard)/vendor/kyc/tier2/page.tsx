@@ -50,6 +50,8 @@ import {
   VerificationErrorDialog,
 } from '@/components/kyc/verification-error-dialog';
 import { isPendingTier2Review } from '@/features/kyc/utils/tier2-status';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { usesSingleFullKycFlow } from '@/lib/vendor/onboarding-policy-ui';
 
 declare global {
   interface Window {
@@ -201,6 +203,12 @@ function applyDojahIframePermissions() {
 export default function Tier2KYCPage() {
   const router = useAppRouter();
   const { data: session, status: authStatus } = useSession();
+  const { policy } = usePublicBusinessPolicy();
+  const singleFullKycFlow = policy ? usesSingleFullKycFlow(policy) : false;
+  const verificationTitle = singleFullKycFlow ? 'Business Verification' : 'Tier 2 Verification';
+  const verificationSubtitle = singleFullKycFlow
+    ? 'Complete identity and business checks (including BVN where required) to unlock bidding.'
+    : 'Complete identity verification for higher bidding access';
 
   const [pageState, setPageState] = useState<PageState>('loading_config');
   const [widgetConfig, setWidgetConfig] = useState<Tier2WidgetConfig | null>(null);
@@ -882,8 +890,8 @@ export default function Tier2KYCPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full mb-4">
               <Award className="w-8 h-8 text-[var(--brand-primary)]" />
             </div>
-            <h1 className="text-3xl font-bold text-white mb-2">Tier 2 Verification</h1>
-            <p className="text-gray-200">Complete identity verification for higher bidding access</p>
+            <h1 className="text-3xl font-bold text-white mb-2">{verificationTitle}</h1>
+            <p className="text-gray-200">{verificationSubtitle}</p>
             {isKycTestingModeClient() && (
               <p className="text-xs text-amber-100 bg-amber-900/40 border border-amber-400/50 rounded-lg px-3 py-2 mt-4 max-w-md mx-auto">
                 KYC testing mode — Tier 2 state resets when you load this page so you can verify again with the same NIN and company details.

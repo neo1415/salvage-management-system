@@ -3,11 +3,15 @@ import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getAuthJwtParams } from '@/lib/auth/jwt-token';
 import {
-  isVendorPreBvnApi,
-  isVendorPreBvnPage,
-  vendorNeedsBvnVerification,
-  VENDOR_TIER1_PATH,
-} from '@/lib/auth/vendor-bvn-access';
+  CHANGE_PASSWORD_PATH,
+  isVendorOnboardingApi,
+  isVendorOnboardingPage,
+} from '@/lib/auth/vendor-onboarding-paths';
+import { businessPolicyService } from '@/features/business-policy/business-policy.service';
+import {
+  loadVendorNavigationSnapshot,
+  resolveVendorOnboardingPath,
+} from '@/lib/auth/vendor-onboarding-navigation';
 import {
   isApiAllowedForRole,
   isPathAllowedForRole,
@@ -28,7 +32,7 @@ function getManagerCaseDetailRedirect(pathname: string, role: string | undefined
 }
 
 /**
- * Proxy: IP forwarding, BVN onboarding, and server-side RBAC (JWT from httpOnly cookie).
+ * Proxy: IP forwarding, vendor onboarding gates, and server-side RBAC (JWT from httpOnly cookie).
  */
 export async function proxy(request: NextRequest) {
   const forwarded = request.headers.get('x-forwarded-for');
@@ -77,19 +81,32 @@ export async function proxy(request: NextRequest) {
     );
   }
 
-  const needsBvn = vendorNeedsBvnVerification(role, token?.bvnVerified as boolean | undefined);
+  if (role === 'vendor' && token?.id) {
+    const snapshot = await loadVendorNavigationSnapshot(token.id as string);
+    if (snapshot) {
+      const policy = await businessPolicyService.getEffectivePolicy();
+      const onboardingPath = resolveVendorOnboardingPath(policy, snapshot);
 
-  if (needsBvn) {
-    if (pathname.startsWith('/vendor/') && !isVendorPreBvnPage(pathname)) {
-      const url = new URL(VENDOR_TIER1_PATH, request.url);
-      return NextResponse.redirect(url);
-    }
+      if (onboardingPath) {
+        if (pathname.startsWith('/vendor/') && !isVendorOnboardingPage(pathname)) {
+          return NextResponse.redirect(new URL(onboardingPath, request.url));
+        }
 
-    if (pathname.startsWith('/api/') && !isVendorPreBvnApi(pathname)) {
-      return NextResponse.json(
-        { error: 'Identity verification required. Complete BVN verification to continue.' },
-        { status: 403 }
-      );
+        if (
+          pathname === CHANGE_PASSWORD_PATH &&
+          onboardingPath !== CHANGE_PASSWORD_PATH &&
+          !pathname.startsWith('/api/auth')
+        ) {
+          return NextResponse.redirect(new URL(onboardingPath, request.url));
+        }
+
+        if (pathname.startsWith('/api/') && !isVendorOnboardingApi(pathname)) {
+          return NextResponse.json(
+            { error: 'Complete account setup before using this feature.' },
+            { status: 403 }
+          );
+        }
+      }
     }
   }
 
@@ -115,5 +132,6 @@ export const config = {
     '/dashboard',
     '/dashboard/:path*',
     '/receipt/:path*',
+    '/change-password',
   ],
 };

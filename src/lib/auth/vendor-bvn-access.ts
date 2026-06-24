@@ -1,16 +1,20 @@
 /**
- * BVN onboarding gate — vendors must complete Tier 1 before using the platform.
+ * BVN onboarding gate — legacy exports; routing uses vendor-onboarding-navigation.
  */
 
-export const VENDOR_TIER1_PATH = '/vendor/kyc/tier1';
-
-/** Page routes allowed before BVN is verified (prefix match). */
-export const VENDOR_PRE_BVN_PAGE_PREFIXES = [
+export {
   VENDOR_TIER1_PATH,
-  '/api/auth',
-] as const;
+  VENDOR_TIER2_PATH,
+  CHANGE_PASSWORD_PATH,
+  VENDOR_REGISTRATION_FEE_PATH,
+  isVendorOnboardingPage,
+  isVendorOnboardingApi,
+} from '@/lib/auth/vendor-onboarding-paths';
 
-/** API routes allowed before BVN is verified (prefix match). */
+/** @deprecated Use isVendorOnboardingPage */
+export const VENDOR_PRE_BVN_PAGE_PREFIXES = ['/vendor/kyc/tier1'] as const;
+
+/** @deprecated Use isVendorOnboardingApi */
 export const VENDOR_PRE_BVN_API_PREFIXES = [
   '/api/auth',
   '/api/vendors/verify-bvn',
@@ -21,19 +25,17 @@ export const VENDOR_PRE_BVN_API_PREFIXES = [
   '/api/webhooks/',
 ] as const;
 
-export const VENDOR_TIER2_PATH = '/vendor/kyc/tier2';
-
+/** @deprecated Prefer vendor-onboarding-navigation */
 export function vendorNeedsBvnVerification(role: string | undefined, bvnVerified: boolean | undefined): boolean {
   return role === 'vendor' && bvnVerified !== true;
 }
 
+/** @deprecated Use isVendorOnboardingPage */
 export function isVendorPreBvnPage(pathname: string): boolean {
-  if (pathname === VENDOR_TIER1_PATH || pathname.startsWith(`${VENDOR_TIER1_PATH}/`)) {
-    return true;
-  }
-  return false;
+  return pathname === '/vendor/kyc/tier1' || pathname.startsWith('/vendor/kyc/tier1/');
 }
 
+/** @deprecated Use isVendorOnboardingApi */
 export function isVendorPreBvnApi(pathname: string): boolean {
   return VENDOR_PRE_BVN_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }

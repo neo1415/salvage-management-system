@@ -267,7 +267,13 @@ export const authConfig: NextAuthConfig = {
           throw new Error('Account not found.');
         }
 
-        if (isMfaRequiredForUser(user)) {
+        const effectivePolicy = await businessPolicyService.getEffectivePolicy();
+        const mfaAuthPolicy = {
+          staffMfaRequired: effectivePolicy.auth.staffMfaRequired,
+          vendorMfaRequired: effectivePolicy.auth.vendorMfaRequired,
+        };
+
+        if (isMfaRequiredForUser(user, mfaAuthPolicy)) {
           if (!mfaCode) {
             const mfaResult = await sendLoginMfaCode(user, ipAddress, deviceType);
             await createAuditLog(

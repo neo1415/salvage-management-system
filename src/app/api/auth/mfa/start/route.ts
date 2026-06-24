@@ -21,6 +21,7 @@ import {
   getIpAddress,
   logAction,
 } from '@/lib/utils/audit-logger';
+import { businessPolicyService } from '@/features/business-policy/business-policy.service';
 
 const startMfaRateLimit = new Ratelimit({
   redis,
@@ -93,7 +94,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ required: false });
     }
 
-    if (!isMfaRequiredForUser(user)) {
+    const effectivePolicy = await businessPolicyService.getEffectivePolicy();
+    const mfaAuthPolicy = {
+      staffMfaRequired: effectivePolicy.auth.staffMfaRequired,
+      vendorMfaRequired: effectivePolicy.auth.vendorMfaRequired,
+    };
+
+    if (!isMfaRequiredForUser(user, mfaAuthPolicy)) {
       return NextResponse.json({ required: false });
     }
 

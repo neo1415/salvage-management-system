@@ -2285,6 +2285,21 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             <Toggle checked={policy.onboarding.requireTier2ForUnlimitedBidding} onChange={(checked) => updatePolicy((draft) => { draft.onboarding.requireTier2ForUnlimitedBidding = checked; })} label="Full verification unlocks higher bidding" />
             <Toggle checked={policy.onboarding.allowBrowseBeforeKyc} onChange={(checked) => updatePolicy((draft) => { draft.onboarding.allowBrowseBeforeKyc = checked; })} label="Allow browsing before KYC" />
           </div>
+          {validation.issues.some((issue) => issue.path.startsWith('onboarding.') || issue.path.startsWith('auth.')) ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+              <p className="text-sm font-semibold text-red-900">Fix these before publishing</p>
+              {validation.issues
+                .filter((issue) => issue.path.startsWith('onboarding.') || issue.path.startsWith('auth.'))
+                .map((issue) => (
+                  <p
+                    key={`${issue.path}-${issue.message}`}
+                    className={issue.severity === 'error' ? 'text-xs text-red-700' : 'text-xs text-amber-800'}
+                  >
+                    {issue.message}
+                  </p>
+                ))}
+            </div>
+          ) : null}
         </div>
 
         <div className={`space-y-4 rounded-lg border border-gray-200 p-4 ${visibleStepClass('operations')}`}>

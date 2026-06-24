@@ -8,10 +8,9 @@ import { phoneSchema } from '@/lib/utils/validation';
 import {
   MFA_CHANNELS,
   MFA_LOGIN_ENFORCED,
-  MFA_STAFF_LOGIN_REQUIRED,
-  MFA_VENDOR_LOGIN_ENFORCED,
   normalizeMfaChannel,
 } from '@/lib/settings/mfa';
+import { businessPolicyService } from '@/features/business-policy/business-policy.service';
 import {
   AuditActionType,
   AuditEntityType,
@@ -51,6 +50,8 @@ export async function GET() {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
+    const effectivePolicy = await businessPolicyService.getEffectivePolicy();
+
     return NextResponse.json({
       mfaEnabled: user.mfaEnabled,
       mfaChannel: normalizeMfaChannel(user.mfaChannel),
@@ -58,11 +59,11 @@ export async function GET() {
       email: user.email,
       phone: user.phone,
       loginMfaEnforced: MFA_LOGIN_ENFORCED,
-      staffMfaRequired: MFA_STAFF_LOGIN_REQUIRED,
-      vendorMfaEnforced: MFA_VENDOR_LOGIN_ENFORCED,
+      staffMfaRequired: effectivePolicy.auth.staffMfaRequired,
+      vendorMfaEnforced: effectivePolicy.auth.vendorMfaRequired,
       availableChannels: MFA_CHANNELS,
       phase2Note:
-        'MFA is feature-flagged. Staff can be required globally with MFA_STAFF_LOGIN_REQUIRED, while vendor MFA stays optional unless explicitly enabled.',
+        'Staff and vendor MFA requirements are configured in Enterprise Setup (Access policy).',
     });
   } catch (error) {
     console.error('GET /api/settings/security:', error);

@@ -37,17 +37,15 @@ export async function POST(request: NextRequest) {
     const { success, limit, remaining, reset } = await verifyOtpRateLimit.limit(ipAddress);
 
     if (!success) {
-      console.warn('[Security] OTP verification rate limit exceeded', {
-        ip: ipAddress,
-        limit,
-        remaining,
-        resetAt: new Date(reset).toISOString(),
-      });
+      const retryAfterSeconds = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
+      const retryMinutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
 
       return NextResponse.json(
         {
-          error: 'Too many verification attempts. Please try again later.',
-          retryAfter: Math.ceil((reset - Date.now()) / 1000), // seconds until reset
+          error: `Too many verification attempts. You can try again in ${retryMinutes} minute${retryMinutes === 1 ? '' : 's'}.`,
+          retryAfter: retryAfterSeconds,
+          retryAfterMinutes: retryMinutes,
+          attemptsRemaining: 0,
         },
         {
           status: 429,
@@ -86,7 +84,10 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: result.message },
+        {
+          error: result.message,
+          attemptsRemaining: result.attemptsRemaining,
+        },
         { status: 400 }
       );
     }

@@ -31,17 +31,22 @@ export function isStaffRole(role: string | null | undefined): boolean {
   );
 }
 
-export function isMfaRequiredForUser(user: MfaUser): boolean {
+export type MfaAuthPolicy = {
+  staffMfaRequired?: boolean;
+  vendorMfaRequired?: boolean;
+};
+
+export function isMfaRequiredForUser(user: MfaUser, authPolicy?: MfaAuthPolicy): boolean {
   if (user.mfaEnabled === true) return true;
 
   if (!MFA_LOGIN_ENFORCED) return false;
 
   if (user.role === 'vendor') {
-    return MFA_VENDOR_LOGIN_ENFORCED;
+    return authPolicy?.vendorMfaRequired ?? MFA_VENDOR_LOGIN_ENFORCED;
   }
 
   if (isStaffRole(user.role)) {
-    return MFA_STAFF_LOGIN_REQUIRED;
+    return authPolicy?.staffMfaRequired ?? MFA_STAFF_LOGIN_REQUIRED;
   }
 
   return false;

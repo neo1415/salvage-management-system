@@ -218,6 +218,59 @@ export class ConfigService {
   }
 
   /**
+   * Update deposit system feature flag in legacy system_config.
+   */
+  async updateDepositSystemEnabled(
+    enabled: boolean,
+    changedBy: string,
+    reason?: string
+  ): Promise<void> {
+    const parameter = 'deposit_system_enabled';
+    const valueStr = String(enabled);
+
+    await db.transaction(async (tx) => {
+      const [currentRecord] = await tx
+        .select()
+        .from(systemConfig)
+        .where(eq(systemConfig.parameter, parameter))
+        .limit(1);
+
+      const oldValue = currentRecord?.value ?? 'true';
+
+      if (currentRecord) {
+        await tx
+          .update(systemConfig)
+          .set({
+            value: valueStr,
+            updatedAt: new Date(),
+            updatedBy: changedBy,
+          })
+          .where(eq(systemConfig.parameter, parameter));
+      } else {
+        await tx.insert(systemConfig).values({
+          parameter,
+          value: valueStr,
+          dataType: 'boolean',
+          description: 'Feature flag for auction deposit bidding system',
+          updatedBy: changedBy,
+        });
+      }
+
+      if (oldValue !== valueStr) {
+        await tx.insert(configChangeHistory).values({
+          parameter,
+          oldValue,
+          newValue: valueStr,
+          changedBy,
+          reason,
+        });
+      }
+    });
+
+    this.configCache = null;
+  }
+
+  /**
    * Get configuration change history
    * Supports filtering by parameter, date range, and user
    * 

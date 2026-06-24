@@ -15,6 +15,7 @@ import {
   businessPolicyService,
   getBusinessPolicyRuntimeMode,
   isBusinessPolicyEnforcementEnabled,
+  isOnboardingPolicyEnforced,
   logPolicyDecision,
   resolveTier2Access,
 } from '@/features/business-policy';
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
     });
   });
 
-  if (!tier2AccessDecision.allowed && isBusinessPolicyEnforcementEnabled()) {
+  if (!tier2AccessDecision.allowed && (isOnboardingPolicyEnforced() || isBusinessPolicyEnforcementEnabled())) {
     return NextResponse.json(
       {
         error: 'tier2_not_available',

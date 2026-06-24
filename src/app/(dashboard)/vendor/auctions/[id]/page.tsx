@@ -37,6 +37,7 @@ import { useToast } from '@/components/ui/toast';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 import { PredictionCard } from '@/components/intelligence/prediction-card';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { useVendorOnboardingStatus } from '@/hooks/use-vendor-onboarding-status';
 import { formatAssetName } from '@/lib/utils/asset-name';
 import type { DocumentType } from '@/lib/db/schema/release-forms';
 
@@ -154,6 +155,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   const { data: session } = useSession();
   const toast = useToast();
   const { policy: publicPolicy } = usePublicBusinessPolicy();
+  const { status: onboardingStatus } = useVendorOnboardingStatus();
+  const canPlaceBid = onboardingStatus?.canBid ?? true;
+  const bidBlockedMessage = onboardingStatus?.bidBlockedMessage;
   const requiredAuctionDocuments = publicPolicy?.documents.requiredAuctionDocuments ?? DEFAULT_AUCTION_DOCUMENTS;
   const paymentDeadlineHours = publicPolicy?.payments.paymentDeadlineAfterSigningHours ?? 72;
 
@@ -1917,12 +1921,21 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               <div className="space-y-3">
                 {/* Place Bid Button */}
                 {(auction.status === 'active' || auction.status === 'extended') && (
-                  <button
-                    onClick={() => setShowBidForm(true)}
-                    className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] py-4 rounded-lg font-bold text-lg hover:bg-[var(--brand-accent-hover)] transition-colors shadow-md hover:shadow-lg"
-                  >
-                    Place Bid
-                  </button>
+                  canPlaceBid ? (
+                    <button
+                      onClick={() => setShowBidForm(true)}
+                      className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] py-4 rounded-lg font-bold text-lg hover:bg-[var(--brand-accent-hover)] transition-colors shadow-md hover:shadow-lg"
+                    >
+                      Place Bid
+                    </button>
+                  ) : (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      <p className="font-semibold">Bidding unavailable</p>
+                      <p className="mt-1">
+                        {bidBlockedMessage ?? 'Complete the required verification steps before placing a bid.'}
+                      </p>
+                    </div>
+                  )
                 )}
 
                 {auction.status === 'closed' &&

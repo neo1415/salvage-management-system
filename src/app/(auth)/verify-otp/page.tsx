@@ -89,7 +89,19 @@ function VerifyOTPForm() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Verification failed');
+        const retryMinutes = result.retryAfterMinutes ?? Math.max(1, Math.ceil((result.retryAfter ?? 0) / 60));
+        if (response.status === 429) {
+          throw new Error(
+            result.error ||
+              `Too many verification attempts. Try again in ${retryMinutes} minute${retryMinutes === 1 ? '' : 's'}.`
+          );
+        }
+
+        let message = result.error || 'Verification failed';
+        if (typeof result.attemptsRemaining === 'number' && result.attemptsRemaining > 0) {
+          message += ` ${result.attemptsRemaining} attempt${result.attemptsRemaining === 1 ? '' : 's'} remaining.`;
+        }
+        throw new Error(message);
       }
 
       // Show success message
@@ -106,8 +118,8 @@ function VerifyOTPForm() {
       // After OTP verification the user is not authenticated yet.
       // Send them through login with an explicit BVN callback instead of storing passwords in browser storage.
       const loginParams = new URLSearchParams({
-        message: 'Phone verified! Please sign in to complete BVN verification.',
-        callbackUrl: '/vendor/kyc/tier1',
+        message: 'Phone verified. Sign in to continue account setup.',
+        callbackUrl: '/dashboard',
       });
       if (email) loginParams.set('email', email);
 

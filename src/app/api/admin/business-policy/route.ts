@@ -138,7 +138,8 @@ export async function PATCH(request: NextRequest) {
     revalidatePath('/');
     revalidatePath('/login');
     revalidatePath('/register');
-    revalidatePath('/manifest.webmanifest');
+    revalidatePath('/admin/enterprise-setup');
+    revalidatePath('/admin/auction-config');
 
     return NextResponse.json(result);
   } catch (error) {

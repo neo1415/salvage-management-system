@@ -8,6 +8,7 @@ import {
   businessPolicyService,
   getBusinessPolicyRuntimeMode,
   isBusinessPolicyEnforcementEnabled,
+  isOnboardingPolicyEnforced,
   logPolicyDecision,
   resolveRegistrationFeePaymentAccess,
 } from '@/features/business-policy';
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    const policyEnforcementEnabled = isBusinessPolicyEnforcementEnabled();
+    const policyEnforcementEnabled = isOnboardingPolicyEnforced() || isBusinessPolicyEnforcementEnabled();
 
     if (!registrationFeeDecision.allowed && policyEnforcementEnabled) {
       const status = registrationFeeDecision.value === 'already_paid' ? 400 : 403;
@@ -98,12 +99,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Check if BVN is verified (Tier 1 KYC complete)
-    if (!vendor.bvnVerifiedAt && !(policyEnforcementEnabled && registrationFeeDecision.allowed)) {
+    const bvnRequiredBeforeFee =
+      policy.kyc.tier1RequiresBvn && policy.onboarding.mode !== 'single_full_kyc';
+
+    if (!vendor.bvnVerifiedAt && bvnRequiredBeforeFee) {
       return NextResponse.json(
-        { 
-          error: 'BVN verification required',
-          message: 'Please complete Tier 1 KYC (BVN verification) before paying registration fee.',
+        {
+          error: 'Identity verification required',
+          message: 'Complete identity verification before paying the registration fee.',
         },
         { status: 400 }
       );

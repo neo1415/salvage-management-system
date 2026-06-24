@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
+import { isProvisionalVendorPhone } from '@/lib/auth/vendor-phone';
 
 interface ProfileUser {
   fullName: string;
@@ -61,7 +64,10 @@ interface VendorInfo {
 }
 
 export function ProfileSettingsPanel() {
-  const { data: session } = useSession();
+  const { data: session, update } = useSession();
+  const searchParams = useSearchParams();
+  const router = useAppRouter();
+  const focusPhone = searchParams.get('focus') === 'phone';
   const [user, setUser] = useState<ProfileUser | null>(null);
   const [vendor, setVendor] = useState<VendorInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,7 +90,8 @@ export function ProfileSettingsPanel() {
       const data = await res.json();
       setUser(data.user);
       setVendor(data.vendor ?? null);
-      setPhoneDraft(data.user.phone || '');
+      const loadedPhone = data.user.phone || '';
+      setPhoneDraft(isProvisionalVendorPhone(loadedPhone) ? '' : loadedPhone);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load profile');
     } finally {
@@ -95,6 +102,21 @@ export function ProfileSettingsPanel() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (focusPhone && !loading && user) {
+      const phoneSection = document.getElementById('profile-phone-section');
+      phoneSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [focusPhone, loading, user]);
+
+  const isOnboardingPhoneStep =
+    session?.user?.role === 'vendor' && user?.status === 'unverified_tier_0';
+  const displayPhone = user && isProvisionalVendorPhone(user.phone) ? '' : user?.phone ?? '';
+  const phoneUnchanged =
+    !!user &&
+    phoneDraft.trim() === user.phone &&
+    !isProvisionalVendorPhone(user.phone);
 
   const requestPhoneCode = async () => {
     setPhoneMessage(null);
@@ -137,6 +159,11 @@ export function ProfileSettingsPanel() {
       setOtp('');
       setPhoneMessage({ type: 'success', text: 'Phone number updated successfully.' });
       await load();
+      await update();
+
+      if (isOnboardingPhoneStep) {
+        router.push('/vendor/onboarding/verify-account');
+      }
     } catch (e) {
       setPhoneMessage({
         type: 'error',
@@ -204,10 +231,12 @@ export function ProfileSettingsPanel() {
         </dl>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div id="profile-phone-section" className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-2">Phone number</h2>
         <p className="text-sm text-gray-600 mb-4">
-          We send a verification code to your new number before saving (SMS + email backup).
+          {isOnboardingPhoneStep
+            ? 'Add your phone number. You will verify phone and email on the next step.'
+            : 'We send a verification code to your new number before saving (SMS + email backup).'}
         </p>
         {phoneMessage && (
           <div
@@ -234,7 +263,7 @@ export function ProfileSettingsPanel() {
           <button
             type="button"
             onClick={requestPhoneCode}
-            disabled={phoneBusy || phoneDraft.trim() === user.phone}
+            disabled={phoneBusy || phoneUnchanged}
             className="px-4 py-2 border border-[var(--brand-primary)] text-[var(--brand-primary)] rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium whitespace-nowrap"
           >
             {phoneBusy ? 'Sending...' : 'Send code'}

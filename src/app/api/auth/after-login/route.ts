@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { getDashboardPathForRole } from '@/lib/auth/rbac';
 import {
-  vendorNeedsBvnVerification,
-  VENDOR_TIER1_PATH,
-} from '@/lib/auth/vendor-bvn-access';
+  CHANGE_PASSWORD_PATH,
+  resolveVendorOnboardingRedirectForUser,
+} from '@/lib/auth/vendor-onboarding-navigation';
 
 const BLOCKED_CALLBACK_PATHS = new Set(['/', '/login', '/launch', '/register']);
 
@@ -28,19 +28,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  if (session.user.requirePasswordChange) {
+    return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, request.url));
+  }
+
   const callback = resolveSafeCallback(
     request.nextUrl.searchParams.get('callbackUrl')
   );
-  if (callback) {
+  if (callback && callback !== CHANGE_PASSWORD_PATH) {
     return NextResponse.redirect(new URL(callback, request.url));
   }
 
-  const { role, bvnVerified } = session.user;
-  if (vendorNeedsBvnVerification(role, bvnVerified)) {
-    return NextResponse.redirect(new URL(VENDOR_TIER1_PATH, request.url));
+  if (session.user.role === 'vendor') {
+    const vendorPath = await resolveVendorOnboardingRedirectForUser(session.user.id);
+    if (vendorPath) {
+      return NextResponse.redirect(new URL(vendorPath, request.url));
+    }
   }
 
-  const home = getDashboardPathForRole(role);
+  const home = getDashboardPathForRole(session.user.role);
   if (home === '/login') {
     loginUrl.searchParams.set('error', 'UnknownRole');
     return NextResponse.redirect(loginUrl);

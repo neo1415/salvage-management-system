@@ -31,6 +31,7 @@ import {
   businessPolicyService,
   getBusinessPolicyRuntimeMode,
   isBusinessPolicyEnforcementEnabled,
+  isOnboardingPolicyEnforced,
   logPolicyDecision,
   resolveDepositAmountRequired,
   resolveVendorBidEligibility,
@@ -687,7 +688,7 @@ export class BiddingService {
       errors.push(`Auction must be in active or extended status (current: ${auctionStatus})`);
     }
 
-    if (isBusinessPolicyEnforcementEnabled()) {
+    if (isOnboardingPolicyEnforced() || isBusinessPolicyEnforcementEnabled()) {
       const policy = await businessPolicyService.getEffectivePolicy();
       const tier: VendorPolicySnapshot['tier'] =
         vendorTier === 'tier2_full'

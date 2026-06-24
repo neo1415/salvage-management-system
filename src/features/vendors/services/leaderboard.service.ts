@@ -1,5 +1,6 @@
 import { db } from '@/lib/db/drizzle';
 import { sql } from 'drizzle-orm';
+import { businessPolicyService } from '@/features/business-policy/business-policy.service';
 import { calculateAutoRating } from './auto-rating.service';
 import { formatRatingLabel } from '@/lib/metrics/dashboard-status';
 
@@ -21,6 +22,8 @@ export interface LeaderboardEntry {
 }
 
 export async function calculateLeaderboard(limit = 25): Promise<LeaderboardEntry[]> {
+  const policy = await businessPolicyService.getEffectivePolicy();
+  const requireFullVerificationForLeaderboard = policy.onboarding.requireTier2ForUnlimitedBidding;
   const rows = await db.execute(sql`
     WITH bid_stats AS (
       SELECT
@@ -117,6 +120,7 @@ export async function calculateLeaderboard(limit = 25): Promise<LeaderboardEntry
       OR COALESCE(ws.wins, 0) > 0
       OR COALESCE(bs.total_bids, 0) > 0
     )
+      ${requireFullVerificationForLeaderboard ? sql`AND v.tier = 'tier2_full'` : sql``}
       AND u.email NOT ILIKE '%@example.com'
       AND u.email NOT ILIKE '%test-bid-%'
       AND u.email NOT ILIKE '%demo%@'

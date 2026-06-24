@@ -5,6 +5,7 @@ import { useAppRouter } from '@/hooks/use-app-router';
 import { Crown, ArrowRight, CheckCircle2, Clock, XCircle, AlertTriangle, RefreshCw, Shield } from 'lucide-react';
 import type { KYCStatus } from '@/features/kyc/types/kyc.types';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { useVendorOnboardingStatus } from '@/hooks/use-vendor-onboarding-status';
 import { isPendingTier2Review } from '@/features/kyc/utils/tier2-status';
 
 export type VendorTier = 'tier1_bvn' | 'tier2_full';
@@ -18,6 +19,7 @@ interface KYCStatusCardProps {
 export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStatusCardProps) {
   const router = useAppRouter();
   const { policy } = usePublicBusinessPolicy();
+  const { status: onboardingStatus } = useVendorOnboardingStatus();
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
@@ -244,10 +246,13 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
               <Crown className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg md:text-xl font-bold mb-1">Complete Full Verification</h3>
+              <h3 className="text-lg md:text-xl font-bold mb-1">
+                {onboardingStatus?.bannerTitle ?? 'Complete Full Verification'}
+              </h3>
               <p className="text-white/90 text-sm md:text-base">
-                Complete the configured verification checks for higher auction access, priority support, and leaderboard eligibility.
-                {bidLimit ? ` Your current Tier 1 limit is ₦${bidLimit.toLocaleString()}.` : ''}
+                {onboardingStatus?.bannerBody ??
+                  'Complete the configured verification checks for higher auction access, priority support, and leaderboard eligibility.'}
+                {bidLimit && onboardingStatus?.canBid ? ` Your current bid limit is ₦${bidLimit.toLocaleString()}.` : ''}
               </p>
             </div>
             <button

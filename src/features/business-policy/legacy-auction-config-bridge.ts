@@ -200,3 +200,22 @@ function nextAuctionConfigPolicyVersion(currentVersion: string): string {
   const base = currentVersion.replace(/-auction-config-\d+$/, '');
   return `${base}-auction-config-${Date.now()}`;
 }
+
+/**
+ * Mirror shared auction/deposit fields from a published business policy into legacy system_config.
+ */
+export async function syncPolicyToLegacySystemConfig(
+  policy: BusinessPolicy,
+  changedBy: string,
+  reason: string
+): Promise<void> {
+  const { configService } = await import('@/features/auction-deposit/services/config.service');
+
+  for (const mapping of mappings) {
+    if (mapping.key === 'depositSystemEnabled') continue;
+    const value = mapping.read(policy);
+    await configService.updateConfig(mapping.canonicalParameter, value as number, changedBy, reason);
+  }
+
+  await configService.updateDepositSystemEnabled(policy.escrow.depositSystemEnabled, changedBy, reason);
+}

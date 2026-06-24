@@ -7,6 +7,7 @@ import { DEFAULT_BUSINESS_POLICY } from './default-policy';
 import { toPublicBusinessPolicy } from './public-policy';
 import { validateBusinessPolicy } from './policy-validation';
 import { sanitizeBusinessPolicy } from './policy-sanitization';
+import { syncPolicyToLegacySystemConfig } from './legacy-auction-config-bridge';
 import type { BusinessPolicy, PolicyValidationResult, PublicBusinessPolicy } from './types';
 
 export type BusinessPolicyVersionRecord = typeof businessPolicyVersions.$inferSelect;
@@ -47,9 +48,6 @@ export class BusinessPolicyService {
 
   async getRuntimeDefaultPolicy(): Promise<BusinessPolicy> {
     const policy: BusinessPolicy = structuredClone(DEFAULT_BUSINESS_POLICY);
-
-    policy.auth.staffMfaRequired = process.env.MFA_STAFF_LOGIN_REQUIRED === 'true';
-    policy.auth.vendorMfaRequired = process.env.MFA_VENDOR_LOGIN_ENFORCED === 'true';
 
     try {
       const legacyConfig = await configService.getConfig();
@@ -239,6 +237,18 @@ export class BusinessPolicyService {
         publishedAt: record.publishedAt?.toISOString?.() ?? now.toISOString(),
       },
     });
+
+    try {
+      await syncPolicyToLegacySystemConfig(
+        record.policy,
+        input.actorId,
+        record.notes || 'Enterprise Setup published'
+      );
+    } catch (mirrorError) {
+      console.warn('[BusinessPolicy] Published policy, but legacy config mirror failed', {
+        error: mirrorError instanceof Error ? mirrorError.message : 'Unknown error',
+      });
+    }
 
     return { success: true, record, validation };
   }

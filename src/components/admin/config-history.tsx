@@ -77,6 +77,18 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
   };
 
   const formatParameterName = (param: string) => {
+    const labels: Record<string, string> = {
+      policy_publish: 'Policy version',
+      onboarding_mode: 'Onboarding mode',
+      registration_fee_required: 'Registration fee required',
+      allow_bid_after_tier1: 'Allow bid after Tier 1',
+      staff_mfa_required: 'Staff MFA required',
+      vendor_mfa_required: 'Vendor MFA required',
+      user_managed_mfa_allowed: 'User-managed MFA allowed',
+      deposit_system_enabled: 'Deposit system',
+    };
+    if (labels[param]) return labels[param];
+
     return param
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))

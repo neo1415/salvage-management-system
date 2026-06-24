@@ -299,10 +299,105 @@ export class OTPService {
   async verifyOTPCode(
     phone: string,
     otp: string
+  ): Promise<{ success: boolean; message: string; attemptsRemaining?: number }> {
+    return this.verifyStoredOtp(this.normalizePhoneNumber(phone), otp);
+  }
+
+  private emailOtpKey(email: string): string {
+    return `email:${email.trim().toLowerCase()}`;
+  }
+
+  /**
+   * Send a dedicated OTP to email (separate code from phone SMS).
+   */
+  async sendEmailOTP(
+    email: string,
+    fullName: string,
+    ipAddress: string,
+    deviceType: 'mobile' | 'desktop' | 'tablet',
+    context: OTPContext = 'authentication'
   ): Promise<{ success: boolean; message: string }> {
     try {
-      const normalizedPhone = this.normalizePhoneNumber(phone);
-      const otpData = await otpCache.get(normalizedPhone);
+      const normalizedEmail = email.trim().toLowerCase();
+      const limits = RATE_LIMITS[context];
+      const rateLimitKey = `otp:ratelimit:email:${context}:${normalizedEmail}`;
+
+      const isLimited = await rateLimiter.isLimited(
+        rateLimitKey,
+        limits.maxAttempts,
+        limits.windowSeconds
+      );
+
+      if (isLimited) {
+        const minutes = Math.ceil(limits.windowSeconds / 60);
+        return {
+          success: false,
+          message: `Too many email code requests. Please try again in ${minutes} minutes.`,
+        };
+      }
+
+      const otp = this.generateOTP();
+      const emailKey = this.emailOtpKey(normalizedEmail);
+      await otpCache.set(emailKey, otp);
+
+      const { emailService } = await import('@/features/notifications/services/email.service');
+      const emailResult = await emailService.sendOTPEmail(normalizedEmail, fullName, otp, 5);
+
+      if (!emailResult.success) {
+        await otpCache.del(emailKey);
+        return {
+          success: false,
+          message: emailResult.error || 'Failed to send email verification code.',
+        };
+      }
+
+      try {
+        const [user] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.email, normalizedEmail))
+          .limit(1);
+
+        if (user) {
+          await db.insert(auditLogs).values({
+            userId: user.id,
+            actionType: 'email_otp_sent',
+            entityType: 'user',
+            entityId: user.id,
+            ipAddress,
+            deviceType,
+            userAgent: 'web',
+            afterState: { email: normalizedEmail },
+          });
+        }
+      } catch (auditError) {
+        console.error('Failed to create audit log for email OTP send:', auditError);
+      }
+
+      if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+        console.log(`[DEV] Email OTP for ${normalizedEmail}: ${otp}`);
+      }
+
+      return { success: true, message: 'Email verification code sent.' };
+    } catch (error) {
+      console.error('Send email OTP error:', error);
+      return { success: false, message: 'Failed to send email verification code.' };
+    }
+  }
+
+  async verifyEmailOTPCode(
+    email: string,
+    otp: string
+  ): Promise<{ success: boolean; message: string; attemptsRemaining?: number }> {
+    return this.verifyStoredOtp(this.emailOtpKey(email), otp);
+  }
+
+  private async verifyStoredOtp(
+    cacheKey: string,
+    otp: string
+  ): Promise<{ success: boolean; message: string; attemptsRemaining?: number }> {
+    try {
+      const otpData = await otpCache.get(cacheKey);
 
       if (!otpData) {
         return {
@@ -312,23 +407,25 @@ export class OTPService {
       }
 
       if (otpData.attempts >= this.MAX_ATTEMPTS) {
-        await otpCache.del(normalizedPhone);
+        await otpCache.del(cacheKey);
         return {
           success: false,
           message: 'Maximum verification attempts exceeded. Please request a new code.',
+          attemptsRemaining: 0,
         };
       }
 
       if (otpData.otp !== otp) {
-        const newAttempts = await otpCache.incrementAttempts(normalizedPhone);
+        const newAttempts = await otpCache.incrementAttempts(cacheKey);
         const remainingAttempts = this.MAX_ATTEMPTS - newAttempts;
         return {
           success: false,
           message: `Invalid code. ${remainingAttempts} attempt${remainingAttempts !== 1 ? 's' : ''} remaining.`,
+          attemptsRemaining: remainingAttempts,
         };
       }
 
-      await otpCache.del(normalizedPhone);
+      await otpCache.del(cacheKey);
       return { success: true, message: 'Verified' };
     } catch (error) {
       console.error('Verify OTP code error:', error);
@@ -341,11 +438,15 @@ export class OTPService {
     otp: string,
     ipAddress: string,
     deviceType: 'mobile' | 'desktop' | 'tablet'
-  ): Promise<{ success: boolean; message: string; userId?: string }> {
+  ): Promise<{ success: boolean; message: string; userId?: string; attemptsRemaining?: number }> {
     try {
       const codeCheck = await this.verifyOTPCode(phone, otp);
       if (!codeCheck.success) {
-        return { success: false, message: codeCheck.message };
+        return {
+          success: false,
+          message: codeCheck.message,
+          attemptsRemaining: codeCheck.attemptsRemaining,
+        };
       }
 
       const normalizedPhone = this.normalizePhoneNumber(phone);
