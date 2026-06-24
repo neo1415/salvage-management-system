@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
@@ -23,7 +23,7 @@ import { defaultReportFilters, loadReportFromApi } from '@/components/reports/co
 
 export default function RevenueAnalysisPage() {
   const { data: session } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [error, setError] = useState<string | null>(null);
@@ -245,6 +245,7 @@ export default function RevenueAnalysisPage() {
             showAssetTypes={true}
             showRegions={true}
             showBranches={true}
+            showBrokers={true}
             showStatus={false}
             showGroupBy={true}
           />

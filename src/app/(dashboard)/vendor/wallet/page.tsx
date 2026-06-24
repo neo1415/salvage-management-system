@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Wallet, Plus, TrendingUp, TrendingDown, Lock, Unlock, CreditCard, WifiOff, Clock } from 'lucide-react';
 import { useOnlineStatus } from '@/hooks/use-online-status';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import { useCachedWallet } from '@/hooks/use-cached-wallet';
-import { DepositHistory } from '@/components/vendor/deposit-history';
+// DepositHistory duplicates transaction history — kept for reference if deposit audit UI is needed later
+// import { DepositHistory } from '@/components/vendor/deposit-history';
 
 interface WalletBalance {
   balance: number;
@@ -37,7 +38,7 @@ interface PaginationMeta {
 
 export default function WalletPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const isOnline = useOnlineStatus();
   const [currentPage, setCurrentPage] = useState(1);
   const [fundingAmount, setFundingAmount] = useState<string>('');
@@ -758,36 +759,38 @@ export default function WalletPage() {
           )}
         </div>
 
-        {/* Deposit History Section */}
+        {/* Wallet & Deposits section removed — see transaction history above */}
+        {/*
         {vendorId && (
           <div className="mt-8">
             <DepositHistory vendorId={vendorId} />
           </div>
         )}
+        */}
 
         {/* Info Section */}
         <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-blue-900 mb-3">How Escrow Wallet Works</h3>
+          <h3 className="text-lg font-semibold text-blue-900 mb-3">How your wallet works</h3>
           <ul className="space-y-2 text-sm text-blue-800">
             <li className="flex items-start gap-2">
               <span className="text-blue-600 mt-0.5">•</span>
-              <span>Pre-fund your wallet to speed up future payments and enable instant bidding</span>
+              <span>Available balance is money you can bid with or pay from.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 mt-0.5">•</span>
-              <span>When you win an auction, the bid amount is frozen, then you must sign all necessary documents</span>
+              <span>When you place a bid, part of your balance may be frozen as a deposit.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 mt-0.5">•</span>
-              <span>After all documents are signed, the frozen funds are paid and you receive your authorization code to collect your item</span>
+              <span>If you are outbid or lose, that frozen amount returns to your available balance.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 mt-0.5">•</span>
-              <span>Your remaining balance stays available for your next bid</span>
+              <span>If you win, funds stay frozen while you sign documents and complete payment.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 mt-0.5">•</span>
-              <span>All transactions are secured and processed via Paystack</span>
+              <span>After payment is verified, frozen funds are released to settle the sale.</span>
             </li>
           </ul>
         </div>

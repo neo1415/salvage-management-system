@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import NotificationItem from '@/components/notifications/notification-item';
 
 interface Notification {
@@ -41,7 +41,7 @@ export default function NotificationDropdown({
   onNotificationUpdated,
 }: NotificationDropdownProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const router = useAppRouter();
 
   // Close dropdown when clicking outside
   useEffect(() => {

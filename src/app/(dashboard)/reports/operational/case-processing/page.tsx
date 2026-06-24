@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
@@ -13,7 +13,7 @@ import { ExportButton } from '@/components/reports/common/export-button';
 import { CaseProcessingReport } from '@/components/reports/operational/case-processing-report';
 
 export default function CaseProcessingPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -169,6 +169,7 @@ export default function CaseProcessingPage() {
               onApply={fetchReport}
               onReset={() => setFilters(defaultReportFilters())}
               showBranches={true}
+              showBrokers={true}
             />
           </CardContent>
         </Card>

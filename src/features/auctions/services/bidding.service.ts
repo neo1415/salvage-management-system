@@ -515,7 +515,7 @@ export class BiddingService {
       });
 
       // Analyze IP patterns for fraud detection (async, don't wait)
-      this.analyzeIPPatterns(data.vendorId, data.ipAddress).catch((error) => {
+      this.analyzeIPPatterns(data.vendorId, data.ipAddress, data.auctionId).catch((error) => {
         console.error('Failed to analyze IP patterns:', error);
       });
 
@@ -1030,10 +1030,10 @@ export class BiddingService {
    * Analyze IP patterns for fraud detection
    * Checks if multiple vendors from same IP are bidding against each other
    */
-  private async analyzeIPPatterns(vendorId: string, ipAddress: string): Promise<void> {
+  private async analyzeIPPatterns(vendorId: string, ipAddress: string, auctionId: string): Promise<void> {
     try {
       const { ipAnalysisService } = await import('@/features/fraud/services/ip-analysis.service');
-      await ipAnalysisService.analyzeBiddingPatterns(vendorId, ipAddress);
+      await ipAnalysisService.analyzeBiddingPatterns(vendorId, ipAddress, auctionId);
     } catch (error) {
       console.error('Failed to analyze IP patterns:', error);
       // Don't throw - fraud detection should not block bidding

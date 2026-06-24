@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { DataLoadingState } from '@/components/ui/loading-states';
 
 /**
@@ -12,7 +12,7 @@ import { DataLoadingState } from '@/components/ui/loading-states';
  * enterprise reporting platform with 17+ report types.
  */
 export default function ManagerReportsPage() {
-  const router = useRouter();
+  const router = useAppRouter();
 
   useEffect(() => {
     // Redirect to new comprehensive reporting system

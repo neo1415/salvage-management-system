@@ -9,6 +9,7 @@ import { db } from '@/lib/db/drizzle';
 import { salvageCases, auctions, payments, bids, vendors, users } from '@/lib/db/schema';
 import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
 import { ReportFilters } from '../types';
+import { formatVendorDisplayName } from '@/lib/utils/vendor-display-name';
 
 export class DataAggregationService {
   /**
@@ -132,7 +133,7 @@ export class DataAggregationService {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    return await db
+    const paymentRows = await db
       .select({
         paymentId: payments.id,
         amount: payments.amount,
@@ -142,12 +143,30 @@ export class DataAggregationService {
         verifiedAt: payments.verifiedAt,
         vendorId: payments.vendorId,
         auctionId: payments.auctionId,
-        vendorName: vendors.businessName,
+        vendorBusinessName: vendors.businessName,
+        vendorUserFullName: users.fullName,
         vendorTier: vendors.tier,
       })
       .from(payments)
       .leftJoin(vendors, eq(payments.vendorId, vendors.id))
+      .leftJoin(users, eq(vendors.userId, users.id))
       .where(whereClause);
+
+    return paymentRows.map((row) => ({
+      paymentId: row.paymentId,
+      amount: row.amount,
+      status: row.status,
+      method: row.method,
+      createdAt: row.createdAt,
+      verifiedAt: row.verifiedAt,
+      vendorId: row.vendorId,
+      auctionId: row.auctionId,
+      vendorName: formatVendorDisplayName({
+        businessName: row.vendorBusinessName,
+        fullName: row.vendorUserFullName,
+      }),
+      vendorTier: row.vendorTier,
+    }));
   }
 
   /**
@@ -224,10 +243,11 @@ export class DataAggregationService {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    return await db
+    const vendorRows = await db
       .select({
         vendorId: vendors.id,
         businessName: vendors.businessName,
+        vendorUserFullName: users.fullName,
         tier: vendors.tier,
         rating: vendors.rating,
         status: vendors.status,
@@ -235,7 +255,21 @@ export class DataAggregationService {
         createdAt: vendors.createdAt,
       })
       .from(vendors)
+      .leftJoin(users, eq(vendors.userId, users.id))
       .where(whereClause);
+
+    return vendorRows.map((row) => ({
+      vendorId: row.vendorId,
+      businessName: formatVendorDisplayName({
+        businessName: row.businessName,
+        fullName: row.vendorUserFullName,
+      }),
+      tier: row.tier,
+      rating: row.rating,
+      status: row.status,
+      performanceStats: row.performanceStats,
+      createdAt: row.createdAt,
+    }));
   }
 
   /**

@@ -14,6 +14,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 interface PaymentData {
   paymentId: string;
@@ -121,12 +122,14 @@ export function usePaymentUnlockedModal() {
       }
 
       // Extract asset description from payment or notification
-      let assetDescription = 'Salvage Item';
+      let assetDescription = 'Auction item';
       
-      // Try to get from payment data
-      if (payment.auction?.case?.assetDetails) {
-        const assetDetails = payment.auction.case.assetDetails;
-        assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || payment.auction.case.assetType;
+      if (payment.auction?.case) {
+        assetDescription = formatAssetName(
+          payment.auction.case.assetType,
+          payment.auction.case.assetDetails as Record<string, unknown>,
+          payment.auction.case.claimReference
+        );
       }
 
       // Prepare modal data

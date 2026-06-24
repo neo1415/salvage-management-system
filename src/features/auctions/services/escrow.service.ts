@@ -106,22 +106,16 @@ export class EscrowService {
 
       // Verify invariant after update
       await this.verifyInvariantInTransaction(tx, vendorId);
-    });
 
-    // PHASE 2.2: Record ledger entry AFTER deposit freeze succeeds
-    try {
       const { ledgerService } = await import('@/features/ledger/services/ledger.service');
       await ledgerService.recordDepositFreeze(
+        tx,
         vendorId,
         amount,
         auctionId,
         `Deposit frozen for auction ${auctionId}`
       );
-      console.log(`[Ledger] Recorded deposit freeze: ₦${amount.toLocaleString()}`);
-    } catch (ledgerError) {
-      // Log error but don't block operation - ledger is for reconciliation only
-      console.error('[Ledger] Failed to record deposit freeze (non-blocking):', ledgerError);
-    }
+    });
   }
 
   /**
@@ -204,6 +198,15 @@ export class EscrowService {
 
       // Verify invariant after update
       await this.verifyInvariantInTransaction(tx, vendorId);
+
+      const { ledgerService } = await import('@/features/ledger/services/ledger.service');
+      await ledgerService.recordDepositUnfreeze(
+        tx,
+        vendorId,
+        amount,
+        auctionId,
+        `Deposit unfrozen for auction ${auctionId}`
+      );
     };
 
     // CRITICAL FIX: Use existing transaction if provided, otherwise create new one
@@ -211,21 +214,6 @@ export class EscrowService {
       await executeInTransaction(existingTx);
     } else {
       await db.transaction(executeInTransaction);
-    }
-
-    // PHASE 2.2: Record ledger entry AFTER deposit unfreeze succeeds
-    try {
-      const { ledgerService } = await import('@/features/ledger/services/ledger.service');
-      await ledgerService.recordDepositUnfreeze(
-        vendorId,
-        amount,
-        auctionId,
-        `Deposit unfrozen for auction ${auctionId}`
-      );
-      console.log(`[Ledger] Recorded deposit unfreeze: ₦${amount.toLocaleString()}`);
-    } catch (ledgerError) {
-      // Log error but don't block operation - ledger is for reconciliation only
-      console.error('[Ledger] Failed to record deposit unfreeze (non-blocking):', ledgerError);
     }
   }
 

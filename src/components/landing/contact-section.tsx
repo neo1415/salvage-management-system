@@ -20,7 +20,7 @@ export function ContactSection({ brandingOverride }: { brandingOverride?: Brandi
     {
       icon: Phone,
       label: 'Phone',
-      value: branding.supportPhone || 'Configured after enterprise setup',
+      value: branding.supportPhone || 'Not configured yet',
       href: branding.supportPhone ? `tel:${branding.supportPhone}` : `mailto:${branding.supportEmail}`,
     },
     {
@@ -29,12 +29,14 @@ export function ContactSection({ brandingOverride }: { brandingOverride?: Brandi
       value: branding.supportEmail,
       href: `mailto:${branding.supportEmail}`,
     },
-    {
-      icon: MapPin,
-      label: 'Address',
-      value: `${branding.legalName} service operations`,
-      href: '#contact',
-    },
+    ...(branding.supportAddress
+      ? [{
+          icon: MapPin,
+          label: 'Address',
+          value: branding.supportAddress,
+          href: `https://maps.google.com/?q=${encodeURIComponent(branding.supportAddress)}`,
+        }]
+      : []),
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -146,6 +148,9 @@ export function ContactSection({ brandingOverride }: { brandingOverride?: Brandi
               <div className="mt-5 rounded-lg p-4 text-sm text-white" style={{ background: getBrandGradient(branding) }}>
                 <p className="font-semibold">{branding.supportEmail}</p>
                 <p className="mt-1 opacity-85">{branding.supportPhone || 'Support phone not added yet'}</p>
+                {branding.supportAddress ? (
+                  <p className="mt-1 opacity-85">{branding.supportAddress}</p>
+                ) : null}
               </div>
             </motion.div>
           </motion.div>

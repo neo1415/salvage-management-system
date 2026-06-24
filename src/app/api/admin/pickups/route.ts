@@ -224,7 +224,9 @@ export async function GET(request: NextRequest) {
         and(
           eq(releaseForms.auctionId, auctions.id),
           eq(releaseForms.vendorId, vendors.id),
-          eq(releaseForms.documentType, 'pickup_authorization')
+          eq(releaseForms.documentType, 'pickup_authorization'),
+          eq(releaseForms.disabled, false),
+          sql`${releaseForms.status} != 'voided'`
         )
       )
       .where(

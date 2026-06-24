@@ -13,8 +13,10 @@ import {
   type BidAlertTemplateData,
   type PaymentConfirmationTemplateData,
 } from '../templates';
+import { wrapProfessionalEmail } from '../templates/wrap-professional-email';
 import { businessPolicyService } from '@/features/business-policy';
 import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
+import { canUserReceiveEmail } from './notification-channel-guard';
 
 // Validate required environment variables
 if (!process.env.RESEND_API_KEY) {
@@ -35,6 +37,7 @@ export interface EmailOptions {
   replyTo?: string;
   category?: 'auth' | 'notification' | 'system';
   critical?: boolean;
+  userId?: string;
   attachments?: Array<{
     filename: string;
     content: string | Buffer;
@@ -88,6 +91,11 @@ export class EmailService {
       console.warn('[Email] Business policy unavailable; allowing email send', {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+    }
+
+    if (options.userId && !(await canUserReceiveEmail(options.userId, { critical: options.critical }))) {
+      console.log(`[EMAIL SKIPPED] User disabled email channel for ${options.to}: ${options.subject}`);
+      return false;
     }
 
     return true;
@@ -426,6 +434,62 @@ export class EmailService {
         success: false,
         error: errorMessage,
       };
+    }
+  }
+
+  async sendManagerScheduledAuctionLiveEmail(
+    email: string,
+    data: {
+      managerName: string;
+      claimReference: string;
+      assetType: string;
+      auctionId: string;
+      reservePrice: number;
+      location: string;
+      endTime: string;
+      managerAuctionUrl: string;
+      approvalsUrl: string;
+      managerUserId?: string;
+    }
+  ): Promise<EmailResult> {
+    try {
+      if (!email) throw new Error('Email is required');
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) throw new Error('Invalid email format');
+
+      const subject = `Scheduled auction is now live — ${data.claimReference}`;
+      const bodyHtml = `
+        <p>Hello ${this.escapeHtml(data.managerName)},</p>
+        <p>Your scheduled auction for <strong>${this.escapeHtml(data.claimReference)}</strong> is now <strong>active</strong>.</p>
+        <ul>
+          <li><strong>Asset:</strong> ${this.escapeHtml(data.assetType)}</li>
+          <li><strong>Reserve:</strong> ₦${data.reservePrice.toLocaleString()}</li>
+          <li><strong>Location:</strong> ${this.escapeHtml(data.location)}</li>
+          <li><strong>Ends:</strong> ${this.escapeHtml(data.endTime)} (WAT)</li>
+        </ul>
+        <p>
+          <a href="${data.managerAuctionUrl}">Open auction details</a>
+          ·
+          <a href="${data.approvalsUrl}">Approval queue</a>
+        </p>
+      `;
+
+      return await this.sendEmailWithRetry({
+        to: email,
+        subject,
+        html: await wrapProfessionalEmail(
+          'Scheduled auction is live',
+          bodyHtml,
+          'Reminder: a scheduled auction you approved has started.'
+        ),
+        category: 'notification',
+        userId: data.managerUserId,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Manager scheduled auction email error:', errorMessage);
+      return { success: false, error: errorMessage };
     }
   }
 

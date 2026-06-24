@@ -12,6 +12,12 @@ import { TrendingUp, TrendingDown, Banknote, BarChart3 } from 'lucide-react';
 import { Line, Bar } from 'react-chartjs-2';
 import { ChartFrame, MetricGrid, MetricValue, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import {
+  FinancialBreakdownSection,
+  FinancialDetailTable,
+} from '@/components/reports/common/financial-detail-table';
+import type { FinancialBreakdownGroup, FinancialDetailRow } from '@/features/reports/utils/financial-breakdown';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import {
   Chart as ChartJS,
@@ -71,17 +77,18 @@ interface RevenueAnalysisData {
     netLoss: number;
     recoveryRate: number;
   }>;
-  itemBreakdown: Array<{
-    claimReference: string;
-    assetType: string;
-    marketValue: number;
-    salvageRecovery: number;
+  byBroker?: Array<{
+    channelName: string;
+    channelType: 'broker' | 'agency' | 'unassigned';
+    count: number;
+    claimsPaid: number;
+    salvageRecovered: number;
     netLoss: number;
     recoveryRate: number;
-    region: string;
-    branchName?: string;
-    date: string;
   }>;
+  branchBreakdown?: FinancialBreakdownGroup[];
+  brokerBreakdown?: FinancialBreakdownGroup[];
+  itemBreakdown: FinancialDetailRow[];
   registrationFees: Array<{
     vendorName: string;
     amount: number;
@@ -122,6 +129,9 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
     byAssetType: data.byAssetType || [],
     byRegion: data.byRegion || [],
     byBranch: data.byBranch || [],
+    byBroker: data.byBroker || [],
+    branchBreakdown: data.branchBreakdown || [],
+    brokerBreakdown: data.brokerBreakdown || [],
     itemBreakdown: data.itemBreakdown || [],
     registrationFees: data.registrationFees || [],
     trend: data.trend || [],
@@ -192,9 +202,9 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <Banknote className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              ₦{safeData.summary.totalRevenue.toLocaleString()}
-            </div>
+            <MetricValue>
+              {formatReportCurrency(safeData.summary.totalRevenue)}
+            </MetricValue>
             <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
               {trendDirection === 'up' ? (
                 <TrendingUp className="h-3 w-3 text-green-600" />
@@ -216,9 +226,9 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <Banknote className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              ₦{safeData.summary.totalSalvageRecovered.toLocaleString()}
-            </div>
+            <MetricValue>
+              {formatReportCurrency(safeData.summary.totalSalvageRecovered)}
+            </MetricValue>
             <p className="text-xs text-gray-600 mt-1">
               From {safeData.summary.totalCases} cases
             </p>
@@ -233,9 +243,9 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <Banknote className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              ₦{safeData.summary.totalRegistrationFees.toLocaleString()}
-            </div>
+            <MetricValue>
+              {formatReportCurrency(safeData.summary.totalRegistrationFees)}
+            </MetricValue>
             <p className="text-xs text-gray-600 mt-1">
               {safeData.registrationFees.length} payments
             </p>
@@ -250,9 +260,9 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
             <BarChart3 className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <MetricValue>
               {safeData.summary.averageRecoveryRate.toFixed(2)}%
-            </div>
+            </MetricValue>
             <p className="text-xs text-gray-600 mt-1">
               Of claim payouts recovered
             </p>
@@ -299,10 +309,10 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-[var(--brand-primary)]">
-                      ₦{(asset?.salvageRecovered || 0).toLocaleString()}
+                      {formatReportCurrency(asset?.salvageRecovered || 0)}
                     </p>
                     <p className="text-xs text-gray-600">
-                      ₦{Math.round((asset?.salvageRecovered || 0) / (asset?.count || 1)).toLocaleString()} avg
+                      {formatReportCurrency(Math.round((asset?.salvageRecovered || 0) / (asset?.count || 1)))} avg
                     </p>
                   </div>
                 </div>
@@ -326,7 +336,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                   <p className="text-sm text-gray-600">{region?.count || 0} cases</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold">₦{(region?.salvageRecovered || 0).toLocaleString()}</p>
+                  <p className="font-bold">{formatReportCurrency(region?.salvageRecovered || 0)}</p>
                   <div className="w-32 bg-gray-200 rounded-full h-2 mt-1">
                     <div
                       className="bg-[var(--brand-primary)] h-2 rounded-full"
@@ -368,9 +378,9 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                         <tr key={`${branch.branchName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                           <td className="p-2 font-medium">{branch.branchName || 'Unassigned'}</td>
                           <td className="p-2 text-right">{branch.count}</td>
-                          <td className="p-2 text-right">â‚¦{branch.claimsPaid.toLocaleString()}</td>
-                          <td className="p-2 text-right text-green-600">â‚¦{branch.salvageRecovered.toLocaleString()}</td>
-                          <td className="p-2 text-right text-red-600">â‚¦{branch.netLoss.toLocaleString()}</td>
+                          <td className="p-2 text-right">{formatReportCurrency(branch.claimsPaid)}</td>
+                          <td className="p-2 text-right text-green-600">{formatReportCurrency(branch.salvageRecovered)}</td>
+                          <td className="p-2 text-right text-red-600">{formatReportCurrency(branch.netLoss)}</td>
                           <td className="p-2 text-right">{branch.recoveryRate.toFixed(2)}%</td>
                         </tr>
                       ))}
@@ -383,49 +393,67 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
         </Card>
       )}
 
-      {/* Item Breakdown Table */}
+      {safeData.byBroker.length > 0 && (
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader>
+            <CardTitle>Recovery by Broker / Agency</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PaginatedReportRows rows={safeData.byBroker} label="channels">
+              {(rows, startIndex) => (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-2">Channel</th>
+                        <th className="text-left p-2">Type</th>
+                        <th className="text-right p-2">Cases</th>
+                        <th className="text-right p-2">Claims Paid</th>
+                        <th className="text-right p-2">Salvage Recovered</th>
+                        <th className="text-right p-2">Recovery Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((broker, index) => (
+                        <tr key={`${broker.channelName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
+                          <td className="p-2 font-medium">{broker.channelName}</td>
+                          <td className="p-2 capitalize">{broker.channelType}</td>
+                          <td className="p-2 text-right">{broker.count}</td>
+                          <td className="p-2 text-right">{formatReportCurrency(broker.claimsPaid)}</td>
+                          <td className="p-2 text-right text-green-600">{formatReportCurrency(broker.salvageRecovered)}</td>
+                          <td className="p-2 text-right">{broker.recoveryRate.toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedReportRows>
+          </CardContent>
+        </Card>
+      )}
+
+      {safeData.branchBreakdown.length > 0 && (
+        <div className="space-y-6">
+          <h3 className="text-lg font-semibold text-gray-900">Branch breakdown</h3>
+          <FinancialBreakdownSection groups={safeData.branchBreakdown} nameColumnLabel="Branch" />
+        </div>
+      )}
+
+      {safeData.brokerBreakdown.length > 0 && (
+        <div className="space-y-6">
+          <h3 className="text-lg font-semibold text-gray-900">Broker / agency breakdown</h3>
+          <FinancialBreakdownSection groups={safeData.brokerBreakdown} nameColumnLabel="Channel" />
+        </div>
+      )}
+
       {safeData.itemBreakdown.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Detailed Item Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
-            <PaginatedReportRows rows={safeData.itemBreakdown} label="items">
-              {(rows, startIndex) => (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-2 font-medium">Claim Reference</th>
-                    <th className="text-left p-2 font-medium">Asset Type</th>
-                    <th className="text-right p-2 font-medium">Market Value</th>
-                    <th className="text-right p-2 font-medium">Salvage Recovery</th>
-                    <th className="text-right p-2 font-medium">Net Loss</th>
-                    <th className="text-right p-2 font-medium">Recovery Rate</th>
-                    <th className="text-left p-2 font-medium">Region</th>
-                    <th className="text-left p-2 font-medium">Branch</th>
-                    <th className="text-left p-2 font-medium">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((item, index) => (
-                    <tr key={startIndex + index} className="border-b hover:bg-gray-50">
-                      <td className="p-2 font-medium">{item.claimReference}</td>
-                      <td className="p-2 capitalize">{item.assetType}</td>
-                      <td className="p-2 text-right">₦{item.marketValue.toLocaleString()}</td>
-                      <td className="p-2 text-right text-green-600">₦{item.salvageRecovery.toLocaleString()}</td>
-                      <td className="p-2 text-right text-red-600">₦{item.netLoss.toLocaleString()}</td>
-                      <td className="p-2 text-right">{item.recoveryRate.toFixed(2)}%</td>
-                      <td className="p-2">{item.region}</td>
-                      <td className="p-2">{item.branchName || 'Unassigned'}</td>
-                      <td className="p-2">{new Date(item.date).toLocaleDateString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-              )}
-            </PaginatedReportRows>
+            <FinancialDetailTable rows={safeData.itemBreakdown} />
           </CardContent>
         </Card>
       )}
@@ -454,7 +482,7 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
                   {rows.map((fee, index) => (
                     <tr key={startIndex + index} className="border-b hover:bg-gray-50">
                       <td className="p-2 font-medium">{fee.vendorName}</td>
-                      <td className="p-2 text-right text-green-600">₦{fee.amount.toLocaleString()}</td>
+                      <td className="p-2 text-right text-green-600">{formatReportCurrency(fee.amount)}</td>
                       <td className="p-2 capitalize">{fee.paymentMethod}</td>
                       <td className="p-2">
                         <span className={`px-2 py-1 rounded text-xs ${

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactElement } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import Link from 'next/link';
 import { 
   FileText, 
@@ -75,6 +75,7 @@ interface Case {
   approvedAt: string | null;
   approvedBy: string | null;
   approverName: string | null;
+  adjusterName?: string | null;
   // Auction data for real-time status checking
   auctionId: string | null;
   auctionStatus: string | null;
@@ -99,7 +100,7 @@ type StatusFilter =
 
 export function CasePortfolioPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const isOffline = useOffline();
   const [cases, setCases] = useState<Case[]>([]);
   const [drafts, setDrafts] = useState<DraftCase[]>([]);
@@ -841,6 +842,7 @@ export function CasePortfolioPage() {
                     getStatusBadge={getStatusBadge}
                     isOfflineCase={isOfflineCase}
                     detailsBasePath={isManagerPortfolio ? '/manager/cases' : '/adjuster/cases'}
+                    showSubmittedBy={isManagerPortfolio}
                   />
                 );
               })}
@@ -863,7 +865,7 @@ interface DraftCardProps {
 }
 
 function DraftCard({ draft, onDelete }: DraftCardProps) {
-  const router = useRouter();
+  const router = useAppRouter();
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleResume = () => {
@@ -976,6 +978,7 @@ interface CaseCardProps {
   isOfflineCase?: boolean;
   showRejectionReason?: boolean;
   detailsBasePath?: '/adjuster/cases' | '/manager/cases';
+  showSubmittedBy?: boolean;
 }
 
 function CaseCard({
@@ -985,9 +988,10 @@ function CaseCard({
   isOfflineCase = false,
   showRejectionReason = false,
   detailsBasePath = '/adjuster/cases',
+  showSubmittedBy = false,
 }: CaseCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const router = useRouter();
+  const router = useAppRouter();
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1131,7 +1135,7 @@ function CaseCard({
           )}
 
         {/* Expandable Section for Optional Details */}
-        {(caseItem.approvedAt || caseItem.status === 'draft') && (
+        {(caseItem.approvedAt || caseItem.status === 'draft' || (showSubmittedBy && caseItem.createdAt)) && (
           <div className="border-t border-gray-100 pt-3">
             <button
               onClick={(e) => {
@@ -1151,7 +1155,21 @@ function CaseCard({
 
             {isExpanded && (
               <div className="mt-3 space-y-2 text-sm">
-                {caseItem.approvedAt && (
+                {showSubmittedBy && caseItem.createdAt && (
+                  <div className="flex items-start gap-2 text-blue-700">
+                    <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
+                    <div>
+                      <p className="font-medium">
+                        Submitted {formatRelativeDate(caseItem.createdAt)}
+                      </p>
+                      {caseItem.adjusterName && (
+                        <p className="text-xs text-gray-600">by {caseItem.adjusterName}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {!showSubmittedBy && caseItem.approvedAt && (
                   <div className="flex items-start gap-2 text-green-600">
                     <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
                     <div>

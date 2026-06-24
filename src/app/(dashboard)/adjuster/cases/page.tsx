@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { DataLoadingState } from '@/components/ui/loading-states';
 
 export default function CasesPage() {
-  const router = useRouter();
+  const router = useAppRouter();
 
   useEffect(() => {
     router.replace('/adjuster/cases/new');

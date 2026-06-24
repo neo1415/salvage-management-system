@@ -71,6 +71,12 @@ export async function POST(request: NextRequest) {
     if (filters?.regions && filters.regions.length > 0) {
       urlParams.append('regions', filters.regions.join(','));
     }
+    if (filters?.branches && filters.branches.length > 0) {
+      urlParams.append('branches', filters.branches.join(','));
+    }
+    if (filters?.brokers && filters.brokers.length > 0) {
+      urlParams.append('brokers', filters.brokers.join(','));
+    }
 
     // Build the full URL for the PDF-optimized report page
     const queryString = urlParams.toString();

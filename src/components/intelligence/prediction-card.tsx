@@ -8,6 +8,7 @@
 'use client';
 
 import { useState } from 'react';
+import { MetricValue } from '@/components/ui/stat-card';
 import { TrendingUp, Info, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface PredictionCardProps {
@@ -84,9 +85,9 @@ export function PredictionCard({
       </div>
 
       {/* Predicted Price */}
-      <div className="mb-4">
+      <div className="mb-4 min-w-0 overflow-hidden">
         <p className="text-sm text-gray-600 mb-1">Predicted Final Price</p>
-        <p className="text-3xl font-bold text-gray-900">{formatCurrency(predictedPrice)}</p>
+        <MetricValue className="text-gray-900">{formatCurrency(predictedPrice)}</MetricValue>
       </div>
 
       {/* Price Range */}

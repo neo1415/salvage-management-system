@@ -471,6 +471,7 @@ export async function POST(
           notifiedVendorsCount = await notifyMatchingVendorsOfNewAuction({
             auctionId: auction.id,
             assetType: caseRecord.assetType,
+            assetDetails: caseRecord.assetDetails as Record<string, unknown>,
             claimReference: caseRecord.claimReference,
             reservePrice: finalReservePrice.toString(),
             locationName: caseRecord.locationName,

@@ -470,23 +470,40 @@ export function enrichItemInfoWithAiIdentification(
   }
 
   if (isBulkRecoveryAsset(enriched)) {
-    const combined = [
-      enriched.description,
-      enriched.model,
-      details.detectedModel,
-      details.notes,
-    ].filter(Boolean).join(' ');
+    const makeLabel = details.detectedMake?.trim();
+    const brandLabel = (enriched.brand || enriched.make)?.trim();
+    const modelLabel = stripBulkNarrative(details.detectedModel);
+    const primaryBrand =
+      makeLabel && brandLabel && makeLabel.toLowerCase() !== brandLabel.toLowerCase()
+        ? makeLabel
+        : makeLabel || brandLabel;
 
-    if (combined) {
-      enriched.description = combined;
+    if (primaryBrand) {
+      enriched.brand = enriched.brand || primaryBrand;
     }
 
-    if (!enriched.unitOfMeasure && /\bbags?\b/i.test(combined)) {
+    const labelParts = [primaryBrand, modelLabel].filter((part, index, parts) => {
+      if (!part) return false;
+      const lower = part.toLowerCase();
+      return parts.findIndex((candidate) => candidate?.toLowerCase() === lower) === index;
+    });
+
+    if (labelParts.length > 0) {
+      enriched.description = stripBulkNarrative(labelParts.join(' '));
+    }
+
+    const quantitySource = details.notes || '';
+
+    if (!enriched.unitOfMeasure && /\bbags?\b/i.test(quantitySource)) {
       enriched.unitOfMeasure = 'bags';
     }
 
-    if (!/\b\d+\b/.test(enriched.quantity || '') && /\b(?:approximately\s*)?(\d{1,5})\s*(?:bags?|cartons?|units?|kg|tonnes?)\b/i.test(combined)) {
-      enriched.quantity = combined.match(/\b(?:approximately\s*)?(\d{1,5})\s*(?:bags?|cartons?|units?|kg|tonnes?)\b/i)?.[1] || enriched.quantity;
+    if (!enriched.quantity && quantitySource) {
+      enriched.quantity = extractBulkUnitCount(quantitySource);
+    }
+
+    if (!enriched.packagingType && /\b25\s*kg\b/i.test(`${modelLabel} ${quantitySource}`)) {
+      enriched.packagingType = '25kg bag';
     }
   }
 
@@ -501,8 +518,87 @@ export function parseQuantityValue(value?: string): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+function stripBulkNarrative(value?: string): string {
+  if (!value) return '';
+  const trimmed = value.trim();
+  const cut = trimmed.search(/\s+(approximately|stored in|across photos|all bags|surrounding|consistent with|no intact)/i);
+  const short = cut > 0 ? trimmed.slice(0, cut) : trimmed;
+  return short.replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+export function extractBulkUnitCount(text: string): string | undefined {
+  const normalized = text.replace(/\s+/g, ' ');
+  const rangeMatch = normalized.match(
+    /\b(?:approximately|about|around)?\s*(\d{1,4})\s*[-–]\s*(\d{1,4})\s*(?:bags?|sacks?|cartons?|units?)\b/i
+  );
+  if (rangeMatch) {
+    const low = Math.min(Number(rangeMatch[1]), Number(rangeMatch[2]));
+    if (low > 0) return String(low);
+  }
+
+  const singleMatch = normalized.match(
+    /\b(?:approximately|about|around)?\s*(\d{1,4})\s*(?:bags?|sacks?|cartons?|units?)\b/i
+  );
+  if (singleMatch) return singleMatch[1];
+
+  return undefined;
+}
+
+function getBulkQuantityReviewReasons(
+  itemInfo: UniversalItemInfo | undefined,
+  aiNotes?: string,
+  userQuantityBeforeAi?: string
+): string[] {
+  if (!itemInfo || !isBulkRecoveryAsset(itemInfo)) return [];
+
+  const userQuantity = parseQuantityValue(userQuantityBeforeAi);
+  if (userQuantity) return [];
+
+  const notes = aiNotes || '';
+  const hasApproximateCount =
+    /\b(approximately|about|around)\b/i.test(notes)
+    || /\d+\s*[-–]\s*\d+\s*(?:bags?|sacks?|cartons?|units?|pallets?)\b/i.test(notes);
+  const mentionsOffCameraStock =
+    /\b(across photos|warehouse|off-camera|full consignment|policy schedule|stated quantity)\b/i.test(notes);
+
+  if (!hasApproximateCount && !mentionsOffCameraStock) return [];
+
+  return [
+    'AI stock count is approximate or inferred — confirm total units/weight from policy schedule or adjuster verification before relying on the market value total',
+  ];
+}
+
+export function scaleBulkInternetSearchPrice(
+  itemInfo: UniversalItemInfo,
+  unitPrice: number
+): {
+  totalValue: number;
+  unitPrice: number;
+  quantity: number;
+  quantityMissing: boolean;
+} {
+  const quantity = parseQuantityValue(itemInfo.quantity);
+  const roundedUnitPrice = Math.round(unitPrice);
+
+  if (!quantity || quantity <= 0) {
+    return {
+      totalValue: roundedUnitPrice,
+      unitPrice: roundedUnitPrice,
+      quantity: 1,
+      quantityMissing: true,
+    };
+  }
+
+  return {
+    totalValue: Math.round(roundedUnitPrice * quantity),
+    unitPrice: roundedUnitPrice,
+    quantity,
+    quantityMissing: false,
+  };
+}
+
 export function estimateKnownBulkUnitMarketValue(itemInfo: UniversalItemInfo): number | null {
-  const quantity = parseQuantityValue(itemInfo.quantity || itemInfo.model);
+  const quantity = parseQuantityValue(itemInfo.quantity);
   if (!quantity) return null;
 
   const text = [
@@ -513,14 +609,15 @@ export function estimateKnownBulkUnitMarketValue(itemInfo: UniversalItemInfo): n
     itemInfo.packagingType,
   ].filter(Boolean).join(' ').toLowerCase();
 
-  const unitText = `${itemInfo.unitOfMeasure || ''} ${itemInfo.model || ''}`.toLowerCase();
-  const looksLikeBaggedDangoteCement =
-    /\bdangote\b/.test(text)
+  const packText = `${itemInfo.model || ''} ${itemInfo.packagingType || ''}`.toLowerCase();
+  const unitText = `${itemInfo.unitOfMeasure || ''}`.toLowerCase();
+  const looksLikeBaggedCement =
+    (/\bcement\b/.test(text) || /\blafarge\b/.test(text) || /\bdangote\b/.test(text))
     && /\bbags?\b|\bsacks?\b/.test(`${text} ${unitText}`)
     && !/\b(sugar|flour|rice|salt|pasta|noodles|feed)\b/.test(text);
 
-  if ((/\bcement\b/.test(text) || looksLikeBaggedDangoteCement) && /\bbag|sack/.test(`${text} ${unitText}`)) {
-    const isHalfBag = /\b25\s*kg\b/.test(text);
+  if (looksLikeBaggedCement) {
+    const isHalfBag = /\b25\s*kg\b/.test(packText);
     const estimatedBagPrice = isHalfBag ? 6000 : 11000;
     return Math.round(quantity * estimatedBagPrice);
   }
@@ -786,7 +883,16 @@ export async function assessDamageEnhanced(params: {
     : calculateDamagePercentage(damageScore);
   
   // Step 3: Determine market value (with universal item support)
-  const marketLookupItemInfo = enrichItemInfoWithAiIdentification(itemInfo, damageAnalysis);
+  const userQuantityBeforeAi = itemInfo?.quantity;
+  const enrichedItemInfo = enrichItemInfoWithAiIdentification(itemInfo, damageAnalysis);
+  valuationReviewReasons.push(
+    ...getBulkQuantityReviewReasons(
+      enrichedItemInfo,
+      damageAnalysis.itemDetails?.notes,
+      userQuantityBeforeAi
+    )
+  );
+  const marketLookupItemInfo = enrichedItemInfo;
   const marketValueResult = await getUniversalMarketValue(marketLookupItemInfo, { forceRefresh });
   const marketValue = marketValueResult.value;
   const marketDataConfidence = marketValueResult.confidence;
@@ -2658,9 +2764,24 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
       });
 
       if (searchResult.success && searchResult.priceData.averagePrice) {
-        const rawPrice = searchResult.priceData.medianPrice || searchResult.priceData.averagePrice;
-        const marketValue = Math.round(rawPrice);
+        const rawUnitPrice = searchResult.priceData.medianPrice || searchResult.priceData.averagePrice;
         const adjudicationReviewReasons = searchResult.adjudication?.reviewReasons || [];
+        let marketValue = Math.round(rawUnitPrice);
+        let bulkPriceScaling: ReturnType<typeof scaleBulkInternetSearchPrice> | undefined;
+
+        if (isBulkRecoveryAsset(itemInfo)) {
+          bulkPriceScaling = scaleBulkInternetSearchPrice(itemInfo, rawUnitPrice);
+          marketValue = bulkPriceScaling.totalValue;
+          if (bulkPriceScaling.quantityMissing) {
+            adjudicationReviewReasons.push(
+              'Visible stock quantity not established — market value shown is per unit until staff confirms total bag/unit count'
+            );
+          } else if (bulkPriceScaling.quantity > 1) {
+            adjudicationReviewReasons.push(
+              `Market search price ₦${bulkPriceScaling.unitPrice.toLocaleString()} per unit × ${bulkPriceScaling.quantity} units = ₦${bulkPriceScaling.totalValue.toLocaleString()}`
+            );
+          }
+        }
 
         console.log(`Found ${itemInfo.type} price: NGN ${marketValue.toLocaleString()}`);
 
@@ -2676,6 +2797,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
             priceData: searchResult.priceData,
             adjudication: searchResult.adjudication,
             reviewReasons: adjudicationReviewReasons,
+            bulkPriceScaling,
           },
         };
       }
@@ -2878,14 +3000,11 @@ function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdenti
     case 'building_materials':
     case 'scrap':
     case 'agriculture':
-      if (!brand && !description && !itemInfo.model) return null;
+      if (!brand && !itemInfo.model) return null;
       return {
         type: itemInfo.type,
-        description,
         brand,
-        model: itemInfo.model,
-        quantity: itemInfo.quantity,
-        unitOfMeasure: itemInfo.unitOfMeasure,
+        model: stripBulkNarrative(itemInfo.model),
         packagingType: itemInfo.packagingType,
       };
     case 'equipment':

@@ -212,15 +212,7 @@ export async function POST(request: NextRequest) {
     if (imageIntegritySummary.warnings.length > 0) {
       body.aiAssessmentResult = {
         ...(body.aiAssessmentResult || {}),
-        warnings: [
-          ...((body.aiAssessmentResult?.warnings || []) as string[]),
-          ...imageIntegritySummary.warnings,
-        ],
         manualReviewRequired: true,
-        reviewReasons: [
-          ...((body.aiAssessmentResult?.reviewReasons || []) as string[]),
-          'Photo integrity review produced evidence warnings.',
-        ],
         photoIntegrity: {
           status: imageIntegritySummary.status,
           results: imageIntegrityResults,

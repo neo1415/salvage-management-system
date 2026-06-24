@@ -14,13 +14,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
-import Image from 'next/image';
 import { Download } from 'lucide-react';
 import { formatNaira, formatAnalysisMethod } from '@/lib/utils/currency-formatter';
 import { LocationMap } from '@/components/ui/location-map';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
+import { CasePhotoGallery } from '@/components/ui/case-photo-gallery';
 
 interface Case {
   id: string;
@@ -69,7 +70,7 @@ function formatInsuranceClass(value?: string | null): string {
 }
 
 export default function CaseDetailsPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const params = useParams();
   const { data: session } = useSession();
   const caseId = params.id as string;
@@ -77,7 +78,6 @@ export default function CaseDetailsPage() {
   const [caseData, setCaseData] = useState<Case | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [isExportingEvidence, setIsExportingEvidence] = useState(false);
   const canManageDraft =
     session?.user?.role === 'claims_adjuster' &&
@@ -299,44 +299,7 @@ export default function CaseDetailsPage() {
           </p>
         </div>
 
-        {/* Photo Gallery */}
-        {caseData.photos && caseData.photos.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <h3 className="font-bold text-gray-900 mb-3">Photos</h3>
-            <div className="space-y-3">
-              <Image
-                src={caseData.photos[selectedPhotoIndex]}
-                alt={`Case photo ${selectedPhotoIndex + 1}`}
-                width={600}
-                height={400}
-                unoptimized
-                className="w-full h-64 object-cover rounded-lg"
-              />
-              {caseData.photos.length > 1 && (
-                <div className="flex gap-2 overflow-x-auto">
-                  {caseData.photos.map((photo, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setSelectedPhotoIndex(index)}
-                      className={`flex-shrink-0 ${
-                        selectedPhotoIndex === index ? 'ring-2 ring-[var(--brand-primary)]' : ''
-                      }`}
-                    >
-                      <Image
-                        src={photo}
-                        alt={`Thumbnail ${index + 1}`}
-                        width={80}
-                        height={80}
-                        unoptimized
-                        className="w-20 h-20 object-cover rounded"
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <CasePhotoGallery photos={caseData.photos} title="Photos" />
 
         {/* Gemini AI Damage Summary - PROSE FORMAT */}
         {caseData.aiAssessment && typeof caseData.aiAssessment === 'object' && (

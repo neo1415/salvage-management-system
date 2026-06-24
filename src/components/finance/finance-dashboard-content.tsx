@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import { CreditCard, CheckCircle, Clock, AlertCircle, Wallet, Banknote } from 'lucide-react';
-import Link from 'next/link';
+import { AppLink } from '@/components/navigation/app-link';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
 import { DataLoadingState } from '@/components/ui/loading-states';
+import { StatCard, StatGrid, StatTile } from '@/components/ui/stat-card';
+import { useAppRouter } from '@/hooks/use-app-router';
 
 interface DashboardStats {
   totalPayments: number;
@@ -33,7 +34,7 @@ interface DashboardStats {
 
 function FinanceDashboardContentInner() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const statsRef = useRef<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,7 +67,7 @@ function FinanceDashboardContentInner() {
       // User has correct role, fetch dashboard data
       fetchDashboardStats();
     }
-  }, [session, status, router]);
+  }, [session, status, router.push]);
 
   const fetchDashboardStats = async () => {
     const showFullPageLoader = statsRef.current == null;
@@ -141,101 +142,65 @@ function FinanceDashboardContentInner() {
         <p className="text-gray-600 mt-2">Payment verification and management</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Payments</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.totalPayments || 0}
-              </p>
-            </div>
+      <StatGrid className="lg:grid-cols-5" minCol={180}>
+        <StatCard
+          title="Total Payments"
+          value={stats?.totalPayments || 0}
+          icon={
             <div className="p-3 bg-blue-100 rounded-lg">
               <CreditCard className="w-8 h-8 text-blue-600" />
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Pending</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.pendingVerification || 0}
-              </p>
-            </div>
+          }
+        />
+        <StatCard
+          title="Pending"
+          value={stats?.pendingVerification || 0}
+          icon={
             <div className="p-3 bg-yellow-100 rounded-lg">
               <Clock className="w-8 h-8 text-yellow-600" />
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Verified</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.verified || 0}
-              </p>
-            </div>
+          }
+        />
+        <StatCard
+          title="Verified"
+          value={stats?.verified || 0}
+          icon={
             <div className="p-3 bg-green-100 rounded-lg">
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Rejected</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.rejected || 0}
-              </p>
-            </div>
+          }
+        />
+        <StatCard
+          title="Rejected"
+          value={stats?.rejected || 0}
+          icon={
             <div className="p-3 bg-red-100 rounded-lg">
               <AlertCircle className="w-8 h-8 text-red-600" />
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Verified Receipts</p>
-              <p className="text-2xl font-bold text-gray-900 mt-2">
-                {formatCurrency(stats?.totalAmount || 0)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">Includes registration fees</p>
-            </div>
+          }
+        />
+        <StatCard
+          title="Verified Receipts"
+          value={formatCurrency(stats?.totalAmount || 0)}
+          subtitle="Includes registration fees"
+          icon={
             <div className="p-3 bg-purple-100 rounded-lg">
               <Banknote className="w-8 h-8 text-purple-600" />
             </div>
-          </div>
-        </div>
-      </div>
+          }
+        />
+      </StatGrid>
 
-      {/* Escrow Wallet Payments Stat Card */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <div className="p-3 bg-[var(--brand-primary)] bg-opacity-10 rounded-lg">
-              <Wallet className="w-8 h-8 text-[var(--brand-primary)]" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Escrow Wallet Payments</h2>
-              <p className="text-sm text-gray-600">Pre-funded vendor wallet payments</p>
-            </div>
+      <StatCard
+        title="Escrow Wallet Payments"
+        value={stats?.escrowWalletPayments || 0}
+        subtitle={`${stats?.escrowWalletPercentage || 0}% of total — pre-funded vendor wallet payments`}
+        icon={
+          <div className="p-3 bg-[var(--brand-primary)] bg-opacity-10 rounded-lg">
+            <Wallet className="w-8 h-8 text-[var(--brand-primary)]" />
           </div>
-          <div className="text-right">
-            <p className="text-3xl font-bold text-gray-900">
-              {stats?.escrowWalletPayments || 0}
-            </p>
-            <p className="text-sm text-gray-600 mt-1">
-              {stats?.escrowWalletPercentage || 0}% of total
-            </p>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex flex-col gap-1 mb-5">
@@ -245,63 +210,54 @@ function FinanceDashboardContentInner() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
-          <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Verified recovery</p>
-            <p className="mt-2 text-2xl font-bold text-emerald-700">
-              {formatCurrency(stats.settlementControl.verifiedRecovery)}
-            </p>
-            <p className="mt-1 text-xs text-gray-500">Winner payments confirmed</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Finance queue</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {stats.settlementControl.pendingFinanceReview}
-            </p>
-            <p className="mt-1 text-xs text-gray-500">Payments needing review</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Paid awaiting pickup</p>
-            <p className="mt-2 text-2xl font-bold text-amber-700">
-              {stats.settlementControl.paidAwaitingPickup}
-            </p>
-            <p className="mt-1 text-xs text-gray-500">Assets still in handoff</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Overdue unpaid</p>
-            <p className="mt-2 text-2xl font-bold text-red-700">
-              {stats.settlementControl.overdueSignedUnpaid}
-            </p>
-            <p className="mt-1 text-xs text-gray-500">Signed documents past payment date</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Frozen escrow</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {stats.settlementControl.frozenEscrowPayments}
-            </p>
-            <p className="mt-1 text-xs text-gray-500">Wallet deposits held</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Avg payment cycle</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {formatDays(stats.settlementControl.averageDaysToPayment)}
-            </p>
-            <p className="mt-1 text-xs text-gray-500">Auction close to verified payment</p>
-          </div>
-        </div>
+        <StatGrid minCol={140}>
+          <StatTile
+            title="Verified recovery"
+            value={formatCurrency(stats.settlementControl.verifiedRecovery)}
+            subtitle="Winner payments confirmed"
+            valueClassName="text-emerald-700"
+          />
+          <StatTile
+            title="Finance queue"
+            value={stats.settlementControl.pendingFinanceReview}
+            subtitle="Payments needing review"
+          />
+          <StatTile
+            title="Paid awaiting pickup"
+            value={stats.settlementControl.paidAwaitingPickup}
+            subtitle="Assets still in handoff"
+            valueClassName="text-amber-700"
+          />
+          <StatTile
+            title="Overdue unpaid"
+            value={stats.settlementControl.overdueSignedUnpaid}
+            subtitle="Signed documents past payment date"
+            valueClassName="text-red-700"
+          />
+          <StatTile
+            title="Frozen escrow"
+            value={stats.settlementControl.frozenEscrowPayments}
+            subtitle="Wallet deposits held"
+          />
+          <StatTile
+            title="Avg payment cycle"
+            value={formatDays(stats.settlementControl.averageDaysToPayment)}
+            subtitle="Auction close to verified payment"
+          />
+        </StatGrid>
       </div>
 
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Link
+          <AppLink
             href="/finance/payments"
-            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
+            className="p-6 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center min-w-0 overflow-hidden"
           >
             <CreditCard className="w-12 h-12 mx-auto mb-3 text-[var(--brand-primary)]" />
             <p className="font-medium text-lg">View All Payments</p>
             <p className="text-sm text-gray-600 mt-1">Manage payment verifications</p>
-          </Link>
+          </AppLink>
 
           <button
             onClick={fetchDashboardStats}

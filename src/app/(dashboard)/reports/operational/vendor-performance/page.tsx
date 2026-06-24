@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
@@ -11,9 +11,11 @@ import { ReportFiltersComponent, ReportFilters } from '@/components/reports/comm
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import { ReportSummaryGrid, ReportSummaryStat } from '@/components/reports/common/report-ui';
 
 export default function VendorPerformancePage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -168,8 +170,9 @@ export default function VendorPerformancePage() {
               onFiltersChange={setFilters}
               onApply={fetchReport}
               onReset={() => setFilters(defaultReportFilters())}
-              showAssetTypes={false}
+              showAssetTypes={true}
               showRegions={false}
+              showBranches={true}
             />
           </CardContent>
         </Card>
@@ -185,24 +188,12 @@ export default function VendorPerformancePage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Summary</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Vendors</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.totalVendors || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Avg Win Rate</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.averageWinRate || 0}%</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Avg Participation</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.averageParticipationRate || 0}%</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Top Performer</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.topPerformerWinRate || 0}%</p>
-                  </div>
-                </div>
+                <ReportSummaryGrid>
+                  <ReportSummaryStat label="Total Vendors" value={reportData.summary?.totalVendors || 0} />
+                  <ReportSummaryStat label="Avg Win Rate" value={`${reportData.summary?.averageWinRate || 0}%`} />
+                  <ReportSummaryStat label="Avg Participation" value={`${reportData.summary?.averageParticipationRate || 0}%`} />
+                  <ReportSummaryStat label="Top Performer" value={`${reportData.summary?.topPerformerWinRate || 0}%`} />
+                </ReportSummaryGrid>
               </CardContent>
             </Card>
 
@@ -226,6 +217,7 @@ export default function VendorPerformancePage() {
                         <th className="text-right p-2">Bids</th>
                         <th className="text-right p-2">Wins</th>
                         <th className="text-right p-2">Win Rate</th>
+                        <th className="text-right p-2">Verified Spend</th>
                         <th className="text-right p-2">Completed Pickups</th>
                         <th className="text-right p-2">Pending Pickups</th>
                         <th className="text-right p-2">On-Time Pickup</th>
@@ -241,6 +233,7 @@ export default function VendorPerformancePage() {
                           <td className="text-right p-2">{vendor.totalBids}</td>
                           <td className="text-right p-2">{vendor.totalWins}</td>
                           <td className="text-right p-2">{vendor.winRate}%</td>
+                          <td className="text-right p-2 font-semibold">{formatReportCurrency(vendor.totalSpent || 0)}</td>
                           <td className="text-right p-2">{vendor.completedPickups ?? 0}</td>
                           <td className="text-right p-2">{vendor.pendingPickups ?? 0}</td>
                           <td className="text-right p-2">{vendor.onTimePickupRate ?? 0}%</td>

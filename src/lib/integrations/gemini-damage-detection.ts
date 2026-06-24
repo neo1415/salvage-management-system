@@ -1269,7 +1269,8 @@ For each damaged item, provide:
 
 **IMPORTANT:**
 - Do not pretend bulk goods have mechanical "parts".
-- Count visible quantity where possible, but do not overstate certainty.
+- Count only units clearly visible in the photos; do not estimate warehouse or off-camera stock.
+- Do not confuse pack weight (e.g. 25kg, 50kg) with unit count (bags/sacks). Put pack size in detectedModel; put visible bag/sack count only in notes when you can see distinct units.
 - Only include visibly damaged components/units/sections.
 
 **Total Loss Determination (CONSERVATIVE):**
@@ -1320,6 +1321,7 @@ function getGeneralAssetPromptProfile(itemType: string): string {
     case 'building_materials':
       return [
         '- Focus on material type, brand, unit size, count, exposure to water/fire, broken packaging, deformation, corrosion, hardening, or contamination.',
+        '- For bagged cement and similar: detectedModel should be pack size and material (e.g. "25kg bagged cement"), not a bag count. Count only bags you can see; if uncertain, say "approximately N bags visible" with N ≤ what is clearly in frame.',
         '- Cement/plaster/adhesives exposed to water may be a total commercial loss; metal, tiles, roofing sheets, and timber may retain scrap or partial resale value depending on condition.',
       ].join('\n');
     case 'property':

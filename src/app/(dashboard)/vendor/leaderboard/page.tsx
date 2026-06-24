@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useAuth } from '@/lib/auth/use-auth';
 import { TrustBadges } from '@/components/vendor/trust-badges';
 import { DataLoadingState } from '@/components/ui/loading-states';
@@ -32,7 +32,7 @@ interface LeaderboardResponse {
 }
 
 export default function VendorLeaderboardPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { user, isAuthenticated, isLoading } = useAuth();
   const { data: leaderboardData, isLoading: isLoadingData, isOffline, lastCached, refresh, error: cacheError } = useCachedLeaderboard();
 

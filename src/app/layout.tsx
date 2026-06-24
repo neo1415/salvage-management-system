@@ -9,6 +9,7 @@ import { QueryProvider } from '@/lib/query-provider';
 import { ToastProvider } from '@/components/ui/toast';
 import { CookieConsentBanner } from '@/components/legal/cookie-consent-banner';
 import { PwaSplashScreen } from '@/components/pwa/pwa-splash-screen';
+import { AppShell } from '@/components/providers/app-shell';
 import { PwaRouteTracker } from '@/components/pwa/pwa-route-tracker';
 import { PublicBusinessPolicyProvider } from '@/hooks/public-business-policy-context';
 import { businessPolicyService } from '@/features/business-policy';
@@ -123,7 +124,7 @@ export default async function RootLayout({
   const appUrl = getAppUrl();
 
   return (
-    <html lang="en" style={getBrandCssVariables(branding)} suppressHydrationWarning>
+    <html lang="en" data-scroll-behavior="smooth" style={getBrandCssVariables(branding)} suppressHydrationWarning>
       <head>
         <link rel="canonical" href={appUrl} />
         <link rel="icon" href={versionedAssetUrl(branding.faviconPath || '/icons/icon-192.png', publicPolicy.version)} />
@@ -177,9 +178,11 @@ export default async function RootLayout({
                 <OfflineIndicator />
                 <InstallPrompt />
                 <CookieConsentBanner />
-                <div id="app-root">
-                  {children}
-                </div>
+                <AppShell>
+                  <div id="app-root">
+                    {children}
+                  </div>
+                </AppShell>
               </PublicBusinessPolicyProvider>
             </ToastProvider>
           </QueryProvider>

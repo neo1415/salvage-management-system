@@ -28,7 +28,6 @@ interface DashboardStats {
   userGrowth: number;
   systemHealth: 'healthy' | 'warning' | 'critical';
   pendingPickupConfirmations: number;
-  expiredDocuments: number;
   overdueSignedUnpaid: number;
   healthReasons: string[];
 }
@@ -164,6 +163,14 @@ async function calculateAdminStats(): Promise<DashboardStats> {
         eq(payments.status, 'verified')
       )
     )
+    .innerJoin(
+      releaseForms,
+      and(
+        eq(releaseForms.auctionId, auctions.id),
+        eq(releaseForms.documentType, 'pickup_authorization'),
+        sql`COALESCE(${releaseForms.disabled}, false) = false`
+      )
+    )
     .where(eq(auctions.pickupConfirmedAdmin, false));
 
   const pendingPickupConfirmations = pendingPickupConfirmationsResult[0]?.count || 0;
@@ -173,14 +180,6 @@ async function calculateAdminStats(): Promise<DashboardStats> {
       SELECT DISTINCT auction_id, vendor_id
       FROM payments
       WHERE status = 'verified'
-    ),
-    expired_documents AS (
-      SELECT DISTINCT auction_id
-      FROM release_forms
-      WHERE status = 'pending'
-        AND validity_deadline IS NOT NULL
-        AND validity_deadline < NOW()
-        AND COALESCE(disabled, false) = false
     ),
     overdue_signed_unpaid AS (
       SELECT DISTINCT rf.auction_id
@@ -195,11 +194,9 @@ async function calculateAdminStats(): Promise<DashboardStats> {
         AND p.auction_id IS NULL
     )
     SELECT
-      (SELECT COUNT(*)::int FROM expired_documents) AS expired_documents,
       (SELECT COUNT(*)::int FROM overdue_signed_unpaid) AS overdue_signed_unpaid
   `)) as any[];
 
-  const expiredDocuments = numberFrom(operationsRow?.expired_documents);
   const overdueSignedUnpaid = numberFrom(operationsRow?.overdue_signed_unpaid);
 
   // System health (based on fraud alerts and system activity)
@@ -214,17 +211,13 @@ async function calculateAdminStats(): Promise<DashboardStats> {
     healthReasons.push(`${pendingPickupConfirmations} pickup confirmation${pendingPickupConfirmations === 1 ? '' : 's'} pending`);
   }
 
-  if (expiredDocuments > 0) {
-    healthReasons.push(`${expiredDocuments} document deadline${expiredDocuments === 1 ? '' : 's'} expired`);
-  }
-
   if (overdueSignedUnpaid > 0) {
     healthReasons.push(`${overdueSignedUnpaid} signed payment${overdueSignedUnpaid === 1 ? '' : 's'} overdue`);
   }
   
   if (pendingFraudAlerts > 10 || overdueSignedUnpaid > 0) {
     systemHealth = 'critical';
-  } else if (pendingFraudAlerts > 5 || pendingPickupConfirmations > 0 || expiredDocuments > 0) {
+  } else if (pendingFraudAlerts > 5 || pendingPickupConfirmations > 0) {
     systemHealth = 'warning';
   }
 
@@ -236,7 +229,6 @@ async function calculateAdminStats(): Promise<DashboardStats> {
     userGrowth,
     systemHealth,
     pendingPickupConfirmations,
-    expiredDocuments,
     overdueSignedUnpaid,
     healthReasons,
   };

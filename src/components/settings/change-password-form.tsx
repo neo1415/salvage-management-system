@@ -82,7 +82,11 @@ export default function ChangePasswordForm({
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to change password');
+        const message =
+          data.error ||
+          (Array.isArray(data.details) && data.details[0]?.message) ||
+          'Failed to change password';
+        throw new Error(message);
       }
 
       setSuccess('Password changed successfully');

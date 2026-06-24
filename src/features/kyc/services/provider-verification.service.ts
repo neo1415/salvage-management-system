@@ -144,8 +144,8 @@ export class ProviderVerificationService {
       failedChecks: [],
       reasonCodes: [],
       displayMessage: isResubmission
-        ? 'Dojah Tier 2 verification has been resubmitted.'
-        : 'Dojah Tier 2 verification workflow has been started.',
+        ? 'Tier 2 verification has been resubmitted.'
+        : 'Tier 2 verification workflow has been started.',
       normalizedResult: {
         workflowSlug: input.workflowSlug || 'salvage',
         startedAt: now.toISOString(),

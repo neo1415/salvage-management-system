@@ -8,7 +8,9 @@
  */
 
 import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { MetricValue } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
@@ -244,17 +246,18 @@ function MetricCard({
   const isNegative = change !== undefined && change < 0;
 
   return (
-    <Card className={
+    <Card className={cn(
+      'min-w-0 overflow-hidden',
       variant === 'warning' ? 'border-yellow-500' :
       variant === 'success' ? 'border-green-500' :
       ''
-    }>
+    )}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         {icon}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <MetricValue>{value}</MetricValue>
         {change !== undefined && (
           <div className="flex items-center text-xs text-muted-foreground mt-1">
             {isPositive && <TrendingUp className="h-3 w-3 text-green-500 mr-1" />}

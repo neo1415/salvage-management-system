@@ -20,7 +20,7 @@ export interface LeaderboardEntry {
   profilePictureUrl: string | null;
 }
 
-export async function calculateLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
+export async function calculateLeaderboard(limit = 25): Promise<LeaderboardEntry[]> {
   const rows = await db.execute(sql`
     WITH bid_stats AS (
       SELECT
@@ -39,6 +39,13 @@ export async function calculateLeaderboard(limit = 10): Promise<LeaderboardEntry
       SELECT vendor_id, auction_id
       FROM auction_winners
       WHERE rank = 1
+      UNION
+      SELECT p.vendor_id, p.auction_id
+      FROM payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      WHERE p.status = 'verified'
+        AND p.auction_id IS NOT NULL
+        AND p.vendor_id = a.current_bidder
     ),
     verified_winner_payments AS (
       SELECT DISTINCT ON (p.auction_id)
@@ -105,13 +112,15 @@ export async function calculateLeaderboard(limit = 10): Promise<LeaderboardEntry
     LEFT JOIN win_stats ws ON ws.vendor_id = v.id
     LEFT JOIN payment_stats ps ON ps.vendor_id = v.id
     LEFT JOIN pickup_stats pus ON pus.vendor_id = v.id
-    WHERE v.status = 'approved'
-      AND u.email NOT ILIKE '%test%'
-      AND u.email NOT ILIKE '%demo%'
-      AND u.email NOT ILIKE '%uat%'
-      AND u.full_name NOT ILIKE '%test%'
-      AND u.full_name NOT ILIKE '%demo%'
-      AND u.full_name NOT ILIKE '%uat%'
+    WHERE (
+      v.status = 'approved'
+      OR COALESCE(ws.wins, 0) > 0
+      OR COALESCE(bs.total_bids, 0) > 0
+    )
+      AND u.email NOT ILIKE '%@example.com'
+      AND u.email NOT ILIKE '%test-bid-%'
+      AND u.email NOT ILIKE '%demo%@'
+      AND u.email NOT ILIKE '%uat%@'
     ORDER BY COALESCE(ws.wins, 0) DESC, COALESCE(ps.total_spent, 0) DESC, COALESCE(bs.total_bids, 0) DESC
     LIMIT ${limit}
   `);

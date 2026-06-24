@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { brandLegalName, getEmailBranding, getSupportPhone, type EmailBranding } from '@/features/notifications/templates/email-branding';
+import { formatNaira } from '@/lib/utils/currency-formatter';
 
 /**
  * POST /api/reports/generate-pdf
@@ -192,11 +193,11 @@ function generateRecoverySummaryHTML(
     </div>
     <div class="summary-card">
       <div class="summary-label">Market Value</div>
-      <div class="summary-value">₦${summary.totalMarketValue.toLocaleString()}</div>
+      <div class="summary-value">${formatNaira(summary.totalMarketValue)}</div>
     </div>
     <div class="summary-card">
       <div class="summary-label">Recovery Value</div>
-      <div class="summary-value">₦${summary.totalRecoveryValue.toLocaleString()}</div>
+      <div class="summary-value">${formatNaira(summary.totalRecoveryValue)}</div>
     </div>
   </div>
 
@@ -218,8 +219,8 @@ function generateRecoverySummaryHTML(
         <tr>
           <td style="text-transform: capitalize;">${item.assetType}</td>
           <td>${item.count}</td>
-          <td>₦${item.marketValue.toLocaleString()}</td>
-          <td>₦${item.recoveryValue.toLocaleString()}</td>
+          <td>${formatNaira(item.marketValue)}</td>
+          <td>${formatNaira(item.recoveryValue)}</td>
           <td>${item.recoveryRate.toFixed(2)}%</td>
         </tr>
       `
@@ -249,8 +250,8 @@ function generateRecoverySummaryHTML(
         <tr>
           <td>${new Date(item.date).toLocaleDateString()}</td>
           <td>${item.count}</td>
-          <td>₦${item.marketValue.toLocaleString()}</td>
-          <td>₦${item.recoveryValue.toLocaleString()}</td>
+          <td>${formatNaira(item.marketValue)}</td>
+          <td>${formatNaira(item.recoveryValue)}</td>
           <td>${item.recoveryRate.toFixed(2)}%</td>
         </tr>
       `
@@ -368,7 +369,7 @@ function generateVendorRankingsHTML(
           <td style="text-transform: uppercase;">${vendor.tier.replace('_', ' ')}</td>
           <td>${vendor.totalBids}</td>
           <td>${vendor.totalWins}</td>
-          <td>₦${vendor.totalSpent.toLocaleString()}</td>
+          <td>${formatNaira(vendor.totalSpent)}</td>
           <td>${winRate.toFixed(1)}%</td>
           <td>${avgPaymentTime.toFixed(1)}h</td>
           <td>${rating.toFixed(1)} ⭐</td>
@@ -466,7 +467,7 @@ function generatePaymentAgingHTML(
     </div>
     <div class="summary-card">
       <div class="summary-label">Total Amount</div>
-      <div class="summary-value">₦${summary.totalAmount.toLocaleString()}</div>
+      <div class="summary-value">${formatNaira(summary.totalAmount)}</div>
     </div>
     <div class="summary-card">
       <div class="summary-label">Average Age (Days)</div>
@@ -500,7 +501,7 @@ function generatePaymentAgingHTML(
         <tr>
           <td>${payment.claimReference}</td>
           <td>${payment.vendorName}</td>
-          <td>₦${payment.amount.toLocaleString()}</td>
+          <td>${formatNaira(payment.amount)}</td>
           <td class="status-${payment.status}">${payment.status.toUpperCase()}</td>
           <td>${paymentMethod.replace('_', ' ').toUpperCase()}</td>
           <td>${hoursOverdue > 0 ? hoursOverdue.toFixed(1) : '-'}</td>

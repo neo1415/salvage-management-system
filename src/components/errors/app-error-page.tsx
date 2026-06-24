@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import { ArrowLeft, Home, ShieldAlert, FileQuestion, Ban } from 'lucide-react';
 import { getDashboardPathForRole } from '@/lib/auth/rbac';
@@ -47,7 +48,7 @@ interface AppErrorPageProps {
 }
 
 export function AppErrorPage({ variant }: AppErrorPageProps) {
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const { branding } = usePublicBranding();

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import { WalletPaymentConfirmation } from '@/components/payments/wallet-payment-confirmation';
 import Script from 'next/script';
@@ -60,7 +61,7 @@ interface WalletBalance {
 
 export default function PaymentPage() {
   const params = useParams();
-  const router = useRouter();
+  const router = useAppRouter();
   const { data: session } = useSession();
   const [payment, setPayment] = useState<PaymentDetails | null>(null);
   const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null);

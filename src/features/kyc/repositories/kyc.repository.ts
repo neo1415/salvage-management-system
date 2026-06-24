@@ -678,7 +678,7 @@ function documentLabel(type: string, sourceKey?: string): string {
   if (type === 'address_proof') return 'Address proof';
   if (type === 'cac_certificate') return 'Business registration document';
   if (type === 'bank_statement') return 'Bank statement';
-  return sourceKey ? sourceKey.replace(/[._-]+/g, ' ') : 'Dojah document';
+  return sourceKey ? sourceKey.replace(/[._-]+/g, ' ') : 'Verification document';
 }
 
 function extractProviderDocuments(

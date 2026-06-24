@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { AuctionPerformanceService } from '@/features/reports/operational/services';
-import { ReportFilters } from '@/features/reports/types';
+import { parseReportFiltersFromSearchParams } from '@/features/reports/utils/parse-report-filters';
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,13 +19,7 @@ export async function GET(request: NextRequest) {
     }
 
     const searchParams = request.nextUrl.searchParams;
-    
-    const filters: ReportFilters = {
-      startDate: searchParams.get('startDate') || undefined,
-      endDate: searchParams.get('endDate') || undefined,
-      assetTypes: searchParams.get('assetTypes')?.split(',').filter(Boolean),
-      branches: searchParams.get('branches')?.split(',').filter(Boolean),
-    };
+    const filters = parseReportFiltersFromSearchParams(searchParams);
 
     const report = await AuctionPerformanceService.generateReport(filters);
 

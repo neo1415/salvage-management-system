@@ -3,16 +3,18 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import { ReportSummaryGrid, ReportSummaryStat } from '@/components/reports/common/report-ui';
 
 export default function ManagerMetricsPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -184,48 +186,24 @@ export default function ManagerMetricsPage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Summary</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Cases Managed</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.totalCasesManaged || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Revenue Generated</p>
-                    <p className="text-2xl font-bold">₦{(reportData.summary?.totalRevenueGenerated || 0).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Team Productivity</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.teamProductivity || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Operational Efficiency</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.operationalEfficiency || 0}%</p>
-                  </div>
-                </div>
+                <ReportSummaryGrid>
+                  <ReportSummaryStat label="Cases Managed" value={reportData.summary?.totalCasesManaged || 0} />
+                  <ReportSummaryStat label="Revenue Generated" value={formatReportCurrency(reportData.summary?.totalRevenueGenerated || 0)} />
+                  <ReportSummaryStat label="Team Productivity" value={reportData.summary?.teamProductivity || 0} />
+                  <ReportSummaryStat label="Operational Efficiency" value={`${reportData.summary?.operationalEfficiency || 0}%`} />
+                </ReportSummaryGrid>
               </CardContent>
             </Card>
 
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Team Performance</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Team Size</p>
-                    <p className="text-xl font-bold">{reportData.teamPerformance?.adjusters || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Avg Cases/Adjuster</p>
-                    <p className="text-xl font-bold">{reportData.teamPerformance?.averageCasesPerAdjuster || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Team Approval Rate</p>
-                    <p className="text-xl font-bold">{reportData.teamPerformance?.teamApprovalRate || 0}%</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Team Recovery Rate</p>
-                    <p className="text-xl font-bold">{reportData.teamPerformance?.teamRecoveryRate || 0}%</p>
-                  </div>
-                </div>
+                <ReportSummaryGrid>
+                  <ReportSummaryStat label="Team Size" value={reportData.teamPerformance?.adjusters || 0} />
+                  <ReportSummaryStat label="Avg Cases/Adjuster" value={reportData.teamPerformance?.averageCasesPerAdjuster || 0} />
+                  <ReportSummaryStat label="Team Approval Rate" value={`${reportData.teamPerformance?.teamApprovalRate || 0}%`} />
+                  <ReportSummaryStat label="Team Recovery Rate" value={`${reportData.teamPerformance?.teamRecoveryRate || 0}%`} />
+                </ReportSummaryGrid>
               </CardContent>
             </Card>
           </div>

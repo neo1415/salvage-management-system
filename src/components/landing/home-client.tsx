@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { isStandalonePwa } from '@/lib/pwa/detect';
 import { usePublicBranding } from '@/hooks/use-public-branding';
 import { WhiteLabelHomeTemplates } from './home-templates';
 
 export function HomeClient() {
   const [showBelowFold, setShowBelowFold] = useState(false);
-  const router = useRouter();
+  const router = useAppRouter();
   const { branding } = usePublicBranding();
 
   useEffect(() => {

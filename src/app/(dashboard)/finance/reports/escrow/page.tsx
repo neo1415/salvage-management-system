@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useSession } from 'next-auth/react';
+import { StatCard, StatGrid, StatTile, MetricValue } from '@/components/ui/stat-card';
 
 interface EscrowReportSummary {
   totalPayments: number;
@@ -251,75 +252,35 @@ export default function EscrowPerformanceReportPage() {
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Payments</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{summary.totalPayments}</p>
-              <p className="text-sm text-gray-500 mt-1">
-                ₦{summary.totalAmount.toLocaleString()} processed
-              </p>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-full">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Automation Rate</p>
-              <p className="text-3xl font-bold text-green-600 mt-2">{summary.automationSuccessRate.toFixed(1)}%</p>
-              <p className="text-sm text-gray-500 mt-1">
-                {summary.autoReleased} auto / {summary.manualReleased} manual
-              </p>
-            </div>
-            <div className="p-3 bg-green-100 rounded-full">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Document Completion</p>
-              <p className="text-3xl font-bold text-purple-600 mt-2">{summary.documentCompletionRate.toFixed(1)}%</p>
-              <p className="text-sm text-gray-500 mt-1">
-                {summary.allDocumentsSigned} completed all docs
-              </p>
-            </div>
-            <div className="p-3 bg-purple-100 rounded-full">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Avg Processing Time</p>
-              <p className="text-3xl font-bold text-orange-600 mt-2">{summary.avgProcessingTimeHours.toFixed(1)}h</p>
-              <p className="text-sm text-gray-500 mt-1">
-                {summary.failed} failed releases
-              </p>
-            </div>
-            <div className="p-3 bg-orange-100 rounded-full">
-              <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
+      <StatGrid className="lg:grid-cols-4">
+        <StatCard
+          title="Total Payments"
+          value={summary.totalPayments}
+          subtitle={`₦${summary.totalAmount.toLocaleString()} processed`}
+          className="shadow"
+        />
+        <StatCard
+          title="Automation Rate"
+          value={`${summary.automationSuccessRate.toFixed(1)}%`}
+          subtitle={`${summary.autoReleased} auto / ${summary.manualReleased} manual`}
+          valueClassName="text-green-600"
+          className="shadow"
+        />
+        <StatCard
+          title="Document Completion"
+          value={`${summary.documentCompletionRate.toFixed(1)}%`}
+          subtitle={`${summary.allDocumentsSigned} completed all docs`}
+          valueClassName="text-purple-600"
+          className="shadow"
+        />
+        <StatCard
+          title="Avg Processing Time"
+          value={`${summary.avgProcessingTimeHours.toFixed(1)}h`}
+          subtitle={`${summary.failed} failed releases`}
+          valueClassName="text-orange-600"
+          className="shadow"
+        />
+      </StatGrid>
 
       {/* Automation Success Rate Chart */}
       <div className="bg-white rounded-lg shadow p-6">
@@ -362,7 +323,7 @@ export default function EscrowPerformanceReportPage() {
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
-                <p className="text-2xl font-bold text-gray-900">{summary.automationSuccessRate.toFixed(0)}%</p>
+                <MetricValue className="text-gray-900">{summary.automationSuccessRate.toFixed(0)}%</MetricValue>
                 <p className="text-xs text-gray-500">Auto</p>
               </div>
             </div>
@@ -448,52 +409,29 @@ export default function EscrowPerformanceReportPage() {
       {/* Document Signing Status */}
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Document Signing Status</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-green-800">All Documents Signed</p>
-                <p className="text-2xl font-bold text-green-900 mt-1">{summary.allDocumentsSigned}</p>
-                <p className="text-xs text-green-700 mt-1">
-                  {summary.documentCompletionRate.toFixed(1)}% completion rate
-                </p>
-              </div>
-              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-yellow-800">Partial Signing</p>
-                <p className="text-2xl font-bold text-yellow-900 mt-1">{summary.partialDocumentsSigned}</p>
-                <p className="text-xs text-yellow-700 mt-1">
-                  {((summary.partialDocumentsSigned / summary.totalPayments) * 100).toFixed(1)}% of total
-                </p>
-              </div>
-              <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-red-800">No Documents Signed</p>
-                <p className="text-2xl font-bold text-red-900 mt-1">{summary.noDocumentsSigned}</p>
-                <p className="text-xs text-red-700 mt-1">
-                  {((summary.noDocumentsSigned / summary.totalPayments) * 100).toFixed(1)}% of total
-                </p>
-              </div>
-              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-          </div>
-        </div>
+        <StatGrid className="md:grid-cols-3">
+          <StatTile
+            title="All Documents Signed"
+            value={summary.allDocumentsSigned}
+            subtitle={`${summary.documentCompletionRate.toFixed(1)}% completion rate`}
+            className="bg-green-50 border-green-200"
+            valueClassName="text-green-900"
+          />
+          <StatTile
+            title="Partial Signing"
+            value={summary.partialDocumentsSigned}
+            subtitle={`${((summary.partialDocumentsSigned / summary.totalPayments) * 100).toFixed(1)}% of total`}
+            className="bg-yellow-50 border-yellow-200"
+            valueClassName="text-yellow-900"
+          />
+          <StatTile
+            title="No Documents Signed"
+            value={summary.noDocumentsSigned}
+            subtitle={`${((summary.noDocumentsSigned / summary.totalPayments) * 100).toFixed(1)}% of total`}
+            className="bg-red-50 border-red-200"
+            valueClassName="text-red-900"
+          />
+        </StatGrid>
       </div>
 
       {/* Detailed Payments Table */}

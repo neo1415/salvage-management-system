@@ -21,6 +21,7 @@ export async function loadReportFromApi(
   if (filters.assetTypes?.length && !extraParams.assetTypes) params.append('assetTypes', filters.assetTypes.join(','));
   if (filters.regions?.length && !extraParams.regions) params.append('regions', filters.regions.join(','));
   if (filters.branches?.length && !extraParams.branches) params.append('branches', filters.branches.join(','));
+  if (filters.brokers?.length && !extraParams.brokers) params.append('brokers', filters.brokers.join(','));
   if (filters.status?.length && !extraParams.status) params.append('status', filters.status.join(','));
   if (filters.groupBy && !extraParams.groupBy) params.append('groupBy', filters.groupBy);
   if (options?.extraParams) {

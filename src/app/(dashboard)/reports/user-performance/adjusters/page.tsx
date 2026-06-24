@@ -3,17 +3,19 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
+import { ReportSummaryGrid, ReportSummaryStat } from '@/components/reports/common/report-ui';
 
 export default function AdjusterMetricsPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -185,24 +187,12 @@ export default function AdjusterMetricsPage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Summary</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Adjusters</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.totalAdjusters || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Cases Processed</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.totalCasesProcessed || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Avg Approval Rate</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.averageApprovalRate || 0}%</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Revenue Generated</p>
-                    <p className="text-2xl font-bold">₦{(reportData.summary?.totalRevenueGenerated || 0).toLocaleString()}</p>
-                  </div>
-                </div>
+                <ReportSummaryGrid>
+                  <ReportSummaryStat label="Total Adjusters" value={reportData.summary?.totalAdjusters || 0} />
+                  <ReportSummaryStat label="Cases Processed" value={reportData.summary?.totalCasesProcessed || 0} />
+                  <ReportSummaryStat label="Avg Approval Rate" value={`${reportData.summary?.averageApprovalRate || 0}%`} />
+                  <ReportSummaryStat label="Revenue Generated" value={formatReportCurrency(reportData.summary?.totalRevenueGenerated || 0)} />
+                </ReportSummaryGrid>
               </CardContent>
             </Card>
 

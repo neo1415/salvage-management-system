@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
@@ -11,9 +11,16 @@ import { ReportFiltersComponent, ReportFilters } from '@/components/reports/comm
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import { ReportSummaryGrid, ReportSummaryStat } from '@/components/reports/common/report-ui';
+import {
+  AuctionBreakdownTable,
+  AuctionCategoryBreakdownSection,
+} from '@/components/reports/common/auction-breakdown-table';
+import { mapAuctionListToBreakdownRow } from '@/features/reports/utils/auction-breakdown';
 
 export default function AuctionPerformancePage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -36,10 +43,6 @@ export default function AuctionPerformancePage() {
     } finally {
       endFetch();
     }
-  };
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(value);
   };
 
   return (
@@ -179,6 +182,7 @@ export default function AuctionPerformancePage() {
               showAssetTypes={true}
               showRegions={false}
               showBranches={true}
+              showBrokers={true}
             />
           </CardContent>
         </Card>
@@ -195,52 +199,19 @@ export default function AuctionPerformancePage() {
           <Card>
             <CardContent className="pt-6">
               <h3 className="text-lg font-semibold mb-4">Summary</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Auctions</p>
-                  <p className="text-2xl font-bold">{reportData.summary?.totalAuctions || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Success Rate</p>
-                  <p className="text-2xl font-bold">{reportData.summary?.successRate || 0}%</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Bids/Auction</p>
-                  <p className="text-2xl font-bold">{reportData.summary?.averageBidsPerAuction || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Bidders</p>
-                  <p className="text-2xl font-bold">{reportData.summary?.averageUniqueBidders || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Reserve Met Rate</p>
-                  <p className="text-2xl font-bold">{reportData.summary?.reserveMetRate || 0}%</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Duration</p>
-                  <p className="text-2xl font-bold">{reportData.summary?.averageDurationHours || 0}h</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Revenue</p>
-                  <p className="text-2xl font-bold">{formatCurrency(reportData.summary?.totalRevenue || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Winning Bid</p>
-                  <p className="text-2xl font-bold">{formatCurrency(reportData.summary?.averageWinningBid || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Price Realization</p>
-                  <p className="text-2xl font-bold">{reportData.summary?.priceRealizationRate || 0}%</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Unique Vendors</p>
-                  <p className="text-2xl font-bold">{reportData.summary?.uniqueVendorsParticipating || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Vendor Engagement</p>
-                  <p className="text-2xl font-bold">{reportData.summary?.vendorEngagementRate || 0}%</p>
-                </div>
-              </div>
+              <ReportSummaryGrid>
+                <ReportSummaryStat label="Total Auctions" value={reportData.summary?.totalAuctions || 0} />
+                <ReportSummaryStat label="Success Rate" value={`${reportData.summary?.successRate || 0}%`} />
+                <ReportSummaryStat label="Avg Bids/Auction" value={reportData.summary?.averageBidsPerAuction || 0} />
+                <ReportSummaryStat label="Avg Bidders" value={reportData.summary?.averageUniqueBidders || 0} />
+                <ReportSummaryStat label="Reserve Met Rate" value={`${reportData.summary?.reserveMetRate || 0}%`} />
+                <ReportSummaryStat label="Avg Duration" value={`${reportData.summary?.averageDurationHours || 0}h`} />
+                <ReportSummaryStat label="Total Revenue" value={formatReportCurrency(reportData.summary?.totalRevenue || 0)} />
+                <ReportSummaryStat label="Avg Winning Bid" value={formatReportCurrency(reportData.summary?.averageWinningBid || 0)} />
+                <ReportSummaryStat label="Price Realization" value={`${reportData.summary?.priceRealizationRate || 0}%`} />
+                <ReportSummaryStat label="Unique Vendors" value={reportData.summary?.uniqueVendorsParticipating || 0} />
+                <ReportSummaryStat label="Vendor Engagement" value={`${reportData.summary?.vendorEngagementRate || 0}%`} />
+              </ReportSummaryGrid>
             </CardContent>
           </Card>
 
@@ -271,8 +242,8 @@ export default function AuctionPerformancePage() {
                           <td className="text-right p-2">{item.successRate}%</td>
                           <td className="text-right p-2">{item.averageBids}</td>
                           <td className="text-right p-2">{item.reserveMetRate}%</td>
-                          <td className="text-right p-2">{formatCurrency(item.totalRevenue)}</td>
-                          <td className="text-right p-2">{formatCurrency(item.averageWinningBid)}</td>
+                          <td className="text-right p-2">{formatReportCurrency(item.totalRevenue)}</td>
+                          <td className="text-right p-2">{formatReportCurrency(item.averageWinningBid)}</td>
                           <td className="text-right p-2">{item.competitiveAuctions}</td>
                         </tr>
                       ))}
@@ -310,8 +281,8 @@ export default function AuctionPerformancePage() {
                               <td className="text-right p-2">{branch.auctionCount || 0}</td>
                               <td className="text-right p-2">{branch.successfulAuctions || 0}</td>
                               <td className="text-right p-2">{branch.successRate || 0}%</td>
-                              <td className="text-right p-2 font-semibold">{formatCurrency(branch.totalRevenue || 0)}</td>
-                              <td className="text-right p-2">{formatCurrency(branch.averageWinningBid || 0)}</td>
+                              <td className="text-right p-2 font-semibold">{formatReportCurrency(branch.totalRevenue || 0)}</td>
+                              <td className="text-right p-2">{formatReportCurrency(branch.averageWinningBid || 0)}</td>
                               <td className="text-right p-2">{branch.averageBids || 0}</td>
                             </tr>
                           ))}
@@ -324,28 +295,72 @@ export default function AuctionPerformancePage() {
             </Card>
           )}
 
+          {reportData.byBroker && reportData.byBroker.length > 0 && (
+            <Card>
+              <CardContent className="pt-6">
+                <h3 className="text-lg font-semibold mb-4">Performance by Broker / Agency</h3>
+                <PaginatedReportRows rows={reportData.byBroker} label="channels">
+                  {(rows, startIndex) => (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left p-2">Channel</th>
+                            <th className="text-left p-2">Type</th>
+                            <th className="text-right p-2">Auctions</th>
+                            <th className="text-right p-2">Successful</th>
+                            <th className="text-right p-2">Success Rate</th>
+                            <th className="text-right p-2">Revenue</th>
+                            <th className="text-right p-2">Avg Winning Bid</th>
+                            <th className="text-right p-2">Avg Bids</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((broker: any, index: number) => (
+                            <tr key={`${broker.channelName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
+                              <td className="p-2 font-medium">{broker.channelName || 'Unassigned'}</td>
+                              <td className="p-2 capitalize">{broker.channelType}</td>
+                              <td className="text-right p-2">{broker.auctionCount || 0}</td>
+                              <td className="text-right p-2">{broker.successfulAuctions || 0}</td>
+                              <td className="text-right p-2">{broker.successRate || 0}%</td>
+                              <td className="text-right p-2 font-semibold">{formatReportCurrency(broker.totalRevenue || 0)}</td>
+                              <td className="text-right p-2">{formatReportCurrency(broker.averageWinningBid || 0)}</td>
+                              <td className="text-right p-2">{broker.averageBids || 0}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </PaginatedReportRows>
+              </CardContent>
+            </Card>
+          )}
+
+          {reportData.branchBreakdown && reportData.branchBreakdown.length > 0 && (
+            <AuctionCategoryBreakdownSection
+              groups={reportData.branchBreakdown}
+              nameColumnLabel="Branch"
+            />
+          )}
+
+          {reportData.brokerBreakdown && reportData.brokerBreakdown.length > 0 && (
+            <AuctionCategoryBreakdownSection
+              groups={reportData.brokerBreakdown}
+              nameColumnLabel="Broker / Agency"
+            />
+          )}
+
           {/* Financial Metrics */}
           <Card>
             <CardContent className="pt-6">
               <h3 className="text-lg font-semibold mb-4">Financial Metrics</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Revenue</p>
-                  <p className="text-2xl font-bold">{formatCurrency(reportData.financialMetrics?.totalRevenue || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Winning Bid</p>
-                  <p className="text-2xl font-bold">{formatCurrency(reportData.financialMetrics?.averageWinningBid || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Reserve Price</p>
-                  <p className="text-2xl font-bold">{formatCurrency(reportData.financialMetrics?.averageReservePrice || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Price Realization</p>
-                  <p className="text-2xl font-bold">{reportData.financialMetrics?.priceRealizationRate || 0}%</p>
-                </div>
-              </div>
+              <ReportSummaryGrid className="mb-6">
+                <ReportSummaryStat label="Total Revenue" value={formatReportCurrency(reportData.financialMetrics?.totalRevenue || 0)} />
+                <ReportSummaryStat label="Avg Winning Bid" value={formatReportCurrency(reportData.financialMetrics?.averageWinningBid || 0)} />
+                <ReportSummaryStat label="Avg Reserve Price" value={formatReportCurrency(reportData.financialMetrics?.averageReservePrice || 0)} />
+                <ReportSummaryStat label="Price Realization" value={`${reportData.financialMetrics?.priceRealizationRate || 0}%`} />
+              </ReportSummaryGrid>
               {reportData.financialMetrics?.revenueByAssetType && reportData.financialMetrics.revenueByAssetType.length > 0 && (
                 <div>
                   <h4 className="font-semibold mb-2">Revenue by Asset Type</h4>
@@ -354,7 +369,7 @@ export default function AuctionPerformancePage() {
                       <div key={item.assetType} className="flex justify-between items-center">
                         <span className="capitalize">{item.assetType}</span>
                         <div className="flex items-center gap-4">
-                          <span className="font-semibold">{formatCurrency(item.revenue)}</span>
+                          <span className="font-semibold">{formatReportCurrency(item.revenue)}</span>
                           <span className="text-sm text-muted-foreground">({item.percentage}%)</span>
                         </div>
                       </div>
@@ -369,40 +384,16 @@ export default function AuctionPerformancePage() {
           <Card>
             <CardContent className="pt-6">
               <h3 className="text-lg font-semibold mb-4">Bidding Metrics</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Bids</p>
-                  <p className="text-2xl font-bold">{reportData.bidding?.totalBids || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Bids/Auction</p>
-                  <p className="text-2xl font-bold">{reportData.bidding?.averageBidsPerAuction || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Competitive Auctions</p>
-                  <p className="text-2xl font-bold">{reportData.bidding?.competitiveAuctions || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Single Bidder</p>
-                  <p className="text-2xl font-bold">{reportData.bidding?.singleBidderAuctions || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">No Bids</p>
-                  <p className="text-2xl font-bold">{reportData.bidding?.noBidAuctions || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Bidding Wars</p>
-                  <p className="text-2xl font-bold">{reportData.bidding?.biddingWarFrequency || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Bid Increment</p>
-                  <p className="text-2xl font-bold">{formatCurrency(reportData.bidding?.averageBidIncrement || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Bid Density (bids/hr)</p>
-                  <p className="text-2xl font-bold">{reportData.bidding?.bidDensity || 0}</p>
-                </div>
-              </div>
+              <ReportSummaryGrid>
+                <ReportSummaryStat label="Total Bids" value={reportData.bidding?.totalBids || 0} />
+                <ReportSummaryStat label="Avg Bids/Auction" value={reportData.bidding?.averageBidsPerAuction || 0} />
+                <ReportSummaryStat label="Competitive Auctions" value={reportData.bidding?.competitiveAuctions || 0} />
+                <ReportSummaryStat label="Single Bidder" value={reportData.bidding?.singleBidderAuctions || 0} />
+                <ReportSummaryStat label="No Bids" value={reportData.bidding?.noBidAuctions || 0} />
+                <ReportSummaryStat label="Bidding Wars" value={reportData.bidding?.biddingWarFrequency || 0} />
+                <ReportSummaryStat label="Avg Bid Increment" value={formatReportCurrency(reportData.bidding?.averageBidIncrement || 0)} />
+                <ReportSummaryStat label="Bid Density (bids/hr)" value={reportData.bidding?.bidDensity || 0} />
+              </ReportSummaryGrid>
             </CardContent>
           </Card>
 
@@ -410,28 +401,13 @@ export default function AuctionPerformancePage() {
           <Card>
             <CardContent className="pt-6">
               <h3 className="text-lg font-semibold mb-4">Timing Analysis</h3>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Duration</p>
-                  <p className="text-2xl font-bold">{reportData.timing?.averageDuration || 0}h</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Shortest</p>
-                  <p className="text-2xl font-bold">{reportData.timing?.shortestDuration || 0}h</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Longest</p>
-                  <p className="text-2xl font-bold">{reportData.timing?.longestDuration || 0}h</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Time to 1st Bid</p>
-                  <p className="text-2xl font-bold">{reportData.timing?.averageTimeToFirstBid || 0}m</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Last Minute Bidding</p>
-                  <p className="text-2xl font-bold">{reportData.timing?.lastMinuteBiddingRate || 0}%</p>
-                </div>
-              </div>
+              <ReportSummaryGrid>
+                <ReportSummaryStat label="Avg Duration" value={`${reportData.timing?.averageDuration || 0}h`} />
+                <ReportSummaryStat label="Shortest" value={`${reportData.timing?.shortestDuration || 0}h`} />
+                <ReportSummaryStat label="Longest" value={`${reportData.timing?.longestDuration || 0}h`} />
+                <ReportSummaryStat label="Avg Time to 1st Bid" value={`${reportData.timing?.averageTimeToFirstBid || 0}m`} />
+                <ReportSummaryStat label="Last Minute Bidding" value={`${reportData.timing?.lastMinuteBiddingRate || 0}%`} />
+              </ReportSummaryGrid>
             </CardContent>
           </Card>
 
@@ -439,24 +415,12 @@ export default function AuctionPerformancePage() {
           <Card>
             <CardContent className="pt-6">
               <h3 className="text-lg font-semibold mb-4">Vendor Participation</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Unique Vendors</p>
-                  <p className="text-2xl font-bold">{reportData.vendorParticipation?.uniqueVendors || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Vendors/Auction</p>
-                  <p className="text-2xl font-bold">{reportData.vendorParticipation?.averageVendorsPerAuction || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Repeat Bidder Rate</p>
-                  <p className="text-2xl font-bold">{reportData.vendorParticipation?.repeatBidderRate || 0}%</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">New vs Returning</p>
-                  <p className="text-2xl font-bold">{reportData.vendorParticipation?.newVsReturningRatio || 0}</p>
-                </div>
-              </div>
+              <ReportSummaryGrid>
+                <ReportSummaryStat label="Unique Vendors" value={reportData.vendorParticipation?.uniqueVendors || 0} />
+                <ReportSummaryStat label="Avg Vendors/Auction" value={reportData.vendorParticipation?.averageVendorsPerAuction || 0} />
+                <ReportSummaryStat label="Repeat Bidder Rate" value={`${reportData.vendorParticipation?.repeatBidderRate || 0}%`} />
+                <ReportSummaryStat label="New vs Returning" value={reportData.vendorParticipation?.newVsReturningRatio || 0} />
+              </ReportSummaryGrid>
             </CardContent>
           </Card>
 
@@ -464,24 +428,12 @@ export default function AuctionPerformancePage() {
           <Card>
             <CardContent className="pt-6">
               <h3 className="text-lg font-semibold mb-4">Competition Levels</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">No Bids</p>
-                  <p className="text-2xl font-bold">{reportData.competitionLevels?.noBids || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">1 Bidder</p>
-                  <p className="text-2xl font-bold">{reportData.competitionLevels?.oneBidder || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">2-3 Bidders</p>
-                  <p className="text-2xl font-bold">{reportData.competitionLevels?.twoToThreeBidders || 0}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">4+ Bidders</p>
-                  <p className="text-2xl font-bold">{reportData.competitionLevels?.fourPlusBidders || 0}</p>
-                </div>
-              </div>
+              <ReportSummaryGrid>
+                <ReportSummaryStat label="No Bids" value={reportData.competitionLevels?.noBids || 0} />
+                <ReportSummaryStat label="1 Bidder" value={reportData.competitionLevels?.oneBidder || 0} />
+                <ReportSummaryStat label="2-3 Bidders" value={reportData.competitionLevels?.twoToThreeBidders || 0} />
+                <ReportSummaryStat label="4+ Bidders" value={reportData.competitionLevels?.fourPlusBidders || 0} />
+              </ReportSummaryGrid>
             </CardContent>
           </Card>
 
@@ -490,58 +442,11 @@ export default function AuctionPerformancePage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Detailed Auction List</h3>
-                <PaginatedReportRows rows={reportData.auctionList} label="auctions">
-                  {(rows) => (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-2">Claim Ref</th>
-                        <th className="text-left p-2">Branch</th>
-                        <th className="text-left p-2">Asset Type</th>
-                        <th className="text-left p-2">Start Time</th>
-                        <th className="text-right p-2">Duration (h)</th>
-                        <th className="text-right p-2">Bids</th>
-                        <th className="text-right p-2">Bidders</th>
-                        <th className="text-right p-2">Winning Bid</th>
-                        <th className="text-right p-2">Reserve</th>
-                        <th className="text-left p-2">Pickup</th>
-                        <th className="text-left p-2">Possessing Vendor</th>
-                        <th className="text-left p-2">Picked Up</th>
-                        <th className="text-left p-2">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((auction: any) => (
-                        <tr key={auction.auctionId} className="border-b hover:bg-muted/50">
-                        <td className="p-2">{auction.claimReference}</td>
-                        <td className="p-2">{auction.branchName || 'Unassigned'}</td>
-                        <td className="p-2 capitalize">{auction.assetType}</td>
-                          <td className="p-2">{new Date(auction.startTime).toLocaleDateString()}</td>
-                          <td className="text-right p-2">{auction.durationHours}</td>
-                          <td className="text-right p-2">{auction.bidCount}</td>
-                          <td className="text-right p-2">{auction.uniqueBidders}</td>
-                          <td className="text-right p-2">
-                            {auction.winningBid ? formatCurrency(auction.winningBid) : '-'}
-                          </td>
-                          <td className="text-right p-2">{formatCurrency(auction.reservePrice)}</td>
-                          <td className="p-2 capitalize">{String(auction.pickupStatus || 'not_ready').replaceAll('_', ' ')}</td>
-                          <td className="p-2">{auction.pickupVendorName || '-'}</td>
-                          <td className="p-2">{auction.pickedUpAt ? new Date(auction.pickedUpAt).toLocaleDateString() : '-'}</td>
-                          <td className="p-2">
-                            <span className={`px-2 py-1 rounded text-xs ${
-                              auction.isSuccessful ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {auction.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <AuctionBreakdownTable
+                  rows={reportData.auctionList.map((auction: any) =>
+                    mapAuctionListToBreakdownRow(auction)
                   )}
-                </PaginatedReportRows>
+                />
               </CardContent>
             </Card>
           )}

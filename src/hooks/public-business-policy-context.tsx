@@ -4,6 +4,10 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { PublicBusinessPolicy } from '@/features/business-policy/types';
 import { getBrandCssVariables } from '@/features/branding/brand-colors';
+import {
+  readCachedPublicBusinessPolicy,
+  writeCachedPublicBusinessPolicy,
+} from '@/lib/business-policy/client-policy-cache';
 
 type PublicPolicyState = {
   policy: PublicBusinessPolicy | null;
@@ -20,6 +24,10 @@ function getBootPolicy(): PublicBusinessPolicy | null {
   return window.__PUBLIC_BUSINESS_POLICY__ ?? null;
 }
 
+function resolveInitialPolicy(initialPolicy: PublicBusinessPolicy | null): PublicBusinessPolicy | null {
+  return initialPolicy ?? getBootPolicy() ?? readCachedPublicBusinessPolicy();
+}
+
 type PublicBusinessPolicyProviderProps = {
   initialPolicy: PublicBusinessPolicy | null;
   children: ReactNode;
@@ -29,23 +37,16 @@ export function PublicBusinessPolicyProvider({
   initialPolicy,
   children,
 }: PublicBusinessPolicyProviderProps) {
-  const bootPolicy = initialPolicy ?? getBootPolicy();
+  const bootPolicy = resolveInitialPolicy(initialPolicy);
   const [state, setState] = useState<PublicPolicyState>({
     policy: bootPolicy,
     loading: !bootPolicy,
   });
 
   useEffect(() => {
-    const nextInitialPolicy = initialPolicy ?? getBootPolicy();
-
-    if (nextInitialPolicy) {
-      setState((current) => ({
-        policy: !current.policy || current.policy.version !== nextInitialPolicy.version
-          ? nextInitialPolicy
-          : current.policy,
-        loading: false,
-      }));
-      return;
+    const seededPolicy = resolveInitialPolicy(initialPolicy);
+    if (seededPolicy) {
+      setState({ policy: seededPolicy, loading: false });
     }
 
     let cancelled = false;
@@ -54,17 +55,31 @@ export function PublicBusinessPolicyProvider({
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return;
-        setState({
-          policy: data?.policy ?? nextInitialPolicy ?? null,
+
+        const fetchedPolicy = data?.policy as PublicBusinessPolicy | undefined;
+        if (fetchedPolicy) {
+          writeCachedPublicBusinessPolicy(fetchedPolicy);
+          setState((current) => ({
+            policy:
+              !current.policy || current.policy.version !== fetchedPolicy.version
+                ? fetchedPolicy
+                : current.policy,
+            loading: false,
+          }));
+          return;
+        }
+
+        setState((current) => ({
+          policy: current.policy ?? seededPolicy ?? readCachedPublicBusinessPolicy() ?? null,
           loading: false,
-        });
+        }));
       })
       .catch(() => {
         if (cancelled) return;
-        setState({
-          policy: nextInitialPolicy ?? null,
+        setState((current) => ({
+          policy: current.policy ?? seededPolicy ?? readCachedPublicBusinessPolicy() ?? null,
           loading: false,
-        });
+        }));
       });
 
     return () => {

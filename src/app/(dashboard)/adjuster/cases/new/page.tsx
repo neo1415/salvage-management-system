@@ -16,7 +16,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { useForm, Controller } from 'react-hook-form';
@@ -463,7 +464,7 @@ interface AIAssessmentResult {
 }
 
 function NewCasePageContent() {
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const isOffline = useOffline();
@@ -547,6 +548,7 @@ function NewCasePageContent() {
   const { policy: publicPolicy } = usePublicBusinessPolicy();
   const enabledAssetTypesPolicy = publicPolicy?.cases.enabledAssetTypes as PublicAssetTypePolicy | undefined;
   const insuranceClassesPolicy = publicPolicy?.cases.insuranceClasses as PublicInsuranceClassPolicy | undefined;
+  const adjusterRunsAiAnalysis = publicPolicy?.cases?.aiDamageAssessmentRunner !== 'salvage_manager';
   
   // Search progress state
   const {
@@ -567,7 +569,7 @@ function NewCasePageContent() {
   // The hook will handle its own memoization internally
   const formData = watch();
   const marketValue = watch('marketValue');
-  const hasAIAnalysis = !!aiAssessment;
+  const hasAIAnalysis = adjusterRunsAiAnalysis ? !!aiAssessment : true;
   const enabledAssetTypes = useMemo(
     () => getEnabledCaseAssetTypeOptions(enabledAssetTypesPolicy),
     [enabledAssetTypesPolicy]
@@ -631,6 +633,7 @@ function NewCasePageContent() {
   } = useDraftAutoSave(formData, hasAIAnalysis, marketValue, {
     enabled: true,
     interval: 30000, // 30 seconds
+    requireMarketValue: adjusterRunsAiAnalysis,
     onSave: (draft) => {
       console.log('Draft auto-saved:', draft.id);
     },
@@ -1806,8 +1809,24 @@ function NewCasePageContent() {
     
     try {
       // Market value is required for submission but not for draft saves
-      if (isDraft === false && (!data.marketValue || data.marketValue <= 0)) {
-        toast.error('Claims paid value required', 'Enter the claim/asset value or run AI analysis to estimate it before submitting.');
+      if (isDraft === false && adjusterRunsAiAnalysis && (!data.marketValue || data.marketValue <= 0)) {
+        toast.error('Claims paid value required', 'Enter the claim/asset value before submitting.');
+        setIsSubmittingForApproval(false);
+        return;
+      }
+
+      if (
+        !isDraft &&
+        isBulkAssetType(data.assetType) &&
+        !String(data.quantity || '').trim()
+      ) {
+        toast.error('Quantity required', 'Enter the insured unit count (bags, kg, cartons, etc.) for bulk assets.');
+        setIsSubmittingForApproval(false);
+        return;
+      }
+
+      if (!isDraft && adjusterRunsAiAnalysis && !aiAssessment) {
+        toast.error('AI analysis required', 'Run AI damage analysis before submitting for approval.');
         setIsSubmittingForApproval(false);
         return;
       }
@@ -2557,8 +2576,9 @@ function NewCasePageContent() {
                 <ModernInput {...register('stockBrand')} variant="filled" placeholder={stockFormLabels.brandPlaceholder} />
               </FormField>
 
-              <FormField label={stockFormLabels.quantityLabel}>
+              <FormField label={stockFormLabels.quantityLabel} required={true}>
                 <ModernInput {...register('quantity')} variant="filled" placeholder={stockFormLabels.quantityPlaceholder} />
+                <p className="mt-1 text-xs text-gray-500">Used for market value totals — enter insured/policy unit count, not pack weight alone.</p>
               </FormField>
 
               <FormField label="Unit of Measure">
@@ -2601,8 +2621,9 @@ function NewCasePageContent() {
                 <ModernInput {...register('cargoBrand')} variant="filled" placeholder="e.g., Samsung, LG, Dangote, Nestle" />
               </FormField>
 
-              <FormField label="Quantity">
+              <FormField label="Quantity" required={true}>
                 <ModernInput {...register('quantity')} variant="filled" placeholder="e.g., 48" />
+                <p className="mt-1 text-xs text-gray-500">Enter consignment unit count from the policy schedule or waybill.</p>
               </FormField>
 
               <FormField label="Unit of Measure">
@@ -2993,7 +3014,14 @@ function NewCasePageContent() {
           </div>
         )}
 
-        {/* Claims Paid / Market Value */}
+        {!adjusterRunsAiAnalysis && (
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-900">
+            AI damage analysis will be run by the salvage manager after you submit photos and claim details.
+          </div>
+        )}
+
+        {/* Claims Paid / Market Value — only when adjuster runs AI analysis */}
+        {adjusterRunsAiAnalysis && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Claims Paid / Asset Value (NGN)
@@ -3025,6 +3053,7 @@ function NewCasePageContent() {
             <p className="mt-1 text-sm text-red-600">{errors.marketValue.message}</p>
           )}
         </div>
+        )}
 
         {/* Photos */}
         <div>
@@ -3089,7 +3118,7 @@ function NewCasePageContent() {
           )}
           
           {/* Manual AI Assessment Button */}
-          {!isOffline && photos && photos.length >= 3 && photos.length <= 10 && shouldRunAIAssessment() && searchProgress.stage === 'idle' && (
+          {!isOffline && adjusterRunsAiAnalysis && photos && photos.length >= 3 && photos.length <= 10 && shouldRunAIAssessment() && searchProgress.stage === 'idle' && (
             <div className="mt-4 space-y-3">
               {/* AI Analysis Status Badge */}
               <AIAnalysisStatusBadge

@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { Heart, Clock, Eye, TrendingUp, X } from 'lucide-react';
 import Link from 'next/link';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 interface RecommendationCardProps {
   auctionId: string;
@@ -125,20 +126,12 @@ export function RecommendationCard({
 
   if (isHidden) return null;
 
-  // Get asset display name
-  const getAssetName = () => {
-    const details = auctionDetails.assetDetails;
-    if (auctionDetails.assetType === 'vehicle') {
-      return `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim();
-    }
-    if (auctionDetails.assetType === 'electronics') {
-      return `${details.brand || ''} ${details.model || ''}`.trim();
-    }
-    if (auctionDetails.assetType === 'machinery') {
-      return `${details.manufacturer || ''} ${details.model || ''}`.trim();
-    }
-    return 'Asset';
-  };
+  const getAssetName = () =>
+    formatAssetName(
+      auctionDetails.assetType,
+      auctionDetails.assetDetails as Record<string, unknown>,
+      auctionDetails.assetType.replace(/_/g, ' ')
+    );
 
   return (
     <div className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow">

@@ -3,17 +3,41 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import { ReportSummaryGrid, ReportSummaryStat } from '@/components/reports/common/report-ui';
+import {
+  FinancialBreakdownSection,
+  FinancialDetailTable,
+} from '@/components/reports/common/financial-detail-table';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 
+type ProfitabilityBranchRow = {
+  label: string;
+  count: number;
+  claimsPaid: number;
+  salvageRecovered: number;
+  netLoss: number;
+  recoveryRate: number;
+};
+
+type ProfitabilityBrokerRow = {
+  label: string;
+  channelType: string;
+  count: number;
+  claimsPaid: number;
+  salvageRecovered: number;
+  recoveryRate: number;
+};
+
 export default function ProfitabilityPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -175,6 +199,7 @@ export default function ProfitabilityPage() {
               showAssetTypes={true}
               showRegions={false}
               showBranches={true}
+              showBrokers={true}
             />
           </CardContent>
         </Card>
@@ -190,24 +215,12 @@ export default function ProfitabilityPage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Summary</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Cases</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.totalCases || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Salvage Recovered</p>
-                    <p className="text-2xl font-bold">₦{(reportData.summary?.totalSalvageRecovered || 0).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Recovery Rate</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.averageRecoveryRate || 0}%</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">ROI</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.roi || 0}%</p>
-                  </div>
-                </div>
+                <ReportSummaryGrid>
+                  <ReportSummaryStat label="Total Cases" value={reportData.summary?.totalCases || 0} />
+                  <ReportSummaryStat label="Salvage Recovered" value={formatReportCurrency(reportData.summary?.totalSalvageRecovered || 0)} />
+                  <ReportSummaryStat label="Recovery Rate" value={`${reportData.summary?.averageRecoveryRate || 0}%`} />
+                  <ReportSummaryStat label="ROI" value={`${reportData.summary?.roi || 0}%`} />
+                </ReportSummaryGrid>
               </CardContent>
             </Card>
 
@@ -232,9 +245,9 @@ export default function ProfitabilityPage() {
                         <tr key={data.assetType} className="border-b">
                           <td className="p-2 capitalize">{data.assetType}</td>
                           <td className="text-right p-2">{data.count || 0}</td>
-                          <td className="text-right p-2">₦{(data.claimsPaid || 0).toLocaleString()}</td>
-                          <td className="text-right p-2">₦{(data.salvageRecovered || 0).toLocaleString()}</td>
-                          <td className="text-right p-2">₦{(data.netLoss || 0).toLocaleString()}</td>
+                          <td className="text-right p-2">{formatReportCurrency(data.claimsPaid || 0)}</td>
+                          <td className="text-right p-2">{formatReportCurrency(data.salvageRecovered || 0)}</td>
+                          <td className="text-right p-2">{formatReportCurrency(data.netLoss || 0)}</td>
                           <td className="text-right p-2">{data.recoveryRate || 0}%</td>
                           <td className="text-right p-2">{data.roi || 0}%</td>
                         </tr>
@@ -265,44 +278,101 @@ export default function ProfitabilityPage() {
               </CardContent>
             </Card>
 
+            {reportData.byBranch?.length > 0 && (
+              <Card>
+                <CardContent className="pt-6">
+                  <h3 className="text-lg font-semibold mb-4">By Branch</h3>
+                  <PaginatedReportRows<ProfitabilityBranchRow> rows={reportData.byBranch} label="branches">
+                    {(rows, startIndex) => (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left p-2">Branch</th>
+                              <th className="text-right p-2">Count</th>
+                              <th className="text-right p-2">Claims Paid</th>
+                              <th className="text-right p-2">Salvage Recovered</th>
+                              <th className="text-right p-2">Net Loss</th>
+                              <th className="text-right p-2">Recovery Rate</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((branch, index) => (
+                              <tr key={`${branch.label}-${startIndex + index}`} className="border-b">
+                                <td className="p-2 font-medium">{branch.label}</td>
+                                <td className="text-right p-2">{branch.count}</td>
+                                <td className="text-right p-2">{formatReportCurrency(branch.claimsPaid)}</td>
+                                <td className="text-right p-2">{formatReportCurrency(branch.salvageRecovered)}</td>
+                                <td className="text-right p-2">{formatReportCurrency(branch.netLoss)}</td>
+                                <td className="text-right p-2">{branch.recoveryRate}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </PaginatedReportRows>
+                </CardContent>
+              </Card>
+            )}
+
+            {reportData.byBroker?.length > 0 && (
+              <Card>
+                <CardContent className="pt-6">
+                  <h3 className="text-lg font-semibold mb-4">By Broker / Agency</h3>
+                  <PaginatedReportRows<ProfitabilityBrokerRow> rows={reportData.byBroker} label="channels">
+                    {(rows, startIndex) => (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left p-2">Channel</th>
+                              <th className="text-left p-2">Type</th>
+                              <th className="text-right p-2">Count</th>
+                              <th className="text-right p-2">Claims Paid</th>
+                              <th className="text-right p-2">Salvage Recovered</th>
+                              <th className="text-right p-2">Recovery Rate</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((broker, index) => (
+                              <tr key={`${broker.label}-${startIndex + index}`} className="border-b">
+                                <td className="p-2 font-medium">{broker.label}</td>
+                                <td className="p-2 capitalize">{broker.channelType}</td>
+                                <td className="text-right p-2">{broker.count}</td>
+                                <td className="text-right p-2">{formatReportCurrency(broker.claimsPaid)}</td>
+                                <td className="text-right p-2">{formatReportCurrency(broker.salvageRecovered)}</td>
+                                <td className="text-right p-2">{broker.recoveryRate}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </PaginatedReportRows>
+                </CardContent>
+              </Card>
+            )}
+
+            {reportData.branchBreakdown?.length > 0 && (
+              <div className="space-y-6">
+                <h3 className="text-lg font-semibold text-gray-900">Branch breakdown</h3>
+                <FinancialBreakdownSection groups={reportData.branchBreakdown} nameColumnLabel="Branch" />
+              </div>
+            )}
+
+            {reportData.brokerBreakdown?.length > 0 && (
+              <div className="space-y-6">
+                <h3 className="text-lg font-semibold text-gray-900">Broker / agency breakdown</h3>
+                <FinancialBreakdownSection groups={reportData.brokerBreakdown} nameColumnLabel="Channel" />
+              </div>
+            )}
+
             {reportData.itemBreakdown && reportData.itemBreakdown.length > 0 && (
               <Card>
                 <CardContent className="pt-6">
                   <h3 className="text-lg font-semibold mb-4">Detailed Item Breakdown</h3>
-                  <PaginatedReportRows rows={reportData.itemBreakdown} label="items">
-                    {(rows, startIndex) => (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="text-left p-2 font-medium">Claim Reference</th>
-                          <th className="text-left p-2 font-medium">Asset Type</th>
-                          <th className="text-right p-2 font-medium">Market Value</th>
-                          <th className="text-right p-2 font-medium">Salvage Recovery</th>
-                          <th className="text-right p-2 font-medium">Net Loss</th>
-                          <th className="text-right p-2 font-medium">Recovery Rate</th>
-                          <th className="text-right p-2 font-medium">ROI</th>
-                          <th className="text-left p-2 font-medium">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((item: any, index: number) => (
-                          <tr key={startIndex + index} className="border-b hover:bg-gray-50">
-                            <td className="p-2 font-medium">{item.claimReference}</td>
-                            <td className="p-2 capitalize">{item.assetType}</td>
-                            <td className="p-2 text-right">₦{item.marketValue.toLocaleString()}</td>
-                            <td className="p-2 text-right text-green-600">₦{item.salvageRecovery.toLocaleString()}</td>
-                            <td className="p-2 text-right text-red-600">₦{item.netLoss.toLocaleString()}</td>
-                            <td className="p-2 text-right">{item.recoveryRate.toFixed(2)}%</td>
-                            <td className="p-2 text-right">{item.roi.toFixed(2)}%</td>
-                            <td className="p-2">{new Date(item.date).toLocaleDateString()}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                    )}
-                  </PaginatedReportRows>
+                  <FinancialDetailTable rows={reportData.itemBreakdown} />
                 </CardContent>
               </Card>
             )}

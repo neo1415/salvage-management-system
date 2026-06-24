@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Camera, CheckCircle2, ClipboardCheck, Loader2, PackageCheck, UploadCloud } from 'lucide-react';
 import { useAuth } from '@/lib/auth/use-auth';
@@ -73,12 +73,64 @@ async function uploadPickupEvidenceFile(auctionId: string, file: File): Promise<
   return uploadResult.secure_url;
 }
 
+type CompletedPickup = {
+  auctionId: string;
+  pickupConfirmedAt: string | null;
+  pickupConfirmedVendor: boolean;
+  pickupConfirmedAdmin: boolean;
+  case: {
+    claimReference: string;
+    assetType: string;
+    assetDetails: Record<string, unknown>;
+  };
+};
+
+type HistoryPeriod = 'all' | '30d' | '90d';
+
 export default function VendorPickupsPage() {
   const { user } = useAuth();
   const { data, isLoading, error, refetch } = useVendorDashboard();
   const [forms, setForms] = useState<Record<string, FormState>>({});
 
   const pickups = data?.pendingPickupConfirmations || [];
+  const [historyFilter, setHistoryFilter] = useState<HistoryPeriod>('all');
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPickups, setHistoryPickups] = useState<CompletedPickup[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyTotalPages, setHistoryTotalPages] = useState(1);
+  const HISTORY_PER_PAGE = 10;
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(historyPage),
+        limit: String(HISTORY_PER_PAGE),
+        period: historyFilter,
+      });
+      const response = await fetch(`/api/vendor/pickups/completed?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to load pickup history');
+      }
+      const payload = await response.json();
+      setHistoryPickups(payload.pickups || []);
+      setHistoryTotalPages(payload.pagination?.totalPages || 1);
+    } catch (historyError) {
+      console.error(historyError);
+      setHistoryPickups([]);
+      setHistoryTotalPages(1);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [historyFilter, historyPage]);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [historyFilter]);
 
   const formFor = (auctionId: string) => forms[auctionId] || emptyForm;
   const updateForm = (auctionId: string, patch: Partial<FormState>) => {
@@ -142,6 +194,7 @@ export default function VendorPickupsPage() {
         files: [],
       });
       await refetch();
+      await loadHistory();
     } catch (submitError) {
       updateForm(pickup.auctionId, {
         submitting: false,
@@ -293,6 +346,95 @@ export default function VendorPickupsPage() {
             })}
           </div>
         )}
+
+        <section className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Pickup history</h2>
+              <p className="text-sm text-gray-600">Completed pickups confirmed by staff.</p>
+            </div>
+            <div className="flex gap-2">
+              {(['all', '30d', '90d'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setHistoryFilter(filter)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    historyFilter === filter
+                      ? 'bg-[var(--brand-primary)] text-white'
+                      : 'bg-white text-gray-600 border border-gray-300'
+                  }`}
+                >
+                  {filter === 'all' ? 'All' : filter === '30d' ? 'Last 30 days' : 'Last 90 days'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {historyLoading ? (
+            <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+              Loading pickup history...
+            </div>
+          ) : historyPickups.length === 0 ? (
+            <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+              No staff-confirmed pickups with submitted evidence in this period.
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {historyPickups.map((pickup) => (
+                <article key={pickup.auctionId} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Completed</p>
+                      <h3 className="mt-1 text-lg font-bold text-gray-900">
+                        {assetLabel(pickup.case.assetType, pickup.case.assetDetails)}
+                      </h3>
+                      <p className="mt-1 text-sm text-gray-500">{pickup.case.claimReference}</p>
+                    </div>
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                  </div>
+                  <p className="mt-3 text-sm text-gray-600">
+                    Picked up: {pickup.pickupConfirmedAt
+                      ? new Date(pickup.pickupConfirmedAt).toLocaleString()
+                      : 'Date unavailable'}
+                  </p>
+                  <Link
+                    href={`/vendor/auctions/${pickup.auctionId}`}
+                    className="mt-3 inline-flex text-sm font-semibold text-[var(--brand-primary)]"
+                  >
+                    View auction details
+                  </Link>
+                </article>
+              ))}
+            </div>
+          )}
+
+          {historyTotalPages > 1 && (
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <p className="text-xs text-gray-500">
+                Page {historyPage} of {historyTotalPages}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={historyPage <= 1 || historyLoading}
+                  onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
+                  className="rounded-lg border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={historyPage >= historyTotalPages || historyLoading}
+                  onClick={() => setHistoryPage((page) => page + 1)}
+                  className="rounded-lg border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

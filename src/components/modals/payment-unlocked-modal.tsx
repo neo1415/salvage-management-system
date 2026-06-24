@@ -16,7 +16,7 @@
 
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { X } from 'lucide-react';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 
@@ -39,7 +39,7 @@ export default function PaymentUnlockedModal({
   onClose,
   paymentData,
 }: PaymentUnlockedModalProps) {
-  const router = useRouter();
+  const router = useAppRouter();
 
   // Prevent body scroll when modal is open
   useEffect(() => {

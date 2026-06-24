@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import { CheckCircle2, Loader2, Shield, Lock } from 'lucide-react';
 import { isKycTestingModeClient } from '@/lib/kyc/kyc-testing-mode';
@@ -16,7 +16,7 @@ import {
  * Tier 1 — BVN identity verification (required before platform access).
  */
 export default function Tier1KYCPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { status, data: session, update } = useSession();
 
   const [bvn, setBvn] = useState('');

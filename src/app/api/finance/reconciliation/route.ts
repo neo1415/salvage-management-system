@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import {
-  getRecentReconciliationLogs,
   getUnresolvedUnmatchedTransactions,
-  calculateTotalVendorBalances,
   getLedgerVendorBalances,
-  getRecentLedgerTransactions,
   compareWalletVsLedgerBalances,
+  calculateVendorBalanceBreakdown,
 } from '@/features/reconciliation/services/reconciliation.service';
 import { PaystackBalanceService } from '@/features/finance/services/paystack-balance.service';
 
@@ -45,19 +43,15 @@ export async function GET() {
 
     // Fetch reconciliation data
     const [
-      reconciliationLogs,
       unmatchedTransactions,
-      vendorBalances,
       ledgerBalances,
-      recentLedgerTransactions,
       walletVsLedgerComparison,
+      balanceBreakdown,
     ] = await Promise.all([
-      getRecentReconciliationLogs(30), // Last 30 days
       getUnresolvedUnmatchedTransactions(),
-      calculateTotalVendorBalances(),
       getLedgerVendorBalances(),
-      getRecentLedgerTransactions(50),
       compareWalletVsLedgerBalances(),
+      calculateVendorBalanceBreakdown(),
     ]);
 
     // Fetch Paystack balance (with error handling)
@@ -72,28 +66,28 @@ export async function GET() {
       console.error('[Reconciliation API] Paystack balance fetch error:', error);
     }
 
-    // Calculate statistics
-    const passedCount = reconciliationLogs.filter(log => log.status === 'passed').length;
-    const failedCount = reconciliationLogs.filter(log => log.status === 'failed').length;
-    const successRate = reconciliationLogs.length > 0
-      ? (passedCount / reconciliationLogs.length) * 100
-      : 100;
+    const operationalLedgerTotal = balanceBreakdown.operationalWallets.reduce((sum, w) => {
+      const ledgerBalance =
+        ledgerBalances.byVendor.find((v) => v.vendorId === w.vendorId)?.balance ?? 0;
+      return sum + ledgerBalance;
+    }, 0);
+    const ledgerDiscrepancy = Math.abs(balanceBreakdown.operational.total - operationalLedgerTotal);
 
-    // Calculate ledger vs wallet discrepancy
-    const ledgerDiscrepancy = Math.abs(vendorBalances.total - ledgerBalances.total);
+    const walletTopupIssues = unmatchedTransactions.filter(
+      (txn) => txn.reference.toUpperCase().startsWith('WALLET_')
+    );
 
-    // Calculate Paystack vs Database discrepancy
     const paystackDiscrepancy = paystackBalance !== null
-      ? Math.abs(paystackBalance - vendorBalances.total)
+      ? Math.abs(paystackBalance - balanceBreakdown.operational.total)
       : null;
+
+    const walletLedgerHealthy =
+      ledgerDiscrepancy <= 1 && walletVsLedgerComparison.discrepancies.length === 0;
 
     return NextResponse.json({
       success: true,
       data: {
-        reconciliationLogs,
-        unmatchedTransactions,
-        vendorBalances,
-        ledgerBalances,
+        balanceBreakdown,
         paystackBalance: paystackBalance !== null ? {
           balance: paystackBalance,
           error: null,
@@ -101,17 +95,13 @@ export async function GET() {
           balance: null,
           error: paystackError,
         },
-        recentLedgerTransactions,
         walletVsLedgerComparison,
+        unmatchedTransactions: walletTopupIssues,
         statistics: {
-          totalReconciliations: reconciliationLogs.length,
-          passed: passedCount,
-          failed: failedCount,
-          successRate: successRate.toFixed(2),
-          unresolvedTransactions: unmatchedTransactions.length,
           ledgerDiscrepancy: ledgerDiscrepancy.toFixed(2),
           paystackDiscrepancy: paystackDiscrepancy !== null ? paystackDiscrepancy.toFixed(2) : null,
-          walletLedgerMatched: walletVsLedgerComparison.matched,
+          walletLedgerHealthy,
+          walletTopupIssues: walletTopupIssues.length,
           walletLedgerDiscrepancies: walletVsLedgerComparison.discrepancies.length,
         },
       },

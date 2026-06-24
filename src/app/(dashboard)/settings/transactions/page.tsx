@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { ChevronDown, CreditCard, Download, Gavel, Loader2, Wallet } from 'lucide-react';
 import TransactionHistory from '@/components/settings/transaction-history';
 import TransactionFilters from '@/components/settings/transaction-filters';
@@ -27,7 +27,7 @@ const tabs = [
 
 export default function SettingsTransactionsPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const [activeTab, setActiveTab] = useState<TransactionTab>('wallet');
   const [filters, setFilters] = useState<Filters>({
     dateRange: {

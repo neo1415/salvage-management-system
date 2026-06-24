@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -9,7 +10,7 @@ import { Loader2 } from 'lucide-react';
  * Separated to use useSearchParams with Suspense boundary
  */
 function AuthErrorHandler() {
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
 

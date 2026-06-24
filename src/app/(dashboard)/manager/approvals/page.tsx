@@ -19,13 +19,15 @@ import { useState, useEffect } from 'react';
 import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
 
 const APPROVAL_TABS = ['pending', 'approved', 'rejected', 'all'] as const;
-import { useRouter } from 'next/navigation';
+import { StatCard, StatGrid } from '@/components/ui/stat-card';
+import { useAppRouter } from '@/hooks/use-app-router';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { PriceField } from '@/components/manager/price-field';
 import { validatePriceOverrides as validatePrices, type PriceOverrides } from '@/lib/validation/price-validation';
 import { formatConditionForDisplay } from '@/features/valuations/services/condition-mapping.service';
 import { AuctionScheduleSelector, type AuctionScheduleValue } from '@/components/ui/auction-schedule-selector';
+import { CasePhotoGallery } from '@/components/ui/case-photo-gallery';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import { resolveCaseDisplayStatus } from '@/lib/metrics/case-display-status';
 import { LocationMap } from '@/components/ui/location-map';
@@ -33,7 +35,8 @@ import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
 import { Star, Check, X, CheckCircle, Banknote } from 'lucide-react';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
-import { sanitizeAiAssessmentWarnings } from '@/features/cases/services/ai-warning-sanitization';
+import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 
 /**
@@ -225,7 +228,7 @@ function formatAssetDetailValue(key: string, value: string | number): string {
 }
 
 export default function ApprovalsPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { status } = useSession();
   
   // State
@@ -236,10 +239,12 @@ export default function ApprovalsPage() {
   const [selectedCase, setSelectedCase] = useState<CaseData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [approvalAction, setApprovalAction] = useState<ApprovalAction>(null);
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRunningManagerAi, setIsRunningManagerAi] = useState(false);
+  const { policy: publicPolicy } = usePublicBusinessPolicy();
+  const managerRunsAiAssessment = publicPolicy?.cases?.aiDamageAssessmentRunner === 'salvage_manager';
   
   // Price override state
   const [isEditMode, setIsEditMode] = useState(false);
@@ -361,12 +366,44 @@ export default function ApprovalsPage() {
     }
   };
 
+  const runManagerAiAssessment = async () => {
+    if (!selectedCase) return;
+
+    setIsRunningManagerAi(true);
+    try {
+      const response = await fetch(`/api/cases/${selectedCase.id}/ai-assessment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceRefresh: true }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || 'AI assessment failed');
+      }
+
+      await fetchPendingCases();
+      const caseResponse = await fetch(`/api/cases/${selectedCase.id}`);
+      const casePayload = await caseResponse.json();
+      if (caseResponse.ok && casePayload.success && casePayload.data) {
+        setSelectedCase(casePayload.data as CaseData);
+      }
+    } catch (error) {
+      setResultModalData({
+        type: 'error',
+        title: 'AI assessment failed',
+        message: error instanceof Error ? error.message : 'Unable to run AI assessment',
+      });
+      setShowResultModal(true);
+    } finally {
+      setIsRunningManagerAi(false);
+    }
+  };
+
   /**
    * Handle case selection
    */
   const handleCaseSelect = (caseData: CaseData) => {
     setSelectedCase(caseData);
-    setCurrentPhotoIndex(0);
     setApprovalAction(null);
     setComment('');
     // Reset price override state
@@ -386,19 +423,6 @@ export default function ApprovalsPage() {
     // Reset modal state
     setShowConfirmModal(false);
     setShowResultModal(false);
-  };
-
-  /**
-   * Handle photo swipe
-   */
-  const handlePhotoSwipe = (direction: 'left' | 'right') => {
-    if (!selectedCase) return;
-
-    if (direction === 'left' && currentPhotoIndex < selectedCase.photos.length - 1) {
-      setCurrentPhotoIndex(currentPhotoIndex + 1);
-    } else if (direction === 'right' && currentPhotoIndex > 0) {
-      setCurrentPhotoIndex(currentPhotoIndex - 1);
-    }
   };
 
   /**
@@ -904,76 +928,7 @@ export default function ApprovalsPage() {
             ) : null}
           </div>
 
-          {/* Swipeable Photo Gallery */}
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="relative w-full aspect-[4/3] bg-gray-200">
-              {isValidPhotoUrl(selectedCase.photos[currentPhotoIndex]) ? (
-                <Image
-                  src={selectedCase.photos[currentPhotoIndex]}
-                  alt={`Photo ${currentPhotoIndex + 1}`}
-                  fill
-                  className="object-contain"
-                  sizes="(max-width: 768px) 100vw, 800px"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-400">
-                  <p>Photo not available</p>
-                </div>
-              )}
-              
-              {/* Photo Navigation */}
-              <div className="absolute inset-0 flex items-center justify-between px-4">
-                <button
-                  onClick={() => handlePhotoSwipe('right')}
-                  disabled={currentPhotoIndex === 0}
-                  className="bg-black bg-opacity-50 text-white rounded-full w-10 h-10 flex items-center justify-center disabled:opacity-30 hover:bg-opacity-70 transition-all"
-                >
-                  ←
-                </button>
-                <button
-                  onClick={() => handlePhotoSwipe('left')}
-                  disabled={currentPhotoIndex === selectedCase.photos.length - 1}
-                  className="bg-black bg-opacity-50 text-white rounded-full w-10 h-10 flex items-center justify-center disabled:opacity-30 hover:bg-opacity-70 transition-all"
-                >
-                  →
-                </button>
-              </div>
-
-              {/* Photo Counter */}
-              <div className="absolute bottom-4 left-0 right-0 text-center">
-                <span className="bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm backdrop-blur-sm">
-                  {currentPhotoIndex + 1} / {selectedCase.photos.length}
-                </span>
-              </div>
-            </div>
-
-            {/* Photo Thumbnails */}
-            <div className="p-3 flex gap-2 overflow-x-auto">
-              {selectedCase.photos.map((photo, index) => (
-                <button
-                  key={index}
-                  onClick={() => setCurrentPhotoIndex(index)}
-                  className={`flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
-                    index === currentPhotoIndex ? 'ring-2 ring-[var(--brand-primary)] border-[var(--brand-primary)]' : 'border-gray-300'
-                  }`}
-                >
-                  {isValidPhotoUrl(photo) ? (
-                    <Image
-                      src={photo}
-                      alt={`Thumbnail ${index + 1}`}
-                      width={80}
-                      height={60}
-                      className="w-20 h-16 object-cover"
-                    />
-                  ) : (
-                    <div className="w-20 h-16 bg-gray-200 flex items-center justify-center text-xs text-gray-400">
-                      N/A
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+          <CasePhotoGallery photos={selectedCase.photos} title="Case photos" className="shadow-md" />
 
           {/* AI Assessment */}
           <div className="bg-white rounded-lg shadow-md p-4">
@@ -983,12 +938,23 @@ export default function ApprovalsPage() {
             </h3>
             
             {!selectedCase.aiAssessment ? (
-              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-3">
                 <p className="text-sm text-yellow-800">
-                  <span className="font-medium">⚠️ No AI Assessment Available</span>
+                  <span className="font-medium">No AI assessment yet</span>
                   <br />
-                  AI assessment data is not available for this case. Manual review required.
+                  {managerRunsAiAssessment
+                    ? 'Run AI damage analysis on the submitted photos before approving this case.'
+                    : 'AI assessment data is not available for this case. Manual review is required.'}
                 </p>
+                {managerRunsAiAssessment && selectedCase.status === 'pending_approval' && (
+                  <OfflineAwareButton
+                    onClick={() => void runManagerAiAssessment()}
+                    disabled={isRunningManagerAi}
+                    className="bg-[var(--brand-primary)] text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-60"
+                  >
+                    {isRunningManagerAi ? 'Running AI analysis...' : 'Run AI damage analysis'}
+                  </OfflineAwareButton>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -1076,9 +1042,13 @@ export default function ApprovalsPage() {
 
                 {/* AI Warnings */}
                 {(() => {
-                  const warnings = sanitizeAiAssessmentWarnings(
+                  const warnings = formatStaffReviewNotes(
+                    selectedCase.aiAssessment.reviewReasons,
                     selectedCase.aiAssessment.warnings,
-                    selectedCase.aiAssessment.reviewReasons
+                    {
+                      confidenceScore: selectedCase.aiAssessment.confidenceScore,
+                      manualReviewRequired: true,
+                    }
                   );
                   return warnings.length > 0 ? (
                     <div className="space-y-2">
@@ -1488,71 +1458,60 @@ export default function ApprovalsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-600">Pending</p>
-              <p className="text-2xl font-bold text-yellow-600 mt-1">
-                {Array.from(new Map(allCases.map(c => [c.id, c])).values()).filter(c => c.status === 'pending_approval').length}
-              </p>
-            </div>
+      <StatGrid className="p-4 grid-cols-2 md:grid-cols-4">
+        <StatCard
+          title="Pending"
+          value={Array.from(new Map(allCases.map(c => [c.id, c])).values()).filter(c => c.status === 'pending_approval').length}
+          valueClassName="text-yellow-600"
+          icon={
             <div className="p-2 bg-yellow-100 rounded-full">
               <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-600">Approved</p>
-              <p className="text-2xl font-bold text-green-600 mt-1">
-                {Array.from(new Map(allCases.map(c => [c.id, c])).values()).filter(c => c.approvedBy !== null && c.approvedBy !== undefined).length}
-              </p>
-            </div>
+          }
+          className="shadow"
+        />
+        <StatCard
+          title="Approved"
+          value={Array.from(new Map(allCases.map(c => [c.id, c])).values()).filter(c => c.approvedBy !== null && c.approvedBy !== undefined).length}
+          valueClassName="text-green-600"
+          icon={
             <div className="p-2 bg-green-100 rounded-full">
               <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-600">Rejected</p>
-              <p className="text-2xl font-bold text-red-600 mt-1">
-                {Array.from(new Map(allCases.map(c => [c.id, c])).values()).filter(c => c.status === 'rejected').length}
-              </p>
-            </div>
+          }
+          className="shadow"
+        />
+        <StatCard
+          title="Rejected"
+          value={Array.from(new Map(allCases.map(c => [c.id, c])).values()).filter(c => c.status === 'rejected').length}
+          valueClassName="text-red-600"
+          icon={
             <div className="p-2 bg-red-100 rounded-full">
               <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-600">Total</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">
-                {Array.from(new Map(allCases.map(c => [c.id, c])).values()).length}
-              </p>
-            </div>
+          }
+          className="shadow"
+        />
+        <StatCard
+          title="Total"
+          value={Array.from(new Map(allCases.map(c => [c.id, c])).values()).length}
+          valueClassName="text-blue-600"
+          icon={
             <div className="p-2 bg-blue-100 rounded-full">
               <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
-          </div>
-        </div>
-      </div>
+          }
+          className="shadow"
+        />
+      </StatGrid>
 
       {/* Tabs */}
       <div className="bg-white border-b border-gray-200 sticky top-[60px] z-30">

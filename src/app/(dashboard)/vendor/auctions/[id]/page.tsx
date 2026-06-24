@@ -20,13 +20,13 @@
 'use client';
 
 import { useState, useEffect, use, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
-import Image from 'next/image';
 import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { CountdownTimer } from '@/components/ui/countdown-timer';
+import { CasePhotoGallery } from '@/components/ui/case-photo-gallery';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import { BidForm } from '@/components/auction/bid-form';
 import { type VendorTier } from '@/hooks/use-tier-upgrade';
@@ -150,7 +150,7 @@ interface PageProps {
 
 export default function AuctionDetailsPage({ params }: PageProps) {
   const resolvedParams = use(params);
-  const router = useRouter();
+  const router = useAppRouter();
   const { data: session } = useSession();
   const toast = useToast();
   const { policy: publicPolicy } = usePublicBusinessPolicy();
@@ -161,7 +161,6 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   const [auction, setAuction] = useState<AuctionDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [showBidForm, setShowBidForm] = useState(false);
   const [isWatching, setIsWatching] = useState(false);
   const [isWatchLoading, setIsWatchLoading] = useState(false);
@@ -992,21 +991,6 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     }
   }, [isWatchLoading, isWatching, resolvedParams.id, toast]);
 
-  // Photo navigation - wrapped in useCallback
-  const handlePrevPhoto = useCallback(() => {
-    if (!auction) return;
-    setCurrentPhotoIndex(prev =>
-      prev === 0 ? auction.case.photos.length - 1 : prev - 1
-    );
-  }, [auction?.case.photos.length]);
-
-  const handleNextPhoto = useCallback(() => {
-    if (!auction) return;
-    setCurrentPhotoIndex(prev =>
-      prev === auction.case.photos.length - 1 ? 0 : prev + 1
-    );
-  }, [auction?.case.photos.length]);
-
   // Format asset name - wrapped in useCallback
   const getAssetName = useCallback(() => {
     if (!auction) return '';
@@ -1524,75 +1508,11 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Photos and Details */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Photo Gallery */}
-            <div className="bg-white rounded-lg shadow-md overflow-hidden">
-              <div className="relative w-full aspect-[4/3] bg-gray-200">
-                <Image
-                  src={auction.case.photos[currentPhotoIndex] || '/placeholder-auction.jpg'}
-                  alt={`${getAssetName()} - Photo ${currentPhotoIndex + 1}`}
-                  fill
-                  className="object-contain"
-                  sizes="(max-width: 1024px) 100vw, 66vw"
-                  priority
-                />
-
-                {/* Photo Navigation */}
-                {auction.case.photos.length > 1 && (
-                  <>
-                    <button
-                      onClick={handlePrevPhoto}
-                      className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors"
-                      aria-label="Previous photo"
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={handleNextPhoto}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors"
-                      aria-label="Next photo"
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-
-                    {/* Photo Indicator */}
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
-                      <span className="text-white text-sm font-medium">
-                        {currentPhotoIndex + 1} / {auction.case.photos.length}
-                      </span>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Photo Thumbnails */}
-              {auction.case.photos.length > 1 && (
-                <div className="p-4 flex gap-2 overflow-x-auto">
-                  {auction.case.photos.map((photo, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setCurrentPhotoIndex(index)}
-                      className={`relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
-                        index === currentPhotoIndex
-                          ? 'border-[var(--brand-primary)] ring-2 ring-[var(--brand-focus-ring)]'
-                          : 'border-gray-300 hover:border-gray-400'
-                      }`}
-                    >
-                      <Image
-                        src={photo}
-                        alt={`Thumbnail ${index + 1}`}
-                        fill
-                        className="object-cover"
-                        sizes="80px"
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <CasePhotoGallery
+              photos={auction.case.photos}
+              title=""
+              className="shadow-md rounded-lg border-0"
+            />
 
             {/* Asset Details */}
             <div className="bg-white rounded-lg shadow-md p-6">

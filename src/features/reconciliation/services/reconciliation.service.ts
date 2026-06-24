@@ -4,6 +4,10 @@ import { sql, eq, and, gte, lte, desc, isNull, inArray, notInArray } from 'drizz
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { createNotification } from '@/features/notifications/services/notification.service';
+import {
+  isPaystackComparableReference,
+  isAutomatedTestWalletEmail,
+} from '@/features/reconciliation/utils/paystack-reference';
 
 /**
  * Reconciliation Service
@@ -23,6 +27,9 @@ interface ReconciliationResult {
     totalFrozen: number;
     totalForfeited: number;
     timestamp: string;
+    ledgerBalance?: number;
+    walletLedgerDiscrepancy?: number;
+    paystackVsWalletGap?: number;
   };
 }
 
@@ -114,9 +121,140 @@ export async function fetchPaystackBalance(): Promise<number> {
   }
 }
 
+export async function calculateVendorBalanceBreakdown(): Promise<{
+  all: Awaited<ReturnType<typeof calculateTotalVendorBalances>>;
+  operational: {
+    total: number;
+    available: number;
+    frozen: number;
+    forfeited: number;
+    vendorCount: number;
+  };
+  testPollution: {
+    total: number;
+    available: number;
+    frozen: number;
+    forfeited: number;
+    vendorCount: number;
+  };
+  testWallets: Array<{
+    vendorId: string;
+    email: string | null;
+    businessName: string | null;
+    balance: number;
+  }>;
+  operationalWallets: Array<{
+    vendorId: string;
+    email: string | null;
+    businessName: string | null;
+    balance: number;
+    available: number;
+    frozen: number;
+  }>;
+}> {
+  const rows = await db
+    .select({
+      vendorId: escrowWallets.vendorId,
+      balance: escrowWallets.balance,
+      available: escrowWallets.availableBalance,
+      frozen: escrowWallets.frozenAmount,
+      forfeited: escrowWallets.forfeitedAmount,
+      email: users.email,
+      businessName: vendors.businessName,
+      fullName: users.fullName,
+    })
+    .from(escrowWallets)
+    .leftJoin(vendors, eq(escrowWallets.vendorId, vendors.id))
+    .leftJoin(users, eq(vendors.userId, users.id));
+
+  let testTotal = 0;
+  let testAvailable = 0;
+  let testFrozen = 0;
+  let testForfeited = 0;
+  let testCount = 0;
+  let opTotal = 0;
+  let opAvailable = 0;
+  let opFrozen = 0;
+  let opForfeited = 0;
+  let opCount = 0;
+
+  const testWallets: Array<{
+    vendorId: string;
+    email: string | null;
+    businessName: string | null;
+    balance: number;
+  }> = [];
+  const operationalWallets: Array<{
+    vendorId: string;
+    email: string | null;
+    businessName: string | null;
+    balance: number;
+    available: number;
+    frozen: number;
+  }> = [];
+
+  for (const row of rows) {
+    const balance = parseFloat(row.balance);
+    const available = parseFloat(row.available);
+    const frozen = parseFloat(row.frozen);
+    const forfeited = parseFloat(row.forfeited ?? '0');
+    const isTest = isAutomatedTestWalletEmail(row.email);
+
+    if (isTest) {
+      testTotal += balance;
+      testAvailable += available;
+      testFrozen += frozen;
+      testForfeited += forfeited;
+      testCount += 1;
+      testWallets.push({
+        vendorId: row.vendorId,
+        email: row.email,
+        businessName: row.businessName || row.fullName,
+        balance,
+      });
+    } else {
+      opTotal += balance;
+      opAvailable += available;
+      opFrozen += frozen;
+      opForfeited += forfeited;
+      opCount += 1;
+      operationalWallets.push({
+        vendorId: row.vendorId,
+        email: row.email,
+        businessName: row.businessName || row.fullName,
+        balance,
+        available,
+        frozen,
+      });
+    }
+  }
+
+  const all = await calculateTotalVendorBalances();
+
+  return {
+    all,
+    operational: {
+      total: opTotal,
+      available: opAvailable,
+      frozen: opFrozen,
+      forfeited: opForfeited,
+      vendorCount: opCount,
+    },
+    testPollution: {
+      total: testTotal,
+      available: testAvailable,
+      frozen: testFrozen,
+      forfeited: testForfeited,
+      vendorCount: testCount,
+    },
+    testWallets,
+    operationalWallets,
+  };
+}
+
 /**
  * Perform daily reconciliation
- * 
+ *
  * Compares database balances with Paystack balance and logs the result.
  * Sends alerts if discrepancy exceeds tolerance.
  */
@@ -124,28 +262,29 @@ export async function performDailyReconciliation(): Promise<ReconciliationResult
   // Step 1: Calculate total vendor balances from database
   const dbBalances = await calculateTotalVendorBalances();
 
-  // Step 2: Fetch Paystack balance via API
+  // Step 2: Ledger total — primary pass/fail is wallet vs ledger integrity
+  const ledgerBalances = await getLedgerVendorBalances();
+  const walletLedgerDiscrepancy = Math.abs(dbBalances.total - ledgerBalances.total);
+
+  // Step 3: Fetch Paystack balance for reference (not used for pass/fail)
   let paystackBalance: number;
   try {
     paystackBalance = await fetchPaystackBalance();
   } catch (error) {
-    // If Paystack API fails, log error but don't crash
     console.error('Failed to fetch Paystack balance:', error);
     paystackBalance = 0;
   }
 
-  // Step 3: Calculate discrepancy
-  const discrepancy = Math.abs(paystackBalance - dbBalances.total);
+  const paystackVsWalletGap = Math.abs(paystackBalance - dbBalances.total);
 
-  // Step 4: Determine status (₦1 tolerance for rounding)
+  // Step 4: Determine status from internal bookkeeping (₦1 tolerance for rounding)
   const TOLERANCE = 1.0;
-  const status: 'passed' | 'failed' = discrepancy <= TOLERANCE ? 'passed' : 'failed';
+  const status: 'passed' | 'failed' = walletLedgerDiscrepancy <= TOLERANCE ? 'passed' : 'failed';
 
-  // Step 5: Prepare result details
   const result: ReconciliationResult = {
     paystackBalance,
     databaseBalance: dbBalances.total,
-    discrepancy,
+    discrepancy: walletLedgerDiscrepancy,
     status,
     details: {
       totalVendors: dbBalances.vendorCount,
@@ -153,6 +292,9 @@ export async function performDailyReconciliation(): Promise<ReconciliationResult
       totalFrozen: dbBalances.frozen,
       totalForfeited: dbBalances.forfeited,
       timestamp: new Date().toISOString(),
+      ledgerBalance: ledgerBalances.total,
+      walletLedgerDiscrepancy,
+      paystackVsWalletGap,
     },
   };
 
@@ -161,7 +303,7 @@ export async function performDailyReconciliation(): Promise<ReconciliationResult
     reconciliationDate: new Date().toISOString().split('T')[0],
     paystackBalance: paystackBalance.toString(),
     databaseBalance: dbBalances.total.toString(),
-    discrepancy: discrepancy.toString(),
+    discrepancy: walletLedgerDiscrepancy.toString(),
     status,
     details: result.details,
   });
@@ -184,9 +326,10 @@ async function flagDiscrepancy(result: ReconciliationResult): Promise<void> {
                    result.discrepancy > 1000 ? 'high' : 
                    result.discrepancy > 100 ? 'medium' : 'low';
 
-  const message = `Reconciliation failed: ₦${result.discrepancy.toFixed(2)} discrepancy detected. ` +
-                  `Paystack: ₦${result.paystackBalance.toFixed(2)}, ` +
-                  `Database: ₦${result.databaseBalance.toFixed(2)}`;
+  const message = `Wallet vs ledger reconciliation failed: ₦${result.discrepancy.toFixed(2)} discrepancy. ` +
+                  `Wallet total: ₦${result.databaseBalance.toFixed(2)}, ` +
+                  `Ledger total: ₦${(result.details as { ledgerBalance?: number }).ledgerBalance?.toFixed(2) ?? 'unknown'}. ` +
+                  `Paystack merchant balance (reference): ₦${result.paystackBalance.toFixed(2)}`;
 
   // Get finance officers and admins (you'll need to implement this query)
   const alertRecipients = await getFinanceOfficersAndAdmins();
@@ -337,8 +480,12 @@ export async function matchTransactions(
     }
   }
 
-  // Check for database transactions not in Paystack
+  // Check for database transactions not in Paystack (deposit refs only — skip internal escrow movements)
   for (const dbTxn of dbTxns) {
+    if (!isPaystackComparableReference(dbTxn.reference)) {
+      continue;
+    }
+
     const psTxn = paystackTxns.find(t => t.reference === dbTxn.reference);
 
     if (!psTxn) {
@@ -445,11 +592,16 @@ export async function getLedgerVendorBalances(): Promise<{
 }> {
   const { ledgerAccounts, ledgerEntries } = await import('@/lib/db/schema/ledger');
   
-  // Get all vendor wallet accounts
+  // Main vendor wallet accounts only (exclude :frozen / :available sub-accounts used for deposit tracking)
   const vendorAccounts = await db
     .select()
     .from(ledgerAccounts)
-    .where(eq(ledgerAccounts.accountType, 'vendor_wallet'));
+    .where(
+      and(
+        eq(ledgerAccounts.accountType, 'vendor_wallet'),
+        sql`${ledgerAccounts.accountId} NOT LIKE '%:%'`
+      )
+    );
 
   // Calculate balance for each vendor
   const balancePromises = vendorAccounts.map(async (account) => {
@@ -547,6 +699,10 @@ export async function compareWalletVsLedgerBalances(): Promise<{
 
   for (const row of wallets) {
     const wallet = row.wallet;
+    if (isAutomatedTestWalletEmail(row.userEmail)) {
+      continue;
+    }
+
     const ledgerBalance = ledgerBalances.byVendor.find(
       v => v.vendorId === wallet.vendorId
     )?.balance || 0;

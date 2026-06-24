@@ -132,7 +132,7 @@ export function SecuritySettingsPanel() {
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Login verification method</h2>
           <p className="text-sm text-gray-600 mt-1">
-            Email is recommended while SMS delivery is being stabilized with Termii.
+            Choose where login verification codes are sent when two-factor login is enabled.
           </p>
         </div>
 

@@ -1,5 +1,18 @@
 import type { AssetTypePolicy } from './types';
 
+export type PolicyEnabledAssetTypesInput = Record<
+  string,
+  {
+    enabled?: boolean;
+    label?: string;
+    requiredFields?: string[];
+    requiresAiAnalysis?: boolean;
+    requiresMarketValue?: boolean;
+    requiresInspectionLocation?: boolean;
+    promptProfile?: AssetTypePolicy['promptProfile'];
+  }
+>;
+
 export type CaseAssetTypeOption = {
   value: string;
   label: string;
@@ -32,7 +45,7 @@ export const CASE_ASSET_TYPE_KEYS = CASE_ASSET_TYPE_CATALOG.map((type) => type.v
  * Asset type keys for policy UI — catalog order first, then any custom enterprise types.
  */
 export function getOrderedAssetTypeKeys(
-  enabledAssetTypes: Record<string, AssetTypePolicy>
+  enabledAssetTypes: PolicyEnabledAssetTypesInput
 ): string[] {
   const known = CASE_ASSET_TYPE_KEYS.filter((key) => key in enabledAssetTypes);
   const custom = Object.keys(enabledAssetTypes)
@@ -45,7 +58,7 @@ export function getOrderedAssetTypeKeys(
  * Asset types available on case creation — only those enabled in business policy.
  */
 export function getEnabledCaseAssetTypeOptions(
-  enabledAssetTypes: Record<string, AssetTypePolicy> | undefined
+  enabledAssetTypes: PolicyEnabledAssetTypesInput | undefined
 ): CaseAssetTypeOption[] {
   if (!enabledAssetTypes) {
     return CASE_ASSET_TYPE_CATALOG;

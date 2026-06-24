@@ -7,11 +7,11 @@
 
 import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 
 export default function ChangePasswordPage() {
   const { data: session, update } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');

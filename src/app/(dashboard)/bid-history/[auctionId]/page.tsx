@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth/use-auth';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import Link from 'next/link';
 import { DataLoadingState } from '@/components/ui/loading-states';
-import Image from 'next/image';
 import { 
   ArrowLeft, 
   Clock, 
@@ -29,7 +29,6 @@ import {
   User,
   Phone,
   ExternalLink,
-  ImageIcon,
   Play,
   Pause
 } from 'lucide-react';
@@ -43,6 +42,12 @@ import { ErrorModal } from '@/components/modals/error-modal';
 import { RestartAuctionModal } from '@/components/modals/restart-auction-modal';
 import { useToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { CasePhotoGallery } from '@/components/ui/case-photo-gallery';
+import {
+  bidHistoryBadgeClassName,
+  resolveBidHistoryBadge,
+  type BidHistoryBadgeTone,
+} from '@/lib/auctions/bid-history-display';
 
 interface DetailedAuctionData {
   auction: {
@@ -107,11 +112,15 @@ interface DetailedAuctionData {
   }>;
   watchingCount: number;
   paymentStatus: string | null;
+  displayBadge?: {
+    label: string;
+    tone: BidHistoryBadgeTone;
+  };
 }
 
 export default function AuctionDetailPage() {
   const { user, isAuthenticated, isLoading } = useAuth();
-  const router = useRouter();
+  const router = useAppRouter();
   const params = useParams();
   const auctionId = params.auctionId as string;
   const toast = useToast();
@@ -119,7 +128,6 @@ export default function AuctionDetailPage() {
   const [data, setData] = useState<DetailedAuctionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [endingAuction, setEndingAuction] = useState(false);
   const [playingVoiceNote, setPlayingVoiceNote] = useState<string | null>(null);
   const [showEndAuctionModal, setShowEndAuctionModal] = useState(false);
@@ -352,8 +360,8 @@ export default function AuctionDetailPage() {
     if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
   };
-  const getStatusIcon = (status: string) => {
-    switch (status) {
+  const getBadgeIcon = (tone: BidHistoryBadgeTone) => {
+    switch (tone) {
       case 'active':
         return <TrendingUp className="w-4 h-4 text-green-600" />;
       case 'scheduled':
@@ -362,12 +370,22 @@ export default function AuctionDetailPage() {
         return <AlertCircle className="w-4 h-4 text-orange-600" />;
       case 'closed':
         return <CheckCircle className="w-4 h-4 text-gray-600" />;
+      case 'payment':
+        return <Clock className="w-4 h-4 text-amber-700" />;
+      case 'warning':
       case 'cancelled':
         return <XCircle className="w-4 h-4 text-red-600" />;
       default:
         return <Clock className="w-4 h-4 text-gray-400" />;
     }
   };
+
+  const resolveDetailBadge = (detail: DetailedAuctionData) =>
+    detail.displayBadge ??
+    resolveBidHistoryBadge({
+      auctionStatus: detail.auction.status,
+      caseStatus: detail.case?.status,
+    });
 
   const getTierBadge = (tier: string) => {
     const isT2 = tier === 'tier2_full';
@@ -473,19 +491,15 @@ export default function AuctionDetailPage() {
           {/* Status and Actions */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              {/* Hide status badge for awaiting_payment since payment status is shown in dedicated section below */}
-              {data.auction.status !== 'awaiting_payment' && (
-                <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
-                  data.auction.status === 'active' ? 'bg-green-100 text-green-800' :
-                  data.auction.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                  data.auction.status === 'extended' ? 'bg-orange-100 text-orange-800' :
-                  data.auction.status === 'closed' ? 'bg-gray-100 text-gray-800' :
-                  'bg-red-100 text-red-800'
-                }`}>
-                  {getStatusIcon(data.auction.status)}
-                  {data.auction.status.charAt(0).toUpperCase() + data.auction.status.slice(1)}
-                </span>
-              )}
+              {(() => {
+                const badge = resolveDetailBadge(data);
+                return (
+              <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${bidHistoryBadgeClassName(badge.tone)}`}>
+                {getBadgeIcon(badge.tone)}
+                {badge.label}
+              </span>
+                );
+              })()}
               
               {data.auction.status === 'active' && (
                 <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-white border border-gray-200">
@@ -521,90 +535,11 @@ export default function AuctionDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Images and Details */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Image Gallery */}
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-              <div className="relative w-full aspect-[4/3] bg-gray-100">
-                {data.case.photos && data.case.photos.length > 0 && data.case.photos[selectedImageIndex] ? (
-                  (() => {
-                    const photoSrc = data.case.photos[selectedImageIndex];
-                    // Check if it's a valid URL (starts with http/https or data:)
-                    const isValidUrl = photoSrc.startsWith('http') || photoSrc.startsWith('https') || photoSrc.startsWith('data:');
-                    
-                    if (isValidUrl) {
-                      return (
-                        <Image
-                          src={photoSrc}
-                          alt={getAssetTitle(data.case)}
-                          fill
-                          className="object-contain"
-                          sizes="(max-width: 1024px) 100vw, 66vw"
-                        />
-                      );
-                    } else {
-                      // Invalid or relative path - show placeholder
-                      return (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <div className="text-center">
-                            <ImageIcon className="w-16 h-16 text-gray-400 mx-auto mb-2" />
-                            <p className="text-gray-500">Invalid image URL</p>
-                          </div>
-                        </div>
-                      );
-                    }
-                  })()
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <div className="text-center">
-                      <ImageIcon className="w-16 h-16 text-gray-400 mx-auto mb-2" />
-                      <p className="text-gray-500">No images available</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              {/* Image Thumbnails */}
-              {data.case.photos && data.case.photos.length > 1 && (
-                <div className="p-4 border-t border-gray-200">
-                  <div className="flex gap-2 overflow-x-auto">
-                    {data.case.photos.map((photo, index) => {
-                      const isValidUrl = photo.startsWith('http') || photo.startsWith('https') || photo.startsWith('data:');
-                      
-                      if (!isValidUrl) {
-                        return (
-                          <button
-                            key={index}
-                            onClick={() => setSelectedImageIndex(index)}
-                            className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors bg-gray-200 flex items-center justify-center ${
-                              selectedImageIndex === index ? 'border-[var(--brand-primary)]' : 'border-gray-200'
-                            }`}
-                          >
-                            <ImageIcon className="w-6 h-6 text-gray-400" />
-                          </button>
-                        );
-                      }
-                      
-                      return (
-                        <button
-                          key={index}
-                          onClick={() => setSelectedImageIndex(index)}
-                          className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${
-                            selectedImageIndex === index ? 'border-[var(--brand-primary)]' : 'border-gray-200'
-                          }`}
-                        >
-                          <Image
-                            src={photo}
-                            alt={`View ${index + 1}`}
-                            width={64}
-                            height={64}
-                            className="w-full h-full object-cover"
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+            <CasePhotoGallery
+              photos={data.case.photos}
+              title="Case photos"
+              className="shadow-lg rounded-xl border-0"
+            />
             {/* Item Specifications */}
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-xl font-bold text-gray-900 mb-4">Item Specifications</h3>

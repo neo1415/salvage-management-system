@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { ArrowLeft, Clock, User, Banknote, FileText, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown, Lock } from 'lucide-react';
 import Link from 'next/link';
 
@@ -41,7 +41,7 @@ interface PaymentDetailsContentProps {
 }
 
 export function PaymentDetailsContent({ auctionId }: PaymentDetailsContentProps) {
-  const router = useRouter();
+  const router = useAppRouter();
   const [auction, setAuction] = useState<AuctionDetails | null>(null);
   const [loading, setLoading] = useState(true);
 

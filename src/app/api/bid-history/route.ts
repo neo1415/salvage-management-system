@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { auctions, bids, salvageCases, vendors, users } from '@/lib/db/schema';
+import { auctions, bids, salvageCases, vendors, users, payments } from '@/lib/db/schema';
 import { eq, desc, inArray } from 'drizzle-orm';
+import { bidHistoryAuctionOrder, bidHistoryStatusFilter } from '@/lib/auctions/bid-history-sort';
+import {
+  resolveBidHistoryBadge,
+  resolveBidHistoryPaymentLabel,
+} from '@/lib/auctions/bid-history-display';
 import { getWatchingCount } from '@/features/auctions/services/watching.service';
 
 export async function GET(request: NextRequest) {
@@ -20,15 +25,14 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const tab = searchParams.get('tab') || 'active';
+    const tabParam = searchParams.get('tab') || 'active';
+    const tab = tabParam === 'completed' ? 'completed' : 'active';
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
     const offset = (page - 1) * limit;
 
     // Determine auction status based on tab
-    const statusFilter = tab === 'active' 
-      ? inArray(auctions.status, ['scheduled', 'active', 'extended'])
-      : inArray(auctions.status, ['closed', 'cancelled']);
+    const statusFilter = bidHistoryStatusFilter(tab);
 
     // Fetch auctions with related data
     const auctionData = await db
@@ -43,12 +47,27 @@ export async function GET(request: NextRequest) {
       .leftJoin(vendors, eq(auctions.currentBidder, vendors.id))
       .leftJoin(users, eq(vendors.userId, users.id))
       .where(statusFilter)
-      .orderBy(desc(auctions.createdAt))
+      .orderBy(...bidHistoryAuctionOrder(tab))
       .limit(limit)
       .offset(offset);
 
     // Get bid history for each auction
     const auctionIds = auctionData.map(item => item.auction.id);
+
+    const paymentRows = auctionIds.length
+      ? await db
+          .select({
+            auctionId: payments.auctionId,
+            status: payments.status,
+          })
+          .from(payments)
+          .where(inArray(payments.auctionId, auctionIds))
+      : [];
+
+    const paymentByAuctionId = paymentRows.reduce((acc, row) => {
+      if (row.auctionId) acc[row.auctionId] = { status: row.status };
+      return acc;
+    }, {} as Record<string, { status: string }>);
     
     const bidHistory = await db
       .select({
@@ -98,7 +117,16 @@ export async function GET(request: NextRequest) {
     }, {} as Record<string, number>);
 
     // Format response
-    const formattedData = auctionData.map(item => ({
+    const formattedData = auctionData.map(item => {
+      const payment = paymentByAuctionId[item.auction.id] ?? null;
+      const paymentStatus = resolveBidHistoryPaymentLabel(payment, item.case?.status);
+      const displayBadge = resolveBidHistoryBadge({
+        auctionStatus: item.auction.status,
+        payment,
+        caseStatus: item.case?.status,
+      });
+
+      return {
       auction: {
         id: item.auction.id,
         startTime: item.auction.startTime,
@@ -109,6 +137,7 @@ export async function GET(request: NextRequest) {
         minimumIncrement: item.auction.minimumIncrement,
         status: item.auction.status,
         createdAt: item.auction.createdAt,
+        updatedAt: item.auction.updatedAt,
       },
       case: {
         id: item.case?.id,
@@ -140,8 +169,10 @@ export async function GET(request: NextRequest) {
       } : null,
       bidHistory: bidsByAuction[item.auction.id] || [],
       watchingCount: watchingByAuction[item.auction.id] || 0,
-      paymentStatus: item.case?.status === 'sold' ? 'Payment Pending' : null,
-    }));
+      paymentStatus,
+      displayBadge,
+    };
+    });
 
     // Get total count for pagination
     const totalCount = await db

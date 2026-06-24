@@ -14,8 +14,11 @@ import { resolveReportIsoDateRange } from '../../utils/report-date-range';
 export interface CaseProcessingData {
   caseId: string;
   claimReference: string;
+  policyNumber: string | null;
   assetType: string;
   branchName: string;
+  brokerName: string | null;
+  agencyName: string | null;
   status: string;
   createdAt: Date;
   approvedAt: Date | null;
@@ -34,6 +37,9 @@ export interface AuctionPerformanceData {
   auctionId: string;
   caseId: string;
   claimReference: string;
+  policyNumber: string | null;
+  brokerName: string | null;
+  agencyName: string | null;
   assetType: string;
   branchName: string;
   status: string;
@@ -86,8 +92,12 @@ export class OperationalDataRepository {
     return conditions.length > 0 ? and(...conditions) : undefined;
   }
 
+  private static buildBrokerFilter(filters: ReportFilters) {
+    if (!filters.brokers || filters.brokers.length === 0) return sql``;
+    return sql`AND sc.broker_name IN (${sql.join(filters.brokers.map((broker) => sql`${broker}`), sql`, `)})`;
+  }
+
   /**
-   * Get case processing data
    * FIX: Exclude draft cases and TEST cases, determine correct status from auction state
    */
   static async getCaseProcessingData(filters: ReportFilters): Promise<CaseProcessingData[]> {
@@ -98,14 +108,18 @@ export class OperationalDataRepository {
     const assetTypeFilter = filters.assetTypes && filters.assetTypes.length > 0
       ? sql`AND sc.asset_type IN (${sql.join(filters.assetTypes.map(assetType => sql`${assetType}`), sql`, `)})`
       : sql``;
+    const brokerFilter = this.buildBrokerFilter(filters);
 
     // Use raw SQL to get correct status by joining with auctions and payments
     const results = await db.execute(sql`
       SELECT 
         sc.id as case_id,
         sc.claim_reference,
+        sc.policy_number,
         sc.asset_type,
         COALESCE(sc.branch_name, 'Unassigned') as branch_name,
+        sc.broker_name,
+        sc.agency_name,
         sc.status as case_status,
         sc.created_at,
         sc.approved_at,
@@ -135,6 +149,7 @@ export class OperationalDataRepository {
         AND sc.claim_reference NOT LIKE 'TEST%'
         ${branchFilter}
         ${assetTypeFilter}
+        ${brokerFilter}
       ORDER BY sc.created_at DESC
     `) as any[];
 
@@ -180,8 +195,11 @@ export class OperationalDataRepository {
       return {
         caseId: row.case_id,
         claimReference: row.claim_reference,
+        policyNumber: row.policy_number || null,
         assetType: row.asset_type,
         branchName: row.branch_name || 'Unassigned',
+        brokerName: row.broker_name || null,
+        agencyName: row.agency_name || null,
         status: displayStatus,
         createdAt: new Date(row.created_at),
         approvedAt: row.approved_at ? new Date(row.approved_at) : null,
@@ -213,6 +231,7 @@ export class OperationalDataRepository {
     const assetTypeFilter = filters.assetTypes && filters.assetTypes.length > 0
       ? sql`AND sc.asset_type IN (${sql.join(filters.assetTypes.map(assetType => sql`${assetType}`), sql`, `)})`
       : sql``;
+    const brokerFilter = this.buildBrokerFilter(filters);
 
     // FIX: Use raw SQL with proper DISTINCT ON to handle duplicate payments
     // Get the LATEST payment per auction (highest created_at)
@@ -223,6 +242,9 @@ export class OperationalDataRepository {
         a.id as auction_id,
         a.case_id,
         sc.claim_reference,
+        sc.policy_number,
+        sc.broker_name,
+        sc.agency_name,
         sc.asset_type,
         COALESCE(sc.branch_name, 'Unassigned') as branch_name,
         a.status as auction_status,
@@ -259,6 +281,7 @@ export class OperationalDataRepository {
         AND sc.claim_reference NOT LIKE 'TEST%'
         ${branchFilter}
         ${assetTypeFilter}
+        ${brokerFilter}
       ORDER BY a.id, p.created_at DESC NULLS LAST
     `) as any[];
 
@@ -419,6 +442,9 @@ export class OperationalDataRepository {
         auctionId: row.auction_id,
         caseId: row.case_id,
         claimReference: row.claim_reference || 'Unknown',
+        policyNumber: row.policy_number || null,
+        brokerName: row.broker_name || null,
+        agencyName: row.agency_name || null,
         assetType: row.asset_type || 'unknown',
         branchName: row.branch_name || 'Unassigned',
         status: displayStatus,

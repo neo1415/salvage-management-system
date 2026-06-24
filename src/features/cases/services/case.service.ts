@@ -16,6 +16,8 @@ import {
   recordImageUploadMetadataBatch,
 } from '@/features/media/services/image-upload-metadata.service';
 import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
+import { businessPolicyService } from '@/features/business-policy/business-policy.service';
+import { formatStaffReviewNotes } from './ai-warning-sanitization';
 
 /**
  * Asset types (must match database assetTypeEnum)
@@ -436,6 +438,9 @@ export async function createCase(
     // Determine case status
     const status = input.status || 'pending_approval';
     const isDraft = status === 'draft';
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const managerRunsAiAssessment =
+      policy.cases.aiDamageAssessmentRunner === 'salvage_manager' && !isDraft;
 
     // CRITICAL FIX: Use AI assessment from frontend if provided
     // The frontend runs AI assessment in real-time during photo upload
@@ -488,9 +493,23 @@ export async function createCase(
         isTotalLoss: input.aiAssessmentResult.isTotalLoss, // NEW: Store isTotalLoss field
         priceSource: input.aiAssessmentResult.priceSource, // NEW: Store price source
         recommendation: input.aiAssessmentResult.recommendation || 'Assess for salvage auction',
-        warnings: input.aiAssessmentResult.warnings || [],
         manualReviewRequired: input.aiAssessmentResult.manualReviewRequired,
-        reviewReasons: input.aiAssessmentResult.reviewReasons,
+        warnings: formatStaffReviewNotes(
+          input.aiAssessmentResult.reviewReasons,
+          input.aiAssessmentResult.warnings,
+          {
+            confidenceScore: input.aiAssessmentResult.confidenceScore,
+            manualReviewRequired: input.aiAssessmentResult.manualReviewRequired,
+          }
+        ),
+        reviewReasons: formatStaffReviewNotes(
+          input.aiAssessmentResult.reviewReasons,
+          input.aiAssessmentResult.warnings,
+          {
+            confidenceScore: input.aiAssessmentResult.confidenceScore,
+            manualReviewRequired: input.aiAssessmentResult.manualReviewRequired,
+          }
+        ),
         valuationEvidence: input.aiAssessmentResult.valuationEvidence,
         analysisMethod: input.aiAssessmentResult.analysisMethod || 'gemini' as const,
         photoCount: photoUrls.length,
@@ -502,6 +521,9 @@ export async function createCase(
       };
       
       console.log('🎯 Using frontend severity assessment:', aiAssessment.damageSeverity);
+    } else if (managerRunsAiAssessment) {
+      console.log('Salvage manager AI mode: adjuster submitted without AI assessment — pending manager analysis');
+      aiAssessment = null;
     } else {
       console.log('⚠️ No AI assessment from frontend - using fallback values');
       
@@ -614,6 +636,8 @@ export async function createCase(
         purpose: 'case_inspection',
         uploadedBy: input.createdBy,
         clientMetadata: input.photoMetadata?.[index],
+        serverBuffer: input.photos[index],
+        fallbackMimeType: input.photoMetadata?.[index]?.type,
       })));
     }
 

@@ -13,7 +13,8 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { StatGrid, StatTile } from '@/components/ui/stat-card';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
 import { BodyPortal } from '@/components/ui/body-portal';
 import { ChevronRight } from 'lucide-react';
@@ -166,7 +167,7 @@ function alertWorkflowBucket(alert: FraudAlert): FraudListTab {
 }
 
 export default function FraudAlertDashboard() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { data: session, status: sessionStatus } = useSession();
   const [fraudAlerts, setFraudAlerts] = useState<FraudAlert[]>([]);
   const fraudAlertsRef = useRef<FraudAlert[]>([]);
@@ -577,6 +578,7 @@ export default function FraudAlertDashboard() {
           </p>
         </div>
 
+        {/* IP-based fraud detection toggle — hidden after verification; re-enable when product needs the admin switch again.
         <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="font-semibold text-gray-900">IP-based fraud detection</h2>
@@ -600,6 +602,7 @@ export default function FraudAlertDashboard() {
             />
           </button>
         </div>
+        */}
 
         <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
           <p className="font-medium text-gray-900 mb-1">What the actions do</p>
@@ -620,26 +623,16 @@ export default function FraudAlertDashboard() {
         </div>
 
         {/* Summary stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-xs text-gray-500">Total</div>
-            <div className="text-2xl font-bold text-gray-900">{fraudTabCounts.all}</div>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-xs text-gray-500">Open</div>
-            <div className="text-2xl font-bold text-orange-600">{fraudTabCounts.open}</div>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-xs text-gray-500">In review</div>
-            <div className="text-2xl font-bold text-blue-600">{fraudTabCounts.in_review}</div>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-xs text-gray-500">Dismissed / Confirmed</div>
-            <div className="text-2xl font-bold text-gray-800">
-              {fraudTabCounts.dismissed} / {fraudTabCounts.confirmed}
-            </div>
-          </div>
-        </div>
+        <StatGrid className="grid-cols-2 md:grid-cols-4 mb-6">
+          <StatTile title="Total" value={fraudTabCounts.all} className="bg-white" />
+          <StatTile title="Open" value={fraudTabCounts.open} valueClassName="text-orange-600" className="bg-white" />
+          <StatTile title="In review" value={fraudTabCounts.in_review} valueClassName="text-blue-600" className="bg-white" />
+          <StatTile
+            title="Dismissed / Confirmed"
+            value={`${fraudTabCounts.dismissed} / ${fraudTabCounts.confirmed}`}
+            className="bg-white"
+          />
+        </StatGrid>
 
         {/* Tabs — one fetch, client-side filter; swipe on touch */}
         <div className="mb-4 flex flex-wrap gap-2 border-b border-gray-200 pb-3">

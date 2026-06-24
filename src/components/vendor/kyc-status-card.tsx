@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Crown, ArrowRight, CheckCircle2, Clock, XCircle, AlertTriangle, RefreshCw, Shield } from 'lucide-react';
 import type { KYCStatus } from '@/features/kyc/types/kyc.types';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
@@ -16,7 +16,7 @@ interface KYCStatusCardProps {
 }
 
 export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStatusCardProps) {
-  const router = useRouter();
+  const router = useAppRouter();
   const { policy } = usePublicBusinessPolicy();
   const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);

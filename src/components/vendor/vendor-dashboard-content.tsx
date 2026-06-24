@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
+import { MetricValue, StatCard, StatGrid, StatTile } from '@/components/ui/stat-card';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth/use-auth';
@@ -46,7 +47,7 @@ function formatHours(value: number | null | undefined): string {
 }
 
 function VendorDashboardContentInner() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [dismissedPickups, setDismissedPickups] = useState<Set<string>>(new Set());
   const [pickupEvidenceForms, setPickupEvidenceForms] = useState<Record<string, PickupEvidenceFormState>>({});
@@ -95,7 +96,7 @@ function VendorDashboardContentInner() {
       router.push('/login');
       return;
     }
-  }, [isAuthenticated, isAuthLoading, user, router]);
+  }, [isAuthenticated, isAuthLoading, user, router.push]);
 
   // Get trend indicator
   const getTrendIndicator = (trend: 'up' | 'down' | 'neutral') => {
@@ -490,52 +491,28 @@ function VendorDashboardContentInner() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-            <div className="rounded-lg border border-gray-200 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Won unpaid</p>
-              <p className="mt-2 text-2xl font-bold text-amber-700">{buyerControl.wonAwaitingPayment}</p>
-              <p className="mt-1 text-xs text-gray-500">Auctions needing payment</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Signed unpaid</p>
-              <p className="mt-2 text-2xl font-bold text-red-700">{buyerControl.signedAwaitingPayment}</p>
-              <p className="mt-1 text-xs text-gray-500">Documents signed, payment pending</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pickup ready</p>
-              <p className="mt-2 text-2xl font-bold text-emerald-700">{buyerControl.paidAwaitingPickup}</p>
-              <p className="mt-1 text-xs text-gray-500">Paid assets awaiting handoff</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment cycle</p>
-              <p className="mt-2 text-2xl font-bold text-gray-900">{formatHours(buyerControl.averagePaymentTimeHours)}</p>
-              <p className="mt-1 text-xs text-gray-500">Auction close to verified payment</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pickup cycle</p>
-              <p className="mt-2 text-2xl font-bold text-gray-900">{formatHours(buyerControl.averagePickupTimeHours)}</p>
-              <p className="mt-1 text-xs text-gray-500">Average payment to staff confirmation</p>
-            </div>
-          </div>
+          <StatGrid minCol={140}>
+            <StatTile title="Won unpaid" value={buyerControl.wonAwaitingPayment} subtitle="Auctions needing payment" valueClassName="text-amber-700" />
+            <StatTile title="Signed unpaid" value={buyerControl.signedAwaitingPayment} subtitle="Documents signed, payment pending" valueClassName="text-red-700" />
+            <StatTile title="Pickup ready" value={buyerControl.paidAwaitingPickup} subtitle="Paid assets awaiting handoff" valueClassName="text-emerald-700" />
+            <StatTile title="Payment cycle" value={formatHours(buyerControl.averagePaymentTimeHours)} subtitle="Auction close to verified payment" />
+            <StatTile title="Pickup cycle" value={formatHours(buyerControl.averagePickupTimeHours)} subtitle="Average payment to staff confirmation" />
+          </StatGrid>
         </div>
 
-        {/* Performance Stats Cards - Mobile Optimized */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
-          {/* Win Rate */}
-          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">Win Rate</h3>
+        <StatGrid className="mb-8" minCol={200}>
+          <StatCard
+            title="Win Rate"
+            value={`${performanceStats.winRate.toFixed(1)}%`}
+            subtitle={`${performanceStats.totalWins} wins / ${performanceStats.totalBids} bids`}
+            icon={
               <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
                 </svg>
               </div>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{performanceStats.winRate.toFixed(1)}%</p>
-            <p className="text-sm text-gray-600 mt-1">
-              {performanceStats.totalWins} wins / {performanceStats.totalBids} bids
-            </p>
-          </div>
+            }
+          />
 
           {/* Average Payment Time - Hidden from vendor view (admin/manager only) */}
           {/* <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
@@ -564,43 +541,37 @@ function VendorDashboardContentInner() {
             </p>
           </div> */}
 
-          {/* On-Time Pickup Rate */}
-          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">On-Time Pickup</h3>
+          <StatCard
+            title="On-Time Pickup"
+            value={`${performanceStats.onTimePickupRate.toFixed(1)}%`}
+            subtitle="Within 48h pickup SLA"
+            icon={
               <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{performanceStats.onTimePickupRate.toFixed(1)}%</p>
-            <p className="text-sm text-gray-600 mt-1">Within 48h pickup SLA</p>
-          </div>
-
-          {/* Rating */}
-          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">Rating</h3>
+            }
+          />
+          <StatCard
+            title="Rating"
+            value={performanceStats.ratingLabel || (performanceStats.rating > 0 ? performanceStats.rating.toFixed(1) : 'Not enough data')}
+            subtitle={
+              performanceStats.rating >= 4.5
+                ? 'Top rated!'
+                : performanceStats.rating > 0
+                  ? 'Out of 5 stars'
+                  : 'Builds after more bids and payments'
+            }
+            icon={
               <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                 </svg>
               </div>
-            </div>
-            <p className="text-3xl font-bold text-gray-900 leading-tight break-words">
-              {performanceStats.ratingLabel || (performanceStats.rating > 0 ? performanceStats.rating.toFixed(1) : 'Not enough data')}
-            </p>
-            <p className="text-sm text-gray-600 mt-1 break-words">
-              {performanceStats.rating >= 4.5 ? (
-                <span className="flex items-center gap-1">
-                  <Star className="w-4 h-4 inline fill-current" aria-label="Top rated badge" />
-                  <span>Top rated!</span>
-                </span>
-              ) : performanceStats.rating > 0 ? 'Out of 5 stars' : 'Builds after more bids and payments'}
-            </p>
-          </div>
-        </div>
+            }
+          />
+        </StatGrid>
 
         {/* Leaderboard Position */}
         <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-lg shadow-lg p-6 mb-8 text-white">
@@ -691,23 +662,23 @@ function VendorDashboardContentInner() {
           <h2 className="text-lg font-bold text-gray-900 mb-4">
             Comparison to Last Month
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 min-w-0">
             {comparisons.map((comparison) => (
               <div
                 key={comparison.metric}
-                className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow min-w-0 overflow-hidden"
               >
-                <h3 className="text-sm font-medium text-gray-500 mb-2">
+                <h3 className="text-sm font-medium text-gray-500 mb-2 truncate">
                   {comparison.metric}
                 </h3>
-                <div className="flex items-baseline gap-2 mb-2">
-                  <p className="text-2xl font-bold text-gray-900">
+                <div className="flex items-baseline gap-2 mb-2 min-w-0">
+                  <MetricValue className="text-gray-900">
                     {comparison.metric.includes('Time')
                       ? `${comparison.currentValue.toFixed(1)}h`
                       : comparison.metric.includes('Rate')
                       ? `${comparison.currentValue.toFixed(1)}%`
                       : comparison.currentValue}
-                  </p>
+                  </MetricValue>
                   {getTrendIndicator(comparison.trend)}
                 </div>
                 <p className="text-xs text-gray-600">

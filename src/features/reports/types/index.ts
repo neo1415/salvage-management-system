@@ -74,6 +74,7 @@ export interface ReportFilters {
   assetTypes?: string[];
   regions?: string[];
   branches?: string[];
+  brokers?: string[];
   userIds?: string[];
   vendorIds?: string[];
   status?: string[];

@@ -10,6 +10,7 @@
 import { useState, useEffect } from 'react';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import { useSession } from 'next-auth/react';
+import { MetricValue } from '@/components/ui/stat-card';
 import { TrendingUp, BarChart3, MapPin, Clock, Download, Filter } from 'lucide-react';
 
 interface AssetPerformance {
@@ -331,9 +332,9 @@ export default function MarketInsightsPage() {
                     <p className="text-sm font-medium text-gray-700">
                       {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][pattern.dayOfWeek]}
                     </p>
-                    <p className="text-2xl font-bold text-green-600 my-2">
+                    <MetricValue className="text-green-600 my-2">
                       {pattern.hour}:00
-                    </p>
+                    </MetricValue>
                     <p className="text-xs text-gray-600">Low Competition</p>
                   </div>
                 ))}
@@ -355,17 +356,17 @@ export default function MarketInsightsPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-blue-50 rounded-lg p-4">
                 <p className="text-sm text-gray-600 mb-1">Win Rate</p>
-                <p className="text-2xl font-bold text-blue-600">--</p>
+                <MetricValue className="text-blue-600">--</MetricValue>
                 <p className="text-xs text-gray-500 mt-1">Coming soon</p>
               </div>
               <div className="bg-green-50 rounded-lg p-4">
                 <p className="text-sm text-gray-600 mb-1">Avg Savings</p>
-                <p className="text-2xl font-bold text-green-600">--</p>
+                <MetricValue className="text-green-600">--</MetricValue>
                 <p className="text-xs text-gray-500 mt-1">Coming soon</p>
               </div>
               <div className="bg-purple-50 rounded-lg p-4">
                 <p className="text-sm text-gray-600 mb-1">Total Bids</p>
-                <p className="text-2xl font-bold text-purple-600">--</p>
+                <MetricValue className="text-purple-600">--</MetricValue>
                 <p className="text-xs text-gray-500 mt-1">Coming soon</p>
               </div>
             </div>

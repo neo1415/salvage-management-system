@@ -3,16 +3,18 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import { ReportSummaryGrid, ReportSummaryStat } from '@/components/reports/common/report-ui';
 
 export default function FinancePerformancePage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -184,48 +186,24 @@ export default function FinancePerformancePage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Summary</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Payments Processed</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.totalPaymentsProcessed || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Amount</p>
-                    <p className="text-2xl font-bold">₦{(reportData.summary?.totalAmountProcessed || 0).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Avg Verification Time</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.averageVerificationTimeHours || 0}h</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Auto Verification Rate</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.autoVerificationRate || 0}%</p>
-                  </div>
-                </div>
+                <ReportSummaryGrid>
+                  <ReportSummaryStat label="Payments Processed" value={reportData.summary?.totalPaymentsProcessed || 0} />
+                  <ReportSummaryStat label="Total Amount" value={formatReportCurrency(reportData.summary?.totalAmountProcessed || 0)} />
+                  <ReportSummaryStat label="Avg Verification Time" value={`${reportData.summary?.averageVerificationTimeHours || 0}h`} />
+                  <ReportSummaryStat label="Auto Verification Rate" value={`${reportData.summary?.autoVerificationRate || 0}%`} />
+                </ReportSummaryGrid>
               </CardContent>
             </Card>
 
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Performance Metrics</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Payments Processed</p>
-                    <p className="text-xl font-bold">{reportData.financePerformance?.paymentsProcessed || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Avg Processing Time</p>
-                    <p className="text-xl font-bold">{reportData.financePerformance?.averageProcessingTime || 0}h</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Success Rate</p>
-                    <p className="text-xl font-bold">{reportData.financePerformance?.successRate || 0}%</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Revenue Impact</p>
-                    <p className="text-xl font-bold">₦{(reportData.financePerformance?.revenueImpact || 0).toLocaleString()}</p>
-                  </div>
-                </div>
+                <ReportSummaryGrid>
+                  <ReportSummaryStat label="Payments Processed" value={reportData.financePerformance?.paymentsProcessed || 0} />
+                  <ReportSummaryStat label="Avg Processing Time" value={`${reportData.financePerformance?.averageProcessingTime || 0}h`} />
+                  <ReportSummaryStat label="Success Rate" value={`${reportData.financePerformance?.successRate || 0}%`} />
+                  <ReportSummaryStat label="Revenue Impact" value={formatReportCurrency(reportData.financePerformance?.revenueImpact || 0)} />
+                </ReportSummaryGrid>
               </CardContent>
             </Card>
           </div>

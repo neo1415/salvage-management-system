@@ -1,23 +1,5 @@
 /**
- * AuctionScheduleSelector Component
- * 
- * Reusable component for scheduling auction start times.
- * Features:
- * - Two modes: "Start Now" (default) or "Schedule for Later"
- * - Date picker with calendar component
- * - Time picker (hours and minutes)
- * - Timezone display (Africa/Lagos)
- * - Validation for future dates
- * - Mobile-optimized with burgundy theme (#800020)
- * 
- * Usage:
- * ```tsx
- * <AuctionScheduleSelector
- *   value={{ mode: 'now' }}
- *   onChange={(value) => console.log(value)}
- *   minDate={new Date()}
- * />
- * ```
+ * AuctionScheduleSelector — start mode, schedule date/time, and auction duration.
  */
 
 'use client';
@@ -29,6 +11,14 @@ import { Label } from './label';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { cn } from '@/lib/utils';
 import { Calendar as CalendarIcon, Clock } from 'lucide-react';
+import {
+  type AuctionDurationUnit,
+  clampDurationHours,
+  durationToHours,
+  getDurationInputMax,
+  hoursToDisplayParts,
+  validateDurationInput,
+} from '@/lib/auction/duration';
 
 export interface AuctionScheduleValue {
   mode: 'now' | 'scheduled';
@@ -49,62 +39,53 @@ export function AuctionScheduleSelector({
   minDate = new Date(),
   className,
 }: AuctionScheduleSelectorProps) {
-  const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(
-    value.scheduledTime
-  );
+  const initialParts = hoursToDisplayParts(clampDurationHours(value.durationHours || 120));
+
+  const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(value.scheduledTime);
   const [selectedHour, setSelectedHour] = React.useState<string>(
     value.scheduledTime ? value.scheduledTime.getHours().toString().padStart(2, '0') : '09'
   );
   const [selectedMinute, setSelectedMinute] = React.useState<string>(
     value.scheduledTime ? value.scheduledTime.getMinutes().toString().padStart(2, '0') : '00'
   );
-  const [durationValue, setDurationValue] = React.useState<number>(() => {
-    if (!value.durationHours) return 5;
-    
-    // Ensure minimum 1 hour
-    const hours = Math.max(1, value.durationHours);
-    
-    // Determine best unit and value
-    if (hours >= 168) {
-      return Math.floor(hours / 168); // weeks
-    } else if (hours >= 24) {
-      return Math.floor(hours / 24); // days
-    } else {
-      return Math.round(hours); // hours (rounded to nearest whole number)
-    }
-  });
-  const [durationUnit, setDurationUnit] = React.useState<'hours' | 'days' | 'weeks'>(() => {
-    if (!value.durationHours) return 'days';
-    
-    // Ensure minimum 1 hour
-    const hours = Math.max(1, value.durationHours);
-    
-    // Determine best unit
-    if (hours >= 168) {
-      return 'weeks';
-    } else if (hours >= 24) {
-      return 'days';
-    } else {
-      return 'hours';
-    }
-  });
+  const [durationInput, setDurationInput] = React.useState<string>(String(initialParts.value));
+  const [durationUnit, setDurationUnit] = React.useState<AuctionDurationUnit>(initialParts.unit);
   const [error, setError] = React.useState<string>('');
 
-  // Calculate duration in hours
-  const calculateDurationHours = (value: number, unit: 'hours' | 'days' | 'weeks'): number => {
-    switch (unit) {
-      case 'hours':
-        return value;
-      case 'days':
-        return value * 24;
-      case 'weeks':
-        return value * 24 * 7;
-      default:
-        return value;
+  const getDurationHours = React.useCallback(() => {
+    const parsed = parseInt(durationInput, 10);
+    if (!durationInput.trim() || Number.isNaN(parsed) || parsed <= 0) {
+      return clampDurationHours(value.durationHours || 120);
     }
-  };
+    return clampDurationHours(durationToHours(parsed, durationUnit));
+  }, [durationInput, durationUnit, value.durationHours]);
 
-  // Validate and update scheduled time
+  const commitDuration = React.useCallback(
+    (rawValue: string, unit: AuctionDurationUnit) => {
+      const parsed = parseInt(rawValue, 10);
+      if (!rawValue.trim() || Number.isNaN(parsed) || parsed <= 0) {
+        setError('Enter a valid duration');
+        return false;
+      }
+
+      const validationError = validateDurationInput(parsed, unit);
+      if (validationError) {
+        setError(validationError);
+        return false;
+      }
+
+      const durationHours = clampDurationHours(durationToHours(parsed, unit));
+      setDurationInput(String(parsed));
+      setError('');
+      onChange({
+        ...value,
+        durationHours,
+      });
+      return true;
+    },
+    [onChange, value]
+  );
+
   const updateScheduledTime = React.useCallback(
     (date: Date | undefined, hour: string, minute: string) => {
       if (!date) {
@@ -118,14 +99,12 @@ export function AuctionScheduleSelector({
       scheduledTime.setSeconds(0);
       scheduledTime.setMilliseconds(0);
 
-      // Validate that scheduled time is in the future
       const now = new Date();
       if (scheduledTime <= now) {
         setError('Scheduled time must be in the future');
         return;
       }
 
-      // Validate against minDate
       if (minDate && scheduledTime < minDate) {
         setError('Scheduled time must be after the minimum date');
         return;
@@ -135,73 +114,43 @@ export function AuctionScheduleSelector({
       onChange({
         mode: 'scheduled',
         scheduledTime,
-        durationHours: calculateDurationHours(durationValue, durationUnit),
+        durationHours: getDurationHours(),
       });
     },
-    [minDate, onChange, durationValue, durationUnit]
+    [minDate, onChange, getDurationHours]
   );
 
-  // Update duration
-  const updateDuration = React.useCallback(
-    (newValue: number, newUnit: 'hours' | 'days' | 'weeks') => {
-      const durationHours = calculateDurationHours(newValue, newUnit);
-      
-      // Validate duration (min 1 hour, max 720 hours = 30 days)
-      if (durationHours < 1) {
-        setError('Duration must be at least 1 hour');
-        return;
-      }
-      if (durationHours > 720) {
-        setError('Duration cannot exceed 30 days (720 hours)');
-        return;
-      }
-
-      setError('');
-      onChange({
-        ...value,
-        durationHours,
-      });
-    },
-    [value, onChange]
-  );
-
-  // Handle mode change
   const handleModeChange = (mode: 'now' | 'scheduled') => {
-    const currentDurationHours = calculateDurationHours(durationValue, durationUnit);
-    
+    const currentDurationHours = getDurationHours();
+
     if (mode === 'now') {
       setError('');
-      onChange({ 
+      onChange({
         mode: 'now',
         durationHours: currentDurationHours,
       });
+      return;
+    }
+
+    if (!selectedDate) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(9, 0, 0, 0);
+      setSelectedDate(tomorrow);
+      updateScheduledTime(tomorrow, selectedHour, selectedMinute);
     } else {
-      // When switching to scheduled mode, set default time if not already set
-      if (!selectedDate) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        tomorrow.setHours(9, 0, 0, 0);
-        setSelectedDate(tomorrow);
-        updateScheduledTime(tomorrow, selectedHour, selectedMinute);
-      } else {
-        updateScheduledTime(selectedDate, selectedHour, selectedMinute);
-      }
+      updateScheduledTime(selectedDate, selectedHour, selectedMinute);
     }
   };
 
-  // Handle date selection
   const handleDateSelect = (date: Date | { from: Date; to: Date } | undefined) => {
-    // Only handle single date selection
-    if (date && !(date instanceof Date)) {
-      return;
-    }
+    if (date && !(date instanceof Date)) return;
     setSelectedDate(date);
     if (date && value.mode === 'scheduled') {
       updateScheduledTime(date, selectedHour, selectedMinute);
     }
   };
 
-  // Handle hour change
   const handleHourChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const hour = e.target.value;
     setSelectedHour(hour);
@@ -210,7 +159,6 @@ export function AuctionScheduleSelector({
     }
   };
 
-  // Handle minute change
   const handleMinuteChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const minute = e.target.value;
     setSelectedMinute(minute);
@@ -219,23 +167,30 @@ export function AuctionScheduleSelector({
     }
   };
 
-  // Handle duration value change
-  const handleDurationValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = parseInt(e.target.value, 10);
-    if (!isNaN(newValue) && newValue > 0) {
-      setDurationValue(newValue);
-      updateDuration(newValue, durationUnit);
+  const handleDurationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDurationInput(e.target.value);
+    if (error) setError('');
+  };
+
+  const handleDurationInputBlur = () => {
+    if (!durationInput.trim()) {
+      const fallback = hoursToDisplayParts(clampDurationHours(value.durationHours || 120));
+      setDurationInput(String(fallback.value));
+      setDurationUnit(fallback.unit);
+      setError('');
+      return;
+    }
+    commitDuration(durationInput, durationUnit);
+  };
+
+  const handleDurationUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newUnit = e.target.value as AuctionDurationUnit;
+    setDurationUnit(newUnit);
+    if (durationInput.trim()) {
+      commitDuration(durationInput, newUnit);
     }
   };
 
-  // Handle duration unit change
-  const handleDurationUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newUnit = e.target.value as 'hours' | 'days' | 'weeks';
-    setDurationUnit(newUnit);
-    updateDuration(durationValue, newUnit);
-  };
-
-  // Format date for display
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-US', {
       weekday: 'short',
@@ -245,19 +200,13 @@ export function AuctionScheduleSelector({
     });
   };
 
-  // Generate hour options (00-23)
   const hourOptions = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
-
-  // Generate minute options (00, 15, 30, 45)
   const minuteOptions = ['00', '15', '30', '45'];
 
   return (
     <div className={cn('space-y-4', className)}>
-      {/* Mode Selection */}
       <div>
-        <Label className="text-sm font-medium text-gray-700 mb-2 block">
-          Auction Start Time
-        </Label>
+        <Label className="text-sm font-medium text-gray-700 mb-2 block">Auction start time</Label>
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
@@ -272,7 +221,7 @@ export function AuctionScheduleSelector({
           >
             <div className="flex items-center justify-center gap-2">
               <Clock className="w-4 h-4" />
-              <span>Start Now</span>
+              <span>Start now</span>
             </div>
           </button>
           <button
@@ -294,24 +243,21 @@ export function AuctionScheduleSelector({
         </div>
       </div>
 
-      {/* Duration Selector - Always visible */}
       <div>
-        <Label className="text-sm font-medium text-gray-700 mb-2 block">
-          Auction Duration
-        </Label>
+        <Label className="text-sm font-medium text-gray-700 mb-2 block">Auction duration</Label>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label className="text-xs text-gray-600 mb-1 block">Duration</Label>
             <input
               type="number"
               min="1"
-              max={durationUnit === 'hours' ? '720' : durationUnit === 'days' ? '30' : '4'}
-              value={durationValue}
-              onChange={handleDurationValueChange}
+              max={getDurationInputMax(durationUnit)}
+              value={durationInput}
+              onChange={handleDurationInputChange}
+              onBlur={handleDurationInputBlur}
               className={cn(
                 'w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white',
-                'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]',
-                'disabled:cursor-not-allowed disabled:opacity-50'
+                'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]'
               )}
             />
           </div>
@@ -322,10 +268,10 @@ export function AuctionScheduleSelector({
               onChange={handleDurationUnitChange}
               className={cn(
                 'w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white',
-                'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]',
-                'disabled:cursor-not-allowed disabled:opacity-50'
+                'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]'
               )}
             >
+              <option value="minutes">Minutes</option>
               <option value="hours">Hours</option>
               <option value="days">Days</option>
               <option value="weeks">Weeks</option>
@@ -333,18 +279,14 @@ export function AuctionScheduleSelector({
           </div>
         </div>
         <p className="text-xs text-gray-500 mt-1">
-          Default: 120 hours (5 days) • Min: 1 hour • Max: 720 hours (30 days)
+          Default: 120 hours (5 days) · Min: 15 minutes · Max: 30 days
         </p>
       </div>
 
-      {/* Scheduled Mode Options */}
       {value.mode === 'scheduled' && (
         <div className="space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          {/* Date Picker */}
           <div>
-            <Label className="text-sm font-medium text-gray-700 mb-2 block">
-              Select Date
-            </Label>
+            <Label className="text-sm font-medium text-gray-700 mb-2 block">Select date</Label>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
@@ -359,37 +301,23 @@ export function AuctionScheduleSelector({
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0 bg-white shadow-lg border border-gray-200 rounded-lg" align="start">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={handleDateSelect}
-                  initialFocus
-                />
+                <Calendar mode="single" selected={selectedDate} onSelect={handleDateSelect} initialFocus />
               </PopoverContent>
             </Popover>
           </div>
 
-          {/* Time Picker */}
           <div>
-            <Label className="text-sm font-medium text-gray-700 mb-2 block">
-              Select Time
-            </Label>
+            <Label className="text-sm font-medium text-gray-700 mb-2 block">Select time</Label>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs text-gray-600 mb-1 block">Hour</Label>
                 <select
                   value={selectedHour}
                   onChange={handleHourChange}
-                  className={cn(
-                    'w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white',
-                    'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]',
-                    'disabled:cursor-not-allowed disabled:opacity-50'
-                  )}
+                  className="w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]"
                 >
                   {hourOptions.map((hour) => (
-                    <option key={hour} value={hour}>
-                      {hour}
-                    </option>
+                    <option key={hour} value={hour}>{hour}</option>
                   ))}
                 </select>
               </div>
@@ -398,29 +326,21 @@ export function AuctionScheduleSelector({
                 <select
                   value={selectedMinute}
                   onChange={handleMinuteChange}
-                  className={cn(
-                    'w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white',
-                    'text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]',
-                    'disabled:cursor-not-allowed disabled:opacity-50'
-                  )}
+                  className="w-full h-10 px-3 py-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-[var(--brand-primary)]"
                 >
                   {minuteOptions.map((minute) => (
-                    <option key={minute} value={minute}>
-                      {minute}
-                    </option>
+                    <option key={minute} value={minute}>{minute}</option>
                   ))}
                 </select>
               </div>
             </div>
           </div>
 
-          {/* Timezone Display */}
           <div className="flex items-center justify-between text-sm text-gray-600 pt-2 border-t border-gray-200">
             <span className="font-medium">Timezone:</span>
             <span className="text-gray-700">Africa/Lagos (WAT)</span>
           </div>
 
-          {/* Preview */}
           {selectedDate && !error && (
             <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
               <p className="text-sm text-green-800">
@@ -430,25 +350,23 @@ export function AuctionScheduleSelector({
               </p>
             </div>
           )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">
-                <span className="font-medium">⚠️ Error:</span> {error}
-              </p>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Start Now Info */}
       {value.mode === 'now' && (
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-800">
-            <span className="font-medium">ℹ️ Auction will start immediately</span>
+            <span className="font-medium">Auction will start immediately</span>
             <br />
-            Vendors will be notified as soon as the case is approved.
+            Vendors will be notified when the case is approved.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-sm text-red-800">
+            <span className="font-medium">Error:</span> {error}
           </p>
         </div>
       )}

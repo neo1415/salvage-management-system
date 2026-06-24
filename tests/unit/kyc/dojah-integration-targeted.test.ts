@@ -1198,14 +1198,18 @@ describe('evidence export route', () => {
     vi.doMock('@/lib/auth/next-auth.config', () => ({
       auth: vi.fn(async () => ({ user: { id: 'manager-1', role: 'salvage_manager' } })),
     }));
-    vi.doMock('@/features/export/services/export.service', () => ({
-      ExportService: {
-        generateCSV: ({ columns, data }: { columns: Array<{ key: string; header: string }>; data: Array<Record<string, unknown>> }) =>
-          [
-            columns.map((column) => column.header).join(','),
-            ...data.map((row) => columns.map((column) => String(row[column.key] ?? '')).join(',')),
-          ].join('\n'),
-      },
+    vi.doMock('@/lib/kyc/vendor-evidence-pdf', () => ({
+      generateVendorEvidencePdf: vi.fn(async () =>
+        Buffer.from(
+          '%PDF-1.4 Vendor Verification Evidence Linked Fraud Alerts aml flagged *******6789'
+        )
+      ),
+    }));
+    vi.doMock('@/features/notifications/templates/email-branding', () => ({
+      getEmailBranding: vi.fn(async () => ({
+        brandName: 'Salvage Bridge',
+        primaryColor: '#04007a',
+      })),
     }));
     vi.doMock('@/lib/utils/audit-logger', () => ({
       logAction: vi.fn(async () => undefined),
@@ -1294,13 +1298,16 @@ describe('evidence export route', () => {
       new NextRequest('https://nemsalvage.com/api/kyc/approvals/vendor-1/evidence/export'),
       { params: Promise.resolve({ id: 'vendor-1' }) }
     );
-    const text = await response.text();
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const text = buffer.toString('latin1');
 
     expect(response.status).toBe(200);
-    expect(text).toContain('Vendor Verification Evidence Packet');
+    expect(response.headers.get('content-type')).toContain('application/pdf');
+    expect(text.startsWith('%PDF')).toBe(true);
+    expect(text).toContain('Vendor Verification Evidence');
     expect(text).toContain('*******6789');
     expect(text).toContain('Linked Fraud Alerts');
-    expect(text).toContain('dojah_aml_flagged');
+    expect(text).toContain('aml flagged');
     expect(text).not.toContain('RC123456789');
     expect(text).not.toContain('TIN987654321');
     expect(text).not.toContain('0123456789');

@@ -7,12 +7,12 @@ import { hash, compare } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-// Validation schema for password change
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
   newPassword: z
     .string()
     .min(8, 'Password must be at least 8 characters')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
     .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
     .regex(/[0-9]/, 'Password must contain at least one number')
     .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
@@ -38,9 +38,10 @@ export async function POST(request: NextRequest) {
     const validationResult = changePasswordSchema.safeParse(body);
 
     if (!validationResult.success) {
+      const firstIssue = validationResult.error.issues[0];
       return NextResponse.json(
         {
-          error: 'Validation failed',
+          error: firstIssue?.message || 'Validation failed',
           details: validationResult.error.issues.map((err: z.ZodIssue) => ({
             field: err.path.join('.'),
             message: err.message,

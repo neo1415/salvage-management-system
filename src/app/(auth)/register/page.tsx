@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { VendorRegistrationForm } from '@/components/forms/vendor-registration-form';
 import { type RegistrationInput } from '@/lib/utils/validation';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
@@ -13,7 +13,7 @@ import { getAuthSurfaceCopy, normalizeHomepageTemplate, resolveTemplateTheme } f
  * Mobile-responsive registration page with standard and OAuth registration
  */
 export default function RegisterPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { branding } = usePublicBranding();
   const authCopy = getAuthSurfaceCopy(branding);
   const template = normalizeHomepageTemplate(branding.homepageTemplate);

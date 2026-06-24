@@ -1,9 +1,9 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { AppLink } from '@/components/navigation/app-link';
+import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 import Image from 'next/image';
 import {
   LayoutDashboard,
@@ -261,7 +261,6 @@ const navigationItems: NavItem[] = [
 export default function DashboardSidebar() {
   const { data: session } = useSession();
   const pathname = usePathname();
-  const router = useRouter();
   const { policy: publicPolicy } = usePublicBusinessPolicy();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
@@ -278,23 +277,6 @@ export default function DashboardSidebar() {
   const filteredNavItems = settingsNavItem.roles.includes(userRole)
     ? [...roleNavItems, settingsNavItem]
     : roleNavItems;
-
-  const prefetchRoutes = useMemo(() => {
-    const routes = new Set<string>();
-    for (const item of filteredNavItems) {
-      routes.add(item.href);
-      item.submenu?.forEach((sub) => routes.add(sub.href));
-    }
-    return Array.from(routes);
-  }, [filteredNavItems]);
-
-  useEffect(() => {
-    for (const href of prefetchRoutes) {
-      if (href !== pathname) {
-        router.prefetch(href);
-      }
-    }
-  }, [prefetchRoutes, pathname, router]);
 
   const toggleSubmenu = (href: string) => {
     setExpandedMenus((prev) => ({
@@ -318,7 +300,9 @@ export default function DashboardSidebar() {
     }
   };
 
-  const NavLinks = () => (
+  // Render as JSX (not <Component />) — inline arrow components remount on every parent
+  // re-render and break Next.js Link client navigation (full document reload).
+  const navLinks = (
     <>
       {filteredNavItems.map((item) => {
         const Icon = item.icon;
@@ -354,9 +338,10 @@ export default function DashboardSidebar() {
                     {item.submenu.map((subItem) => {
                       const isSubActive = pathname === subItem.href;
                       return (
-                        <Link
+                        <AppLink
                           key={subItem.href}
                           href={subItem.href}
+                          prefetch
                           onClick={() => setIsMobileMenuOpen(false)}
                           className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm ${
                             isSubActive
@@ -366,16 +351,16 @@ export default function DashboardSidebar() {
                           style={isSubActive ? { backgroundColor: primaryColor } : undefined}
                         >
                           <span>{subItem.name}</span>
-                        </Link>
+                        </AppLink>
                       );
                     })}
                   </div>
                 )}
               </>
             ) : (
-              <Link
+              <AppLink
                 href={item.href}
-                prefetch={true}
+                prefetch
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                   isActive
@@ -386,7 +371,7 @@ export default function DashboardSidebar() {
               >
                 <Icon className="w-5 h-5" />
                 <span className="font-medium">{item.label}</span>
-              </Link>
+              </AppLink>
             )}
           </div>
         );
@@ -424,8 +409,9 @@ export default function DashboardSidebar() {
         {/* Top Right: Notification Bell + Profile Picture */}
         <div className="flex items-center gap-3">
           <NotificationBell />
-          <Link 
+          <AppLink
             href="/settings/profile-picture"
+            prefetch
             className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 transition-colors"
             style={{ ['--brand-hover-border' as string]: primaryColor }}
           >
@@ -442,7 +428,7 @@ export default function DashboardSidebar() {
                 <UserIcon className="w-5 h-5 text-white" />
               </div>
             )}
-          </Link>
+          </AppLink>
         </div>
       </div>
 
@@ -477,8 +463,9 @@ export default function DashboardSidebar() {
             {/* Right: Notification Bell + Profile Picture */}
             <div className="flex items-center gap-3 ml-3">
               <NotificationBell />
-              <Link 
+              <AppLink
                 href="/settings/profile-picture"
+                prefetch
                 className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200 transition-colors flex-shrink-0"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
@@ -495,13 +482,13 @@ export default function DashboardSidebar() {
                     <UserIcon className="w-6 h-6 text-white" />
                   </div>
                 )}
-              </Link>
+              </AppLink>
             </div>
           </div>
         </div>
 
         <nav className="p-4 flex flex-col gap-2">
-          <NavLinks />
+          {navLinks}
         </nav>
       </aside>
 
@@ -518,7 +505,7 @@ export default function DashboardSidebar() {
         </div>
 
         <nav className="p-4 flex flex-col gap-2">
-          <NavLinks />
+          {navLinks}
         </nav>
       </aside>
     </>

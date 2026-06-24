@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, Calendar } from 'lucide-react';
 import { MasterReportContent } from '@/components/reports/executive/master-report-content';
@@ -20,7 +20,7 @@ import { ExportButton } from '@/components/reports/common/export-button';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 
 export default function MasterReportPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<MasterReportData | null>(null);
@@ -28,10 +28,16 @@ export default function MasterReportPage() {
   const [startDate, setStartDate] = useState<Date | undefined>(defaultRange.startDate);
   const [endDate, setEndDate] = useState<Date | undefined>(defaultRange.endDate);
   const [branchText, setBranchText] = useState('');
+  const [brokerText, setBrokerText] = useState('');
 
   const selectedBranches = branchText
     .split(',')
     .map((branch) => branch.trim())
+    .filter(Boolean);
+
+  const selectedBrokers = brokerText
+    .split(',')
+    .map((broker) => broker.trim())
     .filter(Boolean);
 
   useEffect(() => {
@@ -43,7 +49,7 @@ export default function MasterReportPage() {
     try {
       const result = await loadReportFromApi(
         '/api/reports/executive/master-report',
-        { startDate, endDate, branches: selectedBranches },
+        { startDate, endDate, branches: selectedBranches, brokers: selectedBrokers },
         { force }
       );
 
@@ -251,6 +257,14 @@ export default function MasterReportPage() {
               className="h-9 w-48 rounded-md border border-gray-300 bg-white px-3 text-sm outline-none transition focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
               aria-label="Filter by branches"
             />
+            <input
+              type="text"
+              value={brokerText}
+              onChange={(event) => setBrokerText(event.target.value)}
+              placeholder="Brokers"
+              className="h-9 w-48 rounded-md border border-gray-300 bg-white px-3 text-sm outline-none transition focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+              aria-label="Filter by brokers"
+            />
             <Button onClick={() => fetchMasterReport()} variant="outline" size="sm" disabled={isBusy}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
@@ -259,7 +273,7 @@ export default function MasterReportPage() {
               <ExportButton
                 reportType="master-report"
                 reportData={reportData}
-                filters={{ startDate, endDate, branches: selectedBranches }}
+                filters={{ startDate, endDate, branches: selectedBranches, brokers: selectedBrokers }}
                 disabled={isBusy}
               />
             )}

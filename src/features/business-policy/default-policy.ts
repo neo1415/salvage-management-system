@@ -14,7 +14,7 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
     logoPath: '/icons/icon-512.png',
     faviconPath: '/icons/icon-192.png',
     homepageMode: 'landing',
-    homepageTemplate: 'reclaim_editorial',
+    homepageTemplate: 'nem_salvage',
     homepageTheme: 'night',
     splashEnabled: true,
     homepageCopy: {
@@ -361,6 +361,7 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
     voiceNotesEnabled: true,
     claimsAdjusterTranscriptEditable: true,
     salvageManagerTranscriptReviewRequired: true,
+    aiDamageAssessmentRunner: 'claims_adjuster',
   },
   aiValuation: {
     enabled: true,

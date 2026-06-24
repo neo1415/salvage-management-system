@@ -3,17 +3,19 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, TrendingUp, TrendingDown } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import { MetricGrid, ReportKPICard } from '@/components/reports/common/report-ui';
 
 export default function KPIDashboardPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -38,25 +40,7 @@ export default function KPIDashboardPage() {
     }
   };
 
-  const KPICard = ({ title, value, subtitle, trend }: any) => (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold mt-2">{value}</p>
-            {subtitle && <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>}
-          </div>
-          {trend !== undefined && (
-            <div className={`flex items-center ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {trend >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
-              <span className="ml-1 font-semibold">{Math.abs(trend)}%</span>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
+  const KPICard = ReportKPICard;
 
   return (
     <>
@@ -188,9 +172,10 @@ export default function KPIDashboardPage() {
               onFiltersChange={setFilters}
               onApply={fetchReport}
               onReset={() => setFilters(defaultReportFilters())}
-              showAssetTypes={false}
+              showAssetTypes={true}
               showRegions={false}
               showBranches={true}
+              showBrokers={true}
             />
           </CardContent>
         </Card>
@@ -205,10 +190,10 @@ export default function KPIDashboardPage() {
         <div data-report-content className="space-y-6">
           <div>
             <h2 className="text-xl font-semibold mb-4">Financial KPIs</h2>
-            <div className="grid grid-cols-4 gap-4">
+            <MetricGrid>
               <KPICard
                 title="Total Revenue"
-                value={`₦${reportData.financial.totalRevenue.toLocaleString()}`}
+                value={formatReportCurrency(reportData.financial.totalRevenue)}
                 trend={reportData.financial.revenueGrowth}
               />
               <KPICard
@@ -226,12 +211,12 @@ export default function KPIDashboardPage() {
                 value={`${reportData.financial.revenueGrowth >= 0 ? '+' : ''}${reportData.financial.revenueGrowth}%`}
                 subtitle="vs previous period"
               />
-            </div>
+            </MetricGrid>
           </div>
 
           <div>
             <h2 className="text-xl font-semibold mb-4">Operational KPIs</h2>
-            <div className="grid grid-cols-4 gap-4">
+            <MetricGrid>
               <KPICard
                 title="Total Cases"
                 value={reportData.operational.totalCases}
@@ -252,12 +237,12 @@ export default function KPIDashboardPage() {
                 value={`${reportData.operational.vendorParticipationRate}%`}
                 subtitle="Auctions with bids"
               />
-            </div>
+            </MetricGrid>
           </div>
 
           <div>
             <h2 className="text-xl font-semibold mb-4">Performance KPIs</h2>
-            <div className="grid grid-cols-4 gap-4">
+            <MetricGrid>
               <KPICard
                 title="Top Adjuster"
                 value={reportData.performance.topAdjusterPerformance}
@@ -278,7 +263,7 @@ export default function KPIDashboardPage() {
                 value={`${reportData.performance.documentCompletionRate}%`}
                 subtitle="On-time completion"
               />
-            </div>
+            </MetricGrid>
           </div>
 
           {/* Detailed Breakdowns */}
@@ -296,6 +281,8 @@ export default function KPIDashboardPage() {
                         <thead>
                           <tr className="border-b">
                             <th className="text-left p-2">Claim Ref</th>
+                            <th className="text-left p-2">Policy</th>
+                            <th className="text-left p-2">Broker / Agency</th>
                             <th className="text-left p-2">Adjuster</th>
                             <th className="text-left p-2">Branch</th>
                             <th className="text-left p-2">Asset Type</th>
@@ -309,12 +296,14 @@ export default function KPIDashboardPage() {
                           {rows.map((c: any, index: number) => (
                             <tr key={`case-${c.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{c.claimReference}</td>
+                              <td className="p-2">{c.policyNumber || '—'}</td>
+                              <td className="p-2">{c.channelLabel || '—'}</td>
                               <td className="p-2">{c.adjusterName}</td>
                               <td className="p-2">{c.branchName || 'Unassigned'}</td>
                               <td className="p-2 capitalize">{c.assetType}</td>
-                              <td className="text-right p-2">₦{parseFloat(c.marketValue || '0').toLocaleString()}</td>
+                              <td className="text-right p-2">{formatReportCurrency(parseFloat(c.marketValue || '0'))}</td>
                               <td className="text-right p-2">{c.processingTime}h</td>
-                              <td className="text-right p-2">₦{parseFloat(c.revenue || '0').toLocaleString()}</td>
+                              <td className="text-right p-2">{formatReportCurrency(parseFloat(c.revenue || '0'))}</td>
                               <td className="p-2">
                                 <span className={`px-2 py-1 rounded text-xs ${
                                   c.status === 'sold' ? 'bg-green-100 text-green-800' :
@@ -360,8 +349,8 @@ export default function KPIDashboardPage() {
                                   <td className="p-2 font-medium">{branch.branchName || 'Unassigned'}</td>
                                   <td className="text-right p-2">{branch.totalCases || 0}</td>
                                   <td className="text-right p-2">{branch.soldCases || 0}</td>
-                                  <td className="text-right p-2">â‚¦{parseFloat(branch.claimsValue || '0').toLocaleString()}</td>
-                                  <td className="text-right p-2 font-semibold">â‚¦{parseFloat(branch.verifiedRecovery || '0').toLocaleString()}</td>
+                                  <td className="text-right p-2">{formatReportCurrency(parseFloat(branch.claimsValue || '0'))}</td>
+                                  <td className="text-right p-2 font-semibold">{formatReportCurrency(parseFloat(branch.verifiedRecovery || '0'))}</td>
                                   <td className="text-right p-2">{branch.recoveryRate || 0}%</td>
                                 </tr>
                               ))}
@@ -400,8 +389,8 @@ export default function KPIDashboardPage() {
                               <td className="p-2">{a.caseReference}</td>
                               <td className="text-right p-2">{a.uniqueBidders}</td>
                               <td className="text-right p-2">{a.totalBids}</td>
-                              <td className="text-right p-2">₦{parseFloat(a.startingBid || '0').toLocaleString()}</td>
-                              <td className="text-right p-2">₦{parseFloat(a.winningBid || '0').toLocaleString()}</td>
+                              <td className="text-right p-2">{formatReportCurrency(parseFloat(a.startingBid || '0'))}</td>
+                              <td className="text-right p-2">{formatReportCurrency(parseFloat(a.winningBid || '0'))}</td>
                               <td className="p-2">{a.winnerName || '-'}</td>
                               <td className="p-2">
                                 <span className={`px-2 py-1 rounded text-xs ${
@@ -453,7 +442,7 @@ export default function KPIDashboardPage() {
                               <td className="text-right p-2 text-red-600">{adj.rejected}</td>
                               <td className="text-right p-2">{adj.approvalRate}%</td>
                               <td className="text-right p-2">{adj.avgProcessingTime}h</td>
-                              <td className="text-right p-2">₦{parseFloat(adj.revenue || '0').toLocaleString()}</td>
+                              <td className="text-right p-2">{formatReportCurrency(parseFloat(adj.revenue || '0'))}</td>
                               <td className="text-right p-2">
                                 <span className={`px-2 py-1 rounded text-xs font-semibold ${
                                   adj.qualityScore >= 80 ? 'bg-green-100 text-green-800' :
@@ -511,8 +500,8 @@ export default function KPIDashboardPage() {
                               <td className="text-right p-2">{v.auctionsParticipated}</td>
                               <td className="text-right p-2">{v.auctionsWon}</td>
                               <td className="text-right p-2">{v.winRate}%</td>
-                              <td className="text-right p-2">₦{parseFloat(v.totalSpent || '0').toLocaleString()}</td>
-                              <td className="text-right p-2">₦{parseFloat(v.avgBid || '0').toLocaleString()}</td>
+                              <td className="text-right p-2">{formatReportCurrency(parseFloat(v.totalSpent || '0'))}</td>
+                              <td className="text-right p-2">{formatReportCurrency(parseFloat(v.avgBid || '0'))}</td>
                               <td className="text-right p-2">
                                 <span className={`px-2 py-1 rounded text-xs ${
                                   v.paymentRate >= 90 ? 'bg-green-100 text-green-800' :

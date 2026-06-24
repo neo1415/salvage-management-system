@@ -31,7 +31,7 @@ export interface UseCachedBidHistoryReturn {
 }
 
 function cacheKey(tab: BidHistoryTab, page: number) {
-  return `bid-history-${tab}-${page}`;
+  return `bid-history-v3-${tab}-${page}`;
 }
 
 function memoryKey(tab: BidHistoryTab, page: number) {

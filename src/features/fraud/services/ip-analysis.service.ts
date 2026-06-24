@@ -11,12 +11,28 @@ interface IPClusterAnalysis {
   reason: string;
 }
 
+function normalizeIpAddress(ipAddress: string): string {
+  const trimmed = ipAddress.trim().toLowerCase();
+  if (!trimmed) return 'unknown';
+
+  if (trimmed.startsWith('::ffff:')) {
+    return trimmed.slice(7);
+  }
+
+  return trimmed;
+}
+
 export class IPAnalysisService {
-  async analyzeBiddingPatterns(vendorId: string, ipAddress: string): Promise<void> {
+  async analyzeBiddingPatterns(vendorId: string, ipAddress: string, auctionId?: string): Promise<void> {
     try {
       const enabled = await this.isIPFraudDetectionEnabled();
       if (!enabled) {
         console.log('IP fraud detection disabled by admin setting');
+        return;
+      }
+
+      const normalizedIp = normalizeIpAddress(ipAddress);
+      if (!normalizedIp) {
         return;
       }
 
@@ -25,7 +41,7 @@ export class IPAnalysisService {
         .from(bids)
         .where(
           and(
-            eq(bids.ipAddress, ipAddress),
+            sql`lower(trim(${bids.ipAddress})) = ${normalizedIp}`,
             gte(bids.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
           )
         );
@@ -46,6 +62,7 @@ export class IPAnalysisService {
         .where(
           and(
             inArray(bids.vendorId, vendorIds),
+            sql`lower(trim(${bids.ipAddress})) = ${normalizedIp}`,
             gte(bids.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
           )
         )
@@ -60,11 +77,16 @@ export class IPAnalysisService {
         return;
       }
 
+      const targetAuctionId = auctionId && competingAuctions.includes(auctionId)
+        ? auctionId
+        : competingAuctions[0];
+
       await this.createIPFraudAlert({
-        ipAddress,
+        ipAddress: normalizedIp,
         vendorIds,
         competingAuctions,
         severity: 'high',
+        primaryAuctionId: targetAuctionId,
       });
     } catch (error) {
       console.error('Failed to analyze bidding patterns:', error);
@@ -72,12 +94,14 @@ export class IPAnalysisService {
   }
 
   async analyzeIPClustering(ipAddress: string): Promise<IPClusterAnalysis> {
+    const normalizedIp = normalizeIpAddress(ipAddress);
+
     const vendorBids = await db
       .selectDistinct({ vendorId: bids.vendorId })
       .from(bids)
       .where(
         and(
-          eq(bids.ipAddress, ipAddress),
+          sql`lower(trim(${bids.ipAddress})) = ${normalizedIp}`,
           gte(bids.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
         )
       );
@@ -86,7 +110,7 @@ export class IPAnalysisService {
 
     if (vendorIds.length <= 1) {
       return {
-        ipAddress,
+        ipAddress: normalizedIp,
         vendorIds,
         competingAuctions: [],
         isSuspicious: false,
@@ -103,6 +127,7 @@ export class IPAnalysisService {
       .where(
         and(
           inArray(bids.vendorId, vendorIds),
+          sql`lower(trim(${bids.ipAddress})) = ${normalizedIp}`,
           gte(bids.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
         )
       )
@@ -113,7 +138,7 @@ export class IPAnalysisService {
     const isSuspicious = competingAuctions.length > 0;
 
     return {
-      ipAddress,
+      ipAddress: normalizedIp,
       vendorIds,
       competingAuctions,
       isSuspicious,
@@ -128,26 +153,42 @@ export class IPAnalysisService {
     vendorIds: string[];
     competingAuctions: string[];
     severity: 'low' | 'medium' | 'high' | 'critical';
+    primaryAuctionId: string;
   }): Promise<void> {
-    const primaryAuctionId = data.competingAuctions[0];
-    if (!primaryAuctionId) {
-      return;
-    }
-
-    const existingAlert = await db
-      .select({ id: fraudAlerts.id })
+    const existingAlerts = await db
+      .select({ id: fraudAlerts.id, metadata: fraudAlerts.metadata })
       .from(fraudAlerts)
       .where(
         and(
           eq(fraudAlerts.entityType, 'auction'),
-          eq(fraudAlerts.entityId, primaryAuctionId),
+          eq(fraudAlerts.entityId, data.primaryAuctionId),
           eq(fraudAlerts.status, 'pending'),
           gte(fraudAlerts.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
         )
       )
       .limit(1);
 
-    if (existingAlert.length > 0) {
+    if (existingAlerts.length > 0) {
+      const existing = existingAlerts[0];
+      const metadata = (existing.metadata as { source?: string; vendorIds?: string[] } | null) ?? null;
+      if (metadata?.source === 'ip_analysis') {
+        const mergedVendorIds = Array.from(new Set([...(metadata.vendorIds ?? []), ...data.vendorIds]));
+        await db
+          .update(fraudAlerts)
+          .set({
+            flagReasons: [
+              'Multiple vendors from the same IP address are bidding on the same auction',
+              `${mergedVendorIds.length} vendor accounts share IP ${data.ipAddress}`,
+            ],
+            metadata: {
+              source: 'ip_analysis',
+              ipAddress: data.ipAddress,
+              vendorIds: mergedVendorIds,
+              competingAuctions: data.competingAuctions,
+            },
+          } as Partial<typeof fraudAlerts.$inferInsert>)
+          .where(eq(fraudAlerts.id, existing.id));
+      }
       return;
     }
 
@@ -156,7 +197,7 @@ export class IPAnalysisService {
 
     await fraudService.createFraudAlert(
       'auction',
-      primaryAuctionId,
+      data.primaryAuctionId,
       data.severity === 'critical' ? 95 : data.severity === 'high' ? 80 : data.severity === 'medium' ? 60 : 40,
       [
         'Multiple vendors from the same IP address are bidding on the same auction',
@@ -171,11 +212,12 @@ export class IPAnalysisService {
     );
   }
 
-  async getIPFraudHistory(ipAddress: string): Promise<any[]> {
+  async getIPFraudHistory(ipAddress: string): Promise<typeof fraudAlerts.$inferSelect[]> {
+    const normalizedIp = normalizeIpAddress(ipAddress);
     return await db
       .select()
       .from(fraudAlerts)
-      .where(sql`${fraudAlerts.metadata}->>'ipAddress' = ${ipAddress}`)
+      .where(sql`${fraudAlerts.metadata}->>'ipAddress' = ${normalizedIp}`)
       .orderBy(sql`${fraudAlerts.createdAt} DESC`);
   }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import Script from 'next/script';
 import imageCompression from 'browser-image-compression';
@@ -152,7 +152,7 @@ async function fetchClientPublicIp(): Promise<string | null> {
 }
 
 export default function Tier2ManualKYCPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { status: authStatus } = useSession();
   const [pageState, setPageState] = useState<PageState>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

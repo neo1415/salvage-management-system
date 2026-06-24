@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { X, Crown, Zap, TrendingUp, Award } from 'lucide-react';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
@@ -14,7 +14,7 @@ interface TierUpgradeModalProps {
 }
 
 export function TierUpgradeModal({ isOpen, onClose, auctionValue }: TierUpgradeModalProps) {
-  const router = useRouter();
+  const router = useAppRouter();
   const { policy } = usePublicBusinessPolicy();
   const tierLimit = policy?.onboarding.tier1BidLimit ?? 500000;
 

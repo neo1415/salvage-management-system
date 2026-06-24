@@ -258,9 +258,15 @@ export class OTPService {
 
   private async sendBiddingOtpPush(userId: string, otp: string, auctionId?: string): Promise<void> {
     const { sendPushToUser } = await import('@/features/notifications/services/push-subscription.service');
+    const { getEmailBranding } = await import('@/features/notifications/templates/email-branding');
+    const branding = await getEmailBranding();
+    const icon = branding.faviconPath || branding.logoPath || '/icons/icon-192.png';
+
     const result = await sendPushToUser(userId, {
-      title: 'Bid verification code',
+      title: `${branding.brandName} bid verification`,
       body: `Your bid verification code is ${otp}. It expires in 5 minutes.`,
+      icon,
+      badge: icon,
       tag: auctionId ? `bidding-otp-${auctionId}` : 'bidding-otp',
       requireInteraction: true,
       data: {

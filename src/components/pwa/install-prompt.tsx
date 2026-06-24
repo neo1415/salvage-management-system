@@ -3,10 +3,28 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { usePublicBranding } from '@/hooks/use-public-branding';
+import { hasCookieConsent } from '@/lib/cookies/cookie-consent';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+const PWA_DISMISSED_KEY = 'pwa-install-dismissed-v1';
+const PWA_ACCEPTED_KEY = 'pwa-install-accepted-v1';
+
+function isPwaPromptSuppressed(): boolean {
+  if (typeof window === 'undefined') return true;
+
+  const isStandalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+  if (isStandalone) return true;
+  if (localStorage.getItem(PWA_ACCEPTED_KEY) === '1') return true;
+  if (localStorage.getItem(PWA_DISMISSED_KEY) === '1') return true;
+
+  return false;
 }
 
 /**
@@ -17,29 +35,36 @@ export function InstallPrompt() {
   const { branding } = usePublicBranding();
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
-  const [canShowPrompt, setCanShowPrompt] = useState(false);
+  const [cookieResolved, setCookieResolved] = useState(() => hasCookieConsent());
 
   useEffect(() => {
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-    const dismissedUntil = Number(localStorage.getItem('pwa-prompt-dismissed-until') || '0');
+    const syncCookieState = () => setCookieResolved(hasCookieConsent());
+    window.addEventListener('salvage:cookie-banner-dismissed', syncCookieState);
+    window.addEventListener('salvage:cookie-analytics-disabled', syncCookieState);
+    return () => {
+      window.removeEventListener('salvage:cookie-banner-dismissed', syncCookieState);
+      window.removeEventListener('salvage:cookie-analytics-disabled', syncCookieState);
+    };
+  }, []);
 
-    if (isStandalone || dismissedUntil > Date.now()) {
+  useEffect(() => {
+    if (isPwaPromptSuppressed() || !cookieResolved) {
       return;
     }
 
-    setCanShowPrompt(true);
-
     const handler = (e: Event) => {
-      // Prevent the mini-infobar from appearing on mobile
+      if (isPwaPromptSuppressed()) {
+        return;
+      }
+
       e.preventDefault();
-      // Stash the event so it can be triggered later
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      // Show the install prompt after a delay
-      setTimeout(() => {
-        setShowPrompt(true);
-      }, 3000); // Show after 3 seconds
+
+      window.setTimeout(() => {
+        if (!isPwaPromptSuppressed() && hasCookieConsent()) {
+          setShowPrompt(true);
+        }
+      }, 4000);
     };
 
     window.addEventListener('beforeinstallprompt', handler);
@@ -47,38 +72,39 @@ export function InstallPrompt() {
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
     };
-  }, []);
+  }, [cookieResolved]);
 
   const handleInstall = async () => {
     if (!deferredPrompt) {
       return;
     }
 
-    // Show the install prompt
     await deferredPrompt.prompt();
 
-    // Wait for the user to respond to the prompt
     const { outcome } = await deferredPrompt.userChoice;
 
-    console.log(`User response to the install prompt: ${outcome}`);
+    if (outcome === 'accepted') {
+      localStorage.setItem(PWA_ACCEPTED_KEY, '1');
+      localStorage.removeItem(PWA_DISMISSED_KEY);
+    } else {
+      localStorage.setItem(PWA_DISMISSED_KEY, '1');
+    }
 
-    // Clear the deferredPrompt
     setDeferredPrompt(null);
     setShowPrompt(false);
   };
 
   const handleDismiss = () => {
     setShowPrompt(false);
-    // Don't show again for 7 days.
-    localStorage.setItem('pwa-prompt-dismissed-until', String(Date.now() + 7 * 24 * 60 * 60 * 1000));
+    localStorage.setItem(PWA_DISMISSED_KEY, '1');
   };
 
-  if (!canShowPrompt || !showPrompt || !deferredPrompt) {
+  if (!showPrompt || !deferredPrompt || isPwaPromptSuppressed() || !cookieResolved) {
     return null;
   }
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 animate-slide-up sm:left-auto sm:right-4 sm:max-w-[300px]">
+    <div className="fixed bottom-4 left-4 z-40 animate-slide-up sm:max-w-[300px]">
       <div className="relative overflow-hidden rounded-lg border border-[var(--brand-primary-border)] bg-white p-3 shadow-xl">
         <button
           onClick={handleDismiss}

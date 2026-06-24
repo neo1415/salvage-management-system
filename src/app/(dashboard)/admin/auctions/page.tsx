@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
@@ -71,7 +71,7 @@ interface ModalConfig {
 
 export default function AdminAuctionsPage() {
   const { data: session } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const { policy: publicPolicy } = usePublicBusinessPolicy();
   const requiredAuctionDocuments = publicPolicy?.documents.requiredAuctionDocuments ?? DEFAULT_AUCTION_DOCUMENTS;
   const [auctions, setAuctions] = useState<AuctionWithStatus[]>([]);

@@ -11,6 +11,7 @@ import { db } from '@/lib/db/drizzle';
 import { releaseForms } from '@/lib/db/schema/release-forms';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
+import { formatAssetName } from '@/lib/utils/asset-name';
 import { eq, desc } from 'drizzle-orm';
 
 export async function GET(_request: NextRequest) {
@@ -56,18 +57,18 @@ export async function GET(_request: NextRequest) {
 
     // Get recent activity
     const recentActivity = documents.slice(0, 10).map((doc) => {
-      const assetDetails = doc.case.assetDetails as {
-        make?: string;
-        model?: string;
-        year?: number;
-      };
+      const assetDescription = formatAssetName(
+        doc.case.assetType,
+        doc.case.assetDetails as Record<string, unknown>,
+        doc.case.claimReference
+      );
       return {
         id: doc.document.id,
         type: doc.document.documentType,
         title: doc.document.title,
         status: doc.document.status,
         auctionId: doc.auction.id,
-        assetDescription: `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || doc.case.assetType,
+        assetDescription,
         createdAt: doc.document.createdAt,
         signedAt: doc.document.signedAt,
       };
@@ -75,12 +76,11 @@ export async function GET(_request: NextRequest) {
 
     // Format documents for frontend consumption
     const formattedDocuments = documents.map((doc) => {
-      const assetDetails = doc.case.assetDetails as {
-        make?: string;
-        model?: string;
-        year?: number;
-      };
-      const assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || doc.case.assetType;
+      const assetDescription = formatAssetName(
+        doc.case.assetType,
+        doc.case.assetDetails as Record<string, unknown>,
+        doc.case.claimReference
+      );
       
       return {
         id: doc.document.id,

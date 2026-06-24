@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { X, Crown, ArrowRight } from 'lucide-react';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 
@@ -14,7 +14,7 @@ const DISMISS_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
 
 export function TierUpgradeBanner({ highValueAuctionCount = 0 }: TierUpgradeBannerProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const router = useRouter();
+  const router = useAppRouter();
   const { policy } = usePublicBusinessPolicy();
 
   useEffect(() => {

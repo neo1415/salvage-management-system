@@ -13,7 +13,7 @@ export async function GET(_request: NextRequest) {
       );
     }
 
-    const leaderboard = await calculateLeaderboard(10);
+    const leaderboard = await calculateLeaderboard(25);
 
     return NextResponse.json(
       {

@@ -1214,12 +1214,11 @@ async function sendDocumentSigningProgressNotifications(
 
       if (auctionData) {
         const { auction, case: caseData } = auctionData;
-        const assetDetails = caseData.assetDetails as {
-          make?: string;
-          model?: string;
-          year?: number;
-        };
-        const assetDescription = `${assetDetails.make || ''} ${assetDetails.model || ''} ${assetDetails.year || ''}`.trim() || caseData.assetType;
+        const assetDescription = formatAssetName(
+          caseData.assetType,
+          caseData.assetDetails as AssetNameDetails,
+          caseData.claimReference
+        );
         
         const emailHtml = await documentSignedTemplate({
           vendorName: user.fullName,
@@ -1712,9 +1711,13 @@ async function sendFundReleaseSuccessNotification(
       .where(eq(salvageCases.id, auction.caseId))
       .limit(1);
 
-    const assetDescription = caseData 
-      ? `${caseData.assetType} - ${caseData.claimReference}`
-      : 'Salvage Item';
+    const assetDescription = caseData
+      ? formatAssetName(
+          caseData.assetType,
+          caseData.assetDetails as AssetNameDetails,
+          caseData.claimReference
+        )
+      : 'Auction item';
 
     // Send email to each Finance Officer
     const { emailService } = await import('@/features/notifications/services/email.service');

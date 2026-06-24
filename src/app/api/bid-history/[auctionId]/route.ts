@@ -3,6 +3,10 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions, bids, salvageCases, vendors, users, payments } from '@/lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
+import {
+  resolveBidHistoryBadge,
+  resolveBidHistoryPaymentLabel,
+} from '@/lib/auctions/bid-history-display';
 
 export async function GET(
   request: NextRequest,
@@ -128,18 +132,12 @@ export async function GET(
         },
       })),
       watchingCount: auction.auction.watchingCount || 0,
-      // Fix: Check actual payment status instead of hardcoding "Payment Pending"
-      paymentStatus: payment 
-        ? payment.status === 'verified' 
-          ? 'Payment Completed' 
-          : payment.status === 'rejected'
-          ? 'Payment Rejected'
-          : payment.status === 'overdue'
-          ? 'Payment Overdue'
-          : 'Payment Pending'
-        : auction.case?.status === 'sold' 
-        ? 'Payment Pending' 
-        : null,
+      paymentStatus: resolveBidHistoryPaymentLabel(payment, auction.case?.status),
+      displayBadge: resolveBidHistoryBadge({
+        auctionStatus: auction.auction.status,
+        payment,
+        caseStatus: auction.case?.status,
+      }),
     };
 
     return NextResponse.json(response);

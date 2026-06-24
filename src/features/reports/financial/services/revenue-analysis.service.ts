@@ -8,6 +8,15 @@
 import { ReportFilters } from '../../types';
 import { FinancialDataRepository } from '../repositories/financial-data.repository';
 import { DataAggregationService } from '../../services/data-aggregation.service';
+import {
+  buildFinancialBranchBreakdown,
+  buildFinancialBrokerBreakdown,
+  buildFinancialBranchSummary,
+  buildFinancialBrokerSummary,
+  mapRevenueToFinancialDetail,
+  type FinancialBreakdownGroup,
+  type FinancialDetailRow,
+} from '../../utils/financial-breakdown';
 
 export interface RevenueAnalysisReport {
   summary: {
@@ -42,17 +51,18 @@ export interface RevenueAnalysisReport {
     netLoss: number;
     recoveryRate: number;
   }>;
-  itemBreakdown: Array<{
-    claimReference: string;
-    assetType: string;
-    marketValue: number;
-    salvageRecovery: number;
+  byBroker?: Array<{
+    channelName: string;
+    channelType: 'broker' | 'agency' | 'unassigned';
+    count: number;
+    claimsPaid: number;
+    salvageRecovered: number;
     netLoss: number;
     recoveryRate: number;
-    region: string;
-    branchName: string;
-    date: string;
   }>;
+  branchBreakdown?: FinancialBreakdownGroup[];
+  brokerBreakdown?: FinancialBreakdownGroup[];
+  itemBreakdown: FinancialDetailRow[];
   registrationFees: Array<{
     vendorName: string;
     amount: number;
@@ -109,20 +119,24 @@ export class RevenueAnalysisService {
     // Group by insurer branch
     const byBranch = this.calculateByBranch(revenueData);
 
-    // Create item breakdown - sorted by date descending (latest first)
-    const itemBreakdown = revenueData
-      .map(row => ({
-        claimReference: row.claimReference,
-        assetType: row.assetType,
-        marketValue: parseFloat(row.marketValue),
-        salvageRecovery: parseFloat(row.salvageRecovery),
-        netLoss: row.netLoss,
-        recoveryRate: row.recoveryRate,
-        region: row.region || 'Unknown',
-        branchName: row.branchName || 'Unassigned',
-        date: row.createdAt.toISOString().split('T')[0],
-      }))
-      .sort((a, b) => b.date.localeCompare(a.date)); // Sort by date descending
+    const financialDetails = revenueData
+      .map(mapRevenueToFinancialDetail)
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    const byBroker = buildFinancialBrokerSummary(financialDetails).map((row) => ({
+      channelName: row.label,
+      channelType: row.channelType,
+      count: row.count,
+      claimsPaid: row.claimsPaid,
+      salvageRecovered: row.salvageRecovered,
+      netLoss: row.netLoss,
+      recoveryRate: row.recoveryRate,
+    }));
+
+    const branchBreakdown = buildFinancialBranchBreakdown(financialDetails);
+    const brokerBreakdown = buildFinancialBrokerBreakdown(financialDetails);
+
+    const itemBreakdown = financialDetails;
 
     // Create registration fees breakdown
     const registrationFees = registrationFeeData.map(fee => ({
@@ -152,6 +166,9 @@ export class RevenueAnalysisService {
       byAssetType,
       byRegion,
       byBranch,
+      byBroker,
+      branchBreakdown,
+      brokerBreakdown,
       itemBreakdown,
       registrationFees,
       trend,

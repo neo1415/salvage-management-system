@@ -2,6 +2,14 @@
 
 import { useState } from 'react';
 import { Clock, Calendar, Timer } from 'lucide-react';
+import {
+  type AuctionDurationUnit,
+  clampDurationHours,
+  durationToHours,
+  getDurationInputMax,
+  hoursToDisplayParts,
+  validateDurationInput,
+} from '@/lib/auction/duration';
 
 interface AuctionDurationOption {
   value: number; // Duration in hours
@@ -58,37 +66,65 @@ const DURATION_OPTIONS: AuctionDurationOption[] = [
 ];
 
 export function AuctionDurationSelector({ value, onChange, disabled = false }: AuctionDurationSelectorProps) {
+  const initialParts = hoursToDisplayParts(clampDurationHours(value));
   const [customDuration, setCustomDuration] = useState<string>('');
+  const [customUnit, setCustomUnit] = useState<AuctionDurationUnit>(initialParts.unit);
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customError, setCustomError] = useState<string>('');
 
   const handleOptionSelect = (hours: number) => {
-    onChange(hours);
+    onChange(clampDurationHours(hours));
     setShowCustomInput(false);
     setCustomDuration('');
+    setCustomError('');
   };
 
-  const handleCustomDurationSubmit = () => {
-    const hours = parseFloat(customDuration);
-    if (hours > 0 && hours <= 168) { // Max 1 week
-      onChange(hours);
-      setShowCustomInput(false);
-      setCustomDuration('');
+  const commitCustomDuration = (rawValue: string, unit: AuctionDurationUnit) => {
+    const parsed = parseInt(rawValue, 10);
+    if (!rawValue.trim() || Number.isNaN(parsed) || parsed <= 0) {
+      setCustomError('Enter a valid duration');
+      return false;
     }
+
+    const validationError = validateDurationInput(parsed, unit);
+    if (validationError) {
+      setCustomError(validationError);
+      return false;
+    }
+
+    onChange(clampDurationHours(durationToHours(parsed, unit)));
+    setShowCustomInput(false);
+    setCustomDuration('');
+    setCustomError('');
+    return true;
+  };
+
+  const handleCustomDurationBlur = () => {
+    if (!customDuration.trim()) {
+      const fallback = hoursToDisplayParts(clampDurationHours(value));
+      setCustomDuration(String(fallback.value));
+      setCustomUnit(fallback.unit);
+      setCustomError('');
+      return;
+    }
+    commitCustomDuration(customDuration, customUnit);
   };
 
   const formatDuration = (hours: number): string => {
-    if (hours < 1) {
-      return `${Math.round(hours * 60)} minutes`;
-    } else if (hours < 24) {
-      return `${hours} hour${hours !== 1 ? 's' : ''}`;
-    } else {
-      const days = Math.round(hours / 24);
-      return `${days} day${days !== 1 ? 's' : ''}`;
-    }
+    const parts = hoursToDisplayParts(clampDurationHours(hours));
+    const unitLabel =
+      parts.unit === 'minutes'
+        ? `minute${parts.value !== 1 ? 's' : ''}`
+        : parts.unit === 'hours'
+          ? `hour${parts.value !== 1 ? 's' : ''}`
+          : parts.unit === 'days'
+            ? `day${parts.value !== 1 ? 's' : ''}`
+            : `week${parts.value !== 1 ? 's' : ''}`;
+    return `${parts.value} ${unitLabel}`;
   };
 
   const getEndTime = (hours: number): string => {
-    const endTime = new Date(Date.now() + hours * 60 * 60 * 1000);
+    const endTime = new Date(Date.now() + clampDurationHours(hours) * 60 * 60 * 1000);
     return endTime.toLocaleString('en-NG', {
       timeZone: 'Africa/Lagos',
       weekday: 'short',
@@ -98,6 +134,14 @@ export function AuctionDurationSelector({ value, onChange, disabled = false }: A
       minute: '2-digit',
     });
   };
+
+  const previewHours =
+    customDuration.trim() && !Number.isNaN(parseInt(customDuration, 10))
+      ? durationToHours(parseInt(customDuration, 10), customUnit)
+      : null;
+  const previewValid =
+    previewHours !== null &&
+    validateDurationInput(parseInt(customDuration, 10), customUnit) === null;
 
   return (
     <div className="space-y-4">
@@ -159,7 +203,12 @@ export function AuctionDurationSelector({ value, onChange, disabled = false }: A
         {!showCustomInput ? (
           <button
             type="button"
-            onClick={() => setShowCustomInput(true)}
+            onClick={() => {
+              const parts = hoursToDisplayParts(clampDurationHours(value));
+              setCustomDuration(String(parts.value));
+              setCustomUnit(parts.unit);
+              setShowCustomInput(true);
+            }}
             disabled={disabled}
             className="text-sm text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -167,33 +216,57 @@ export function AuctionDurationSelector({ value, onChange, disabled = false }: A
           </button>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-center gap-3">
+            <div className="flex items-start gap-3">
               <div className="flex-1">
                 <label htmlFor="customDuration" className="block text-xs font-medium text-gray-700 mb-1">
-                  Custom Duration (hours)
+                  Custom duration
                 </label>
                 <input
                   id="customDuration"
                   type="number"
-                  min="0.5"
-                  max="168"
-                  step="0.5"
+                  min="1"
+                  max={getDurationInputMax(customUnit)}
                   value={customDuration}
-                  onChange={(e) => setCustomDuration(e.target.value)}
-                  placeholder="e.g., 12 for 12 hours"
+                  onChange={(e) => {
+                    setCustomDuration(e.target.value);
+                    if (customError) setCustomError('');
+                  }}
+                  onBlur={handleCustomDurationBlur}
+                  placeholder="e.g. 12"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent text-sm"
                   disabled={disabled}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Min: 30 minutes (0.5), Max: 7 days (168)
-                </p>
+              </div>
+
+              <div className="w-32">
+                <label htmlFor="customDurationUnit" className="block text-xs font-medium text-gray-700 mb-1">
+                  Unit
+                </label>
+                <select
+                  id="customDurationUnit"
+                  value={customUnit}
+                  onChange={(e) => {
+                    const unit = e.target.value as AuctionDurationUnit;
+                    setCustomUnit(unit);
+                    if (customDuration.trim()) {
+                      commitCustomDuration(customDuration, unit);
+                    }
+                  }}
+                  disabled={disabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent text-sm"
+                >
+                  <option value="minutes">Minutes</option>
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                  <option value="weeks">Weeks</option>
+                </select>
               </div>
 
               <div className="flex gap-2 pt-5">
                 <button
                   type="button"
-                  onClick={handleCustomDurationSubmit}
-                  disabled={!customDuration || parseFloat(customDuration) <= 0 || parseFloat(customDuration) > 168 || disabled}
+                  onClick={() => commitCustomDuration(customDuration, customUnit)}
+                  disabled={disabled || !previewValid}
                   className="px-3 py-2 bg-[var(--brand-primary)] text-white text-sm font-medium rounded-lg hover:bg-[var(--brand-primary-hover)] disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
                   Set
@@ -203,6 +276,7 @@ export function AuctionDurationSelector({ value, onChange, disabled = false }: A
                   onClick={() => {
                     setShowCustomInput(false);
                     setCustomDuration('');
+                    setCustomError('');
                   }}
                   disabled={disabled}
                   className="px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -212,9 +286,17 @@ export function AuctionDurationSelector({ value, onChange, disabled = false }: A
               </div>
             </div>
 
-            {customDuration && parseFloat(customDuration) > 0 && parseFloat(customDuration) <= 168 && (
+            <p className="text-xs text-gray-500">
+              Min: 15 minutes · Max: 30 days (720 hours)
+            </p>
+
+            {customError && (
+              <p className="text-xs text-red-600">{customError}</p>
+            )}
+
+            {previewValid && previewHours !== null && (
               <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
-                Preview: Auction will run for {formatDuration(parseFloat(customDuration))} and end on {getEndTime(parseFloat(customDuration))}
+                Preview: Auction will run for {formatDuration(previewHours)} and end on {getEndTime(previewHours)}
               </div>
             )}
           </div>

@@ -1,5 +1,7 @@
 /** Safe display helpers for identity verification evidence (no raw PII). */
 
+import { sanitizeWorkflowReference } from '@/lib/kyc/kyc-user-messages';
+
 export function maskIdentifier(value: unknown, visibleTail = 4): string {
   if (value === null || value === undefined) return '';
   const text = String(value).trim();
@@ -233,7 +235,10 @@ export function buildDojahEvidenceSections(
       providerSummary: {
         Source: 'Manual verification',
         'Reference ID': displayOrFallback(providerEvidence?.providerReference),
-        'Workflow reference': displayOrFallback(providerEvidence?.workflowReference, 'nem-hybrid-tier2'),
+        'Workflow reference': displayOrFallback(
+          sanitizeWorkflowReference(providerEvidence?.workflowReference),
+          'Tier 2 manual review'
+        ),
         Status: displayOrFallback(providerEvidence?.status?.replace(/_/g, ' ')),
         'Risk level': displayOrFallback(providerEvidence?.riskLevel),
         'Verification status': displayOrFallback(normalized?.verificationStatus),

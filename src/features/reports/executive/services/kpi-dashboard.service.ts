@@ -7,6 +7,7 @@ import { db } from '@/lib/db/drizzle';
 import { sql } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
 import { resolveReportIsoDateRange } from '../../utils/report-date-range';
+import { formatCaseChannelDisplay, resolveCaseChannelLabel } from '../../utils/case-channel-label';
 
 export interface KPIDashboardReport {
   financial: {
@@ -36,6 +37,8 @@ export interface KPIDashboardReport {
     cases: Array<{
       id: string;
       claimReference: string;
+      policyNumber: string | null;
+      channelLabel: string;
       adjusterName: string;
       assetType: string;
       branchName: string;
@@ -88,6 +91,47 @@ export interface KPIDashboardReport {
 }
 
 export class KPIDashboardService {
+  private static buildCaseScopeFilters(filters: ReportFilters) {
+    const branchFilter =
+      filters.branches && filters.branches.length > 0
+        ? sql`AND COALESCE(sc.branch_name, 'Unassigned') IN (${sql.join(
+            filters.branches.map((branch) => sql`${branch}`),
+            sql`, `
+          )})`
+        : sql``;
+    const brokerFilter =
+      filters.brokers && filters.brokers.length > 0
+        ? sql`AND sc.broker_name IN (${sql.join(
+            filters.brokers.map((broker) => sql`${broker}`),
+            sql`, `
+          )})`
+        : sql``;
+    const assetFilter =
+      filters.assetTypes && filters.assetTypes.length > 0
+        ? sql`AND sc.asset_type IN (${sql.join(
+            filters.assetTypes.map((assetType) => sql`${assetType}`),
+            sql`, `
+          )})`
+        : sql``;
+    const hasCaseScope =
+      (filters.branches?.length ?? 0) > 0 ||
+      (filters.brokers?.length ?? 0) > 0 ||
+      (filters.assetTypes?.length ?? 0) > 0;
+    const registrationFeeGate = hasCaseScope ? sql`AND FALSE` : sql``;
+    const scopedPaymentMatch = hasCaseScope
+      ? sql`AND p.auction_id IS NOT NULL AND sc.id IS NOT NULL AND sc.claim_reference NOT LIKE 'TEST%' ${branchFilter} ${brokerFilter} ${assetFilter}`
+      : sql``;
+
+    return {
+      branchFilter,
+      brokerFilter,
+      assetFilter,
+      hasCaseScope,
+      registrationFeeGate,
+      scopedPaymentMatch,
+    };
+  }
+
   static async generateReport(filters: ReportFilters): Promise<KPIDashboardReport> {
     const [financial, operational, performance, trends, breakdowns] = await Promise.all([
       this.getFinancialKPIs(filters),
@@ -102,6 +146,8 @@ export class KPIDashboardService {
 
   private static async getFinancialKPIs(filters: ReportFilters) {
     const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
+    const { branchFilter, brokerFilter, assetFilter, registrationFeeGate } =
+      this.buildCaseScopeFilters(filters);
 
     const result = await db.execute(sql`
       WITH revenue_data AS (
@@ -119,6 +165,9 @@ export class KPIDashboardService {
             AND p.created_at <= ${endDate}
             AND sc.status != 'draft'
             AND sc.claim_reference NOT LIKE 'TEST%'
+            ${branchFilter}
+            ${brokerFilter}
+            ${assetFilter}
           ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
         ),
         registration_fees AS (
@@ -129,6 +178,7 @@ export class KPIDashboardService {
             AND payment_reference LIKE 'REG-%'
             AND created_at >= ${startDate}
             AND created_at <= ${endDate}
+            ${registrationFeeGate}
         )
         SELECT COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_revenue
         FROM (
@@ -153,6 +203,9 @@ export class KPIDashboardService {
             AND p.created_at <= ${endDate}
             AND sc.status != 'draft'
             AND sc.claim_reference NOT LIKE 'TEST%'
+            ${branchFilter}
+            ${brokerFilter}
+            ${assetFilter}
           ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
         )
         SELECT
@@ -175,6 +228,9 @@ export class KPIDashboardService {
             AND p.created_at < ${startDate}
             AND sc.status != 'draft'
             AND sc.claim_reference NOT LIKE 'TEST%'
+            ${branchFilter}
+            ${brokerFilter}
+            ${assetFilter}
           ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
         ),
         registration_fees AS (
@@ -185,6 +241,7 @@ export class KPIDashboardService {
             AND payment_reference LIKE 'REG-%'
             AND created_at >= ${startDate}::timestamp - INTERVAL '30 days'
             AND created_at < ${startDate}
+            ${registrationFeeGate}
         )
         SELECT COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as prev_revenue
         FROM (
@@ -218,33 +275,51 @@ export class KPIDashboardService {
 
   private static async getOperationalKPIs(filters: ReportFilters) {
     const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
+    const { branchFilter, brokerFilter, assetFilter } = this.buildCaseScopeFilters(filters);
 
     const result = await db.execute(sql`
       WITH case_data AS (
         SELECT 
           COUNT(*) as total_cases,
-          AVG(EXTRACT(EPOCH FROM (approved_at - created_at)) / 3600) as avg_processing_hours
-        FROM salvage_cases
-        WHERE status != 'draft' 
-          AND created_at >= ${startDate}
-          AND created_at <= ${endDate}
+          AVG(EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 3600) as avg_processing_hours
+        FROM salvage_cases sc
+        WHERE sc.status != 'draft' 
+          AND sc.created_at >= ${startDate}
+          AND sc.created_at <= ${endDate}
+          AND sc.claim_reference NOT LIKE 'TEST%'
+          ${branchFilter}
+          ${brokerFilter}
+          ${assetFilter}
       ),
       auction_data AS (
         SELECT 
           COUNT(DISTINCT a.id) as total_auctions,
           COUNT(DISTINCT a.id) FILTER (WHERE p.id IS NOT NULL) as successful_auctions
         FROM auctions a
+        INNER JOIN salvage_cases sc ON a.case_id = sc.id
         LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
         WHERE a.created_at >= ${startDate}
           AND a.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+          ${branchFilter}
+          ${brokerFilter}
+          ${assetFilter}
       ),
       vendor_data AS (
         SELECT 
-          COUNT(DISTINCT vendor_id) as active_vendors,
-          COUNT(DISTINCT auction_id) as auctions_with_bids
-        FROM bids
-        WHERE created_at >= ${startDate}
-          AND created_at <= ${endDate}
+          COUNT(DISTINCT b.vendor_id) as active_vendors,
+          COUNT(DISTINCT b.auction_id) as auctions_with_bids
+        FROM bids b
+        INNER JOIN auctions a ON b.auction_id = a.id
+        INNER JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE b.created_at >= ${startDate}
+          AND b.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+          ${branchFilter}
+          ${brokerFilter}
+          ${assetFilter}
       )
       SELECT 
         c.total_cases,
@@ -271,26 +346,35 @@ export class KPIDashboardService {
 
   private static async getPerformanceKPIs(filters: ReportFilters) {
     const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
+    const { branchFilter, brokerFilter, assetFilter, scopedPaymentMatch } =
+      this.buildCaseScopeFilters(filters);
 
     const result = await db.execute(sql`
       WITH adjuster_performance AS (
         SELECT 
-          created_by,
+          sc.created_by,
           COUNT(*) as cases_processed,
-          AVG(EXTRACT(EPOCH FROM (approved_at - created_at)) / 3600) as avg_time
-        FROM salvage_cases
-        WHERE status != 'draft' 
-          AND created_at >= ${startDate}
-          AND created_at <= ${endDate}
-        GROUP BY created_by
+          AVG(EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 3600) as avg_time
+        FROM salvage_cases sc
+        WHERE sc.status != 'draft' 
+          AND sc.created_at >= ${startDate}
+          AND sc.created_at <= ${endDate}
+          AND sc.claim_reference NOT LIKE 'TEST%'
+          ${branchFilter}
+          ${brokerFilter}
+          ${assetFilter}
+        GROUP BY sc.created_by
       ),
       payment_data AS (
         SELECT 
           COUNT(*) as total_payments,
-          COUNT(*) FILTER (WHERE status = 'verified') as verified_payments
-        FROM payments
-        WHERE created_at >= ${startDate}
-          AND created_at <= ${endDate}
+          COUNT(*) FILTER (WHERE p.status = 'verified') as verified_payments
+        FROM payments p
+        LEFT JOIN auctions a ON p.auction_id = a.id
+        LEFT JOIN salvage_cases sc ON a.case_id = sc.id
+        WHERE p.created_at >= ${startDate}
+          AND p.created_at <= ${endDate}
+          ${scopedPaymentMatch}
       ),
       adjuster_stats AS (
         SELECT 
@@ -321,6 +405,8 @@ export class KPIDashboardService {
 
   private static async getTrendData(filters: ReportFilters) {
     const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
+    const { branchFilter, brokerFilter, assetFilter, registrationFeeGate } =
+      this.buildCaseScopeFilters(filters);
 
     const revenueByMonth = await db.execute(sql`
       WITH latest_auction_payments AS (
@@ -332,11 +418,15 @@ export class KPIDashboardService {
         INNER JOIN salvage_cases sc ON a.case_id = sc.id
         WHERE p.status = 'verified'
           AND p.auction_id IS NOT NULL
+          AND p.vendor_id = a.current_bidder
           AND p.created_at >= ${startDate}
           AND p.created_at <= ${endDate}
           AND sc.status != 'draft'
           AND sc.claim_reference NOT LIKE 'TEST%'
-        ORDER BY sc.id, p.created_at DESC
+          ${branchFilter}
+          ${brokerFilter}
+          ${assetFilter}
+        ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
       ),
       registration_fees AS (
         SELECT amount, created_at
@@ -346,6 +436,7 @@ export class KPIDashboardService {
           AND payment_reference LIKE 'REG-%'
           AND created_at >= ${startDate}
           AND created_at <= ${endDate}
+          ${registrationFeeGate}
       ),
       report_revenue AS (
         SELECT amount, created_at FROM latest_auction_payments
@@ -363,13 +454,17 @@ export class KPIDashboardService {
 
     const casesByMonth = await db.execute(sql`
       SELECT 
-        TO_CHAR(created_at, 'YYYY-MM') as month,
+        TO_CHAR(sc.created_at, 'YYYY-MM') as month,
         COUNT(*) as cases
-      FROM salvage_cases
-      WHERE status != 'draft' 
-        AND created_at >= ${startDate}
-        AND created_at <= ${endDate}
-      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
+      FROM salvage_cases sc
+      WHERE sc.status != 'draft' 
+        AND sc.created_at >= ${startDate}
+        AND sc.created_at <= ${endDate}
+        AND sc.claim_reference NOT LIKE 'TEST%'
+        ${branchFilter}
+        ${brokerFilter}
+        ${assetFilter}
+      GROUP BY TO_CHAR(sc.created_at, 'YYYY-MM')
       ORDER BY month DESC
       LIMIT 12
     `);
@@ -382,9 +477,15 @@ export class KPIDashboardService {
           ELSE 0 
         END as rate
       FROM auctions a
+      INNER JOIN salvage_cases sc ON a.case_id = sc.id
       LEFT JOIN payments p ON p.auction_id = a.id AND p.status = 'verified'
       WHERE a.created_at >= ${startDate}
         AND a.created_at <= ${endDate}
+        AND sc.status != 'draft'
+        AND sc.claim_reference NOT LIKE 'TEST%'
+        ${branchFilter}
+        ${brokerFilter}
+        ${assetFilter}
       GROUP BY TO_CHAR(a.created_at, 'YYYY-MM')
       ORDER BY month DESC
       LIMIT 12
@@ -408,9 +509,7 @@ export class KPIDashboardService {
 
   private static async getDetailedBreakdowns(filters: ReportFilters) {
     const { startDate, endDate } = resolveReportIsoDateRange(filters.startDate, filters.endDate);
-    const branchFilter = filters.branches && filters.branches.length > 0
-      ? sql`AND COALESCE(sc.branch_name, 'Unassigned') IN (${sql.join(filters.branches.map(branch => sql`${branch}`), sql`, `)})`
-      : sql``;
+    const { branchFilter, brokerFilter, assetFilter } = this.buildCaseScopeFilters(filters);
 
     // Cases breakdown - use DISTINCT ON to prevent duplicates
     const casesResult = await db.execute(sql`
@@ -419,6 +518,9 @@ export class KPIDashboardService {
         SELECT DISTINCT ON (sc.id)
           sc.id,
           sc.claim_reference,
+          sc.policy_number,
+          sc.broker_name,
+          sc.agency_name,
           u.full_name as adjuster_name,
           sc.asset_type,
           COALESCE(sc.branch_name, 'Unassigned') as branch_name,
@@ -440,6 +542,8 @@ export class KPIDashboardService {
         WHERE sc.created_at >= ${startDate}
           AND sc.created_at <= ${endDate}
           ${branchFilter}
+          ${brokerFilter}
+          ${assetFilter}
         ORDER BY sc.id, sc.created_at DESC
       ) latest_cases
       ORDER BY created_at DESC
@@ -466,6 +570,8 @@ export class KPIDashboardService {
       WHERE a.created_at >= ${startDate}
         AND a.created_at <= ${endDate}
         ${branchFilter}
+        ${brokerFilter}
+        ${assetFilter}
       GROUP BY a.id, sc.claim_reference, sc.market_value, p.id, p.amount, v.business_name, winner.full_name, a.status
       ORDER BY a.created_at DESC
       LIMIT 100
@@ -493,6 +599,8 @@ export class KPIDashboardService {
           AND sc.status != 'draft'
           AND sc.claim_reference NOT LIKE 'TEST%'
           ${branchFilter}
+          ${brokerFilter}
+          ${assetFilter}
       )
       SELECT
         branch_name,
@@ -526,6 +634,9 @@ export class KPIDashboardService {
       LEFT JOIN salvage_cases sc ON u.id = sc.created_by 
         AND sc.created_at >= ${startDate}
         AND sc.created_at <= ${endDate}
+        ${branchFilter}
+        ${brokerFilter}
+        ${assetFilter}
       LEFT JOIN auctions a ON sc.id = a.case_id
       LEFT JOIN payments p ON a.id = p.auction_id AND p.status = 'verified'
       WHERE u.role = 'claims_adjuster'
@@ -599,17 +710,22 @@ export class KPIDashboardService {
     });
 
     return {
-      cases: (casesResult as any[]).map(c => ({
-        id: c.id,
-        claimReference: c.claim_reference || 'N/A',
-        adjusterName: c.adjuster_name || 'Unknown',
-        assetType: c.asset_type,
-        branchName: c.branch_name || 'Unassigned',
-        marketValue: c.market_value || '0',
-        processingTime: Math.round(parseFloat(c.processing_days || '0') * 100) / 100,
-        revenue: c.revenue || '0',
-        status: c.status,
-      })),
+      cases: (casesResult as any[]).map(c => {
+        const channel = resolveCaseChannelLabel(c.broker_name, c.agency_name);
+        return {
+          id: c.id,
+          claimReference: c.claim_reference || 'N/A',
+          policyNumber: c.policy_number?.trim() || null,
+          channelLabel: formatCaseChannelDisplay(channel),
+          adjusterName: c.adjuster_name || 'Unknown',
+          assetType: c.asset_type,
+          branchName: c.branch_name || 'Unassigned',
+          marketValue: c.market_value || '0',
+          processingTime: Math.round(parseFloat(c.processing_days || '0') * 100) / 100,
+          revenue: c.revenue || '0',
+          status: c.status,
+        };
+      }),
       auctions: (auctionsResult as any[]).map(a => ({
         id: a.id,
         caseReference: a.case_reference || 'N/A',

@@ -132,7 +132,7 @@ export async function GET() {
 
     // Try to get cached data. Include policy version so display-only policy changes
     // do not keep stale bid limits in the vendor dashboard cache.
-    const cacheKey = `dashboard:vendor:v2:${vendor.id}`;
+    const cacheKey = `dashboard:vendor:v4:${vendor.id}`;
     try {
       const cachedData = await cache.get<VendorDashboardData>(cacheKey);
 

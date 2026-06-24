@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import Script from 'next/script';
 import {
@@ -196,10 +196,10 @@ function applyDojahIframePermissions() {
  * Tier 2 KYC Verification Page — Dojah Widget Integration
  *
  * Replaces the old manual document upload form.
- * Uses Dojah's JS widget for NIN, liveness, biometric, and document verification.
+ * Uses the configured identity widget for NIN, liveness, biometric, and document verification.
  */
 export default function Tier2KYCPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { data: session, status: authStatus } = useSession();
 
   const [pageState, setPageState] = useState<PageState>('loading_config');
@@ -683,8 +683,8 @@ export default function Tier2KYCPage() {
           {
             title: 'Use HTTPS for camera verification',
             message: [
-              'Camera verification runs inside Dojah\'s secure identity window.',
-              'Your browser may allow camera for localhost, but still block the embedded Dojah camera request from a plain HTTP page.',
+              'Camera verification runs inside the secure identity verification window.',
+              'Your browser may allow camera for localhost, but still block the embedded camera request from a plain HTTP page.',
               httpsUrl
                 ? `Open this page through your HTTPS app URL (${httpsUrl}) and start verification again.`
                 : 'Open this page through the secure HTTPS app address and start verification again.',

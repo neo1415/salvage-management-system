@@ -24,6 +24,7 @@ import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from 
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { getAppUrl } from '@/features/notifications/templates/email-urls';
+import { notifyApprovingManagerScheduledAuctionLive } from '@/features/auctions/services/scheduled-auction-manager-notification.service';
 import { createNotification } from '@/features/notifications/services/notification.service';
 import { getWatchingVendorIds } from '@/features/auctions/services/watching.service';
 
@@ -230,6 +231,14 @@ export async function POST(request: NextRequest) {
         });
 
         console.log(`[Polling] Successfully activated auction ${auction.id}, notified ${notifiedCount} vendors`);
+
+        await notifyApprovingManagerScheduledAuctionLive({
+          auctionId: auction.id,
+          caseId: caseRecord.id,
+          claimReference: caseRecord.claimReference,
+          assetType: caseRecord.assetType,
+          endTime: auction.endTime,
+        });
       } catch (error) {
         console.error(`[Polling] Error activating auction ${auction.id}:`, error);
       }

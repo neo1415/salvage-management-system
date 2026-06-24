@@ -280,6 +280,37 @@ export async function POST(
     })
   );
 
+  runInBackground('pickup-evidence fraud alert', async () => {
+    if (finalComparisonSummary.status === 'matches_expected') {
+      return;
+    }
+
+    const { FraudDetectionService } = await import('@/features/intelligence/services/fraud-detection.service');
+    const fraudService = new FraudDetectionService();
+    const flagReasons = [
+      finalComparisonSummary.status === 'material_discrepancy'
+        ? 'Pickup evidence materially differs from original inspection photos'
+        : 'Pickup evidence requires staff review',
+      ...finalComparisonSummary.findings.slice(0, 3),
+    ];
+
+    await fraudService.createFraudAlert(
+      'auction',
+      auctionId,
+      finalComparisonSummary.status === 'material_discrepancy' ? 85 : 65,
+      flagReasons,
+      {
+        source: 'pickup_evidence_comparison',
+        pickupEvidenceId: record.id,
+        vendorId,
+        caseId: context.caseId,
+        comparisonStatus: finalComparisonSummary.status,
+        findings: finalComparisonSummary.findings,
+        observedDifferences: finalComparisonSummary.observedDifferences,
+      }
+    );
+  });
+
   return NextResponse.json({
     success: true,
     evidence: record,

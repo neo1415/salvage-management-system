@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useOffline } from '@/hooks/use-offline';
 import { CacheService } from '@/features/cache/services/cache.service';
 
-const LEADERBOARD_CACHE_KEY = 'leaderboard:v2';
+const LEADERBOARD_CACHE_KEY = 'leaderboard:v3';
 
 interface LeaderboardEntry {
   rank: number;

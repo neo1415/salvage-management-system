@@ -3,6 +3,7 @@ import { jsPDF } from 'jspdf';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { desc, eq, inArray } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { salvageCases } from '@/lib/db/schema/cases';
@@ -11,11 +12,13 @@ import { bids } from '@/lib/db/schema/bids';
 import { payments } from '@/lib/db/schema/payments';
 import { releaseForms } from '@/lib/db/schema/release-forms';
 import { pickupEvidence } from '@/lib/db/schema/pickup-evidence';
-import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { getEmailBranding } from '@/features/notifications/templates/email-branding';
-import { listImageUploadMetadataForEntities } from '@/features/media/services/image-upload-metadata.service';
+import { buildCaseEvidenceAuditNarrative } from '@/lib/cases/evidence-audit-narrative';
+import { formatVendorDisplayName } from '@/lib/utils/vendor-display-name';
+
+const vendorUsers = alias(users, 'vendor_users');
 
 const ALLOWED_ROLES = new Set([
   'claims_adjuster',
@@ -31,6 +34,7 @@ type PaymentRow = {
   id: string;
   auctionId: string | null;
   vendorBusinessName: string | null;
+  vendorFullName: string | null;
   amount: string;
   paymentMethod: string;
   paymentReference: string | null;
@@ -41,24 +45,10 @@ type PaymentRow = {
   paymentDeadline: Date;
   createdAt: Date;
 };
-type ImageMetadataRow = {
-  entityType: string;
-  imageIndex: string | null;
-  source: string | null;
-  originalFilename: string | null;
-  mimeType: string | null;
-  uploadedAt: Date;
-  capturedAt: Date | null;
-  gpsLatitude: string | null;
-  gpsLongitude: string | null;
-  deviceMake: string | null;
-  deviceModel: string | null;
-  metadataStatus: string;
-  metadataWarnings: string[] | null;
-};
 type DocumentRow = {
   auctionId: string;
   vendorBusinessName: string | null;
+  vendorFullName: string | null;
   title: string;
   documentType: string;
   status: string;
@@ -76,6 +66,7 @@ type PickupEvidenceRow = {
   id: string;
   auctionId: string;
   vendorBusinessName: string | null;
+  vendorFullName: string | null;
   photoUrls: string[];
   comparisonStatus: string;
   comparisonSummary: {
@@ -98,6 +89,13 @@ type PickupEvidenceRow = {
   reviewNotes: string | null;
   createdAt: Date;
 };
+
+function resolveVendorName(
+  businessName: string | null | undefined,
+  fullName: string | null | undefined
+): string {
+  return formatVendorDisplayName({ businessName, fullName });
+}
 
 function hexToRgb(hex: string | null | undefined, fallback: Rgb = [4, 0, 122]): Rgb {
   const normalized = typeof hex === 'string' ? hex.trim().replace(/^#/, '') : '';
@@ -199,15 +197,6 @@ function pickupEvidenceDisplayStatus(evidence: PickupEvidenceRow, officialAuctio
   if (officialAuction?.pickupConfirmedAdmin) return 'Reviewed and release confirmed';
   if (evidence.reviewedAt) return 'Reviewed';
   return formatLabel(evidence.comparisonStatus);
-}
-
-function formatGps(latitude: string | null, longitude: string | null): string {
-  if (!latitude || !longitude) return '-';
-  return `${latitude}, ${longitude}`;
-}
-
-function formatDevice(make: string | null, model: string | null): string {
-  return [make, model].filter(Boolean).join(' ') || '-';
 }
 
 function text(value: unknown): string {
@@ -395,6 +384,7 @@ export async function GET(
           .select({
             auctionId: bids.auctionId,
             vendorBusinessName: vendors.businessName,
+            vendorFullName: vendorUsers.fullName,
             amount: bids.amount,
             status: bids.status,
             otpVerified: bids.otpVerified,
@@ -403,6 +393,7 @@ export async function GET(
           })
           .from(bids)
           .leftJoin(vendors, eq(bids.vendorId, vendors.id))
+          .leftJoin(vendorUsers, eq(vendors.userId, vendorUsers.id))
           .where(inArray(bids.auctionId, auctionIds))
           .orderBy(desc(bids.createdAt)),
         db
@@ -410,6 +401,7 @@ export async function GET(
             id: payments.id,
             auctionId: payments.auctionId,
             vendorBusinessName: vendors.businessName,
+            vendorFullName: vendorUsers.fullName,
             amount: payments.amount,
             paymentMethod: payments.paymentMethod,
             paymentReference: payments.paymentReference,
@@ -422,12 +414,14 @@ export async function GET(
           })
           .from(payments)
           .leftJoin(vendors, eq(payments.vendorId, vendors.id))
+          .leftJoin(vendorUsers, eq(vendors.userId, vendorUsers.id))
           .where(inArray(payments.auctionId, auctionIds))
           .orderBy(desc(payments.createdAt)),
         db
           .select({
             auctionId: releaseForms.auctionId,
             vendorBusinessName: vendors.businessName,
+            vendorFullName: vendorUsers.fullName,
             title: releaseForms.title,
             documentType: releaseForms.documentType,
             status: releaseForms.status,
@@ -440,6 +434,7 @@ export async function GET(
           })
           .from(releaseForms)
           .leftJoin(vendors, eq(releaseForms.vendorId, vendors.id))
+          .leftJoin(vendorUsers, eq(vendors.userId, vendorUsers.id))
           .where(inArray(releaseForms.auctionId, auctionIds))
           .orderBy(desc(releaseForms.createdAt)),
       ])
@@ -451,6 +446,7 @@ export async function GET(
           id: pickupEvidence.id,
           auctionId: pickupEvidence.auctionId,
           vendorBusinessName: vendors.businessName,
+          vendorFullName: vendorUsers.fullName,
           photoUrls: pickupEvidence.photoUrls,
           comparisonStatus: pickupEvidence.comparisonStatus,
           comparisonSummary: pickupEvidence.comparisonSummary,
@@ -463,30 +459,24 @@ export async function GET(
         })
         .from(pickupEvidence)
         .leftJoin(vendors, eq(pickupEvidence.vendorId, vendors.id))
+        .leftJoin(vendorUsers, eq(vendors.userId, vendorUsers.id))
         .where(inArray(pickupEvidence.auctionId, auctionIds))
         .orderBy(desc(pickupEvidence.createdAt))
     : [];
 
-  const imageMetadataEntityIds = [
-    caseId,
-    ...pickupEvidenceRows.map((evidence) => evidence.id).filter(Boolean),
-    ...paymentRows.map((payment) => payment.id).filter(Boolean),
-  ];
-  const imageMetadataRows: ImageMetadataRow[] = await listImageUploadMetadataForEntities(imageMetadataEntityIds);
-
-  const auditEntityIds = [caseId, ...auctionIds];
-  const auditRows = await db
-    .select({
-      actionType: auditLogs.actionType,
-      entityType: auditLogs.entityType,
-      deviceType: auditLogs.deviceType,
-      createdAt: auditLogs.createdAt,
-      recordHash: auditLogs.recordHash,
-    })
-    .from(auditLogs)
-    .where(inArray(auditLogs.entityId, auditEntityIds))
-    .orderBy(desc(auditLogs.createdAt))
-    .limit(60);
+  let winnerName: string | null = null;
+  if (officialAuction?.currentBidder) {
+    const [winner] = await db
+      .select({
+        businessName: vendors.businessName,
+        fullName: users.fullName,
+      })
+      .from(vendors)
+      .leftJoin(users, eq(vendors.userId, users.id))
+      .where(eq(vendors.id, officialAuction.currentBidder))
+      .limit(1);
+    winnerName = formatVendorDisplayName(winner);
+  }
 
   const officialAuctionIds = officialAuction ? [officialAuction.id] : auctionIds;
   const displayAuctionRows = officialAuction ? [officialAuction] : auctionRows;
@@ -494,6 +484,41 @@ export async function GET(
   const displayPaymentRows = latestForAuction(paymentRows, officialAuction?.id);
   const displayDocumentRows = documentRows.filter((document) => officialAuctionIds.includes(document.auctionId));
   const displayPickupEvidenceRows = latestForAuction(pickupEvidenceRows, officialAuction?.id).slice(0, 1);
+
+  const narrativeEvents = buildCaseEvidenceAuditNarrative({
+    claimReference: caseRecord.claimReference,
+    adjusterName: caseRecord.adjusterName,
+    createdAt: caseRecord.createdAt,
+    approvedAt: caseRecord.approvedAt,
+    winnerName,
+    auction: officialAuction,
+    bids: displayBidRows.map((bid) => ({
+      vendorName: resolveVendorName(bid.vendorBusinessName, bid.vendorFullName),
+      amount: bid.amount,
+      status: bid.status,
+      createdAt: bid.createdAt,
+    })),
+    payments: displayPaymentRows.map((payment) => ({
+      vendorName: resolveVendorName(payment.vendorBusinessName, payment.vendorFullName),
+      amount: payment.amount,
+      status: payment.status,
+      verifiedAt: payment.verifiedAt,
+      createdAt: payment.createdAt,
+    })),
+    documents: displayDocumentRows.map((document) => ({
+      vendorName: resolveVendorName(document.vendorBusinessName, document.vendorFullName),
+      title: document.title,
+      documentType: document.documentType,
+      status: document.status,
+      signedAt: document.signedAt,
+      createdAt: document.createdAt,
+    })),
+    pickupEvidence: displayPickupEvidenceRows.map((evidence) => ({
+      vendorName: resolveVendorName(evidence.vendorBusinessName, evidence.vendorFullName),
+      createdAt: evidence.createdAt,
+      reviewedAt: evidence.reviewedAt,
+    })),
+  });
 
   const branding = await getEmailBranding();
   const brandRgb = hexToRgb(branding.primaryColor);
@@ -558,7 +583,7 @@ export async function GET(
 
   y = addSectionTitle(doc, 'Bid Evidence', y, brandRgb);
   y = addTable(doc, ['Vendor', 'Amount', 'Status', 'OTP', 'Created'], displayBidRows.slice(0, 30).map((bid) => [
-    bid.vendorBusinessName,
+    resolveVendorName(bid.vendorBusinessName, bid.vendorFullName),
     formatMoney(bid.amount),
     bid.status,
     bid.otpVerified,
@@ -567,7 +592,7 @@ export async function GET(
 
   y = addSectionTitle(doc, 'Payment And Settlement Evidence', y, brandRgb);
   y = addTable(doc, ['Vendor', 'Amount', 'Method', 'Reference', 'Verified'], displayPaymentRows.map((payment) => [
-    payment.vendorBusinessName,
+    resolveVendorName(payment.vendorBusinessName, payment.vendorFullName),
     formatMoney(payment.amount),
     formatLabel(payment.paymentMethod),
     payment.paymentReference,
@@ -576,7 +601,7 @@ export async function GET(
 
   y = addSectionTitle(doc, 'Document Evidence', y, brandRgb);
   y = addTable(doc, ['Vendor', 'Document', 'Status', 'Completed', 'Deadline'], displayDocumentRows.map((document) => [
-    document.vendorBusinessName,
+    resolveVendorName(document.vendorBusinessName, document.vendorFullName),
     document.title || document.documentType,
     displayDocumentStatus(document, officialAuction),
     documentCompletedAt(document, officialAuction),
@@ -585,7 +610,7 @@ export async function GET(
 
   y = addSectionTitle(doc, 'Pickup Evidence', y, brandRgb);
   y = addTable(doc, ['Vendor', 'Photos', 'Review Outcome', 'Match', 'Resolution'], displayPickupEvidenceRows.map((evidence) => [
-    evidence.vendorBusinessName,
+    resolveVendorName(evidence.vendorBusinessName, evidence.vendorFullName),
     evidence.photoUrls?.length ?? 0,
     pickupEvidenceDisplayStatus(evidence, officialAuction),
     formatScore(evidence.comparisonSummary?.overallMatchScore ?? evidence.comparisonSummary?.confidenceScore),
@@ -606,30 +631,13 @@ export async function GET(
     ], y);
   }
 
-  y = addSectionTitle(doc, 'Image Metadata', y, brandRgb);
-  y = addTable(doc, ['Image', 'Uploaded', 'Captured', 'GPS', 'Device'], imageMetadataRows.slice(0, 30).map((metadata) => [
-    `${formatLabel(metadata.entityType)} #${metadata.imageIndex ?? '-'}`,
-    formatDate(metadata.uploadedAt),
-    metadata.capturedAt ? formatDate(metadata.capturedAt) : formatLabel(metadata.metadataStatus),
-    formatGps(metadata.gpsLatitude, metadata.gpsLongitude),
-    formatDevice(metadata.deviceMake, metadata.deviceModel),
-  ]), y);
-  const metadataWarningCount = imageMetadataRows.filter((metadata) => metadata.metadataWarnings?.length).length;
-  if (metadataWarningCount > 0) {
-    y = addKeyValues(doc, [
-      ['Metadata note', `${metadataWarningCount} image metadata record(s) include warnings. Full warning details are available in the JSON evidence export.`],
-    ], y);
-  }
-
-  y = addSectionTitle(doc, 'Audit Trail Extract', y, brandRgb);
-  y = addKeyValues(doc, [
-    ['Integrity note', 'Full audit hash-chain values are retained in the audit log and JSON export. This PDF shows the readable operational sequence only.'],
-  ], y);
-  y = addTable(doc, ['Action', 'Entity', 'Time'], [...auditRows].reverse().map((audit) => [
-    audit.actionType,
-    audit.entityType,
-    formatDate(audit.createdAt),
-  ]), y);
+  y = addSectionTitle(doc, 'Operational Timeline', y, brandRgb);
+  y = addTable(
+    doc,
+    ['Time', 'Event'],
+    narrativeEvents.map((event) => [formatDate(event.at), event.description]),
+    y
+  );
 
   const pageCount = doc.getNumberOfPages();
   for (let page = 1; page <= pageCount; page++) {

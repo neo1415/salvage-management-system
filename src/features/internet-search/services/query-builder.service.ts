@@ -641,16 +641,14 @@ export class QueryBuilderService {
   }
 
   private buildBulkGoodsQuery(item: BulkGoodsIdentifier): string {
-    const description = this.compactTerms([
-      item.brand,
-      item.description,
-      item.model,
-      item.quantity,
-      item.unitOfMeasure,
-      item.packagingType,
-    ]);
-    const base = description || item.type.replace(/_/g, ' ');
-    const lower = base.toLowerCase();
+    const identityTerms =
+      item.type === 'scrap'
+        ? [item.brand, this.stripBulkNarrative(item.model), this.stripBulkNarrative(item.description)]
+        : [item.brand, this.stripBulkNarrative(item.model), item.packagingType];
+
+    const base = this.dedupeSearchTerms(this.compactTerms(identityTerms));
+    const normalizedBase = base || item.type.replace(/_/g, ' ');
+    const lower = normalizedBase.toLowerCase();
     const hasBagUnit = /\b(bags?|sacks?)\b/.test(lower);
     const looksLikeDangoteCement =
       /\bdangote\b/.test(lower)
@@ -658,37 +656,35 @@ export class QueryBuilderService {
       && !/\b(sugar|flour|rice|salt|pasta|noodles|feed)\b/.test(lower);
 
     if (item.type === 'scrap' || /\b(scrap|copper|aluminium|aluminum)\b/.test(lower)) {
-      return `${base} scrap metal price per kg tonne Nigeria`;
+      return `${normalizedBase} scrap metal price per kg tonne Nigeria`;
     }
 
     if (looksLikeDangoteCement || /\bcement\b/.test(lower)) {
-      const normalizedBase = /\bcement\b/.test(lower) ? base : `${base} cement`;
+      const cementBase = /\bcement\b/.test(lower) ? normalizedBase : `${normalizedBase} cement`;
       const weightHint = /\b(25|50)\s*kg\b/.test(lower) ? '' : ' 50kg';
-      return `${normalizedBase}${weightHint} bag cement retail wholesale`;
+      return `${cementBase}${weightHint} bag cement retail wholesale`;
     }
 
     if (item.type === 'building_materials' || /\b(roofing|tiles?|paint|blocks?|steel|rebar|iron rods?|plywood|plumbing|electrical cable)\b/.test(lower)) {
-      return `${base} building material unit price retail wholesale`;
+      return `${normalizedBase} building material unit price retail wholesale`;
     }
 
     if (item.type === 'agriculture' || /\b(rice|maize|beans|cassava|yam|grain|feed|fertilizer|seed|produce|livestock)\b/.test(lower)) {
-      return `${base} agricultural produce commodity market price per kg bag tonne`;
+      return `${normalizedBase} agricultural produce commodity market price per kg bag tonne`;
     }
 
     if (item.type === 'goods_in_transit') {
-      return `${base} cargo goods wholesale market value replacement cost`;
+      return `${normalizedBase} cargo goods wholesale market value replacement cost`;
     }
 
-    return `${base} wholesale retail market value`;
+    return `${normalizedBase} wholesale retail market value`;
   }
 
   private buildSpecialEquipmentQuery(item: SpecialEquipmentIdentifier): string {
     const description = this.compactTerms([
       item.brand,
-      item.model,
-      item.description,
-      item.quantity,
-      item.unitOfMeasure,
+      this.stripBulkNarrative(item.model),
+      this.stripBulkNarrative(item.description),
     ]);
     const base = description || item.type.replace(/_/g, ' ');
 
@@ -756,13 +752,35 @@ export class QueryBuilderService {
       .trim();
   }
 
+  private dedupeSearchTerms(text: string): string {
+    const seen = new Set<string>();
+    return text
+      .split(/\s+/)
+      .filter((word) => {
+        const key = word.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .join(' ')
+      .trim();
+  }
+
+  private stripBulkNarrative(value?: string): string {
+    if (!value) return '';
+    const trimmed = value.trim();
+    const cut = trimmed.search(/\s+(approximately|stored in|across photos|all bags|surrounding|consistent with)/i);
+    const short = cut > 0 ? trimmed.slice(0, cut) : trimmed;
+    return short.replace(/\s+/g, ' ').trim().slice(0, 80);
+  }
+
   private sanitizeQuery(query: string): string {
     return query
       .replace(/[<>\"']/g, '') // Remove HTML/JS injection chars
       .replace(/[;&|`$()]/g, '') // Remove shell injection chars
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim()
-      .substring(0, 500); // Limit length
+      .substring(0, 160); // Keep Serper queries short and product-focused
   }
 }
 

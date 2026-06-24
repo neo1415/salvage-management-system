@@ -1780,6 +1780,9 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             <Field label="Support phone">
               <TextInput value={policy.branding.supportPhone ?? ''} onChange={(event) => updatePolicy((draft) => { draft.branding.supportPhone = event.target.value; })} />
             </Field>
+            <Field label="Business address" description="Shown on the public homepage contact section.">
+              <TextInput value={policy.branding.supportAddress ?? ''} onChange={(event) => updatePolicy((draft) => { draft.branding.supportAddress = event.target.value; })} />
+            </Field>
             <div className="lg:col-span-2 grid gap-4 xl:grid-cols-2">
               <BrandAssetUploadCard
                 target="logo"
@@ -2477,6 +2480,17 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             <Toggle checked={policy.cases.voiceNotesEnabled} onChange={(checked) => updatePolicy((draft) => { draft.cases.voiceNotesEnabled = checked; })} label="Voice notes enabled" />
             <Toggle checked={policy.cases.claimsAdjusterTranscriptEditable} onChange={(checked) => updatePolicy((draft) => { draft.cases.claimsAdjusterTranscriptEditable = checked; })} label="Adjuster can edit transcript" />
             <Toggle checked={policy.cases.salvageManagerTranscriptReviewRequired} onChange={(checked) => updatePolicy((draft) => { draft.cases.salvageManagerTranscriptReviewRequired = checked; })} label="Manager reviews transcript before auction" />
+            <Field label="Who runs AI damage analysis" description="Default: claims adjuster runs analysis before submit. Salvage manager mode lets adjusters submit photos only.">
+              <SelectInput
+                value={policy.cases.aiDamageAssessmentRunner}
+                onChange={(event) => updatePolicy((draft) => {
+                  draft.cases.aiDamageAssessmentRunner = event.target.value as BusinessPolicy['cases']['aiDamageAssessmentRunner'];
+                })}
+              >
+                <option value="claims_adjuster">Claims adjuster (default)</option>
+                <option value="salvage_manager">Salvage manager at approval</option>
+              </SelectInput>
+            </Field>
           </div>
         </div>
 

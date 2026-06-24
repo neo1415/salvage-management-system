@@ -10,6 +10,12 @@ import { FileText, Clock, CheckCircle } from 'lucide-react';
 import { Bar, Line } from 'react-chartjs-2';
 import { ChartFrame, MetricGrid, MetricValue, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import {
+  CaseBreakdownTable,
+  CategoryBreakdownSection,
+} from '@/components/reports/common/case-breakdown-table';
+import type { CaseBreakdownRow, CategoryBreakdownGroup } from '@/features/reports/utils/case-breakdown';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -69,17 +75,20 @@ interface CaseProcessingData {
     totalMarketValue: number;
     totalSalvageValue: number;
     averageMarketValue: number;
-    cases: Array<{
-      claimReference: string;
-      status: string;
-      marketValue: number;
-      salvageValue: number;
-      processingDays: number;
-      createdAt: string;
-      possessingVendorName: string | null;
-      pickedUpAt: string | null;
-    }>;
+    cases: CaseBreakdownRow[];
   }>;
+  byBroker?: Array<{
+    channelType: 'broker' | 'agency' | 'unassigned';
+    channelName: string;
+    casesProcessed: number;
+    soldCases: number;
+    approvalRate: number;
+    averageProcessingTime: number;
+    totalMarketValue: number;
+    totalSalvageValue: number;
+  }>;
+  branchBreakdown?: CategoryBreakdownGroup<string>[];
+  brokerBreakdown?: CategoryBreakdownGroup<string>[];
   trend: Array<{ date: string; count: number; approved: number; sold: number }>;
   byAdjuster: Array<{ adjusterId: string; adjusterName: string; casesProcessed: number; averageProcessingTime: number; approvalRate: number }>;
 }
@@ -157,9 +166,9 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
             <FileText className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              ₦{(data.summary.totalMarketValue ?? 0).toLocaleString()}
-            </div>
+            <MetricValue>
+              {formatReportCurrency(data.summary.totalMarketValue ?? 0)}
+            </MetricValue>
           </CardContent>
         </Card>
       </MetricGrid>
@@ -170,7 +179,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
             <CardTitle className="text-sm">Total Salvage Value</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold">₦{(data.summary.totalSalvageValue ?? 0).toLocaleString()}</div>
+            <MetricValue>{formatReportCurrency(data.summary.totalSalvageValue ?? 0)}</MetricValue>
           </CardContent>
         </Card>
 
@@ -179,7 +188,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
             <CardTitle className="text-sm">Avg Market Value</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold">₦{(data.summary.averageMarketValue ?? 0).toLocaleString()}</div>
+            <MetricValue>{formatReportCurrency(data.summary.averageMarketValue ?? 0)}</MetricValue>
           </CardContent>
         </Card>
 
@@ -188,7 +197,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
             <CardTitle className="text-sm">Avg Salvage Value</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold">₦{(data.summary.averageSalvageValue ?? 0).toLocaleString()}</div>
+            <MetricValue>{formatReportCurrency(data.summary.averageSalvageValue ?? 0)}</MetricValue>
           </CardContent>
         </Card>
       </MetricGrid>
@@ -246,8 +255,8 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
                           <td className="py-2 px-3 text-right">{branch.soldCases}</td>
                           <td className="py-2 px-3 text-right">{branch.approvalRate.toFixed(1)}%</td>
                           <td className="py-2 px-3 text-right">{branch.averageProcessingTime.toFixed(1)}d</td>
-                          <td className="py-2 px-3 text-right font-medium">â‚¦{branch.totalMarketValue.toLocaleString()}</td>
-                          <td className="py-2 px-3 text-right">â‚¦{branch.totalSalvageValue.toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right font-medium">{formatReportCurrency(branch.totalMarketValue)}</td>
+                          <td className="py-2 px-3 text-right">{formatReportCurrency(branch.totalSalvageValue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -259,6 +268,64 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
         </Card>
       )}
 
+      {data.byBroker && data.byBroker.length > 0 && (
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader>
+            <CardTitle>Broker / Agency Processing Performance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PaginatedReportRows rows={data.byBroker} label="channels">
+              {(rows, startIndex) => (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 px-3">Channel</th>
+                        <th className="text-left py-2 px-3">Type</th>
+                        <th className="text-right py-2 px-3">Cases</th>
+                        <th className="text-right py-2 px-3">Sold</th>
+                        <th className="text-right py-2 px-3">Approval Rate</th>
+                        <th className="text-right py-2 px-3">Avg Processing</th>
+                        <th className="text-right py-2 px-3">Market Value</th>
+                        <th className="text-right py-2 px-3">Salvage Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((broker, index) => (
+                        <tr key={`${broker.channelName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
+                          <td className="py-2 px-3 font-medium">{broker.channelName}</td>
+                          <td className="py-2 px-3 capitalize">{broker.channelType}</td>
+                          <td className="py-2 px-3 text-right">{broker.casesProcessed}</td>
+                          <td className="py-2 px-3 text-right">{broker.soldCases}</td>
+                          <td className="py-2 px-3 text-right">{broker.approvalRate.toFixed(1)}%</td>
+                          <td className="py-2 px-3 text-right">{broker.averageProcessingTime.toFixed(1)}d</td>
+                          <td className="py-2 px-3 text-right font-medium">{formatReportCurrency(broker.totalMarketValue)}</td>
+                          <td className="py-2 px-3 text-right">{formatReportCurrency(broker.totalSalvageValue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedReportRows>
+          </CardContent>
+        </Card>
+      )}
+
+      {data.branchBreakdown && data.branchBreakdown.length > 0 && (
+        <div className="space-y-6">
+          <h3 className="text-lg font-semibold text-gray-900">Branch breakdown</h3>
+          <CategoryBreakdownSection groups={data.branchBreakdown} nameColumnLabel="Branch" />
+        </div>
+      )}
+
+      {data.brokerBreakdown && data.brokerBreakdown.length > 0 && (
+        <div className="space-y-6">
+          <h3 className="text-lg font-semibold text-gray-900">Broker / agency breakdown</h3>
+          <CategoryBreakdownSection groups={data.brokerBreakdown} nameColumnLabel="Channel" />
+        </div>
+      )}
+
       {data.byAssetType.map((asset) => (
         <Card key={asset.assetType} className="min-w-0 overflow-hidden">
           <CardHeader>
@@ -266,11 +333,11 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
             <div className="grid gap-4 mt-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <p className="text-gray-600">Total Market Value</p>
-                <p className="font-bold text-lg">₦{asset.totalMarketValue.toLocaleString()}</p>
+                <p className="font-bold text-lg">{formatReportCurrency(asset.totalMarketValue)}</p>
               </div>
               <div>
                 <p className="text-gray-600">Total Salvage Value</p>
-                <p className="font-bold text-lg">₦{asset.totalSalvageValue.toLocaleString()}</p>
+                <p className="font-bold text-lg">{formatReportCurrency(asset.totalSalvageValue)}</p>
               </div>
               <div>
                 <p className="text-gray-600">Avg Processing Time</p>
@@ -283,50 +350,7 @@ export function CaseProcessingReport({ data, loading }: CaseProcessingReportProp
             </div>
           </CardHeader>
           <CardContent>
-            <PaginatedReportRows rows={asset.cases} label="cases">
-              {(rows, startIndex) => (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 px-3">Claim Reference</th>
-                    <th className="text-left py-2 px-3">Status</th>
-                    <th className="text-right py-2 px-3">Market Value</th>
-                    <th className="text-right py-2 px-3">Salvage Value</th>
-                    <th className="text-right py-2 px-3">Processing Days</th>
-                    <th className="text-left py-2 px-3">Possessing Vendor</th>
-                    <th className="text-left py-2 px-3">Picked Up</th>
-                    <th className="text-left py-2 px-3">Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((caseItem, index) => (
-                    <tr key={`${asset.assetType}-${caseItem.claimReference}-${caseItem.createdAt}-${startIndex + index}`} className="border-b hover:bg-gray-50">
-                      <td className="py-2 px-3 font-medium">{caseItem.claimReference}</td>
-                      <td className="py-2 px-3">
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          caseItem.status === 'sold' ? 'bg-green-100 text-green-800' :
-                          caseItem.status === 'approved' ? 'bg-blue-100 text-blue-800' :
-                          caseItem.status === 'active_auction' ? 'bg-yellow-100 text-yellow-800' :
-                          caseItem.status === 'pending_approval' ? 'bg-orange-100 text-orange-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {caseItem.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-right font-medium">₦{caseItem.marketValue.toLocaleString()}</td>
-                      <td className="py-2 px-3 text-right">₦{caseItem.salvageValue.toLocaleString()}</td>
-                      <td className="py-2 px-3 text-right">{(caseItem.processingDays ?? 0).toFixed(1)}</td>
-                      <td className="py-2 px-3">{caseItem.possessingVendorName || '-'}</td>
-                      <td className="py-2 px-3">{caseItem.pickedUpAt || '-'}</td>
-                      <td className="py-2 px-3">{caseItem.createdAt}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-              )}
-            </PaginatedReportRows>
+            <CaseBreakdownTable rows={asset.cases} />
           </CardContent>
         </Card>
       ))}

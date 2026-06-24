@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import { isPathAllowedForRole } from '@/lib/auth/rbac';
 
@@ -10,7 +11,7 @@ import { isPathAllowedForRole } from '@/lib/auth/rbac';
  */
 export function DashboardRouteGuard() {
   const pathname = usePathname();
-  const router = useRouter();
+  const { replace } = useAppRouter();
   const { data: session, status } = useSession();
 
   useEffect(() => {
@@ -18,9 +19,9 @@ export function DashboardRouteGuard() {
 
     const role = session?.user?.role;
     if (!isPathAllowedForRole(pathname, role)) {
-      router.replace(`/unauthorized?from=${encodeURIComponent(pathname)}`);
+      replace(`/unauthorized?from=${encodeURIComponent(pathname)}`);
     }
-  }, [status, session?.user?.role, pathname, router]);
+  }, [status, session?.user?.role, pathname, replace]);
 
   return null;
 }

@@ -3,16 +3,18 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { ReportFiltersComponent, ReportFilters } from '@/components/reports/common/report-filters';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import { ReportSummaryGrid, ReportSummaryStat, MetricValue } from '@/components/reports/common/report-ui';
 
 export default function PaymentAnalyticsPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -171,8 +173,10 @@ export default function PaymentAnalyticsPage() {
               onFiltersChange={setFilters}
               onApply={fetchReport}
               onReset={() => setFilters(defaultReportFilters())}
-              showAssetTypes={false}
+              showAssetTypes={true}
               showRegions={false}
+              showBranches={true}
+              showBrokers={true}
             />
           </CardContent>
         </Card>
@@ -188,24 +192,12 @@ export default function PaymentAnalyticsPage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Summary</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Payments</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.totalPayments || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Amount</p>
-                    <p className="text-2xl font-bold">₦{(reportData.summary?.totalAmount || 0).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Success Rate</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.successRate || 0}%</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Avg Payment Time</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.averagePaymentTime || 0}h</p>
-                  </div>
-                </div>
+                <ReportSummaryGrid>
+                  <ReportSummaryStat label="Total Payments" value={reportData.summary?.totalPayments || 0} />
+                  <ReportSummaryStat label="Total Amount" value={formatReportCurrency(reportData.summary?.totalAmount || 0)} />
+                  <ReportSummaryStat label="Success Rate" value={`${reportData.summary?.successRate || 0}%`} />
+                  <ReportSummaryStat label="Avg Payment Time" value={`${reportData.summary?.averagePaymentTime || 0}h`} />
+                </ReportSummaryGrid>
               </CardContent>
             </Card>
 
@@ -224,14 +216,14 @@ export default function PaymentAnalyticsPage() {
                     return (
                       <div 
                         key={status.status} 
-                        className={`p-4 rounded-lg border ${isVerified ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}
+                        className={`p-4 rounded-lg border min-w-0 overflow-hidden ${isVerified ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-sm font-medium capitalize">{status.status || ''}</p>
                           {isVerified && <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Received</span>}
                           {!isVerified && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">Pending</span>}
                         </div>
-                        <p className="text-2xl font-bold">₦{(status.totalAmount || 0).toLocaleString()}</p>
+                        <MetricValue>{formatReportCurrency(status.totalAmount || 0)}</MetricValue>
                         <p className="text-sm text-muted-foreground mt-1">
                           {status.count || 0} payment{status.count !== 1 ? 's' : ''} ({status.percentage || 0}%)
                         </p>
@@ -267,7 +259,7 @@ export default function PaymentAnalyticsPage() {
                         <tr key={method.method} className="border-b">
                           <td className="p-2 capitalize">{(method.method || '').replace('_', ' ')}</td>
                           <td className="text-right p-2">{method.count || 0}</td>
-                          <td className="text-right p-2">₦{(method.totalAmount || 0).toLocaleString()}</td>
+                          <td className="text-right p-2">{formatReportCurrency(method.totalAmount || 0)}</td>
                           <td className="text-right p-2">{method.percentage || 0}%</td>
                           <td className="text-right p-2">{method.successRate || 0}%</td>
                         </tr>

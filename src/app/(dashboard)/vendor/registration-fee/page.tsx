@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { RegistrationFeeModal } from '@/components/vendor/registration-fee-modal';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 
 function RegistrationFeePageContent() {
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
   const paymentStatus = searchParams.get('payment');
   

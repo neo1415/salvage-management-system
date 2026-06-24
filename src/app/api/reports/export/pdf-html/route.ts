@@ -42,6 +42,8 @@ export async function POST(request: NextRequest) {
     if (filters?.endDate) params.append('endDate', filters.endDate);
     if (filters?.assetTypes?.length) params.append('assetTypes', filters.assetTypes.join(','));
     if (filters?.regions?.length) params.append('regions', filters.regions.join(','));
+    if (filters?.branches?.length) params.append('branches', filters.branches.join(','));
+    if (filters?.brokers?.length) params.append('brokers', filters.brokers.join(','));
     if (filters?.groupBy) params.append('groupBy', filters.groupBy);
     
     const url = `${baseUrl}${reportPath}${params.toString() ? '?' + params.toString() : ''}`;

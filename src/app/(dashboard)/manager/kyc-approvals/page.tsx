@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Loader2 } from 'lucide-react';
 
 /**
  * Legacy route — Tier 2 queue lives on Vendor Management.
  */
 export default function KYCApprovalsRedirectPage() {
-  const router = useRouter();
+  const router = useAppRouter();
 
   useEffect(() => {
     router.replace('/manager/vendors?tier=tier2&status=pending');

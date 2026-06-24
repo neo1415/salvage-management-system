@@ -7,6 +7,7 @@ import { db } from '@/lib/db/drizzle';
 import { sql } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
 import { resolveReportIsoDateRange } from '../../utils/report-date-range';
+import { formatVendorDisplayName } from '@/lib/utils/vendor-display-name';
 
 export interface MasterReportData {
   executiveSummary: {
@@ -46,6 +47,15 @@ export interface MasterReportData {
     };
     branches: Array<{
       branchName: string;
+      totalCases: number;
+      soldCases: number;
+      claimsValue: number;
+      verifiedRecovery: number;
+      recoveryRate: number;
+    }>;
+    brokers: Array<{
+      channelName: string;
+      channelType: 'broker' | 'agency' | 'unassigned';
       totalCases: number;
       soldCases: number;
       claimsValue: number;
@@ -157,7 +167,11 @@ export class MasterReportService {
     ] = await Promise.all([
       this.getExecutiveSummary(startDate, endDate, prevStart, prevEnd),
       this.getFinancialData(startDate, endDate),
-      this.getOperationalData(startDate, endDate, filters.branches),
+      this.getOperationalData(startDate, endDate, {
+        branches: filters.branches,
+        brokers: filters.brokers,
+        assetTypes: filters.assetTypes,
+      }),
       this.getPerformanceData(startDate, endDate),
       this.getAuctionIntelligence(startDate, endDate),
       this.getSystemHealth(startDate, endDate),
@@ -509,9 +523,20 @@ export class MasterReportService {
     };
   }
 
-  private static async getOperationalData(startDate: string, endDate: string, branches?: string[]) {
+  private static async getOperationalData(
+    startDate: string,
+    endDate: string,
+    scope?: { branches?: string[]; brokers?: string[]; assetTypes?: string[] }
+  ) {
+    const branches = scope?.branches;
     const branchFilter = branches && branches.length > 0
       ? sql`AND COALESCE(sc.branch_name, 'Unassigned') IN (${sql.join(branches.map(branch => sql`${branch}`), sql`, `)})`
+      : sql``;
+    const assetTypeFilter = scope?.assetTypes && scope.assetTypes.length > 0
+      ? sql`AND sc.asset_type IN (${sql.join(scope.assetTypes.map(assetType => sql`${assetType}`), sql`, `)})`
+      : sql``;
+    const brokerFilter = scope?.brokers && scope.brokers.length > 0
+      ? sql`AND sc.broker_name IN (${sql.join(scope.brokers.map(broker => sql`${broker}`), sql`, `)})`
       : sql``;
 
     // Cases overview - EXCLUDE DRAFTS
@@ -525,6 +550,8 @@ export class MasterReportService {
         AND sc.status != 'draft'
         AND sc.claim_reference NOT LIKE 'TEST%'
         ${branchFilter}
+        ${assetTypeFilter}
+        ${brokerFilter}
       GROUP BY status
     `);
 
@@ -541,6 +568,8 @@ export class MasterReportService {
         AND sc.status != 'draft'
         AND sc.claim_reference NOT LIKE 'TEST%'
         ${branchFilter}
+        ${assetTypeFilter}
+        ${brokerFilter}
       GROUP BY asset_type
     `);
 
@@ -566,6 +595,8 @@ export class MasterReportService {
           AND sc.status != 'draft'
           AND sc.claim_reference NOT LIKE 'TEST%'
           ${branchFilter}
+          ${assetTypeFilter}
+          ${brokerFilter}
       )
       SELECT
         branch_name,
@@ -575,6 +606,49 @@ export class MasterReportService {
         COALESCE(SUM(verified_recovery), 0) as verified_recovery
       FROM branch_cases
       GROUP BY branch_name
+      ORDER BY verified_recovery DESC, claims_value DESC
+      LIMIT 25
+    `);
+
+    const brokersResult = await db.execute(sql`
+      WITH channel_cases AS (
+        SELECT
+          sc.id,
+          COALESCE(NULLIF(TRIM(sc.broker_name), ''), NULLIF(TRIM(sc.agency_name), ''), 'Unassigned') as channel_name,
+          CASE
+            WHEN sc.broker_name IS NOT NULL AND TRIM(sc.broker_name) != '' THEN 'broker'
+            WHEN sc.agency_name IS NOT NULL AND TRIM(sc.agency_name) != '' THEN 'agency'
+            ELSE 'unassigned'
+          END as channel_type,
+          COALESCE(CAST(sc.market_value AS NUMERIC), 0) as market_value,
+          COALESCE((
+            SELECT p.amount
+            FROM payments p
+            JOIN auctions a ON p.auction_id = a.id
+            WHERE a.case_id = sc.id
+              AND p.status = 'verified'
+              AND p.vendor_id = a.current_bidder
+            ORDER BY p.verified_at DESC NULLS LAST, p.created_at DESC
+            LIMIT 1
+          ), 0) as verified_recovery
+        FROM salvage_cases sc
+        WHERE sc.created_at >= ${startDate}
+          AND sc.created_at <= ${endDate}
+          AND sc.status != 'draft'
+          AND sc.claim_reference NOT LIKE 'TEST%'
+          ${branchFilter}
+          ${assetTypeFilter}
+          ${brokerFilter}
+      )
+      SELECT
+        channel_name,
+        channel_type,
+        COUNT(*) as total_cases,
+        COUNT(*) FILTER (WHERE verified_recovery > 0) as sold_cases,
+        COALESCE(SUM(market_value), 0) as claims_value,
+        COALESCE(SUM(verified_recovery), 0) as verified_recovery
+      FROM channel_cases
+      GROUP BY channel_name, channel_type
       ORDER BY verified_recovery DESC, claims_value DESC
       LIMIT 25
     `);
@@ -655,6 +729,19 @@ export class MasterReportService {
           branchName: branch.branch_name || 'Unassigned',
           totalCases: parseInt(branch.total_cases || '0'),
           soldCases: parseInt(branch.sold_cases || '0'),
+          claimsValue: Math.round(claimsValue * 100) / 100,
+          verifiedRecovery: Math.round(verifiedRecovery * 100) / 100,
+          recoveryRate: claimsValue > 0 ? Math.round((verifiedRecovery / claimsValue) * 10000) / 100 : 0,
+        };
+      }),
+      brokers: (brokersResult as any[]).map((row) => {
+        const claimsValue = parseFloat(row.claims_value || '0');
+        const verifiedRecovery = parseFloat(row.verified_recovery || '0');
+        return {
+          channelName: row.channel_name || 'Unassigned',
+          channelType: (row.channel_type || 'unassigned') as 'broker' | 'agency' | 'unassigned',
+          totalCases: parseInt(row.total_cases || '0'),
+          soldCases: parseInt(row.sold_cases || '0'),
           claimsValue: Math.round(claimsValue * 100) / 100,
           verifiedRecovery: Math.round(verifiedRecovery * 100) / 100,
           recoveryRate: claimsValue > 0 ? Math.round((verifiedRecovery / claimsValue) * 10000) / 100 : 0,
@@ -743,6 +830,7 @@ export class MasterReportService {
       SELECT 
         v.id,
         v.business_name,
+        u.full_name as vendor_full_name,
         v.tier,
         COUNT(DISTINCT b.auction_id) as auctions_participated,
         COUNT(DISTINCT a.id) FILTER (WHERE a.current_bidder = v.id) as auctions_won,
@@ -763,12 +851,13 @@ export class MasterReportService {
           ELSE 0
         END as payment_rate
       FROM vendors v
+      LEFT JOIN users u ON u.id = v.user_id
       LEFT JOIN bids b ON v.id = b.vendor_id 
         AND b.created_at >= ${startDate}
         AND b.created_at <= ${endDate}
       LEFT JOIN auctions a ON b.auction_id = a.id AND a.current_bidder = v.id
       LEFT JOIN vendor_payments vp ON v.id = vp.vendor_id
-      GROUP BY v.id, v.business_name, v.tier, vp.total_spent, vp.paid_auctions
+      GROUP BY v.id, v.business_name, u.full_name, v.tier, vp.total_spent, vp.paid_auctions
       HAVING COUNT(DISTINCT b.auction_id) > 0
       ORDER BY total_spent DESC
       LIMIT 20
@@ -794,8 +883,21 @@ export class MasterReportService {
         activeVendors: parseInt((activeVendors[0] as any)?.count || '0'),
       },
       adjusters,
-      vendors: (vendorsData as any[]).map(v => ({
-        businessName: v.business_name,
+      vendors: (vendorsData as unknown as Array<{
+        business_name: string | null;
+        vendor_full_name: string | null;
+        tier: string;
+        auctions_participated: string;
+        auctions_won: string;
+        win_rate: string;
+        total_spent: string;
+        avg_bid: string;
+        payment_rate: string;
+      }>).map((v) => ({
+        businessName: formatVendorDisplayName({
+          businessName: v.business_name,
+          fullName: v.vendor_full_name,
+        }),
         tier: vendorTierToNumber(v.tier),
         auctionsParticipated: parseInt(v.auctions_participated),
         auctionsWon: parseInt(v.auctions_won),

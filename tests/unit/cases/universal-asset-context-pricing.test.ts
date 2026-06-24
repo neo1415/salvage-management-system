@@ -4,6 +4,7 @@ import {
   buildUniversalProviderContext,
   enrichItemInfoWithAiIdentification,
   estimateKnownBulkUnitMarketValue,
+  scaleBulkInternetSearchPrice,
   type UniversalItemInfo,
 } from '@/features/cases/services/ai-assessment-enhanced.service';
 import { QueryBuilderService } from '@/features/internet-search/services/query-builder.service';
@@ -12,19 +13,55 @@ import { validateSummary as validateGeminiSummary } from '@/lib/integrations/gem
 describe('universal asset assessment context and pricing', () => {
   const queryBuilder = new QueryBuilderService();
 
-  it('builds cement searches from bag quantity instead of generic goods-in-transit text', () => {
+  it('builds cement searches from product identity, not quantity or damage notes', () => {
     const query = queryBuilder.buildMarketQuery({
-      type: 'goods_in_transit',
-      brand: 'Dangote',
-      description: 'cement',
-      quantity: '10',
+      type: 'building_materials',
+      brand: 'Lafarge',
+      model: '25kg bagged cement',
+      description: 'Lafarge Lafarge 25kg bagged cement fire damaged warehouse',
+      quantity: '20',
       unitOfMeasure: 'bags',
     });
 
-    expect(query).toContain('Dangote cement 10 bags');
-    expect(query).toContain('50kg bag cement');
+    expect(query).toContain('Lafarge 25kg bagged cement');
+    expect(query).toContain('bag cement retail wholesale');
     expect(query).toContain('price Nigeria');
-    expect(query).not.toContain('goods_in_transit');
+    expect(query).not.toContain('fire');
+    expect(query).not.toContain('20 bags');
+    expect(query).not.toMatch(/Lafarge.*Lafarge/i);
+  });
+
+  it('scales internet search unit prices by visible bulk quantity', () => {
+    const scaled = scaleBulkInternetSearchPrice({
+      type: 'building_materials',
+      condition: 'Nigerian Used',
+      brand: 'Lafarge',
+      model: '25kg bagged cement',
+      quantity: '10',
+      unitOfMeasure: 'bags',
+    }, 11900);
+
+    expect(scaled.unitPrice).toBe(11900);
+    expect(scaled.quantity).toBe(10);
+    expect(scaled.totalValue).toBe(119000);
+  });
+
+  it('extracts bag quantity from notes only, not 25kg pack size in model', () => {
+    const enriched = enrichItemInfoWithAiIdentification({
+      type: 'building_materials',
+      condition: 'Poor',
+      make: 'Larfarge cement',
+    }, {
+      itemDetails: {
+        detectedMake: 'Lafarge',
+        detectedModel: '25kg bagged cement',
+        notes: 'Approximately 20–25 bags visible across photos. All bags show fire damage.',
+      },
+    });
+
+    expect(enriched?.quantity).toBe('20');
+    expect(enriched?.description).toBe('Lafarge 25kg bagged cement');
+    expect(enriched?.description).not.toMatch(/Lafarge.*Lafarge/i);
   });
 
   it('estimates known Dangote cement bags conservatively when search evidence is unavailable', () => {

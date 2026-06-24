@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cache } from '@/lib/redis/client';
 import { calculateLeaderboard, type LeaderboardEntry } from '@/features/vendors/services/leaderboard.service';
 
-const LEADERBOARD_CACHE_KEY = 'leaderboard:monthly';
+const LEADERBOARD_CACHE_KEY = 'leaderboard:v3';
 const LEADERBOARD_CACHE_TTL = 5 * 60;
 
 interface LeaderboardResponse {
@@ -23,7 +23,7 @@ export async function GET() {
       return NextResponse.json(cached, { status: 200 });
     }
 
-    const leaderboard = await calculateLeaderboard(10);
+    const leaderboard = await calculateLeaderboard(25);
     const now = new Date();
 
     const response: LeaderboardResponse = {

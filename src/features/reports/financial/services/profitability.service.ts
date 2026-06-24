@@ -7,6 +7,15 @@
 
 import { ReportFilters } from '../../types';
 import { FinancialDataRepository } from '../repositories/financial-data.repository';
+import {
+  buildFinancialBranchBreakdown,
+  buildFinancialBrokerBreakdown,
+  buildFinancialBranchSummary,
+  buildFinancialBrokerSummary,
+  mapRevenueToFinancialDetail,
+  type FinancialBreakdownGroup,
+  type FinancialDetailRow,
+} from '../../utils/financial-breakdown';
 
 export interface ProfitabilityReport {
   summary: {
@@ -26,16 +35,28 @@ export interface ProfitabilityReport {
     recoveryRate: number;
     roi: number;
   }>;
-  itemBreakdown: Array<{
-    claimReference: string;
-    assetType: string;
-    marketValue: number;
-    salvageRecovery: number;
+  itemBreakdown: FinancialDetailRow[];
+  byBranch: Array<{
+    label: string;
+    count: number;
+    claimsPaid: number;
+    salvageRecovered: number;
     netLoss: number;
     recoveryRate: number;
     roi: number;
-    date: string;
   }>;
+  byBroker: Array<{
+    label: string;
+    channelType: 'broker' | 'agency' | 'unassigned';
+    count: number;
+    claimsPaid: number;
+    salvageRecovered: number;
+    netLoss: number;
+    recoveryRate: number;
+    roi: number;
+  }>;
+  branchBreakdown: FinancialBreakdownGroup[];
+  brokerBreakdown: FinancialBreakdownGroup[];
   profitDistribution: {
     profitable: number;
     breakEven: number;
@@ -104,23 +125,18 @@ export class ProfitabilityService {
     }));
 
     // Create item breakdown with ROI - sorted by date descending (latest first)
-    const itemBreakdown = data.details
-      .map(row => ({
-        claimReference: row.claimReference,
-        assetType: row.assetType,
-        marketValue: parseFloat(row.marketValue),
-        salvageRecovery: parseFloat(row.salvageRecovery),
-        netLoss: row.netLoss,
-        recoveryRate: row.recoveryRate,
-        roi: row.recoveryRate, // Recovery rate IS the ROI for salvage
-        date: row.createdAt.toISOString().split('T')[0],
-      }))
-      .sort((a, b) => b.date.localeCompare(a.date)); // Sort by date descending
+    const financialDetails = data.details
+      .map(mapRevenueToFinancialDetail)
+      .sort((a, b) => b.date.localeCompare(a.date));
 
     return {
       summary: summaryWithROI,
       byAssetType: byAssetTypeArray,
-      itemBreakdown,
+      itemBreakdown: financialDetails,
+      byBranch: buildFinancialBranchSummary(financialDetails),
+      byBroker: buildFinancialBrokerSummary(financialDetails),
+      branchBreakdown: buildFinancialBranchBreakdown(financialDetails),
+      brokerBreakdown: buildFinancialBrokerBreakdown(financialDetails),
       profitDistribution,
       topPerformers: performers.top,
       bottomPerformers: performers.bottom,

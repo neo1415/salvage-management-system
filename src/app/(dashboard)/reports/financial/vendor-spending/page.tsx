@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
@@ -11,9 +11,11 @@ import { ReportFiltersComponent, ReportFilters } from '@/components/reports/comm
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
+import { ReportSummaryGrid, ReportSummaryStat } from '@/components/reports/common/report-ui';
 
 export default function VendorSpendingPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [reportData, setReportData] = useState<any>(null);
@@ -168,8 +170,10 @@ export default function VendorSpendingPage() {
               onFiltersChange={setFilters}
               onApply={fetchReport}
               onReset={() => setFilters(defaultReportFilters())}
-              showAssetTypes={false}
+              showAssetTypes={true}
               showRegions={false}
+              showBranches={true}
+              showBrokers={true}
             />
           </CardContent>
         </Card>
@@ -185,24 +189,12 @@ export default function VendorSpendingPage() {
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Summary</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Vendors</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.totalVendors || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Spending</p>
-                    <p className="text-2xl font-bold">₦{(reportData.summary?.totalSpent || 0).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Avg Spending/Vendor</p>
-                    <p className="text-2xl font-bold">₦{(reportData.summary?.averageSpendPerVendor || 0).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Top Vendor Share</p>
-                    <p className="text-2xl font-bold">{reportData.summary?.topSpenderPercentage || 0}%</p>
-                  </div>
-                </div>
+                <ReportSummaryGrid>
+                  <ReportSummaryStat label="Total Vendors" value={reportData.summary?.totalVendors || 0} />
+                  <ReportSummaryStat label="Total Spending" value={formatReportCurrency(reportData.summary?.totalSpent || 0)} />
+                  <ReportSummaryStat label="Avg Spending/Vendor" value={formatReportCurrency(reportData.summary?.averageSpendPerVendor || 0)} />
+                  <ReportSummaryStat label="Top Vendor Share" value={`${reportData.summary?.topSpenderPercentage || 0}%`} />
+                </ReportSummaryGrid>
               </CardContent>
             </Card>
 
@@ -229,9 +221,9 @@ export default function VendorSpendingPage() {
                           <td className="p-2">{startIndex + index + 1}</td>
                           <td className="p-2">{vendor.vendorName}</td>
                           <td className="p-2 capitalize">{vendor.tier}</td>
-                          <td className="text-right p-2">₦{(vendor.totalSpent || 0).toLocaleString()}</td>
+                          <td className="text-right p-2">{formatReportCurrency(vendor.totalSpent || 0)}</td>
                           <td className="text-right p-2">{vendor.transactionCount || 0}</td>
-                          <td className="text-right p-2">₦{(vendor.averageTransaction || 0).toLocaleString()}</td>
+                          <td className="text-right p-2">{formatReportCurrency(vendor.averageTransaction || 0)}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Wallet, TrendingUp, TrendingDown, Lock, AlertCircle, ExternalLink } from 'lucide-react';
+import { MetricValue, StatGrid } from '@/components/ui/stat-card';
 import Link from 'next/link';
 
 interface DepositEvent {
@@ -176,34 +177,34 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
         </div>
 
         {walletBalance && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
+          <StatGrid className="md:grid-cols-4">
+            <div className="bg-gray-50 p-4 rounded-lg min-w-0 overflow-hidden">
               <p className="text-xs text-gray-500 mb-1">Total Balance</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <MetricValue className="text-gray-900">
                 ₦{formatAmount(walletBalance.balance)}
-              </p>
+              </MetricValue>
             </div>
-            <div className="bg-green-50 p-4 rounded-lg">
+            <div className="bg-green-50 p-4 rounded-lg min-w-0 overflow-hidden">
               <p className="text-xs text-green-700 mb-1">Available</p>
-              <p className="text-2xl font-bold text-green-600">
+              <MetricValue className="text-green-600">
                 ₦{formatAmount(walletBalance.availableBalance)}
-              </p>
+              </MetricValue>
             </div>
-            <div className="bg-orange-50 p-4 rounded-lg">
+            <div className="bg-orange-50 p-4 rounded-lg min-w-0 overflow-hidden">
               <p className="text-xs text-orange-700 mb-1">Frozen (Deposits)</p>
-              <p className="text-2xl font-bold text-orange-600">
+              <MetricValue className="text-orange-600">
                 ₦{formatAmount(walletBalance.frozenAmount)}
-              </p>
+              </MetricValue>
             </div>
             {toAmount(walletBalance.forfeitedAmount) > 0 && (
-              <div className="bg-red-50 p-4 rounded-lg">
+              <div className="bg-red-50 p-4 rounded-lg min-w-0 overflow-hidden">
                 <p className="text-xs text-red-700 mb-1">Forfeited</p>
-                <p className="text-2xl font-bold text-red-600">
+                <MetricValue className="text-red-600">
                   ₦{formatAmount(walletBalance.forfeitedAmount)}
-                </p>
+                </MetricValue>
               </div>
             )}
-          </div>
+          </StatGrid>
         )}
       </div>
 

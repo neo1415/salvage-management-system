@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Bell, CheckCheck } from 'lucide-react';
 import NotificationItem from '@/components/notifications/notification-item';
 
@@ -42,7 +42,7 @@ export default function NotificationsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<NotificationTab>('all');
   const [hasMore, setHasMore] = useState(true);
-  const router = useRouter();
+  const router = useAppRouter();
 
   const loadTab = useCallback(async (tab: NotificationTab, reset: boolean) => {
     const cached = tabCacheRef.current.get(tab);

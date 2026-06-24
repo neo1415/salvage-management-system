@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { useCachedDocuments } from '@/hooks/use-cached-documents';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
@@ -108,7 +108,7 @@ function mapApiDocument(doc: ApiDocumentPayload): Document {
 
 export default function VendorDocumentsPage() {
   const { data: session, status: sessionStatus } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const [auctionDocuments, setAuctionDocuments] = useState<AuctionDocuments[]>([]);
   
   // Track if we need to scroll to a specific auction
@@ -178,7 +178,7 @@ export default function VendorDocumentsPage() {
         assetName:
           auction?.assetName ||
           saleFromDoc?.documentData?.assetDescription ||
-          'Salvage Item',
+          'Auction item',
         winningBid: auction
           ? Number(auction.currentBid ?? 0)
           : saleFromDoc?.documentData?.salePrice ?? 0,
@@ -558,7 +558,7 @@ interface AuctionDocumentCardProps {
 }
 
 function AuctionDocumentCard({ auction, onViewAuction, onDownload, onViewReceipt, isOffline }: AuctionDocumentCardProps) {
-  const router = useRouter();
+  const router = useAppRouter();
 
   const visibleDocuments = auction.documents.filter(isVisibleDocument);
   const signedCount = visibleDocuments.filter(d => d.status === 'signed').length;

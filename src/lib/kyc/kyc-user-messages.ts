@@ -14,7 +14,7 @@ export interface ResolvedVerificationError {
   mismatches?: string[];
 }
 
-const PROVIDER_NAME_PATTERN = /\b(dojah|paystack|termii|resend)\b/gi;
+const PROVIDER_NAME_PATTERN = /\b(dojah|nem|paystack|termii|resend)\b/gi;
 
 const TECHNICAL_MESSAGE_PATTERN =
   /^(4\d{2}|5\d{2})\b|axios|fetch failed|network error|econnrefused|timeout|undefined|null/i;
@@ -227,6 +227,21 @@ export function resolveTier2ApiError(payload: {
       'We could not finish processing your verification. Try again or contact support.',
     source: 'app',
   };
+}
+
+export function sanitizeVerificationProviderLabel(provider: string | null | undefined): string {
+  const value = (provider ?? '').trim().toLowerCase();
+  if (!value) return 'Verification service';
+  if (value === 'dojah') return 'Identity verification';
+  if (value.includes('nem')) return 'Platform verification';
+  return 'Verification service';
+}
+
+export function sanitizeWorkflowReference(reference: string | null | undefined): string {
+  const value = (reference ?? '').trim();
+  if (!value) return '';
+  if (/nem-hybrid|dojah/i.test(value)) return 'Tier 2 manual review workflow';
+  return value.replace(/^(dojah|nem)[-_]/i, '').replace(/_/g, ' ').trim();
 }
 
 export function sourceHint(source: VerificationErrorSource): string {

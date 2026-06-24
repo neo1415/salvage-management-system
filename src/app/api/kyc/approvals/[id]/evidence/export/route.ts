@@ -7,8 +7,14 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { fraudAlerts } from '@/lib/db/schema/intelligence';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
-import { ExportService } from '@/features/export/services/export.service';
 import { getEmailBranding } from '@/features/notifications/templates/email-branding';
+import {
+  sanitizeVerificationProviderLabel,
+  sanitizeVerificationUserMessage,
+  sanitizeWorkflowReference,
+} from '@/lib/kyc/kyc-user-messages';
+import { formatReasonCode } from '@/features/kyc/utils/provider-evidence-display';
+import { generateVendorEvidencePdf } from '@/lib/kyc/vendor-evidence-pdf';
 import {
   AuditActionType,
   AuditEntityType,
@@ -33,19 +39,9 @@ function formatDate(value: unknown): string {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString();
 }
 
-function section(title: string, rows: Array<Record<string, unknown>>): string {
-  return [
-    '',
-    title,
-    ExportService.generateCSV({
-      filename: 'section.csv',
-      columns: [
-        { key: 'field', header: 'Field' },
-        { key: 'value', header: 'Value' },
-      ],
-      data: rows,
-    }),
-  ].join('\n');
+function formatReasonCodes(values: unknown): string {
+  if (!Array.isArray(values)) return '';
+  return values.map((value) => formatReasonCode(String(value))).join('; ');
 }
 
 export async function GET(
@@ -122,28 +118,28 @@ export async function GET(
     limit: 50,
   });
 
-  const providerRows = providerRecords.map((record) => {
+  const verificationTableRows = providerRecords.map((record) => {
     const reviewer = reviewers.find((item) => item.id === record.reviewedBy);
-    return {
-      provider: record.provider,
-      verificationType: record.verificationType,
-      providerReference: record.providerReference || '',
-      workflowReference: record.workflowReference || '',
-      status: record.status,
-      riskLevel: record.riskLevel,
-      checksCompleted: safeJoin(record.checksCompleted),
-      pendingChecks: safeJoin(record.pendingChecks),
-      failedChecks: safeJoin(record.failedChecks),
-      reviewRequiredChecks: safeJoin(record.reasonCodes),
-      reviewer: reviewer ? `${reviewer.fullName} <${reviewer.email}>` : '',
-      decision: record.finalDecision || '',
-      decisionReason: record.decisionReason || '',
-      reviewedAt: formatDate(record.reviewedAt),
-      updatedAt: formatDate(record.updatedAt),
-    };
+    return [
+      sanitizeVerificationProviderLabel(record.provider),
+      record.verificationType,
+      record.providerReference || '',
+      sanitizeWorkflowReference(record.workflowReference),
+      record.status,
+      record.riskLevel || '',
+      formatCheckList(record.checksCompleted),
+      formatCheckList(record.pendingChecks),
+      formatCheckList(record.failedChecks),
+      formatReasonCodes(record.reasonCodes),
+      reviewer ? `${reviewer.fullName} <${reviewer.email}>` : '',
+      record.finalDecision || '',
+      sanitizeVerificationUserMessage(record.decisionReason) || record.decisionReason || '',
+      formatDate(record.reviewedAt),
+      formatDate(record.updatedAt),
+    ];
   });
 
-  const fraudRows = alerts.map((alert) => {
+  const fraudTableRows = alerts.map((alert) => {
     const metadata = alert.metadata as {
       source?: string;
       providerReference?: string;
@@ -152,95 +148,96 @@ export async function GET(
       reasonCodes?: string[];
     } | null;
 
-    return {
-      source: metadata?.source || 'system',
-      status: alert.status,
-      riskScore: alert.riskScore,
-      severity: alert.riskScore >= 90 ? 'critical' : alert.riskScore >= 75 ? 'high' : alert.riskScore >= 50 ? 'medium' : 'low',
-      providerReference: metadata?.providerReference || '',
-      workflowReference: metadata?.workflowReference || '',
-      reasonCodes: safeJoin(metadata?.reasonCodes || alert.flagReasons),
-      createdAt: formatDate(alert.createdAt),
-    };
+    return [
+      sanitizeVerificationProviderLabel(metadata?.source || 'system'),
+      alert.status,
+      String(alert.riskScore),
+      alert.riskScore >= 90 ? 'critical' : alert.riskScore >= 75 ? 'high' : alert.riskScore >= 50 ? 'medium' : 'low',
+      metadata?.providerReference || '',
+      sanitizeWorkflowReference(metadata?.workflowReference),
+      formatReasonCodes(metadata?.reasonCodes || alert.flagReasons),
+      formatDate(alert.createdAt),
+    ];
   });
 
-  const auditRows = auditTrail.map((log) => ({
-    timestamp: formatDate(log.createdAt),
-    action: log.actionType,
-    entityType: log.entityType,
-    entityId: log.entityId,
-  }));
+  const auditTableRows = auditTrail.map((log) => [
+    formatDate(log.createdAt),
+    formatReasonCode(log.actionType),
+    log.entityType,
+    log.entityId,
+  ]);
 
-  const csvParts = [
-    `${branding.brandName} Vendor Verification Evidence Packet`,
-    section('Vendor Identity Summary', [
-      { field: 'Vendor ID', value: vendor.id },
-      { field: 'User ID', value: vendor.userId },
-      { field: 'Full Name', value: vendorUser?.fullName || '' },
-      { field: 'Email', value: vendorUser?.email || '' },
-      { field: 'Phone', value: vendorUser?.phone || '' },
-      { field: 'User Status', value: vendorUser?.status || '' },
-      { field: 'Vendor Status', value: vendor.status },
-      { field: 'Vendor Tier', value: vendor.tier },
-      { field: 'Created At', value: formatDate(vendor.createdAt) },
-    ]),
-    section('Business Identity Summary', [
-      { field: 'Business Name', value: vendor.businessName || 'Individual' },
-      { field: 'Business Type', value: vendor.businessType || '' },
-      { field: 'CAC Number', value: maskIdentifier(vendor.cacNumber) },
-    ]),
-    '',
-    'Verification Records',
-    ExportService.generateCSV({
-      filename: 'verification-records.csv',
-      columns: [
-        { key: 'provider', header: 'Provider' },
-        { key: 'verificationType', header: 'Verification Type' },
-        { key: 'providerReference', header: 'Provider Reference' },
-        { key: 'workflowReference', header: 'Workflow Reference' },
-        { key: 'status', header: 'Status' },
-        { key: 'riskLevel', header: 'Risk Level' },
-        { key: 'checksCompleted', header: 'Completed Checks' },
-        { key: 'pendingChecks', header: 'Pending Checks' },
-        { key: 'failedChecks', header: 'Failed Checks' },
-        { key: 'reviewRequiredChecks', header: 'Review Required / Reason Codes' },
-        { key: 'reviewer', header: 'Reviewer' },
-        { key: 'decision', header: 'Decision' },
-        { key: 'decisionReason', header: 'Decision Reason' },
-        { key: 'reviewedAt', header: 'Reviewed At' },
-        { key: 'updatedAt', header: 'Updated At' },
-      ],
-      data: providerRows,
-    }),
-    '',
-    'Linked Fraud Alerts',
-    ExportService.generateCSV({
-      filename: 'linked-fraud-alerts.csv',
-      columns: [
-        { key: 'source', header: 'Source' },
-        { key: 'status', header: 'Status' },
-        { key: 'riskScore', header: 'Risk Score' },
-        { key: 'severity', header: 'Severity' },
-        { key: 'providerReference', header: 'Provider Reference' },
-        { key: 'workflowReference', header: 'Workflow Reference' },
-        { key: 'reasonCodes', header: 'Reason Codes' },
-        { key: 'createdAt', header: 'Created At' },
-      ],
-      data: fraudRows,
-    }),
-    '',
-    'Audit Trail Summary',
-    ExportService.generateCSV({
-      filename: 'audit-trail.csv',
-      columns: [
-        { key: 'timestamp', header: 'Timestamp' },
-        { key: 'action', header: 'Action' },
-        { key: 'entityType', header: 'Entity Type' },
-        { key: 'entityId', header: 'Entity ID' },
-      ],
-      data: auditRows,
-    }),
-  ];
+  const pdfBuffer = await generateVendorEvidencePdf({
+    title: 'VENDOR VERIFICATION EVIDENCE',
+    subtitle: `${branding.brandName} | Vendor ${vendorId.slice(0, 8)} | Generated ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}`,
+    keyValueSections: [
+      {
+        title: 'Vendor Identity Summary',
+        rows: [
+          { label: 'Vendor ID', value: vendor.id },
+          { label: 'User ID', value: vendor.userId },
+          { label: 'Full Name', value: vendorUser?.fullName || '' },
+          { label: 'Email', value: vendorUser?.email || '' },
+          { label: 'Phone', value: vendorUser?.phone || '' },
+          { label: 'User Status', value: vendorUser?.status || '' },
+          { label: 'Vendor Status', value: vendor.status },
+          { label: 'Vendor Tier', value: vendor.tier },
+          { label: 'Created At', value: formatDate(vendor.createdAt) },
+        ],
+      },
+      {
+        title: 'Business Identity Summary',
+        rows: [
+          { label: 'Business Name', value: vendor.businessName || 'Individual' },
+          { label: 'Business Type', value: vendor.businessType || '' },
+          { label: 'CAC Number', value: maskIdentifier(vendor.cacNumber) },
+        ],
+      },
+    ],
+    tables: [
+      {
+        title: 'Verification Records',
+        headers: [
+          'Provider',
+          'Type',
+          'Reference',
+          'Workflow',
+          'Status',
+          'Risk',
+          'Completed',
+          'Pending',
+          'Failed',
+          'Reason codes',
+          'Reviewer',
+          'Decision',
+          'Reason',
+          'Reviewed',
+          'Updated',
+        ],
+        rows: verificationTableRows,
+      },
+      {
+        title: 'Linked Fraud Alerts',
+        headers: [
+          'Source',
+          'Status',
+          'Risk score',
+          'Severity',
+          'Reference',
+          'Workflow',
+          'Reason codes',
+          'Created',
+        ],
+        rows: fraudTableRows,
+      },
+      {
+        title: 'Audit Trail Summary',
+        headers: ['Timestamp', 'Action', 'Entity type', 'Entity ID'],
+        rows: auditTableRows,
+      },
+    ],
+    footerNote: `${branding.brandName} | Confidential`,
+  });
 
   await logAction(createAuditLogData(
     request,
@@ -251,21 +248,25 @@ export async function GET(
     undefined,
     {
       reportType: 'vendor_verification_evidence_packet',
-      format: 'csv',
+      format: 'pdf',
       providerRecordCount: providerRecords.length,
       fraudAlertCount: alerts.length,
       auditLogCount: auditTrail.length,
     }
   ));
 
-  const csv = csvParts.join('\n');
-  const filename = `vendor-verification-evidence-${vendorId.slice(0, 8)}-${new Date().toISOString().split('T')[0]}.csv`;
+  const filename = `vendor-verification-evidence-${vendorId.slice(0, 8)}-${new Date().toISOString().split('T')[0]}.pdf`;
 
-  return new NextResponse(csv, {
+  return new NextResponse(new Uint8Array(pdfBuffer), {
     headers: {
-      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${filename}"`,
       'Cache-Control': 'no-store',
     },
   });
+}
+
+function formatCheckList(checks: string[] | null | undefined): string {
+  if (!checks?.length) return '';
+  return checks.map((check) => check.replace(/_/g, ' ')).join('; ');
 }

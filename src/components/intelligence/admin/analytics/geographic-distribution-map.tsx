@@ -7,6 +7,7 @@
  * Task: 11.3.5 - Implement Geographic Distribution map
  */
 
+import { MetricValue } from '@/components/ui/stat-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MapPin, TrendingUp, TrendingDown } from 'lucide-react';
@@ -141,9 +142,9 @@ export function GeographicDistributionMap({ data, loading }: GeographicDistribut
                     </div>
                   </div>
                   
-                  <div className="text-right ml-4">
+                  <div className="text-right ml-4 min-w-0 shrink-0">
                     <p className="text-xs text-muted-foreground">Rank</p>
-                    <p className="text-2xl font-bold text-[var(--brand-primary)]">#{index + 1}</p>
+                    <MetricValue className="text-[var(--brand-primary)]">#{index + 1}</MetricValue>
                   </div>
                 </div>
               </div>

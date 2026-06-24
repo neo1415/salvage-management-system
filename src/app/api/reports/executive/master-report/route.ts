@@ -23,7 +23,9 @@ export async function GET(request: NextRequest) {
       searchParams.get('endDate')
     );
     const branches = searchParams.get('branches')?.split(',').filter(Boolean);
-    const filters = { startDate, endDate, branches };
+    const brokers = searchParams.get('brokers')?.split(',').filter(Boolean);
+    const assetTypes = searchParams.get('assetTypes')?.split(',').filter(Boolean);
+    const filters = { startDate, endDate, branches, brokers, assetTypes };
 
     const cached = await ReportCacheService.getCachedReport(MASTER_REPORT_CACHE_TYPE, filters);
     if (cached) {

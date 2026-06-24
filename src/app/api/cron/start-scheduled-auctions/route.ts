@@ -32,6 +32,7 @@ import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from 
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { getAppUrl } from '@/features/notifications/templates/email-urls';
+import { notifyApprovingManagerScheduledAuctionLive } from '@/features/auctions/services/scheduled-auction-manager-notification.service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60 seconds max execution time
@@ -196,6 +197,14 @@ export async function GET(request: NextRequest) {
         });
 
         console.log(`[Cron] Successfully started auction ${auction.id}, notified ${notifiedCount} vendors`);
+
+        await notifyApprovingManagerScheduledAuctionLive({
+          auctionId: auction.id,
+          caseId: caseRecord.id,
+          claimReference: caseRecord.claimReference,
+          assetType: assetType,
+          endTime: auction.endTime,
+        });
       } catch (error) {
         console.error(`[Cron] Error starting auction ${auction.id}:`, error);
         results.push({

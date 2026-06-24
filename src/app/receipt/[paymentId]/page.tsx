@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { usePublicBranding } from '@/hooks/use-public-branding';
 
 interface PaymentDetails {
@@ -48,7 +49,7 @@ interface PaymentDetails {
 
 export default function PublicReceiptPage() {
   const params = useParams();
-  const router = useRouter();
+  const router = useAppRouter();
   const { branding } = usePublicBranding();
   const [payment, setPayment] = useState<PaymentDetails | null>(null);
   const [loading, setLoading] = useState(true);

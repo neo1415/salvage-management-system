@@ -11,6 +11,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { depositEvents, vendors, auctions, salvageCases } from '@/lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 /**
  * GET /api/vendors/[id]/wallet/deposit-history
@@ -81,7 +82,9 @@ export async function GET(
         auctionId: depositEvents.auctionId,
         auction: {
           id: auctions.id,
-          assetName: salvageCases.assetType,
+          assetType: salvageCases.assetType,
+          assetDetails: salvageCases.assetDetails,
+          claimReference: salvageCases.claimReference,
           status: auctions.status,
         },
       })
@@ -131,7 +134,11 @@ export async function GET(
         createdAt: event.createdAt,
         auction: event.auction ? {
           id: event.auction.id,
-          assetName: event.auction.assetName,
+          assetName: formatAssetName(
+            event.auction.assetType || 'other',
+            event.auction.assetDetails as Record<string, unknown>,
+            event.auction.claimReference
+          ),
           status: event.auction.status,
         } : null,
         reference: null,

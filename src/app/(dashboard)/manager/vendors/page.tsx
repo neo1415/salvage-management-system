@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { 
@@ -92,7 +93,7 @@ export default function VendorManagementPage() {
 }
 
 function VendorManagementContent() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { data: session, status: sessionStatus } = useSession();
   const searchParams = useSearchParams();
   const isSalvageManager = session?.user?.role === 'salvage_manager';

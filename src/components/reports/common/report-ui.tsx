@@ -1,12 +1,18 @@
 'use client';
 
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type React from 'react';
 import {
   DataLoadingState,
   DataRefreshingHint,
 } from '@/components/ui/loading-states';
+import {
+  MetricValue,
+  StatGrid,
+  StatCard,
+  StatTile,
+  ReportKPICard as ReportKPICardBase,
+} from '@/components/ui/stat-card';
 
 export {
   DataLoadingState,
@@ -17,6 +23,13 @@ export {
   NavigationProgressBar,
 } from '@/components/ui/loading-states';
 
+export {
+  MetricValue,
+  StatGrid,
+  StatCard,
+  StatTile,
+} from '@/components/ui/stat-card';
+
 /** @deprecated Prefer `DataLoadingState` */
 export function ReportLoadingState({ label = 'Loading report' }: { label?: string }) {
   return <DataLoadingState label={label} variant="report" />;
@@ -25,25 +38,6 @@ export function ReportLoadingState({ label = 'Loading report' }: { label?: strin
 /** @deprecated Prefer `DataRefreshingHint` */
 export function ReportRefreshingHint({ className }: { className?: string }) {
   return <DataRefreshingHint className={className} />;
-}
-
-export function MetricValue({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <p
-      className={cn(
-        'max-w-full break-words font-bold leading-tight text-gray-950 text-[clamp(1.15rem,1.55vw,1.6rem)]',
-        className
-      )}
-    >
-      {children}
-    </p>
-  );
 }
 
 export function MetricGrid({
@@ -63,6 +57,47 @@ export function MetricGrid({
       {children}
     </div>
   );
+}
+
+export function ReportSummaryGrid({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <StatGrid minCol={160} className={className}>
+      {children}
+    </StatGrid>
+  );
+}
+
+export function ReportSummaryStat({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('min-w-0 overflow-hidden', className)}>
+      <p className="text-sm text-muted-foreground truncate">{label}</p>
+      <MetricValue className="mt-1">{value}</MetricValue>
+    </div>
+  );
+}
+
+export function ReportKPICard(props: {
+  title: string;
+  value: React.ReactNode;
+  subtitle?: string;
+  trend?: number;
+  className?: string;
+}) {
+  return <ReportKPICardBase {...props} />;
 }
 
 export function ChartFrame({

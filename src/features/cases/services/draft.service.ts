@@ -116,10 +116,14 @@ class DraftServiceClass {
   /**
    * Validate draft for submission
    */
-  canSubmit(draft: DraftCase): DraftValidation {
+  canSubmit(
+    draft: DraftCase,
+    options?: { requireMarketValue?: boolean }
+  ): DraftValidation {
     const errors: string[] = [];
+    const requireMarketValue = options?.requireMarketValue ?? true;
 
-    if (!draft.marketValue || draft.marketValue <= 0) {
+    if (requireMarketValue && (!draft.marketValue || draft.marketValue <= 0)) {
       errors.push('Claims paid / asset value is required. Enter it manually or run AI analysis to estimate it.');
     }
 

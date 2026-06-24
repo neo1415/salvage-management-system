@@ -17,6 +17,7 @@ import axios from 'axios';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { businessPolicyService } from '@/features/business-policy';
 import { getAppUrl } from '@/features/notifications/templates/email-urls';
+import { canUserReceiveSms } from './notification-channel-guard';
 
 // Validate required environment variables
 if (!process.env.TERMII_API_KEY) {
@@ -191,6 +192,19 @@ export class SMSService {
           success: true,
           skipped: true,
           messageId: `category-skipped-${category}`,
+        };
+      }
+
+      if (
+        options.userId &&
+        (category === 'routine' || category === 'manual') &&
+        !(await canUserReceiveSms(options.userId))
+      ) {
+        console.log(`[SMS SKIPPED] User disabled SMS channel for ${normalizedPhone}`);
+        return {
+          success: true,
+          skipped: true,
+          messageId: 'user-sms-disabled',
         };
       }
 

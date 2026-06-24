@@ -1,23 +1,17 @@
 /**
  * Double-Entry Ledger Service
- * 
- * Provides true accounting integrity by ensuring every transaction has two sides.
- * 
- * CRITICAL RULES:
- * 1. Every transaction MUST have balanced debits and credits
- * 2. Never modify existing payment flows - only ADD ledger entries
- * 3. Ledger writes happen AFTER existing operations succeed
- * 4. If ledger write fails, log error but don't block payment
- * 
- * Example: Vendor funds wallet with ₦100k
- * - Debit: vendor_wallet account (increases vendor balance)
- * - Credit: nem_paystack account (increases NEM Paystack balance)
+ *
+ * Audit-only mirror of wallet movements — never charges Paystack or users twice.
+ * Every wallet operation should record matching ledger entries in the same DB transaction.
  */
 
 import { db } from '@/lib/db';
 import { ledgerAccounts, ledgerEntries, ledgerTransactionSummary } from '@/lib/db/schema/ledger';
 import { eq, and, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+
+/** DB client or transaction — both support ledger inserts */
+export type LedgerDbExecutor = Pick<typeof db, 'select' | 'insert'>;
 
 export interface LedgerEntry {
   accountType: 'vendor_wallet' | 'nem_paystack' | 'nem_bank';
@@ -31,20 +25,27 @@ export interface LedgerTransaction {
   transactionId: string;
   entries: LedgerEntry[];
   reference?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export class LedgerService {
-  /**
-   * Get or create a ledger account
-   */
+  async hasLedgerReference(executor: LedgerDbExecutor, reference: string): Promise<boolean> {
+    if (!reference?.trim()) return false;
+    const existing = await executor
+      .select({ id: ledgerEntries.id })
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.reference, reference))
+      .limit(1);
+    return existing.length > 0;
+  }
+
   private async getOrCreateAccount(
+    executor: LedgerDbExecutor,
     accountType: 'vendor_wallet' | 'nem_paystack' | 'nem_bank',
     accountId: string,
     name: string
   ) {
-    // Try to find existing account
-    const existing = await db
+    const existing = await executor
       .select()
       .from(ledgerAccounts)
       .where(
@@ -59,8 +60,7 @@ export class LedgerService {
       return existing[0];
     }
 
-    // Create new account
-    const [newAccount] = await db
+    const [newAccount] = await executor
       .insert(ledgerAccounts)
       .values({
         accountType,
@@ -73,37 +73,40 @@ export class LedgerService {
   }
 
   /**
-   * Record a double-entry transaction
-   * 
-   * CRITICAL: This validates that debits = credits before inserting
+   * Record a double-entry transaction. Skips insert if reference already exists (idempotent).
    */
-  async recordTransaction(transaction: LedgerTransaction): Promise<void> {
+  async recordTransaction(
+    executor: LedgerDbExecutor,
+    transaction: LedgerTransaction
+  ): Promise<void> {
     const { transactionId, entries, reference, metadata } = transaction;
 
-    // Validate: Calculate total debits and credits
+    if (reference && await this.hasLedgerReference(executor, reference)) {
+      return;
+    }
+
     const totalDebit = entries.reduce((sum, entry) => sum + entry.debit, 0);
     const totalCredit = entries.reduce((sum, entry) => sum + entry.credit, 0);
     const discrepancy = Math.abs(totalDebit - totalCredit);
 
-    // Allow small rounding errors (< 1 kobo)
     if (discrepancy >= 0.01) {
       throw new Error(
         `Ledger transaction ${transactionId} is unbalanced: ` +
-        `debit=${totalDebit}, credit=${totalCredit}, discrepancy=${discrepancy}`
+          `debit=${totalDebit}, credit=${totalCredit}, discrepancy=${discrepancy}`
       );
     }
 
-    // Get or create accounts for all entries
-    const accountPromises = entries.map(entry =>
-      this.getOrCreateAccount(
-        entry.accountType,
-        entry.accountId,
-        `${entry.accountType}:${entry.accountId}`
+    const accounts = await Promise.all(
+      entries.map((entry) =>
+        this.getOrCreateAccount(
+          executor,
+          entry.accountType,
+          entry.accountId,
+          `${entry.accountType}:${entry.accountId}`
+        )
       )
     );
-    const accounts = await Promise.all(accountPromises);
 
-    // Create ledger entries
     const ledgerEntryValues = entries.map((entry, index) => ({
       transactionId,
       accountId: accounts[index].id,
@@ -114,29 +117,18 @@ export class LedgerService {
       metadata: metadata ? JSON.stringify(metadata) : null,
     }));
 
-    // Insert all entries in a single transaction
-    await db.insert(ledgerEntries).values(ledgerEntryValues);
-
-    console.log(`[Ledger] Recorded transaction ${transactionId} with ${entries.length} entries`);
+    await executor.insert(ledgerEntries).values(ledgerEntryValues);
   }
 
-  /**
-   * Record wallet funding transaction
-   * 
-   * Example: Vendor funds wallet with ₦100k
-   * - Debit: vendor_wallet (vendor balance increases)
-   * - Credit: nem_paystack (NEM Paystack balance increases)
-   */
   async recordWalletFunding(
+    executor: LedgerDbExecutor,
     vendorId: string,
     amount: number,
     reference: string,
     description: string
   ): Promise<void> {
-    const transactionId = randomUUID();
-
-    await this.recordTransaction({
-      transactionId,
+    await this.recordTransaction(executor, {
+      transactionId: randomUUID(),
       reference,
       entries: [
         {
@@ -162,23 +154,17 @@ export class LedgerService {
     });
   }
 
-  /**
-   * Record deposit freeze transaction
-   * 
-   * Note: This is an internal transfer within vendor_wallet
-   * - Debit: vendor_wallet:frozen
-   * - Credit: vendor_wallet:available
-   */
   async recordDepositFreeze(
+    executor: LedgerDbExecutor,
     vendorId: string,
     amount: number,
     auctionId: string,
-    description: string
+    description: string,
+    reference?: string
   ): Promise<void> {
-    const transactionId = randomUUID();
-
-    await this.recordTransaction({
-      transactionId,
+    await this.recordTransaction(executor, {
+      transactionId: randomUUID(),
+      reference: reference ?? `FREEZE_${auctionId}`,
       entries: [
         {
           accountType: 'vendor_wallet',
@@ -204,23 +190,17 @@ export class LedgerService {
     });
   }
 
-  /**
-   * Record deposit unfreeze transaction
-   * 
-   * Reverse of freeze:
-   * - Debit: vendor_wallet:available
-   * - Credit: vendor_wallet:frozen
-   */
   async recordDepositUnfreeze(
+    executor: LedgerDbExecutor,
     vendorId: string,
     amount: number,
     auctionId: string,
-    description: string
+    description: string,
+    reference?: string
   ): Promise<void> {
-    const transactionId = randomUUID();
-
-    await this.recordTransaction({
-      transactionId,
+    await this.recordTransaction(executor, {
+      transactionId: randomUUID(),
+      reference: reference ?? `UNFREEZE_${auctionId}`,
       entries: [
         {
           accountType: 'vendor_wallet',
@@ -246,24 +226,16 @@ export class LedgerService {
     });
   }
 
-  /**
-   * Record payment debit transaction
-   * 
-   * Example: Vendor pays ₦120k for auction
-   * - Debit: nem_paystack (NEM receives payment)
-   * - Credit: vendor_wallet (vendor balance decreases)
-   */
   async recordPaymentDebit(
+    executor: LedgerDbExecutor,
     vendorId: string,
     amount: number,
     auctionId: string,
     reference: string,
     description: string
   ): Promise<void> {
-    const transactionId = randomUUID();
-
-    await this.recordTransaction({
-      transactionId,
+    await this.recordTransaction(executor, {
+      transactionId: randomUUID(),
       reference,
       entries: [
         {
@@ -290,23 +262,15 @@ export class LedgerService {
     });
   }
 
-  /**
-   * Record fund release to finance
-   * 
-   * Example: Release ₦120k to NEM bank account
-   * - Debit: nem_bank (NEM bank balance increases)
-   * - Credit: nem_paystack (NEM Paystack balance decreases)
-   */
   async recordFundRelease(
+    executor: LedgerDbExecutor,
     amount: number,
     auctionId: string,
     reference: string,
     description: string
   ): Promise<void> {
-    const transactionId = randomUUID();
-
-    await this.recordTransaction({
-      transactionId,
+    await this.recordTransaction(executor, {
+      transactionId: randomUUID(),
       reference,
       entries: [
         {
@@ -333,10 +297,69 @@ export class LedgerService {
   }
 
   /**
-   * Get account balance from ledger
-   * 
-   * Balance = SUM(debits) - SUM(credits)
+   * Bring a vendor's main ledger account in line with the wallet balance (historical repair only).
+   * Wallet balance is the source of truth for what vendors can spend.
    */
+  async recordReconciliationAdjustment(
+    executor: LedgerDbExecutor,
+    vendorId: string,
+    walletBalance: number,
+    ledgerBalance: number,
+    reference: string,
+    description: string
+  ): Promise<void> {
+    const diff = walletBalance - ledgerBalance;
+    if (Math.abs(diff) < 0.01) return;
+
+    const amount = Math.abs(diff);
+
+    if (diff > 0) {
+      await this.recordTransaction(executor, {
+        transactionId: randomUUID(),
+        reference,
+        entries: [
+          {
+            accountType: 'vendor_wallet',
+            accountId: vendorId,
+            debit: amount,
+            credit: 0,
+            description: `${description} (Vendor)`,
+          },
+          {
+            accountType: 'nem_paystack',
+            accountId: 'nem',
+            debit: 0,
+            credit: amount,
+            description: `${description} (NEM Paystack)`,
+          },
+        ],
+        metadata: { type: 'reconciliation_adjustment', vendorId, walletBalance, ledgerBalance },
+      });
+    } else {
+      await this.recordTransaction(executor, {
+        transactionId: randomUUID(),
+        reference,
+        entries: [
+          {
+            accountType: 'nem_paystack',
+            accountId: 'nem',
+            debit: amount,
+            credit: 0,
+            description: `${description} (NEM Paystack)`,
+          },
+          {
+            accountType: 'vendor_wallet',
+            accountId: vendorId,
+            debit: 0,
+            credit: amount,
+            description: `${description} (Vendor)`,
+          },
+        ],
+        metadata: { type: 'reconciliation_adjustment', vendorId, walletBalance, ledgerBalance },
+      });
+    }
+  }
+
   async getAccountBalance(
     accountType: 'vendor_wallet' | 'nem_paystack' | 'nem_bank',
     accountId: string
@@ -366,11 +389,6 @@ export class LedgerService {
     return parseFloat(result[0].balance);
   }
 
-  /**
-   * Validate transaction balance
-   * 
-   * Returns true if transaction is balanced (debits = credits)
-   */
   async validateTransactionBalance(transactionId: string): Promise<boolean> {
     const result = await db
       .select({
@@ -384,29 +402,18 @@ export class LedgerService {
     const totalCredit = parseFloat(result[0].totalCredit);
     const discrepancy = Math.abs(totalDebit - totalCredit);
 
-    return discrepancy < 0.01; // Allow 1 kobo rounding error
+    return discrepancy < 0.01;
   }
 
-  /**
-   * Get unbalanced transactions
-   * 
-   * Returns all transactions where debits != credits
-   */
-  async getUnbalancedTransactions(): Promise<any[]> {
-    const result = await db
+  async getUnbalancedTransactions(): Promise<typeof ledgerTransactionSummary.$inferSelect[]> {
+    return await db
       .select()
       .from(ledgerTransactionSummary)
       .where(eq(ledgerTransactionSummary.isBalanced, 'false'));
-
-    return result;
   }
 
-  /**
-   * Refresh ledger transaction summary materialized view
-   */
   async refreshTransactionSummary(): Promise<void> {
     await db.execute(sql`SELECT refresh_ledger_transaction_summary()`);
-    console.log('[Ledger] Refreshed transaction summary materialized view');
   }
 }
 

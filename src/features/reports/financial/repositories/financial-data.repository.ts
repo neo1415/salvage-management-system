@@ -14,6 +14,7 @@ import { resolveReportIsoDateRange } from '../../utils/report-date-range';
 export interface RevenueData {
   caseId: string;
   claimReference: string;
+  policyNumber: string | null;
   assetType: string;
   marketValue: string; // ACV - what insurance paid out
   salvageRecovery: string; // What we recovered from auction
@@ -22,6 +23,8 @@ export interface RevenueData {
   createdAt: Date;
   region?: string;
   branchName: string;
+  brokerName: string | null;
+  agencyName: string | null;
 }
 
 export interface PaymentData {
@@ -74,6 +77,9 @@ export class FinancialDataRepository {
     const assetTypeFilter = filters.assetTypes && filters.assetTypes.length > 0
       ? sql`AND sc.asset_type IN (${sql.join(filters.assetTypes.map(assetType => sql`${assetType}`), sql`, `)})`
       : sql``;
+    const brokerFilter = filters.brokers && filters.brokers.length > 0
+      ? sql`AND sc.broker_name IN (${sql.join(filters.brokers.map((broker) => sql`${broker}`), sql`, `)})`
+      : sql``;
 
     // Use raw SQL with DISTINCT ON to handle duplicate payments per case
     // Get the LATEST verified payment per case
@@ -81,8 +87,11 @@ export class FinancialDataRepository {
       SELECT DISTINCT ON (sc.id)
         sc.id as case_id,
         sc.claim_reference,
+        sc.policy_number,
         sc.asset_type,
         sc.market_value,
+        sc.broker_name,
+        sc.agency_name,
         COALESCE(sc.branch_name, 'Unassigned') as branch_name,
         sc.created_at,
         sc.location_name,
@@ -100,6 +109,7 @@ export class FinancialDataRepository {
         AND sc.claim_reference NOT LIKE 'TEST%'
         ${branchFilter}
         ${assetTypeFilter}
+        ${brokerFilter}
       ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
     `) as any[];
 
@@ -124,6 +134,7 @@ export class FinancialDataRepository {
       return {
         caseId: row.case_id,
         claimReference: row.claim_reference,
+        policyNumber: row.policy_number || null,
         assetType: row.asset_type,
         marketValue: row.market_value,
         salvageRecovery: salvageRecovery.toString(),
@@ -132,8 +143,54 @@ export class FinancialDataRepository {
         createdAt: new Date(row.created_at),
         region,
         branchName: row.branch_name || 'Unassigned',
+        brokerName: row.broker_name || null,
+        agencyName: row.agency_name || null,
       };
     });
+  }
+
+  /**
+   * Case-scoped filters for payment queries joined through auction → salvage case.
+   */
+  private static buildPaymentCaseScopeConditions(filters: ReportFilters) {
+    const conditions = [];
+    const hasCaseScope =
+      (filters.branches && filters.branches.length > 0) ||
+      (filters.brokers && filters.brokers.length > 0) ||
+      (filters.assetTypes && filters.assetTypes.length > 0);
+
+    if (hasCaseScope) {
+      conditions.push(sql`${payments.auctionId} IS NOT NULL`);
+    }
+
+    if (filters.branches && filters.branches.length > 0) {
+      conditions.push(
+        sql`COALESCE(${salvageCases.branchName}, 'Unassigned') IN (${sql.join(
+          filters.branches.map((branch) => sql`${branch}`),
+          sql`, `
+        )})`
+      );
+    }
+
+    if (filters.brokers && filters.brokers.length > 0) {
+      conditions.push(
+        sql`${salvageCases.brokerName} IN (${sql.join(
+          filters.brokers.map((broker) => sql`${broker}`),
+          sql`, `
+        )})`
+      );
+    }
+
+    if (filters.assetTypes && filters.assetTypes.length > 0) {
+      conditions.push(
+        sql`${salvageCases.assetType} IN (${sql.join(
+          filters.assetTypes.map((assetType) => sql`${assetType}`),
+          sql`, `
+        )})`
+      );
+    }
+
+    return conditions;
   }
 
   /**
@@ -165,6 +222,8 @@ export class FinancialDataRepository {
       conditions.push(inArray(payments.vendorId, filters.vendorIds));
     }
 
+    conditions.push(...this.buildPaymentCaseScopeConditions(filters));
+
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     const results = await db
@@ -183,6 +242,8 @@ export class FinancialDataRepository {
       .from(payments)
       .leftJoin(vendors, eq(payments.vendorId, vendors.id))
       .leftJoin(sql`users u`, sql`${vendors.userId} = u.id`)
+      .leftJoin(auctions, eq(payments.auctionId, auctions.id))
+      .leftJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
       .where(whereClause)
       .orderBy(desc(payments.createdAt));
 
@@ -307,6 +368,33 @@ export class FinancialDataRepository {
     // Vendor filter
     if (filters.vendorIds && filters.vendorIds.length > 0) {
       conditions.push(inArray(payments.vendorId, filters.vendorIds));
+    }
+
+    if (filters.branches && filters.branches.length > 0) {
+      conditions.push(
+        sql`COALESCE(${salvageCases.branchName}, 'Unassigned') IN (${sql.join(
+          filters.branches.map((branch) => sql`${branch}`),
+          sql`, `
+        )})`
+      );
+    }
+
+    if (filters.brokers && filters.brokers.length > 0) {
+      conditions.push(
+        sql`${salvageCases.brokerName} IN (${sql.join(
+          filters.brokers.map((broker) => sql`${broker}`),
+          sql`, `
+        )})`
+      );
+    }
+
+    if (filters.assetTypes && filters.assetTypes.length > 0) {
+      conditions.push(
+        sql`${salvageCases.assetType} IN (${sql.join(
+          filters.assetTypes.map((assetType) => sql`${assetType}`),
+          sql`, `
+        )})`
+      );
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

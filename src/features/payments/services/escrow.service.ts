@@ -2,7 +2,7 @@ import { db } from '@/lib/db/drizzle';
 import { escrowWallets, walletTransactions } from '@/lib/db/schema/escrow';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { kv } from '@vercel/kv';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { brandLegalName, getEmailBranding } from '@/features/notifications/templates/email-branding';
@@ -194,87 +194,112 @@ export async function creditWallet(
   userId: string
 ): Promise<WalletBalance> {
   try {
-    // Get wallet
-    const [wallet] = await db
-      .select()
-      .from(escrowWallets)
-      .where(eq(escrowWallets.id, walletId))
-      .limit(1);
+    const result = await db.transaction(async (tx) => {
+      const [wallet] = await tx
+        .select()
+        .from(escrowWallets)
+        .where(eq(escrowWallets.id, walletId))
+        .for('update')
+        .limit(1);
 
-    if (!wallet) {
-      throw new Error('Wallet not found');
-    }
+      if (!wallet) {
+        throw new Error('Wallet not found');
+      }
 
-    // Calculate new balances
-    const currentBalance = parseFloat(wallet.balance);
-    const currentAvailable = parseFloat(wallet.availableBalance);
-    const newBalance = currentBalance + amount;
-    const newAvailable = currentAvailable + amount;
+      // Idempotent: skip if this Paystack reference was already credited
+      const [existingCredit] = await tx
+        .select()
+        .from(walletTransactions)
+        .where(
+          and(
+            eq(walletTransactions.walletId, walletId),
+            eq(walletTransactions.reference, reference),
+            eq(walletTransactions.type, 'credit'),
+            sql`${walletTransactions.description} NOT LIKE '%Pending confirmation%'`
+          )
+        )
+        .limit(1);
 
-    // Update wallet
-    const [updatedWallet] = await db
-      .update(escrowWallets)
-      .set({
-        balance: newBalance.toFixed(2),
-        availableBalance: newAvailable.toFixed(2),
-        updatedAt: new Date(),
-      })
-      .where(eq(escrowWallets.id, walletId))
-      .returning();
+      if (existingCredit) {
+        return {
+          balance: parseFloat(wallet.balance),
+          availableBalance: parseFloat(wallet.availableBalance),
+          frozenAmount: parseFloat(wallet.frozenAmount),
+          skipped: true as const,
+        };
+      }
 
-    // Create transaction record
-    await db.insert(walletTransactions).values({
-      walletId,
-      type: 'credit',
-      amount: amount.toString(),
-      balanceAfter: newBalance.toFixed(2),
-      reference,
-      description: `Wallet funded ₦${amount.toLocaleString()} via Paystack`,
-    });
+      const currentBalance = parseFloat(wallet.balance);
+      const currentAvailable = parseFloat(wallet.availableBalance);
+      const newBalance = currentBalance + amount;
+      const newAvailable = currentAvailable + amount;
 
-    // Invalidate cache
-    await kv.del(`wallet:${walletId}`);
+      const [updatedWallet] = await tx
+        .update(escrowWallets)
+        .set({
+          balance: newBalance.toFixed(2),
+          availableBalance: newAvailable.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(escrowWallets.id, walletId))
+        .returning();
 
-    // Log wallet funding
-    await logAction({
-      userId,
-      actionType: AuditActionType.WALLET_FUNDED,
-      entityType: AuditEntityType.WALLET,
-      entityId: walletId,
-      ipAddress: '0.0.0.0',
-      deviceType: DeviceType.DESKTOP,
-      userAgent: 'system',
-      beforeState: {
-        balance: currentBalance,
-        availableBalance: currentAvailable,
-      },
-      afterState: {
-        balance: newBalance,
-        availableBalance: newAvailable,
-        amount,
+      await tx.insert(walletTransactions).values({
+        walletId,
+        type: 'credit',
+        amount: amount.toString(),
+        balanceAfter: newBalance.toFixed(2),
         reference,
-      },
-    });
+        description: `Wallet funded ₦${amount.toLocaleString()} via Paystack`,
+      });
 
-    // PHASE 2.2: Record ledger entry AFTER wallet credit succeeds
-    try {
       const { ledgerService } = await import('@/features/ledger/services/ledger.service');
       await ledgerService.recordWalletFunding(
+        tx,
         wallet.vendorId,
         amount,
         reference,
         `Wallet funded ₦${amount.toLocaleString()} via Paystack`
       );
-      console.log(`[Ledger] Recorded wallet funding: ₦${amount.toLocaleString()}`);
-    } catch (ledgerError) {
-      // Log error but don't block payment - ledger is for reconciliation only
-      console.error('[Ledger] Failed to record wallet funding (non-blocking):', ledgerError);
+
+      return {
+        balance: parseFloat(updatedWallet.balance),
+        availableBalance: parseFloat(updatedWallet.availableBalance),
+        frozenAmount: parseFloat(updatedWallet.frozenAmount),
+        skipped: false as const,
+        beforeBalance: currentBalance,
+        beforeAvailable: currentAvailable,
+      };
+    });
+
+    await kv.del(`wallet:${walletId}`);
+
+    if (!result.skipped) {
+      await logAction({
+        userId,
+        actionType: AuditActionType.WALLET_FUNDED,
+        entityType: AuditEntityType.WALLET,
+        entityId: walletId,
+        ipAddress: '0.0.0.0',
+        deviceType: DeviceType.DESKTOP,
+        userAgent: 'system',
+        beforeState: {
+          balance: result.beforeBalance!,
+          availableBalance: result.beforeAvailable!,
+        },
+        afterState: {
+          balance: result.balance,
+          availableBalance: result.availableBalance,
+          amount,
+          reference,
+        },
+      });
     }
 
     return {
-      balance: parseFloat(updatedWallet.balance),
-      availableBalance: parseFloat(updatedWallet.availableBalance),
-      frozenAmount: parseFloat(updatedWallet.frozenAmount),
+      balance: result.balance,
+      availableBalance: result.availableBalance,
+      frozenAmount: result.frozenAmount,
     };
   } catch (error) {
     console.error('Error crediting wallet:', error);
@@ -481,36 +506,83 @@ export async function releaseFunds(
       });
     }
 
-    // ATOMIC UPDATE: Update wallet with BOTH balance and frozen amount reduced
-    const [updatedWallet] = await db
-      .update(escrowWallets)
-      .set({
-        balance: newBalance.toFixed(2),
-        frozenAmount: newFrozen.toFixed(2),
-        updatedAt: new Date(),
-      })
-      .where(eq(escrowWallets.id, wallet.id))
-      .returning();
+    // Paystack transfer happens outside DB transaction; wallet + ledger update atomically after
+    const updatedBalances = await db.transaction(async (tx) => {
+      const [lockedWallet] = await tx
+        .select()
+        .from(escrowWallets)
+        .where(eq(escrowWallets.id, wallet.id))
+        .for('update')
+        .limit(1);
 
-    // Create debit transaction record
-    await db.insert(walletTransactions).values({
-      walletId: wallet.id,
-      type: 'debit',
-      amount: amount.toString(),
-      balanceAfter: newBalance.toFixed(2),
-      reference: transferReference,
-      description: `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to ${settlementRecipient} via Paystack`,
+      if (!lockedWallet) {
+        throw new Error('Wallet not found');
+      }
+
+      const lockedBalance = parseFloat(lockedWallet.balance);
+      const lockedAvailable = parseFloat(lockedWallet.availableBalance);
+      const lockedFrozen = parseFloat(lockedWallet.frozenAmount);
+
+      if (lockedFrozen < amount) {
+        throw new Error(
+          `Insufficient frozen balance. Frozen: ₦${lockedFrozen.toLocaleString()}, Required: ₦${amount.toLocaleString()}`
+        );
+      }
+
+      const newBalance = lockedBalance - amount;
+      const newFrozen = lockedFrozen - amount;
+
+      if (Math.abs(newBalance - (lockedAvailable + newFrozen)) > 0.01) {
+        throw new Error('Balance invariant violation detected');
+      }
+
+      const [updatedWallet] = await tx
+        .update(escrowWallets)
+        .set({
+          balance: newBalance.toFixed(2),
+          frozenAmount: newFrozen.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(escrowWallets.id, wallet.id))
+        .returning();
+
+      await tx.insert(walletTransactions).values({
+        walletId: wallet.id,
+        type: 'debit',
+        amount: amount.toString(),
+        balanceAfter: newBalance.toFixed(2),
+        reference: transferReference,
+        description: `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to ${settlementRecipient} via Paystack`,
+      });
+
+      await tx.insert(walletTransactions).values({
+        walletId: wallet.id,
+        type: 'unfreeze',
+        amount: amount.toString(),
+        balanceAfter: newBalance.toFixed(2),
+        reference: `UNFREEZE_${auctionId}`,
+        description: `Funds unfrozen for auction ${auctionId.substring(0, 8)} - Part of atomic release operation`,
+      });
+
+      const { ledgerService } = await import('@/features/ledger/services/ledger.service');
+      await ledgerService.recordPaymentDebit(
+        tx,
+        vendorId,
+        amount,
+        auctionId,
+        transferReference,
+        `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to ${settlementRecipient}`
+      );
+
+      return {
+        wallet: updatedWallet,
+        beforeBalance: lockedBalance,
+        beforeAvailable: lockedAvailable,
+        beforeFrozen: lockedFrozen,
+      };
     });
 
-    // Create unfreeze transaction record (for audit trail)
-    await db.insert(walletTransactions).values({
-      walletId: wallet.id,
-      type: 'unfreeze',
-      amount: amount.toString(),
-      balanceAfter: newBalance.toFixed(2),
-      reference: `UNFREEZE_${auctionId}`,
-      description: `Funds unfrozen for auction ${auctionId.substring(0, 8)} - Part of atomic release operation`,
-    });
+    const updatedWallet = updatedBalances.wallet;
 
     // Invalidate cache
     await kv.del(`wallet:${wallet.id}`);
@@ -525,14 +597,14 @@ export async function releaseFunds(
       deviceType: DeviceType.DESKTOP,
       userAgent: 'system',
       beforeState: {
-        balance: currentBalance,
-        availableBalance: currentAvailable,
-        frozenAmount: currentFrozen,
+        balance: updatedBalances.beforeBalance,
+        availableBalance: updatedBalances.beforeAvailable,
+        frozenAmount: updatedBalances.beforeFrozen,
       },
       afterState: {
-        balance: newBalance,
-        availableBalance: currentAvailable,
-        frozenAmount: newFrozen,
+        balance: parseFloat(updatedWallet.balance),
+        availableBalance: parseFloat(updatedWallet.availableBalance),
+        frozenAmount: parseFloat(updatedWallet.frozenAmount),
         auctionId,
         amount,
         transferReference,
@@ -540,23 +612,9 @@ export async function releaseFunds(
       },
     });
 
-    console.log(`✅ ATOMIC RELEASE: Balance ${currentBalance} → ${newBalance}, Frozen ${currentFrozen} → ${newFrozen}`);
-
-    // PHASE 2.2: Record ledger entry AFTER fund release succeeds
-    try {
-      const { ledgerService } = await import('@/features/ledger/services/ledger.service');
-      await ledgerService.recordPaymentDebit(
-        vendorId,
-        amount,
-        auctionId,
-        transferReference,
-        `Funds released for auction ${auctionId.substring(0, 8)} - Transferred to ${settlementRecipient}`
-      );
-      console.log(`[Ledger] Recorded payment debit: ₦${amount.toLocaleString()}`);
-    } catch (ledgerError) {
-      // Log error but don't block payment - ledger is for reconciliation only
-      console.error('[Ledger] Failed to record payment debit (non-blocking):', ledgerError);
-    }
+    console.log(
+      `✅ ATOMIC RELEASE: Balance ${updatedBalances.beforeBalance} → ${updatedWallet.balance}, Frozen ${updatedBalances.beforeFrozen} → ${updatedWallet.frozenAmount}`
+    );
 
     return {
       balance: parseFloat(updatedWallet.balance),

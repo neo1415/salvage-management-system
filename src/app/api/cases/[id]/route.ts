@@ -103,8 +103,20 @@ export async function GET(
       ? {
           ...(caseData.aiAssessment as Record<string, unknown>),
           warnings: sanitizeAiAssessmentWarnings(
+            (caseData.aiAssessment as { reviewReasons?: string[] }).reviewReasons,
             (caseData.aiAssessment as { warnings?: string[] }).warnings,
-            (caseData.aiAssessment as { reviewReasons?: string[] }).reviewReasons
+            {
+              confidenceScore: (caseData.aiAssessment as { confidenceScore?: number }).confidenceScore,
+              manualReviewRequired: (caseData.aiAssessment as { manualReviewRequired?: boolean }).manualReviewRequired,
+            }
+          ),
+          reviewReasons: sanitizeAiAssessmentWarnings(
+            (caseData.aiAssessment as { reviewReasons?: string[] }).reviewReasons,
+            (caseData.aiAssessment as { warnings?: string[] }).warnings,
+            {
+              confidenceScore: (caseData.aiAssessment as { confidenceScore?: number }).confidenceScore,
+              manualReviewRequired: (caseData.aiAssessment as { manualReviewRequired?: boolean }).manualReviewRequired,
+            }
           ),
         }
       : caseData.aiAssessment;

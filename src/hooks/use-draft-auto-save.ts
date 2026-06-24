@@ -14,6 +14,7 @@ import type { DraftCase } from '@/lib/db/indexeddb';
 export interface UseDraftAutoSaveOptions {
   interval?: number; // Default: 30000ms
   enabled?: boolean; // Default: true
+  requireMarketValue?: boolean; // Default: true
   onSave?: (draft: DraftCase) => void;
   onError?: (error: Error) => void;
 }
@@ -37,7 +38,7 @@ export function useDraftAutoSave(
   marketValue?: number,
   options: UseDraftAutoSaveOptions = {}
 ): UseDraftAutoSaveReturn {
-  const { enabled = true, onSave, onError } = options;
+  const { enabled = true, requireMarketValue = true, onSave, onError } = options;
 
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -132,7 +133,7 @@ export function useDraftAutoSave(
       marketValue: marketValueRef.current,
     };
 
-    const validation = DraftService.canSubmit(draft);
+    const validation = DraftService.canSubmit(draft, { requireMarketValue });
     setCanSubmit(validation.valid);
     setValidationErrors(validation.errors);
     
@@ -143,7 +144,7 @@ export function useDraftAutoSave(
       valid: validation.valid,
       errors: validation.errors,
     });
-  }, [currentDraftId, hasAIAnalysis, marketValue, formDataSnapshot]); // Re-validate when visible form fields change
+  }, [currentDraftId, hasAIAnalysis, marketValue, formDataSnapshot, requireMarketValue]);
 
   // Manual save
   const saveDraft = useCallback(async () => {

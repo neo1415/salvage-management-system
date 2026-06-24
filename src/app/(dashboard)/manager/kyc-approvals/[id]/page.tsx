@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import {
   Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle,
@@ -111,7 +112,7 @@ function cardTone(value: string) {
 }
 
 export default function KYCApprovalDetailPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const params = useParams();
   const { data: session, status } = useSession();
   const vendorId = params.id as string;
@@ -276,7 +277,7 @@ export default function KYCApprovalDetailPage() {
       const blob = await response.blob();
       const contentDisposition = response.headers.get('Content-Disposition') || '';
       const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-      const filename = filenameMatch?.[1] || `vendor-verification-evidence-${vendorId.slice(0, 8)}.csv`;
+      const filename = filenameMatch?.[1] || `vendor-verification-evidence-${vendorId.slice(0, 8)}.pdf`;
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -440,7 +441,7 @@ export default function KYCApprovalDetailPage() {
             className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-[var(--brand-primary)] text-[var(--brand-primary)] font-semibold rounded-lg hover:bg-[var(--brand-primary)] hover:text-white transition-colors disabled:opacity-50"
           >
             {exportingEvidence ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Export Evidence CSV
+            Export Evidence PDF
           </button>
         </div>
       </div>
@@ -617,7 +618,7 @@ export default function KYCApprovalDetailPage() {
         />
       </div>
 
-      {/* Legacy technical evidence is kept out of the default staff view; use CSV export for audit details. */}
+      {/* Legacy technical evidence is kept out of the default staff view; use PDF export for audit details. */}
       {showLegacyTechnicalEvidence && approval.flaggedReasons.length > 0 && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
           <div className="flex items-center gap-2 mb-2">

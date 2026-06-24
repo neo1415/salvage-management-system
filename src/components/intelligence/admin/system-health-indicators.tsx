@@ -7,6 +7,7 @@
  * Task: 11.1.5
  */
 
+import { MetricValue } from '@/components/ui/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, AlertCircle, Clock, Database, Zap } from 'lucide-react';
@@ -27,12 +28,12 @@ export function SystemHealthIndicators({ metrics }: SystemHealthIndicatorsProps)
   const responseStatus = metrics.avgResponseTime <= 200 ? 'healthy' : metrics.avgResponseTime <= 500 ? 'warning' : 'critical';
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader>
         <CardTitle>System Health</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 min-w-0">
           <HealthMetric
             icon={<Database className="h-4 w-4" />}
             label="Cache Hit Rate"
@@ -92,7 +93,7 @@ function HealthMetric({ icon, label, value, status, description }: HealthMetricP
   };
 
   return (
-    <div className="flex flex-col space-y-2">
+    <div className="flex flex-col space-y-2 min-w-0 overflow-hidden">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {icon}
@@ -100,9 +101,7 @@ function HealthMetric({ icon, label, value, status, description }: HealthMetricP
         </div>
         {statusBadges[status]}
       </div>
-      <div className={`text-2xl font-bold ${statusColors[status]}`}>
-        {value}
-      </div>
+      <MetricValue className={statusColors[status]}>{value}</MetricValue>
       <p className="text-xs text-muted-foreground">{description}</p>
     </div>
   );

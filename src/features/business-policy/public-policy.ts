@@ -33,6 +33,7 @@ export function toPublicBusinessPolicy(policy: BusinessPolicy): PublicBusinessPo
       enabledAssetTypes: policy.cases.enabledAssetTypes,
       insuranceClasses: policy.cases.insuranceClasses,
       voiceNotesEnabled: policy.cases.voiceNotesEnabled,
+      aiDamageAssessmentRunner: policy.cases.aiDamageAssessmentRunner,
     },
     documents: {
       requiredAuctionDocuments: policy.documents.requiredAuctionDocuments,

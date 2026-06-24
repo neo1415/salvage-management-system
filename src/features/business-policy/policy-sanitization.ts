@@ -18,6 +18,10 @@ const ONBOARDING_MODES: OnboardingMode[] = [
 const PAYMENT_PROVIDERS: PaymentProvider[] = ['paystack', 'flutterwave', 'manual'];
 const VERIFICATION_PROVIDERS: VerificationProvider[] = ['dojah'];
 const AI_PROVIDERS: AiProvider[] = ['gemini', 'claude', 'serper'];
+const AI_DAMAGE_RUNNERS: BusinessPolicy['cases']['aiDamageAssessmentRunner'][] = [
+  'claims_adjuster',
+  'salvage_manager',
+];
 const HOMEPAGE_MODES: BusinessPolicy['branding']['homepageMode'][] = ['landing', 'login_first'];
 const HOMEPAGE_TEMPLATES: BusinessPolicy['branding']['homepageTemplate'][] = [
   'reclaim_editorial',
@@ -296,6 +300,7 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       legalName: stringValue(branding.legalName, fallback.branding.legalName),
       supportEmail: stringValue(branding.supportEmail, fallback.branding.supportEmail),
       supportPhone: optionalStringValue(branding.supportPhone, fallback.branding.supportPhone),
+      supportAddress: optionalStringValue(branding.supportAddress, fallback.branding.supportAddress),
       primaryColor: stringValue(branding.primaryColor, fallback.branding.primaryColor),
       accentColor: stringValue(branding.accentColor, fallback.branding.accentColor),
       logoPath: stringValue(branding.logoPath, fallback.branding.logoPath),
@@ -424,6 +429,11 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       voiceNotesEnabled: booleanValue(cases.voiceNotesEnabled, fallback.cases.voiceNotesEnabled),
       claimsAdjusterTranscriptEditable: booleanValue(cases.claimsAdjusterTranscriptEditable, fallback.cases.claimsAdjusterTranscriptEditable),
       salvageManagerTranscriptReviewRequired: booleanValue(cases.salvageManagerTranscriptReviewRequired, fallback.cases.salvageManagerTranscriptReviewRequired),
+      aiDamageAssessmentRunner: enumValue(
+        cases.aiDamageAssessmentRunner,
+        AI_DAMAGE_RUNNERS,
+        fallback.cases.aiDamageAssessmentRunner
+      ),
     },
     aiValuation: {
       enabled: booleanValue(aiValuation.enabled, fallback.aiValuation.enabled),

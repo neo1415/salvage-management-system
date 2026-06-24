@@ -77,7 +77,7 @@ export default function AdminUserManagement() {
     email: '',
     phone: '',
     branchName: '',
-    role: 'claims_adjuster' as 'claims_adjuster' | 'salvage_manager' | 'finance_officer',
+    role: 'claims_adjuster' as 'vendor' | 'claims_adjuster' | 'salvage_manager' | 'finance_officer' | 'system_admin',
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -159,7 +159,9 @@ export default function AdminUserManagement() {
     }
     
     if (!formData.phone || !/^\+?[0-9]{10,15}$/.test(formData.phone)) {
-      errors.phone = 'Invalid phone number format (10-15 digits)';
+      if (formData.role !== 'vendor') {
+        errors.phone = 'Invalid phone number format (10-15 digits)';
+      }
     }
 
     if (formData.branchName && formData.branchName.length > 150) {
@@ -174,12 +176,17 @@ export default function AdminUserManagement() {
     try {
       setSubmitting(true);
 
+      const payload = {
+        ...formData,
+        phone: formData.phone.trim() || undefined,
+      };
+
       const response = await fetch('/api/admin/users', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -806,7 +813,7 @@ export default function AdminUserManagement() {
                   {/* Phone */}
                   <div className="mb-4">
                     <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                      Phone Number *
+                      Phone Number {formData.role === 'vendor' ? '(Optional)' : '*'}
                     </label>
                     <input
                       type="tel"
@@ -851,9 +858,14 @@ export default function AdminUserManagement() {
                     <select
                       id="role"
                       value={formData.role}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        role: e.target.value as typeof formData.role,
+                      })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     >
+                      <option value="vendor">Vendor</option>
+                      <option value="system_admin">System Admin</option>
                       <option value="claims_adjuster">Claims Adjuster</option>
                       <option value="salvage_manager">Salvage Manager</option>
                       <option value="finance_officer">Finance Officer</option>
@@ -863,8 +875,7 @@ export default function AdminUserManagement() {
                   {/* Info Box */}
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                     <p className="text-sm text-blue-800">
-                      <strong>ℹ️ Note:</strong> A temporary password will be generated and emailed to the user. 
-                      They will be required to change it on first login.
+                      <strong>ℹ️ Note:</strong> A temporary password will be emailed to the user. Vendors without a phone number complete phone verification after their first password change.
                     </p>
                   </div>
 

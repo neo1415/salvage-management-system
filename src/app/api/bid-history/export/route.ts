@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions, bids, salvageCases, vendors, users } from '@/lib/db/schema';
 import { eq, desc, inArray } from 'drizzle-orm';
+import { bidHistoryAuctionOrder, bidHistoryStatusFilter } from '@/lib/auctions/bid-history-sort';
 import { ExportService } from '@/features/export/services/export.service';
 
 /**
@@ -29,13 +30,11 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const tab = searchParams.get('tab') || 'active';
+    const tabParam = searchParams.get('tab') || 'active';
+    const tab = tabParam === 'completed' ? 'completed' : 'active';
     const format = searchParams.get('format') || 'csv';
 
-    // Determine auction status based on tab
-    const statusFilter = tab === 'active' 
-      ? inArray(auctions.status, ['scheduled', 'active', 'extended'])
-      : inArray(auctions.status, ['closed', 'cancelled']);
+    const statusFilter = bidHistoryStatusFilter(tab);
 
     // Fetch all auctions with related data (no pagination for export)
     const auctionData = await db
@@ -50,7 +49,7 @@ export async function GET(request: NextRequest) {
       .leftJoin(vendors, eq(auctions.currentBidder, vendors.id))
       .leftJoin(users, eq(vendors.userId, users.id))
       .where(statusFilter)
-      .orderBy(desc(auctions.createdAt));
+      .orderBy(...bidHistoryAuctionOrder(tab));
 
     // Get bid history for each auction
     const auctionIds = auctionData.map(item => item.auction.id);

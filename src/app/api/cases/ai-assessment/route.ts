@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { assessDamageEnhanced } from '@/features/cases/services/ai-assessment-enhanced.service';
 import type { VehicleInfo, UniversalItemInfo } from '@/features/cases/services/ai-assessment-enhanced.service';
 import { auth } from '@/lib/auth/next-auth.config';
+import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
 import { getValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
 
 // In-memory rate limiting store (in production, use Redis)
@@ -363,6 +364,15 @@ export async function POST(request: NextRequest) {
       isTotalLoss: assessment.isTotalLoss,
     });
 
+    const staffReviewReasons = formatStaffReviewNotes(
+      assessment.reviewReasons,
+      assessment.warnings,
+      {
+        confidenceScore: assessment.confidenceScore,
+        manualReviewRequired: assessment.manualReviewRequired,
+      }
+    );
+
     return NextResponse.json({
       success: true,
       data: {
@@ -374,20 +384,19 @@ export async function POST(request: NextRequest) {
         marketValue: assessment.marketValue,
         estimatedRepairCost: assessment.estimatedRepairCost,
         damagePercentage: assessment.damagePercentage,
-        damageScore: assessment.damageScore, // CRITICAL FIX: Return actual damage scores
-        isTotalLoss: assessment.isTotalLoss, // CRITICAL FIX: Return total loss indicator
+        damageScore: assessment.damageScore,
+        isTotalLoss: assessment.isTotalLoss,
         isRepairable: assessment.isRepairable,
-        recommendation: assessment.summary || assessment.recommendation, // CRITICAL FIX: Use Gemini's summary if available, fallback to recommendation
-        warnings: assessment.warnings,
+        recommendation: assessment.summary || assessment.recommendation,
+        warnings: staffReviewReasons,
         confidence: assessment.confidence,
-        analysisMethod: assessment.analysisMethod, // CRITICAL FIX: Return analysis method
-        qualityTier: assessment.qualityTier, // Return quality tier
-        priceSource: assessment.priceSource, // CRITICAL FIX: Return price source
-        // CRITICAL FIX: Return detailed Gemini analysis results
-        itemDetails: assessment.itemDetails, // Item identification from Gemini
-        damagedParts: assessment.damagedParts, // Detailed damaged parts list from Gemini
-        manualReviewRequired: assessment.manualReviewRequired,
-        reviewReasons: assessment.reviewReasons,
+        analysisMethod: assessment.analysisMethod,
+        qualityTier: assessment.qualityTier,
+        priceSource: assessment.priceSource,
+        itemDetails: assessment.itemDetails,
+        damagedParts: assessment.damagedParts,
+        manualReviewRequired: assessment.manualReviewRequired || staffReviewReasons.length > 0,
+        reviewReasons: staffReviewReasons,
         valuationEvidence: assessment.valuationEvidence,
         // Add metadata for progress indicators
         dataSource: assessment.priceSource || 'valuation',

@@ -6,12 +6,13 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import Link from 'next/link';
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
-  const router = useRouter();
+  const router = useAppRouter();
   const token = searchParams.get('token');
 
   const [password, setPassword] = useState('');

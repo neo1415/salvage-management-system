@@ -4,84 +4,60 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { X, Cookie, Settings } from 'lucide-react';
 import { usePublicBranding } from '@/hooks/use-public-branding';
-
-interface CookiePreferences {
-  essential: boolean;
-  functional: boolean;
-  analytics: boolean;
-}
+import {
+  applyCookiePreferences,
+  dismissCookieBanner,
+  getDefaultCookiePreferences,
+  hasCookieConsent,
+  persistCookiePreferences,
+  readStoredCookiePreferences,
+  type CookiePreferences,
+} from '@/lib/cookies/cookie-consent';
 
 export function CookieConsentBanner() {
   const { branding } = usePublicBranding();
   const [isVisible, setIsVisible] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [preferences, setPreferences] = useState<CookiePreferences>({
-    essential: true, // Always true, cannot be disabled
-    functional: true,
-    analytics: true,
-  });
+  const [preferences, setPreferences] = useState<CookiePreferences>(getDefaultCookiePreferences());
 
   useEffect(() => {
-    // Check if user has already consented in this session
-    const hasConsented = sessionStorage.getItem('cookie-consent');
+    const stored = readStoredCookiePreferences();
+    if (stored) {
+      applyCookiePreferences(stored);
+      return;
+    }
 
-    if (!hasConsented) {
-      // Show banner after a short delay for better UX
-      const timer = setTimeout(() => {
+    if (!hasCookieConsent()) {
+      const timer = window.setTimeout(() => {
         setIsVisible(true);
       }, 1000);
 
-      return () => clearTimeout(timer);
+      return () => window.clearTimeout(timer);
     }
   }, []);
 
   const handleAcceptAll = () => {
-    const consentData = {
-      essential: true,
-      functional: true,
-      analytics: true,
-      timestamp: new Date().toISOString(),
-    };
-
-    // Store consent in sessionStorage (only for this session)
-    sessionStorage.setItem('cookie-consent', JSON.stringify(consentData));
-
-    // Store in localStorage for persistent tracking (optional)
-    localStorage.setItem('cookie-preferences', JSON.stringify(consentData));
-
+    persistCookiePreferences(getDefaultCookiePreferences());
     setIsVisible(false);
   };
 
   const handleRejectNonEssential = () => {
-    const consentData = {
+    persistCookiePreferences({
       essential: true,
       functional: false,
       analytics: false,
-      timestamp: new Date().toISOString(),
-    };
-
-    sessionStorage.setItem('cookie-consent', JSON.stringify(consentData));
-    localStorage.setItem('cookie-preferences', JSON.stringify(consentData));
-
+    });
     setIsVisible(false);
   };
 
   const handleSavePreferences = () => {
-    const consentData = {
-      ...preferences,
-      essential: true, // Always true
-      timestamp: new Date().toISOString(),
-    };
-
-    sessionStorage.setItem('cookie-consent', JSON.stringify(consentData));
-    localStorage.setItem('cookie-preferences', JSON.stringify(consentData));
-
+    persistCookiePreferences(preferences);
     setIsVisible(false);
   };
 
   const handleClose = () => {
-    // Treat close as "Accept All" for better UX
-    handleAcceptAll();
+    dismissCookieBanner();
+    setIsVisible(false);
   };
 
   if (!isVisible) return null;
@@ -89,18 +65,15 @@ export function CookieConsentBanner() {
   return (
     <div className="fixed bottom-3 left-3 right-3 md:left-auto md:right-3 md:max-w-xs z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
         <div className="bg-white rounded-md shadow-lg border border-gray-200 overflow-hidden">
-          {/* Main Banner */}
           {!showSettings ? (
             <div className="p-2.5">
               <div className="flex items-start gap-2">
-                {/* Cookie Icon */}
                 <div className="flex-shrink-0">
                   <div className="w-6 h-6 rounded-full flex items-center justify-center bg-[var(--brand-primary-surface)]">
                     <Cookie className="w-3 h-3 text-[var(--brand-primary)]" />
                   </div>
                 </div>
 
-                {/* Content */}
                 <div className="flex-1 min-w-0">
                   <h3 className="text-[11px] font-bold text-gray-900 mb-0.5">
                     Cookies
@@ -112,7 +85,6 @@ export function CookieConsentBanner() {
                     </Link>
                   </p>
 
-                  {/* Action Buttons */}
                   <div className="flex flex-wrap gap-1">
                     <button
                       onClick={handleAcceptAll}
@@ -136,7 +108,6 @@ export function CookieConsentBanner() {
                   </div>
                 </div>
 
-                {/* Close Button */}
                 <button
                   onClick={handleClose}
                   className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
@@ -147,7 +118,6 @@ export function CookieConsentBanner() {
               </div>
             </div>
           ) : (
-              /* Settings Panel */
               <div className="p-2.5 max-h-[60vh] overflow-y-auto">
                 <div className="flex items-start justify-between mb-2">
                   <div>
@@ -167,9 +137,7 @@ export function CookieConsentBanner() {
                   </button>
                 </div>
 
-                {/* Cookie Categories */}
                 <div className="space-y-1.5 mb-2">
-                  {/* Essential Cookies */}
                   <div className="flex items-center justify-between p-1.5 bg-gray-50 rounded">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1">
@@ -186,7 +154,6 @@ export function CookieConsentBanner() {
                     </div>
                   </div>
 
-                  {/* Functional Cookies */}
                   <div className="flex items-center justify-between p-1.5 bg-gray-50 rounded">
                     <div className="flex-1 min-w-0">
                       <h4 className="text-[10px] font-semibold text-gray-900">Functional</h4>
@@ -206,7 +173,6 @@ export function CookieConsentBanner() {
                     </div>
                   </div>
 
-                  {/* Analytics Cookies */}
                   <div className="flex items-center justify-between p-1.5 bg-gray-50 rounded">
                     <div className="flex-1 min-w-0">
                       <h4 className="text-[10px] font-semibold text-gray-900">Analytics</h4>
@@ -227,7 +193,6 @@ export function CookieConsentBanner() {
                   </div>
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex flex-wrap gap-1">
                   <button
                     onClick={handleSavePreferences}

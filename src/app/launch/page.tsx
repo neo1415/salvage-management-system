@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import {
   isStandalonePwa,
@@ -38,7 +38,7 @@ function getSafeRestorePath(): string | null {
  * PWA entry: after splash, go to login, role home, or last visited page.
  */
 export default function LaunchPage() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { data: session, status } = useSession();
   const navigated = useRef(false);
 

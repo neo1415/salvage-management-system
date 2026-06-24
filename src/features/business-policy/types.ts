@@ -33,6 +33,7 @@ export type BrandingPolicy = {
   legalName: string;
   supportEmail: string;
   supportPhone?: string;
+  supportAddress?: string;
   primaryColor: string;
   accentColor: string;
   logoPath: string;
@@ -172,12 +173,16 @@ export type AuctionPolicy = {
   socketMode: 'polling_primary_socket_secondary' | 'socket_primary_polling_fallback';
 };
 
+export type AiDamageAssessmentRunner = 'claims_adjuster' | 'salvage_manager';
+
 export type CasePolicy = {
   enabledAssetTypes: Record<string, AssetTypePolicy>;
   insuranceClasses: Record<string, InsuranceClassPolicy>;
   voiceNotesEnabled: boolean;
   claimsAdjusterTranscriptEditable: boolean;
   salvageManagerTranscriptReviewRequired: boolean;
+  /** Who runs AI damage analysis before manager approval. Default: claims_adjuster */
+  aiDamageAssessmentRunner: AiDamageAssessmentRunner;
 };
 
 export type AiValuationPolicy = {
@@ -378,6 +383,6 @@ export type PublicBusinessPolicy = Pick<BusinessPolicy, 'version' | 'branding'> 
     | 'paymentDeadlineAfterSigningHours'
   >;
   auctions: Pick<AuctionPolicy, 'minimumBidIncrement'>;
-  cases: Pick<CasePolicy, 'enabledAssetTypes' | 'insuranceClasses' | 'voiceNotesEnabled'>;
+  cases: Pick<CasePolicy, 'enabledAssetTypes' | 'insuranceClasses' | 'voiceNotesEnabled' | 'aiDamageAssessmentRunner'>;
   documents: Pick<DocumentPolicy, 'requiredAuctionDocuments'>;
 };

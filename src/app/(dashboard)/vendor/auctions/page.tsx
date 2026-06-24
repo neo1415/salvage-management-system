@@ -34,7 +34,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { formatConditionForDisplay, type QualityTier } from '@/features/valuations/services/condition-mapping.service';
@@ -51,6 +52,7 @@ import { useScheduledAuctionChecker } from '@/hooks/use-scheduled-auction-checke
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { RecommendationsFeed } from '@/components/intelligence/recommendations-feed';
 import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 const AUCTION_TABS = ['active', 'for_you', 'my_bids', 'won', 'scheduled'] as const;
 
@@ -132,7 +134,7 @@ export default function AuctionBrowsingPage() {
 }
 
 function AuctionBrowsingContent() {
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   
@@ -366,34 +368,11 @@ function AuctionBrowsingContent() {
 
   // Helper function to get asset name for filtering (avoid duplication)
   const getAssetNameForFiltering = (auction: Auction) => {
-    const details = auction.case.assetDetails;
-    let name = '';
-    
-    switch (auction.case.assetType) {
-      case 'vehicle':
-        name = `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim();
-        break;
-      case 'property':
-        name = details.propertyType ? String(details.propertyType) : 'Property';
-        break;
-      case 'electronics':
-        name = details.brand ? `${details.brand} ${details.model || 'Electronics'}`.trim() : 'Electronics';
-        break;
-      case 'machinery':
-        name = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
-        if (!name) {
-          name = details.machineryType ? String(details.machineryType) : 'Machinery';
-        }
-        break;
-      default:
-        name = 'Salvage Item';
-    }
-    
-    if (!name || name === auction.case.assetType) {
-      name = auction.case.assetType.replace(/_/g, ' ');
-    }
-    
-    return name;
+    return formatAssetName(
+      auction.case.assetType,
+      auction.case.assetDetails as Record<string, unknown>,
+      auction.case.claimReference
+    );
   };
 
   // Build filters object for API
@@ -1054,7 +1033,6 @@ function AuctionBrowsingContent() {
   );
 }
 
-// Compact Auction Card Component with max 5 fields
 interface AuctionCardProps {
   auction: Auction;
   onClick: () => void;
@@ -1143,57 +1121,26 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
     return () => clearInterval(interval);
   }, [auction.endTime, auction.status, auction.scheduledStartTime]);
 
-  // Format asset name - show specific item names, not just categories
+  // Format asset name using shared formatter for all asset types
   const getAssetName = () => {
-    const details = auction.case.assetDetails;
-    let name = '';
-    
-    switch (auction.case.assetType) {
-      case 'vehicle':
-        // Format: "2015 Toyota Camry" or fallback to "Vehicle"
-        name = `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim();
-        break;
-      case 'property':
-        // Format: "Commercial Property" or specific property type
-        name = details.propertyType ? String(details.propertyType) : 'Property';
-        break;
-      case 'electronics':
-        // Format: "Samsung Electronics" or "Electronics"
-        name = details.brand ? `${details.brand} ${details.model || 'Electronics'}`.trim() : 'Electronics';
-        break;
-      case 'machinery':
-        // Format: "Caterpillar CAT 320 Excavator" or "Caterpillar Excavator"
-        name = `${details.brand || ''} ${details.model || ''} ${details.machineryType || ''}`.trim();
-        if (!name) {
-          name = details.machineryType ? String(details.machineryType) : 'Machinery';
-        }
-        break;
-      default:
-        name = 'Salvage Item';
-    }
-    
-    // Fallback to the asset type if no specific name is available.
-    if (!name || name === auction.case.assetType) {
-      name = auction.case.assetType.replace(/_/g, ' ');
-    }
-    
-    // Truncate to 50 characters with ellipsis
+    const name = formatAssetName(
+      auction.case.assetType,
+      auction.case.assetDetails as Record<string, unknown>,
+      auction.case.assetType.replace(/_/g, ' ')
+    );
+
     if (name.length > 50) {
-      name = name.substring(0, 50) + '...';
+      return `${name.substring(0, 50)}...`;
     }
-    
+
     return name;
   };
 
-  // Get photos for carousel (at least 3 photos, or repeat if less)
-  const photos = auction.case.photos.length > 0 
-    ? auction.case.photos 
+  const photos = auction.case.photos.length > 0
+    ? auction.case.photos
     : ['/placeholder-auction.jpg'];
-  
-  // Ensure we have at least 3 photos for carousel by repeating if necessary
-  const carouselPhotos = photos.length >= 3 
-    ? photos 
-    : [...photos, ...photos, ...photos].slice(0, 3);
+
+  const carouselPhotos = photos;
 
   // Get current bid or reserve price
   const displayPrice = auction.currentBid 

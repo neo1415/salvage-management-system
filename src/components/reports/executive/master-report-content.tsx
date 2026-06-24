@@ -28,6 +28,7 @@ import {
   Filler,
 } from 'chart.js';
 import { MasterReportData } from '@/features/reports/executive/services/master-report.service';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
 
 // Register Chart.js components
 ChartJS.register(
@@ -48,7 +49,7 @@ interface MasterReportContentProps {
 }
 
 export function MasterReportContent({ data }: MasterReportContentProps) {
-  const formatCurrency = (amount: number) => `₦${amount.toLocaleString()}`;
+  const formatCurrency = formatReportCurrency;
   const formatPercent = (value: number) => `${value.toFixed(1)}%`;
 
   return (
@@ -180,32 +181,32 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
       <section>
         <h2 className="text-2xl font-bold mb-4 text-[var(--brand-primary)]">Financial Performance</h2>
         
-        <div className="grid gap-4 md:grid-cols-3 mb-4">
-          <Card>
+        <MetricGrid className="mb-4 md:grid-cols-3">
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">Gross Profit</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{formatCurrency(data.financial.profitability.grossProfit)}</p>
+              <MetricValue>{formatCurrency(data.financial.profitability.grossProfit)}</MetricValue>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">Profit Margin</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{formatPercent(data.financial.profitability.profitMargin)}</p>
+              <MetricValue>{formatPercent(data.financial.profitability.profitMargin)}</MetricValue>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">Net Profit</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-green-600">{formatCurrency(data.financial.profitability.netProfit)}</p>
+              <MetricValue className="text-green-600">{formatCurrency(data.financial.profitability.netProfit)}</MetricValue>
             </CardContent>
           </Card>
-        </div>
+        </MetricGrid>
 
         <div className="grid min-w-0 gap-4 lg:grid-cols-2 mb-4">
           <Card className="min-w-0 overflow-hidden">
@@ -239,7 +240,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                       y: {
                         beginAtZero: true,
                         ticks: {
-                          callback: (value) => `₦${(value as number).toLocaleString()}`,
+                          callback: (value) => formatReportCurrency(value as number),
                         },
                       },
                     },
@@ -316,9 +317,9 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
             <CardTitle>Recovery Rate Analysis</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-4">
+            <div className="mb-4 min-w-0">
               <p className="text-sm text-gray-600">Average Recovery Rate</p>
-              <p className="text-3xl font-bold">{formatPercent(data.financial.recovery.averageRate)}</p>
+              <MetricValue>{formatPercent(data.financial.recovery.averageRate)}</MetricValue>
               <p className="text-xs text-gray-500">of market value</p>
             </div>
             <div className="grid min-w-0 gap-4 lg:grid-cols-2">
@@ -367,7 +368,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
               <CardTitle>Cases Overview</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold mb-4">{data.operational.cases.total}</p>
+              <MetricValue className="mb-4">{data.operational.cases.total}</MetricValue>
               <div className="space-y-2">
                 {data.operational.cases.byStatus.map((s, i) => (
                   <div key={i} className="flex justify-between items-center">
@@ -387,7 +388,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
               <CardTitle>Auctions Overview</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold mb-4">{data.operational.auctions.total}</p>
+              <MetricValue className="mb-4">{data.operational.auctions.total}</MetricValue>
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm">Active</span>
@@ -418,7 +419,7 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
               <CardTitle>Documents</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold mb-4">{data.operational.documents.totalGenerated}</p>
+              <MetricValue className="mb-4">{data.operational.documents.totalGenerated}</MetricValue>
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm">Completion Rate</span>
@@ -510,6 +511,48 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
                             <td className="py-2 px-4 text-right">{formatCurrency(branch.claimsValue)}</td>
                             <td className="py-2 px-4 text-right font-semibold">{formatCurrency(branch.verifiedRecovery)}</td>
                             <td className="py-2 px-4 text-right">{formatPercent(branch.recoveryRate)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </PaginatedReportRows>
+            </CardContent>
+          </Card>
+        )}
+
+        {data.operational.brokers && data.operational.brokers.length > 0 && (
+          <Card className="mb-4 min-w-0 overflow-hidden">
+            <CardHeader>
+              <CardTitle>Broker / Agency Recovery Performance</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PaginatedReportRows rows={data.operational.brokers} label="channels">
+                {(rows, startIndex) => (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-4">Channel</th>
+                          <th className="text-left py-2 px-4">Type</th>
+                          <th className="text-center py-2 px-4">Cases</th>
+                          <th className="text-center py-2 px-4">Sold</th>
+                          <th className="text-right py-2 px-4">Claims Value</th>
+                          <th className="text-right py-2 px-4">Verified Recovery</th>
+                          <th className="text-right py-2 px-4">Recovery Rate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((broker, index) => (
+                          <tr key={`${broker.channelName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
+                            <td className="py-2 px-4 font-medium">{broker.channelName}</td>
+                            <td className="py-2 px-4 capitalize">{broker.channelType}</td>
+                            <td className="py-2 px-4 text-center">{broker.totalCases}</td>
+                            <td className="py-2 px-4 text-center">{broker.soldCases}</td>
+                            <td className="py-2 px-4 text-right">{formatCurrency(broker.claimsValue)}</td>
+                            <td className="py-2 px-4 text-right font-semibold">{formatCurrency(broker.verifiedRecovery)}</td>
+                            <td className="py-2 px-4 text-right">{formatPercent(broker.recoveryRate)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -799,73 +842,73 @@ export function MasterReportContent({ data }: MasterReportContentProps) {
       <section>
         <h2 className="text-2xl font-bold mb-4 text-[var(--brand-primary)]">System Health & Compliance</h2>
         
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
+        <MetricGrid className="md:grid-cols-3">
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>Data Quality</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Complete Cases</p>
-                  <p className="text-2xl font-bold">{data.systemHealth.dataQuality.completeCases}</p>
+                  <MetricValue>{data.systemHealth.dataQuality.completeCases}</MetricValue>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Missing Data</p>
-                  <p className="text-2xl font-bold text-red-600">{data.systemHealth.dataQuality.missingData}</p>
+                  <MetricValue className="text-red-600">{data.systemHealth.dataQuality.missingData}</MetricValue>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Quality Score</p>
-                  <p className="text-2xl font-bold text-green-600">{formatPercent(data.systemHealth.dataQuality.dataQualityScore)}</p>
+                  <MetricValue className="text-green-600">{formatPercent(data.systemHealth.dataQuality.dataQualityScore)}</MetricValue>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>System Performance</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Avg Response Time</p>
-                  <p className="text-2xl font-bold">{data.systemHealth.performance.avgApiResponseTime}ms</p>
+                  <MetricValue>{data.systemHealth.performance.avgApiResponseTime}ms</MetricValue>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Error Rate</p>
-                  <p className="text-2xl font-bold">{formatPercent(data.systemHealth.performance.errorRate)}</p>
+                  <MetricValue>{formatPercent(data.systemHealth.performance.errorRate)}</MetricValue>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Uptime</p>
-                  <p className="text-2xl font-bold text-green-600">{formatPercent(data.systemHealth.performance.uptime)}</p>
+                  <MetricValue className="text-green-600">{formatPercent(data.systemHealth.performance.uptime)}</MetricValue>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle>Compliance</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Audit Coverage</p>
-                  <p className="text-2xl font-bold">{formatPercent(data.systemHealth.compliance.auditTrailCoverage)}</p>
+                  <MetricValue>{formatPercent(data.systemHealth.compliance.auditTrailCoverage)}</MetricValue>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Security Incidents</p>
-                  <p className="text-2xl font-bold">{data.systemHealth.compliance.securityIncidents}</p>
+                  <MetricValue>{data.systemHealth.compliance.securityIncidents}</MetricValue>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-gray-600">Compliance Score</p>
-                  <p className="text-2xl font-bold text-green-600">{data.systemHealth.compliance.complianceScore}</p>
+                  <MetricValue className="text-green-600">{data.systemHealth.compliance.complianceScore}</MetricValue>
                 </div>
               </div>
             </CardContent>
           </Card>
-        </div>
+        </MetricGrid>
       </section>
 
       {/* METADATA */}

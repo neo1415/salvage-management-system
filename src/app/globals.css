@@ -372,3 +372,7 @@ img {
 .navigation-progress-bar {
   animation: navigation-progress-slide 0.45s ease-out forwards;
 }
+
+.navigation-progress-bar--active {
+  animation: navigation-progress-slide 1.1s ease-in-out infinite;
+}

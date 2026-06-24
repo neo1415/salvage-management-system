@@ -2,20 +2,20 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import {
   Users,
   AlertTriangle,
   ClipboardList,
   Activity,
-  TrendingUp,
   Package,
   Database,
   ShieldCheck,
 } from 'lucide-react';
-import Link from 'next/link';
+import { AppLink } from '@/components/navigation/app-link';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
 import { DataLoadingState } from '@/components/ui/loading-states';
+import { StatCard, StatGrid, StatTile } from '@/components/ui/stat-card';
+import { useAppRouter } from '@/hooks/use-app-router';
 
 interface DashboardStats {
   totalUsers: number;
@@ -25,14 +25,13 @@ interface DashboardStats {
   userGrowth: number;
   systemHealth: 'healthy' | 'warning' | 'critical';
   pendingPickupConfirmations: number;
-  expiredDocuments: number;
   overdueSignedUnpaid: number;
   healthReasons: string[];
 }
 
 function AdminDashboardContentInner() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const statsRef = useRef<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,7 +64,7 @@ function AdminDashboardContentInner() {
       // User has correct role, fetch dashboard stats
       fetchDashboardStats();
     }
-  }, [session, status, router]);
+  }, [session, status, router.push]);
 
   const fetchDashboardStats = async () => {
     const showFullPageLoader = statsRef.current == null;
@@ -92,7 +91,6 @@ function AdminDashboardContentInner() {
         userGrowth: 0,
         systemHealth: 'healthy',
         pendingPickupConfirmations: 0,
-        expiredDocuments: 0,
         overdueSignedUnpaid: 0,
         healthReasons: [],
       };
@@ -127,94 +125,53 @@ function AdminDashboardContentInner() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Total Users */}
-        <Link
+      <StatGrid minCol={200}>
+        <StatCard
           href="/admin/users"
-          className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Users</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.totalUsers || 0}
-              </p>
-              <div className="flex items-center gap-1 mt-2">
-                <TrendingUp className="w-4 h-4 text-green-600" />
-                <span className="text-sm text-green-600">
-                  +{stats?.userGrowth || 0}% this month
-                </span>
-              </div>
-            </div>
+          title="Total Users"
+          value={stats?.totalUsers || 0}
+          subtitle={`+${stats?.userGrowth || 0}% this month`}
+          icon={
             <div className="p-3 bg-blue-100 rounded-lg">
               <Users className="w-8 h-8 text-blue-600" />
             </div>
-          </div>
-        </Link>
-
-        {/* Active Vendors */}
-        <Link
+          }
+        />
+        <StatCard
           href="/admin/users"
-          className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Active Vendors</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.activeVendors || 0}
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                Verified & active
-              </p>
-            </div>
+          title="Active Vendors"
+          value={stats?.activeVendors || 0}
+          subtitle="Verified & active"
+          icon={
             <div className="p-3 bg-green-100 rounded-lg">
               <Activity className="w-8 h-8 text-green-600" />
             </div>
-          </div>
-        </Link>
-
-        {/* Fraud Alerts */}
-        <Link
+          }
+        />
+        <StatCard
           href="/admin/fraud"
-          className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Fraud Alerts</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.pendingFraudAlerts || 0}
-              </p>
-              <p className="text-sm text-red-600 mt-2">
-                {stats?.pendingFraudAlerts ? 'Requires attention' : 'All clear'}
-              </p>
-            </div>
+          title="Fraud Alerts"
+          value={stats?.pendingFraudAlerts || 0}
+          subtitle={stats?.pendingFraudAlerts ? 'Requires attention' : 'All clear'}
+          valueClassName={stats?.pendingFraudAlerts ? 'text-red-700' : undefined}
+          icon={
             <div className="p-3 bg-red-100 rounded-lg">
               <AlertTriangle className="w-8 h-8 text-red-600" />
             </div>
-          </div>
-        </Link>
-
-        {/* Audit Logs */}
-        <Link
+          }
+        />
+        <StatCard
           href="/admin/audit-logs"
-          className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Today's Logs</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">
-                {stats?.todayAuditLogs || 0}
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                System activities
-              </p>
-            </div>
+          title="Today's Logs"
+          value={stats?.todayAuditLogs || 0}
+          subtitle="System activities"
+          icon={
             <div className="p-3 bg-purple-100 rounded-lg">
               <ClipboardList className="w-8 h-8 text-purple-600" />
             </div>
-          </div>
-        </Link>
-      </div>
+          }
+        />
+      </StatGrid>
 
       {/* Pending Pickup Confirmations Widget */}
       <div className="bg-white rounded-lg shadow p-6">
@@ -240,12 +197,12 @@ function AdminDashboardContentInner() {
           </div>
           
           {stats?.pendingPickupConfirmations ? (
-            <Link
+            <AppLink
               href="/admin/pickups"
               className="px-6 py-3 bg-[var(--brand-primary)] text-white rounded-lg font-medium hover:bg-[var(--brand-primary-hover)] transition-colors"
             >
               Review Pickups
-            </Link>
+            </AppLink>
           ) : (
             <div className="text-green-600 font-medium flex items-center gap-2">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -296,73 +253,71 @@ function AdminDashboardContentInner() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <Link href="/admin/fraud" className="rounded-lg border border-gray-200 p-4 hover:border-[var(--brand-primary)] transition-colors">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Fraud queue</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.pendingFraudAlerts}</p>
-            <p className="mt-1 text-xs text-gray-500">Pending alerts to review</p>
-          </Link>
-          <Link href="/admin/pickups" className="rounded-lg border border-gray-200 p-4 hover:border-[var(--brand-primary)] transition-colors">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pickup queue</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.pendingPickupConfirmations}</p>
-            <p className="mt-1 text-xs text-gray-500">Paid assets awaiting confirmation</p>
-          </Link>
-          <Link href="/reports/operational/document-management" className="rounded-lg border border-gray-200 p-4 hover:border-[var(--brand-primary)] transition-colors">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Document exceptions</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.expiredDocuments}</p>
-            <p className="mt-1 text-xs text-gray-500">Expired signing windows</p>
-          </Link>
-          <Link href="/finance/payments" className="rounded-lg border border-gray-200 p-4 hover:border-[var(--brand-primary)] transition-colors">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment exceptions</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.overdueSignedUnpaid}</p>
-            <p className="mt-1 text-xs text-gray-500">Signed but unpaid past deadline</p>
-          </Link>
-        </div>
+        <StatGrid minCol={160}>
+          <StatTile
+            href="/admin/fraud"
+            title="Fraud queue"
+            value={stats.pendingFraudAlerts}
+            subtitle="Pending alerts to review"
+          />
+          <StatTile
+            href="/admin/pickups"
+            title="Pickup queue"
+            value={stats.pendingPickupConfirmations}
+            subtitle="Paid assets awaiting confirmation"
+          />
+          <StatTile
+            href="/finance/payments"
+            title="Payment exceptions"
+            value={stats.overdueSignedUnpaid}
+            subtitle="Signed but unpaid past deadline"
+          />
+        </StatGrid>
       </div>
 
       {/* Quick Actions */}
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          <Link
+          <AppLink
             href="/admin/users"
             className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
             <Users className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">Manage Users</p>
-          </Link>
+          </AppLink>
 
-          <Link
+          <AppLink
             href="/admin/fraud"
             className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
             <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">Review Fraud</p>
-          </Link>
+          </AppLink>
 
-          <Link
+          <AppLink
             href="/manager/vendors?tier=tier2&status=pending"
             className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
             <Users className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">KYC Approvals</p>
-          </Link>
+          </AppLink>
 
-          <Link
+          <AppLink
             href="/admin/audit-logs"
             className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
             <ClipboardList className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">View Logs</p>
-          </Link>
+          </AppLink>
 
-          <Link
+          <AppLink
             href="/admin/privacy-requests"
             className="p-4 border-2 border-gray-200 rounded-lg hover:border-[var(--brand-primary)] transition-colors text-center"
           >
             <ShieldCheck className="w-8 h-8 mx-auto mb-2 text-[var(--brand-primary)]" />
             <p className="font-medium">Privacy Requests</p>
-          </Link>
+          </AppLink>
         </div>
       </div>
     </div>

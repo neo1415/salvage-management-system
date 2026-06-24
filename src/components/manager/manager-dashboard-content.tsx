@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useAppRouter } from '@/hooks/use-app-router';
+import { StatCard, StatGrid, StatTile } from '@/components/ui/stat-card';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth/use-auth';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
 import { PageLoadingSkeleton } from '@/components/ui/loading-states';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { getEnabledCaseAssetTypeOptions } from '@/features/business-policy/case-asset-type-options';
 
 // Dynamic import for Recharts to reduce initial bundle size
 const LineChart = dynamic(
@@ -112,6 +115,10 @@ interface DashboardData {
     topVendors: TopVendor[];
     paymentStatusBreakdown: PaymentStatusBreakdown[];
   };
+  filterOptions?: {
+    branches: string[];
+    brokers: string[];
+  };
   lastUpdated: string;
 }
 
@@ -151,7 +158,7 @@ function formatDays(value: number | null): string {
 }
 
 function ManagerDashboardContentInner() {
-  const router = useRouter();
+  const router = useAppRouter();
   const { user, isAuthenticated, isLoading } = useAuth();
 
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
@@ -161,8 +168,22 @@ function ManagerDashboardContentInner() {
   const [error, setError] = useState<string | null>(null);
   
   // Filters
-  const [dateRange, setDateRange] = useState('30'); // Default 30 days
-  const [assetType, setAssetType] = useState<string>(''); // Empty = all
+  const [dateRange, setDateRange] = useState('30');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [assetType, setAssetType] = useState<string>('');
+  const [branchName, setBranchName] = useState('');
+  const [brokerQuery, setBrokerQuery] = useState('');
+  const [filterOptions, setFilterOptions] = useState<{ branches: string[]; brokers: string[] }>({
+    branches: [],
+    brokers: [],
+  });
+
+  const { policy: publicPolicy } = usePublicBusinessPolicy();
+  const enabledAssetTypes = useMemo(
+    () => getEnabledCaseAssetTypeOptions(publicPolicy?.cases.enabledAssetTypes),
+    [publicPolicy]
+  );
 
   // Auto-refresh interval (30 seconds)
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
@@ -179,9 +200,13 @@ function ManagerDashboardContentInner() {
       setError(null);
       const params = new URLSearchParams();
       params.append('dateRange', dateRange);
-      if (assetType) {
-        params.append('assetType', assetType);
+      if (dateRange === 'custom') {
+        if (customStartDate) params.append('startDate', customStartDate);
+        if (customEndDate) params.append('endDate', customEndDate);
       }
+      if (assetType) params.append('assetType', assetType);
+      if (branchName) params.append('branchName', branchName);
+      if (brokerQuery.trim()) params.append('brokerQuery', brokerQuery.trim());
 
       const response = await fetch(`/api/dashboard/manager?${params.toString()}`);
       
@@ -200,6 +225,9 @@ function ManagerDashboardContentInner() {
       const data: DashboardData = await response.json();
       dashboardDataRef.current = data;
       setDashboardData(data);
+      if (data.filterOptions) {
+        setFilterOptions(data.filterOptions);
+      }
       setLastRefresh(new Date());
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
@@ -208,7 +236,7 @@ function ManagerDashboardContentInner() {
       setIsLoadingData(false);
       setIsRefreshing(false);
     }
-  }, [dateRange, assetType, router]);
+  }, [dateRange, customStartDate, customEndDate, assetType, branchName, brokerQuery, router.push]);
 
   // Initial fetch and auth check
   useEffect(() => {
@@ -226,7 +254,7 @@ function ManagerDashboardContentInner() {
     if (isAuthenticated && user) {
       fetchDashboardData();
     }
-  }, [isAuthenticated, isLoading, user, router, fetchDashboardData]);
+  }, [isAuthenticated, isLoading, user, router.push, fetchDashboardData]);
 
   // Refresh dashboard when page becomes visible (e.g., returning from another page)
   useEffect(() => {
@@ -256,9 +284,16 @@ function ManagerDashboardContentInner() {
     setDateRange(newRange);
   };
 
-  const handleAssetTypeChange = (newType: string) => {
-    setAssetType(newType);
+  const handleBrokerQueryChange = (value: string) => {
+    setBrokerQuery(value);
   };
+
+  const dateRangeLabel =
+    dateRange === 'all'
+      ? 'all time'
+      : dateRange === 'custom'
+        ? 'selected dates'
+        : `last ${dateRange} days`;
 
   // Handle chart drill-down with proper Recharts types
   const handleRecoveryTrendClick = (data: unknown) => {
@@ -341,45 +376,119 @@ function ManagerDashboardContentInner() {
           </div>
 
           {/* Filters */}
-          <div className="mt-4 flex flex-col sm:flex-row gap-4">
-            {/* Date Range Filter */}
-            <div className="flex-1">
-              <label htmlFor="dateRange" className="block text-sm font-medium text-gray-700 mb-1">
-                Date Range
-              </label>
-              <select
-                id="dateRange"
-                value={dateRange}
-                onChange={(e) => handleDateRangeChange(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
-              >
-                <option value="7">Last 7 days</option>
-                <option value="30">Last 30 days</option>
-                <option value="60">Last 60 days</option>
-                <option value="90">Last 90 days</option>
-              </select>
+          <div className="mt-4 flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label htmlFor="dateRange" className="block text-sm font-medium text-gray-700 mb-1">
+                  Date range
+                </label>
+                <select
+                  id="dateRange"
+                  value={dateRange}
+                  onChange={(e) => handleDateRangeChange(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+                >
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="60">Last 60 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="all">All time</option>
+                  <option value="custom">Custom range</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="assetType" className="block text-sm font-medium text-gray-700 mb-1">
+                  Asset type
+                </label>
+                <select
+                  id="assetType"
+                  value={assetType}
+                  onChange={(e) => setAssetType(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+                >
+                  <option value="">All types</option>
+                  {enabledAssetTypes.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="branchName" className="block text-sm font-medium text-gray-700 mb-1">
+                  Branch
+                </label>
+                <select
+                  id="branchName"
+                  value={branchName}
+                  onChange={(e) => setBranchName(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+                >
+                  <option value="">All branches</option>
+                  {filterOptions.branches.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="brokerQuery" className="block text-sm font-medium text-gray-700 mb-1">
+                  Broker
+                </label>
+                <input
+                  id="brokerQuery"
+                  type="search"
+                  list="manager-dashboard-brokers"
+                  value={brokerQuery}
+                  onChange={(e) => handleBrokerQueryChange(e.target.value)}
+                  placeholder="Search broker name"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+                />
+                <datalist id="manager-dashboard-brokers">
+                  {filterOptions.brokers.map((broker) => (
+                    <option key={broker} value={broker} />
+                  ))}
+                </datalist>
+              </div>
             </div>
 
-            {/* Asset Type Filter */}
-            <div className="flex-1">
-              <label htmlFor="assetType" className="block text-sm font-medium text-gray-700 mb-1">
-                Asset Type
-              </label>
-              <select
-                id="assetType"
-                value={assetType}
-                onChange={(e) => handleAssetTypeChange(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
-              >
-                <option value="">All Types</option>
-                <option value="vehicle">Vehicle</option>
-                <option value="property">Property</option>
-                <option value="electronics">Electronics</option>
-              </select>
-            </div>
+            {dateRange === 'custom' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="customStartDate" className="block text-sm font-medium text-gray-700 mb-1">
+                    From
+                  </label>
+                  <input
+                    id="customStartDate"
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="customEndDate" className="block text-sm font-medium text-gray-700 mb-1">
+                    To
+                  </label>
+                  <input
+                    id="customEndDate"
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+                  />
+                </div>
+              </div>
+            )}
 
-            {/* Refresh Button */}
-            <div className="flex items-end">
+            <div className="flex items-end justify-between gap-4">
+              <p className="text-sm text-gray-500">
+                Control tower metrics reflect {dateRangeLabel}.
+              </p>
               <button
                 onClick={() => {
                   void fetchDashboardData();
@@ -387,10 +496,10 @@ function ManagerDashboardContentInner() {
                 disabled={isLoadingData || isRefreshing}
                 className="px-6 py-2 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                <svg 
-                  className={`w-5 h-5 ${isLoadingData || isRefreshing ? 'animate-spin' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
+                <svg
+                  className={`w-5 h-5 ${isLoadingData || isRefreshing ? 'animate-spin' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -401,64 +510,56 @@ function ManagerDashboardContentInner() {
           </div>
         </div>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
-          {/* Active Auctions */}
-          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">Active Auctions</h3>
+        <StatGrid className="mb-8" minCol={200}>
+          <StatCard
+            title="Active Auctions"
+            value={kpis.activeAuctions}
+            subtitle="Currently live"
+            icon={
               <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{kpis.activeAuctions}</p>
-            <p className="text-sm text-gray-600 mt-1">Currently live</p>
-          </div>
-
-          {/* Total Bids Today */}
-          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">Bids Today</h3>
+            }
+          />
+          <StatCard
+            title="Bids Today"
+            value={kpis.totalBidsToday}
+            subtitle="Since midnight"
+            icon={
               <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
               </div>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{kpis.totalBidsToday}</p>
-            <p className="text-sm text-gray-600 mt-1">Since midnight</p>
-          </div>
-
-          {/* Average Recovery Rate */}
-          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">Recovery Rate</h3>
+            }
+          />
+          <StatCard
+            title="Recovery Rate"
+            value={`${kpis.averageRecoveryRate.toFixed(1)}%`}
+            subtitle={`Last ${dateRange} days`}
+            icon={
               <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
               </div>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{kpis.averageRecoveryRate.toFixed(1)}%</p>
-            <p className="text-sm text-gray-600 mt-1">Last {dateRange} days</p>
-          </div>
-
-          {/* Cases Pending Approval */}
-          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">Pending Approval</h3>
+            }
+          />
+          <StatCard
+            title="Pending Approval"
+            value={kpis.casesPendingApproval}
+            subtitle="Awaiting review"
+            icon={
               <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{kpis.casesPendingApproval}</p>
-            <p className="text-sm text-gray-600 mt-1">Awaiting review</p>
-          </div>
-        </div>
+            }
+          />
+        </StatGrid>
 
         {controlTower && (
           <div className="bg-white rounded-lg shadow p-6 mb-8">
@@ -477,37 +578,35 @@ function ManagerDashboardContentInner() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-              <div className="rounded-lg border border-gray-200 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Claims value</p>
-                <p className="mt-2 text-2xl font-bold text-gray-900">{formatNaira(controlTower.claimsValue)}</p>
-                <p className="mt-1 text-xs text-gray-500">Case market value in range</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Verified recovery</p>
-                <p className="mt-2 text-2xl font-bold text-emerald-700">{formatNaira(controlTower.verifiedRecovery)}</p>
-                <p className="mt-1 text-xs text-gray-500">{controlTower.recoveryRate.toFixed(1)}% of claims value in range</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Reserve gap</p>
-                <p className="mt-2 text-2xl font-bold text-amber-700">{formatNaira(controlTower.expectedRecoveryGap)}</p>
-                <p className="mt-1 text-xs text-gray-500">Reserve target less verified recovery</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Awaiting pickup</p>
-                <p className="mt-2 text-2xl font-bold text-gray-900">{controlTower.awaitingPickup}</p>
-                <p className="mt-1 text-xs text-gray-500">All paid assets not yet released</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Avg cycle</p>
-                <p className="mt-2 text-lg font-bold text-gray-900">
-                  {formatDays(controlTower.averageDaysToPayment)} payment
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  {formatDays(controlTower.averageDaysToAssessment)} assessment, {formatDays(controlTower.averageDaysToPickup)} pickup
-                </p>
-              </div>
-            </div>
+            <StatGrid minCol={140}>
+              <StatTile
+                title="Claims value"
+                value={formatNaira(controlTower.claimsValue)}
+                subtitle="Case market value in range"
+              />
+              <StatTile
+                title="Verified recovery"
+                value={formatNaira(controlTower.verifiedRecovery)}
+                subtitle={`${controlTower.recoveryRate.toFixed(1)}% of claims value in range`}
+                valueClassName="text-emerald-700"
+              />
+              <StatTile
+                title="Reserve gap"
+                value={formatNaira(controlTower.expectedRecoveryGap)}
+                subtitle="Reserve target less verified recovery"
+                valueClassName="text-amber-700"
+              />
+              <StatTile
+                title="Awaiting pickup"
+                value={controlTower.awaitingPickup}
+                subtitle="Paid with pickup authorization, not yet released"
+              />
+              <StatTile
+                title="Avg cycle"
+                value={`${formatDays(controlTower.averageDaysToPayment)} payment`}
+                subtitle={`${formatDays(controlTower.averageDaysToPickup)} pickup`}
+              />
+            </StatGrid>
 
             <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               {controlTower.exceptions.map((exception) => (

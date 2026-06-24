@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { 
@@ -187,7 +187,7 @@ const REPORT_CATEGORIES: ReportCategory[] = [
 
 export default function ReportsHubPage() {
   const { data: session } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [recentReports, setRecentReports] = useState<any[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -290,12 +290,12 @@ export default function ReportsHubPage() {
                     key={report.id}
                     href={report.path}
                     prefetch
-                    className="flex items-start gap-3 p-4 border rounded-lg hover:border-[var(--brand-primary)] hover:bg-[var(--brand-primary-surface)] transition-all text-left"
+                    className="flex items-start gap-3 p-4 border rounded-lg hover:border-[var(--brand-primary)] hover:bg-[var(--brand-primary-surface)] transition-all text-left min-w-0 overflow-hidden"
                   >
                     <report.icon className="h-5 w-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium">{report.name}</p>
-                      <p className="text-sm text-gray-600 mt-1">{report.description}</p>
+                      <p className="text-sm text-gray-600 mt-1 line-clamp-2 break-words">{report.description}</p>
                     </div>
                     <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
                   </Link>

@@ -7,6 +7,7 @@
  * Task: 11.3.8 - Implement Session Analytics metrics and trends
  */
 
+import { MetricValue } from '@/components/ui/stat-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Clock, FileText, TrendingDown } from 'lucide-react';
@@ -71,35 +72,35 @@ export function SessionAnalyticsMetrics({ metrics, trends, loading }: SessionAna
       </CardHeader>
       <CardContent>
         {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="border rounded-lg p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 min-w-0">
+          <div className="border rounded-lg p-4 min-w-0 overflow-hidden">
             <div className="flex items-center gap-2 mb-2">
               <Clock className="h-4 w-4 text-blue-600" />
               <span className="text-sm text-muted-foreground">Avg Session Duration</span>
             </div>
-            <p className="text-2xl font-bold">{formatDuration(avgSessionDuration)}</p>
+            <MetricValue>{formatDuration(avgSessionDuration)}</MetricValue>
             <p className="text-xs text-muted-foreground mt-1">
               {totalSessions.toLocaleString()} total sessions
             </p>
           </div>
 
-          <div className="border rounded-lg p-4">
+          <div className="border rounded-lg p-4 min-w-0 overflow-hidden">
             <div className="flex items-center gap-2 mb-2">
               <FileText className="h-4 w-4 text-green-600" />
               <span className="text-sm text-muted-foreground">Pages per Session</span>
             </div>
-            <p className="text-2xl font-bold">{avgPagesPerSession.toFixed(1)}</p>
+            <MetricValue>{avgPagesPerSession.toFixed(1)}</MetricValue>
             <p className="text-xs text-muted-foreground mt-1">
               {avgPagesPerSession >= 3 ? 'Good engagement' : 'Low engagement'}
             </p>
           </div>
 
-          <div className="border rounded-lg p-4">
+          <div className="border rounded-lg p-4 min-w-0 overflow-hidden">
             <div className="flex items-center gap-2 mb-2">
               <TrendingDown className="h-4 w-4 text-orange-600" />
               <span className="text-sm text-muted-foreground">Bounce Rate</span>
             </div>
-            <p className="text-2xl font-bold">{bounceRate.toFixed(1)}%</p>
+            <MetricValue>{bounceRate.toFixed(1)}%</MetricValue>
             <p className="text-xs text-muted-foreground mt-1">
               {bounceRate <= 40 ? 'Excellent' : bounceRate <= 60 ? 'Good' : 'Needs improvement'}
             </p>

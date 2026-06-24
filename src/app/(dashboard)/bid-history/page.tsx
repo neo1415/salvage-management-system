@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/lib/auth/use-auth';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import Link from 'next/link';
 import Image from 'next/image';
 import { 
@@ -29,8 +29,14 @@ import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { useToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useCachedBidHistory } from '@/hooks/use-cached-bid-history';
+import {
+  bidHistoryBadgeClassName,
+  resolveBidHistoryBadge,
+  type BidHistoryBadgeTone,
+} from '@/lib/auctions/bid-history-display';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
+import { sortBidHistoryItems } from '@/lib/auctions/bid-history-sort';
 
 const BID_HISTORY_TABS = ['active', 'completed'] as const;
 
@@ -45,6 +51,7 @@ interface BidHistoryItem {
     minimumIncrement: string;
     status: string;
     createdAt: string;
+    updatedAt?: string;
   };
   case: {
     id: string;
@@ -95,11 +102,15 @@ interface BidHistoryItem {
   }>;
   watchingCount: number;
   paymentStatus: string | null;
+  displayBadge?: {
+    label: string;
+    tone: BidHistoryBadgeTone;
+  };
 }
 
 export default function BidHistoryPage() {
   const { user, isAuthenticated, isLoading } = useAuth();
-  const router = useRouter();
+  const router = useAppRouter();
   const toast = useToast();
   
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
@@ -122,7 +133,10 @@ export default function BidHistoryPage() {
     error: cacheError, 
     totalPages 
   } = useCachedBidHistory(activeTab, page);
-  const bidHistoryItems = data as BidHistoryItem[];
+  const bidHistoryItems = useMemo(
+    () => sortBidHistoryItems(data as BidHistoryItem[], activeTab),
+    [data, activeTab]
+  );
 
   const [error, setError] = useState<string | null>(null);
 
@@ -295,8 +309,8 @@ export default function BidHistoryPage() {
     return `${minutes}m`;
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
+  const getBadgeIcon = (tone: BidHistoryBadgeTone) => {
+    switch (tone) {
       case 'active':
         return <TrendingUp className="w-4 h-4 text-green-600" />;
       case 'scheduled':
@@ -305,12 +319,22 @@ export default function BidHistoryPage() {
         return <AlertCircle className="w-4 h-4 text-orange-600" />;
       case 'closed':
         return <CheckCircle className="w-4 h-4 text-gray-600" />;
+      case 'payment':
+        return <Clock className="w-4 h-4 text-amber-700" />;
+      case 'warning':
       case 'cancelled':
         return <XCircle className="w-4 h-4 text-red-600" />;
       default:
         return <Clock className="w-4 h-4 text-gray-400" />;
     }
   };
+
+  const resolveItemBadge = (item: BidHistoryItem) =>
+    item.displayBadge ??
+    resolveBidHistoryBadge({
+      auctionStatus: item.auction.status,
+      caseStatus: item.case?.status,
+    });
 
   if ((isLoading || loading) && data.length === 0) {
     return <DataLoadingState label="Bid history" variant="page" />;
@@ -540,16 +564,15 @@ export default function BidHistoryPage() {
                   
                   {/* Status Badge */}
                   <div className="absolute top-3 left-3">
-                    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${
-                      item.auction.status === 'active' ? 'bg-green-100 text-green-800' :
-                      item.auction.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                      item.auction.status === 'extended' ? 'bg-orange-100 text-orange-800' :
-                      item.auction.status === 'closed' ? 'bg-gray-100 text-gray-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {getStatusIcon(item.auction.status)}
-                      {item.auction.status.charAt(0).toUpperCase() + item.auction.status.slice(1)}
+                    {(() => {
+                      const badge = resolveItemBadge(item);
+                      return (
+                    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${bidHistoryBadgeClassName(badge.tone)}`}>
+                      {getBadgeIcon(badge.tone)}
+                      {badge.label}
                     </span>
+                      );
+                    })()}
                   </div>
 
                   {/* Time Remaining */}

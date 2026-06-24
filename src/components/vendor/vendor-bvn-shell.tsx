@@ -2,12 +2,12 @@
 
 import { ReactNode, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import DashboardSidebar from '@/components/layout/dashboard-sidebar';
 import { DashboardTopBar } from '@/components/layout/dashboard-top-bar';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { SyncProgressIndicator } from '@/components/ui/sync-progress-indicator';
-import { NavigationProgressBar } from '@/components/ui/loading-states';
 import {
   isVendorPreBvnPage,
   vendorNeedsBvnVerification,
@@ -21,7 +21,7 @@ import { isKycTestingModeClient } from '@/lib/kyc/kyc-testing-mode';
 export function VendorBvnShell({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession();
   const pathname = usePathname();
-  const router = useRouter();
+  const { replace } = useAppRouter();
 
   const needsBvn = vendorNeedsBvnVerification(session?.user?.role, session?.user?.bvnVerified);
   const onTier1 = isVendorPreBvnPage(pathname);
@@ -30,7 +30,7 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
     if (status !== 'authenticated') return;
 
     if (needsBvn && !onTier1) {
-      router.replace(VENDOR_TIER1_PATH);
+      replace(VENDOR_TIER1_PATH);
       return;
     }
 
@@ -43,9 +43,9 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
       if (typeof window !== 'undefined' && sessionStorage.getItem('bvn_verification_success') === '1') {
         return;
       }
-      router.replace('/vendor/kyc/tier2');
+      replace('/vendor/kyc/tier2');
     }
-  }, [status, needsBvn, onTier1, session?.user?.role, session?.user?.bvnVerified, router]);
+  }, [status, needsBvn, onTier1, session?.user?.role, session?.user?.bvnVerified, replace]);
 
   if (status === 'loading') {
     return (
@@ -64,18 +64,12 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
       );
     }
 
-    return (
-      <>
-        <NavigationProgressBar />
-        <div className="min-h-screen">{children}</div>
-      </>
-    );
+    return <div className="min-h-screen">{children}</div>;
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <DashboardRouteGuard />
-      <NavigationProgressBar />
       <DashboardSidebar />
       <div className="hidden lg:block">
         <DashboardTopBar />

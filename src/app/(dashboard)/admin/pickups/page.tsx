@@ -12,7 +12,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import {
   AdminPickupConfirmation,
   type PickupConfirmationSubmitInput,
@@ -78,7 +78,7 @@ interface PickupConfirmation {
 
 export default function AdminPickupsPage() {
   const { data: session } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
   const [allPickups, setAllPickups] = useState<PickupConfirmation[]>([]);
   const pickupsRef = useRef<PickupConfirmation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -374,8 +374,8 @@ export default function AdminPickupsPage() {
         ) : (
           <div className="space-y-4">
             {filteredPickups.map((pickup) => (
-              <div key={pickup.auctionId} className="bg-white rounded-lg shadow-md p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              <div key={pickup.auctionId} className="bg-white rounded-lg shadow-md p-4 sm:p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
                   {/* Auction Details */}
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-2">Auction Details</h3>
@@ -423,7 +423,7 @@ export default function AdminPickupsPage() {
                       </p>
                       <p>
                         <span className="text-gray-600">Email:</span>{' '}
-                        <span className="font-medium">{pickup.vendor.email}</span>
+                        <span className="font-medium break-all">{pickup.vendor.email}</span>
                       </p>
                       <p>
                         <span className="text-gray-600">Phone:</span>{' '}
@@ -489,75 +489,71 @@ export default function AdminPickupsPage() {
                         <p className="text-xs font-medium">
                           Evidence: {pickup.pickupEvidence ? evidenceLabel(pickup.pickupEvidence.status) : 'Not submitted'}
                         </p>
-                        {pickup.pickupEvidence && (
-                          <div className="mt-1 space-y-1 text-xs opacity-90">
-                            <p>
-                              {pickup.pickupEvidence.photoCount ?? 0} photo{pickup.pickupEvidence.photoCount === 1 ? '' : 's'}
-                              {pickup.pickupEvidence.submittedAt
-                                ? ` submitted ${new Date(pickup.pickupEvidence.submittedAt).toLocaleString()}`
-                                : ''}
-                            </p>
-                            <p className={scoreTone(pickup.pickupEvidence.overallMatchScore)}>
-                              Match: {pickup.pickupEvidence.overallMatchScore ?? pickup.pickupEvidence.confidenceScore ?? 'N/A'}%
-                              {pickup.pickupEvidence.reviewBand ? ` (${pickup.pickupEvidence.reviewBand.replace('_', ' ')})` : ''}
-                            </p>
-                          </div>
+                        {pickup.pickupEvidence?.submittedAt && (
+                          <p className="text-xs text-gray-600 mt-1">
+                            {pickup.pickupEvidence.photoCount ?? 0} photo{pickup.pickupEvidence.photoCount === 1 ? '' : 's'}
+                            {' · '}
+                            {new Date(pickup.pickupEvidence.submittedAt).toLocaleString()}
+                          </p>
                         )}
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* Actions */}
-                  <div>
-                    <h3 className="font-semibold text-gray-900 mb-2">Actions</h3>
-                    {pickup.pickupEvidence && (
-                      <div className={`mb-3 rounded-lg border p-3 text-xs ${evidenceTone(pickup.pickupEvidence.status)}`}>
-                        <p className="font-semibold">Evidence review</p>
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          <p>Identity: <span className={scoreTone(pickup.pickupEvidence.assetIdentityScore)}>{pickup.pickupEvidence.assetIdentityScore ?? 'N/A'}%</span></p>
-                          <p>Quantity: <span className={scoreTone(pickup.pickupEvidence.quantityMatchScore)}>{pickup.pickupEvidence.quantityMatchScore ?? 'N/A'}%</span></p>
-                          <p>Condition: <span className={scoreTone(pickup.pickupEvidence.conditionMatchScore)}>{pickup.pickupEvidence.conditionMatchScore ?? 'N/A'}%</span></p>
-                          <p>Method: {pickup.pickupEvidence.method || 'unknown'}</p>
-                        </div>
-                        {pickup.pickupEvidence.findings?.length > 0 && (
-                          <ul className="mt-2 list-disc space-y-1 pl-4">
-                            {pickup.pickupEvidence.findings.slice(0, 3).map((finding, index) => (
-                              <li key={index}>{finding}</li>
-                            ))}
-                          </ul>
+                {pickup.pickupEvidence && (
+                  <div className={`rounded-lg border p-4 text-sm ${evidenceTone(pickup.pickupEvidence.status)}`}>
+                    <p className="font-semibold text-gray-900">Evidence review</p>
+                    <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <p>Identity: <span className={scoreTone(pickup.pickupEvidence.assetIdentityScore)}>{pickup.pickupEvidence.assetIdentityScore ?? 'N/A'}%</span></p>
+                      <p>Quantity: <span className={scoreTone(pickup.pickupEvidence.quantityMatchScore)}>{pickup.pickupEvidence.quantityMatchScore ?? 'N/A'}%</span></p>
+                      <p>Condition: <span className={scoreTone(pickup.pickupEvidence.conditionMatchScore)}>{pickup.pickupEvidence.conditionMatchScore ?? 'N/A'}%</span></p>
+                      <p>Method: {pickup.pickupEvidence.method || 'unknown'}</p>
+                    </div>
+                    <p className={`mt-2 text-xs ${scoreTone(pickup.pickupEvidence.overallMatchScore)}`}>
+                      Overall match: {pickup.pickupEvidence.overallMatchScore ?? pickup.pickupEvidence.confidenceScore ?? 'N/A'}%
+                      {pickup.pickupEvidence.reviewBand ? ` (${pickup.pickupEvidence.reviewBand.replace(/_/g, ' ')})` : ''}
+                    </p>
+                    {pickup.pickupEvidence.findings?.length > 0 && (
+                      <ul className="mt-3 list-disc space-y-1 pl-4 text-xs">
+                        {pickup.pickupEvidence.findings.slice(0, 4).map((finding, index) => (
+                          <li key={index}>{finding}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {pickup.pickupEvidence.recommendedStaffAction && (
+                      <p className="mt-3 text-xs font-medium">{pickup.pickupEvidence.recommendedStaffAction}</p>
+                    )}
+                    {pickup.pickupEvidence.resolutionStatus && pickup.pickupEvidence.resolutionStatus !== 'not_required' && (
+                      <div className="mt-3 rounded-md bg-white/70 p-3 text-xs">
+                        <p className="font-semibold">Resolution: {pickup.pickupEvidence.resolutionStatus.replace(/_/g, ' ')}</p>
+                        {pickup.pickupEvidence.adjustmentAmount && (
+                          <p>Adjustment: NGN {Number(pickup.pickupEvidence.adjustmentAmount).toLocaleString('en-NG')}</p>
                         )}
-                        {pickup.pickupEvidence.recommendedStaffAction && (
-                          <p className="mt-2 font-medium">{pickup.pickupEvidence.recommendedStaffAction}</p>
-                        )}
-                        {pickup.pickupEvidence.resolutionStatus && pickup.pickupEvidence.resolutionStatus !== 'not_required' && (
-                          <div className="mt-2 rounded-md bg-white/70 p-2 text-xs">
-                            <p className="font-semibold">Resolution: {pickup.pickupEvidence.resolutionStatus.replace(/_/g, ' ')}</p>
-                            {pickup.pickupEvidence.adjustmentAmount && (
-                              <p>Adjustment: NGN {Number(pickup.pickupEvidence.adjustmentAmount).toLocaleString('en-NG')}</p>
-                            )}
-                            {pickup.pickupEvidence.reimbursementMethod && (
-                              <p>Method: {pickup.pickupEvidence.reimbursementMethod}</p>
-                            )}
-                          </div>
+                        {pickup.pickupEvidence.reimbursementMethod && (
+                          <p>Method: {pickup.pickupEvidence.reimbursementMethod}</p>
                         )}
                       </div>
                     )}
-                    {!pickup.adminConfirmation.confirmed ? (
-                      <button
-                        onClick={() => {
-                          setSelectedPickup(pickup);
-                          setIsModalOpen(true);
-                        }}
-                        className="w-full px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors text-sm"
-                      >
-                        Confirm Pickup
-                      </button>
-                    ) : pickup.adminConfirmation.confirmed ? (
-                      <div className="text-center p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <p className="text-sm font-medium text-green-800">✓ Completed</p>
-                      </div>
-                    ) : null}
                   </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 border-t border-gray-100 pt-4">
+                  {!pickup.adminConfirmation.confirmed ? (
+                    <button
+                      onClick={() => {
+                        setSelectedPickup(pickup);
+                        setIsModalOpen(true);
+                      }}
+                      className="w-full sm:w-auto sm:min-w-[200px] px-4 py-2.5 bg-[var(--brand-primary)] text-white rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors text-sm"
+                    >
+                      Confirm Pickup
+                    </button>
+                  ) : (
+                    <div className="w-full sm:w-auto text-center px-4 py-2.5 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-sm font-medium text-green-800">✓ Pickup completed</p>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

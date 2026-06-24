@@ -7,6 +7,7 @@
  * Task: 11.3.6 - Implement Vendor Segments pie chart and table
  */
 
+import { MetricValue } from '@/components/ui/stat-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -127,9 +128,9 @@ export function VendorSegmentsChart({ data, loading }: VendorSegmentsChartProps)
 
           {/* Summary Stats */}
           <div className="space-y-4">
-            <div>
+            <div className="min-w-0 overflow-hidden">
               <p className="text-sm text-muted-foreground">Total Vendors</p>
-              <p className="text-3xl font-bold">{totalVendors.toLocaleString()}</p>
+              <MetricValue>{totalVendors.toLocaleString()}</MetricValue>
             </div>
             
             <div className="space-y-2">

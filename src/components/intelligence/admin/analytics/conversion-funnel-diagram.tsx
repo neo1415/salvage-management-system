@@ -7,6 +7,7 @@
  * Task: 11.3.7 - Implement Conversion Funnel Sankey diagram
  */
 
+import { MetricValue } from '@/components/ui/stat-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowRight } from 'lucide-react';
 
@@ -131,32 +132,32 @@ export function ConversionFunnelDiagram({ data, loading }: ConversionFunnelDiagr
         </div>
 
         {/* Summary Metrics */}
-        <div className="grid grid-cols-3 gap-4 mt-8 pt-6 border-t">
-          <div className="text-center">
+        <div className="grid grid-cols-3 gap-4 mt-8 pt-6 border-t min-w-0">
+          <div className="text-center min-w-0 overflow-hidden">
             <p className="text-sm text-muted-foreground">View → Bid</p>
-            <p className="text-2xl font-bold text-green-600">
+            <MetricValue className="text-green-600">
               {viewToBidRate.toFixed(1)}%
-            </p>
+            </MetricValue>
             <p className="text-xs text-muted-foreground mt-1">
               {bids.toLocaleString()} of {views.toLocaleString()}
             </p>
           </div>
           
-          <div className="text-center">
+          <div className="text-center min-w-0 overflow-hidden">
             <p className="text-sm text-muted-foreground">Bid → Win</p>
-            <p className="text-2xl font-bold text-[var(--brand-primary)]">
+            <MetricValue className="text-[var(--brand-primary)]">
               {bidToWinRate.toFixed(1)}%
-            </p>
+            </MetricValue>
             <p className="text-xs text-muted-foreground mt-1">
               {wins.toLocaleString()} of {bids.toLocaleString()}
             </p>
           </div>
           
-          <div className="text-center">
+          <div className="text-center min-w-0 overflow-hidden">
             <p className="text-sm text-muted-foreground">Overall Conversion</p>
-            <p className="text-2xl font-bold text-blue-600">
+            <MetricValue className="text-blue-600">
               {overallConversionRate.toFixed(1)}%
-            </p>
+            </MetricValue>
             <p className="text-xs text-muted-foreground mt-1">
               {wins.toLocaleString()} of {views.toLocaleString()}
             </p>

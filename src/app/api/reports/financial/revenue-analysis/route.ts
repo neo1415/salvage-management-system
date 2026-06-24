@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { ReportService } from '@/features/reports/services/report.service';
 import { RevenueAnalysisService } from '@/features/reports/financial/services/revenue-analysis.service';
-import { ReportFilters } from '@/features/reports/types';
+import { parseReportFiltersFromSearchParams } from '@/features/reports/utils/parse-report-filters';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -48,21 +48,7 @@ export async function GET(request: NextRequest) {
 
     // Parse and validate query parameters
     const searchParams = request.nextUrl.searchParams;
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-    const assetTypes = searchParams.get('assetTypes')?.split(',').filter(Boolean);
-    const branches = searchParams.get('branches')?.split(',').filter(Boolean);
-
-    // Validate date range
-    const { start, end } = ReportService.validateDateRange(startDate, endDate);
-
-    // Build filters
-    const filters: ReportFilters = {
-      startDate: start.toISOString(),
-      endDate: end.toISOString(),
-      assetTypes,
-      branches,
-    };
+    const filters = parseReportFiltersFromSearchParams(searchParams, { validateDates: true });
 
     // Generate report with caching
     const result = await ReportService.generateReport(

@@ -8,7 +8,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import Image from 'next/image';
 import { useCases, type StatusFilter } from '@/hooks/queries/use-cases';
 import { useDeleteCase } from '@/hooks/queries/use-case-mutation';
@@ -24,7 +25,7 @@ import { RippleButton } from '@/components/ui/ripple-button';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
 
 function AdjusterCasesContentInner() {
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
   
   // Initialize filters from URL

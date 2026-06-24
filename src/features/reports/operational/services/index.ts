@@ -8,6 +8,18 @@
 import { ReportFilters } from '../../types';
 import { OperationalDataRepository } from '../repositories/operational-data.repository';
 import { DataAggregationService } from '../../services/data-aggregation.service';
+import {
+  buildCategoryBreakdown,
+  mapCaseToBreakdownRow,
+  type CaseBreakdownRow,
+  type CategoryBreakdownGroup,
+} from '../../utils/case-breakdown';
+import {
+  buildAuctionCategoryBreakdown,
+  mapAuctionToBreakdownRow,
+  type AuctionCategoryBreakdownGroup,
+} from '../../utils/auction-breakdown';
+import { resolveCaseChannelLabel } from '../../utils/case-channel-label';
 
 // ============================================================================
 // TASK 12: Case Processing Metrics Service
@@ -38,16 +50,7 @@ export interface CaseProcessingReport {
     totalMarketValue: number;
     totalSalvageValue: number;
     averageMarketValue: number;
-    cases: Array<{
-      claimReference: string;
-      status: string;
-      marketValue: number;
-      salvageValue: number;
-      processingDays: number;
-      possessingVendorName: string | null;
-      pickedUpAt: string | null;
-      createdAt: string;
-    }>;
+    cases: CaseBreakdownRow[];
   }>;
   byStatus: Array<{
     status: string;
@@ -63,6 +66,18 @@ export interface CaseProcessingReport {
     totalMarketValue: number;
     totalSalvageValue: number;
   }>;
+  byBroker: Array<{
+    channelType: 'broker' | 'agency' | 'unassigned';
+    channelName: string;
+    casesProcessed: number;
+    soldCases: number;
+    approvalRate: number;
+    averageProcessingTime: number;
+    totalMarketValue: number;
+    totalSalvageValue: number;
+  }>;
+  branchBreakdown: CategoryBreakdownGroup<string>[];
+  brokerBreakdown: CategoryBreakdownGroup<string>[];
   byAdjuster: Array<{
     adjusterId: string;
     adjusterName: string;
@@ -91,11 +106,36 @@ export class CaseProcessingService {
     const byAssetType = this.calculateByAssetType(data) || [];
     const byStatus = this.calculateByStatus(data) || [];
     const byBranch = this.calculateByBranch(data) || [];
+    const byBroker = this.calculateByBroker(data) || [];
+    const branchBreakdown = buildCategoryBreakdown(
+      data,
+      (row) => row.branchName || 'Unassigned',
+      (key) => key
+    );
+    const brokerBreakdown = buildCategoryBreakdown(
+      data,
+      (row) => {
+        const channel = resolveCaseChannelLabel(row.brokerName, row.agencyName);
+        return `${channel.type}:${channel.label}`;
+      },
+      (_key, row) => resolveCaseChannelLabel(row.brokerName, row.agencyName).label
+    );
     const byAdjuster = this.calculateByAdjuster(data) || [];
     const trend = this.calculateTrend(data) || [];
     const bottlenecks = this.identifyBottlenecks(data) || [];
 
-    return { summary, byAssetType, byStatus, byBranch, byAdjuster, trend, bottlenecks };
+    return {
+      summary,
+      byAssetType,
+      byStatus,
+      byBranch,
+      byBroker,
+      branchBreakdown,
+      brokerBreakdown,
+      byAdjuster,
+      trend,
+      bottlenecks,
+    };
   }
 
   private static calculateSummary(data: any[]) {
@@ -167,16 +207,9 @@ export class CaseProcessingService {
       const averageMarketValue = items.length > 0 ? totalMarketValue / items.length : 0;
 
       // Build case list with details - sorted by date descending (latest first)
-      const cases = items.map(c => ({
-        claimReference: c.claimReference,
-        status: c.status,
-        marketValue: Math.round(parseFloat(c.marketValue || '0')),
-        salvageValue: Math.round(parseFloat(c.estimatedSalvageValue || '0')),
-        processingDays: c.processingTimeHours ? Math.round((c.processingTimeHours / 24) * 10) / 10 : 0,
-        possessingVendorName: c.possessingVendorName || null,
-        pickedUpAt: c.pickedUpAt ? new Date(c.pickedUpAt).toISOString().split('T')[0] : null,
-        createdAt: new Date(c.createdAt).toISOString().split('T')[0],
-      })).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); // Sort by date descending (latest first)
+      const cases = items
+        .map(mapCaseToBreakdownRow)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
       return {
         assetType,
@@ -225,6 +258,53 @@ export class CaseProcessingService {
 
       return {
         branchName: branchName || 'Unassigned',
+        casesProcessed: items.length,
+        soldCases: sold,
+        approvalRate: Math.round(approvalRate * 100) / 100,
+        averageProcessingTime: Math.round((avgHours / 24) * 100) / 100,
+        totalMarketValue: Math.round(totalMarketValue),
+        totalSalvageValue: Math.round(totalSalvageValue),
+      };
+    }).sort((a, b) => b.totalSalvageValue - a.totalSalvageValue);
+  }
+
+  private static calculateByBroker(data: any[]) {
+    if (data.length === 0) return [];
+
+    const grouped: Record<string, any[]> = {};
+    for (const row of data) {
+      const channel = resolveCaseChannelLabel(row.brokerName, row.agencyName);
+      const key = `${channel.type}:${channel.label}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(row);
+    }
+
+    return Object.entries(grouped).map(([key, items]) => {
+      const channel = resolveCaseChannelLabel(items[0].brokerName, items[0].agencyName);
+      const approved = items.filter((c) =>
+        ['approved', 'active_auction', 'awaiting_payment', 'sold'].includes(c.status)
+      ).length;
+      const sold = items.filter((c) => c.status === 'sold').length;
+      const approvalRate = items.length > 0 ? (approved / items.length) * 100 : 0;
+      const withTime = items.filter(
+        (c) => c.processingTimeHours !== null && c.processingTimeHours !== undefined
+      );
+      const avgHours =
+        withTime.length > 0
+          ? withTime.reduce((sum, c) => sum + (c.processingTimeHours || 0), 0) / withTime.length
+          : 0;
+      const totalMarketValue = items.reduce(
+        (sum, c) => sum + parseFloat(c.marketValue || '0'),
+        0
+      );
+      const totalSalvageValue = items.reduce(
+        (sum, c) => sum + parseFloat(c.estimatedSalvageValue || '0'),
+        0
+      );
+
+      return {
+        channelType: channel.type,
+        channelName: channel.label,
         casesProcessed: items.length,
         soldCases: sold,
         approvalRate: Math.round(approvalRate * 100) / 100,
@@ -354,6 +434,18 @@ export interface AuctionPerformanceReport {
     averageWinningBid: number;
     averageBids: number;
   }>;
+  byBroker: Array<{
+    channelType: 'broker' | 'agency' | 'unassigned';
+    channelName: string;
+    auctionCount: number;
+    successfulAuctions: number;
+    successRate: number;
+    totalRevenue: number;
+    averageWinningBid: number;
+    averageBids: number;
+  }>;
+  branchBreakdown: AuctionCategoryBreakdownGroup[];
+  brokerBreakdown: AuctionCategoryBreakdownGroup[];
   bidding: {
     totalBids: number;
     averageBidsPerAuction: number;
@@ -405,6 +497,8 @@ export interface AuctionPerformanceReport {
   auctionList: Array<{
     auctionId: string;
     claimReference: string;
+    policyNumber: string | null;
+    channelLabel: string;
     assetType: string;
     branchName: string;
     startTime: string;
@@ -444,11 +538,28 @@ export class AuctionPerformanceService {
   static async generateReport(filters: ReportFilters): Promise<AuctionPerformanceReport> {
     const data = await OperationalDataRepository.getAuctionPerformanceData(filters) || [];
 
+    const branchBreakdown = buildAuctionCategoryBreakdown(
+      data,
+      (row) => row.branchName || 'Unassigned',
+      (key) => key
+    );
+    const brokerBreakdown = buildAuctionCategoryBreakdown(
+      data,
+      (row) => {
+        const channel = resolveCaseChannelLabel(row.brokerName, row.agencyName);
+        return `${channel.type}:${channel.label}`;
+      },
+      (_key, row) => resolveCaseChannelLabel(row.brokerName, row.agencyName).label
+    );
+
     return {
       summary: this.calculateSummary(data),
       byAssetType: this.calculateByAssetType(data) || [],
       byStatus: this.calculateByStatus(data) || [],
       byBranch: this.calculateByBranch(data) || [],
+      byBroker: this.calculateByBroker(data) || [],
+      branchBreakdown,
+      brokerBreakdown,
       bidding: this.calculateBiddingMetrics(data),
       timing: this.calculateTimingMetrics(data),
       vendorParticipation: this.calculateVendorParticipation(data),
@@ -555,6 +666,36 @@ export class AuctionPerformanceService {
 
       return {
         branchName: branchName || 'Unassigned',
+        auctionCount: items.length,
+        successfulAuctions: soldAuctions.length,
+        successRate: items.length > 0 ? Math.round((soldAuctions.length / items.length) * 10000) / 100 : 0,
+        totalRevenue: Math.round(totalRevenue),
+        averageWinningBid: soldAuctions.length > 0 ? Math.round(totalRevenue / soldAuctions.length) : 0,
+        averageBids: items.length > 0 ? Math.round((totalBids / items.length) * 100) / 100 : 0,
+      };
+    }).sort((a, b) => b.totalRevenue - a.totalRevenue);
+  }
+
+  private static calculateByBroker(data: any[]) {
+    if (data.length === 0) return [];
+
+    const grouped: Record<string, any[]> = {};
+    for (const row of data) {
+      const channel = resolveCaseChannelLabel(row.brokerName, row.agencyName);
+      const key = `${channel.type}:${channel.label}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(row);
+    }
+
+    return Object.entries(grouped).map(([_key, items]) => {
+      const channel = resolveCaseChannelLabel(items[0].brokerName, items[0].agencyName);
+      const soldAuctions = items.filter(a => this.isSoldAuction(a));
+      const totalRevenue = soldAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
+      const totalBids = items.reduce((sum, a) => sum + (a.bidCount || 0), 0);
+
+      return {
+        channelType: channel.type,
+        channelName: channel.label,
         auctionCount: items.length,
         successfulAuctions: soldAuctions.length,
         successRate: items.length > 0 ? Math.round((soldAuctions.length / items.length) * 10000) / 100 : 0,
@@ -751,25 +892,30 @@ export class AuctionPerformanceService {
   }
 
   private static buildAuctionList(data: any[]) {
-    return data.map(a => ({
-      auctionId: a.auctionId,
-      claimReference: a.claimReference,
-      assetType: a.assetType,
-      branchName: a.branchName || 'Unassigned',
-      startTime: new Date(a.startTime).toISOString(),
-      endTime: new Date(a.endTime).toISOString(),
-      durationHours: Math.round(a.durationHours * 100) / 100,
-      bidCount: a.bidCount,
-      uniqueBidders: a.uniqueBidders,
-      winningBid: a.winningBid ? Math.round(parseFloat(a.winningBid)) : null,
-      reservePrice: Math.round(parseFloat(a.reservePrice || '0')),
-      status: a.status,
-      isSuccessful: this.isSoldAuction(a),
-      pickupStatus: a.pickupStatus,
-      pickedUpAt: a.pickedUpAt ? new Date(a.pickedUpAt).toISOString() : null,
-      pickupVendorName: a.pickupVendorName || null,
-      paymentVerifiedAt: a.paymentVerifiedAt ? new Date(a.paymentVerifiedAt).toISOString() : null,
-    })).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    return data.map(a => {
+      const channel = resolveCaseChannelLabel(a.brokerName, a.agencyName);
+      return {
+        auctionId: a.auctionId,
+        claimReference: a.claimReference,
+        policyNumber: a.policyNumber?.trim() || null,
+        channelLabel: channel.type === 'unassigned' ? '—' : channel.label,
+        assetType: a.assetType,
+        branchName: a.branchName || 'Unassigned',
+        startTime: new Date(a.startTime).toISOString(),
+        endTime: new Date(a.endTime).toISOString(),
+        durationHours: Math.round(a.durationHours * 100) / 100,
+        bidCount: a.bidCount,
+        uniqueBidders: a.uniqueBidders,
+        winningBid: a.winningBid ? Math.round(parseFloat(a.winningBid)) : null,
+        reservePrice: Math.round(parseFloat(a.reservePrice || '0')),
+        status: a.status,
+        isSuccessful: this.isSoldAuction(a),
+        pickupStatus: a.pickupStatus,
+        pickedUpAt: a.pickedUpAt ? new Date(a.pickedUpAt).toISOString() : null,
+        pickupVendorName: a.pickupVendorName || null,
+        paymentVerifiedAt: a.paymentVerifiedAt ? new Date(a.paymentVerifiedAt).toISOString() : null,
+      };
+    }).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
   }
 
   private static generateInsights(data: any[]) {
@@ -894,6 +1040,7 @@ export interface VendorPerformanceReport {
     totalBids: number;
     totalWins: number;
     winRate: number;
+    totalSpent: number;
     participationRate: number;
     completedPickups: number;
     pendingPickups: number;
@@ -955,6 +1102,7 @@ export class VendorPerformanceService {
       totalBids: vendor.totalBids,
       totalWins: vendor.totalWins,
       winRate: vendor.winRate,
+      totalSpent: Math.round(parseFloat(String(vendor.totalSpent || '0'))),
       participationRate: vendor.participationRate,
       completedPickups: vendor.completedPickups,
       pendingPickups: vendor.pendingPickups,

@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getLegalBranding } from '../legal-branding';
 
+import { CookiePreferencesPanel } from '@/components/legal/cookie-preferences-panel';
+
 export const metadata: Metadata = {
   title: 'Cookie Policy | Salvage Auction Platform',
   description: 'Cookie Policy for the Salvage Auction Platform',
@@ -71,6 +73,8 @@ export default async function CookiePolicyPage() {
                 <li><strong>Browser Settings:</strong> Most browsers allow you to refuse or delete cookies</li>
                 <li><strong>Cookie Banner:</strong> Manage preferences via our cookie consent banner</li>
               </ul>
+
+              <CookiePreferencesPanel />
 
               <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 my-4">
                 <p className="text-sm text-yellow-800">

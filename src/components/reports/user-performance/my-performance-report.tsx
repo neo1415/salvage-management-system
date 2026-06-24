@@ -11,6 +11,8 @@ import { TrendingUp, FileText, Clock, Award } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import { usePublicBranding } from '@/hooks/use-public-branding';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
+import { MetricGrid, MetricValue } from '@/components/reports/common/report-ui';
+import { formatReportCurrency } from '@/components/reports/common/report-currency';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -98,14 +100,14 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
             <CardTitle className="text-yellow-800">Pending Approval</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-yellow-900">{data.pendingApproval}</div>
+            <MetricValue className="text-yellow-900">{data.pendingApproval}</MetricValue>
             <p className="text-sm text-yellow-700 mt-2">Cases awaiting your review</p>
           </CardContent>
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
+      <MetricGrid>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
               {isManagerView ? 'Team Cases' : 'Cases Processed'}
@@ -113,21 +115,21 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
             <FileText className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.casesProcessed}</div>
+            <MetricValue>{data.casesProcessed}</MetricValue>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Avg Processing Time</CardTitle>
             <Clock className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.avgProcessingTime.toFixed(1)} days</div>
+            <MetricValue>{data.avgProcessingTime.toFixed(1)} days</MetricValue>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
               {isManagerView ? 'Team Approval Rate' : 'Approval Rate'}
@@ -135,20 +137,20 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
             <TrendingUp className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.approvalRate.toFixed(1)}%</div>
+            <MetricValue>{data.approvalRate.toFixed(1)}%</MetricValue>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Quality Score</CardTitle>
             <Award className="h-4 w-4 text-[var(--brand-primary)]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.qualityScore.toFixed(1)}/100</div>
+            <MetricValue>{data.qualityScore.toFixed(1)}/100</MetricValue>
           </CardContent>
         </Card>
-      </div>
+      </MetricGrid>
 
       <Card>
         <CardHeader>
@@ -194,7 +196,7 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
                       <td className="text-right p-2 text-red-600">{adjuster.casesRejected}</td>
                       <td className="text-right p-2">{adjuster.approvalRate.toFixed(1)}%</td>
                       <td className="text-right p-2">{adjuster.avgProcessingTime.toFixed(1)}d</td>
-                      <td className="text-right p-2">₦{adjuster.revenue.toLocaleString()}</td>
+                      <td className="text-right p-2">{formatReportCurrency(adjuster.revenue)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -211,9 +213,9 @@ export function MyPerformanceReport({ data }: MyPerformanceReportProps) {
           <CardTitle>Revenue Contribution</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-bold text-[var(--brand-primary)]">
-            ₦{data.revenueContribution.toLocaleString()}
-          </div>
+          <MetricValue className="text-[var(--brand-primary)]">
+            {formatReportCurrency(data.revenueContribution)}
+          </MetricValue>
           <p className="text-sm text-gray-600 mt-2">
             {isManagerView ? 'Total revenue from team cases that sold' : 'Total revenue from your processed cases'}
           </p>

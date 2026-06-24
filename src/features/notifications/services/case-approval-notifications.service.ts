@@ -14,10 +14,12 @@ import {
   createRoleNotifications,
 } from '@/features/notifications/services/notification.service';
 import { isTestOrPlaceholderEmail } from '@/lib/utils/notification-recipients';
+import { formatAssetName } from '@/lib/utils/asset-name';
 
 export interface VendorOutreachContext {
   auctionId: string;
   assetType: string;
+  assetDetails?: Record<string, unknown> | null;
   claimReference: string;
   reservePrice: string;
   locationName: string | null;
@@ -88,9 +90,15 @@ export async function notifyMatchingVendorsOfNewAuction(
   const startLabel = new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
   const endLabel = context.endTime.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
 
+  const assetName = formatAssetName(
+    context.assetType,
+    context.assetDetails,
+    context.claimReference
+  );
+
   await Promise.allSettled(
     realVendors.map(async (vendor) => {
-      const smsMessage = `New auction available! ${context.assetType.toUpperCase()} - Reserve: ₦${context.reservePrice}. Ends in 5 days. Bid now: ${context.appUrl}/vendor/auctions/${context.auctionId}`;
+      const smsMessage = `New auction: ${assetName}. Reserve: ₦${context.reservePrice}. Ends in 5 days. Bid: ${context.appUrl}/vendor/auctions/${context.auctionId}`;
 
       try {
         await smsService.sendSMS({ to: vendor.phone, message: smsMessage });
@@ -103,7 +111,7 @@ export async function notifyMatchingVendorsOfNewAuction(
           vendorName: vendor.fullName ?? 'Vendor',
           auctionId: context.auctionId,
           assetType: context.assetType,
-          assetName: `${context.assetType.toUpperCase()} - ${context.claimReference}`,
+          assetName,
           reservePrice: parseFloat(context.reservePrice),
           startTime: startLabel,
           endTime: endLabel,

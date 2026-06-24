@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
@@ -13,15 +14,37 @@ import { appPath } from '@/features/notifications/templates/email-urls';
 import { brandLegalName, brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
 
-// Validation schema for staff account creation
-const createStaffSchema = z.object({
+// Validation schema for admin-provisioned accounts
+const phoneSchema = z.string().regex(/^\+?[0-9]{10,15}$/, 'Invalid phone number format');
+
+const createUserSchema = z.object({
   fullName: z.string().min(2, 'Full name must be at least 2 characters').max(255),
   email: z.string().email('Invalid email format'),
-  phone: z.string().regex(/^\+?[0-9]{10,15}$/, 'Invalid phone number format'),
+  phone: z.string().trim().optional(),
   branchName: z.string().trim().max(150, 'Branch name must be 150 characters or less').optional(),
-  role: z.enum(['claims_adjuster', 'salvage_manager', 'finance_officer'], {
-    message: 'Invalid role. Must be claims_adjuster, salvage_manager, or finance_officer',
+  role: z.enum(['vendor', 'claims_adjuster', 'salvage_manager', 'finance_officer', 'system_admin'], {
+    message: 'Invalid role',
   }),
+}).superRefine((data, ctx) => {
+  const requiresPhone = data.role !== 'vendor';
+  const phone = data.phone?.trim() ?? '';
+
+  if (requiresPhone && !phone) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Phone number is required for staff accounts',
+      path: ['phone'],
+    });
+    return;
+  }
+
+  if (phone && !phoneSchema.safeParse(phone).success) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Invalid phone number format',
+      path: ['phone'],
+    });
+  }
 });
 
 /**
@@ -61,9 +84,11 @@ async function sendTemporaryPasswordEmail(
   role: string
 ): Promise<void> {
   const roleDisplayNames: Record<string, string> = {
+    vendor: 'Vendor',
     claims_adjuster: 'Claims Adjuster',
     salvage_manager: 'Salvage Manager',
     finance_officer: 'Finance Officer',
+    system_admin: 'System Admin',
   };
 
   const roleDisplay = roleDisplayNames[role] || role;
@@ -76,7 +101,7 @@ async function sendTemporaryPasswordEmail(
     `Welcome to ${branding.brandName}`,
     `
       <p>Hello <strong>${fullName}</strong>,</p>
-      <p>Your staff account has been created for ${branding.brandName}. You have been assigned the role of <strong>${roleDisplay}</strong>.</p>
+      <p>Your ${roleDisplay === 'Vendor' ? 'vendor' : 'staff'} account has been created for ${branding.brandName}. You have been assigned the role of <strong>${roleDisplay}</strong>.</p>
       <div style="background-color: #f8f9fa; border-left: 4px solid ${branding.primaryColor}; padding: 20px; margin: 30px 0; border-radius: 4px;">
         <p style="margin: 0 0 10px; color: #333333; font-size: 14px; font-weight: bold;">Your Login Credentials:</p>
         <p style="margin: 0 0 5px; color: #555555; font-size: 14px;"><strong>Email:</strong> ${email}</p>
@@ -93,7 +118,7 @@ async function sendTemporaryPasswordEmail(
       <p style="margin-top: 30px;">Best regards,<br><strong>${brandTeamName(branding)}</strong></p>
       <p style="font-size: 12px; color: #999999;">${brandLegalName(branding)}</p>
     `,
-    `Your ${branding.brandName} staff account has been created.`
+    `Your ${branding.brandName} account has been created.`
   );
   await emailService.sendEmail({
     to: email,
@@ -305,7 +330,7 @@ export async function POST(request: NextRequest) {
 
     // Parse and validate request body
     const body = await request.json();
-    const validationResult = createStaffSchema.safeParse(body);
+    const validationResult = createUserSchema.safeParse(body);
 
     if (!validationResult.success) {
       return NextResponse.json(
@@ -321,6 +346,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { fullName, email, phone, role, branchName } = validationResult.data;
+    const normalizedPhone = phone?.trim() || '';
 
     // Check if email already exists
     const existingUserByEmail = await db.query.users.findFirst({
@@ -334,16 +360,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if phone already exists
-    const existingUserByPhone = await db.query.users.findFirst({
-      where: (users, { eq }) => eq(users.phone, phone),
-    });
+    // Check if phone already exists when provided
+    if (normalizedPhone) {
+      const existingUserByPhone = await db.query.users.findFirst({
+        where: (users, { eq }) => eq(users.phone, normalizedPhone),
+      });
 
-    if (existingUserByPhone) {
-      return NextResponse.json(
-        { error: 'Phone number already registered' },
-        { status: 409 }
-      );
+      if (existingUserByPhone) {
+        return NextResponse.json(
+          { error: 'Phone number already registered' },
+          { status: 409 }
+        );
+      }
     }
 
     // Generate temporary password
@@ -352,22 +380,42 @@ export async function POST(request: NextRequest) {
     // Hash temporary password with bcrypt (12 rounds)
     const passwordHash = await hash(temporaryPassword, 12);
 
-    // Create staff user record
-    // Staff accounts don't need phone verification or KYC, so status is set based on role
+    const provisionalPhone = normalizedPhone || `+8${randomUUID().replace(/-/g, '').slice(0, 18)}`;
+    const isVendor = role === 'vendor';
+    const userStatus = isVendor ? 'unverified_tier_0' : 'phone_verified_tier_0';
+
     const [newUser] = await db
       .insert(users)
       .values({
         email,
-        phone,
+        phone: provisionalPhone,
         passwordHash,
         fullName,
         branchName: branchName?.trim() || null,
-        dateOfBirth: new Date('1990-01-01'), // Placeholder for staff accounts
+        dateOfBirth: new Date('1990-01-01'),
         role,
-        status: 'phone_verified_tier_0', // Staff don't need vendor tiers
-        requirePasswordChange: 'true', // Force password change on first login
+        status: userStatus,
+        requirePasswordChange: 'true',
       })
       .returning();
+
+    if (isVendor) {
+      await db.insert(vendors).values({
+        userId: newUser.id,
+        tier: 'tier0',
+        status: 'pending',
+        registrationFeePaid: false,
+        performanceStats: {
+          totalBids: 0,
+          totalWins: 0,
+          winRate: 0,
+          avgPaymentTimeHours: 0,
+          onTimePickupRate: 0,
+          fraudFlags: 0,
+        },
+        rating: '0.00',
+      });
+    }
 
     // Get IP address and user agent for audit log
     const ipAddress = request.headers.get('x-forwarded-for') ||
@@ -378,17 +426,18 @@ export async function POST(request: NextRequest) {
     // Create audit log entry
     await db.insert(auditLogs).values({
       userId: session.user.id,
-      actionType: 'staff_account_created',
+      actionType: isVendor ? 'vendor_account_created' : 'staff_account_created',
       entityType: 'user',
       entityId: newUser.id,
       ipAddress,
       deviceType: 'desktop',
       userAgent: userAgent.substring(0, 500),
       afterState: {
-        staffUserId: newUser.id,
-        staffEmail: email,
-        staffRole: role,
-        staffBranchName: branchName?.trim() || null,
+        createdUserId: newUser.id,
+        createdEmail: email,
+        createdRole: role,
+        createdBranchName: branchName?.trim() || null,
+        phoneProvided: Boolean(normalizedPhone),
         createdBy: session.user.id,
         createdByEmail: session.user.email,
       },
@@ -407,7 +456,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        message: 'Staff account created successfully',
+        message: isVendor ? 'Vendor account created successfully' : 'Staff account created successfully',
         user: {
           id: newUser.id,
           email: newUser.email,

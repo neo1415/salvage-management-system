@@ -5,8 +5,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
+import { useNavigation } from '@/components/navigation/navigation-provider';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -172,23 +172,33 @@ export function PageLoadingSkeleton({ className }: { className?: string }) {
 }
 
 export function NavigationProgressBar() {
-  const pathname = usePathname();
-  const [visible, setVisible] = useState(false);
+  const { isNavigating } = useNavigation();
 
-  useEffect(() => {
-    setVisible(true);
-    const timer = window.setTimeout(() => setVisible(false), 450);
-    return () => window.clearTimeout(timer);
-  }, [pathname]);
-
-  if (!visible) return null;
+  if (!isNavigating) return null;
 
   return (
     <div
       className="fixed left-0 right-0 top-16 z-[100] h-0.5 overflow-hidden lg:left-64"
       aria-hidden
     >
-      <div className="navigation-progress-bar h-full w-1/3 bg-[var(--brand-primary)] shadow-[0_0_8px_var(--brand-shadow-color)]" />
+      <div className="navigation-progress-bar navigation-progress-bar--active h-full w-1/3 bg-[var(--brand-primary)] shadow-[0_0_8px_var(--brand-shadow-color)]" />
+    </div>
+  );
+}
+
+export function NavigationBusyHint() {
+  const { isNavigating } = useNavigation();
+
+  if (!isNavigating) return null;
+
+  return (
+    <div
+      className="fixed bottom-20 right-4 z-[100] lg:bottom-6 flex items-center gap-2 rounded-full bg-gray-900/85 px-3 py-1.5 text-xs font-medium text-white shadow-lg pointer-events-none"
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2 className="h-3 w-3 animate-spin shrink-0" aria-hidden />
+      Opening…
     </div>
   );
 }

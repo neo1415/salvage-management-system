@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession, signIn, signOut } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 
 /**
  * Custom hook for authentication
@@ -14,7 +14,7 @@ import { useRouter } from 'next/navigation';
  */
 export function useAuth() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const router = useAppRouter();
 
   const isLoading = status === 'loading';
   const isAuthenticated = status === 'authenticated';
@@ -78,7 +78,7 @@ export function useRole(requiredRole: string | string[]) {
  */
 export function useRequireAuth() {
   const { isAuthenticated, isLoading } = useAuth();
-  const router = useRouter();
+  const router = useAppRouter();
 
   if (!isLoading && !isAuthenticated) {
     router.push('/login');
@@ -93,7 +93,7 @@ export function useRequireAuth() {
  */
 export function useRequireRole(requiredRole: string | string[]) {
   const { user, isLoading } = useAuth();
-  const router = useRouter();
+  const router = useAppRouter();
   const hasRequiredRole = useRole(requiredRole);
 
   if (!isLoading && user && !hasRequiredRole) {

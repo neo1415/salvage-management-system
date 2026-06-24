@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { ReportService } from '@/features/reports/services/report.service';
 import { CaseProcessingService } from '@/features/reports/operational/services';
-import { ReportFilters } from '@/features/reports/types';
+import { parseReportFiltersFromSearchParams } from '@/features/reports/utils/parse-report-filters';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,19 +21,7 @@ export async function GET(request: NextRequest) {
     }
 
     const searchParams = request.nextUrl.searchParams;
-    const { start, end } = ReportService.validateDateRange(
-      searchParams.get('startDate'),
-      searchParams.get('endDate')
-    );
-
-    const filters: ReportFilters = {
-      startDate: start.toISOString(),
-      endDate: end.toISOString(),
-      assetTypes: searchParams.get('assetTypes')?.split(',').filter(Boolean),
-      branches: searchParams.get('branches')?.split(',').filter(Boolean),
-      status: searchParams.get('status')?.split(',').filter(Boolean),
-      userIds: searchParams.get('userIds')?.split(',').filter(Boolean),
-    };
+    const filters = parseReportFiltersFromSearchParams(searchParams, { validateDates: true });
 
     const result = await ReportService.generateReport(
       { type: 'case-processing', filters, includeCharts: true },

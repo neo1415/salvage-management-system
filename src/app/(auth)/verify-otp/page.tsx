@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/use-app-router';
 import { AlertCircle, CheckCircle2, Loader2, Phone, ArrowLeft } from 'lucide-react';
 
 /**
@@ -9,7 +10,7 @@ import { AlertCircle, CheckCircle2, Loader2, Phone, ArrowLeft } from 'lucide-rea
  * Separated to use useSearchParams with Suspense boundary
  */
 function VerifyOTPForm() {
-  const router = useRouter();
+  const router = useAppRouter();
   const searchParams = useSearchParams();
   const phone = searchParams.get('phone') || '';
   const email = searchParams.get('email') || '';

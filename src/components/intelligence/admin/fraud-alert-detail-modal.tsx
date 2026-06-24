@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { MetricValue } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -132,9 +133,9 @@ export function FraudAlertDetailModal({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Risk Score</p>
-                <p className={`text-2xl font-bold ${getRiskColor(alert.riskScore)}`}>
+                <MetricValue className={getRiskColor(alert.riskScore)}>
                   {alert.riskScore}
-                </p>
+                </MetricValue>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Entity Type</p>

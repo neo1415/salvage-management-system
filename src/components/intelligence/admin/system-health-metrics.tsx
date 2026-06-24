@@ -7,6 +7,7 @@
  * Task: 15.1.1
  */
 
+import { MetricValue } from '@/components/ui/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -141,7 +142,7 @@ function HealthMetricCard({ icon, title, value, status, subtitle, trend }: Healt
   };
 
   return (
-    <Card className={`border-2 ${statusColors[status]}`}>
+    <Card className={`border-2 min-w-0 overflow-hidden ${statusColors[status]}`}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex items-center gap-2">
           {icon}
@@ -150,8 +151,8 @@ function HealthMetricCard({ icon, title, value, status, subtitle, trend }: Healt
         {statusIcons[status]}
       </CardHeader>
       <CardContent>
-        <div className="flex items-baseline gap-2">
-          <div className="text-2xl font-bold">{value}</div>
+        <div className="flex items-baseline gap-2 min-w-0">
+          <MetricValue>{value}</MetricValue>
           {trend && (
             <TrendingUp 
               className={`h-4 w-4 ${trend === 'up' ? 'text-green-600' : 'text-red-600 rotate-180'}`} 
