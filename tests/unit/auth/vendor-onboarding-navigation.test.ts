@@ -24,6 +24,16 @@ describe('resolveVendorOnboardingPath', () => {
     expect(path).toBe(VENDOR_REGISTRATION_FEE_PATH);
   });
 
+  it('still redirects to registration fee for fee-before-tier1 when registration fee toggle is off', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'fee_before_tier1';
+    policy.onboarding.registrationFeeRequired = false;
+
+    const path = resolveVendorOnboardingPath(policy, baseVendor);
+
+    expect(path).toBe(VENDOR_REGISTRATION_FEE_PATH);
+  });
+
   it('redirects to Tier 1 after fee is paid under fee-before-tier1', () => {
     const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
     policy.onboarding.mode = 'fee_before_tier1';

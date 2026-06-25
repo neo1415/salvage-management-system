@@ -231,14 +231,17 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
                 <Crown className="w-6 h-6" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg md:text-xl font-bold mb-1">Complete Your Registration</h3>
+                <h3 className="text-lg md:text-xl font-bold mb-1">
+                  {onboardingStatus?.bannerTitle ?? 'Complete your registration'}
+                </h3>
                 <p className="text-white/90 text-sm md:text-base">
-                  Pay the one-time registration fee to continue to {fullLabel.toLowerCase()}.
+                  {onboardingStatus?.bannerBody ??
+                    `Pay the one-time registration fee to continue to ${fullLabel.toLowerCase()}.`}
                   {bidLimit && tierLanguage ? ` Your current Tier 1 limit is ₦${bidLimit.toLocaleString()}.` : ''}
                 </p>
               </div>
               <button
-                onClick={handleUpgradeClick}
+                onClick={() => router.push('/vendor/registration-fee')}
                 className="flex-shrink-0 px-6 py-3 bg-white text-[var(--brand-primary)] font-bold rounded-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2 whitespace-nowrap min-h-[44px]"
               >
                 Pay Now

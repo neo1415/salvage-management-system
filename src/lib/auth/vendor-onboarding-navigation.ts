@@ -19,7 +19,10 @@ import {
   fullVerificationLabel,
   usesSingleFullKycFlow,
 } from '@/lib/vendor/onboarding-policy-ui';
-import { isRegistrationFeeRequiredForPolicy } from '@/features/business-policy/onboarding-decisions';
+import {
+  isRegistrationFeeRequiredForPolicy,
+  vendorMustPayRegistrationFeeBeforeTier1,
+} from '@/features/business-policy/onboarding-decisions';
 
 export {
   CHANGE_PASSWORD_PATH,
@@ -68,11 +71,9 @@ export function resolveVendorOnboardingPath(
   }
 
   const mode = policy.onboarding.mode;
-  const feeRequired = isRegistrationFeeRequiredForPolicy(policy);
-  const feeUnpaid = feeRequired && !vendor.registrationFeePaid;
+  const feeUnpaid = isRegistrationFeeRequiredForPolicy(policy) && !vendor.registrationFeePaid;
 
-  // Registration fee before Tier 1 BVN — must not run the BVN gate first.
-  if (mode === 'fee_before_tier1' && feeUnpaid) {
+  if (vendorMustPayRegistrationFeeBeforeTier1(policy, vendor)) {
     return VENDOR_REGISTRATION_FEE_PATH;
   }
 
@@ -132,6 +133,29 @@ export function resolveKycBannerCopy(
 ): { title: string; body: string } {
   const mode = policy.onboarding.mode;
   const fullLabel = fullVerificationLabel(policy);
+
+  if (
+    policy.onboarding.registrationFeeRequired &&
+    !vendor.registrationFeePaid &&
+    mode !== 'no_registration_fee'
+  ) {
+    if (mode === 'fee_before_tier1') {
+      return {
+        title: 'Pay registration fee to continue',
+        body: 'Pay the registration fee before identity verification (Tier 1 BVN) under your account policy.',
+      };
+    }
+    if (mode === 'full_kyc_before_bidding' || mode === 'single_full_kyc') {
+      return {
+        title: 'Pay registration fee to start verification',
+        body: `Pay the registration fee before you begin ${fullLabel.toLowerCase()}. You can browse auctions while you complete setup.`,
+      };
+    }
+    return {
+      title: 'Pay registration fee to bid',
+      body: 'Pay the registration fee to unlock initial bidding access under your account policy.',
+    };
+  }
 
   if (mode === 'full_kyc_before_bidding' || mode === 'single_full_kyc') {
     return {

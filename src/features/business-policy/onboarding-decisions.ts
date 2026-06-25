@@ -181,6 +181,28 @@ export function isRegistrationFeeRequiredForPolicy(policy: BusinessPolicy): bool
   );
 }
 
+/** Fee-before-tier-1 always collects payment before Tier 1 BVN, even if toggles drift. */
+export function vendorMustPayRegistrationFeeBeforeTier1(
+  policy: BusinessPolicy,
+  vendor: Pick<VendorPolicySnapshot, 'registrationFeePaid'>
+): boolean {
+  return policy.onboarding.mode === 'fee_before_tier1' && !vendor.registrationFeePaid;
+}
+
+/** Registration fee is owed before starting full verification (KYC), but browsing may still be allowed. */
+export function vendorOwesRegistrationFeeForVerification(
+  policy: BusinessPolicy,
+  vendor: Pick<VendorPolicySnapshot, 'registrationFeePaid'>
+): boolean {
+  if (vendor.registrationFeePaid) {
+    return false;
+  }
+  if (policy.onboarding.mode === 'no_registration_fee') {
+    return false;
+  }
+  return policy.onboarding.registrationFeeRequired;
+}
+
 export function resolveRegistrationFeePaymentAccess(
   policy: BusinessPolicy,
   vendor: Pick<VendorPolicySnapshot, 'tier' | 'bvnVerified' | 'registrationFeePaid'>

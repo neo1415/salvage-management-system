@@ -7,6 +7,7 @@ import {
   resolveVendorBidEligibility,
   resolveVendorBidLimit,
   resolveVendorBvnGate,
+  vendorMustPayRegistrationFeeBeforeTier1,
 } from '@/features/business-policy';
 
 describe('onboarding policy decisions', () => {
@@ -129,6 +130,16 @@ describe('onboarding policy decisions', () => {
     expect(result.allowed).toBe(true);
     expect(result.value).toBe('payment_available');
     expect(result.decision.resolvedValue).toBe(policy.onboarding.registrationFeeAmount);
+  });
+
+  it('requires fee-before-tier1 payment even if registration fee toggle is off', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'fee_before_tier1';
+    policy.onboarding.registrationFeeRequired = false;
+
+    expect(
+      vendorMustPayRegistrationFeeBeforeTier1(policy, { registrationFeePaid: false })
+    ).toBe(true);
   });
 
   it('marks registration fee payment unavailable when no fee is configured', () => {

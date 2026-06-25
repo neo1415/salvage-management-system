@@ -32,18 +32,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, request.url));
   }
 
-  const callback = resolveSafeCallback(
-    request.nextUrl.searchParams.get('callbackUrl')
-  );
-  if (callback && callback !== CHANGE_PASSWORD_PATH) {
-    return NextResponse.redirect(new URL(callback, request.url));
-  }
-
   if (session.user.role === 'vendor') {
     const vendorPath = await resolveVendorOnboardingRedirectForUser(session.user.id);
     if (vendorPath) {
       return NextResponse.redirect(new URL(vendorPath, request.url));
     }
+  }
+
+  const callback = resolveSafeCallback(
+    request.nextUrl.searchParams.get('callbackUrl')
+  );
+  if (callback && callback !== CHANGE_PASSWORD_PATH) {
+    return NextResponse.redirect(new URL(callback, request.url));
   }
 
   const home = getDashboardPathForRole(session.user.role);

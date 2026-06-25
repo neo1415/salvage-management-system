@@ -22,41 +22,42 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { replace } = useAppRouter();
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true);
 
+  const isVendor = session?.user?.role === 'vendor';
   const onOnboardingPage = isVendorOnboardingPage(pathname);
 
   useEffect(() => {
-    if (status !== 'authenticated' || session?.user?.role !== 'vendor') {
-      setLoadingStatus(false);
+    if (status !== 'authenticated' || !isVendor) {
+      setInitialLoad(false);
       return;
     }
 
     let cancelled = false;
-    setLoadingStatus(true);
 
     fetch('/api/vendor/onboarding-status', { cache: 'no-store' })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
         if (!cancelled) {
           setOnboardingStatus(payload?.data ?? { redirectPath: null });
-          setLoadingStatus(false);
+          setInitialLoad(false);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setOnboardingStatus({ redirectPath: null });
-          setLoadingStatus(false);
+          hasLoadedOnboardingRef.current = true;
+          setInitialLoad(false);
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [status, session?.user?.role, pathname]);
+  }, [status, isVendor]);
 
   useEffect(() => {
-    if (status !== 'authenticated' || loadingStatus) return;
+    if (status !== 'authenticated' || !isVendor || initialLoad) return;
 
     const redirectPath = onboardingStatus?.redirectPath;
     if (redirectPath && !onOnboardingPage) {
@@ -65,9 +66,9 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
         replace(redirectPath);
       }
     }
-  }, [status, loadingStatus, onboardingStatus, onOnboardingPage, pathname, replace]);
+  }, [status, isVendor, initialLoad, onboardingStatus, onOnboardingPage, pathname, replace]);
 
-  if (status === 'loading' || loadingStatus) {
+  if (status === 'loading' || (isVendor && initialLoad)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--brand-primary)]" />
@@ -75,17 +76,18 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
     );
   }
 
-  const needsOnboardingGate = Boolean(onboardingStatus?.redirectPath);
+  const forcedOnboardingPath = onboardingStatus?.redirectPath;
+  const needsOnboardingGate = Boolean(forcedOnboardingPath);
 
-  if (needsOnboardingGate) {
-    if (!onOnboardingPage) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <Loader2 className="h-8 w-8 animate-spin text-[var(--brand-primary)]" />
-        </div>
-      );
-    }
+  if (isVendor && needsOnboardingGate && !onOnboardingPage) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--brand-primary)]" />
+      </div>
+    );
+  }
 
+  if (isVendor && needsOnboardingGate && onOnboardingPage) {
     return <div className="min-h-screen">{children}</div>;
   }
 
