@@ -4,6 +4,7 @@ import { db } from '@/lib/db/drizzle';
 import { users, vendors } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { getDojahService } from '@/features/kyc/services/dojah.service';
+import { VERIFICATION_COPY } from '@/lib/kyc/verification-copy';
 import { parseFullNameBvnOrder } from '@/lib/utils/person-name';
 
 type CheckState = 'verified' | 'review' | 'unavailable' | 'failed';
@@ -336,7 +337,7 @@ export async function POST(request: NextRequest) {
           'BVN details did not fully match your profile. Your legal name order may be wrong — update your profile name to match your bank ID, then try again.'
         );
       } catch {
-        return response('unavailable', 'BVN provider check is unavailable. You can still submit for manager review.');
+        return response('unavailable', VERIFICATION_COPY.bvnCheckUnavailable);
       }
     }
 
@@ -367,7 +368,7 @@ export async function POST(request: NextRequest) {
           'NIN details did not match your profile. Your legal name order may be wrong — update your profile name to match your government ID, then try again.'
         );
       } catch {
-        return response('unavailable', 'NIN provider check is unavailable. You can still submit for manager review.');
+        return response('unavailable', VERIFICATION_COPY.ninCheckUnavailable);
       }
     }
 
@@ -391,7 +392,7 @@ export async function POST(request: NextRequest) {
         typeMatched,
       });
       if (providerError && /unable to reach|unavailable|timeout|service/i.test(providerError)) {
-        return response('unavailable', 'CAC provider check is temporarily unavailable. Managers can still review the uploaded business document.', {
+        return response('unavailable', VERIFICATION_COPY.cacCheckTemporarilyUnavailable, {
           providerBusinessName,
         });
       }
@@ -409,7 +410,7 @@ export async function POST(request: NextRequest) {
         { providerBusinessName }
       );
     } catch {
-      return response('unavailable', 'CAC provider check is unavailable. You can still submit for manager review.');
+      return response('unavailable', VERIFICATION_COPY.cacCheckUnavailable);
     }
   } catch (error) {
     console.error('[Manual KYC Verify Field] Error:', error);

@@ -50,6 +50,9 @@ import {
   VerificationErrorDialog,
 } from '@/components/kyc/verification-error-dialog';
 import { isPendingTier2Review } from '@/features/kyc/utils/tier2-status';
+import { resolveTier2KycProvider } from '@/lib/kyc/tier2-kyc-provider';
+import { VENDOR_TIER2_MANUAL_PATH } from '@/lib/auth/vendor-onboarding-paths';
+import { VERIFICATION_COPY } from '@/lib/kyc/verification-copy';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { usesSingleFullKycFlow } from '@/lib/vendor/onboarding-policy-ui';
 
@@ -131,9 +134,19 @@ interface DojahConnect {
 type PageState = 'idle' | 'loading_config' | 'ready' | 'verifying' | 'pending_review' | 'approved' | 'rejected' | 'expired' | 'error';
 
 const DOJAH_IFRAME_ALLOW = 'camera; microphone; geolocation; fullscreen; autoplay';
-const TIER2_KYC_PROVIDER = process.env.NEXT_PUBLIC_TIER2_KYC_PROVIDER === 'dojah_widget'
-  ? 'dojah_widget'
-  : 'manual';
+const TIER2_KYC_PROVIDER = resolveTier2KycProvider();
+const INIT_FETCH_TIMEOUT_MS = 25_000;
+const LOADING_WATCHDOG_MS = 45_000;
+
+async function fetchWithTimeout(input: string, timeoutMs = INIT_FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 function formatEmbeddedCameraHelp(prefix: string) {
   return [
@@ -201,6 +214,29 @@ function applyDojahIframePermissions() {
  * Uses the configured identity widget for NIN, liveness, biometric, and document verification.
  */
 export default function Tier2KYCPage() {
+  const router = useAppRouter();
+
+  useEffect(() => {
+    if (TIER2_KYC_PROVIDER === 'manual') {
+      router.replace(VENDOR_TIER2_MANUAL_PATH);
+    }
+  }, [router]);
+
+  if (TIER2_KYC_PROVIDER === 'manual') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center">
+        <div className="text-center text-white">
+          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-3" />
+          <p>{VERIFICATION_COPY.loadingVerification}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <Tier2WidgetKYCPage />;
+}
+
+function Tier2WidgetKYCPage() {
   const router = useAppRouter();
   const { data: session, status: authStatus } = useSession();
   const { policy } = usePublicBusinessPolicy();
@@ -301,7 +337,7 @@ export default function Tier2KYCPage() {
   }, [authStatus, router]);
 
   async function loadWidgetConfig() {
-    const configRes = await fetch('/api/kyc/widget-config');
+    const configRes = await fetchWithTimeout('/api/kyc/widget-config');
     if (!configRes.ok) {
       setPageState('error');
       showVerificationError(
@@ -325,8 +361,8 @@ export default function Tier2KYCPage() {
     async function init() {
       try {
         const [statusRes, feeRes] = await Promise.all([
-          fetch('/api/kyc/status'),
-          fetch('/api/vendors/registration-fee/status'),
+          fetchWithTimeout('/api/kyc/status'),
+          fetchWithTimeout('/api/vendors/registration-fee/status'),
         ]);
 
         // Check registration fee first
@@ -358,10 +394,15 @@ export default function Tier2KYCPage() {
         const configLoaded = await loadWidgetConfig();
         if (!configLoaded) return;
         setPageState('ready');
-      } catch {
+      } catch (err) {
         setPageState('error');
+        const timedOut = err instanceof Error && err.name === 'AbortError';
         showVerificationError(
-          resolveTier2ApiError({ message: 'Failed to load verification service. Please try again.' }),
+          resolveTier2ApiError({
+            message: timedOut
+              ? 'Verification setup timed out. Check your connection and refresh the page.'
+              : 'Failed to load verification service. Please try again.',
+          }),
           { nextPageState: 'error' }
         );
       }
@@ -369,6 +410,24 @@ export default function Tier2KYCPage() {
 
     init();
   }, [authStatus, router]);
+
+  // Surface a recoverable error if initialization hangs (slow network / API).
+  useEffect(() => {
+    if (authStatus !== 'authenticated' || pageState !== 'loading_config') return;
+
+    const timer = window.setTimeout(() => {
+      setPageState('error');
+      showVerificationError(
+        resolveTier2ApiError({
+          message:
+            'Verification is taking longer than expected. Check your connection and refresh, or contact support if this continues.',
+        }),
+        { nextPageState: 'error', openDialog: true }
+      );
+    }, LOADING_WATCHDOG_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [authStatus, pageState]);
 
   // Initialise Dojah widget once script is loaded and config is available
   const initWidget = useCallback(() => {
@@ -835,7 +894,8 @@ export default function Tier2KYCPage() {
     window.setTimeout(applyDojahIframePermissions, 1000);
   }
 
-  if (authStatus === 'loading' || pageState === 'loading_config') {
+  const sessionStillLoading = authStatus === 'loading' && !session?.user;
+  if (sessionStillLoading || pageState === 'loading_config') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center">
         <div className="text-center text-white">

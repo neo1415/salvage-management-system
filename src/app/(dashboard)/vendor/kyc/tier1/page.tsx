@@ -11,6 +11,8 @@ import {
   VerificationErrorAlert,
   VerificationErrorDialog,
 } from '@/components/kyc/verification-error-dialog';
+import { usePublicBranding } from '@/hooks/use-public-branding';
+import { resolveVendorTier2Path } from '@/lib/kyc/tier2-kyc-provider';
 
 /**
  * Tier 1 — BVN identity verification (required before platform access).
@@ -18,6 +20,7 @@ import {
 export default function Tier1KYCPage() {
   const router = useAppRouter();
   const { status, data: session, update } = useSession();
+  const { branding } = usePublicBranding();
 
   const [bvn, setBvn] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -113,7 +116,7 @@ export default function Tier1KYCPage() {
     if (!bvn || bvn.length !== 11) {
       const validationError = resolveTier1VerificationError({
         error: 'Invalid BVN format. BVN must be exactly 11 digits.',
-      });
+      }, { brandName: branding.brandName });
       setVerificationError(validationError);
       setErrorDialogOpen(true);
       return;
@@ -145,7 +148,7 @@ export default function Tier1KYCPage() {
           message: result.message,
           errorSource: result.errorSource,
           mismatches: result.mismatches,
-        });
+        }, { brandName: branding.brandName });
         setVerificationError(resolved);
         setErrorDialogOpen(true);
         return;
@@ -162,14 +165,14 @@ export default function Tier1KYCPage() {
       }
 
       sessionStorage.removeItem('bvn_verification_success');
-      window.location.href = '/vendor/kyc/tier2';
+      window.location.href = resolveVendorTier2Path();
       return;
     } catch {
       const resolved = resolveTier1VerificationError({
         error: 'network_error',
         message: 'Network error. Check your connection and try again.',
         errorSource: 'network',
-      });
+      }, { brandName: branding.brandName });
       setVerificationError(resolved);
       setErrorDialogOpen(true);
     } finally {

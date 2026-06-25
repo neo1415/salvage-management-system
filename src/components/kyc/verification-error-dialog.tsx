@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import type { ResolvedVerificationError, VerificationErrorSource } from '@/lib/kyc/kyc-user-messages';
 import { sourceHint } from '@/lib/kyc/kyc-user-messages';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 
 interface VerificationErrorAlertProps {
   error: ResolvedVerificationError;
@@ -19,6 +20,7 @@ interface VerificationErrorAlertProps {
 
 /** Inline alert for forms and verification pages. */
 export function VerificationErrorAlert({ error, className = '' }: VerificationErrorAlertProps) {
+  const { branding } = usePublicBranding();
   return (
     <div
       className={`p-4 bg-red-50 border border-red-200 rounded-lg ${className}`}
@@ -33,7 +35,7 @@ export function VerificationErrorAlert({ error, className = '' }: VerificationEr
           {error.detail ? (
             <p className="text-red-700/90 mt-2 text-xs">{error.detail}</p>
           ) : null}
-          <p className="text-red-600/80 mt-2 text-xs">{sourceHint(error.source)}</p>
+          <p className="text-red-600/80 mt-2 text-xs">{sourceHint(error.source, branding.brandName)}</p>
           {error.mismatches && error.mismatches.length > 0 ? (
             <ul className="mt-2 text-red-700 space-y-1 list-disc list-inside">
               {error.mismatches.map((item) => (
@@ -61,6 +63,7 @@ export function VerificationErrorDialog({
   error,
   confirmLabel = 'Try again',
 }: VerificationErrorDialogProps) {
+  const { branding } = usePublicBranding();
   if (!error) return null;
 
   return (
@@ -78,7 +81,7 @@ export function VerificationErrorDialog({
         {error.detail ? (
           <p className="text-sm text-gray-600 border border-gray-100 rounded-lg p-3 bg-gray-50">{error.detail}</p>
         ) : null}
-        <p className="text-xs text-gray-500">{sourceHint(error.source)}</p>
+        <p className="text-xs text-gray-500">{sourceHint(error.source, branding.brandName)}</p>
         {error.mismatches && error.mismatches.length > 0 ? (
           <ul className="text-sm text-gray-700 list-disc list-inside space-y-1">
             {error.mismatches.map((item) => (

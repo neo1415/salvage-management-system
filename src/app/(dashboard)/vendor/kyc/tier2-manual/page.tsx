@@ -27,6 +27,8 @@ import {
   type DojahWidgetCallbackResponse,
 } from '@/lib/kyc/dojah-widget-completion';
 import { isPendingTier2Review, type Tier2StatusLike } from '@/features/kyc/utils/tier2-status';
+import { VERIFICATION_COPY, verificationTeamLabel } from '@/lib/kyc/verification-copy';
+import { usePublicBranding } from '@/hooks/use-public-branding';
 
 type PageState = 'idle' | 'loading' | 'submitting' | 'liveness' | 'pending_review' | 'approved' | 'rejected';
 type CheckState = 'idle' | 'checking' | 'verified' | 'review' | 'unavailable' | 'failed';
@@ -154,6 +156,8 @@ async function fetchClientPublicIp(): Promise<string | null> {
 export default function Tier2ManualKYCPage() {
   const router = useAppRouter();
   const { status: authStatus } = useSession();
+  const { branding } = usePublicBranding();
+  const reviewTeam = verificationTeamLabel(branding.brandName);
   const [pageState, setPageState] = useState<PageState>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [bvnAlreadyVerified, setBvnAlreadyVerified] = useState(false);
@@ -330,7 +334,7 @@ export default function Tier2ManualKYCPage() {
     const handleCompletion = async (response: DojahWidgetCallbackResponse | undefined) => {
       const referenceId = resolveDojahWidgetReference(response) ?? livenessConfig.verificationReference;
       if (!referenceId) {
-        setErrorMessage('Liveness completed, but the provider did not return a reference. Your documents are still under review.');
+        setErrorMessage(VERIFICATION_COPY.livenessReferenceMissing);
         setPageState('pending_review');
         return;
       }
@@ -492,7 +496,7 @@ export default function Tier2ManualKYCPage() {
     const requestKey = `${type}:${dedupeKey ?? Date.now()}`;
     if (runningCheckKeyRef.current.has(requestKey)) return;
     runningCheckKeyRef.current.add(requestKey);
-    setChecks((prev) => ({ ...prev, [type]: { state: 'checking', message: 'Checking with verification provider...' } }));
+    setChecks((prev) => ({ ...prev, [type]: { state: 'checking', message: VERIFICATION_COPY.checkingDetails } }));
     const payload = {
       type,
       bvn: formData.bvn,
@@ -519,7 +523,7 @@ export default function Tier2ManualKYCPage() {
     } catch {
       setChecks((prev) => ({
         ...prev,
-        [type]: { state: 'unavailable', message: 'Provider check is unavailable. Managers can still review the uploaded evidence.' },
+        [type]: { state: 'unavailable', message: VERIFICATION_COPY.checkUnavailableManagerReview },
       }));
     } finally {
       runningCheckKeyRef.current.delete(requestKey);
@@ -661,7 +665,7 @@ export default function Tier2ManualKYCPage() {
                 <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Submitting Your Application</h2>
-              <p className="text-gray-600 mb-4">Uploading documents, encrypting sensitive fields, and running available provider checks...</p>
+              <p className="text-gray-600 mb-4">{VERIFICATION_COPY.submittingDocuments}</p>
               <p className="text-xs text-gray-500 mt-4">Please do not close this page.</p>
             </div>
           )}
@@ -672,7 +676,7 @@ export default function Tier2ManualKYCPage() {
                 <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Liveness Check</h2>
-              <p className="text-gray-600 mb-4">Finish the face check in the secure verification window. Your documents have already been saved for review.</p>
+              <p className="text-gray-600 mb-4">{VERIFICATION_COPY.finishFaceCheck}</p>
               <p className="text-xs text-gray-500 mt-4">If the window closes, your application will remain under review.</p>
             </div>
           )}
@@ -680,13 +684,13 @@ export default function Tier2ManualKYCPage() {
           {pageState === 'idle' && (
             <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-7">
               <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-xl p-5 text-white">
-                <h2 className="text-lg font-bold mb-3">Controlled Tier 2 Review</h2>
+                <h2 className="text-lg font-bold mb-3">{branding.brandName} verification review</h2>
                 <p className="mb-3 text-sm text-gray-100">
-                  Your evidence is collected directly, checked where automated verification is available, and sent to the review team.
+                  Your evidence is collected on {branding.brandName}, checked against official records where available, and sent to the {reviewTeam}.
                 </p>
                 <ul className="space-y-2 text-sm text-gray-200">
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Automated checks support the review without hiding your application inside an external flow.</li>
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Uploaded documents are stored privately for authorized manager review.</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Automated checks support the review without sending you through an external portal.</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--brand-accent)]" /> Uploaded documents are stored privately for authorized review.</li>
                 </ul>
               </div>
 

@@ -5,6 +5,7 @@ import { users } from '@/lib/db/schema/users';
 import { verificationCosts } from '@/lib/db/schema/verification-costs';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { hasProviderVerificationStorage, ProviderVerificationStorageError } from '../services/provider-verification-readiness';
+import { providerEvidenceCountsAsTier2Submission } from '../utils/tier2-submission-footprint';
 import type {
   KYCStatus,
   KYCVerificationData,
@@ -138,12 +139,13 @@ export class KYCRepository {
           .orderBy(desc(providerVerificationRecords.updatedAt))
           .limit(1)
       : [];
-    const latestNormalized = (latestTier2Provider?.normalizedResult as Record<string, unknown> | null) ?? null;
-    const hasSubmittedProviderEvidence =
-      latestTier2Provider?.workflowReference === 'nem-hybrid-tier2' ||
-      latestNormalized?.verificationMode === 'nem_hybrid_manual_review' ||
-      (latestTier2Provider?.checksCompleted ?? []).includes('nem_documents_uploaded') ||
-      payloadStatusLooksSubmitted(latestTier2Provider?.status);
+    const hasSubmittedProviderEvidence = providerEvidenceCountsAsTier2Submission(latestTier2Provider, {
+      tier2SubmittedAt: v.tier2SubmittedAt,
+      tier2DojahReferenceId: v.tier2DojahReferenceId,
+      ninVerified: v.ninVerified,
+      livenessScore: v.livenessScore,
+      biometricMatchScore: v.biometricMatchScore,
+    });
     const providerDecision = resolveProviderDecision(latestTier2Provider);
 
     // Determine status

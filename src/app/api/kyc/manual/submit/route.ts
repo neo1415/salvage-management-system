@@ -13,6 +13,7 @@ import { getProviderVerificationService } from '@/features/kyc/services/provider
 import { buildDojahReference } from '@/features/kyc/utils/dojah-reference';
 import type { NormalizedVerificationResult } from '@/features/kyc/types/provider-verification.types';
 import { getIpAddress } from '@/lib/utils/audit-logger';
+import { VERIFICATION_COPY } from '@/lib/kyc/verification-copy';
 import { extractTextFromDocument } from '@/lib/integrations/google-document-ai';
 
 /**
@@ -1107,7 +1108,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
     reasonCodes.add('dojah_provider_unavailable');
     dojahEvidenceSummary.provider = {
       status: 'unavailable',
-      message: error instanceof Error ? error.message : 'Verification provider unavailable',
+      message: error instanceof Error ? error.message : VERIFICATION_COPY.checkUnavailable,
     };
   }
 

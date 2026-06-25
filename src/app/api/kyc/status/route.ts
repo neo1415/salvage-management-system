@@ -13,6 +13,11 @@ import {
   isKycTestingMode,
 } from '@/lib/kyc/kyc-testing-mode';
 import { clearPrematureTier2Submission } from '@/features/kyc/services/clear-premature-tier2-submission';
+import {
+  isManualHybridTier2Evidence,
+  providerEvidenceCountsAsTier2Submission,
+  vendorHasRealTier2SubmissionFootprint,
+} from '@/features/kyc/utils/tier2-submission-footprint';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +58,13 @@ export async function GET(request: NextRequest) {
         tier2SubmittedAt: vendors.tier2SubmittedAt,
         tier2ApprovedAt: vendors.tier2ApprovedAt,
         tier2RejectionReason: vendors.tier2RejectionReason,
+        tier2DojahReferenceId: vendors.tier2DojahReferenceId,
+        ninVerified: vendors.ninVerified,
+        livenessScore: vendors.livenessScore,
+        biometricMatchScore: vendors.biometricMatchScore,
+        photoIdUrl: vendors.photoIdUrl,
+        addressProofUrl: vendors.addressProofUrl,
+        cacCertificateUrl: vendors.cacCertificateUrl,
       })
       .from(vendors)
       .where(eq(vendors.id, vendorRow.id))
@@ -82,11 +94,7 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(providerVerificationRecords.updatedAt))
       .limit(1);
 
-    const latestNormalized = (latestEvidence?.normalizedResult as Record<string, unknown> | null) ?? null;
-    const isManualHybridEvidence =
-      latestEvidence?.workflowReference === 'nem-hybrid-tier2' ||
-      latestNormalized?.verificationMode === 'nem_hybrid_manual_review' ||
-      (latestEvidence?.checksCompleted ?? []).includes('nem_documents_uploaded');
+    const isManualHybridEvidence = isManualHybridTier2Evidence(latestEvidence);
 
     let effectiveTier2SubmittedAt = vendorAfterCleanup?.tier2SubmittedAt ?? null;
     let effectiveTier2ApprovedAt = vendorAfterCleanup?.tier2ApprovedAt ?? null;
@@ -266,17 +274,30 @@ export async function GET(request: NextRequest) {
     const payload = isKycTestingMode()
       ? applyKycTestingStatusOverride(kycStatus)
       : kycStatus;
+    const hasRealPendingSubmission =
+      Boolean(
+        effectiveTier2SubmittedAt &&
+          vendorAfterCleanup &&
+          vendorHasRealTier2SubmissionFootprint(vendorAfterCleanup)
+      ) ||
+      isManualHybridEvidence ||
+      providerEvidenceCountsAsTier2Submission(latestEvidence, vendorAfterCleanup);
+
     const responseSubmittedAt =
-      payload.status === 'not_started' ? undefined : kycStatus.submittedAt;
+      hasRealPendingSubmission && payload.status !== 'not_started'
+        ? kycStatus.submittedAt
+        : undefined;
+    const normalizedPayloadStatus =
+      payload.status === 'pending_review' && !hasRealPendingSubmission ? 'not_started' : payload.status;
     const authoritativeStatus =
       !isKycTestingMode() &&
-      (effectiveTier2SubmittedAt || isManualHybridEvidence) &&
+      hasRealPendingSubmission &&
       !effectiveTier2ApprovedAt &&
       !effectiveTier2RejectionReason &&
-      payload.status !== 'approved' &&
-      payload.status !== 'rejected'
+      normalizedPayloadStatus !== 'approved' &&
+      normalizedPayloadStatus !== 'rejected'
         ? 'pending_review'
-        : payload.status;
+        : normalizedPayloadStatus;
 
     console.info('[KYC Status] resolved', {
       vendorId: vendorRow.id,
@@ -287,7 +308,10 @@ export async function GET(request: NextRequest) {
       hasRejectionReason: Boolean(effectiveTier2RejectionReason),
       latestProviderStatus: latestEvidence?.status ?? null,
       latestProviderDecision: latestProviderDecision?.decision ?? null,
-      latestProviderMode: latestNormalized?.verificationMode ?? latestEvidence?.workflowReference ?? null,
+      latestProviderMode:
+        (latestEvidence?.normalizedResult as Record<string, unknown> | null)?.verificationMode ??
+        latestEvidence?.workflowReference ??
+        null,
       testingMode: isKycTestingMode(),
     });
 

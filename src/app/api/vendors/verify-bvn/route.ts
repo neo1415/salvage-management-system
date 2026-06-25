@@ -15,7 +15,9 @@ import { getProviderVerificationService } from '@/features/kyc/services/provider
 import { resolveUserLegalNamesForBvn } from '@/lib/utils/person-name';
 import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
 import { sanitizeVerificationUserMessage } from '@/lib/kyc/kyc-user-messages';
+import { VERIFICATION_COPY } from '@/lib/kyc/verification-copy';
 import { businessPolicyService } from '@/features/business-policy/business-policy.service';
+import { resolveVendorTier2Path } from '@/lib/kyc/tier2-kyc-provider';
 
 /**
  * POST /api/vendors/verify-bvn
@@ -254,8 +256,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: 'identity_verification_failed',
-          message:
-            'Our identity verification partner could not complete this BVN check right now. Please try again in a few minutes.',
+          message: VERIFICATION_COPY.identityCheckCouldNotComplete(
+            (await businessPolicyService.getEffectivePolicy()).branding.brandName
+          ),
           detail: sanitizeVerificationUserMessage(verificationResult.error) || undefined,
           errorSource: 'identity_provider',
         },
@@ -461,7 +464,7 @@ async function getTier1ApprovalEmailTemplate(fullName: string): Promise<string> 
       <div style="background-color: #fff8e1; border: 1px solid ${branding.accentColor}; padding: 20px; border-radius: 6px; margin: 20px 0;">
         <h3 style="margin: 0 0 10px 0; color: ${branding.primaryColor};">Want to bid higher?</h3>
         <p>Complete full verification to unlock higher bidding access and business verification benefits.</p>
-        <p><a href="${appPath('/vendor/kyc/tier2')}" style="color: ${branding.primaryColor}; font-weight: 600;">Continue Verification</a></p>
+        <p><a href="${appPath(resolveVendorTier2Path())}" style="color: ${branding.primaryColor}; font-weight: 600;">Continue Verification</a></p>
       </div>
       <p style="margin-top: 30px;">Best regards,<br><strong style="color: ${branding.primaryColor};">${brandTeamName(branding)}</strong></p>
       <p style="font-size: 13px; color: #666;">Need help? ${supportPhone} | ${supportEmail}</p>

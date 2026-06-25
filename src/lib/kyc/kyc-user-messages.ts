@@ -2,6 +2,8 @@
  * User-facing copy for KYC / identity verification (no third-party provider names).
  */
 
+import { VERIFICATION_COPY, verificationBrandName } from '@/lib/kyc/verification-copy';
+
 export type VerificationErrorSource = 'app' | 'identity_provider' | 'network' | 'validation';
 
 export const GENERIC_NAME_BVN_ORDER_EXAMPLE = 'Chidi Emeka Nwosu';
@@ -22,7 +24,8 @@ const TECHNICAL_MESSAGE_PATTERN =
 export function sanitizeVerificationUserMessage(raw: string | undefined | null): string {
   if (!raw?.trim()) return '';
 
-  let message = raw.trim().replace(PROVIDER_NAME_PATTERN, 'verification service');
+  let message = raw.trim().replace(PROVIDER_NAME_PATTERN, 'verification');
+  message = message.replace(/\b(provider|third[- ]party)\b/gi, 'verification');
   if (TECHNICAL_MESSAGE_PATTERN.test(message)) {
     return '';
   }
@@ -41,7 +44,7 @@ function isLikelyProviderFailure(errorCode: string | undefined, rawMessage: stri
     lower.includes('service unavailable') ||
     lower.includes('unavailable') ||
     lower.includes('could not verify') ||
-    lower.includes('verification service') ||
+    lower.includes('automated check') ||
     lower.includes('api server') ||
     lower.includes('network error')
   );
@@ -51,12 +54,16 @@ export function isNameMismatchMessage(message: string): boolean {
   return /name|first name|last name|middle name|surname/i.test(message);
 }
 
-export function resolveTier1VerificationError(payload: {
-  error?: string;
-  message?: string;
-  errorSource?: VerificationErrorSource;
-  mismatches?: string[];
-}): ResolvedVerificationError {
+export function resolveTier1VerificationError(
+  payload: {
+    error?: string;
+    message?: string;
+    errorSource?: VerificationErrorSource;
+    mismatches?: string[];
+  },
+  options?: { brandName?: string | null }
+): ResolvedVerificationError {
+  const brandName = verificationBrandName(options?.brandName);
   const mismatches = payload.mismatches?.filter(Boolean);
   const hasNameMismatch =
     mismatches?.some((m) => isNameMismatchMessage(m)) ||
@@ -115,8 +122,7 @@ export function resolveTier1VerificationError(payload: {
   if (likelyProvider) {
     return {
       title: 'Identity check could not be completed',
-      message:
-        'Our identity verification partner could not complete this check right now. Wait a few minutes and try again. If it keeps failing, contact support.',
+      message: VERIFICATION_COPY.identityCheckCouldNotComplete(brandName),
       detail: sanitized || undefined,
       source: 'identity_provider',
     };
@@ -145,7 +151,7 @@ export function resolveTier2WidgetError(rawMessage: string | undefined): Resolve
     return {
       title: 'Camera or location access needed',
       message:
-        'Allow camera and location access when the verification window asks. If you blocked access earlier, enable it in your browser settings for this site, then try again.',
+        'Allow camera and location access when prompted during verification. If you blocked access earlier, enable it in your browser settings for this site, then try again.',
       detail: sanitized || undefined,
       source: 'app',
     };
@@ -176,11 +182,16 @@ export function resolveTier2WidgetError(rawMessage: string | undefined): Resolve
   };
 }
 
-export function resolveTier2ApiError(payload: {
-  error?: string;
-  message?: string;
-  status?: string;
-}): ResolvedVerificationError {
+export function resolveTier2ApiError(
+  payload: {
+    error?: string;
+    message?: string;
+    status?: string;
+  },
+  options?: { brandName?: string | null }
+): ResolvedVerificationError {
+  const brandName = verificationBrandName(options?.brandName);
+
   if (payload.error === 'network_error') {
     return {
       title: 'Connection problem',
@@ -196,7 +207,7 @@ export function resolveTier2ApiError(payload: {
       title: 'Verification still processing',
       message:
         payload.message ??
-        'Your result is not ready yet. If the identity window is still open, finish the remaining steps. Otherwise wait a minute and try again.',
+        'Your result is not ready yet. If verification is still open, finish the remaining steps. Otherwise wait a minute and try again.',
       source: 'identity_provider',
     };
   }
@@ -216,7 +227,7 @@ export function resolveTier2ApiError(payload: {
       title: 'Submitted for review',
       message:
         payload.message ??
-        'Your documents were received and are being reviewed. You will be notified by SMS and email within 24–48 hours.',
+        `Your documents were received and are being reviewed by ${brandName}. You will be notified by SMS and email within 24–48 hours.`,
       source: 'app',
     };
   }
@@ -244,28 +255,31 @@ export function resolveTier2ApiError(payload: {
 
 export function sanitizeVerificationProviderLabel(provider: string | null | undefined): string {
   const value = (provider ?? '').trim().toLowerCase();
-  if (!value) return 'Verification service';
-  if (value === 'dojah') return 'Identity verification';
-  if (value.includes('nem')) return 'Platform verification';
-  return 'Verification service';
+  if (!value) return 'Identity verification';
+  if (value === 'dojah' || value.includes('widget')) return 'Identity verification';
+  if (value.includes('nem') || value.includes('manual') || value.includes('hybrid')) {
+    return 'Document review';
+  }
+  return 'Identity verification';
 }
 
 export function sanitizeWorkflowReference(reference: string | null | undefined): string {
   const value = (reference ?? '').trim();
   if (!value) return '';
-  if (/nem-hybrid|dojah/i.test(value)) return 'Tier 2 manual review workflow';
+  if (/nem-hybrid|dojah|manual/i.test(value)) return 'Full verification review';
   return value.replace(/^(dojah|nem)[-_]/i, '').replace(/_/g, ' ').trim();
 }
 
-export function sourceHint(source: VerificationErrorSource): string {
+export function sourceHint(source: VerificationErrorSource, brandName?: string | null): string {
+  const brand = verificationBrandName(brandName);
   switch (source) {
     case 'identity_provider':
-      return 'This usually comes from the external identity check (not from your account settings).';
+      return 'This usually relates to the automated identity check, not your account settings.';
     case 'network':
       return 'Check your internet connection and try again.';
     case 'validation':
       return 'Fix the highlighted information and submit again.';
     default:
-      return 'Review your profile details and try again, or contact support.';
+      return `Review your profile details and try again, or contact ${brand} support.`;
   }
 }

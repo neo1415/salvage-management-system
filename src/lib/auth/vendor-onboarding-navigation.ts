@@ -20,6 +20,7 @@ import {
   usesSingleFullKycFlow,
 } from '@/lib/vendor/onboarding-policy-ui';
 import { isRegistrationFeeRequiredForPolicy } from '@/features/business-policy/onboarding-decisions';
+import { resolveVendorTier2Path } from '@/lib/kyc/tier2-kyc-provider';
 
 export {
   CHANGE_PASSWORD_PATH,
@@ -66,7 +67,7 @@ export function resolveVendorOnboardingPath(
     if (isRegistrationFeeRequiredForPolicy(policy) && !vendor.registrationFeePaid) {
       return VENDOR_REGISTRATION_FEE_PATH;
     }
-    return '/vendor/kyc/tier2';
+    return resolveVendorTier2Path();
   }
 
   const bvnGate = resolveVendorBvnGate(policy, {
@@ -82,7 +83,7 @@ export function resolveVendorOnboardingPath(
     if (isRegistrationFeeRequiredForPolicy(policy) && !vendor.registrationFeePaid) {
       return VENDOR_REGISTRATION_FEE_PATH;
     }
-    return '/vendor/kyc/tier2';
+    return resolveVendorTier2Path();
   }
 
   if (

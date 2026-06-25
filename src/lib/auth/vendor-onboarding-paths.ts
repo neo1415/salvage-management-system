@@ -5,12 +5,15 @@ export const VENDOR_REGISTRATION_FEE_PATH = '/vendor/registration-fee';
 export const VENDOR_TIER1_PATH = '/vendor/kyc/tier1';
 export const VENDOR_TIER2_PATH = '/vendor/kyc/tier2';
 
+export const VENDOR_TIER2_MANUAL_PATH = '/vendor/kyc/tier2-manual';
+
 export const VENDOR_ONBOARDING_PAGE_PREFIXES = [
   CHANGE_PASSWORD_PATH,
   '/vendor/settings/profile',
   VENDOR_VERIFY_ACCOUNT_PATH,
   VENDOR_TIER1_PATH,
   VENDOR_TIER2_PATH,
+  VENDOR_TIER2_MANUAL_PATH,
   VENDOR_REGISTRATION_FEE_PATH,
 ] as const;
 
