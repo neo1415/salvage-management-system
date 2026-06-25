@@ -46,7 +46,6 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
       .catch(() => {
         if (!cancelled) {
           setOnboardingStatus({ redirectPath: null });
-          hasLoadedOnboardingRef.current = true;
           setInitialLoad(false);
         }
       });
