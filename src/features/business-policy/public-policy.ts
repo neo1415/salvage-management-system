@@ -25,6 +25,8 @@ export function toPublicBusinessPolicy(policy: BusinessPolicy): PublicBusinessPo
       hybridPaymentEnabled: policy.payments.hybridPaymentEnabled,
       manualPaymentEnabled: policy.payments.manualPaymentEnabled,
       paymentDeadlineAfterSigningHours: policy.payments.paymentDeadlineAfterSigningHours,
+      walletFundingMinimum: policy.payments.walletFundingMinimum,
+      walletFundingMaximum: policy.payments.walletFundingMaximum,
     },
     auctions: {
       minimumBidIncrement: policy.auctions.minimumBidIncrement,

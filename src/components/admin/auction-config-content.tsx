@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ConfigForm } from './config-form';
 import { ConfigHistory } from './config-history';
 import { Settings, History, ToggleLeft, ToggleRight } from 'lucide-react';
+import { BID_OTP_MODE_LABELS, type BidOtpMode } from '@/features/business-policy/bid-otp-decisions';
 
 type Tab = 'config' | 'history' | 'feature-flags';
 
@@ -11,6 +12,7 @@ export function AuctionConfigContent() {
   const [activeTab, setActiveTab] = useState<Tab>('config');
   const [depositSystemEnabled, setDepositSystemEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [bidOtpMode, setBidOtpMode] = useState<BidOtpMode | null>(null);
 
   useEffect(() => {
     const fetchFeatureFlags = async () => {
@@ -28,7 +30,22 @@ export function AuctionConfigContent() {
     };
 
     fetchFeatureFlags();
+    fetchBidOtpPolicy();
   }, []);
+
+  const fetchBidOtpPolicy = async () => {
+    try {
+      const response = await fetch('/api/admin/business-policy');
+      if (!response.ok) return;
+      const data = await response.json();
+      const mode = data.policy?.auctions?.bidOtpMode;
+      if (mode === 'none' || mode === 'tier1_only' || mode === 'all') {
+        setBidOtpMode(mode);
+      }
+    } catch (error) {
+      console.error('Failed to fetch bid OTP policy:', error);
+    }
+  };
 
   const handleToggleFeatureFlag = async () => {
     try {
@@ -93,7 +110,19 @@ export function AuctionConfigContent() {
 
       {/* Tab Content */}
       {activeTab === 'config' && (
-        <ConfigForm onSaveSuccess={() => setActiveTab('history')} />
+        <>
+          {bidOtpMode ? (
+            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <h3 className="text-sm font-semibold text-blue-900">Bid OTP policy (from published business policy)</h3>
+              <p className="mt-1 text-sm text-blue-800">{BID_OTP_MODE_LABELS[bidOtpMode]}</p>
+              <p className="mt-2 text-xs text-blue-700">
+                Change this in Enterprise Setup under Deposits And Auction Rules, then publish the policy.
+                Numeric auction settings below sync to the same policy when saved.
+              </p>
+            </div>
+          ) : null}
+          <ConfigForm onSaveSuccess={() => setActiveTab('history')} />
+        </>
       )}
 
       {activeTab === 'history' && (

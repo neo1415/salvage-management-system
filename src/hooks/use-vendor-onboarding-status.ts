@@ -17,6 +17,8 @@ export type VendorOnboardingStatus = {
   tier: string;
   registrationFeePaid: boolean;
   bvnVerified: boolean;
+  bidOtpRequired: boolean;
+  bidOtpMode: string;
 };
 
 export function useVendorOnboardingStatus() {

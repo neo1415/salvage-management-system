@@ -192,6 +192,23 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     issues.push(issue('payments.paymentDeadlineAfterSigningHours', 'Payment deadline after signing must be positive.'));
   }
 
+  if (policy.payments.walletFundingMinimum <= 0) {
+    issues.push(issue('payments.walletFundingMinimum', 'Wallet funding minimum must be positive.'));
+  }
+
+  if (policy.payments.walletFundingMaximum <= 0) {
+    issues.push(issue('payments.walletFundingMaximum', 'Wallet funding maximum must be positive.'));
+  }
+
+  if (policy.payments.walletFundingMaximum < policy.payments.walletFundingMinimum) {
+    issues.push(
+      issue(
+        'payments.walletFundingMaximum',
+        'Wallet funding maximum must be greater than or equal to the minimum.'
+      )
+    );
+  }
+
   if (policy.auctions.documentValidityHours <= 0) {
     issues.push(issue('auctions.documentValidityHours', 'Document validity period must be positive.'));
   }

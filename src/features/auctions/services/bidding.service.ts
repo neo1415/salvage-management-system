@@ -34,6 +34,7 @@ import {
   isOnboardingPolicyEnforced,
   logPolicyDecision,
   resolveDepositAmountRequired,
+  resolveBidOtpRequirement,
   resolveVendorBidEligibility,
   type VendorPolicySnapshot,
 } from '@/features/business-policy';
@@ -46,7 +47,7 @@ export interface PlaceBidData {
   auctionId: string;
   vendorId: string;
   amount: number;
-  otp: string;
+  otp?: string;
   ipAddress: string;
   userAgent: string | null;
   deviceFingerprint?: string;
@@ -102,10 +103,10 @@ export class BiddingService {
 
     try {
       // SECURITY FIX: Enhanced input validation
-      if (!data.auctionId || !data.vendorId || !data.amount || !data.otp) {
+      if (!data.auctionId || !data.vendorId || !data.amount) {
         return {
           success: false,
-          error: 'Auction ID, vendor ID, bid amount, and OTP are required',
+          error: 'Auction ID, vendor ID, and bid amount are required',
         };
       }
 
@@ -177,6 +178,23 @@ export class BiddingService {
         };
       }
 
+      const policy = await businessPolicyService.getEffectivePolicy();
+      const vendorTier: VendorPolicySnapshot['tier'] =
+        vendor.tier === 'tier2_full'
+          ? 'tier2_full'
+          : vendor.tier === 'tier1_bvn'
+            ? 'tier1_bvn'
+            : 'tier0';
+      const otpDecision = resolveBidOtpRequirement(policy, { tier: vendorTier });
+      const otpRequired = otpDecision.value?.required ?? true;
+
+      if (otpRequired && !data.otp?.trim()) {
+        return {
+          success: false,
+          error: 'OTP is required to place a bid under the current auction policy',
+        };
+      }
+
       // Validate bid
       const validation = await this.validateBid(
         data.amount,
@@ -184,13 +202,14 @@ export class BiddingService {
         Number(auction.minimumIncrement),
         auction.status,
         vendor.tier,
-        data.otp,
+        data.otp ?? '',
         user.phone,
         data.vendorId,
         data.auctionId,
         config,
         Boolean(vendor.bvnVerifiedAt),
-        Boolean(vendor.registrationFeePaid)
+        Boolean(vendor.registrationFeePaid),
+        otpRequired
       );
 
       await this.logBidPolicyDecisionShadow({
@@ -278,7 +297,7 @@ export class BiddingService {
               auctionId: data.auctionId,
               vendorId: data.vendorId,
               amount: data.amount.toString(),
-              otpVerified: true,
+              otpVerified: otpRequired,
               ipAddress: data.ipAddress,
               deviceType: this.getDeviceType(data.userAgent || 'unknown'),
             })
@@ -673,7 +692,8 @@ export class BiddingService {
     auctionId: string,
     config: SystemConfiguration,
     bvnVerified = true,
-    registrationFeePaid = false
+    registrationFeePaid = false,
+    otpRequired = true
   ): Promise<ValidationResult> {
     const errors: string[] = [];
 
@@ -785,16 +805,18 @@ export class BiddingService {
       errors.push('Unable to verify wallet balance. Please try again.');
     }
 
-    // Verify OTP
-    const otpVerification = await otpService.verifyOTP(
-      phone,
-      otp,
-      'unknown', // IP address not needed for verification
-      'mobile' // Device type not needed for verification
-    );
+    // Verify OTP when required by auction policy
+    if (otpRequired) {
+      const otpVerification = await otpService.verifyOTP(
+        phone,
+        otp,
+        'unknown', // IP address not needed for verification
+        'mobile' // Device type not needed for verification
+      );
 
-    if (!otpVerification.success) {
-      errors.push('OTP verification failed. Please request a new OTP.');
+      if (!otpVerification.success) {
+        errors.push('OTP verification failed. Please request a new OTP.');
+      }
     }
 
     return {

@@ -152,6 +152,10 @@ export type PaymentPolicy = {
   hybridPaymentEnabled: boolean;
   manualPaymentEnabled: boolean;
   paymentDeadlineAfterSigningHours: number;
+  /** Minimum amount per wallet funding transaction (vendors can fund multiple times) */
+  walletFundingMinimum: number;
+  /** Maximum amount per wallet funding transaction */
+  walletFundingMaximum: number;
 };
 
 export type EscrowPolicy = {
@@ -162,6 +166,8 @@ export type EscrowPolicy = {
   forfeiturePercentage: number;
 };
 
+export type BidOtpMode = 'none' | 'tier1_only' | 'all';
+
 export type AuctionPolicy = {
   minimumBidIncrement: number;
   documentValidityHours: number;
@@ -171,6 +177,8 @@ export type AuctionPolicy = {
   reserveValueStrategy: 'percentage_of_salvage_value';
   reserveValuePercentage: number;
   socketMode: 'polling_primary_socket_secondary' | 'socket_primary_polling_fallback';
+  /** When bids require SMS OTP: none, tier1_only (skip for fully verified), or all bidders */
+  bidOtpMode: BidOtpMode;
 };
 
 export type AiDamageAssessmentRunner = 'claims_adjuster' | 'salvage_manager';
@@ -299,7 +307,9 @@ export type PolicyDecisionType =
   | 'fraud_risk_gate_applied'
   | 'reserve_price_rule_applied'
   | 'case_asset_type_allowed'
-  | 'case_asset_type_denied';
+  | 'case_asset_type_denied'
+  | 'bid_otp_requirement_resolved'
+  | 'wallet_funding_amount_validated';
 
 export type PolicyDecisionRecord = {
   policyVersion: string;
@@ -381,6 +391,8 @@ export type PublicBusinessPolicy = Pick<BusinessPolicy, 'version' | 'branding'> 
     | 'hybridPaymentEnabled'
     | 'manualPaymentEnabled'
     | 'paymentDeadlineAfterSigningHours'
+    | 'walletFundingMinimum'
+    | 'walletFundingMaximum'
   >;
   auctions: Pick<AuctionPolicy, 'minimumBidIncrement'>;
   cases: Pick<CasePolicy, 'enabledAssetTypes' | 'insuranceClasses' | 'voiceNotesEnabled' | 'aiDamageAssessmentRunner'>;

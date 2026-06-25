@@ -24,7 +24,11 @@ const bidRequestSchema = z.object({
     .transform((value) => (typeof value === 'number' ? value : Number(value)))
     .refine((value) => Number.isFinite(value) && value > 0, 'Bid amount must be a positive number')
     .refine((value) => value <= 1_000_000_000_000, 'Bid amount is too large'),
-  otp: z.string().trim().regex(/^\d{6}$/, 'A valid 6-digit OTP is required'),
+  otp: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'A valid 6-digit OTP is required')
+    .optional(),
 });
 
 /**

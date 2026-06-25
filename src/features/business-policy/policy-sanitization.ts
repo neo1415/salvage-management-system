@@ -1,6 +1,7 @@
 import { DEFAULT_BUSINESS_POLICY } from './default-policy';
 import type {
   AiProvider,
+  BidOtpMode,
   BusinessPolicy,
   OnboardingMode,
   PaymentProvider,
@@ -41,6 +42,7 @@ const SOCKET_MODES: BusinessPolicy['auctions']['socketMode'][] = [
   'polling_primary_socket_secondary',
   'socket_primary_polling_fallback',
 ];
+const BID_OTP_MODES: BidOtpMode[] = ['none', 'tier1_only', 'all'];
 const REPORT_DATE_RANGES: BusinessPolicy['reports']['defaultDateRange'][] = ['all_time', 'last_30_days', 'last_90_days'];
 const DOCUMENT_TYPES: BusinessPolicy['documents']['requiredAuctionDocuments'][number][] = ['bill_of_sale', 'liability_waiver'];
 const ASSET_PROMPT_PROFILES: BusinessPolicy['cases']['enabledAssetTypes'][string]['promptProfile'][] = [
@@ -405,6 +407,8 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       hybridPaymentEnabled: booleanValue(payments.hybridPaymentEnabled, fallback.payments.hybridPaymentEnabled),
       manualPaymentEnabled: booleanValue(payments.manualPaymentEnabled, fallback.payments.manualPaymentEnabled),
       paymentDeadlineAfterSigningHours: numberValue(payments.paymentDeadlineAfterSigningHours, fallback.payments.paymentDeadlineAfterSigningHours),
+      walletFundingMinimum: numberValue(payments.walletFundingMinimum, fallback.payments.walletFundingMinimum),
+      walletFundingMaximum: numberValue(payments.walletFundingMaximum, fallback.payments.walletFundingMaximum),
     },
     escrow: {
       depositSystemEnabled: booleanValue(escrow.depositSystemEnabled, fallback.escrow.depositSystemEnabled),
@@ -422,6 +426,7 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       reserveValueStrategy: enumValue(auctions.reserveValueStrategy, RESERVE_STRATEGIES, fallback.auctions.reserveValueStrategy),
       reserveValuePercentage: numberValue(auctions.reserveValuePercentage, fallback.auctions.reserveValuePercentage),
       socketMode: enumValue(auctions.socketMode, SOCKET_MODES, fallback.auctions.socketMode),
+      bidOtpMode: enumValue(auctions.bidOtpMode, BID_OTP_MODES, fallback.auctions.bidOtpMode),
     },
     cases: {
       enabledAssetTypes,

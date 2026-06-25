@@ -113,6 +113,8 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
     hybridPaymentEnabled: true,
     manualPaymentEnabled: false,
     paymentDeadlineAfterSigningHours: 72,
+    walletFundingMinimum: 50_000,
+    walletFundingMaximum: 5_000_000,
   },
   escrow: {
     depositSystemEnabled: true,
@@ -130,6 +132,7 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
     reserveValueStrategy: 'percentage_of_salvage_value',
     reserveValuePercentage: 70,
     socketMode: 'polling_primary_socket_secondary',
+    bidOtpMode: 'all',
   },
   cases: {
     enabledAssetTypes: {

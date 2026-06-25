@@ -2323,6 +2323,59 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             <Field label="Payment deadline hours">
               <TextInput type="number" value={policy.payments.paymentDeadlineAfterSigningHours} onChange={(event) => updatePolicy((draft) => { draft.payments.paymentDeadlineAfterSigningHours = numberValue(event.target.value, draft.payments.paymentDeadlineAfterSigningHours); })} />
             </Field>
+            <Field
+              label="Bid OTP requirement"
+              description="Control when vendors must verify bids with SMS OTP. Fully verified vendors are Tier 2 / full KYC approved."
+            >
+              <SelectInput
+                value={policy.auctions.bidOtpMode}
+                onChange={(event) =>
+                  updatePolicy((draft) => {
+                    draft.auctions.bidOtpMode = event.target.value as BusinessPolicy['auctions']['bidOtpMode'];
+                  })
+                }
+              >
+                <option value="all">OTP for all bidders</option>
+                <option value="tier1_only">OTP for Tier 1 only (fully verified skip)</option>
+                <option value="none">No OTP required</option>
+              </SelectInput>
+            </Field>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <h4 className="text-sm font-semibold text-gray-900">Wallet funding limits</h4>
+            <p className="mt-1 text-xs text-gray-600">
+              Per-transaction minimum and maximum when vendors add funds. Vendors can fund multiple times to exceed the maximum in total balance.
+            </p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="Minimum per funding (₦)">
+                <TextInput
+                  type="number"
+                  value={policy.payments.walletFundingMinimum}
+                  onChange={(event) =>
+                    updatePolicy((draft) => {
+                      draft.payments.walletFundingMinimum = numberValue(
+                        event.target.value,
+                        draft.payments.walletFundingMinimum
+                      );
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Maximum per funding (₦)">
+                <TextInput
+                  type="number"
+                  value={policy.payments.walletFundingMaximum}
+                  onChange={(event) =>
+                    updatePolicy((draft) => {
+                      draft.payments.walletFundingMaximum = numberValue(
+                        event.target.value,
+                        draft.payments.walletFundingMaximum
+                      );
+                    })
+                  }
+                />
+              </Field>
+            </div>
           </div>
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
             <h4 className="text-sm font-semibold text-gray-900">Auction payment methods</h4>

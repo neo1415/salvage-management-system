@@ -7,6 +7,7 @@ import { kv } from '@vercel/kv';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { brandLegalName, getEmailBranding } from '@/features/notifications/templates/email-branding';
 import { appPath } from '@/features/notifications/templates/email-urls';
+import { businessPolicyService, validateWalletFundingAmount } from '@/features/business-policy';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY!;
 const WALLET_CACHE_TTL = 300; // 5 minutes in seconds
@@ -65,7 +66,7 @@ async function getOrCreateWallet(vendorId: string): Promise<typeof escrowWallets
 
 /**
  * Fund wallet via Paystack integration
- * Accepts amounts between ₦50k - ₦5M
+ * Per-transaction limits are enforced from the published business policy.
  */
 export async function fundWallet(
   vendorId: string,
@@ -73,9 +74,10 @@ export async function fundWallet(
   userId: string
 ): Promise<FundWalletResult> {
   try {
-    // Validate amount range (₦50k - ₦5M)
-    if (amount < 50000 || amount > 5000000) {
-      throw new Error('Amount must be between ₦50,000 and ₦5,000,000');
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const fundingValidation = validateWalletFundingAmount(policy, amount);
+    if (!fundingValidation.allowed) {
+      throw new Error(fundingValidation.message);
     }
 
     // Get or create wallet

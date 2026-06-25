@@ -6,6 +6,8 @@ export * from './policy-validation';
 export * from './policy-sanitization';
 export * from './policy-runtime-mode';
 export * from './onboarding-decisions';
+export * from './bid-otp-decisions';
+export * from './wallet-funding-decisions';
 export * from './auth-decisions';
 export * from './auction-payment-decisions';
 export * from './auction-timing-decisions';

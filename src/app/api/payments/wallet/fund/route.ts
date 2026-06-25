@@ -11,6 +11,7 @@ import {
   isBusinessPolicyEnforcementEnabled,
   logPolicyDecision,
   resolveAuctionPaymentMethodAccess,
+  validateWalletFundingAmount,
 } from '@/features/business-policy';
 import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 
@@ -95,9 +96,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (amount < 50000 || amount > 5000000) {
+    const fundingValidation = validateWalletFundingAmount(policy, amount);
+    await logPolicyDecision({
+      userId: session.user.id,
+      entityType: AuditEntityType.PAYMENT,
+      entityId: vendor.id,
+      ipAddress,
+      userAgent,
+      deviceType: getDeviceTypeFromUserAgent(userAgent),
+      decision: fundingValidation.decision,
+      context: {
+        source: 'api/payments/wallet/fund',
+        runtimeMode: getBusinessPolicyRuntimeMode(),
+        vendorId: vendor.id,
+        amount,
+      },
+    }).catch((error) => {
+      console.warn('[BusinessPolicy] Failed to audit wallet funding amount decision', {
+        vendorId: vendor.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+
+    if (!fundingValidation.allowed) {
       return NextResponse.json(
-        { error: 'Amount must be between ₦50,000 and ₦5,000,000' },
+        { error: fundingValidation.message },
         { status: 400, headers: rateLimitHeaders }
       );
     }

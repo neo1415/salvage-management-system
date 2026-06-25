@@ -10,6 +10,7 @@ import {
   fullVerificationLabel,
 } from '@/lib/auth/vendor-onboarding-navigation';
 import { resolveVendorBidEligibility } from '@/features/business-policy/onboarding-decisions';
+import { resolveBidOtpRequirement } from '@/features/business-policy/bid-otp-decisions';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,7 @@ export async function GET() {
     const policy = await businessPolicyService.getEffectivePolicy();
     const redirectPath = resolveVendorOnboardingPath(policy, snapshot);
     const bidDecision = resolveVendorBidEligibility(policy, snapshot, 1);
+    const otpDecision = resolveBidOtpRequirement(policy, snapshot);
     const banner = resolveKycBannerCopy(policy, snapshot);
 
     return NextResponse.json({
@@ -36,6 +38,8 @@ export async function GET() {
         redirectPath,
         canBid: bidDecision.allowed,
         bidBlockedMessage: resolveVendorBidBlockedMessage(policy, snapshot),
+        bidOtpRequired: otpDecision.value?.required ?? true,
+        bidOtpMode: otpDecision.value?.mode ?? policy.auctions.bidOtpMode,
         onboardingMode: policy.onboarding.mode,
         usesTierLanguage: usesTierLanguage(policy),
         fullVerificationLabel: fullVerificationLabel(policy),

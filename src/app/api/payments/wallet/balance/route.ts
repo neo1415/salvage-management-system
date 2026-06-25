@@ -4,6 +4,7 @@ import { escrowService } from '@/features/payments/services/escrow.service';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { eq } from 'drizzle-orm';
+import { businessPolicyService } from '@/features/business-policy';
 
 /**
  * GET /api/payments/wallet/balance
@@ -31,8 +32,13 @@ export async function GET(_request: NextRequest) {
 
     // Get wallet balance
     const balance = await escrowService.getBalance(vendor.id);
+    const policy = await businessPolicyService.getEffectivePolicy();
 
-    return NextResponse.json(balance);
+    return NextResponse.json({
+      ...balance,
+      fundingMinimum: policy.payments.walletFundingMinimum,
+      fundingMaximum: policy.payments.walletFundingMaximum,
+    });
   } catch (error) {
     console.error('Error fetching wallet balance:', error);
     return NextResponse.json(

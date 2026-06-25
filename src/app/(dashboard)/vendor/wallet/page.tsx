@@ -49,6 +49,9 @@ export default function WalletPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  const [fundingMinimum, setFundingMinimum] = useState(50_000);
+  const [fundingMaximum, setFundingMaximum] = useState(5_000_000);
+
   // Fetch function for useCachedWallet hook
   const fetchWalletData = useCallback(async () => {
     const [balanceResponse, transactionsResponse] = await Promise.all([
@@ -74,6 +77,8 @@ export default function WalletPage() {
       availableBalance: balanceData.availableBalance,
       frozenAmount: balanceData.frozenAmount,
       transactions: transactionsData.transactions || [],
+      fundingMinimum: balanceData.fundingMinimum ?? 50_000,
+      fundingMaximum: balanceData.fundingMaximum ?? 5_000_000,
     };
   }, []);
 
@@ -113,6 +118,17 @@ export default function WalletPage() {
   };
 
   const [error, setError] = useState<string | null>(null);
+
+  // Sync funding limits from cached wallet data
+  useEffect(() => {
+    const walletLimits = wallet as { fundingMinimum?: number; fundingMaximum?: number } | null;
+    if (walletLimits?.fundingMinimum) {
+      setFundingMinimum(walletLimits.fundingMinimum);
+    }
+    if (walletLimits?.fundingMaximum) {
+      setFundingMaximum(walletLimits.fundingMaximum);
+    }
+  }, [wallet]);
 
   // Sync error with wallet error
   useEffect(() => {
@@ -167,9 +183,11 @@ export default function WalletPage() {
   const handleAddFunds = useCallback(async () => {
     const amount = parseFloat(fundingAmount);
     
-    // Validate amount
-    if (isNaN(amount) || amount < 50000 || amount > 5000000) {
-      alert('Please enter an amount between ₦50,000 and ₦5,000,000');
+    // Validate amount against policy limits
+    if (isNaN(amount) || amount < fundingMinimum || amount > fundingMaximum) {
+      alert(
+        `Please enter an amount between ₦${fundingMinimum.toLocaleString()} and ₦${fundingMaximum.toLocaleString()}`
+      );
       return;
     }
 
@@ -201,7 +219,7 @@ export default function WalletPage() {
       setError(err instanceof Error ? err.message : 'Failed to initiate funding');
       setIsFunding(false);
     }
-  }, [fundingAmount]); // Depend on fundingAmount
+  }, [fundingAmount, fundingMinimum, fundingMaximum]);
 
   // FIXED: Memoize helper functions to prevent recreation
   const formatCurrency = useCallback((amount: number) => {
@@ -538,7 +556,7 @@ export default function WalletPage() {
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
               <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-2">
-                Amount (₦50,000 - ₦5,000,000)
+                Amount (₦{fundingMinimum.toLocaleString()} - ₦{fundingMaximum.toLocaleString()} per transaction)
               </label>
               <input
                 type="number"
@@ -546,8 +564,8 @@ export default function WalletPage() {
                 value={fundingAmount}
                 onChange={(e) => setFundingAmount(e.target.value)}
                 placeholder="Enter amount"
-                min="50000"
-                max="5000000"
+                min={fundingMinimum}
+                max={fundingMaximum}
                 step="1000"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                 disabled={isFunding}
@@ -580,7 +598,8 @@ export default function WalletPage() {
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-3">
-            Funds will be credited immediately after successful payment via Paystack
+            Each funding transaction is limited to the range above. You can add funds multiple times to build a higher wallet balance.
+            Funds are credited immediately after successful payment via Paystack.
           </p>
         </div>
 

@@ -25,6 +25,7 @@ import { TierUpgradeModal } from '@/components/ui/tier-upgrade-modal';
 import { useTierUpgrade, type VendorTier } from '@/hooks/use-tier-upgrade';
 import { useToast } from '@/components/ui/toast';
 import { lockScroll } from '@/lib/utils/modal-scroll-lock';
+import { useVendorOnboardingStatus } from '@/hooks/use-vendor-onboarding-status';
 
 interface BidFormProps {
   auctionId: string;
@@ -51,6 +52,8 @@ export function BidForm({
 }: BidFormProps) {
   const { data: session } = useSession();
   const toast = useToast();
+  const { status: onboardingStatus } = useVendorOnboardingStatus();
+  const bidOtpRequired = onboardingStatus?.bidOtpRequired ?? true;
   const [step, setStep] = useState<'bid' | 'otp'>('bid');
   const [bidAmount, setBidAmount] = useState<string>('');
   const [otp, setOtp] = useState<string>('');
@@ -153,7 +156,7 @@ export function BidForm({
     }
   };
 
-  // Handle confirm bid (send OTP)
+  // Handle confirm bid (send OTP or place bid directly)
   const handleConfirmBid = async () => {
     // Validate bid amount
     const validationError = validateBidAmount(bidAmount);
@@ -167,6 +170,11 @@ export function BidForm({
     // Check tier access before proceeding
     if (!checkAuctionAccess(numAmount)) {
       // Tier upgrade modal will be shown automatically
+      return;
+    }
+
+    if (!bidOtpRequired) {
+      await handleSubmitBid(undefined, true);
       return;
     }
 
@@ -221,10 +229,10 @@ export function BidForm({
   };
 
   // Handle bid submission
-  const handleSubmitBid = async (otpCode?: string) => {
+  const handleSubmitBid = async (otpCode?: string, skipOtp = false) => {
     const otpToVerify = otpCode || otp;
 
-    if (otpToVerify.length !== 6) {
+    if (!skipOtp && otpToVerify.length !== 6) {
       setError('Please enter a 6-digit OTP');
       return;
     }
@@ -233,16 +241,20 @@ export function BidForm({
     setError('');
 
     try {
-      // Submit bid with OTP
+      const payload: { amount: number; otp?: string } = {
+        amount: parseFloat(bidAmount),
+      };
+      if (!skipOtp) {
+        payload.otp = otpToVerify;
+      }
+
+      // Submit bid
       const response = await fetch(`/api/auctions/${auctionId}/bids`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          amount: parseFloat(bidAmount),
-          otp: otpToVerify,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -465,12 +477,24 @@ export function BidForm({
                   disabled={isLoading || !!error || !bidAmount}
                   className="w-full bg-[var(--brand-primary)] text-white py-3 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
-                  {isLoading ? 'Sending OTP...' : 'Confirm Bid'}
+                  {isLoading
+                    ? bidOtpRequired
+                      ? 'Sending OTP...'
+                      : 'Placing bid...'
+                    : bidOtpRequired
+                      ? 'Confirm Bid'
+                      : 'Place Bid'}
                 </button>
 
-                <p className="text-xs text-gray-500 text-center">
-                  You'll receive an OTP via SMS to verify your bid
-                </p>
+                {bidOtpRequired ? (
+                  <p className="text-xs text-gray-500 text-center">
+                    You'll receive an OTP via SMS to verify your bid
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 text-center">
+                    Your bid will be placed immediately — no OTP required for your verification level
+                  </p>
+                )}
               </div>
             )}
 
