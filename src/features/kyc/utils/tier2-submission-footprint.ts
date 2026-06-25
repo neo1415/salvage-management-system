@@ -9,9 +9,9 @@ type VendorTier2Footprint = {
   tier2SubmittedAt?: Date | null;
   tier2ApprovedAt?: Date | null;
   tier2DojahReferenceId?: string | null;
-  ninVerified?: boolean | null;
-  livenessScore?: number | null;
-  biometricMatchScore?: number | null;
+  ninVerified?: Date | null;
+  livenessScore?: string | number | null;
+  biometricMatchScore?: string | number | null;
   photoIdUrl?: string | null;
   addressProofUrl?: string | null;
   cacCertificateUrl?: string | null;

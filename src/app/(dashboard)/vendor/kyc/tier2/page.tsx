@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
+import type { Session } from 'next-auth';
 import Script from 'next/script';
 import {
   CheckCircle2,
@@ -238,7 +239,8 @@ export default function Tier2KYCPage() {
 
 function Tier2WidgetKYCPage() {
   const router = useAppRouter();
-  const { data: session, status: authStatus } = useSession();
+  const { data: sessionData, status: authStatus } = useSession();
+  const session = sessionData as Session | null | undefined;
   const { policy } = usePublicBusinessPolicy();
   const singleFullKycFlow = policy ? usesSingleFullKycFlow(policy) : false;
   const verificationTitle = singleFullKycFlow ? 'Business Verification' : 'Tier 2 Verification';
