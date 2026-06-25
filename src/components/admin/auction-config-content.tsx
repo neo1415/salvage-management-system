@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { ConfigForm } from './config-form';
 import { ConfigHistory } from './config-history';
 import { Settings, History, ToggleLeft, ToggleRight } from 'lucide-react';
-import { BID_OTP_MODE_LABELS, type BidOtpMode } from '@/features/business-policy/bid-otp-decisions';
+import { BID_OTP_MODE_LABELS } from '@/features/business-policy/bid-otp-decisions';
+import type { BidOtpMode } from '@/features/business-policy/types';
 
 type Tab = 'config' | 'history' | 'feature-flags';
 
