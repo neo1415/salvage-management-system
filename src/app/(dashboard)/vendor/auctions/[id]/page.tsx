@@ -155,8 +155,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   const { data: session } = useSession();
   const toast = useToast();
   const { policy: publicPolicy } = usePublicBusinessPolicy();
-  const { status: onboardingStatus } = useVendorOnboardingStatus();
-  const canPlaceBid = onboardingStatus?.canBid ?? true;
+  const { status: onboardingStatus, loading: onboardingLoading } = useVendorOnboardingStatus();
+  const canPlaceBid = onboardingLoading ? false : (onboardingStatus?.canBid ?? false);
   const bidBlockedMessage = onboardingStatus?.bidBlockedMessage;
   const requiredAuctionDocuments = publicPolicy?.documents.requiredAuctionDocuments ?? DEFAULT_AUCTION_DOCUMENTS;
   const paymentDeadlineHours = publicPolicy?.payments.paymentDeadlineAfterSigningHours ?? 72;

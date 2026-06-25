@@ -29,6 +29,8 @@ import {
 import { isPendingTier2Review, type Tier2StatusLike } from '@/features/kyc/utils/tier2-status';
 import { VERIFICATION_COPY, verificationTeamLabel } from '@/lib/kyc/verification-copy';
 import { usePublicBranding } from '@/hooks/use-public-branding';
+import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { kycVerificationPageTitle } from '@/lib/vendor/onboarding-policy-ui';
 
 type PageState = 'idle' | 'loading' | 'submitting' | 'liveness' | 'pending_review' | 'approved' | 'rejected';
 type CheckState = 'idle' | 'checking' | 'verified' | 'review' | 'unavailable' | 'failed';
@@ -157,6 +159,8 @@ export default function Tier2ManualKYCPage() {
   const router = useAppRouter();
   const { status: authStatus } = useSession();
   const { branding } = usePublicBranding();
+  const { policy } = usePublicBusinessPolicy();
+  const pageTitle = policy ? kycVerificationPageTitle(policy) : 'Complete your KYC';
   const reviewTeam = verificationTeamLabel(branding.brandName);
   const [pageState, setPageState] = useState<PageState>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -262,7 +266,10 @@ export default function Tier2ManualKYCPage() {
         }
 
         if (statusData?.status === 'rejected') setPageState('rejected');
-        else if (statusData?.status === 'approved') setPageState('approved');
+        else if (statusData?.status === 'approved') {
+          router.replace('/vendor/dashboard');
+          return;
+        }
         else if (isPendingTier2Review(statusData)) setPageState('pending_review');
         else setPageState('idle');
 
@@ -603,8 +610,12 @@ export default function Tier2ManualKYCPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full mb-4">
             <Award className="w-8 h-8 text-[var(--brand-primary)]" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Tier 2 Verification</h1>
-          <p className="text-gray-200">Upload business, identity, and address evidence for manager review.</p>
+          <h1 className="text-3xl font-bold text-white mb-2">{pageTitle}</h1>
+          <p className="text-gray-200">
+            {policy?.onboarding.mode === 'single_full_kyc'
+              ? 'Upload business, identity, and address evidence for review.'
+              : 'Upload business, identity, and address evidence for manager review.'}
+          </p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">

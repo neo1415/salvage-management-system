@@ -12,7 +12,7 @@ import {
   VerificationErrorDialog,
 } from '@/components/kyc/verification-error-dialog';
 import { usePublicBranding } from '@/hooks/use-public-branding';
-import { resolveVendorTier2Path } from '@/lib/kyc/tier2-kyc-provider';
+import { tier1SuccessRedirectPath } from '@/lib/vendor/onboarding-policy-ui';
 
 /**
  * Tier 1 — BVN identity verification (required before platform access).
@@ -165,7 +165,7 @@ export default function Tier1KYCPage() {
       }
 
       sessionStorage.removeItem('bvn_verification_success');
-      window.location.href = resolveVendorTier2Path();
+      window.location.href = tier1SuccessRedirectPath();
       return;
     } catch {
       const resolved = resolveTier1VerificationError({
@@ -217,7 +217,7 @@ export default function Tier1KYCPage() {
             <div className="p-8 text-center">
               <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-gray-900 mb-2">Verification complete</h2>
-              <p className="text-sm text-gray-600">Redirecting to Tier 2 verification…</p>
+              <p className="text-sm text-gray-600">Redirecting to your dashboard…</p>
             </div>
           ) : (
             <div className="p-6 sm:p-8">

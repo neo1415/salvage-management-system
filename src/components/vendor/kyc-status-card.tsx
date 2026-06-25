@@ -5,10 +5,17 @@ import { useAppRouter } from '@/hooks/use-app-router';
 import { Crown, ArrowRight, CheckCircle2, Clock, XCircle, AlertTriangle, RefreshCw, Shield } from 'lucide-react';
 import type { KYCStatus } from '@/features/kyc/types/kyc.types';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import {
+  kycVerificationPageTitle,
+  kycVerifiedBadgeLabel,
+  usesTierLanguage,
+  fullVerificationLabel,
+} from '@/lib/vendor/onboarding-policy-ui';
+import { resolveVendorTier2Path } from '@/lib/kyc/tier2-kyc-provider';
 import { useVendorOnboardingStatus } from '@/hooks/use-vendor-onboarding-status';
 import { isPendingTier2Review } from '@/features/kyc/utils/tier2-status';
 
-export type VendorTier = 'tier1_bvn' | 'tier2_full';
+export type VendorTier = 'tier0' | 'tier1_bvn' | 'tier2_full';
 
 interface KYCStatusCardProps {
   currentTier: VendorTier;
@@ -57,15 +64,19 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
     };
   }, [loadStatus]);
 
+  const tierLanguage = policy ? usesTierLanguage(policy) : true;
+  const verifiedLabel = policy ? kycVerifiedBadgeLabel(policy) : 'Tier 2 verified';
+  const fullLabel = policy ? fullVerificationLabel(policy) : 'Full verification';
+
   const handleUpgradeClick = () => {
+    const tier2Path = resolveVendorTier2Path();
     if (!policy?.onboarding.registrationFeeRequired) {
-      router.push('/vendor/kyc/tier2');
+      router.push(tier2Path);
       return;
     }
 
-    // Check if registration fee is paid before allowing full verification.
     if (registrationFeePaid) {
-      router.push('/vendor/kyc/tier2');
+      router.push(tier2Path);
     } else {
       router.push('/vendor/registration-fee');
     }
@@ -85,7 +96,9 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-semibold text-orange-900">Tier 2 Verification Expiring Soon</p>
+              <p className="font-semibold text-orange-900">
+                {tierLanguage ? 'Tier 2 verification expiring soon' : `${fullLabel} expiring soon`}
+              </p>
               <p className="text-sm text-orange-700 mt-1">
                 Your verification expires in <strong>{daysLeft} days</strong> ({expiresAt.toLocaleDateString()}).
                 Renew now to keep full bidding access.
@@ -112,7 +125,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
           </div>
           <div>
             <p className="font-semibold text-green-900 flex items-center gap-2">
-              Tier 2 Verified
+              {verifiedLabel}
               <span className="inline-flex items-center gap-1 bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">
                 <CheckCircle2 className="w-3 h-3" /> Active
               </span>
@@ -135,7 +148,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
           </div>
           <div>
             <p className="font-semibold text-green-900 flex items-center gap-2">
-              Tier 2 Verified
+              {verifiedLabel}
               <span className="inline-flex items-center gap-1 bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">
                 <CheckCircle2 className="w-3 h-3" /> Active
               </span>
@@ -155,7 +168,9 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
         <div className="flex items-start gap-3">
           <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="font-semibold text-red-900">Tier 2 Application Not Approved</p>
+            <p className="font-semibold text-red-900">
+              {tierLanguage ? 'Tier 2 application not approved' : 'KYC application not approved'}
+            </p>
             {kycStatus.rejectionReason && (
               <p className="text-sm text-red-700 mt-1">{kycStatus.rejectionReason}</p>
             )}
@@ -188,7 +203,9 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
         <div className="flex items-start gap-3">
           <Clock className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-semibold text-yellow-900">Tier 2 Application Under Review</p>
+            <p className="font-semibold text-yellow-900">
+              {tierLanguage ? 'Tier 2 application under review' : 'KYC application under review'}
+            </p>
             <p className="text-sm text-yellow-700 mt-1">
               Our team is reviewing your application. You'll be notified once the review is complete.
             </p>
@@ -198,8 +215,8 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
     );
   }
 
-  // Tier 1 — show upgrade banner
-  if (currentTier === 'tier1_bvn') {
+  // Tier 0 / Tier 1 — show upgrade or fee banner
+  if (currentTier === 'tier1_bvn' || currentTier === 'tier0') {
     // If registration fee not paid, show payment prompt
     if (policy?.onboarding.registrationFeeRequired !== false && registrationFeePaid === false) {
       return (
@@ -216,8 +233,8 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
               <div className="flex-1">
                 <h3 className="text-lg md:text-xl font-bold mb-1">Complete Your Registration</h3>
                 <p className="text-white/90 text-sm md:text-base">
-                  Pay the one-time registration fee to continue to full verification.
-                  {bidLimit ? ` Your current Tier 1 limit is ₦${bidLimit.toLocaleString()}.` : ''}
+                  Pay the one-time registration fee to continue to {fullLabel.toLowerCase()}.
+                  {bidLimit && tierLanguage ? ` Your current Tier 1 limit is ₦${bidLimit.toLocaleString()}.` : ''}
                 </p>
               </div>
               <button
@@ -247,7 +264,8 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
             </div>
             <div className="flex-1">
               <h3 className="text-lg md:text-xl font-bold mb-1">
-                {onboardingStatus?.bannerTitle ?? 'Complete Full Verification'}
+              {onboardingStatus?.bannerTitle ??
+                (policy ? kycVerificationPageTitle(policy) : 'Complete full verification')}
               </h3>
               <p className="text-white/90 text-sm md:text-base">
                 {onboardingStatus?.bannerBody ??

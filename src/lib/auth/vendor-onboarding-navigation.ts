@@ -20,7 +20,6 @@ import {
   usesSingleFullKycFlow,
 } from '@/lib/vendor/onboarding-policy-ui';
 import { isRegistrationFeeRequiredForPolicy } from '@/features/business-policy/onboarding-decisions';
-import { resolveVendorTier2Path } from '@/lib/kyc/tier2-kyc-provider';
 
 export {
   CHANGE_PASSWORD_PATH,
@@ -31,7 +30,14 @@ export {
   isVendorOnboardingPage,
   isVendorOnboardingApi,
 } from '@/lib/auth/vendor-onboarding-paths';
-export { usesSingleFullKycFlow, usesTierLanguage, fullVerificationLabel } from '@/lib/vendor/onboarding-policy-ui';
+export {
+  usesSingleFullKycFlow,
+  usesTierLanguage,
+  fullVerificationLabel,
+  kycVerificationPageTitle,
+  kycVerifiedBadgeLabel,
+  tier1SuccessRedirectPath,
+} from '@/lib/vendor/onboarding-policy-ui';
 
 export type VendorNavigationSnapshot = VendorPolicySnapshot & {
   role: string;
@@ -62,12 +68,19 @@ export function resolveVendorOnboardingPath(
   }
 
   const mode = policy.onboarding.mode;
+  const feeRequired = isRegistrationFeeRequiredForPolicy(policy);
+  const feeUnpaid = feeRequired && !vendor.registrationFeePaid;
+
+  // Registration fee before Tier 1 BVN — must not run the BVN gate first.
+  if (mode === 'fee_before_tier1' && feeUnpaid) {
+    return VENDOR_REGISTRATION_FEE_PATH;
+  }
 
   if (mode === 'single_full_kyc') {
-    if (isRegistrationFeeRequiredForPolicy(policy) && !vendor.registrationFeePaid) {
+    if (feeUnpaid) {
       return VENDOR_REGISTRATION_FEE_PATH;
     }
-    return resolveVendorTier2Path();
+    return null;
   }
 
   const bvnGate = resolveVendorBvnGate(policy, {
@@ -80,19 +93,10 @@ export function resolveVendorOnboardingPath(
   }
 
   if (mode === 'full_kyc_before_bidding') {
-    if (isRegistrationFeeRequiredForPolicy(policy) && !vendor.registrationFeePaid) {
+    if (feeUnpaid) {
       return VENDOR_REGISTRATION_FEE_PATH;
     }
-    return resolveVendorTier2Path();
-  }
-
-  if (
-    mode === 'fee_before_tier1' &&
-    isRegistrationFeeRequiredForPolicy(policy) &&
-    !vendor.registrationFeePaid &&
-    policy.onboarding.allowBidAfterTier1
-  ) {
-    return VENDOR_REGISTRATION_FEE_PATH;
+    return null;
   }
 
   return null;
@@ -113,6 +117,15 @@ export function resolveVendorBidBlockedMessage(
   if (decision.allowed) {
     return null;
   }
+
+  const mode = policy.onboarding.mode;
+  if (vendor.tier !== 'tier2_full' && mode === 'single_full_kyc') {
+    return 'Complete your KYC before placing a bid. Start verification from your dashboard, or contact support if you need help.';
+  }
+  if (vendor.tier !== 'tier2_full' && mode === 'full_kyc_before_bidding') {
+    return 'Complete business verification before placing a bid. You can browse auctions until your verification is approved.';
+  }
+
   return decision.message;
 }
 
