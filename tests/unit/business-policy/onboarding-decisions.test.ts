@@ -32,6 +32,20 @@ describe('onboarding policy decisions', () => {
     expect(result.value).toBe('bvn_gate_clear');
   });
 
+  it('skips BVN gate when browsing before KYC is allowed', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'full_kyc_before_bidding';
+    policy.onboarding.allowBrowseBeforeKyc = true;
+
+    const result = resolveVendorBvnGate(policy, {
+      role: 'vendor',
+      bvnVerified: false,
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.value).toBe('bvn_gate_clear');
+  });
+
   it('resolves Tier 1 bid limit from the default policy', () => {
     const result = resolveVendorBidLimit(DEFAULT_BUSINESS_POLICY, {
       tier: 'tier1_bvn',

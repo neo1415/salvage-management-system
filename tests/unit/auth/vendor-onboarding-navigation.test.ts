@@ -41,6 +41,7 @@ describe('resolveVendorOnboardingPath', () => {
     const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
     policy.onboarding.mode = 'full_kyc_before_bidding';
     policy.onboarding.registrationFeeRequired = true;
+    policy.onboarding.allowBrowseBeforeKyc = true;
 
     const path = resolveVendorOnboardingPath(policy, {
       ...baseVendor,
@@ -48,6 +49,17 @@ describe('resolveVendorOnboardingPath', () => {
       bvnVerified: true,
       registrationFeePaid: true,
     });
+
+    expect(path).toBeNull();
+  });
+
+  it('allows browsing before BVN when allowBrowseBeforeKyc is enabled', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'full_kyc_before_bidding';
+    policy.onboarding.allowBrowseBeforeKyc = true;
+    policy.onboarding.registrationFeeRequired = true;
+
+    const path = resolveVendorOnboardingPath(policy, baseVendor);
 
     expect(path).toBeNull();
   });

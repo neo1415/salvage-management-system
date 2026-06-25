@@ -9,7 +9,11 @@ export function resolveVendorBvnGate(
   policy: BusinessPolicy,
   vendor: Pick<VendorPolicySnapshot, 'role' | 'bvnVerified'>
 ): PolicyDecision {
-  const requiresBvn = vendor.role === 'vendor' && policy.kyc.tier1RequiresBvn && policy.onboarding.mode !== 'single_full_kyc';
+  const requiresBvn =
+    vendor.role === 'vendor' &&
+    policy.kyc.tier1RequiresBvn &&
+    policy.onboarding.mode !== 'single_full_kyc' &&
+    !policy.onboarding.allowBrowseBeforeKyc;
   const allowed = !requiresBvn || vendor.bvnVerified;
 
   return {
@@ -223,7 +227,10 @@ export function resolveRegistrationFeePaymentAccess(
     };
   }
 
-  const canPayBeforeBvn = policy.onboarding.mode === 'fee_before_tier1' || policy.onboarding.mode === 'single_full_kyc';
+  const canPayBeforeBvn =
+    policy.onboarding.mode === 'fee_before_tier1' ||
+    policy.onboarding.mode === 'single_full_kyc' ||
+    (policy.onboarding.mode === 'full_kyc_before_bidding' && policy.onboarding.allowBrowseBeforeKyc);
   if (policy.kyc.tier1RequiresBvn && !canPayBeforeBvn && !vendor.bvnVerified) {
     return {
       allowed: false,
@@ -290,7 +297,7 @@ export function resolveTier2Access(
     };
   }
 
-  if (policy.kyc.tier1RequiresBvn && policy.onboarding.mode !== 'single_full_kyc' && !vendor.bvnVerified) {
+  if (policy.kyc.tier1RequiresBvn && policy.onboarding.mode !== 'single_full_kyc' && !policy.onboarding.allowBrowseBeforeKyc && !vendor.bvnVerified) {
     return {
       allowed: false,
       value: 'bvn_required',

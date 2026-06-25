@@ -77,7 +77,7 @@ export function resolveVendorOnboardingPath(
   }
 
   if (mode === 'single_full_kyc') {
-    if (feeUnpaid) {
+    if (feeUnpaid && !policy.onboarding.allowBrowseBeforeKyc) {
       return VENDOR_REGISTRATION_FEE_PATH;
     }
     return null;
@@ -93,9 +93,6 @@ export function resolveVendorOnboardingPath(
   }
 
   if (mode === 'full_kyc_before_bidding') {
-    if (feeUnpaid) {
-      return VENDOR_REGISTRATION_FEE_PATH;
-    }
     return null;
   }
 
