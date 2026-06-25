@@ -47,6 +47,16 @@ export default function Tier1KYCPage() {
     }
     if (status !== 'authenticated') return;
 
+    fetch('/api/vendor/onboarding-status', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        const redirectPath = payload?.data?.redirectPath;
+        if (redirectPath === '/vendor/registration-fee') {
+          router.replace('/vendor/registration-fee');
+        }
+      })
+      .catch(() => undefined);
+
     fetch('/api/settings/profile')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {

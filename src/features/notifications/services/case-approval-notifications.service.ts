@@ -170,17 +170,18 @@ export async function notifyAdjusterOfCaseApproval(
       },
     });
 
-    await emailService.sendCaseApprovalEmail(ctx.creatorEmail, {
-      adjusterName: ctx.creatorName,
-      caseId: ctx.caseId,
-      claimReference: ctx.claimReference,
-      assetType: ctx.assetType,
-      status: 'approved',
-      comment: ctx.comment,
-      managerName: ctx.managerName,
-      appUrl: ctx.appUrl,
-      priceAdjustments: ctx.priceAdjustments,
-    });
+    // Adjuster approval email disabled for now — keep SMS + in-app notification.
+    // await emailService.sendCaseApprovalEmail(ctx.creatorEmail, {
+    //   adjusterName: ctx.creatorName,
+    //   caseId: ctx.caseId,
+    //   claimReference: ctx.claimReference,
+    //   assetType: ctx.assetType,
+    //   status: 'approved',
+    //   comment: ctx.comment,
+    //   managerName: ctx.managerName,
+    //   appUrl: ctx.appUrl,
+    //   priceAdjustments: ctx.priceAdjustments,
+    // });
   } catch (error) {
     console.error(`[CaseApproval] Adjuster email/in-app failed:`, error);
   }

@@ -87,6 +87,10 @@ export async function POST(request: NextRequest) {
     const deviceType = getDeviceType(userAgent);
 
     // Send OTP with context-aware rate limiting
+    const session = await auth();
+    const pushUserId =
+      context === 'bidding' && session?.user?.id ? session.user.id : undefined;
+
     const result = await otpService.sendOTP(
       phoneNumber, 
       ipAddress, 
@@ -94,7 +98,8 @@ export async function POST(request: NextRequest) {
       userEmail,
       userFullName,
       context,
-      auctionId
+      auctionId,
+      pushUserId
     );
 
     if (!result.success) {

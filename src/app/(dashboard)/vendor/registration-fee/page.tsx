@@ -5,35 +5,53 @@ import { useSearchParams } from 'next/navigation';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { RegistrationFeeModal } from '@/components/vendor/registration-fee-modal';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { resolveVendorTier2Path } from '@/lib/kyc/tier2-kyc-provider';
+
+function resolvePostPaymentPath(onboardingMode?: string): string {
+  if (onboardingMode === 'fee_before_tier1') {
+    return '/vendor/kyc/tier1';
+  }
+  return resolveVendorTier2Path();
+}
 
 function RegistrationFeePageContent() {
   const router = useAppRouter();
   const searchParams = useSearchParams();
   const paymentStatus = searchParams.get('payment');
-  
+  const [onboardingMode, setOnboardingMode] = useState<string | undefined>();
+
   const [status, setStatus] = useState<'loading' | 'paid' | 'unpaid' | 'success' | 'failed'>('loading');
   const [error, setError] = useState<string | null>(null);
 
+  const goToNextStep = () => {
+    router.push(resolvePostPaymentPath(onboardingMode));
+  };
+
   useEffect(() => {
-    // If coming back from online checkout with success
+    fetch('/api/vendor/onboarding-status', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (payload?.data?.onboardingMode) {
+          setOnboardingMode(payload.data.onboardingMode);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     if (paymentStatus === 'success') {
       setStatus('success');
-      // Redirect to full verification after 3 seconds
-      setTimeout(() => {
-        router.push('/vendor/kyc/tier2');
-      }, 3000);
+      setTimeout(() => goToNextStep(), 3000);
       return;
     }
 
-    // If payment failed
     if (paymentStatus === 'failed') {
       setStatus('failed');
       return;
     }
 
-    // Otherwise check payment status
     checkPaymentStatus();
-  }, [paymentStatus]);
+  }, [paymentStatus, onboardingMode]);
 
   const checkPaymentStatus = async () => {
     try {
@@ -41,16 +59,13 @@ function RegistrationFeePageContent() {
       const result = await response.json();
 
       if (!result.data?.required) {
-        router.push('/vendor/kyc/tier2');
+        goToNextStep();
         return;
       }
 
       if (result.data?.paid) {
         setStatus('paid');
-        // Redirect to full verification after 2 seconds
-        setTimeout(() => {
-          router.push('/vendor/kyc/tier2');
-        }, 2000);
+        setTimeout(() => goToNextStep(), 2000);
       } else {
         setStatus('unpaid');
       }
@@ -61,7 +76,6 @@ function RegistrationFeePageContent() {
     }
   };
 
-  // Loading state
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
@@ -73,37 +87,34 @@ function RegistrationFeePageContent() {
     );
   }
 
-  // Payment success state
   if (status === 'success' || status === 'paid') {
+    const nextLabel =
+      onboardingMode === 'fee_before_tier1' ? 'Continue to identity verification' : 'Continue verification';
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 className="w-12 h-12 text-green-600" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-3">
-            Payment Confirmed!
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-3">Payment Confirmed!</h1>
           <p className="text-gray-700 mb-6">
-            Your registration fee has been successfully processed. You can now continue to full verification.
+            Your registration fee has been successfully processed.
           </p>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <p className="text-sm text-blue-800">
-              Redirecting you to verification...
-            </p>
+            <p className="text-sm text-blue-800">Redirecting you to the next step...</p>
           </div>
           <button
-            onClick={() => router.push('/vendor/kyc/tier2')}
+            onClick={goToNextStep}
             className="w-full px-6 py-3 bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] text-white font-bold rounded-lg hover:shadow-lg transition-all"
           >
-            Continue Verification
+            {nextLabel}
           </button>
         </div>
       </div>
     );
   }
 
-  // Payment failed state
   if (status === 'failed') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
@@ -111,24 +122,20 @@ function RegistrationFeePageContent() {
           <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <XCircle className="w-12 h-12 text-red-600" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-3">
-            Payment Failed
-          </h1>
-          <p className="text-gray-700 mb-6">
-            Your payment could not be processed. Please try again.
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-3">Payment Failed</h1>
+          <p className="text-gray-700 mb-6">Your payment could not be processed. Please try again.</p>
           <div className="flex gap-3">
             <button
-              onClick={() => router.push('/vendor/dashboard')}
-              className="flex-1 px-6 py-3 border-2 border-gray-300 rounded-lg text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
-            >
-              Go to Dashboard
-            </button>
-            <button
               onClick={() => setStatus('unpaid')}
-              className="flex-1 px-6 py-3 bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] text-white font-bold rounded-lg hover:shadow-lg transition-all"
+              className="flex-1 px-6 py-3 bg-[var(--brand-primary)] text-white font-bold rounded-lg hover:shadow-lg transition-all"
             >
               Try Again
+            </button>
+            <button
+              onClick={() => router.push('/vendor/dashboard')}
+              className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-all"
+            >
+              Back to Dashboard
             </button>
           </div>
         </div>
@@ -136,29 +143,22 @@ function RegistrationFeePageContent() {
     );
   }
 
-  // Unpaid state - show modal
   return (
     <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center p-4">
-      {error && (
-        <div className="absolute top-4 left-4 right-4 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700 max-w-md mx-auto">
-          {error}
-        </div>
-      )}
-      <RegistrationFeeModal 
-        onClose={() => router.push('/vendor/dashboard')} 
-        showCloseButton={true}
-      />
+      <RegistrationFeeModal onClose={() => router.push('/vendor/dashboard')} showCloseButton={false} />
     </div>
   );
 }
 
 export default function RegistrationFeePage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] flex items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-white" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand-primary)]" />
+        </div>
+      }
+    >
       <RegistrationFeePageContent />
     </Suspense>
   );

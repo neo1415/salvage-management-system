@@ -28,6 +28,20 @@ export interface AccurateGeolocationOptions {
   timeoutMs?: number;
 }
 
+const NIGERIA_LAT_MIN = 4;
+const NIGERIA_LAT_MAX = 14.5;
+const NIGERIA_LNG_MIN = 2.5;
+const NIGERIA_LNG_MAX = 15;
+
+function isWithinNigeria(latitude: number, longitude: number): boolean {
+  return (
+    latitude >= NIGERIA_LAT_MIN &&
+    latitude <= NIGERIA_LAT_MAX &&
+    longitude >= NIGERIA_LNG_MIN &&
+    longitude <= NIGERIA_LNG_MAX
+  );
+}
+
 /**
  * Get accurate geolocation using browser GPS ONLY
  * Browser GPS is far more accurate (5-15m) than Google API IP-based fallback (100km+)
@@ -123,6 +137,15 @@ async function getBrowserGeolocation(options: AccurateGeolocationOptions = {}): 
     });
 
     console.log('📍 GPS Accuracy:', position.coords.accuracy + 'm');
+
+    if (!isWithinNigeria(position.coords.latitude, position.coords.longitude)) {
+      throw {
+        code: 'POSITION_UNAVAILABLE',
+        message:
+          'GPS fix appears outside Nigeria. Move to an open area and tap GPS again, or enter a precise Nigerian address.',
+      } as GeolocationError;
+    }
+
     if (position.coords.accuracy > acceptableAccuracyMeters) {
       console.warn(
         `GPS accuracy (${Math.round(position.coords.accuracy)}m) is above preferred threshold ` +
@@ -190,6 +213,31 @@ async function getBrowserGeolocation(options: AccurateGeolocationOptions = {}): 
  * Uses OpenStreetMap Nominatim API (free, no API key required)
  */
 async function reverseGeocode(latitude: number, longitude: number): Promise<string> {
+  const publicKey =
+    typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY : undefined;
+
+  if (publicKey) {
+    try {
+      const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+      url.searchParams.set('latlng', `${latitude},${longitude}`);
+      url.searchParams.set('key', publicKey);
+      url.searchParams.set('region', 'ng');
+
+      const response = await fetch(url.toString());
+      if (response.ok) {
+        const data = (await response.json()) as {
+          status?: string;
+          results?: Array<{ formatted_address?: string }>;
+        };
+        if (data.status === 'OK' && data.results?.[0]?.formatted_address) {
+          return data.results[0].formatted_address;
+        }
+      }
+    } catch (error) {
+      console.warn('Google reverse geocode failed, falling back to OpenStreetMap:', error);
+    }
+  }
+
   try {
     const response = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,

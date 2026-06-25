@@ -223,6 +223,13 @@ export async function loadVendorNavigationSnapshot(userId: string): Promise<Vend
   };
 }
 
+export function resolvePostRegistrationFeePath(policy: BusinessPolicy): string {
+  if (policy.onboarding.mode === 'fee_before_tier1') {
+    return '/vendor/kyc/tier1';
+  }
+  return '/vendor/dashboard';
+}
+
 export async function resolveVendorOnboardingRedirectForUser(userId: string): Promise<string | null> {
   const snapshot = await loadVendorNavigationSnapshot(userId);
   if (!snapshot) {

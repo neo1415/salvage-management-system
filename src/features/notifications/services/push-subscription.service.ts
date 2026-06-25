@@ -64,6 +64,7 @@ async function getPolicyPushAssets(): Promise<{ icon: string; badge: string }> {
 
 function preferenceKeyForType(type?: string): PreferenceToggle | null {
   switch (type) {
+    case 'bidding_otp':
     case 'outbid':
       return 'bidAlerts';
     case 'auction-ending':
@@ -162,7 +163,9 @@ export async function sendPushToUser(
       return { success: false, sentCount: 0, errors: ['Push disabled'] };
     }
 
-    const preferenceKey = preferenceKeyForType(payload.data?.type);
+    // Bidding OTP push must not be blocked by bid-alert preference toggles.
+    const preferenceKey =
+      payload.data?.type === 'bidding_otp' ? null : preferenceKeyForType(payload.data?.type);
     if (preferences && preferenceKey && !preferences[preferenceKey]) {
       console.log(`Push notification ${payload.data?.type} disabled for user ${userId}`);
       return { success: false, sentCount: 0, errors: ['Notification type disabled'] };

@@ -99,20 +99,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const bvnRequiredBeforeFee =
-      policy.kyc.tier1RequiresBvn && policy.onboarding.mode !== 'single_full_kyc';
-
-    if (!vendor.bvnVerifiedAt && bvnRequiredBeforeFee) {
-      return NextResponse.json(
-        {
-          error: 'Identity verification required',
-          message: 'Complete identity verification before paying the registration fee.',
-        },
-        { status: 400 }
-      );
-    }
-
-    // 4. Check if already paid
     if (vendor.registrationFeePaid) {
       return NextResponse.json(
         { 

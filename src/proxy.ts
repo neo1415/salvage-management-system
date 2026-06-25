@@ -88,7 +88,13 @@ export async function proxy(request: NextRequest) {
       const onboardingPath = resolveVendorOnboardingPath(policy, snapshot);
 
       if (onboardingPath) {
-        if (pathname.startsWith('/vendor/') && !isVendorOnboardingPage(pathname)) {
+        const targetBase = onboardingPath.split('?')[0];
+        const onWrongOnboardingPage =
+          isVendorOnboardingPage(pathname) &&
+          pathname !== targetBase &&
+          !pathname.startsWith(`${targetBase}/`);
+
+        if (pathname.startsWith('/vendor/') && (!isVendorOnboardingPage(pathname) || onWrongOnboardingPage)) {
           return NextResponse.redirect(new URL(onboardingPath, request.url));
         }
 

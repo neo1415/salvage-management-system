@@ -846,6 +846,7 @@ function NewCasePageContent() {
    */
   useEffect(() => {
     if (isOffline || isCapturingGPS) return;
+    if (coordinateSource === 'gps' && gpsAccuracy !== null && gpsAccuracy <= 100) return;
 
     const address = (locationName || '').trim();
     if (address.length < 5) return;
@@ -891,7 +892,7 @@ function NewCasePageContent() {
         clearTimeout(addressGeocodeTimerRef.current);
       }
     };
-  }, [locationName, isOffline, isCapturingGPS]);
+  }, [locationName, isOffline, isCapturingGPS, coordinateSource, gpsAccuracy]);
 
   /**
    * Capture GPS location using device GPS (most accurate on phones).
@@ -914,8 +915,8 @@ function NewCasePageContent() {
       // low-quality browser position.
       const result = await getAccurateGeolocation({
         desiredAccuracyMeters: 50,
-        acceptableAccuracyMeters: 150,
-        timeoutMs: 30000,
+        acceptableAccuracyMeters: 80,
+        timeoutMs: 45000,
       });
 
       const location: GeoLocation = {
