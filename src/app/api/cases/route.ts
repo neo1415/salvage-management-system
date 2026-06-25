@@ -87,7 +87,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!body.marketValue) {
+    const policy = await businessPolicyService.getEffectivePolicy();
+    const managerRunsAiAssessment = policy.cases.aiDamageAssessmentRunner === 'salvage_manager';
+
+    if (!managerRunsAiAssessment && !body.marketValue) {
       return NextResponse.json(
         { success: false, error: 'Market value is required' },
         { status: 400 }
@@ -143,7 +146,6 @@ export async function POST(request: NextRequest) {
     const userAgent = headers.get('user-agent') || 'unknown';
     const deviceType = getDeviceTypeFromUserAgent(userAgent);
 
-    const policy = await businessPolicyService.getEffectivePolicy();
     const assetTypeDecision = resolveCaseAssetTypeAllowed(policy, body.assetType);
 
     await logPolicyDecision({

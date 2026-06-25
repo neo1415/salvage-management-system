@@ -112,7 +112,7 @@ export interface CreateCaseInput {
   branchName?: string;
   assetType: ExtendedAssetType;
   assetDetails: ExtendedAssetDetails;
-  marketValue: number;
+  marketValue?: number;
   photos: Buffer[]; // Photo buffers to upload
   photoMetadata?: ImageUploadClientMetadata[];
   gpsLocation: GeoPoint;
@@ -310,14 +310,21 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
     }
   }
 
-  // Validate market value
-  if (!input.marketValue || input.marketValue <= 0) {
-    errors.push('Market value must be positive');
-    console.error('❌ Market value validation failed:', {
-      marketValue: input.marketValue,
-      type: typeof input.marketValue,
-      isPositive: input.marketValue > 0
-    });
+  // Validate market value (skipped when salvage manager runs AI assessment)
+  const policy = await businessPolicyService.getEffectivePolicy();
+  const managerRunsAiAssessment =
+    policy.cases.aiDamageAssessmentRunner === 'salvage_manager' &&
+    input.status !== 'draft';
+
+  if (!managerRunsAiAssessment) {
+    if (!input.marketValue || input.marketValue <= 0) {
+      errors.push('Market value must be positive');
+      console.error('❌ Market value validation failed:', {
+        marketValue: input.marketValue,
+        type: typeof input.marketValue,
+        isPositive: (input.marketValue ?? 0) > 0,
+      });
+    }
   }
 
   // Validate photos
@@ -441,6 +448,7 @@ export async function createCase(
     const policy = await businessPolicyService.getEffectivePolicy();
     const managerRunsAiAssessment =
       policy.cases.aiDamageAssessmentRunner === 'salvage_manager' && !isDraft;
+    const resolvedMarketValue = input.marketValue ?? 0;
 
     // CRITICAL FIX: Use AI assessment from frontend if provided
     // The frontend runs AI assessment in real-time during photo upload
@@ -487,7 +495,7 @@ export async function createCase(
           reasons: ['Frontend assessment completed'],
         },
         estimatedSalvageValue: input.aiAssessmentResult.estimatedSalvageValue,
-        estimatedRepairCost: input.aiAssessmentResult.estimatedRepairCost || input.marketValue * 0.7,
+        estimatedRepairCost: input.aiAssessmentResult.estimatedRepairCost || resolvedMarketValue * 0.7,
         reservePrice: input.aiAssessmentResult.reservePrice,
         isRepairable: input.aiAssessmentResult.isRepairable ?? true,
         isTotalLoss: input.aiAssessmentResult.isTotalLoss, // NEW: Store isTotalLoss field
@@ -514,7 +522,7 @@ export async function createCase(
         analysisMethod: input.aiAssessmentResult.analysisMethod || 'gemini' as const,
         photoCount: photoUrls.length,
         qualityTier: (input.aiAssessmentResult.qualityTier || 'fair') as any,
-        marketValue: input.marketValue,
+        marketValue: resolvedMarketValue,
         // CRITICAL: Extract detailed Gemini analysis results
         itemDetails: input.aiAssessmentResult.itemDetails,
         damagedParts: input.aiAssessmentResult.damagedParts,
@@ -549,16 +557,16 @@ export async function createCase(
           photoQuality: 50,
           reasons: ['No frontend assessment available'],
         },
-        estimatedSalvageValue: input.marketValue * 0.3,
-        estimatedRepairCost: input.marketValue * 0.7,
-        reservePrice: input.marketValue * 0.25,
+        estimatedSalvageValue: resolvedMarketValue * 0.3,
+        estimatedRepairCost: resolvedMarketValue * 0.7,
+        reservePrice: resolvedMarketValue * 0.25,
         isRepairable: true,
         recommendation: 'Assess for salvage auction',
         warnings: [],
         analysisMethod: 'mock' as const,
         photoCount: photoUrls.length,
         qualityTier: 'fair' as const,
-        marketValue: input.marketValue,
+        marketValue: resolvedMarketValue,
       };
     }
     
@@ -571,7 +579,7 @@ export async function createCase(
       branchName: input.branchName?.trim() || null,
       assetType: input.assetType,
       assetDetails: input.assetDetails,
-      marketValue: input.marketValue.toString(),
+      marketValue: String(resolvedMarketValue),
       // AI assessment fields are nullable for draft cases
       estimatedSalvageValue: aiAssessment ? aiAssessment.estimatedSalvageValue.toString() : null,
       reservePrice: aiAssessment ? aiAssessment.reservePrice.toString() : null,

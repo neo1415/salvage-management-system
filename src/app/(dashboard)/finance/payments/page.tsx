@@ -66,6 +66,12 @@ interface Payment {
     claimReference: string;
     assetType: string;
     assetDetails: Record<string, unknown>;
+    branchName?: string | null;
+    policyNumber?: string | null;
+    brokerName?: string | null;
+    agencyName?: string | null;
+    insuranceClass?: string | null;
+    caseName?: string;
   } | null; // Can be null for registration fees
 }
 
@@ -1983,6 +1989,12 @@ export default function FinancePaymentsPage() {
                 <div className="bg-gray-50 p-4 rounded-lg">
                   {selectedPayment.case ? (
                     <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2">
+                        <p className="text-xs text-gray-500 mb-1">Case / Asset</p>
+                        <p className="font-medium text-gray-900">
+                          {selectedPayment.case.caseName || selectedPayment.case.claimReference}
+                        </p>
+                      </div>
                       <div>
                         <p className="text-xs text-gray-500 mb-1">Claim Reference</p>
                         <p className="font-medium text-gray-900">
@@ -1995,6 +2007,32 @@ export default function FinancePaymentsPage() {
                           {selectedPayment.case.assetType}
                         </span>
                       </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Branch</p>
+                        <p className="font-medium text-gray-900">
+                          {selectedPayment.case.branchName || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Policy Number</p>
+                        <p className="font-medium text-gray-900">
+                          {selectedPayment.case.policyNumber || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Broker</p>
+                        <p className="font-medium text-gray-900">
+                          {selectedPayment.case.brokerName || selectedPayment.case.agencyName || 'N/A'}
+                        </p>
+                      </div>
+                      {selectedPayment.case.insuranceClass ? (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Insurance Class</p>
+                          <p className="font-medium text-gray-900 capitalize">
+                            {selectedPayment.case.insuranceClass}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div>

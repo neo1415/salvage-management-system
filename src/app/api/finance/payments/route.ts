@@ -9,6 +9,7 @@ import { salvageCases } from '@/lib/db/schema/cases';
 import { escrowWallets } from '@/lib/db/schema/escrow';
 import { releaseForms } from '@/lib/db/schema/release-forms';
 import { businessPolicyService } from '@/features/business-policy';
+import { formatAssetName } from '@/lib/utils/asset-name';
 import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
 
 // Force dynamic rendering - never cache this route
@@ -231,6 +232,16 @@ export async function GET(request: NextRequest) {
           claimReference: caseData.claimReference,
           assetType: caseData.assetType,
           assetDetails: caseData.assetDetails,
+          branchName: caseData.branchName,
+          policyNumber: caseData.policyNumber,
+          brokerName: caseData.brokerName,
+          agencyName: caseData.agencyName,
+          insuranceClass: caseData.insuranceClass,
+          caseName: formatAssetName(
+            caseData.assetType,
+            caseData.assetDetails as Record<string, unknown>,
+            caseData.claimReference
+          ),
         } : null, // Can be null for registration fees
       };
 
