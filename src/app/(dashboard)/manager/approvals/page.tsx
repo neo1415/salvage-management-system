@@ -484,9 +484,14 @@ export default function ApprovalsPage() {
       const caseResponse = await fetch(`/api/cases/${selectedCase.id}`);
       const casePayload = await caseResponse.json();
       if (caseResponse.ok && casePayload.success && casePayload.data) {
+        const freshAiAssessment = payload.data?.aiAssessment;
         setSelectedCase({
           ...(casePayload.data as CaseData),
-          aiAssessment: (casePayload.data as CaseData).aiAssessment || payload.data?.aiAssessment || selectedCase.aiAssessment,
+          damageSeverity: payload.data?.damageSeverity || (casePayload.data as CaseData).damageSeverity,
+          marketValue: String(payload.data?.marketValue ?? (casePayload.data as CaseData).marketValue),
+          estimatedSalvageValue: String(payload.data?.estimatedSalvageValue ?? (casePayload.data as CaseData).estimatedSalvageValue),
+          reservePrice: String(payload.data?.reservePrice ?? (casePayload.data as CaseData).reservePrice),
+          aiAssessment: freshAiAssessment || (casePayload.data as CaseData).aiAssessment || selectedCase.aiAssessment,
         });
       } else if (payload.data?.aiAssessment) {
         setSelectedCase({

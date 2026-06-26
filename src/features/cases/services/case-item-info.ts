@@ -1,4 +1,9 @@
 import type { UniversalItemInfo } from '@/features/cases/services/ai-assessment-enhanced.service';
+import {
+  isUniversalMarketSearchCondition,
+  mapQualityToUniversalCondition,
+  validateQualityTier,
+} from '@/features/valuations/services/condition-mapping.service';
 
 type AssetDetails = Record<string, unknown>;
 
@@ -12,11 +17,11 @@ export function buildUniversalItemInfoFromCase(input: {
     : {}) as AssetDetails;
 
   const marketValue = Number(input.marketValue);
-  const conditionRaw = typeof details.condition === 'string' ? details.condition : 'Nigerian Used';
+  const conditionRaw = typeof details.condition === 'string' ? details.condition : undefined;
   const condition = (
-    ['Brand New', 'Nigerian Used', 'Foreign Used (Tokunbo)', 'Heavily Used'].includes(conditionRaw)
+    isUniversalMarketSearchCondition(conditionRaw)
       ? conditionRaw
-      : 'Nigerian Used'
+      : mapQualityToUniversalCondition(validateQualityTier(conditionRaw || 'fair', 'manager AI case rebuild'))
   ) as UniversalItemInfo['condition'];
 
   const base: UniversalItemInfo = {
