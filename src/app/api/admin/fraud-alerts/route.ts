@@ -278,6 +278,10 @@ export async function GET(request: NextRequest) {
         checksCompleted?: string[];
         failedChecks?: string[];
         reasonCodes?: string[];
+        comparisonStatus?: string;
+        pickupEvidenceId?: string;
+        findings?: string[];
+        observedDifferences?: string[];
         reviewHistory?: Array<{
           action: string;
           reason?: string;
@@ -329,11 +333,22 @@ export async function GET(request: NextRequest) {
         : winnerPayment
           ? 'payment_verified'
           : auction?.status;
-      const linkedProviderRecord = providerRecords.find(record =>
-        (metadata?.providerReference && record.providerReference === metadata.providerReference) ||
-        (primaryVendorId && record.vendorId === primaryVendorId)
-      );
-      const normalizedProviderResult = (linkedProviderRecord?.normalizedResult as Record<string, unknown> | null) ?? null;
+      const isPickupEvidenceAlert = metadata?.source === 'pickup_evidence_comparison';
+      const linkedProviderRecord = isPickupEvidenceAlert
+        ? providerRecords.find(
+            (record) =>
+              metadata?.providerReference &&
+              record.providerReference === metadata.providerReference
+          )
+        : providerRecords.find(
+            (record) =>
+              (metadata?.providerReference &&
+                record.providerReference === metadata.providerReference) ||
+              (primaryVendorId && record.vendorId === primaryVendorId)
+          );
+      const normalizedProviderResult = isPickupEvidenceAlert
+        ? null
+        : ((linkedProviderRecord?.normalizedResult as Record<string, unknown> | null) ?? null);
       const timeline = alertTimelineLogs
         .filter(log => log.entityId === alert.id || log.entityId === primaryVendorId || log.entityId === alert.entityId)
         .slice(0, 12)
@@ -369,21 +384,29 @@ export async function GET(request: NextRequest) {
                 : 'Fraud detection',
           evidence: reason,
         })),
-        evidenceSummary: {
-          source: metadata?.source || 'intelligence',
-          providerReference: metadata?.providerReference,
-          workflowReference: metadata?.workflowReference,
-          verificationType: metadata?.verificationType,
-          riskLevel: metadata?.riskLevel,
-          checksCompleted: metadata?.checksCompleted || [],
-          failedChecks: metadata?.failedChecks || [],
-          ipAddress: metadata?.ipAddress,
-          pendingReason: normalizedProviderResult?.pendingReason,
-          providerMessage: normalizedProviderResult?.providerMessage,
-          amlStatus: normalizedProviderResult?.amlStatus,
-          amlMatchDetails: normalizedProviderResult?.amlMatchDetails,
-        },
-        providerVerification: linkedProviderRecord ? {
+        evidenceSummary: isPickupEvidenceAlert
+          ? {
+              source: 'pickup_evidence_comparison',
+              comparisonStatus: metadata?.comparisonStatus,
+              pickupEvidenceId: metadata?.pickupEvidenceId,
+              findings: metadata?.findings || [],
+              observedDifferences: metadata?.observedDifferences || [],
+            }
+          : {
+              source: metadata?.source || 'intelligence',
+              providerReference: metadata?.providerReference,
+              workflowReference: metadata?.workflowReference,
+              verificationType: metadata?.verificationType,
+              riskLevel: metadata?.riskLevel,
+              checksCompleted: metadata?.checksCompleted || [],
+              failedChecks: metadata?.failedChecks || [],
+              ipAddress: metadata?.ipAddress,
+              pendingReason: normalizedProviderResult?.pendingReason,
+              providerMessage: normalizedProviderResult?.providerMessage,
+              amlStatus: normalizedProviderResult?.amlStatus,
+              amlMatchDetails: normalizedProviderResult?.amlMatchDetails,
+            },
+        providerVerification: isPickupEvidenceAlert || !linkedProviderRecord ? null : {
           id: linkedProviderRecord.id,
           provider: linkedProviderRecord.provider,
           providerReference: linkedProviderRecord.providerReference,
@@ -397,7 +420,7 @@ export async function GET(request: NextRequest) {
           reasonCodes: linkedProviderRecord.reasonCodes,
           displayMessage: linkedProviderRecord.displayMessage,
           updatedAt: linkedProviderRecord.updatedAt,
-        } : null,
+        },
         relatedLinks: {
           kycReview: primaryVendorId ? `/manager/kyc-approvals/${primaryVendorId}` : null,
           vendor: primaryVendorId ? `/manager/vendors` : null,

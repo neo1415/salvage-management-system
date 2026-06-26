@@ -91,8 +91,12 @@ export function PublicBusinessPolicyProvider({
     if (!state.policy?.branding || typeof document === 'undefined') return;
 
     const variables = getBrandCssVariables(state.policy.branding);
+    const root = document.documentElement;
     Object.entries(variables).forEach(([name, value]) => {
-      document.documentElement.style.setProperty(name, String(value));
+      const next = String(value);
+      if (root.style.getPropertyValue(name) !== next) {
+        root.style.setProperty(name, next);
+      }
     });
 
     document.title = `${state.policy.branding.brandName} - Salvage Recovery And Auction Management`;

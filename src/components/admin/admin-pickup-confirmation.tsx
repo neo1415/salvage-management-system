@@ -161,7 +161,7 @@ export function AdminPickupConfirmation({
       {/* Notes Field */}
       <div className="mb-6">
         <label htmlFor="admin-notes" className="block text-sm sm:text-base font-medium text-gray-700 mb-2">
-          Admin Notes {evidenceNeedsReview ? '(Required for evidence review)' : '(Optional)'}
+          Admin Notes {evidenceNeedsReview ? '(optional for evidence review)' : '(Optional)'}
         </label>
         <textarea
           id="admin-notes"
@@ -179,7 +179,7 @@ export function AdminPickupConfirmation({
           data-testid="admin-notes-input"
         />
         <p className="text-xs text-gray-500 mt-1">
-          {notes.length}/500 characters{evidenceNeedsReview ? ' - at least 20 characters required' : ''}
+          {notes.length}/500 characters
         </p>
       </div>
 

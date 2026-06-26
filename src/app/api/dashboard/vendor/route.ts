@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions, bids, payments, vendors, salvageCases, releaseForms } from '@/lib/db/schema';
-import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { pickupEvidence } from '@/lib/db/schema/pickup-evidence';
+import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 import { calculateAutoRating } from '@/features/vendors/services/auto-rating.service';
 import { formatRatingLabel } from '@/lib/metrics/dashboard-status';
@@ -65,6 +66,12 @@ interface PendingPickupConfirmation {
   auctionId: string;
   pickupConfirmedVendor: boolean;
   pickupConfirmedAdmin: boolean;
+  pickupEvidence: {
+    submitted: boolean;
+    underReview: boolean;
+    status: string | null;
+    submittedAt: string | null;
+  };
   case: {
     claimReference: string;
     assetType: string;
@@ -132,7 +139,7 @@ export async function GET() {
 
     // Try to get cached data. Include policy version so display-only policy changes
     // do not keep stale bid limits in the vendor dashboard cache.
-    const cacheKey = `dashboard:vendor:v4:${vendor.id}`;
+    const cacheKey = `dashboard:vendor:v5:${vendor.id}`;
     try {
       const cachedData = await cache.get<VendorDashboardData>(cacheKey);
 
@@ -141,7 +148,15 @@ export async function GET() {
         // Backward compatibility: older cache entries won't have this field.
         return NextResponse.json({
           ...cachedData,
-          pendingPickupConfirmations: cachedData.pendingPickupConfirmations ?? [],
+          pendingPickupConfirmations: (cachedData.pendingPickupConfirmations ?? []).map((pickup) => ({
+            ...pickup,
+            pickupEvidence: pickup.pickupEvidence ?? {
+              submitted: false,
+              underReview: false,
+              status: null,
+              submittedAt: null,
+            },
+          })),
           operationsControl: cachedData.operationsControl ?? {
             bidLimit: typeof bidLimitDecision.value === 'number' ? bidLimitDecision.value : undefined,
             wonAwaitingPayment: 0,
@@ -216,9 +231,53 @@ export async function GET() {
       pickupConfirmedAdmin: confirmation.pickupConfirmedAdmin ?? false,
     }));
 
+    const pendingAuctionIds = pendingPickupConfirmationsUnique.map((p) => p.auctionId);
+    const evidenceByAuction: Record<string, { status: string; submittedAt: string }> = {};
+
+    if (pendingAuctionIds.length > 0) {
+      const evidenceRows = await db
+        .select({
+          auctionId: pickupEvidence.auctionId,
+          comparisonStatus: pickupEvidence.comparisonStatus,
+          createdAt: pickupEvidence.createdAt,
+        })
+        .from(pickupEvidence)
+        .where(inArray(pickupEvidence.auctionId, pendingAuctionIds))
+        .orderBy(desc(pickupEvidence.createdAt));
+
+      for (const row of evidenceRows) {
+        if (!evidenceByAuction[row.auctionId]) {
+          evidenceByAuction[row.auctionId] = {
+            status: row.comparisonStatus,
+            submittedAt: row.createdAt.toISOString(),
+          };
+        }
+      }
+    }
+
+    const pendingPickupConfirmationsWithEvidence = pendingPickupConfirmationsUnique.map((confirmation) => {
+      const evidence = evidenceByAuction[confirmation.auctionId];
+      return {
+        ...confirmation,
+        pickupEvidence: evidence
+          ? {
+              submitted: true,
+              underReview: true,
+              status: evidence.status,
+              submittedAt: evidence.submittedAt,
+            }
+          : {
+              submitted: false,
+              underReview: false,
+              status: null,
+              submittedAt: null,
+            },
+      };
+    });
+
     const operationsControl = await calculateVendorOperationsControl(
       vendor.id,
-      pendingPickupConfirmationsUnique.length,
+      pendingPickupConfirmationsWithEvidence.length,
       typeof bidLimitDecision.value === 'number' ? bidLimitDecision.value : undefined
     );
 
@@ -229,7 +288,7 @@ export async function GET() {
       lastUpdated: new Date().toISOString(),
       vendorTier: vendor.tier as 'tier1_bvn' | 'tier2_full',
       bidLimit: typeof bidLimitDecision.value === 'number' ? bidLimitDecision.value : undefined,
-      pendingPickupConfirmations: pendingPickupConfirmationsUnique,
+      pendingPickupConfirmations: pendingPickupConfirmationsWithEvidence,
       operationsControl,
     };
 

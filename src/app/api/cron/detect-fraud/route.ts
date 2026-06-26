@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 import { shillBiddingDetectionService } from '@/features/fraud/services/shill-bidding-detection.service';
 import { paymentFraudDetectionService } from '@/features/fraud/services/payment-fraud-detection.service';
+import { ipAnalysisService } from '@/features/fraud/services/ip-analysis.service';
 import { fraudAlerts } from '@/lib/db/schema/intelligence';
 
 /**
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
   let totalVendorsAnalyzed = 0;
   let shillBiddingAlertsCreated = 0;
   let paymentFraudAlertsCreated = 0;
+  let ipClusterAlertsCreated = 0;
   let errorCount = 0;
 
   try {
@@ -103,12 +105,22 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    try {
+      const ipRescan = await ipAnalysisService.rescanRecentIpClusters(7);
+      ipClusterAlertsCreated = ipRescan.alertsCreated;
+      console.log('[Fraud Cron] IP cluster rescan complete', ipRescan);
+    } catch (error) {
+      console.error('[Fraud Cron] IP cluster rescan failed:', error);
+      errorCount++;
+    }
+
     const duration = Date.now() - startTime;
 
     console.log('[Fraud Cron] Detection complete', {
       vendorsAnalyzed: totalVendorsAnalyzed,
       shillBiddingAlerts: shillBiddingAlertsCreated,
       paymentFraudAlerts: paymentFraudAlertsCreated,
+      ipClusterAlerts: ipClusterAlertsCreated,
       errors: errorCount,
       durationMs: duration,
     });
@@ -119,6 +131,7 @@ export async function GET(request: NextRequest) {
         vendorsAnalyzed: totalVendorsAnalyzed,
         shillBiddingAlerts: shillBiddingAlertsCreated,
         paymentFraudAlerts: paymentFraudAlertsCreated,
+        ipClusterAlerts: ipClusterAlertsCreated,
         errors: errorCount,
         durationMs: duration,
       },

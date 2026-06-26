@@ -10,7 +10,7 @@
  * Features:
  * - Mobile-optimized card layout (2 cards per row)
  * - Modern faceted filters with URL persistence
- * - Search by asset name and claim reference with 300ms debounce
+ * - Search by asset name with 300ms debounce
  * - Lazy loading (20 auctions initially)
  * - Infinite scroll
  * - Pull-to-refresh
@@ -371,7 +371,7 @@ function AuctionBrowsingContent() {
     return formatAssetName(
       auction.case.assetType,
       auction.case.assetDetails as Record<string, unknown>,
-      auction.case.claimReference
+      auction.case.assetType.replace(/_/g, ' ')
     );
   };
 
@@ -718,7 +718,7 @@ function AuctionBrowsingContent() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by asset name or claim reference..."
+                placeholder="Search by asset name..."
                 className="w-full mb-2"
               />
             )}

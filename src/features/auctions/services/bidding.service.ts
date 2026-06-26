@@ -1055,6 +1055,15 @@ export class BiddingService {
    */
   private async analyzeIPPatterns(vendorId: string, ipAddress: string, auctionId: string): Promise<void> {
     try {
+      const trimmed = ipAddress?.trim();
+      if (!trimmed || trimmed.toLowerCase() === 'unknown') {
+        console.warn('[Bidding] Bid recorded with unknown IP — skipping IP fraud analysis', {
+          vendorId,
+          auctionId,
+        });
+        return;
+      }
+
       const { ipAnalysisService } = await import('@/features/fraud/services/ip-analysis.service');
       await ipAnalysisService.analyzeBiddingPatterns(vendorId, ipAddress, auctionId);
     } catch (error) {

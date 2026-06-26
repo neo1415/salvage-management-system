@@ -334,6 +334,51 @@ export async function getPickupContextByCode(pickupAuthCode: string): Promise<Pi
   return rows[0] ? mapPickupRow(rows[0]) : null;
 }
 
+async function notifyVendorPickupConfirmedChannels(context: PickupContext, confirmedAt: Date) {
+  const smsMessage = `Pickup confirmed: ${context.assetName}. Your transaction is complete.`;
+  const emailSubject = 'Pickup confirmed — transaction complete';
+  const emailBody = `${context.assetName} has been released. Your pickup was confirmed on ${confirmedAt.toLocaleString('en-NG')}. The transaction is complete.`;
+
+  if (context.vendorPhone) {
+    try {
+      const { smsService } = await import('@/features/notifications/services/sms.service');
+      await smsService.sendSMS({
+        to: context.vendorPhone,
+        message: smsMessage,
+        userId: context.vendorUserId,
+        category: 'routine',
+      });
+    } catch (error) {
+      console.warn('[Pickup] SMS notification failed', {
+        auctionId: context.auctionId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  if (context.vendorEmail) {
+    try {
+      const { emailService } = await import('@/features/notifications/services/email.service');
+      const { getAppUrl } = await import('@/features/notifications/templates/email-urls');
+      const auctionUrl = `${getAppUrl()}/vendor/auctions/${context.auctionId}`;
+      await emailService.sendEmail({
+        to: context.vendorEmail,
+        subject: emailSubject,
+        html: `
+          <p>Hi ${context.vendorName},</p>
+          <p>${emailBody}</p>
+          <p><a href="${auctionUrl}">View auction details</a></p>
+        `,
+      });
+    } catch (error) {
+      console.warn('[Pickup] Email notification failed', {
+        auctionId: context.auctionId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+}
+
 export async function confirmPickupByStaff(input: {
   pickupAuthCode?: string;
   auctionId?: string;
@@ -398,10 +443,6 @@ export async function confirmPickupByStaff(input: {
       ? parsedAdjustmentAmount
       : null;
   const reimbursementMethod = input.reimbursementMethod?.trim() || null;
-
-  if (evidenceNeedsReview && reviewNotes.length < 20) {
-    throw new Error('Pickup evidence needs review. Add review notes before confirming this pickup.');
-  }
 
   if (
     evidenceNeedsReview
@@ -492,6 +533,7 @@ export async function confirmPickupByStaff(input: {
         pickupConfirmedAt: now.toISOString(),
       },
     }),
+    notifyVendorPickupConfirmedChannels(context, now),
     logAction({
       userId: input.actor.userId,
       actionType: AuditActionType.PICKUP_CONFIRMED_ADMIN,

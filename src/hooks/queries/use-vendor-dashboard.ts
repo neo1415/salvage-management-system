@@ -44,6 +44,12 @@ interface PendingPickupConfirmation {
   auctionId: string;
   pickupConfirmedVendor: boolean;
   pickupConfirmedAdmin: boolean;
+  pickupEvidence: {
+    submitted: boolean;
+    underReview: boolean;
+    status: string | null;
+    submittedAt: string | null;
+  };
   case: {
     claimReference: string;
     assetType: string;

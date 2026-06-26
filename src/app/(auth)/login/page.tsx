@@ -182,7 +182,7 @@ function LoginForm() {
 
   return (
     <div
-      className={`min-h-screen p-4 ${theme === 'night' ? 'bg-[#0C0C0B]' : 'bg-slate-50'}`}
+      className={`min-h-screen p-4 ${theme === 'night' ? 'bg-[var(--brand-primary)]' : 'bg-slate-50'}`}
       style={template === 'nem_salvage' ? { background: getBrandGradient(branding) } : undefined}
     >
       <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-6xl items-center gap-8 lg:grid-cols-[1fr_440px]">

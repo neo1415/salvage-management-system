@@ -164,21 +164,21 @@ export async function GET(request: NextRequest) {
       conditions.push(like(salvageCases.locationName, `%${location}%`));
     }
 
-    // Search filter (asset name or claim reference)
-    // Search in claimReference and assetDetails JSON fields (make, model, description)
+    // Search filter — vendors search asset details only (not internal claim references)
     if (search) {
       const searchLower = search.toLowerCase();
-      conditions.push(
-        or(
-          like(salvageCases.claimReference, `%${search}%`),
-          // Search in JSON assetDetails fields using PostgreSQL JSON operators
-          sql`LOWER(CAST(${salvageCases.assetDetails}->>'make' AS TEXT)) LIKE ${`%${searchLower}%`}`,
-          sql`LOWER(CAST(${salvageCases.assetDetails}->>'model' AS TEXT)) LIKE ${`%${searchLower}%`}`,
-          sql`LOWER(CAST(${salvageCases.assetDetails}->>'description' AS TEXT)) LIKE ${`%${searchLower}%`}`,
-          sql`LOWER(CAST(${salvageCases.assetDetails}->>'brand' AS TEXT)) LIKE ${`%${searchLower}%`}`,
-          sql`LOWER(CAST(${salvageCases.assetDetails}->>'propertyType' AS TEXT)) LIKE ${`%${searchLower}%`}`
-        )
-      );
+      const isVendorSearch = session?.user?.role === 'vendor' || Boolean(vendorId);
+      const searchConditions = [
+        sql`LOWER(CAST(${salvageCases.assetDetails}->>'make' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+        sql`LOWER(CAST(${salvageCases.assetDetails}->>'model' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+        sql`LOWER(CAST(${salvageCases.assetDetails}->>'description' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+        sql`LOWER(CAST(${salvageCases.assetDetails}->>'brand' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+        sql`LOWER(CAST(${salvageCases.assetDetails}->>'propertyType' AS TEXT)) LIKE ${`%${searchLower}%`}`,
+      ];
+      if (!isVendorSearch) {
+        searchConditions.unshift(like(salvageCases.claimReference, `%${search}%`));
+      }
+      conditions.push(or(...searchConditions)!);
     }
 
     // Determine sort order

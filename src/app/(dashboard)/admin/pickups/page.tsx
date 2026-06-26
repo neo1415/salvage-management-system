@@ -508,7 +508,6 @@ export default function AdminPickupsPage() {
                       <p>Identity: <span className={scoreTone(pickup.pickupEvidence.assetIdentityScore)}>{pickup.pickupEvidence.assetIdentityScore ?? 'N/A'}%</span></p>
                       <p>Quantity: <span className={scoreTone(pickup.pickupEvidence.quantityMatchScore)}>{pickup.pickupEvidence.quantityMatchScore ?? 'N/A'}%</span></p>
                       <p>Condition: <span className={scoreTone(pickup.pickupEvidence.conditionMatchScore)}>{pickup.pickupEvidence.conditionMatchScore ?? 'N/A'}%</span></p>
-                      <p>Method: {pickup.pickupEvidence.method || 'unknown'}</p>
                     </div>
                     <p className={`mt-2 text-xs ${scoreTone(pickup.pickupEvidence.overallMatchScore)}`}>
                       Overall match: {pickup.pickupEvidence.overallMatchScore ?? pickup.pickupEvidence.confidenceScore ?? 'N/A'}%
@@ -608,9 +607,6 @@ export default function AdminPickupsPage() {
                           {selectedPickup.pickupEvidence.photoCount ?? 0} photo{selectedPickup.pickupEvidence.photoCount === 1 ? '' : 's'}
                           {typeof selectedPickup.pickupEvidence.confidenceScore === 'number'
                             ? ` | ${selectedPickup.pickupEvidence.confidenceScore}% confidence`
-                            : ''}
-                          {selectedPickup.pickupEvidence.method
-                            ? ` | ${selectedPickup.pickupEvidence.method.replace(/_/g, ' ')}`
                             : ''}
                         </p>
                       </div>

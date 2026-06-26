@@ -22,6 +22,13 @@ function normalizeIpAddress(ipAddress: string): string {
   return trimmed;
 }
 
+function isUnusableIpForAnalysis(ipAddress: string): boolean {
+  const normalized = normalizeIpAddress(ipAddress);
+  if (!normalized || normalized === 'unknown') return true;
+  if (normalized === '127.0.0.1' || normalized === '::1' || normalized === 'localhost') return true;
+  return false;
+}
+
 export class IPAnalysisService {
   async analyzeBiddingPatterns(vendorId: string, ipAddress: string, auctionId?: string): Promise<void> {
     try {
@@ -32,7 +39,12 @@ export class IPAnalysisService {
       }
 
       const normalizedIp = normalizeIpAddress(ipAddress);
-      if (!normalizedIp) {
+      if (isUnusableIpForAnalysis(ipAddress)) {
+        console.warn('[IP Fraud] Skipping analysis — IP address unavailable or unusable', {
+          vendorId,
+          auctionId,
+          ipAddress: normalizedIp,
+        });
         return;
       }
 
@@ -74,6 +86,20 @@ export class IPAnalysisService {
         .map((row) => row.auctionId);
 
       if (competingAuctions.length === 0) {
+        // Same network / shared IP across accounts even on different auctions (lower severity).
+        if (vendorIds.length >= 2) {
+          const crossAuctionTarget = auctionId || recentBids.find((bid) => bid.auctionId)?.auctionId;
+          if (crossAuctionTarget) {
+            await this.createIPFraudAlert({
+              ipAddress: normalizedIp,
+              vendorIds,
+              competingAuctions: Array.from(new Set(recentBids.map((bid) => bid.auctionId))),
+              severity: 'medium',
+              primaryAuctionId: crossAuctionTarget,
+              reasonSuffix: `${vendorIds.length} vendor accounts share IP ${normalizedIp} across recent bids (cross-auction pattern)`,
+            });
+          }
+        }
         return;
       }
 
@@ -87,6 +113,7 @@ export class IPAnalysisService {
         competingAuctions,
         severity: 'high',
         primaryAuctionId: targetAuctionId,
+        reasonSuffix: `${vendorIds.length} vendor accounts share IP ${normalizedIp} on the same auction`,
       });
     } catch (error) {
       console.error('Failed to analyze bidding patterns:', error);
@@ -95,6 +122,16 @@ export class IPAnalysisService {
 
   async analyzeIPClustering(ipAddress: string): Promise<IPClusterAnalysis> {
     const normalizedIp = normalizeIpAddress(ipAddress);
+
+    if (isUnusableIpForAnalysis(ipAddress)) {
+      return {
+        ipAddress: normalizedIp,
+        vendorIds: [],
+        competingAuctions: [],
+        isSuspicious: false,
+        reason: 'IP address unavailable for clustering analysis',
+      };
+    }
 
     const vendorBids = await db
       .selectDistinct({ vendorId: bids.vendorId })
@@ -148,12 +185,64 @@ export class IPAnalysisService {
     };
   }
 
+  async rescanRecentIpClusters(days = 7): Promise<{ scanned: number; alertsCreated: number }> {
+    const enabled = await this.isIPFraudDetectionEnabled();
+    if (!enabled) {
+      return { scanned: 0, alertsCreated: 0 };
+    }
+
+    const rows = await db.execute(sql`
+      SELECT DISTINCT lower(trim(ip_address)) AS ip_address
+      FROM bids
+      WHERE created_at >= NOW() - (${days}::int * INTERVAL '1 day')
+        AND ip_address IS NOT NULL
+        AND trim(ip_address) <> ''
+        AND lower(trim(ip_address)) NOT IN ('unknown', 'localhost', '127.0.0.1', '::1')
+    `);
+
+    const ipAddresses = Array.isArray(rows)
+      ? rows
+          .map((row: { ip_address?: string }) => row.ip_address)
+          .filter((ip): ip is string => typeof ip === 'string' && !isUnusableIpForAnalysis(ip))
+      : [];
+
+    let alertsCreated = 0;
+    for (const ip of ipAddresses) {
+      const analysis = await this.analyzeIPClustering(ip);
+      if (!analysis.isSuspicious || analysis.vendorIds.length < 2) continue;
+
+      const primaryAuctionId = analysis.competingAuctions[0];
+      if (!primaryAuctionId) continue;
+
+      const existing = await this.getIPFraudHistory(ip);
+      const hasRecentPending = existing.some(
+        (alert) =>
+          alert.status === 'pending' &&
+          new Date(alert.createdAt).getTime() > Date.now() - 24 * 60 * 60 * 1000
+      );
+      if (hasRecentPending) continue;
+
+      await this.createIPFraudAlert({
+        ipAddress: analysis.ipAddress,
+        vendorIds: analysis.vendorIds,
+        competingAuctions: analysis.competingAuctions,
+        severity: 'high',
+        primaryAuctionId,
+        reasonSuffix: analysis.reason,
+      });
+      alertsCreated += 1;
+    }
+
+    return { scanned: ipAddresses.length, alertsCreated };
+  }
+
   private async createIPFraudAlert(data: {
     ipAddress: string;
     vendorIds: string[];
     competingAuctions: string[];
     severity: 'low' | 'medium' | 'high' | 'critical';
     primaryAuctionId: string;
+    reasonSuffix?: string;
   }): Promise<void> {
     const existingAlerts = await db
       .select({ id: fraudAlerts.id, metadata: fraudAlerts.metadata })
@@ -200,8 +289,10 @@ export class IPAnalysisService {
       data.primaryAuctionId,
       data.severity === 'critical' ? 95 : data.severity === 'high' ? 80 : data.severity === 'medium' ? 60 : 40,
       [
-        'Multiple vendors from the same IP address are bidding on the same auction',
-        `${data.vendorIds.length} vendor accounts share IP ${data.ipAddress}`,
+        data.severity === 'medium'
+          ? 'Multiple vendor accounts share the same IP across recent bids'
+          : 'Multiple vendors from the same IP address are bidding on the same auction',
+        data.reasonSuffix || `${data.vendorIds.length} vendor accounts share IP ${data.ipAddress}`,
       ],
       {
         source: 'ip_analysis',

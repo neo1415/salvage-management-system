@@ -157,6 +157,28 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid pickup authorization code.' }, { status: 400 });
   }
 
+  const [existingEvidence] = await db
+    .select({ id: pickupEvidence.id })
+    .from(pickupEvidence)
+    .where(
+      and(
+        eq(pickupEvidence.auctionId, auctionId),
+        eq(pickupEvidence.vendorId, vendorId)
+      )
+    )
+    .orderBy(desc(pickupEvidence.createdAt))
+    .limit(1);
+
+  if (existingEvidence) {
+    return NextResponse.json(
+      {
+        error: 'Pickup evidence has already been submitted and is under staff review.',
+        code: 'pickup_evidence_already_submitted',
+      },
+      { status: 409 }
+    );
+  }
+
   const [caseRecord] = await db
     .select({
       photos: salvageCases.photos,
@@ -287,7 +309,7 @@ export async function POST(
     }
 
     const overallScore = finalComparisonSummary.overallMatchScore;
-    if (typeof overallScore === 'number' && overallScore >= 85) {
+    if (typeof overallScore === 'number' && overallScore >= 70) {
       return;
     }
 

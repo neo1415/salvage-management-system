@@ -50,6 +50,10 @@ interface FraudAlert {
   details: FraudPattern[];
   evidenceSummary?: {
     source?: string;
+    comparisonStatus?: string;
+    pickupEvidenceId?: string;
+    findings?: string[];
+    observedDifferences?: string[];
     providerReference?: string;
     workflowReference?: string;
     verificationType?: string;
@@ -158,6 +162,16 @@ const FRAUD_TAB_LABELS: Record<FraudListTab, string> = {
   confirmed: 'Confirmed',
   all: 'All',
 };
+
+function isPickupEvidenceAlert(alert: FraudAlert): boolean {
+  return alert.evidenceSummary?.source === 'pickup_evidence_comparison';
+}
+
+function isKycVerificationAlert(alert: FraudAlert): boolean {
+  if (isPickupEvidenceAlert(alert)) return false;
+  if (alert.evidenceSummary?.source === 'ip_analysis') return false;
+  return alert.evidenceSummary?.source === 'dojah' || Boolean(alert.providerVerification);
+}
 
 function alertWorkflowBucket(alert: FraudAlert): FraudListTab {
   if (alert.workflowStatus === 'in_review') return 'in_review';
@@ -855,7 +869,7 @@ export default function FraudAlertDashboard() {
                       <div className="flex justify-between gap-4"><dt className="text-gray-500">Email</dt><dd className="font-medium text-right break-all">{selectedAlert.vendor?.user?.email || 'N/A'}</dd></div>
                       <div className="flex justify-between gap-4"><dt className="text-gray-500">Vendor status</dt><dd className="font-medium text-right">{selectedAlert.vendor?.status || 'N/A'}</dd></div>
                     </dl>
-                    {selectedAlert.relatedLinks?.kycReview && (
+                    {selectedAlert.relatedLinks?.kycReview && !isPickupEvidenceAlert(selectedAlert) && (
                       <button
                         onClick={() => router.push(selectedAlert.relatedLinks?.kycReview || '/manager/kyc-approvals')}
                         className="mt-4 w-full px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary-hover)]"
@@ -873,9 +887,7 @@ export default function FraudAlertDashboard() {
                     )}
                   </section>
 
-                  {(selectedAlert.evidenceSummary?.source === 'dojah' ||
-                    selectedAlert.entityType === 'vendor' ||
-                    selectedAlert.providerVerification) ? (
+                  {(isKycVerificationAlert(selectedAlert)) ? (
                   <section className="border border-gray-200 rounded-lg p-5">
                     <h4 className="font-semibold text-gray-900 mb-4">Verification Evidence</h4>
                     <dl className="space-y-2 text-sm">
@@ -900,6 +912,36 @@ export default function FraudAlertDashboard() {
                     </div>
                   )}
                   </section>
+                  ) : isPickupEvidenceAlert(selectedAlert) ? (
+                  <section className="border border-amber-200 rounded-lg p-5 bg-amber-50/50">
+                    <h4 className="font-semibold text-amber-900 mb-4">Pickup Evidence</h4>
+                    <dl className="space-y-2 text-sm">
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-amber-800">Comparison status</dt>
+                        <dd className="font-medium text-right capitalize">
+                          {(selectedAlert.evidenceSummary?.comparisonStatus || 'unknown').replace(/_/g, ' ')}
+                        </dd>
+                      </div>
+                      {selectedAlert.evidenceSummary?.pickupEvidenceId && (
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-amber-800">Evidence ref</dt>
+                          <dd className="font-medium text-right break-all text-xs">
+                            {selectedAlert.evidenceSummary.pickupEvidenceId}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                    {(selectedAlert.evidenceSummary?.observedDifferences?.length ?? 0) > 0 && (
+                      <div className="mt-4">
+                        <p className="text-sm font-medium text-amber-900">Observed differences</p>
+                        <ul className="mt-2 space-y-1 text-sm text-amber-800 list-disc list-inside">
+                          {selectedAlert.evidenceSummary?.observedDifferences?.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </section>
                   ) : null}
                 </div>
 
@@ -913,9 +955,7 @@ export default function FraudAlertDashboard() {
                     ))}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {(selectedAlert.evidenceSummary?.source === 'dojah' ||
-                      selectedAlert.entityType === 'vendor' ||
-                      selectedAlert.providerVerification) ? (
+                    {(isKycVerificationAlert(selectedAlert)) ? (
                     <>
                     <div>
                       <div className="text-sm font-medium text-gray-700 mb-2">Completed checks</div>

@@ -250,6 +250,7 @@ export default function VendorPickupsPage() {
           <div className="grid gap-5">
             {pickups.map((pickup) => {
               const form = formFor(pickup.auctionId);
+              const evidenceSubmitted = pickup.pickupEvidence?.submitted ?? false;
               return (
                 <section key={pickup.auctionId} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -257,6 +258,11 @@ export default function VendorPickupsPage() {
                       <div className="flex items-center gap-2 text-sm font-semibold text-[var(--brand-primary)]">
                         <ClipboardCheck className="h-4 w-4" />
                         Pickup authorization
+                        {evidenceSubmitted && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                            Under review
+                          </span>
+                        )}
                       </div>
                       <h2 className="mt-2 text-xl font-bold text-gray-900">
                         {assetLabel(pickup.case.assetType, pickup.case.assetDetails)}
@@ -268,6 +274,18 @@ export default function VendorPickupsPage() {
                     </Link>
                   </div>
 
+                  {evidenceSubmitted ? (
+                    <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      <p className="font-semibold">Pickup evidence submitted</p>
+                      <p className="mt-1 text-amber-800">
+                        Staff are reviewing your photos. Resubmission is disabled until pickup is confirmed.
+                        {pickup.pickupEvidence?.submittedAt
+                          ? ` Submitted ${new Date(pickup.pickupEvidence.submittedAt).toLocaleString()}.`
+                          : ''}
+                      </p>
+                    </div>
+                  ) : (
+                  <>
                   <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.4fr]">
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Pickup authorization code</label>
@@ -341,6 +359,8 @@ export default function VendorPickupsPage() {
                       {form.submitting ? 'Submitting evidence' : 'Submit evidence'}
                     </button>
                   </div>
+                  </>
+                  )}
                 </section>
               );
             })}

@@ -353,6 +353,7 @@ function VendorDashboardContentInner() {
             <div className="space-y-3">
               {visiblePickups.map((pickup) => {
                 const evidenceForm = evidenceFormFor(pickup.auctionId);
+                const evidenceSubmitted = pickup.pickupEvidence?.submitted ?? false;
 
                 return (
                 <div
@@ -372,8 +373,15 @@ function VendorDashboardContentInner() {
                         </p>
                         <p className="text-xs sm:text-sm text-green-600 font-medium flex items-center gap-1">
                           <Check className="w-4 h-4" aria-hidden="true" />
-                          <span>Payment verified • Ready for pickup</span>
+                          <span>
+                            Payment verified • {evidenceSubmitted ? 'Evidence under review' : 'Ready for pickup'}
+                          </span>
                         </p>
+                        {evidenceSubmitted && (
+                          <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                            Under review
+                          </span>
+                        )}
                       </div>
                     </div>
                     <button
@@ -398,6 +406,20 @@ function VendorDashboardContentInner() {
                     </ol>
                   </div>
 
+                    {evidenceSubmitted ? (
+                      <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        <p className="font-semibold">Pickup evidence submitted</p>
+                        <p className="mt-1 text-xs text-amber-800">
+                          Staff are reviewing your photos. You cannot resubmit until pickup is confirmed.
+                          {pickup.pickupEvidence?.submittedAt
+                            ? ` Submitted ${new Date(pickup.pickupEvidence.submittedAt).toLocaleString()}.`
+                            : ''}
+                        </p>
+                        <Link href="/vendor/pickups" className="mt-2 inline-flex text-xs font-semibold text-[var(--brand-primary)]">
+                          View on pickups page
+                        </Link>
+                      </div>
+                    ) : (
                   <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <div className="mb-3">
                       <p className="text-sm font-semibold text-gray-900">Pickup evidence</p>
@@ -476,6 +498,7 @@ function VendorDashboardContentInner() {
                       {evidenceForm.submitting ? 'Submitting evidence...' : 'Submit Evidence'}
                     </button>
                   </div>
+                    )}
                 </div>
               );
               })}

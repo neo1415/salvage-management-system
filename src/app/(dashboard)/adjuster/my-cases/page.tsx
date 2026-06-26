@@ -425,176 +425,60 @@ export function CasePortfolioPage() {
     };
   };
 
-  const handleExportCSV = () => {
+  const exportableStatusFilters = new Set([
+    'pending_approval',
+    'rejected',
+    'approved',
+    'active_auction',
+    'sold',
+  ]);
+
+  const handleExportFromApi = async (format: 'csv' | 'pdf') => {
+    if (statusFilter === 'draft') {
+      alert('Draft cases are stored locally. Submit drafts before using the comprehensive export.');
+      setShowExportMenu(false);
+      return;
+    }
+
     try {
       setExporting(true);
-      
-      // Use filtered cases for export (respects status filters and search)
-      const exportData = filteredCases.map(caseItem => ({
-        claimReference: caseItem.claimReference,
-        insuranceClass: formatInsuranceClass(caseItem.insuranceClass),
-        branchName: caseItem.branchName ?? '',
-        source: caseItem.brokerName ? `Broker: ${caseItem.brokerName}` : caseItem.agencyName ? `Agency: ${caseItem.agencyName}` : '',
-        assetType: caseItem.assetType,
-        status: caseItem.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        createdDate: new Date(caseItem.createdAt).toLocaleDateString('en-NG', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric'
-        }),
-        marketValue: `₦${parseFloat(caseItem.estimatedValue).toLocaleString()}`,
-        reservePrice: `₦${(parseFloat(caseItem.estimatedValue) * 0.7).toLocaleString()}`, // Assuming 70% reserve
-        location: caseItem.locationName,
-        damageSeverity: 'N/A' // Not available in current data model
-      }));
+      setShowExportMenu(false);
 
-      // Generate CSV content
-      const headers = ['Claim Reference', 'Insurance Class', 'Branch', 'Business Source', 'Asset Type', 'Status', 'Created Date', 'Market Value', 'Reserve Price', 'Location', 'Damage Severity'];
-      const csvRows = [headers.join(',')];
-      
-      exportData.forEach(row => {
-        const values = [
-          escapeCSVField(row.claimReference),
-          escapeCSVField(row.insuranceClass),
-          escapeCSVField(row.branchName),
-          escapeCSVField(row.source),
-          escapeCSVField(row.assetType),
-          escapeCSVField(row.status),
-          escapeCSVField(row.createdDate),
-          escapeCSVField(row.marketValue),
-          escapeCSVField(row.reservePrice),
-          escapeCSVField(row.location),
-          escapeCSVField(row.damageSeverity)
-        ];
-        csvRows.push(values.join(','));
-      });
+      const params = new URLSearchParams();
+      params.set('format', format);
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      if (exportableStatusFilters.has(statusFilter)) {
+        params.set('status', statusFilter);
+      }
+      if (!isManagerPortfolio) {
+        params.set('createdByMe', 'true');
+      }
 
-      const csvContent = csvRows.join('\n');
-      
-      // Create and download file
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const response = await fetch(`/api/cases/export?${params.toString()}`);
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error || 'Export failed');
+      }
+
+      const contentDisposition = response.headers.get('Content-Disposition');
+      const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
+      const filename = filenameMatch ? filenameMatch[1] : `cases-export.${format}`;
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      const date = new Date().toISOString().split('T')[0];
-      
-      link.setAttribute('href', url);
-      link.setAttribute('download', `${isManagerPortfolio ? 'case-portfolio' : 'my-cases'}-${date}.csv`);
-      link.style.visibility = 'hidden';
+      link.href = url;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
+      window.URL.revokeObjectURL(url);
       document.body.removeChild(link);
-      
-      alert(`Successfully exported ${filteredCases.length} case records to CSV`);
     } catch (err) {
-      console.error('Error exporting CSV:', err);
-      alert('Failed to generate CSV export. Please try again.');
+      console.error('Error exporting cases:', err);
+      alert(err instanceof Error ? err.message : 'Failed to export cases. Please try again.');
     } finally {
       setExporting(false);
-      setShowExportMenu(false);
     }
-  };
-
-  const handleExportPDF = async () => {
-    try {
-      setExporting(true);
-      
-      // Use filtered cases for export (respects status filters and search)
-      const exportData = filteredCases.map(caseItem => ({
-        claimRef: caseItem.claimReference.substring(0, 15),
-        assetType: caseItem.assetType.substring(0, 12),
-        branchName: (caseItem.branchName ?? '').substring(0, 12),
-        status: caseItem.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).substring(0, 12),
-        createdDate: new Date(caseItem.createdAt).toLocaleDateString('en-NG', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric'
-        }),
-        marketValue: `₦${parseFloat(caseItem.estimatedValue).toLocaleString()}`,
-        location: caseItem.locationName.substring(0, 15)
-      }));
-
-      // Dynamically import jsPDF and services
-      const { jsPDF } = await import('jspdf');
-      const { PDFTemplateService } = await import('@/features/documents/services/pdf-template.service');
-      
-      const doc = new jsPDF();
-      
-      // Add letterhead
-      await PDFTemplateService.addLetterhead(doc, isManagerPortfolio ? 'CASE PORTFOLIO REPORT' : 'MY CASES REPORT');
-      
-      // Add table data
-      let y = 65; // Start below letterhead
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const maxY = PDFTemplateService.getMaxContentY(doc);
-      
-      // Add headers
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Claim Ref', 15, y);
-      doc.text('Asset Type', 50, y);
-      doc.text('Branch', 80, y);
-      doc.text('Status', 110, y);
-      doc.text('Created', 138, y);
-      doc.text('Value', 162, y);
-      
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      
-      // Add data rows
-      for (const item of exportData) {
-        if (y > maxY) {
-          // Add footer to current page
-          PDFTemplateService.addFooter(doc);
-          // Start new page
-          doc.addPage();
-          await PDFTemplateService.addLetterhead(doc, isManagerPortfolio ? 'CASE PORTFOLIO REPORT' : 'MY CASES REPORT');
-          y = 65;
-          
-          // Re-add headers on new page
-          doc.setFontSize(7);
-          doc.setFont('helvetica', 'bold');
-          doc.text('Claim Ref', 15, y);
-          doc.text('Asset Type', 50, y);
-          doc.text('Branch', 80, y);
-          doc.text('Status', 110, y);
-          doc.text('Created', 138, y);
-          doc.text('Value', 162, y);
-          y += 5;
-          doc.setFont('helvetica', 'normal');
-        }
-        
-        doc.text(item.claimRef, 15, y);
-        doc.text(item.assetType, 50, y);
-        doc.text(item.branchName || '-', 80, y);
-        doc.text(item.status, 110, y);
-        doc.text(item.createdDate, 138, y);
-        doc.text(item.marketValue, 162, y);
-        y += 5;
-      }
-      
-      // Add footer to last page
-      PDFTemplateService.addFooter(doc, `Total Records: ${filteredCases.length}`);
-      
-      // Download PDF
-      const date = new Date().toISOString().split('T')[0];
-      doc.save(`${isManagerPortfolio ? 'case-portfolio' : 'my-cases'}-${date}.pdf`);
-      
-      alert(`Successfully exported ${filteredCases.length} case records to PDF`);
-    } catch (err) {
-      console.error('Error exporting PDF:', err);
-      alert('Failed to generate PDF export. Please try again.');
-    } finally {
-      setExporting(false);
-      setShowExportMenu(false);
-    }
-  };
-
-  const escapeCSVField = (field: string): string => {
-    const str = String(field);
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
   };
 
   if (status === 'loading' || (loading && cases.length === 0)) {
@@ -656,7 +540,7 @@ export function CasePortfolioPage() {
                   type="button"
                   onClick={(e) => {
                     e.preventDefault();
-                    handleExportCSV();
+                    handleExportFromApi('csv');
                   }}
                   disabled={exporting}
                   className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 disabled:opacity-50"
@@ -670,7 +554,7 @@ export function CasePortfolioPage() {
                   type="button"
                   onClick={(e) => {
                     e.preventDefault();
-                    handleExportPDF();
+                    handleExportFromApi('pdf');
                   }}
                   disabled={exporting}
                   className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 border-t border-gray-100 disabled:opacity-50"

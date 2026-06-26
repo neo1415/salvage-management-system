@@ -12,9 +12,9 @@
 | B3 | CSV exports comprehensive, remove PDF where requested, IP redaction, filenames, NGN | done |
 | B4 | Pay Now single loader UX + documents download spinners + receipt fixes | done |
 | B5 | Price adjustment propagation (`finalSettledAmount`) app-wide | done |
-| B6 | Pickup vendor flow (no resubmit, under review) + confirm notifications + optional admin notes | pending |
-| B7 | Fraud same-IP detection hardening + brand color flash fix | pending |
-| B8 | Hide claim ref from vendors + evidence review cleanup + cases export | pending |
+| B6 | Pickup vendor flow (no resubmit, under review) + confirm notifications + optional admin notes | done |
+| B7 | Fraud same-IP detection hardening + brand color flash fix | done |
+| B8 | Hide claim ref from vendors + evidence review cleanup + cases export | done |
 
 ---
 
