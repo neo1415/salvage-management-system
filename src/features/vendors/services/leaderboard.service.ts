@@ -54,7 +54,7 @@ export async function calculateLeaderboard(limit = 25): Promise<LeaderboardEntry
       SELECT DISTINCT ON (p.auction_id)
         p.vendor_id,
         p.auction_id,
-        p.amount,
+        COALESCE(a.final_settled_amount, p.amount)::numeric as amount,
         p.verified_at
       FROM payments p
       INNER JOIN auctions a ON a.id = p.auction_id

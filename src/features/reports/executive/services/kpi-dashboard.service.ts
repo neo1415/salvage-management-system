@@ -153,7 +153,7 @@ export class KPIDashboardService {
       WITH revenue_data AS (
         WITH latest_auction_payments AS (
           SELECT DISTINCT ON (sc.id)
-            p.amount,
+            COALESCE(a.final_settled_amount, p.amount) as amount,
             p.created_at
           FROM payments p
           INNER JOIN auctions a ON p.auction_id = a.id
@@ -190,7 +190,7 @@ export class KPIDashboardService {
       recovery_data AS (
         WITH latest_auction_payments AS (
           SELECT DISTINCT ON (sc.id)
-            p.amount,
+            COALESCE(a.final_settled_amount, p.amount) as amount,
             sc.market_value,
             p.created_at
           FROM payments p
@@ -216,7 +216,7 @@ export class KPIDashboardService {
       previous_revenue AS (
         WITH latest_auction_payments AS (
           SELECT DISTINCT ON (sc.id)
-            p.amount,
+            COALESCE(a.final_settled_amount, p.amount) as amount,
             p.created_at
           FROM payments p
           INNER JOIN auctions a ON p.auction_id = a.id
@@ -411,7 +411,7 @@ export class KPIDashboardService {
     const revenueByMonth = await db.execute(sql`
       WITH latest_auction_payments AS (
         SELECT DISTINCT ON (sc.id)
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount) as amount,
           p.created_at
         FROM payments p
         INNER JOIN auctions a ON p.auction_id = a.id
@@ -527,11 +527,12 @@ export class KPIDashboardService {
           sc.market_value,
           EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400 as processing_days,
           COALESCE(
-            (SELECT p.amount
+            (SELECT COALESCE(a.final_settled_amount, p.amount)
              FROM payments p
              JOIN auctions a ON p.auction_id = a.id
              WHERE a.case_id = sc.id AND p.status = 'verified'
-             ORDER BY p.created_at DESC
+               AND p.vendor_id = a.current_bidder
+             ORDER BY p.verified_at DESC NULLS LAST, p.created_at DESC
              LIMIT 1),
             '0'
           ) as revenue,
@@ -558,7 +559,7 @@ export class KPIDashboardService {
         COUNT(DISTINCT b.vendor_id) as unique_bidders,
         COUNT(b.id) as total_bids,
         sc.market_value as starting_bid,
-        COALESCE(p.amount, '0') as winning_bid,
+        COALESCE(a.final_settled_amount, p.amount, '0') as winning_bid,
         COALESCE(v.business_name, winner.full_name) as winner_name,
         CASE WHEN p.id IS NOT NULL THEN 'sold' ELSE a.status::text END as status
       FROM auctions a
@@ -572,7 +573,7 @@ export class KPIDashboardService {
         ${branchFilter}
         ${brokerFilter}
         ${assetFilter}
-      GROUP BY a.id, sc.claim_reference, sc.market_value, p.id, p.amount, v.business_name, winner.full_name, a.status
+      GROUP BY a.id, sc.claim_reference, sc.market_value, p.id, a.final_settled_amount, p.amount, v.business_name, winner.full_name, a.status
       ORDER BY a.created_at DESC
       LIMIT 100
     `);
@@ -584,7 +585,7 @@ export class KPIDashboardService {
           COALESCE(sc.branch_name, 'Unassigned') as branch_name,
           COALESCE(CAST(sc.market_value AS NUMERIC), 0) as market_value,
           COALESCE((
-            SELECT p.amount
+            SELECT COALESCE(a.final_settled_amount, p.amount)
             FROM payments p
             JOIN auctions a ON p.auction_id = a.id
             WHERE a.case_id = sc.id
@@ -629,7 +630,7 @@ export class KPIDashboardService {
           ELSE 0
         END as approval_rate,
         AVG(EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400) as avg_processing_days,
-        COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as revenue
+        COALESCE(SUM(CAST(COALESCE(a.final_settled_amount, p.amount) AS NUMERIC)), 0) as revenue
       FROM users u
       LEFT JOIN salvage_cases sc ON u.id = sc.created_by 
         AND sc.created_at >= ${startDate}
@@ -659,7 +660,7 @@ export class KPIDashboardService {
           THEN (COUNT(DISTINCT a.id) FILTER (WHERE a.current_bidder = v.id)::NUMERIC / COUNT(DISTINCT b.auction_id) * 100)
           ELSE 0
         END as win_rate,
-        COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as total_spent,
+        COALESCE(SUM(CAST(COALESCE(a.final_settled_amount, p.amount) AS NUMERIC)), 0) as total_spent,
         CASE 
           WHEN COUNT(b.id) > 0 
           THEN AVG(CAST(b.amount AS NUMERIC))

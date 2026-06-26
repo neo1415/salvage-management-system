@@ -20,6 +20,7 @@ import {
 import { createNotification } from '@/features/notifications/services/notification.service';
 import { cache } from '@/lib/redis/client';
 import { formatAssetName } from '@/lib/utils/asset-name';
+import { getEffectiveSaleAmount, parseNumericAmount } from '@/lib/finance/effective-sale-amount';
 
 export type PickupLifecycleStatus =
   | 'not_ready'
@@ -217,7 +218,13 @@ async function mapPickupRow(row: any): Promise<PickupContext> {
     vendorName: row.full_name || row.business_name || 'Vendor',
     vendorEmail: row.email || '',
     vendorPhone: row.phone || null,
-    saleAmount: row.current_bid || row.payment_amount || null,
+    saleAmount: (() => {
+      const effective = getEffectiveSaleAmount(
+        { finalSettledAmount: row.final_settled_amount, currentBid: row.current_bid },
+        { amount: row.payment_amount }
+      );
+      return effective > 0 ? effective.toFixed(2) : null;
+    })(),
     paymentId: row.payment_id || null,
     paymentStatus: row.payment_status || null,
     paymentVerifiedAt: toIso(row.verified_at),
@@ -243,6 +250,7 @@ export async function getPickupContextByAuction(auctionId: string): Promise<Pick
       a.id AS auction_id,
       a.case_id,
       a.current_bid,
+      a.final_settled_amount,
       a.current_bidder AS vendor_id,
       a.pickup_confirmed_vendor,
       a.pickup_confirmed_vendor_at,
@@ -289,6 +297,7 @@ export async function getPickupContextByCode(pickupAuthCode: string): Promise<Pi
       a.id AS auction_id,
       a.case_id,
       a.current_bid,
+      a.final_settled_amount,
       a.current_bidder AS vendor_id,
       a.pickup_confirmed_vendor,
       a.pickup_confirmed_vendor_at,
@@ -404,17 +413,36 @@ export async function confirmPickupByStaff(input: {
 
   const now = new Date();
 
+  const auctionUpdate: {
+    pickupConfirmedVendor: boolean;
+    pickupConfirmedVendorAt: Date;
+    pickupConfirmedAdmin: boolean;
+    pickupConfirmedAdminAt: Date;
+    pickupConfirmedAdminBy: string;
+    updatedAt: Date;
+    finalSettledAmount?: string;
+    priceAdjustedAt?: Date;
+    originalWinningBid?: string;
+  } = {
+    pickupConfirmedVendor: true,
+    pickupConfirmedVendorAt: context.pickupConfirmedVendorAt ? new Date(context.pickupConfirmedVendorAt) : now,
+    pickupConfirmedAdmin: true,
+    pickupConfirmedAdminAt: now,
+    pickupConfirmedAdminBy: input.actor.userId,
+    updatedAt: now,
+  };
+
+  if (resolutionStatus === 'price_adjustment_recorded' && adjustmentAmount !== null) {
+    auctionUpdate.finalSettledAmount = adjustmentAmount.toFixed(2);
+    auctionUpdate.priceAdjustedAt = now;
+    const original = parseNumericAmount(context.saleAmount) ?? adjustmentAmount;
+    auctionUpdate.originalWinningBid = original.toFixed(2);
+  }
+
   await db.transaction(async (tx) => {
     await tx
       .update(auctions)
-      .set({
-        pickupConfirmedVendor: true,
-        pickupConfirmedVendorAt: context.pickupConfirmedVendorAt ? new Date(context.pickupConfirmedVendorAt) : now,
-        pickupConfirmedAdmin: true,
-        pickupConfirmedAdminAt: now,
-        pickupConfirmedAdminBy: input.actor.userId,
-        updatedAt: now,
-      })
+      .set(auctionUpdate)
       .where(eq(auctions.id, context.auctionId));
 
     await tx

@@ -95,7 +95,7 @@ export class FinancialDataRepository {
         COALESCE(sc.branch_name, 'Unassigned') as branch_name,
         sc.created_at,
         sc.location_name,
-        p.amount as payment_amount,
+        COALESCE(a.final_settled_amount, p.amount) as payment_amount,
         p.status as payment_status
       FROM payments p
       INNER JOIN auctions a ON p.auction_id = a.id

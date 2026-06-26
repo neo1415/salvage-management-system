@@ -7,7 +7,7 @@
 
 import { db } from '@/lib/db/drizzle';
 import { salvageCases, auctions, payments, bids, users } from '@/lib/db/schema';
-import { eq, and, gte, lte, inArray, desc, count, sum } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray, desc, count, sum, sql } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
 import { resolveReportDateRange } from '../../utils/report-date-range';
 
@@ -53,7 +53,7 @@ class UserPerformanceRepository {
         createdAt: salvageCases.createdAt,
         approvedAt: salvageCases.approvedAt,
         currentBid: auctions.currentBid,
-        paymentAmount: payments.amount,
+        paymentAmount: sql<string>`COALESCE(${auctions.finalSettledAmount}, ${payments.amount})`,
       })
       .from(salvageCases)
       .leftJoin(users, eq(salvageCases.createdBy, users.id))
@@ -488,7 +488,7 @@ export class MyPerformanceService {
         approvedAt: salvageCases.approvedAt,
         adjusterName: users.fullName,
         currentBid: auctions.currentBid,
-        paymentAmount: payments.amount,
+        paymentAmount: sql<string>`COALESCE(${auctions.finalSettledAmount}, ${payments.amount})`,
       })
       .from(salvageCases)
       .leftJoin(users, eq(salvageCases.createdBy, users.id))

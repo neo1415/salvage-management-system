@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { formatAssetName } from '@/lib/utils/asset-name';
 import { brandLegalName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 import { generatePickupAuthorizationCode } from '@/features/pickups/services/pickup-confirmation.service';
+import { getEffectiveSaleAmount } from '@/lib/finance/effective-sale-amount';
 
 function serializeDate(value: Date | string | null | undefined): string | null {
   if (!value) return null;
@@ -103,6 +104,13 @@ export async function GET(
         id: payment.auction.id,
         caseId: payment.auction.caseId,
         currentBid: payment.auction.currentBid,
+        effectiveSaleAmount: getEffectiveSaleAmount(
+          {
+            finalSettledAmount: payment.auction.finalSettledAmount,
+            currentBid: payment.auction.currentBid,
+          },
+          { amount: payment.payment.amount }
+        ).toFixed(2),
         case: {
           claimReference: payment.case.claimReference,
           assetType: payment.case.assetType,

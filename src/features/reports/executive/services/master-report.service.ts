@@ -203,7 +203,7 @@ export class MasterReportService {
     const revenueResult = await db.execute(sql`
       WITH latest_auction_payments AS (
         SELECT DISTINCT ON (sc.id)
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount) as amount,
           p.created_at
         FROM payments p
         INNER JOIN auctions a ON p.auction_id = a.id
@@ -237,7 +237,7 @@ export class MasterReportService {
     const prevRevenueResult = await db.execute(sql`
       WITH latest_auction_payments AS (
         SELECT DISTINCT ON (sc.id)
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount) as amount,
           p.created_at
         FROM payments p
         INNER JOIN auctions a ON p.auction_id = a.id
@@ -323,7 +323,7 @@ export class MasterReportService {
     const revenueByMonth = await db.execute(sql`
       WITH latest_auction_payments AS (
         SELECT DISTINCT ON (sc.id)
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount) as amount,
           p.created_at
         FROM payments p
         INNER JOIN auctions a ON p.auction_id = a.id
@@ -365,7 +365,7 @@ export class MasterReportService {
       WITH latest_auction_payments AS (
         SELECT DISTINCT ON (sc.id)
           sc.asset_type,
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount) as amount,
           p.verified_at,
           p.created_at
         FROM payments p
@@ -394,7 +394,7 @@ export class MasterReportService {
         SELECT DISTINCT ON (sc.id)
           sc.claim_reference,
           sc.asset_type,
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount) as amount,
           p.verified_at,
           p.created_at
         FROM payments p
@@ -432,7 +432,7 @@ export class MasterReportService {
         SELECT DISTINCT ON (sc.id)
           sc.asset_type,
           sc.market_value,
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount) as amount,
           p.verified_at,
           p.created_at
         FROM payments p
@@ -458,7 +458,7 @@ export class MasterReportService {
       WITH latest_auction_payments AS (
         SELECT DISTINCT ON (sc.id)
           sc.market_value,
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount) as amount,
           p.created_at,
           p.verified_at
         FROM payments p
@@ -580,7 +580,7 @@ export class MasterReportService {
           COALESCE(sc.branch_name, 'Unassigned') as branch_name,
           COALESCE(CAST(sc.market_value AS NUMERIC), 0) as market_value,
           COALESCE((
-            SELECT p.amount
+            SELECT COALESCE(a.final_settled_amount, p.amount)
             FROM payments p
             JOIN auctions a ON p.auction_id = a.id
             WHERE a.case_id = sc.id
@@ -622,7 +622,7 @@ export class MasterReportService {
           END as channel_type,
           COALESCE(CAST(sc.market_value AS NUMERIC), 0) as market_value,
           COALESCE((
-            SELECT p.amount
+            SELECT COALESCE(a.final_settled_amount, p.amount)
             FROM payments p
             JOIN auctions a ON p.auction_id = a.id
             WHERE a.case_id = sc.id
@@ -682,12 +682,12 @@ export class MasterReportService {
         sc.claim_reference,
         COUNT(DISTINCT b.vendor_id) as bidders,
         COUNT(b.id) as bids,
-        a.current_bid as winning_bid
+        COALESCE(a.final_settled_amount, a.current_bid) as winning_bid
       FROM auctions a
       JOIN salvage_cases sc ON a.case_id = sc.id
       LEFT JOIN bids b ON a.id = b.auction_id
       WHERE a.created_at >= ${startDate} AND a.created_at <= ${endDate}
-      GROUP BY a.id, sc.claim_reference, a.current_bid
+      GROUP BY a.id, sc.claim_reference, a.final_settled_amount, a.current_bid
       ORDER BY bids DESC
       LIMIT 10
     `);
@@ -782,7 +782,7 @@ export class MasterReportService {
           ELSE 0
         END as approval_rate,
         AVG(EXTRACT(EPOCH FROM (sc.approved_at - sc.created_at)) / 86400) as avg_processing_days,
-        COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as revenue
+        COALESCE(SUM(CAST(COALESCE(a.final_settled_amount, p.amount) AS NUMERIC)), 0) as revenue
       FROM users u
       LEFT JOIN salvage_cases sc ON u.id = sc.created_by 
         AND sc.created_at >= ${startDate}
@@ -820,10 +820,11 @@ export class MasterReportService {
       WITH vendor_payments AS (
         SELECT 
           v.id as vendor_id,
-          COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as total_spent,
+          COALESCE(SUM(CAST(COALESCE(a.final_settled_amount, p.amount) AS NUMERIC)), 0) as total_spent,
           COUNT(DISTINCT p.auction_id) as paid_auctions
         FROM vendors v
         LEFT JOIN payments p ON p.vendor_id = v.id AND p.status = 'verified'
+        LEFT JOIN auctions a ON a.id = p.auction_id
         WHERE p.created_at >= ${startDate} AND p.created_at <= ${endDate}
         GROUP BY v.id
       )
@@ -945,7 +946,7 @@ export class MasterReportService {
     const pricingData = await db.execute(sql`
       SELECT 
         AVG(CAST(sc.reserve_price AS NUMERIC)) as avg_starting_bid,
-        AVG(CAST(a.current_bid AS NUMERIC)) as avg_winning_bid
+        AVG(CAST(COALESCE(a.final_settled_amount, a.current_bid) AS NUMERIC)) as avg_winning_bid
       FROM auctions a
       JOIN salvage_cases sc ON a.case_id = sc.id
       WHERE a.status = 'closed' 

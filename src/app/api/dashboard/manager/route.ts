@@ -199,7 +199,7 @@ async function calculateKPIs(filters: ManagerDashboardFilters): Promise<Dashboar
     WITH verified_winner_payments AS (
       SELECT DISTINCT ON (p.auction_id)
         p.auction_id,
-        p.amount,
+        COALESCE(a.final_settled_amount, p.amount)::numeric as amount,
         p.verified_at
       FROM payments p
       INNER JOIN auctions a ON a.id = p.auction_id
@@ -273,7 +273,7 @@ async function calculateRecoveryControlTower(
     verified_winner_payments AS (
       SELECT DISTINCT ON (p.auction_id)
         p.auction_id,
-        p.amount,
+        COALESCE(a.final_settled_amount, p.amount)::numeric as amount,
         p.verified_at
       FROM payments p
       INNER JOIN auctions a ON a.id = p.auction_id
@@ -423,7 +423,7 @@ async function calculateRecoveryRateTrend(
     WITH verified_winner_payments AS (
       SELECT DISTINCT ON (p.auction_id)
         p.auction_id,
-        p.amount,
+        COALESCE(a.final_settled_amount, p.amount)::numeric as amount,
         p.verified_at
       FROM payments p
       INNER JOIN auctions a ON a.id = p.auction_id
@@ -485,7 +485,7 @@ async function getTopVendors(filters: ManagerDashboardFilters): Promise<TopVendo
         SELECT DISTINCT ON (p.auction_id)
           p.auction_id,
           p.vendor_id,
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount)::numeric as amount,
           p.verified_at,
           p.created_at
         FROM payments p

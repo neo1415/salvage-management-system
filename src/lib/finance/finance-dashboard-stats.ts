@@ -163,7 +163,7 @@ async function calculateSettlementControl(paymentIds: string[] | null) {
         p.id,
         p.auction_id,
         p.vendor_id,
-        p.amount,
+        COALESCE(a.final_settled_amount, p.amount)::numeric as amount,
         p.verified_at,
         p.created_at
       FROM payments p

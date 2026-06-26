@@ -38,6 +38,9 @@ export const auctions = pgTable('auctions', {
   pickupConfirmedAdmin: boolean('pickup_confirmed_admin').default(false),
   pickupConfirmedAdminAt: timestamp('pickup_confirmed_admin_at'),
   pickupConfirmedAdminBy: uuid('pickup_confirmed_admin_by').references(() => users.id),
+  finalSettledAmount: numeric('final_settled_amount', { precision: 12, scale: 2 }),
+  priceAdjustedAt: timestamp('price_adjusted_at'),
+  originalWinningBid: numeric('original_winning_bid', { precision: 12, scale: 2 }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

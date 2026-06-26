@@ -254,7 +254,7 @@ export class OperationalDataRepository {
         a.end_time,
         a.updated_at as closed_at,
         a.current_bidder,
-        p.amount as winning_bid,
+        COALESCE(a.final_settled_amount, p.amount, a.current_bid) as winning_bid,
         p.id as payment_id,
         p.status as payment_status,
         p.verified_at as payment_verified_at,
@@ -484,10 +484,11 @@ export class OperationalDataRepository {
       WITH vendor_payments AS (
         SELECT 
           v.id as vendor_id,
-          COALESCE(SUM(CAST(p.amount AS NUMERIC)), 0) as total_spent,
+          COALESCE(SUM(CAST(COALESCE(a.final_settled_amount, p.amount) AS NUMERIC)), 0) as total_spent,
           COUNT(DISTINCT p.auction_id) as paid_auctions
         FROM vendors v
         LEFT JOIN payments p ON p.vendor_id = v.id AND p.status = 'verified'
+        LEFT JOIN auctions a ON a.id = p.auction_id
         WHERE p.created_at >= ${startDate} AND p.created_at <= ${endDate}
         GROUP BY v.id
       ),

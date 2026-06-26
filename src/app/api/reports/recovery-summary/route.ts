@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
           sc.asset_type,
           sc.market_value,
           sc.created_at,
-          p.amount AS payment_amount
+          COALESCE(a.final_settled_amount, p.amount) AS payment_amount
         FROM salvage_cases sc
         INNER JOIN auctions a ON a.case_id = sc.id
         INNER JOIN payments p ON p.auction_id = a.id

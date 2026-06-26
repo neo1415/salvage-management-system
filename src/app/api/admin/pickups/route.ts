@@ -13,6 +13,7 @@ import { db } from '@/lib/db';
 import { auctions, salvageCases, vendors, users, payments, releaseForms } from '@/lib/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { derivePickupLifecycleStatus } from '@/features/pickups/services/pickup-confirmation.service';
+import { getEffectiveSaleAmount } from '@/lib/finance/effective-sale-amount';
 
 export async function GET(request: NextRequest) {
   try {
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
           id: auctions.id,
           caseId: auctions.caseId,
           currentBid: auctions.currentBid,
+          finalSettledAmount: auctions.finalSettledAmount,
           pickupConfirmedVendor: auctions.pickupConfirmedVendor,
           pickupConfirmedVendorAt: auctions.pickupConfirmedVendorAt,
           pickupConfirmedAdmin: auctions.pickupConfirmedAdmin,
@@ -251,7 +253,13 @@ export async function GET(request: NextRequest) {
       policyNumber: pickup.case.policyNumber,
       assetType: pickup.case.assetType,
       assetDetails: pickup.case.assetDetails,
-      amount: pickup.auction.currentBid,
+      amount: getEffectiveSaleAmount(
+        {
+          finalSettledAmount: pickup.auction.finalSettledAmount,
+          currentBid: pickup.auction.currentBid,
+        },
+        pickup.payment ? { amount: pickup.payment.amount } : null
+      ).toFixed(2),
       vendor: {
         id: pickup.vendor.id,
         businessName: pickup.vendor.businessName,

@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
       verified_winner_payments AS (
         SELECT DISTINCT ON (p.auction_id)
           p.auction_id,
-          p.amount,
+          COALESCE(a.final_settled_amount, p.amount)::numeric as amount,
           p.verified_at,
           p.created_at
         FROM payments p

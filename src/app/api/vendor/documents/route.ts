@@ -12,6 +12,7 @@ import { releaseForms } from '@/lib/db/schema/release-forms';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { formatAssetName } from '@/lib/utils/asset-name';
+import { getEffectiveSaleAmount } from '@/lib/finance/effective-sale-amount';
 import { eq, desc } from 'drizzle-orm';
 
 export async function GET(_request: NextRequest) {
@@ -94,7 +95,13 @@ export async function GET(_request: NextRequest) {
         expiresAt: null, // Documents don't expire in current implementation
         documentData: {
           assetDescription,
-          salePrice: doc.auction.currentBid ? parseFloat(doc.auction.currentBid) : undefined,
+          salePrice: (() => {
+            const effective = getEffectiveSaleAmount({
+              finalSettledAmount: doc.auction.finalSettledAmount,
+              currentBid: doc.auction.currentBid,
+            });
+            return effective > 0 ? effective : undefined;
+          })(),
           pickupAuthCode: (doc.document.documentData as { pickupAuthCode?: string })?.pickupAuthCode,
         },
       };
