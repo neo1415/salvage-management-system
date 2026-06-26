@@ -9,6 +9,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
+import { ExportService } from '@/features/export/services/export.service';
+import { formatNgnAmount } from '@/lib/utils/format-ngn';
+
+function money(value: number | string | null | undefined): string {
+  return formatNgnAmount(value, { decimals: 0, empty: 'NGN 0' });
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,10 +32,12 @@ export async function POST(request: NextRequest) {
     // Generate CSV based on report type
     const csv = generateCSV(reportType, data, filters);
     
+    const filename = ExportService.generateFilename(reportType, 'csv');
+
     return new NextResponse(csv, {
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${reportType}-${new Date().toISOString().split('T')[0]}.csv"`,
+        'Content-Disposition': `attachment; filename="${filename}"`,
       },
     });
   } catch (error) {
@@ -109,7 +117,7 @@ function generatePaymentAnalyticsCSV(csv: string, data: any): string {
   csv += 'SUMMARY METRICS\n';
   csv += 'Metric,Value\n';
   csv += csvRow(['Total Payments', data.summary?.totalPayments || 0]);
-  csv += csvRow(['Verified Payment Amount', data.summary?.totalAmount || 0]);
+  csv += csvRow(['Verified Payment Amount', money(data.summary?.totalAmount)]);
   csv += csvRow(['Success Rate', `${data.summary?.successRate || 0}%`]);
   csv += csvRow(['Average Payment Time', `${data.summary?.averagePaymentTime || 0} hours`]);
   csv += '\n';
@@ -119,9 +127,9 @@ function generatePaymentAnalyticsCSV(csv: string, data: any): string {
     csv += 'PAYMENT METHOD BREAKDOWN\n';
     csv += 'Method,Count,Total Amount,Percentage,Success Rate\n';
     data.byMethod.forEach((method: any) => {
-      csv += csvRow([method.method || 'Unknown', method.count || 0, method.totalAmount || 0, `${method.percentage || 0}%`, `${method.successRate || 0}%`]);
+      csv += csvRow([method.method || 'Unknown', method.count || 0, money(method.totalAmount), `${method.percentage || 0}%`, `${method.successRate || 0}%`]);
     });
-    csv += csvRow(['TOTAL', data.byMethod.reduce((sum: number, m: any) => sum + (m.count || 0), 0), data.byMethod.reduce((sum: number, m: any) => sum + (m.totalAmount || 0), 0), '100%', '']);
+    csv += csvRow(['TOTAL', data.byMethod.reduce((sum: number, m: any) => sum + (m.count || 0), 0), money(data.byMethod.reduce((sum: number, m: any) => sum + (m.totalAmount || 0), 0)), '100%', '']);
     csv += '\n';
   }
 
@@ -130,9 +138,9 @@ function generatePaymentAnalyticsCSV(csv: string, data: any): string {
     csv += 'PAYMENT STATUS BREAKDOWN\n';
     csv += 'Status,Count,Total Amount,Percentage\n';
     data.byStatus.forEach((status: any) => {
-      csv += csvRow([status.status || 'Unknown', status.count || 0, status.totalAmount || 0, `${status.percentage || 0}%`]);
+      csv += csvRow([status.status || 'Unknown', status.count || 0, money(status.totalAmount), `${status.percentage || 0}%`]);
     });
-    csv += csvRow(['TOTAL', data.byStatus.reduce((sum: number, s: any) => sum + (s.count || 0), 0), data.byStatus.reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0), '100%']);
+    csv += csvRow(['TOTAL', data.byStatus.reduce((sum: number, s: any) => sum + (s.count || 0), 0), money(data.byStatus.reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0)), '100%']);
     csv += '\n';
   }
 
@@ -143,9 +151,9 @@ function generateVendorSpendingCSV(csv: string, data: any): string {
   // Summary metrics
   csv += 'SUMMARY METRICS\n';
   csv += 'Metric,Value\n';
-  csv += `Total Spending,${data.summary?.totalSpending || 0}\n`;
+  csv += `Total Spending,${money(data.summary?.totalSpending)}\n`;
   csv += `Total Vendors,${data.summary?.totalVendors || 0}\n`;
-  csv += `Average Spending per Vendor,${data.summary?.averageSpending || 0}\n`;
+  csv += `Average Spending per Vendor,${money(data.summary?.averageSpending)}\n`;
   csv += '\n';
 
   // Vendor spending table
@@ -153,7 +161,7 @@ function generateVendorSpendingCSV(csv: string, data: any): string {
     csv += 'VENDOR SPENDING DETAILS\n';
     csv += 'Vendor Name,Total Spent,Auctions Won,Average Bid,Payment Rate\n';
     data.vendors.forEach((vendor: any) => {
-      csv += `"${vendor.businessName || 'Unknown'}",${vendor.totalSpent || 0},${vendor.auctionsWon || 0},${vendor.avgBid || 0},${vendor.paymentRate || 0}%\n`;
+      csv += `"${vendor.businessName || 'Unknown'}",${money(vendor.totalSpent)},${vendor.auctionsWon || 0},${money(vendor.avgBid)},${vendor.paymentRate || 0}%\n`;
     });
     csv += '\n';
   }
@@ -163,7 +171,7 @@ function generateVendorSpendingCSV(csv: string, data: any): string {
     csv += 'SPENDING BY ASSET TYPE\n';
     csv += 'Asset Type,Total Spent,Count\n';
     data.byAssetType.forEach((asset: any) => {
-      csv += `${asset.assetType || 'Unknown'},${asset.totalSpent || 0},${asset.count || 0}\n`;
+      csv += `${asset.assetType || 'Unknown'},${money(asset.totalSpent)},${asset.count || 0}\n`;
     });
     csv += '\n';
   }
@@ -176,9 +184,9 @@ function generateProfitabilityCSV(csv: string, data: any): string {
   csv += 'Metric,Value\n';
   if (data.summary) {
     csv += csvRow(['Total Cases', data.summary.totalCases || 0]);
-    csv += csvRow(['Total Claims Paid', data.summary.totalClaimsPaid || 0]);
-    csv += csvRow(['Total Salvage Recovered', data.summary.totalSalvageRecovered || 0]);
-    csv += csvRow(['Total Net Loss', data.summary.totalNetLoss || 0]);
+    csv += csvRow(['Total Claims Paid', money(data.summary.totalClaimsPaid)]);
+    csv += csvRow(['Total Salvage Recovered', money(data.summary.totalSalvageRecovered)]);
+    csv += csvRow(['Total Net Loss', money(data.summary.totalNetLoss)]);
     csv += csvRow(['Average Recovery Rate', `${data.summary.averageRecoveryRate || 0}%`]);
     csv += csvRow(['ROI', `${data.summary.roi || 0}%`]);
   }
@@ -191,9 +199,9 @@ function generateProfitabilityCSV(csv: string, data: any): string {
       csv += csvRow([
         branch.label || branch.branchName || 'Unassigned',
         branch.count || 0,
-        branch.claimsPaid || 0,
-        branch.salvageRecovered || 0,
-        branch.netLoss || 0,
+        money(branch.claimsPaid),
+        money(branch.salvageRecovered),
+        money(branch.netLoss),
         `${branch.recoveryRate || 0}%`,
         `${branch.roi || 0}%`,
       ]);
@@ -229,9 +237,9 @@ function generateProfitabilityCSV(csv: string, data: any): string {
         row.branchName || '',
         row.channelLabel || '',
         row.assetType || '',
-        row.marketValue || 0,
-        row.salvageRecovery || 0,
-        row.netLoss || 0,
+        money(row.marketValue),
+        money(row.salvageRecovery),
+        money(row.netLoss),
         `${row.recoveryRate || 0}%`,
         `${row.roi || 0}%`,
         row.date || '',
@@ -247,7 +255,7 @@ function generateRevenueAnalysisCSV(csv: string, data: any): string {
   // Summary metrics
   csv += 'SUMMARY METRICS\n';
   csv += 'Metric,Value\n';
-  csv += `Total Revenue,${data.summary?.totalRevenue || 0}\n`;
+  csv += `Total Revenue,${money(data.summary?.totalRevenue)}\n`;
   csv += `Average Recovery Rate,${data.summary?.averageRecoveryRate || 0}%\n`;
   csv += `Total Cases,${data.summary?.totalCases || 0}\n`;
   csv += '\n';
@@ -305,9 +313,9 @@ function generateRevenueAnalysisCSV(csv: string, data: any): string {
         row.branchName || '',
         row.channelLabel || '',
         row.assetType || '',
-        row.marketValue || 0,
-        row.salvageRecovery || 0,
-        row.netLoss || 0,
+        money(row.marketValue),
+        money(row.salvageRecovery),
+        money(row.netLoss),
         `${row.recoveryRate || 0}%`,
         `${row.roi || 0}%`,
         row.date || '',
@@ -334,7 +342,7 @@ function generateKPIDashboardCSV(csv: string, data: any): string {
   csv += 'FINANCIAL KPIs\n';
   csv += 'Metric,Value\n';
   if (data.financial) {
-    csv += `Total Revenue,${data.financial.totalRevenue || 0}\n`;
+    csv += `Total Revenue,${money(data.financial.totalRevenue)}\n`;
     csv += `Recovery Rate,${data.financial.averageRecoveryRate || 0}%\n`;
     csv += `Profit Margin,${data.financial.profitMargin || 0}%\n`;
     csv += `Revenue Growth,${data.financial.revenueGrowth || 0}%\n`;
@@ -427,8 +435,8 @@ function generateCaseProcessingCSV(csv: string, data: any): string {
     csv += csvRow(['Active Auction Cases', data.summary.activeAuctionCases || 0]);
     csv += csvRow(['Awaiting Payment Cases', data.summary.awaitingPaymentCases || 0]);
     csv += csvRow(['Sold Cases', data.summary.soldCases || 0]);
-    csv += csvRow(['Total Market Value', data.summary.totalMarketValue || 0]);
-    csv += csvRow(['Total Salvage Value', data.summary.totalSalvageValue || 0]);
+    csv += csvRow(['Total Market Value', money(data.summary.totalMarketValue)]);
+    csv += csvRow(['Total Salvage Value', money(data.summary.totalSalvageValue)]);
   }
   csv += '\n';
 

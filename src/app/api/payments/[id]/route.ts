@@ -9,6 +9,7 @@ import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { formatAssetName } from '@/lib/utils/asset-name';
 import { brandLegalName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
+import { generatePickupAuthorizationCode } from '@/features/pickups/services/pickup-confirmation.service';
 
 function serializeDate(value: Date | string | null | undefined): string | null {
   if (!value) return null;
@@ -115,10 +116,14 @@ export async function GET(
       } : null,
       nem: {
         name: brandLegalName(branding),
-        address: '',
+        address: branding.supportAddress ?? '',
         email: getSupportEmail(branding),
         phone: getSupportPhone(branding),
       },
+      pickupAuthCode:
+        payment.payment.auctionId && payment.payment.status === 'verified'
+          ? generatePickupAuthorizationCode(payment.payment.auctionId)
+          : null,
     };
 
     return NextResponse.json(response);

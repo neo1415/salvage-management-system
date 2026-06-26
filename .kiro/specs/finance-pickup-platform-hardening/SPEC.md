@@ -7,10 +7,10 @@
 
 | Batch | Scope | Status |
 |-------|--------|--------|
-| B1 | Spec + payment case fields API/UI + salvage manager market value fix + currency helper | in_progress |
-| B2 | Finance dashboard filters + payment verification filters | pending |
-| B3 | CSV exports comprehensive, remove PDF where requested, IP redaction, filenames, NGN | pending |
-| B4 | Pay Now single loader UX + documents download spinners + receipt fixes | pending |
+| B1 | Spec + payment case fields API/UI + salvage manager market value fix + currency helper | done |
+| B2 | Finance dashboard filters + payment verification filters | done |
+| B3 | CSV exports comprehensive, remove PDF where requested, IP redaction, filenames, NGN | done |
+| B4 | Pay Now single loader UX + documents download spinners + receipt fixes | done |
 | B5 | Price adjustment propagation (`finalSettledAmount`) app-wide | pending |
 | B6 | Pickup vendor flow (no resubmit, under review) + confirm notifications + optional admin notes | pending |
 | B7 | Fraud same-IP detection hardening + brand color flash fix | pending |

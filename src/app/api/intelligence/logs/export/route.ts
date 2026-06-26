@@ -18,6 +18,7 @@ import { predictionLogs, recommendationLogs, fraudDetectionLogs } from '@/lib/db
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { sql, desc, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
+import { ExportService } from '@/features/export/services/export.service';
 
 /**
  * Query parameters validation schema
@@ -180,7 +181,7 @@ export async function GET(request: NextRequest) {
 
     // Return data with appropriate content type
     const contentType = format === 'json' ? 'application/json' : 'text/csv';
-    const filename = `intelligence_logs_${logType || 'all'}_${Date.now()}.${format}`;
+    const filename = ExportService.generateFilename(`intelligence-logs-${logType || 'all'}`, format);
 
     return new NextResponse(exportedData, {
       status: 200,

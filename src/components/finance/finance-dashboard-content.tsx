@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { CreditCard, CheckCircle, Clock, AlertCircle, Wallet, Banknote } from 'lucide-react';
+import { CreditCard, CheckCircle, Clock, AlertCircle, Wallet, Banknote, Filter } from 'lucide-react';
 import { AppLink } from '@/components/navigation/app-link';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import { StatCard, StatGrid, StatTile } from '@/components/ui/stat-card';
 import { useAppRouter } from '@/hooks/use-app-router';
+import { formatNgnAmount } from '@/lib/utils/format-ngn';
 
 interface DashboardStats {
   totalPayments: number;
@@ -38,6 +39,37 @@ function FinanceDashboardContentInner() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const statsRef = useRef<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [branchFilter, setBranchFilter] = useState('');
+  const [brokerFilter, setBrokerFilter] = useState('');
+  const [insuranceClassFilter, setInsuranceClassFilter] = useState('');
+  const [filterOptions, setFilterOptions] = useState<{
+    branches: string[];
+    brokers: string[];
+    insuranceClasses: string[];
+  }>({ branches: [], brokers: [], insuranceClasses: [] });
+
+  const buildFilterParams = () => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+    if (branchFilter) params.set('branch', branchFilter);
+    if (brokerFilter) params.set('broker', brokerFilter);
+    if (insuranceClassFilter) params.set('insuranceClass', insuranceClassFilter);
+    return params;
+  };
+
+  const hasActiveFilters =
+    dateFrom || dateTo || branchFilter || brokerFilter || insuranceClassFilter;
+
+  const clearFilters = () => {
+    setDateFrom('');
+    setDateTo('');
+    setBranchFilter('');
+    setBrokerFilter('');
+    setInsuranceClassFilter('');
+  };
 
   useEffect(() => {
     // Wait for session to be fully loaded
@@ -67,7 +99,7 @@ function FinanceDashboardContentInner() {
       // User has correct role, fetch dashboard data
       fetchDashboardStats();
     }
-  }, [session, status, router.push]);
+  }, [session, status, router.push, dateFrom, dateTo, branchFilter, brokerFilter, insuranceClassFilter]);
 
   const fetchDashboardStats = async () => {
     const showFullPageLoader = statsRef.current == null;
@@ -75,15 +107,23 @@ function FinanceDashboardContentInner() {
       if (showFullPageLoader) {
         setLoading(true);
       }
-      const response = await fetch('/api/dashboard/finance');
+      const params = buildFilterParams();
+      const query = params.toString();
+      const response = await fetch(
+        query ? `/api/dashboard/finance?${query}` : '/api/dashboard/finance'
+      );
       
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard stats');
       }
 
       const data = await response.json();
-      statsRef.current = data;
-      setStats(data);
+      const { filterOptions: options, ...dashboardStats } = data;
+      statsRef.current = dashboardStats as DashboardStats;
+      setStats(dashboardStats as DashboardStats);
+      if (options) {
+        setFilterOptions(options);
+      }
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error);
       const fallback: DashboardStats = {
@@ -117,9 +157,8 @@ function FinanceDashboardContentInner() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return `\u20A6${amount.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-  };
+  const formatCurrency = (amount: number) =>
+    formatNgnAmount(amount, { decimals: 0, empty: 'NGN 0' });
 
   const formatDays = (days: number | null) => {
     if (days === null) return 'No clean data';
@@ -140,6 +179,98 @@ function FinanceDashboardContentInner() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Finance Dashboard</h1>
         <p className="text-gray-600 mt-2">Payment verification and management</p>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Filter className="w-4 h-4 text-[var(--brand-primary)]" />
+            Filter dashboard
+          </h2>
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-sm text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)] font-medium"
+            >
+              Clear filters
+            </button>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div>
+            <label htmlFor="dashboard-date-from" className="block text-xs font-medium text-gray-700 mb-1">
+              From date
+            </label>
+            <input
+              type="date"
+              id="dashboard-date-from"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label htmlFor="dashboard-date-to" className="block text-xs font-medium text-gray-700 mb-1">
+              To date
+            </label>
+            <input
+              type="date"
+              id="dashboard-date-to"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label htmlFor="dashboard-branch" className="block text-xs font-medium text-gray-700 mb-1">
+              Branch
+            </label>
+            <select
+              id="dashboard-branch"
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+            >
+              <option value="">All branches</option>
+              {filterOptions.branches.map((branch) => (
+                <option key={branch} value={branch}>{branch}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="dashboard-broker" className="block text-xs font-medium text-gray-700 mb-1">
+              Broker / Agency
+            </label>
+            <select
+              id="dashboard-broker"
+              value={brokerFilter}
+              onChange={(e) => setBrokerFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+            >
+              <option value="">All brokers</option>
+              {filterOptions.brokers.map((broker) => (
+                <option key={broker} value={broker}>{broker}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="dashboard-insurance-class" className="block text-xs font-medium text-gray-700 mb-1">
+              Insurance class
+            </label>
+            <select
+              id="dashboard-insurance-class"
+              value={insuranceClassFilter}
+              onChange={(e) => setInsuranceClassFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+            >
+              <option value="">All classes</option>
+              {filterOptions.insuranceClasses.map((insuranceClass) => (
+                <option key={insuranceClass} value={insuranceClass}>{insuranceClass}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <StatGrid className="lg:grid-cols-5" minCol={180}>

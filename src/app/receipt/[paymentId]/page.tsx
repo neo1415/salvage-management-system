@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { usePublicBranding } from '@/hooks/use-public-branding';
+import { formatNgnAmount } from '@/lib/utils/format-ngn';
 
 interface PaymentDetails {
   id: string;
@@ -45,6 +46,7 @@ interface PaymentDetails {
     email: string;
     phone: string;
   };
+  pickupAuthCode?: string | null;
 }
 
 export default function PublicReceiptPage() {
@@ -173,7 +175,7 @@ export default function PublicReceiptPage() {
             <div>
               <p className="text-sm text-gray-600">Amount Paid</p>
               <p className="text-3xl font-bold text-green-700">
-                â‚¦{parseFloat(payment.amount).toLocaleString()}
+                {formatNgnAmount(payment.amount)}
               </p>
             </div>
             <div>
@@ -270,8 +272,10 @@ export default function PublicReceiptPage() {
                 <p className="font-semibold text-gray-900">{assetName}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Claim Reference</p>
-                <p className="font-semibold text-gray-900">{auctionCase?.claimReference || 'N/A'}</p>
+                <p className="text-sm text-gray-600">Pickup Authorization Code</p>
+                <p className="font-semibold text-gray-900 font-mono">
+                  {payment.pickupAuthCode || 'Available after payment verification'}
+                </p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Asset Type</p>
@@ -286,7 +290,7 @@ export default function PublicReceiptPage() {
               <div>
                 <p className="text-sm text-gray-600">Market Value</p>
                 <p className="font-semibold text-gray-900">
-                  ₦{parseFloat(payment.auction.case.marketValue).toLocaleString()}
+                  {formatNgnAmount(payment.auction.case.marketValue, { decimals: 0 })}
                 </p>
               </div>
               
@@ -322,7 +326,7 @@ export default function PublicReceiptPage() {
             <div className="bg-green-50 rounded-lg p-4">
               <p className="text-sm text-gray-600 mb-1">Total Amount Paid</p>
               <p className="text-3xl font-bold text-green-700">
-                ₦{parseFloat(payment.amount).toLocaleString()}
+                {formatNgnAmount(payment.amount)}
               </p>
             </div>
           </div>
@@ -425,7 +429,9 @@ export default function PublicReceiptPage() {
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">Address</p>
-                    <p className="font-semibold text-gray-900">{payment.nem.address}</p>
+                    <p className="font-semibold text-gray-900">
+                      {payment.nem.address || branding.supportAddress || 'N/A'}
+                    </p>
                   </div>
                 </div>
               </div>

@@ -10,6 +10,12 @@ import { escrowWallets } from '@/lib/db/schema/escrow';
 import { releaseForms } from '@/lib/db/schema/release-forms';
 import { businessPolicyService } from '@/features/business-policy';
 import { formatAssetName } from '@/lib/utils/asset-name';
+import {
+  parseFinancePaymentFilters,
+  appendPaymentDateFilters,
+  appendCaseDimensionFilters,
+} from '@/lib/finance/payment-case-filters';
+import { fetchFinanceFilterOptions } from '@/lib/finance/finance-filter-options';
 import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
 
 // Force dynamic rendering - never cache this route
@@ -53,8 +59,7 @@ export async function GET(request: NextRequest) {
     const policy = await businessPolicyService.getEffectivePolicy();
     const requiredAuctionDocuments = policy.documents.requiredAuctionDocuments;
     const paymentTypeFilter = searchParams.get('paymentType'); // NEW: 'auction' | 'registration_fee'
-    const dateFrom = searchParams.get('dateFrom');
-    const dateTo = searchParams.get('dateTo');
+    const caseFilters = parseFinancePaymentFilters(searchParams);
 
     // Get today's date range (start of day to now)
     const today = new Date();
@@ -89,17 +94,9 @@ export async function GET(request: NextRequest) {
       conditions.push(sql`${payments.auctionId} IS NOT NULL`);
     }
 
-    // Apply date range filters
-    if (dateFrom) {
-      const fromDate = new Date(dateFrom);
-      fromDate.setHours(0, 0, 0, 0);
-      conditions.push(gte(payments.createdAt, fromDate));
-    }
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      conditions.push(lte(payments.createdAt, toDate));
-    }
+    // Apply date range and case dimension filters
+    appendPaymentDateFilters(conditions, caseFilters);
+    appendCaseDimensionFilters(conditions, caseFilters);
 
     // Fetch payments with filters (LEFT JOIN for auctions to include registration fees)
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -313,6 +310,8 @@ export async function GET(request: NextRequest) {
 
     console.log(`📊 Duplicate filtering: ${formattedPayments.length} → ${filteredForDuplicates.length} payments`);
 
+    const filterOptions = await fetchFinanceFilterOptions();
+
     return NextResponse.json({
       stats: {
         total: totalFiltered,
@@ -324,7 +323,8 @@ export async function GET(request: NextRequest) {
           total: registrationFeeTotal,
         },
       },
-      payments: filteredForDuplicates, // Return filtered list
+      payments: filteredForDuplicates,
+      filterOptions,
     });
   } catch (error) {
     console.error('Error fetching finance payments:', error);

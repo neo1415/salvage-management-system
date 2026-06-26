@@ -5,6 +5,7 @@ import { auctions, bids, salvageCases, vendors, users } from '@/lib/db/schema';
 import { eq, desc, inArray } from 'drizzle-orm';
 import { bidHistoryAuctionOrder, bidHistoryStatusFilter } from '@/lib/auctions/bid-history-sort';
 import { ExportService } from '@/features/export/services/export.service';
+import { formatNgnAmount } from '@/lib/utils/format-ngn';
 
 /**
  * Export Bid History API
@@ -98,10 +99,13 @@ export async function GET(request: NextRequest) {
         return {
           auctionId: item.auction.id,
           assetName,
-          bidAmount: item.auction.currentBid || '0',
+          bidAmount: formatNgnAmount(item.auction.currentBid || 0, { decimals: 0 }),
           bidDate: bids[0]?.createdAt || item.auction.createdAt,
           status,
-          finalPrice: finalPrice || 'N/A',
+          finalPrice:
+            finalPrice != null
+              ? formatNgnAmount(finalPrice, { decimals: 0 })
+              : 'N/A',
         };
       });
 

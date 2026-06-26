@@ -11,6 +11,13 @@ import { ClipboardList, Star } from 'lucide-react';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
+import { formatNgnAmount } from '@/lib/utils/format-ngn';
+import {
+  downloadFinancePaymentsCsv,
+  generateFinancePaymentsCsv,
+} from '@/lib/finance/finance-payment-export';
+import { ExportService } from '@/features/export/services/export.service';
+import { formatExportIpAddress } from '@/lib/export/export-ip';
 
 const PAYMENT_VIEW_TABS: ViewTab[] = ['all', 'today', 'pending', 'overdue'];
 
@@ -104,9 +111,12 @@ function paymentsCacheKey(
   method: string,
   paymentType: string,
   from: string,
-  to: string
+  to: string,
+  branch: string,
+  broker: string,
+  insuranceClass: string
 ) {
-  return `${view}|${status}|${method}|${paymentType}|${from}|${to}`;
+  return `${view}|${status}|${method}|${paymentType}|${from}|${to}|${branch}|${broker}|${insuranceClass}`;
 }
 
 function filterPaymentsBySearch(payments: Payment[], query: string): Payment[] {
@@ -185,12 +195,19 @@ export default function FinancePaymentsPage() {
   const [paymentTypeFilter, setPaymentTypeFilter] = useState<string>(''); // NEW: Payment type filter
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+  const [branchFilter, setBranchFilter] = useState<string>('');
+  const [brokerFilter, setBrokerFilter] = useState<string>('');
+  const [insuranceClassFilter, setInsuranceClassFilter] = useState<string>('');
+  const [filterOptions, setFilterOptions] = useState<{
+    branches: string[];
+    brokers: string[];
+    insuranceClasses: string[];
+  }>({ branches: [], brokers: [], insuranceClasses: [] });
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(PAYMENTS_PAGE_SIZE);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Export states
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const fetchPayments = useCallback(async () => {
@@ -200,7 +217,10 @@ export default function FinancePaymentsPage() {
       methodFilter,
       paymentTypeFilter,
       dateFrom,
-      dateTo
+      dateTo,
+      branchFilter,
+      brokerFilter,
+      insuranceClassFilter
     );
     const cached = paymentsCacheRef.current.get(cacheKey);
     const showFullPageLoader =
@@ -227,6 +247,9 @@ export default function FinancePaymentsPage() {
       if (paymentTypeFilter) params.append('paymentType', paymentTypeFilter);
       if (dateFrom) params.append('dateFrom', dateFrom);
       if (dateTo) params.append('dateTo', dateTo);
+      if (branchFilter) params.append('branch', branchFilter);
+      if (brokerFilter) params.append('broker', brokerFilter);
+      if (insuranceClassFilter) params.append('insuranceClass', insuranceClassFilter);
 
       const response = await fetch(`/api/finance/payments?${params.toString()}`);
 
@@ -245,6 +268,9 @@ export default function FinancePaymentsPage() {
       paymentsRef.current = nextPayments;
       setPayments(nextPayments);
       setStats(nextStats);
+      if (data.filterOptions) {
+        setFilterOptions(data.filterOptions);
+      }
     } catch (err) {
       console.error('Error fetching payments:', err);
       setError(err instanceof Error ? err.message : 'Failed to load payments');
@@ -263,6 +289,9 @@ export default function FinancePaymentsPage() {
     paymentTypeFilter,
     dateFrom,
     dateTo,
+    branchFilter,
+    brokerFilter,
+    insuranceClassFilter,
   ]);
 
   const invalidateAndRefreshPayments = useCallback(async () => {
@@ -278,7 +307,7 @@ export default function FinancePaymentsPage() {
   // Prefetch view tabs (no extra filters) so tab switches feel instant
   useEffect(() => {
     if (prefetchedViewsRef.current) return;
-    if (statusFilter || methodFilter || paymentTypeFilter || dateFrom || dateTo) {
+    if (statusFilter || methodFilter || paymentTypeFilter || dateFrom || dateTo || branchFilter || brokerFilter || insuranceClassFilter) {
       return;
     }
     prefetchedViewsRef.current = true;
@@ -286,7 +315,7 @@ export default function FinancePaymentsPage() {
     const views: ViewTab[] = ['all', 'today', 'pending', 'overdue'];
     void Promise.all(
       views.map(async (view) => {
-        const key = paymentsCacheKey(view, '', '', '', '', '');
+        const key = paymentsCacheKey(view, '', '', '', '', '', '', '', '');
         if (paymentsCacheRef.current.has(key)) return;
         try {
           const response = await fetch(
@@ -303,24 +332,7 @@ export default function FinancePaymentsPage() {
         }
       })
     );
-  }, [statusFilter, methodFilter, paymentTypeFilter, dateFrom, dateTo]);
-
-  // Close export menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (showExportMenu && !target.closest('.relative')) {
-        setShowExportMenu(false);
-      }
-    };
-
-    if (showExportMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
-    }
-  }, [showExportMenu]);
+  }, [statusFilter, methodFilter, paymentTypeFilter, dateFrom, dateTo, branchFilter, brokerFilter, insuranceClassFilter]);
 
   const clearFilters = () => {
     setActiveTab('all');
@@ -329,6 +341,9 @@ export default function FinancePaymentsPage() {
     setPaymentTypeFilter('');
     setDateFrom('');
     setDateTo('');
+    setBranchFilter('');
+    setBrokerFilter('');
+    setInsuranceClassFilter('');
     setSearchQuery('');
   };
 
@@ -338,6 +353,9 @@ export default function FinancePaymentsPage() {
     paymentTypeFilter ||
     dateFrom ||
     dateTo ||
+    branchFilter ||
+    brokerFilter ||
+    insuranceClassFilter ||
     searchQuery.trim().length > 0;
 
   const filteredPayments = useMemo(
@@ -361,6 +379,9 @@ export default function FinancePaymentsPage() {
     paymentTypeFilter,
     dateFrom,
     dateTo,
+    branchFilter,
+    brokerFilter,
+    insuranceClassFilter,
     searchQuery,
   ]);
 
@@ -422,7 +443,7 @@ export default function FinancePaymentsPage() {
 
       // Show success modal
       const message = action === 'approve' 
-        ? `Payment verified successfully! ₦${parseFloat(selectedPayment.amount).toLocaleString()} released to vendor.`
+        ? `Payment verified successfully! ${formatNgnAmount(selectedPayment.amount)} released to vendor.`
         : 'Payment rejected successfully.';
       
       setSuccessMessage(message);
@@ -538,7 +559,7 @@ export default function FinancePaymentsPage() {
       const result = await response.json();
 
       // Show success modal
-      setSuccessMessage(`Funds released successfully! ₦${parseFloat(selectedPayment.amount).toLocaleString()} transferred to the configured settlement account.`);
+      setSuccessMessage(`Funds released successfully! ${formatNgnAmount(selectedPayment.amount)} transferred to the configured settlement account.`);
       setShowSuccessModal(true);
       
       await invalidateAndRefreshPayments();
@@ -621,10 +642,7 @@ export default function FinancePaymentsPage() {
   const exportAuditLogsToCSV = () => {
     if (!selectedPayment || auditLogs.length === 0) return;
 
-    // CSV headers
-    const headers = ['Timestamp', 'Action', 'User', 'IP Address', 'Device', 'Details'];
-    
-    // CSV rows
+    const viewerRole = session?.user?.role;
     const rows = auditLogs.map((log) => {
       const timestamp = new Date(log.createdAt).toLocaleString('en-US', {
         year: 'numeric',
@@ -634,50 +652,50 @@ export default function FinancePaymentsPage() {
         minute: '2-digit',
         second: '2-digit',
       });
-      
+
       const action = log.actionType.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
       const user = log.userName || 'Unknown User';
-      const ipAddress = log.ipAddress;
+      const ipAddress = formatExportIpAddress(log.ipAddress, viewerRole);
       const device = log.deviceType.charAt(0).toUpperCase() + log.deviceType.slice(1);
-      
-      // Extract details from afterState
+
       let details = '';
       if (log.afterState) {
         const detailParts: string[] = [];
         if (log.afterState.amount) {
-          detailParts.push(`Amount: ₦${Number(log.afterState.amount).toLocaleString()}`);
+          detailParts.push(`Amount: ${formatNgnAmount(log.afterState.amount as number | string)}`);
         }
         if (log.afterState.escrowStatus) {
-          detailParts.push(`Status: ${log.afterState.escrowStatus}`);
+          detailParts.push(`Status: ${String(log.afterState.escrowStatus)}`);
         }
         if (log.afterState.autoVerified) {
           detailParts.push('Auto-verified');
         }
         if (log.afterState.error) {
-          detailParts.push(`Error: ${log.afterState.error}`);
+          detailParts.push(`Error: ${String(log.afterState.error)}`);
         }
         details = detailParts.join(' | ');
       }
-      
-      return [timestamp, action, user, ipAddress, device, details];
+
+      return { timestamp, action, user, ipAddress, device, details };
     });
 
-    // Combine headers and rows
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+    const csvContent = ExportService.generateCSV({
+      filename: ExportService.generateFilename(`audit-trail-${selectedPayment.id.slice(0, 8)}`, 'csv'),
+      columns: [
+        { key: 'timestamp', header: 'Timestamp' },
+        { key: 'action', header: 'Action' },
+        { key: 'user', header: 'User' },
+        { key: 'ipAddress', header: 'IP Address' },
+        { key: 'device', header: 'Device' },
+        { key: 'details', header: 'Details' },
+      ],
+      data: rows,
+    });
 
-    // Create blob and download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `audit-trail-${selectedPayment.id}-${Date.now()}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadFinancePaymentsCsv(
+      csvContent,
+      ExportService.generateFilename(`audit-trail-${selectedPayment.id.slice(0, 8)}`, 'csv')
+    );
   };
 
   const openDetailsModalWithAuditLogs = async (payment: Payment) => {
@@ -693,75 +711,8 @@ export default function FinancePaymentsPage() {
   const handleExportCSV = () => {
     try {
       setExporting(true);
-      
-      // Prepare data for export with comprehensive columns
-      const exportData = payments.map(payment => ({
-        paymentId: payment.id,
-        auctionId: payment.auctionId || 'N/A',
-        claimReference: payment.case?.claimReference || 'Registration Fee',
-        vendorName: payment.vendor.businessName || payment.vendor.contactPersonName || 'N/A',
-        amount: `₦${parseFloat(payment.amount).toLocaleString()}`,
-        status: payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
-        paymentMethod: getPaymentSourceLabel(payment.paymentMethod),
-        paymentReference: payment.paymentReference || 'N/A',
-        createdDate: new Date(payment.createdAt).toLocaleDateString('en-NG', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        verifiedDate: payment.status === 'verified' ? new Date(payment.createdAt).toLocaleDateString('en-NG', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric'
-        }) : 'N/A',
-        escrowStatus: payment.escrowStatus || 'N/A',
-        autoVerified: payment.autoVerified ? 'Yes' : 'No',
-        vendorEmail: payment.vendor.email || 'N/A',
-        vendorPhone: payment.vendor.phoneNumber || 'N/A'
-      }));
-
-      // Generate CSV content with more columns
-      const headers = ['Payment ID', 'Auction ID', 'Claim Reference', 'Vendor Name', 'Amount', 'Status', 'Payment Method', 'Transaction Reference', 'Created Date', 'Verified Date', 'Escrow Status', 'Auto-Verified', 'Vendor Email', 'Vendor Phone'];
-      const csvRows = [headers.join(',')];
-      
-      exportData.forEach(row => {
-        const values = [
-          escapeCSVField(row.paymentId),
-          escapeCSVField(row.auctionId),
-          escapeCSVField(row.claimReference),
-          escapeCSVField(row.vendorName),
-          escapeCSVField(row.amount),
-          escapeCSVField(row.status),
-          escapeCSVField(row.paymentMethod),
-          escapeCSVField(row.paymentReference),
-          escapeCSVField(row.createdDate),
-          escapeCSVField(row.verifiedDate),
-          escapeCSVField(row.escrowStatus),
-          escapeCSVField(row.autoVerified),
-          escapeCSVField(row.vendorEmail),
-          escapeCSVField(row.vendorPhone)
-        ];
-        csvRows.push(values.join(','));
-      });
-
-      const csvContent = csvRows.join('\n');
-      
-      // Create and download file
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      const date = new Date().toISOString().split('T')[0];
-      
-      link.setAttribute('href', url);
-      link.setAttribute('download', `finance-payments-${date}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // Show success message
+      const csvContent = generateFinancePaymentsCsv(payments, getPaymentSourceLabel);
+      downloadFinancePaymentsCsv(csvContent);
       setSuccessMessage(`Successfully exported ${payments.length} payment records to CSV`);
       setShowSuccessModal(true);
     } catch (err) {
@@ -772,133 +723,6 @@ export default function FinancePaymentsPage() {
     } finally {
       setExporting(false);
     }
-  };
-
-  const handleExportPDF = async () => {
-    try {
-      setExporting(true);
-      
-      // Prepare data for export with more comprehensive columns
-      const exportData = payments.map(payment => ({
-        paymentId: payment.id.substring(0, 8),
-        auctionId: payment.auctionId ? payment.auctionId.substring(0, 8) : 'N/A',
-        claimRef: payment.case?.claimReference || 'Registration Fee',
-        vendorName: payment.vendor.businessName || payment.vendor.contactPersonName || 'N/A',
-        amount: `₦${parseFloat(payment.amount).toLocaleString()}`,
-        status: payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
-        paymentMethod: getPaymentSourceLabel(payment.paymentMethod),
-        reference: payment.paymentReference || 'N/A',
-        createdDate: new Date(payment.createdAt).toLocaleDateString('en-NG', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric'
-        }),
-        verifiedDate: payment.status === 'verified' ? new Date(payment.createdAt).toLocaleDateString('en-NG', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric'
-        }) : 'N/A',
-        escrowStatus: payment.escrowStatus || 'N/A',
-        autoVerified: payment.autoVerified ? 'Yes' : 'No'
-      }));
-
-      // Dynamically import jsPDF and services
-      const { jsPDF } = await import('jspdf');
-      const { PDFTemplateService } = await import('@/features/documents/services/pdf-template.service');
-      
-      // Use landscape orientation for more columns
-      const doc = new jsPDF('landscape');
-      
-      // Add letterhead
-      await PDFTemplateService.addLetterhead(doc, 'FINANCE PAYMENTS REPORT');
-      
-      // Add table data
-      let y = 65; // Start below letterhead
-      const maxY = PDFTemplateService.getMaxContentY(doc);
-      
-      // Add headers (landscape allows more columns)
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Pay ID', 15, y);
-      doc.text('Auction', 35, y);
-      doc.text('Claim Ref', 55, y);
-      doc.text('Vendor', 85, y);
-      doc.text('Amount', 120, y);
-      doc.text('Status', 150, y);
-      doc.text('Method', 175, y);
-      doc.text('Reference', 205, y);
-      doc.text('Created', 240, y);
-      doc.text('Verified', 265, y);
-      
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      
-      // Add data rows
-      for (const item of exportData) {
-        if (y > maxY) {
-          // Add footer to current page
-          PDFTemplateService.addFooter(doc);
-          // Start new page
-          doc.addPage();
-          await PDFTemplateService.addLetterhead(doc, 'FINANCE PAYMENTS REPORT');
-          y = 65;
-          
-          // Re-add headers on new page
-          doc.setFontSize(7);
-          doc.setFont('helvetica', 'bold');
-          doc.text('Pay ID', 15, y);
-          doc.text('Auction', 35, y);
-          doc.text('Claim Ref', 55, y);
-          doc.text('Vendor', 85, y);
-          doc.text('Amount', 120, y);
-          doc.text('Status', 150, y);
-          doc.text('Method', 175, y);
-          doc.text('Reference', 205, y);
-          doc.text('Created', 240, y);
-          doc.text('Verified', 265, y);
-          y += 5;
-          doc.setFont('helvetica', 'normal');
-        }
-        
-        doc.text(item.paymentId, 15, y);
-        doc.text(item.auctionId, 35, y);
-        doc.text(item.claimRef.substring(0, 12), 55, y);
-        doc.text(item.vendorName.substring(0, 15), 85, y);
-        doc.text(item.amount, 120, y);
-        doc.text(item.status, 150, y);
-        doc.text(item.paymentMethod.substring(0, 12), 175, y);
-        doc.text(item.reference.substring(0, 15), 205, y);
-        doc.text(item.createdDate, 240, y);
-        doc.text(item.verifiedDate, 265, y);
-        y += 5;
-      }
-      
-      // Add footer to last page
-      PDFTemplateService.addFooter(doc, `Total Records: ${payments.length} | Auto-Verified: ${payments.filter(p => p.autoVerified).length}`);
-      
-      // Download PDF
-      const date = new Date().toISOString().split('T')[0];
-      doc.save(`finance-payments-${date}.pdf`);
-      
-      // Show success message
-      setSuccessMessage(`Successfully exported ${payments.length} payment records to PDF`);
-      setShowSuccessModal(true);
-    } catch (err) {
-      console.error('Error exporting PDF:', err);
-      setErrorMessage('Export Failed');
-      setErrorDetails('Failed to generate PDF export. Please try again.');
-      setShowErrorModal(true);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const escapeCSVField = (field: string): string => {
-    const str = String(field);
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
   };
 
   if (loading && payments.length === 0) {
@@ -924,61 +748,22 @@ export default function FinancePaymentsPage() {
         
         {/* Action Buttons Row - Second row on mobile, same row on desktop */}
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Export Dropdown */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                setShowExportMenu(!showExportMenu);
-              }}
-              disabled={isFiltering || payments.length === 0}
-              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span className="hidden sm:inline">Export</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            
-            {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleExportCSV();
-                    setShowExportMenu(false);
-                  }}
-                  disabled={exporting}
-                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 disabled:opacity-50"
-                >
-                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span className="text-sm font-medium text-gray-700">Export as CSV</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleExportPDF();
-                    setShowExportMenu(false);
-                  }}
-                  disabled={exporting}
-                  className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 border-t border-gray-100 disabled:opacity-50"
-                >
-                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                  <span className="text-sm font-medium text-gray-700">Export as PDF</span>
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Export CSV */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              handleExportCSV();
+            }}
+            disabled={isFiltering || exporting || payments.length === 0}
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            data-testid="export-csv-button"
+          >
+            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Export CSV'}</span>
+          </button>
           
           <button
             type="button"
@@ -1054,7 +839,7 @@ export default function FinancePaymentsPage() {
               <p className="text-sm font-medium text-gray-600">Registration Fees</p>
               <p className="text-3xl font-bold text-purple-600 mt-2">{stats.registrationFees.count}</p>
               <p className="text-xs text-gray-500 mt-1">
-                ₦{stats.registrationFees.total.toLocaleString()} total
+                {formatNgnAmount(stats.registrationFees.total, { decimals: 0 })} total
               </p>
             </div>
             <div className="p-3 bg-purple-100 rounded-full">
@@ -1320,6 +1105,59 @@ export default function FinancePaymentsPage() {
               />
             </div>
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div>
+              <label htmlFor="branch-filter" className="block text-xs font-medium text-gray-700 mb-1">
+                Branch
+              </label>
+              <select
+                id="branch-filter"
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+              >
+                <option value="">All branches</option>
+                {filterOptions.branches.map((branch) => (
+                  <option key={branch} value={branch}>{branch}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="broker-filter" className="block text-xs font-medium text-gray-700 mb-1">
+                Broker / Agency
+              </label>
+              <select
+                id="broker-filter"
+                value={brokerFilter}
+                onChange={(e) => setBrokerFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+              >
+                <option value="">All brokers</option>
+                {filterOptions.brokers.map((broker) => (
+                  <option key={broker} value={broker}>{broker}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="insurance-class-filter" className="block text-xs font-medium text-gray-700 mb-1">
+                Insurance class
+              </label>
+              <select
+                id="insurance-class-filter"
+                value={insuranceClassFilter}
+                onChange={(e) => setInsuranceClassFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
+              >
+                <option value="">All classes</option>
+                {filterOptions.insuranceClasses.map((insuranceClass) => (
+                  <option key={insuranceClass} value={insuranceClass}>
+                    {insuranceClass}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* Payments List Header */}
@@ -1421,7 +1259,7 @@ export default function FinancePaymentsPage() {
                       <div>
                         <p className="text-gray-500">Amount</p>
                         <p className="font-medium text-gray-900">
-                          ₦{parseFloat(payment.amount).toLocaleString()}
+                          {formatNgnAmount(payment.amount, { decimals: 0 })}
                         </p>
                       </div>
                       <div>
@@ -1670,7 +1508,7 @@ export default function FinancePaymentsPage() {
                 <div>
                   <p className="text-sm text-gray-500">Amount</p>
                   <p className="font-medium text-gray-900">
-                    ₦{parseFloat(selectedPayment.amount).toLocaleString()}
+                    {formatNgnAmount(selectedPayment.amount, { decimals: 0 })}
                   </p>
                 </div>
                 <div>
@@ -1815,7 +1653,7 @@ export default function FinancePaymentsPage() {
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Amount</p>
                     <p className="text-lg font-bold text-[var(--brand-primary)]">
-                      ₦{parseFloat(selectedPayment.amount).toLocaleString()}
+                      {formatNgnAmount(selectedPayment.amount, { decimals: 0 })}
                     </p>
                   </div>
                   <div>

@@ -115,6 +115,7 @@ export default function VendorDocumentsPage() {
   const [scrollToAuctionId, setScrollToAuctionId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(DOCUMENTS_PAGE_SIZE);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const [downloadingDocumentId, setDownloadingDocumentId] = useState<string | null>(null);
 
   // CRITICAL: Wrap fetchFn in useCallback to prevent infinite loop
   // Without this, fetchFn is recreated on every render, causing the hook to re-fetch infinitely
@@ -315,8 +316,9 @@ export default function VendorDocumentsPage() {
 
   const handleDownload = async (documentId: string, title: string) => {
     try {
+      setDownloadingDocumentId(documentId);
       const response = await fetch(`/api/documents/${documentId}/download`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to download document');
       }
@@ -333,7 +335,21 @@ export default function VendorDocumentsPage() {
     } catch (error) {
       console.error('Error downloading document:', error);
       alert('Failed to download document');
+    } finally {
+      setDownloadingDocumentId(null);
     }
+  };
+
+  const handleDownloadReceipt = (receiptUrl: string) => {
+    const printWindow = window.open(receiptUrl, '_blank', 'noopener,noreferrer');
+    if (!printWindow) {
+      router.push(receiptUrl);
+      return;
+    }
+    printWindow.addEventListener('load', () => {
+      printWindow.focus();
+      printWindow.print();
+    });
   };
 
   const handleViewReceipt = (receiptUrl: string) => {
@@ -511,6 +527,8 @@ export default function VendorDocumentsPage() {
                     onViewAuction={() => router.push(`/vendor/auctions/${auction.auctionId}`)}
                     onDownload={handleDownload}
                     onViewReceipt={handleViewReceipt}
+                    onDownloadReceipt={handleDownloadReceipt}
+                    downloadingDocumentId={downloadingDocumentId}
                     isOffline={isOffline}
                   />
                 </div>
@@ -528,6 +546,8 @@ export default function VendorDocumentsPage() {
                 onViewAuction={() => router.push(`/vendor/auctions/${auction.auctionId}`)}
                 onDownload={handleDownload}
                 onViewReceipt={handleViewReceipt}
+                onDownloadReceipt={handleDownloadReceipt}
+                downloadingDocumentId={downloadingDocumentId}
                 isOffline={isOffline}
               />
             ))}
@@ -554,10 +574,20 @@ interface AuctionDocumentCardProps {
   onViewAuction: () => void;
   onDownload: (docId: string, title: string) => void;
   onViewReceipt: (receiptUrl: string) => void;
+  onDownloadReceipt: (receiptUrl: string) => void;
+  downloadingDocumentId: string | null;
   isOffline: boolean;
 }
 
-function AuctionDocumentCard({ auction, onViewAuction, onDownload, onViewReceipt, isOffline }: AuctionDocumentCardProps) {
+function AuctionDocumentCard({
+  auction,
+  onViewAuction,
+  onDownload,
+  onViewReceipt,
+  onDownloadReceipt,
+  downloadingDocumentId,
+  isOffline,
+}: AuctionDocumentCardProps) {
   const router = useAppRouter();
 
   const visibleDocuments = auction.documents.filter(isVisibleDocument);
@@ -709,30 +739,52 @@ function AuctionDocumentCard({ auction, onViewAuction, onDownload, onViewReceipt
 
               {/* Action Buttons */}
               {doc.status === 'signed' && doc.isReceipt && doc.receiptUrl && (
-                <OfflineAwareButton
-                  onClick={() => onViewReceipt(doc.receiptUrl!)}
-                  className="w-full px-4 py-3 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[var(--brand-shadow-color)] hover:shadow-lg hover:shadow-[var(--brand-shadow-color)] hover:-translate-y-0.5"
-                  requiresOnline={true}
-                  offlineTooltip="Receipt viewing requires an internet connection"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14h6m-6-4h6m-7 10h8a2 2 0 002-2V7.414a2 2 0 00-.586-1.414l-3.414-3.414A2 2 0 0012.586 2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                  View Receipt
-                </OfflineAwareButton>
+                <div className="flex flex-col gap-2">
+                  <OfflineAwareButton
+                    onClick={() => onDownloadReceipt(doc.receiptUrl!)}
+                    className="w-full px-4 py-3 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[var(--brand-shadow-color)] hover:shadow-lg hover:shadow-[var(--brand-shadow-color)] hover:-translate-y-0.5"
+                    requiresOnline={true}
+                    offlineTooltip="Receipt download requires an internet connection"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Download Receipt
+                  </OfflineAwareButton>
+                  <button
+                    type="button"
+                    onClick={() => onViewReceipt(doc.receiptUrl!)}
+                    className="w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors"
+                  >
+                    View Receipt
+                  </button>
+                </div>
               )}
 
               {doc.status === 'signed' && !doc.isReceipt && (
                 <OfflineAwareButton
                   onClick={() => onDownload(doc.id, doc.title)}
-                  className="w-full px-4 py-3 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[var(--brand-shadow-color)] hover:shadow-lg hover:shadow-[var(--brand-shadow-color)] hover:-translate-y-0.5"
+                  disabled={downloadingDocumentId === doc.id}
+                  className="w-full px-4 py-3 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md shadow-[var(--brand-shadow-color)] hover:shadow-lg hover:shadow-[var(--brand-shadow-color)] hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-wait"
                   requiresOnline={true}
                   offlineTooltip="Document downloads require an internet connection"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Download PDF
+                  {downloadingDocumentId === doc.id ? (
+                    <>
+                      <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Downloading…
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Download PDF
+                    </>
+                  )}
                 </OfflineAwareButton>
               )}
 

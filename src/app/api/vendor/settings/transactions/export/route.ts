@@ -4,6 +4,7 @@ import { db } from '@/lib/db/drizzle';
 import { walletTransactions, escrowWallets, bids, auctions, vendors, payments } from '@/lib/db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import { ExportService } from '@/features/export/services/export.service';
+import { formatNgnAmount } from '@/lib/utils/format-ngn';
 
 /**
  * GET /api/vendor/settings/transactions/export
@@ -63,12 +64,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    let csvData: string[][] = [];
-    let headers: string[] = [];
-    let exportData: any[] = [];
+    let columns: { key: string; header: string }[] = [];
+    let exportData: Record<string, string>[] = [];
 
     if (type === 'wallet') {
-      headers = ['Transaction ID', 'Type', 'Amount', 'Balance After', 'Description', 'Date', 'Reference'];
+      columns = [
+        { key: 'transactionId', header: 'Transaction ID' },
+        { key: 'type', header: 'Type' },
+        { key: 'amount', header: 'Amount' },
+        { key: 'balanceAfter', header: 'Balance After' },
+        { key: 'description', header: 'Description' },
+        { key: 'date', header: 'Date' },
+        { key: 'reference', header: 'Reference' },
+      ];
 
       const [wallet] = await db
         .select({ id: escrowWallets.id })
@@ -100,25 +108,20 @@ export async function GET(request: NextRequest) {
         exportData = results.map((t) => ({
           transactionId: t.id,
           type: t.type,
-          amount: parseFloat(t.amount),
-          balanceAfter: parseFloat(t.balanceAfter),
-          description: t.description,
+          amount: formatNgnAmount(t.amount, { decimals: 0 }),
+          balanceAfter: formatNgnAmount(t.balanceAfter, { decimals: 0 }),
+          description: t.description ?? '',
           date: new Date(t.date).toISOString(),
-          reference: t.reference,
+          reference: t.reference ?? '',
         }));
-
-        csvData = results.map((t) => [
-          t.id,
-          t.type,
-          t.amount,
-          t.balanceAfter,
-          t.description,
-          new Date(t.date).toISOString(),
-          t.reference,
-        ]);
       }
     } else if (type === 'bids') {
-      headers = ['Date', 'Auction ID', 'Bid Amount', 'Status'];
+      columns = [
+        { key: 'date', header: 'Date' },
+        { key: 'auctionId', header: 'Auction ID' },
+        { key: 'amount', header: 'Bid Amount' },
+        { key: 'status', header: 'Status' },
+      ];
 
       const results = await db
         .select({
@@ -161,21 +164,20 @@ export async function GET(request: NextRequest) {
           return {
             date: new Date(b.date).toISOString(),
             auctionId: b.auctionId,
-            amount: parseFloat(b.amount),
+            amount: formatNgnAmount(b.amount, { decimals: 0 }),
             status: bidStatus,
           };
         })
-        .filter(Boolean) as any[];
+        .filter(Boolean) as Array<Record<string, string>>;
 
       exportData = filteredResults;
-      csvData = filteredResults.map((b) => [
-        b.date,
-        b.auctionId,
-        b.amount.toString(),
-        b.status,
-      ]);
     } else if (type === 'payments') {
-      headers = ['Date', 'Auction ID', 'Amount', 'Status'];
+      columns = [
+        { key: 'date', header: 'Date' },
+        { key: 'auctionId', header: 'Auction ID' },
+        { key: 'amount', header: 'Amount' },
+        { key: 'status', header: 'Status' },
+      ];
 
       const results = await db
         .select({
@@ -197,72 +199,41 @@ export async function GET(request: NextRequest) {
       exportData = results.map((a) => ({
         date: new Date(a.date || new Date()).toISOString(),
         auctionId: a.auctionId || 'Registration fee',
-        amount: parseFloat(a.amount || '0'),
+        amount: formatNgnAmount(a.amount, { decimals: 0 }),
         status: a.status === 'verified' ? 'completed' : a.status,
       }));
-
-      csvData = results.map((a) => [
-        new Date(a.date || new Date()).toISOString(),
-        a.auctionId || 'Registration fee',
-        a.amount || '0',
-        a.status === 'verified' ? 'completed' : a.status,
-      ]);
     }
 
-    // Generate export based on format
-    if (format === 'csv') {
-      // Generate CSV content
-      const csvContent = [
-        headers.join(','),
-        ...csvData.map((row) => row.map((cell) => `"${cell}"`).join(',')),
-      ].join('\n');
+    const filename = ExportService.generateFilename(`vendor-${type}-transactions`, format);
 
-      // Return CSV file
-      const date = new Date().toISOString().split('T')[0];
+    if (format === 'csv') {
+      const csvContent = ExportService.generateCSV({
+        filename,
+        columns,
+        data: exportData,
+      });
+
       return new NextResponse(csvContent, {
         headers: {
           'Content-Type': 'text/csv',
-          'Content-Disposition': `attachment; filename="wallet-transactions-${date}.csv"`,
-        },
-      });
-    } else {
-      // Generate PDF using ExportService
-      const columns = headers.map((header, index) => ({
-        key: Object.keys(exportData[0] || {})[index] || `col${index}`,
-        header,
-        format: (value: any) => {
-          if (typeof value === 'number') {
-            return new Intl.NumberFormat('en-NG', {
-              style: 'currency',
-              currency: 'NGN',
-            }).format(value);
-          }
-          if (value instanceof Date || (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}/))) {
-            return new Date(value).toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-            });
-          }
-          return String(value || '');
-        },
-      }));
-
-      const date = new Date().toISOString().split('T')[0];
-      const pdfBuffer = await ExportService.generatePDF({
-        filename: `wallet-transactions-${date}.pdf`,
-        columns,
-        data: exportData,
-        title: 'WALLET TRANSACTIONS',
-      });
-
-      return new NextResponse(new Uint8Array(pdfBuffer), {
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="wallet-transactions-${date}.pdf"`,
+          'Content-Disposition': `attachment; filename="${filename}"`,
         },
       });
     }
+
+    const pdfBuffer = await ExportService.generatePDF({
+      filename,
+      columns,
+      data: exportData,
+      title: `VENDOR ${type.toUpperCase()} TRANSACTIONS`,
+    });
+
+    return new NextResponse(new Uint8Array(pdfBuffer), {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
   } catch (error) {
     console.error('Error exporting transactions:', error);
     return NextResponse.json(
