@@ -99,7 +99,8 @@ export async function POST(
       isRepairable: assessment.isRepairable,
       isTotalLoss: assessment.isTotalLoss,
       priceSource: assessment.priceSource,
-      recommendation: assessment.recommendation,
+      recommendation: assessment.summary || assessment.recommendation,
+      summary: assessment.summary,
       warnings: [],
       manualReviewRequired: assessment.manualReviewRequired || staffReviewReasons.length > 0,
       reviewReasons: staffReviewReasons,
@@ -108,6 +109,7 @@ export async function POST(
       photoCount: assessment.photoCount,
       itemDetails: assessment.itemDetails,
       damagedParts: assessment.damagedParts,
+      damageBreakdown: assessment.damageBreakdown,
     };
 
     await db
@@ -153,6 +155,14 @@ export async function POST(
         estimatedSalvageValue: assessment.estimatedSalvageValue,
         reservePrice: assessment.reservePrice,
         marketValue: assessment.marketValue,
+        aiAssessment: aiAssessmentPayload,
+        estimatedRepairCost: assessment.estimatedRepairCost,
+        damagePercentage: assessment.damagePercentage,
+        itemDetails: assessment.itemDetails,
+        damagedParts: assessment.damagedParts,
+        damageBreakdown: assessment.damageBreakdown,
+        recommendation: aiAssessmentPayload.recommendation,
+        summary: assessment.summary,
         reviewReasons: staffReviewReasons,
         manualReviewRequired: aiAssessmentPayload.manualReviewRequired,
       },

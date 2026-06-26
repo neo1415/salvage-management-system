@@ -54,6 +54,12 @@ function getDisplayableDamageLabels(labels?: string[]): string[] {
   return labels.filter((label) => !INTERNAL_DAMAGE_LABELS.has(label.toLowerCase().trim()));
 }
 
+type DisplayDamagedPart = {
+  part: string;
+  severity: 'minor' | 'moderate' | 'severe';
+  confidence: number;
+};
+
 /**
  * Case data structure
  */
@@ -102,7 +108,15 @@ interface CaseData {
       severity: 'minor' | 'moderate' | 'severe';
       confidence: number;
     }>;
+    damageBreakdown?: Array<{
+      component: string;
+      damageLevel: string;
+      repairCost?: number;
+      deductionPercent?: number;
+      deductionAmount?: number;
+    }>;
     recommendation?: string;
+    summary?: string;
   } | null;
   gpsLocation?: {
     x: number; // longitude
@@ -200,6 +214,40 @@ function parseNumberLike(value: unknown): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;
+}
+
+function normalizeDamagedParts(assessment: CaseData['aiAssessment']): DisplayDamagedPart[] {
+  if (!assessment) return [];
+
+  if (Array.isArray(assessment.damagedParts) && assessment.damagedParts.length > 0) {
+    return assessment.damagedParts
+      .filter((part) => typeof part?.part === 'string' && part.part.trim().length > 0)
+      .map((part) => ({
+        part: part.part.trim(),
+        severity: part.severity,
+        confidence: Number.isFinite(part.confidence) ? part.confidence : 75,
+      }));
+  }
+
+  if (Array.isArray(assessment.damageBreakdown) && assessment.damageBreakdown.length > 0) {
+    return assessment.damageBreakdown
+      .filter((part) => typeof part?.component === 'string' && part.component.trim().length > 0)
+      .map((part) => {
+        const normalizedSeverity = String(part.damageLevel || '').toLowerCase();
+        const severity: DisplayDamagedPart['severity'] =
+          normalizedSeverity === 'minor' || normalizedSeverity === 'moderate' || normalizedSeverity === 'severe'
+            ? normalizedSeverity
+            : 'moderate';
+
+        return {
+          part: part.component.trim(),
+          severity,
+          confidence: 70,
+        };
+      });
+  }
+
+  return [];
 }
 
 function parseFiniteNumber(value: unknown): number | undefined {
@@ -436,7 +484,19 @@ export default function ApprovalsPage() {
       const caseResponse = await fetch(`/api/cases/${selectedCase.id}`);
       const casePayload = await caseResponse.json();
       if (caseResponse.ok && casePayload.success && casePayload.data) {
-        setSelectedCase(casePayload.data as CaseData);
+        setSelectedCase({
+          ...(casePayload.data as CaseData),
+          aiAssessment: (casePayload.data as CaseData).aiAssessment || payload.data?.aiAssessment || selectedCase.aiAssessment,
+        });
+      } else if (payload.data?.aiAssessment) {
+        setSelectedCase({
+          ...selectedCase,
+          damageSeverity: payload.data.damageSeverity || selectedCase.damageSeverity,
+          marketValue: String(payload.data.marketValue ?? selectedCase.marketValue),
+          estimatedSalvageValue: String(payload.data.estimatedSalvageValue ?? selectedCase.estimatedSalvageValue),
+          reservePrice: String(payload.data.reservePrice ?? selectedCase.reservePrice),
+          aiAssessment: payload.data.aiAssessment,
+        });
       }
     } catch (error) {
       setResultModalData({
@@ -921,6 +981,7 @@ export default function ApprovalsPage() {
     const reservePrice = parseFiniteNumber(selectedCase.reservePrice);
     const canRunManagerAnalysis = managerRunsAiAssessment && selectedCase.status === 'pending_approval';
     const displayDamageLabels = getDisplayableDamageLabels(selectedCase.aiAssessment?.labels);
+    const displayDamagedParts = normalizeDamagedParts(selectedCase.aiAssessment);
 
     return (
       <div className="min-h-screen bg-gray-50 pb-32 overflow-y-auto">
@@ -1219,14 +1280,14 @@ export default function ApprovalsPage() {
                 {/* Gemini Damage Display Component */}
                 <GeminiDamageDisplay
                   itemDetails={selectedCase.aiAssessment.itemDetails}
-                  damagedParts={selectedCase.aiAssessment.damagedParts}
-                  summary={selectedCase.aiAssessment.recommendation}
+                  damagedParts={displayDamagedParts}
+                  summary={selectedCase.aiAssessment.summary || selectedCase.aiAssessment.recommendation}
                   showTitle={false}
                   assetType={selectedCase.assetType}
                 />
 
                 {/* Fallback: Detected Damage (for Vision API or old data) */}
-                {(!selectedCase.aiAssessment.damagedParts || selectedCase.aiAssessment.damagedParts.length === 0) && displayDamageLabels.length > 0 && (
+                {displayDamagedParts.length === 0 && displayDamageLabels.length > 0 && (
                   <div>
                     <p className="text-gray-600 mb-2">Detected Damage</p>
                     <div className="flex flex-wrap gap-2">
