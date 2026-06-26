@@ -30,6 +30,8 @@ interface DashboardStats {
     overdueSignedUnpaid: number;
     frozenEscrowPayments: number;
     averageDaysToPayment: number | null;
+    pickupPriceAdjustments: number;
+    paidVsSettledDelta: number;
   };
 }
 
@@ -146,6 +148,8 @@ function FinanceDashboardContentInner() {
           overdueSignedUnpaid: 0,
           frozenEscrowPayments: 0,
           averageDaysToPayment: null,
+          pickupPriceAdjustments: 0,
+          paidVsSettledDelta: 0,
         },
       };
       if (showFullPageLoader) {
@@ -313,7 +317,7 @@ function FinanceDashboardContentInner() {
         <StatCard
           title="Verified Receipts"
           value={formatCurrency(stats?.totalAmount || 0)}
-          subtitle="Includes registration fees"
+          subtitle="Cash collected (verified payments)"
           icon={
             <div className="p-3 bg-purple-100 rounded-lg">
               <Banknote className="w-8 h-8 text-purple-600" />
@@ -375,7 +379,34 @@ function FinanceDashboardContentInner() {
             value={formatDays(stats.settlementControl.averageDaysToPayment)}
             subtitle="Auction close to verified payment"
           />
+          {stats.settlementControl.pickupPriceAdjustments > 0 ? (
+            <StatTile
+              title="Pickup adjustments"
+              value={stats.settlementControl.pickupPriceAdjustments}
+              subtitle={
+                stats.settlementControl.paidVsSettledDelta !== 0
+                  ? `${formatCurrency(stats.settlementControl.paidVsSettledDelta)} collected vs settled gap`
+                  : 'Final sale amount updated after pickup'
+              }
+              valueClassName="text-blue-700"
+            />
+          ) : null}
         </StatGrid>
+        {stats.settlementControl.pickupPriceAdjustments > 0 &&
+          stats.settlementControl.paidVsSettledDelta !== 0 ? (
+          <p className="text-sm text-gray-600 mt-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+            Verified receipts total includes amounts actually collected. Recovery metrics use the
+            final settled amount when pickup price was adjusted.
+            {stats.settlementControl.paidVsSettledDelta > 0
+              ? ` Net gap: ${formatCurrency(stats.settlementControl.paidVsSettledDelta)} more collected than settled recovery.`
+              : ''}
+            See{' '}
+            <AppLink href="/finance/reconciliation" className="text-[var(--brand-primary)] underline-offset-2 hover:underline">
+              reconciliation
+            </AppLink>{' '}
+            for case-level detail.
+          </p>
+        ) : null}
       </div>
 
       <div className="bg-white rounded-lg shadow p-6">

@@ -7,6 +7,7 @@ import {
   calculateVendorBalanceBreakdown,
 } from '@/features/reconciliation/services/reconciliation.service';
 import { PaystackBalanceService } from '@/features/finance/services/paystack-balance.service';
+import { getSettlementReconciliationSummary } from '@/lib/finance/settlement-reconciliation';
 
 /**
  * Finance Reconciliation Dashboard API
@@ -47,11 +48,13 @@ export async function GET() {
       ledgerBalances,
       walletVsLedgerComparison,
       balanceBreakdown,
+      settlementReconciliation,
     ] = await Promise.all([
       getUnresolvedUnmatchedTransactions(),
       getLedgerVendorBalances(),
       compareWalletVsLedgerBalances(),
       calculateVendorBalanceBreakdown(),
+      getSettlementReconciliationSummary(25),
     ]);
 
     // Fetch Paystack balance (with error handling)
@@ -97,6 +100,7 @@ export async function GET() {
         },
         walletVsLedgerComparison,
         unmatchedTransactions: walletTopupIssues,
+        settlementReconciliation,
         statistics: {
           ledgerDiscrepancy: ledgerDiscrepancy.toFixed(2),
           paystackDiscrepancy: paystackDiscrepancy !== null ? paystackDiscrepancy.toFixed(2) : null,

@@ -18,6 +18,7 @@ import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { fraudAlerts as intelligenceFraudAlerts } from '@/lib/db/schema/intelligence';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { eq, and, desc, inArray } from 'drizzle-orm';
+import { payments } from '@/lib/db/schema/payments';
 import { AuditActionType } from '@/lib/utils/audit-logger';
 
 /**
@@ -74,8 +75,11 @@ export async function GET(request: NextRequest) {
     }).filter(Boolean).concat(
       intelligenceVendorEntityIds,
       intelligenceAlerts.flatMap((alert) => {
-        const metadata = alert.metadata as { vendorIds?: string[] } | null;
-        return metadata?.vendorIds || [];
+        const metadata = alert.metadata as { vendorId?: string; vendorIds?: string[] } | null;
+        return [
+          ...(metadata?.vendorIds || []),
+          ...(metadata?.vendorId ? [metadata.vendorId] : []),
+        ];
       })
     ))] as string[];
 
@@ -113,6 +117,23 @@ export async function GET(request: NextRequest) {
           where: inArray(bids.auctionId, auctionIds),
           orderBy: [desc(bids.createdAt)],
         })
+      : [];
+
+    const verifiedAuctionPayments = auctionIds.length > 0
+      ? await db
+          .select({
+            auctionId: payments.auctionId,
+            vendorId: payments.vendorId,
+            amount: payments.amount,
+            status: payments.status,
+          })
+          .from(payments)
+          .where(
+            and(
+              inArray(payments.auctionId, auctionIds),
+              eq(payments.status, 'verified')
+            )
+          )
       : [];
 
     // Check if fraud flags have been dismissed
@@ -245,6 +266,7 @@ export async function GET(request: NextRequest) {
 
     const intelligenceFraudAlertsFormatted = intelligenceAlerts.map(alert => {
       const metadata = alert.metadata as {
+        vendorId?: string;
         ipAddress?: string;
         vendorIds?: string[];
         competingAuctions?: string[];
@@ -269,7 +291,7 @@ export async function GET(request: NextRequest) {
         : undefined;
       const primaryVendorId = alert.entityType === 'vendor'
         ? alert.entityId
-        : metadata?.vendorIds?.[0] || '';
+        : metadata?.vendorId || metadata?.vendorIds?.[0] || auction?.currentBidder || '';
       const vendor = vendorDetails.find(v => v.id === primaryVendorId);
       const involvedVendors = (metadata?.vendorIds || [])
         .map((vendorId) => {
@@ -295,6 +317,18 @@ export async function GET(request: NextRequest) {
         ? userDetails.find(u => u.id === alert.entityId)
         : undefined;
       const auctionBidList = auctionBids.filter(b => b.auctionId === alert.entityId);
+      const winnerPayment = auction
+        ? verifiedAuctionPayments.find(
+            (p) =>
+              p.auctionId === auction.id &&
+              p.vendorId === auction.currentBidder
+          )
+        : undefined;
+      const operationalStatus = auction?.pickupConfirmedAdmin
+        ? 'pickup_confirmed'
+        : winnerPayment
+          ? 'payment_verified'
+          : auction?.status;
       const linkedProviderRecord = providerRecords.find(record =>
         (metadata?.providerReference && record.providerReference === metadata.providerReference) ||
         (primaryVendorId && record.vendorId === primaryVendorId)
@@ -375,6 +409,10 @@ export async function GET(request: NextRequest) {
         auction: auction ? {
           id: auction.id,
           status: auction.status,
+          operationalStatus,
+          paymentVerified: !!winnerPayment,
+          pickupConfirmedAdmin: auction.pickupConfirmedAdmin,
+          finalSettledAmount: auction.finalSettledAmount,
           currentBid: auction.currentBid,
           endTime: auction.endTime,
           case: auction.case ? {

@@ -6,6 +6,10 @@ export type FinancePaymentExportRow = {
   auctionId: string;
   paymentType: string;
   amount: string;
+  effectiveSaleAmount: string;
+  settledSaleAmount: string;
+  paidVsSettledDelta: string;
+  priceAdjusted: string;
   status: string;
   paymentMethod: string;
   paymentReference: string;
@@ -39,6 +43,12 @@ type PaymentExportSource = {
   id: string;
   auctionId: string | null;
   amount: string;
+  effectiveSaleAmount?: string | null;
+  settlement?: {
+    settledAmount: string;
+    paidVsSettledDelta: string;
+    hasPriceAdjustment: boolean;
+  } | null;
   paymentMethod: string;
   paymentReference: string | null;
   status: string;
@@ -112,6 +122,16 @@ export function buildFinancePaymentExportRow(
     auctionId: payment.auctionId || 'N/A',
     paymentType: isRegistration ? 'Registration Fee' : 'Auction Payment',
     amount: formatNgnAmount(payment.amount),
+    effectiveSaleAmount: payment.effectiveSaleAmount
+      ? formatNgnAmount(payment.effectiveSaleAmount)
+      : formatNgnAmount(payment.amount),
+    settledSaleAmount: payment.settlement?.settledAmount
+      ? formatNgnAmount(payment.settlement.settledAmount)
+      : 'N/A',
+    paidVsSettledDelta: payment.settlement?.hasPriceAdjustment
+      ? formatNgnAmount(payment.settlement.paidVsSettledDelta)
+      : 'N/A',
+    priceAdjusted: payment.settlement?.hasPriceAdjustment ? 'Yes' : 'No',
     status: payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
     paymentMethod: label(payment.paymentMethod),
     paymentReference: payment.paymentReference || 'N/A',
@@ -156,7 +176,11 @@ export const FINANCE_PAYMENT_EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'paymentId', header: 'Payment ID' },
   { key: 'auctionId', header: 'Auction ID' },
   { key: 'paymentType', header: 'Payment Type' },
-  { key: 'amount', header: 'Amount' },
+  { key: 'amount', header: 'Amount Collected' },
+  { key: 'effectiveSaleAmount', header: 'Effective Sale Amount' },
+  { key: 'settledSaleAmount', header: 'Settled Sale Amount' },
+  { key: 'paidVsSettledDelta', header: 'Collected vs Settled Gap' },
+  { key: 'priceAdjusted', header: 'Pickup Price Adjusted' },
   { key: 'status', header: 'Status' },
   { key: 'paymentMethod', header: 'Payment Method' },
   { key: 'paymentReference', header: 'Transaction Reference' },

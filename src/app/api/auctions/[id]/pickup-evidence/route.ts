@@ -281,23 +281,34 @@ export async function POST(
   );
 
   runInBackground('pickup-evidence fraud alert', async () => {
-    if (finalComparisonSummary.status === 'matches_expected') {
+    // Operational pickup review (review_needed) is handled on Admin Pickups — not fraud.
+    if (finalComparisonSummary.status !== 'material_discrepancy') {
+      return;
+    }
+
+    const overallScore = finalComparisonSummary.overallMatchScore;
+    if (typeof overallScore === 'number' && overallScore >= 85) {
+      return;
+    }
+
+    if (context.pickupConfirmedAdmin) {
       return;
     }
 
     const { FraudDetectionService } = await import('@/features/intelligence/services/fraud-detection.service');
     const fraudService = new FraudDetectionService();
     const flagReasons = [
-      finalComparisonSummary.status === 'material_discrepancy'
-        ? 'Pickup evidence materially differs from original inspection photos'
-        : 'Pickup evidence requires staff review',
-      ...finalComparisonSummary.findings.slice(0, 3),
-    ];
+      'Pickup evidence materially differs from original inspection photos',
+      ...(finalComparisonSummary.observedDifferences ?? []).slice(0, 3),
+      ...finalComparisonSummary.findings
+        .filter((finding) => !finding.toLowerCase().includes('confirmed'))
+        .slice(0, 2),
+    ].filter(Boolean);
 
     await fraudService.createFraudAlert(
       'auction',
       auctionId,
-      finalComparisonSummary.status === 'material_discrepancy' ? 85 : 65,
+      85,
       flagReasons,
       {
         source: 'pickup_evidence_comparison',

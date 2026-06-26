@@ -459,7 +459,7 @@ export async function createCase(
     // For non-draft cases, the frontend has already run the assessment
     if (isDraft) {
       console.log('⚠️ Skipping AI assessment for draft case - will be processed when submitted for approval');
-    } else if (input.aiAssessmentResult) {
+    } else if (input.aiAssessmentResult && !managerRunsAiAssessment) {
       console.log('✅ Using AI assessment from frontend:', {
         severity: input.aiAssessmentResult.damageSeverity,
         confidence: input.aiAssessmentResult.confidenceScore,
@@ -581,8 +581,12 @@ export async function createCase(
       assetDetails: input.assetDetails,
       marketValue: String(resolvedMarketValue),
       // AI assessment fields are nullable for draft cases
-      estimatedSalvageValue: aiAssessment ? aiAssessment.estimatedSalvageValue.toString() : null,
-      reservePrice: aiAssessment ? aiAssessment.reservePrice.toString() : null,
+      estimatedSalvageValue:
+        aiAssessment?.estimatedSalvageValue != null
+          ? String(aiAssessment.estimatedSalvageValue)
+          : null,
+      reservePrice:
+        aiAssessment?.reservePrice != null ? String(aiAssessment.reservePrice) : null,
       damageSeverity: aiAssessment?.damageSeverity || null,
       aiAssessment: aiAssessment ? {
         labels: aiAssessment.labels,

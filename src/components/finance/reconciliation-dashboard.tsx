@@ -55,6 +55,19 @@ interface ReconciliationData {
   paystackBalance: { balance: number | null; error: string | null };
   walletVsLedgerComparison: WalletVsLedgerComparison;
   unmatchedTransactions: UnmatchedTransaction[];
+  settlementReconciliation: {
+    adjustedCount: number;
+    paidVsSettledDelta: number;
+    settledRecoveryTotal: number;
+    items: Array<{
+      auctionId: string;
+      claimReference: string | null;
+      paidAmount: number;
+      settledAmount: number;
+      delta: number;
+      adjustedAt: string | null;
+    }>;
+  };
   statistics: {
     ledgerDiscrepancy: string;
     paystackDiscrepancy: string | null;
@@ -243,6 +256,54 @@ export function ReconciliationDashboard() {
                   </p>
                 </div>
                 <Badge variant="destructive">{formatNaira(d.discrepancy)}</Badge>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {data.settlementReconciliation.adjustedCount > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Pickup sale adjustments ({data.settlementReconciliation.adjustedCount})
+            </CardTitle>
+            <CardDescription>
+              Amount collected vs final settled sale amount after pickup
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {data.settlementReconciliation.paidVsSettledDelta !== 0 ? (
+              <p className="text-sm text-muted-foreground rounded-lg border bg-slate-50 px-3 py-2">
+                Net collected vs settled gap:{' '}
+                <span className="font-semibold text-gray-900">
+                  {formatNaira(data.settlementReconciliation.paidVsSettledDelta)}
+                </span>
+                . Payment records keep amounts collected; recovery reports use settled amounts.
+              </p>
+            ) : null}
+            {data.settlementReconciliation.items.map((item) => (
+              <div
+                key={item.auctionId}
+                className="flex flex-wrap justify-between gap-3 border rounded-lg p-3 text-sm"
+              >
+                <div>
+                  <p className="font-medium">{item.claimReference || item.auctionId.slice(0, 8)}</p>
+                  {item.adjustedAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Adjusted {new Date(item.adjustedAt).toLocaleString()}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="text-right shrink-0">
+                  <p>Collected {formatNaira(item.paidAmount)}</p>
+                  <p className="text-muted-foreground">Settled {formatNaira(item.settledAmount)}</p>
+                  {item.delta !== 0 ? (
+                    <Badge variant={item.delta > 0 ? 'secondary' : 'outline'} className="mt-1">
+                      {formatNaira(item.delta)} gap
+                    </Badge>
+                  ) : null}
+                </div>
               </div>
             ))}
           </CardContent>

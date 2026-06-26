@@ -28,6 +28,8 @@ export interface FinanceDashboardStats {
     overdueSignedUnpaid: number;
     frozenEscrowPayments: number;
     averageDaysToPayment: number | null;
+    pickupPriceAdjustments: number;
+    paidVsSettledDelta: number;
   };
 }
 
@@ -206,6 +208,19 @@ async function calculateSettlementControl(paymentIds: string[] | null) {
       INNER JOIN auctions a ON a.id = p.auction_id
       WHERE p.verified_at IS NOT NULL
         AND p.verified_at >= a.end_time
+    ),
+    adjusted_settlement AS (
+      SELECT DISTINCT ON (p.auction_id)
+        p.amount::numeric AS paid_amount,
+        a.final_settled_amount::numeric AS settled_amount
+      FROM payments p
+      INNER JOIN auctions a ON a.id = p.auction_id
+      WHERE p.status = 'verified'
+        AND p.auction_id IS NOT NULL
+        AND p.vendor_id = a.current_bidder
+        AND a.final_settled_amount IS NOT NULL
+        ${paymentIdFilter}
+      ORDER BY p.auction_id, p.verified_at DESC NULLS LAST, p.created_at DESC
     )
     SELECT
       (SELECT COALESCE(SUM(amount::numeric), 0)::numeric FROM verified_winner_payments) AS verified_recovery,
@@ -215,7 +230,9 @@ async function calculateSettlementControl(paymentIds: string[] | null) {
       (SELECT COUNT(*)::int FROM payments p
         WHERE p.payment_method = 'escrow_wallet' AND p.escrow_status = 'frozen'
         ${paymentIdFilter}) AS frozen_escrow_payments,
-      (SELECT AVG(days_to_payment)::numeric FROM payment_cycles) AS average_days_to_payment
+      (SELECT AVG(days_to_payment)::numeric FROM payment_cycles) AS average_days_to_payment,
+      (SELECT COUNT(*)::int FROM adjusted_settlement) AS pickup_price_adjustments,
+      (SELECT COALESCE(SUM(paid_amount - settled_amount), 0)::numeric FROM adjusted_settlement) AS paid_vs_settled_delta
   `)) as Record<string, unknown>[];
 
   return {
@@ -225,6 +242,8 @@ async function calculateSettlementControl(paymentIds: string[] | null) {
     overdueSignedUnpaid: numberFrom(settlementRow?.overdue_signed_unpaid),
     frozenEscrowPayments: numberFrom(settlementRow?.frozen_escrow_payments),
     averageDaysToPayment: nullableNumberFrom(settlementRow?.average_days_to_payment),
+    pickupPriceAdjustments: numberFrom(settlementRow?.pickup_price_adjustments),
+    paidVsSettledDelta: numberFrom(settlementRow?.paid_vs_settled_delta),
   };
 }
 

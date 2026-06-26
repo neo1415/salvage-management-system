@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
         currentBidder: auctions.currentBidder,
         auctionStatus: auctions.status,
         paymentId: payments.id,
-        paymentAmount: payments.amount,
+        paymentAmount: sql<string>`COALESCE(${auctions.finalSettledAmount}, ${payments.amount})`,
         paymentCreatedAt: payments.createdAt,
         paymentVerifiedAt: payments.verifiedAt,
       })

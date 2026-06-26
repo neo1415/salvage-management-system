@@ -84,7 +84,7 @@ export class DataAggregationService {
         auctionCreatedAt: auctions.createdAt,
         auctionClosedAt: auctions.updatedAt,
         paymentId: payments.id,
-        paymentAmount: payments.amount,
+        paymentAmount: sql<string>`COALESCE(${auctions.finalSettledAmount}, ${payments.amount})`,
         paymentStatus: payments.status,
         paymentMethod: payments.paymentMethod,
         paymentCreatedAt: payments.createdAt,

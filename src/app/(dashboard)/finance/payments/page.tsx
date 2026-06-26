@@ -37,6 +37,15 @@ interface Payment {
   auctionStatus: string | null; // Can be null for registration fees
   vendorId: string;
   amount: string;
+  effectiveSaleAmount?: string | null;
+  settlement?: {
+    paidAmount: string;
+    settledAmount: string;
+    originalWinningBid: string | null;
+    paidVsSettledDelta: string;
+    hasPriceAdjustment: boolean;
+    note: string;
+  } | null;
   paymentMethod: 'paystack' | 'flutterwave' | 'bank_transfer' | 'escrow_wallet';
   paymentReference: string | null;
   paymentProofUrl: string | null;
@@ -1651,11 +1660,20 @@ export default function FinancePaymentsPage() {
                 </h4>
                 <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
                   <div>
-                    <p className="text-xs text-gray-500 mb-1">Amount</p>
+                    <p className="text-xs text-gray-500 mb-1">Amount collected</p>
                     <p className="text-lg font-bold text-[var(--brand-primary)]">
                       {formatNgnAmount(selectedPayment.amount, { decimals: 0 })}
                     </p>
                   </div>
+                  {selectedPayment.effectiveSaleAmount &&
+                    selectedPayment.settlement?.hasPriceAdjustment ? (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Settled sale amount</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {formatNgnAmount(selectedPayment.effectiveSaleAmount, { decimals: 0 })}
+                      </p>
+                    </div>
+                  ) : null}
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Payment Source</p>
                     <p className="font-medium text-gray-900">
@@ -1721,6 +1739,18 @@ export default function FinancePaymentsPage() {
                     </p>
                   </div>
                 </div>
+                {selectedPayment.settlement?.hasPriceAdjustment ? (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                    <p className="font-medium">Pickup price adjusted</p>
+                    <p className="mt-1 text-amber-900">{selectedPayment.settlement.note}</p>
+                    {parseFloat(selectedPayment.settlement.paidVsSettledDelta) !== 0 ? (
+                      <p className="mt-2 text-xs text-amber-800">
+                        Gap: {formatNgnAmount(selectedPayment.settlement.paidVsSettledDelta, { decimals: 0 })}
+                        (collected minus settled)
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               {/* Vendor Information */}

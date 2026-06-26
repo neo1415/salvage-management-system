@@ -16,6 +16,7 @@ import {
   appendCaseDimensionFilters,
 } from '@/lib/finance/payment-case-filters';
 import { fetchFinanceFilterOptions } from '@/lib/finance/finance-filter-options';
+import { buildPaymentSettlementFields } from '@/lib/finance/settlement-reconciliation';
 import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
 
 // Force dynamic rendering - never cache this route
@@ -197,12 +198,15 @@ export async function GET(request: NextRequest) {
 
     // Format response WITHOUT additional queries
     const formattedPayments = filteredPayments.map(({ payment, vendor, user, auction, case: caseData }) => {
+      const settlementFields = buildPaymentSettlementFields(payment.amount, auction ?? null);
       const base = {
         id: payment.id,
         auctionId: payment.auctionId,
         auctionStatus: auction?.status, // Can be null for registration fees
         vendorId: payment.vendorId,
         amount: payment.amount,
+        effectiveSaleAmount: settlementFields.effectiveSaleAmount,
+        settlement: settlementFields.settlement,
         paymentMethod: payment.paymentMethod,
         paymentReference: payment.paymentReference,
         paymentProofUrl: payment.paymentProofUrl,

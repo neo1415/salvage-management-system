@@ -674,36 +674,36 @@ export class PredictionService {
       WITH recent_auctions AS (
         SELECT 
           a.id,
-          p.amount AS final_price,
+          COALESCE(a.final_settled_amount, p.amount) AS final_price,
           COUNT(b.id) AS bid_count
         FROM ${auctions} a
         INNER JOIN ${payments} p
           ON p.auction_id = a.id
          AND p.status = 'verified'
-         AND p.amount IS NOT NULL
+         AND p.vendor_id = a.current_bidder
         LEFT JOIN ${bids} b ON b.auction_id = a.id
         INNER JOIN ${salvageCases} sc ON a.case_id = sc.id
         WHERE a.status IN ('closed', 'awaiting_payment')
           AND a.end_time > ${thirtyDaysAgoISO}
           AND sc.asset_type = ${assetType}
-        GROUP BY a.id, p.amount
+        GROUP BY a.id, a.final_settled_amount, p.amount
       ),
       historical_auctions AS (
         SELECT 
           a.id,
-          p.amount AS final_price,
+          COALESCE(a.final_settled_amount, p.amount) AS final_price,
           COUNT(b.id) AS bid_count
         FROM ${auctions} a
         INNER JOIN ${payments} p
           ON p.auction_id = a.id
          AND p.status = 'verified'
-         AND p.amount IS NOT NULL
+         AND p.vendor_id = a.current_bidder
         LEFT JOIN ${bids} b ON b.auction_id = a.id
         INNER JOIN ${salvageCases} sc ON a.case_id = sc.id
         WHERE a.status IN ('closed', 'awaiting_payment')
           AND a.end_time BETWEEN ${ninetyDaysAgoISO} AND ${thirtyDaysAgoISO}
           AND sc.asset_type = ${assetType}
-        GROUP BY a.id, p.amount
+        GROUP BY a.id, a.final_settled_amount, p.amount
       )
       SELECT 
         AVG(ra.bid_count) AS avg_bids_recent,

@@ -111,6 +111,10 @@ interface FraudAlert {
   auction: {
     id: string;
     status: string;
+    operationalStatus?: string;
+    paymentVerified?: boolean;
+    pickupConfirmedAdmin?: boolean;
+    finalSettledAmount?: string | null;
     currentBid: string;
     endTime: string;
     case: {
@@ -775,7 +779,13 @@ export default function FraudAlertDashboard() {
                       <div className="flex justify-between gap-4"><dt className="text-gray-500">Asset</dt><dd className="font-medium text-right capitalize">{selectedAlert.auction.case?.assetType || '—'}</dd></div>
                       <div className="flex justify-between gap-4"><dt className="text-gray-500">Market value</dt><dd className="font-medium text-right">{selectedAlert.auction.case?.marketValue ? formatCurrency(selectedAlert.auction.case.marketValue) : '—'}</dd></div>
                       <div className="flex justify-between gap-4"><dt className="text-gray-500">Current bid</dt><dd className="font-medium text-right">{formatCurrency(selectedAlert.auction.currentBid)}</dd></div>
-                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Auction status</dt><dd className="font-medium text-right">{selectedAlert.auction.status}</dd></div>
+                      <div className="flex justify-between gap-4"><dt className="text-gray-500">Auction status</dt><dd className="font-medium text-right capitalize">{(selectedAlert.auction.operationalStatus || selectedAlert.auction.status).replace(/_/g, ' ')}</dd></div>
+                      {selectedAlert.auction.paymentVerified ? (
+                        <div className="flex justify-between gap-4"><dt className="text-gray-500">Payment</dt><dd className="font-medium text-right text-green-700">Verified</dd></div>
+                      ) : null}
+                      {selectedAlert.auction.finalSettledAmount ? (
+                        <div className="flex justify-between gap-4"><dt className="text-gray-500">Settled amount</dt><dd className="font-medium text-right">{formatCurrency(selectedAlert.auction.finalSettledAmount)}</dd></div>
+                      ) : null}
                     </dl>
                   </section>
                 )}
@@ -784,12 +794,20 @@ export default function FraudAlertDashboard() {
                   <section className="border border-gray-200 rounded-lg p-5">
                     <h4 className="font-semibold text-gray-900 mb-3">Evidence</h4>
                     <div className="space-y-2">
-                      {selectedAlert.details.map((detail, idx) => (
-                        <div key={idx} className="rounded border border-red-100 bg-red-50/80 p-3 text-sm">
-                          <div className="font-medium text-red-900">{detail.pattern}</div>
-                          <div className="text-red-800">{formatReasonCode(detail.evidence)}</div>
+                      {selectedAlert.details.map((detail, idx) => {
+                        const isPickup = selectedAlert.evidenceSummary?.source === 'pickup_evidence_comparison';
+                        const boxClass = isPickup
+                          ? 'rounded border border-amber-200 bg-amber-50/80 p-3 text-sm'
+                          : 'rounded border border-red-100 bg-red-50/80 p-3 text-sm';
+                        const titleClass = isPickup ? 'font-medium text-amber-900' : 'font-medium text-red-900';
+                        const bodyClass = isPickup ? 'text-amber-800' : 'text-red-800';
+                        return (
+                        <div key={idx} className={boxClass}>
+                          <div className={titleClass}>{detail.pattern}</div>
+                          <div className={bodyClass}>{formatReasonCode(detail.evidence)}</div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </section>
                 )}
@@ -845,8 +863,19 @@ export default function FraudAlertDashboard() {
                         Open KYC Review
                       </button>
                     )}
+                    {selectedAlert.evidenceSummary?.source === 'pickup_evidence_comparison' && (
+                      <button
+                        onClick={() => router.push('/admin/pickups')}
+                        className="mt-3 w-full px-4 py-2 border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50"
+                      >
+                        Open pickup queue
+                      </button>
+                    )}
                   </section>
 
+                  {(selectedAlert.evidenceSummary?.source === 'dojah' ||
+                    selectedAlert.entityType === 'vendor' ||
+                    selectedAlert.providerVerification) ? (
                   <section className="border border-gray-200 rounded-lg p-5">
                     <h4 className="font-semibold text-gray-900 mb-4">Verification Evidence</h4>
                     <dl className="space-y-2 text-sm">
@@ -871,6 +900,7 @@ export default function FraudAlertDashboard() {
                     </div>
                   )}
                   </section>
+                  ) : null}
                 </div>
 
                 <section className="border border-gray-200 rounded-lg p-5">
@@ -883,6 +913,10 @@ export default function FraudAlertDashboard() {
                     ))}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {(selectedAlert.evidenceSummary?.source === 'dojah' ||
+                      selectedAlert.entityType === 'vendor' ||
+                      selectedAlert.providerVerification) ? (
+                    <>
                     <div>
                       <div className="text-sm font-medium text-gray-700 mb-2">Completed checks</div>
                       <div className="text-sm text-gray-600">{(selectedAlert.providerVerification?.checksCompleted || selectedAlert.evidenceSummary?.checksCompleted || []).join(', ') || 'N/A'}</div>
@@ -891,6 +925,12 @@ export default function FraudAlertDashboard() {
                       <div className="text-sm font-medium text-gray-700 mb-2">Failed checks</div>
                       <div className="text-sm text-gray-600">{(selectedAlert.providerVerification?.failedChecks || selectedAlert.evidenceSummary?.failedChecks || []).join(', ') || 'None recorded'}</div>
                     </div>
+                    </>
+                    ) : (
+                      <p className="text-sm text-gray-600 md:col-span-2">
+                        Verification provider details apply to KYC alerts only. Pickup and bidding alerts use the evidence sections above.
+                      </p>
+                    )}
                   </div>
                 </section>
 
