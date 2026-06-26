@@ -2654,20 +2654,12 @@ function calculateConfidence(
     confidence.reasons.push('Market value estimated without vehicle info - high uncertainty');
   }
   
-  // Overall displayed confidence should primarily describe the AI/photo assessment.
-  // Market-search uncertainty is still preserved in valuationAccuracy and review notes,
-  // but it should not make a strong visual damage read look like a failed AI analysis.
-  const valuationForOverall = Math.max(
-    confidence.valuationAccuracy,
-    Math.min(65, Math.max(0, confidence.damageDetection - 20))
-  );
-
   // Overall confidence (weighted average)
   confidence.overall = Math.round(
-    (confidence.vehicleDetection * 0.2) +
-    (confidence.damageDetection * 0.45) +
-    (valuationForOverall * 0.15) +
-    (confidence.photoQuality * 0.2)
+    (confidence.vehicleDetection * 0.25) +
+    (confidence.damageDetection * 0.35) +
+    (confidence.valuationAccuracy * 0.25) +
+    (confidence.photoQuality * 0.15)
   );
   
   return confidence;
@@ -3548,19 +3540,12 @@ function calculateUniversalConfidence(
     confidence.reasons.push(`Market value estimated without ${itemInfo?.type || 'item'} info - high uncertainty`);
   }
   
-  // Overall displayed confidence should primarily describe the AI/photo assessment.
-  // Market-search uncertainty remains in valuationAccuracy and review notes.
-  const valuationForOverall = Math.max(
-    confidence.valuationAccuracy,
-    Math.min(65, Math.max(0, confidence.damageDetection - 20))
-  );
-
   // Overall confidence (weighted average)
   confidence.overall = Math.round(
-    (confidence.vehicleDetection * 0.2) +
-    (confidence.damageDetection * 0.45) +
-    (valuationForOverall * 0.15) +
-    (confidence.photoQuality * 0.2)
+    (confidence.vehicleDetection * 0.25) +
+    (confidence.damageDetection * 0.35) +
+    (confidence.valuationAccuracy * 0.25) +
+    (confidence.photoQuality * 0.15)
   );
   
   return confidence;

@@ -5,6 +5,7 @@ import { db } from '@/lib/db/drizzle';
 import { salvageCases, valuationEvidence } from '@/lib/db/schema';
 import { businessPolicyService } from '@/features/business-policy/business-policy.service';
 import { assessDamageEnhanced } from '@/features/cases/services/ai-assessment-enhanced.service';
+import type { VehicleInfo } from '@/features/cases/services/ai-assessment-enhanced.service';
 import { buildUniversalItemInfoFromCase } from '@/features/cases/services/case-item-info';
 import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
 
@@ -72,9 +73,23 @@ export async function POST(
 
     const body = await request.json().catch(() => ({}));
     const forceRefresh = Boolean(body?.forceRefresh);
+    const vehicleInfo: VehicleInfo | undefined = universalItemInfo.type === 'vehicle'
+      ? {
+          type: 'vehicle',
+          make: universalItemInfo.make,
+          model: universalItemInfo.model,
+          year: universalItemInfo.year,
+          mileage: universalItemInfo.mileage,
+          marketValue: universalItemInfo.marketValue,
+          condition: universalItemInfo.condition,
+          age: universalItemInfo.age,
+          brandPrestige: universalItemInfo.brandPrestige,
+        }
+      : undefined;
 
     const assessment = await assessDamageEnhanced({
       photos,
+      vehicleInfo,
       universalItemInfo,
       forceRefresh,
     });
@@ -152,12 +167,21 @@ export async function POST(
       data: {
         damageSeverity: assessment.damageSeverity,
         confidenceScore: assessment.confidenceScore,
+        labels: assessment.labels,
         estimatedSalvageValue: assessment.estimatedSalvageValue,
         reservePrice: assessment.reservePrice,
         marketValue: assessment.marketValue,
         aiAssessment: aiAssessmentPayload,
         estimatedRepairCost: assessment.estimatedRepairCost,
         damagePercentage: assessment.damagePercentage,
+        damageScore: assessment.damageScore,
+        isTotalLoss: assessment.isTotalLoss,
+        isRepairable: assessment.isRepairable,
+        warnings: staffReviewReasons,
+        confidence: assessment.confidence,
+        analysisMethod: assessment.analysisMethod,
+        qualityTier: assessment.qualityTier,
+        priceSource: assessment.priceSource,
         itemDetails: assessment.itemDetails,
         damagedParts: assessment.damagedParts,
         damageBreakdown: assessment.damageBreakdown,
@@ -165,6 +189,12 @@ export async function POST(
         summary: assessment.summary,
         reviewReasons: staffReviewReasons,
         manualReviewRequired: aiAssessmentPayload.manualReviewRequired,
+        valuationEvidence: assessment.valuationEvidence,
+        dataSource: assessment.priceSource || 'valuation',
+        searchQuery: universalItemInfo
+          ? `${universalItemInfo.brand || universalItemInfo.make || ''} ${universalItemInfo.model || ''} ${universalItemInfo.year || ''} ${universalItemInfo.condition || 'used'} price Nigeria`.trim()
+          : 'market price search',
+        processingTime: Date.now(),
       },
     });
   } catch (error) {
