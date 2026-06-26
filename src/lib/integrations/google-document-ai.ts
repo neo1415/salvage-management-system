@@ -5,6 +5,7 @@
 
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
+import { getGoogleCloudClientOptions } from '@/lib/integrations/google-cloud-client';
 
 const predictionEndpoint =
   process.env.GOOGLE_DOCUMENT_AI_PREDICTION_ENDPOINT?.trim() ||
@@ -12,15 +13,27 @@ const predictionEndpoint =
 
 const documentAiApiEndpoint = predictionEndpoint?.match(/^https:\/\/([^/]+)/i)?.[1];
 
-// Initialize the Document AI client
-const client = new DocumentProcessorServiceClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-  ...(documentAiApiEndpoint ? { apiEndpoint: documentAiApiEndpoint } : {}),
-});
+let documentAiClient: DocumentProcessorServiceClient | null = null;
+let visionOcrClient: ImageAnnotatorClient | null = null;
 
-const visionClient = new ImageAnnotatorClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-});
+function getDocumentAiClient(): DocumentProcessorServiceClient | null {
+  if (documentAiClient) return documentAiClient;
+  const options = getGoogleCloudClientOptions();
+  if (!options) return null;
+  documentAiClient = new DocumentProcessorServiceClient({
+    ...options,
+    ...(documentAiApiEndpoint ? { apiEndpoint: documentAiApiEndpoint } : {}),
+  });
+  return documentAiClient;
+}
+
+function getVisionOcrClient(): ImageAnnotatorClient | null {
+  if (visionOcrClient) return visionOcrClient;
+  const options = getGoogleCloudClientOptions();
+  if (!options) return null;
+  visionOcrClient = new ImageAnnotatorClient(options);
+  return visionOcrClient;
+}
 
 function hasDocumentAiProcessor(): boolean {
   const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID?.trim();
@@ -62,7 +75,12 @@ async function extractTextWithVision(
     throw new Error('Google Vision OCR fallback only supports image uploads. Configure Google Document AI for PDF OCR.');
   }
 
-  const [result] = await visionClient.documentTextDetection({
+  const client = getVisionOcrClient();
+  if (!client) {
+    throw new Error('Google Vision OCR is not configured');
+  }
+
+  const [result] = await client.documentTextDetection({
     image: { content: imageBuffer },
   });
   const text = result.fullTextAnnotation?.text ?? result.textAnnotations?.[0]?.description ?? '';
@@ -120,6 +138,11 @@ export async function extractNINFromDocument(
     };
 
     // Process the document
+    const client = getDocumentAiClient();
+    if (!client) {
+      throw new Error('Google Document AI is not configured');
+    }
+
     const [result] = await client.processDocument(request);
     const { document } = result;
 
@@ -189,6 +212,11 @@ export async function extractTextFromDocument(
         mimeType,
       },
     };
+
+    const client = getDocumentAiClient();
+    if (!client) {
+      throw new Error('Google Document AI is not configured');
+    }
 
     const [result] = await client.processDocument(request);
     const { document } = result;

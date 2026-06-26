@@ -12,14 +12,21 @@
  */
 
 import { ImageAnnotatorClient } from '@google-cloud/vision';
+import { getGoogleCloudClientOptions } from '@/lib/integrations/google-cloud-client';
 
 // Check if we should use mock mode (for development without billing)
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
 
-// Initialize the Vision API client (only if not in mock mode)
-const visionClient = MOCK_MODE ? null : new ImageAnnotatorClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-});
+let visionClient: ImageAnnotatorClient | null = null;
+
+function getVisionClient(): ImageAnnotatorClient | null {
+  if (MOCK_MODE) return null;
+  if (visionClient) return visionClient;
+  const options = getGoogleCloudClientOptions();
+  if (!options) return null;
+  visionClient = new ImageAnnotatorClient(options);
+  return visionClient;
+}
 
 export interface VisionDamageAssessment {
   labels: string[];
@@ -124,8 +131,9 @@ export async function assessDamageWithVision(
       totalConfidence = avgConfidencePerImage * imageUrls.length;
     } else {
       // REAL MODE: Use Google Cloud Vision API
-      if (!visionClient) {
-        throw new Error('Vision API client not initialized');
+      const client = getVisionClient();
+      if (!client) {
+        throw new Error('Vision API client not configured');
       }
 
       for (const imageUrl of imageUrls) {
@@ -143,12 +151,12 @@ export async function assessDamageWithVision(
           const imageBuffer = Buffer.from(base64Data, 'base64');
           
           // Use buffer for label detection
-          [result] = await visionClient.labelDetection({
+          [result] = await client.labelDetection({
             image: { content: imageBuffer },
           });
         } else {
           // Regular URL - use as-is
-          [result] = await visionClient.labelDetection(imageUrl);
+          [result] = await client.labelDetection(imageUrl);
         }
         
         const labels = result.labelAnnotations || [];

@@ -2,8 +2,9 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import { AppLink } from '@/components/navigation/app-link';
+import { DashboardNavLinks } from '@/components/layout/dashboard-nav-links';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
   LayoutDashboard,
@@ -21,8 +22,6 @@ import {
   X,
   History,
   Settings,
-  ChevronDown,
-  ChevronRight,
   User as UserIcon,
   TrendingUp,
   Brain,
@@ -270,14 +269,6 @@ export default function DashboardSidebar() {
   const brandName = publicPolicy?.branding.brandName || fallbackBranding.brandName;
   const primaryColor = publicPolicy?.branding.primaryColor || fallbackBranding.primaryColor;
 
-  // Filter navigation items based on user role
-  const roleNavItems = navigationItems.filter((item) =>
-    item.roles.includes(userRole)
-  );
-  const filteredNavItems = settingsNavItem.roles.includes(userRole)
-    ? [...roleNavItems, settingsNavItem]
-    : roleNavItems;
-
   const toggleSubmenu = (href: string) => {
     setExpandedMenus((prev) => ({
       ...prev,
@@ -287,97 +278,39 @@ export default function DashboardSidebar() {
 
   const handleLogout = async () => {
     try {
-      // Use NextAuth's built-in signOut function with redirect
-      // This will clear the session and redirect to login
-      await signOut({ 
+      await signOut({
         callbackUrl: '/login',
-        redirect: true 
+        redirect: true,
       });
     } catch (error) {
       console.error('Logout error:', error);
-      // Fallback: force navigation to login
       window.location.href = '/login';
     }
   };
 
-  // Render as JSX (not <Component />) — inline arrow components remount on every parent
-  // re-render and break Next.js Link client navigation (full document reload).
+  // Filter navigation items based on user role
+  const filteredNavItems = useMemo(() => {
+    const roleNavItems = navigationItems.filter((item) => item.roles.includes(userRole));
+    return settingsNavItem.roles.includes(userRole)
+      ? [...roleNavItems, settingsNavItem]
+      : roleNavItems;
+  }, [userRole]);
+
+  const closeMobileMenu = () => setIsMobileMenuOpen(false);
+
   const navLinks = (
     <>
-      {filteredNavItems.map((item) => {
-        const Icon = item.icon;
-        const isActive = pathname === item.href || item.submenu?.some(sub => pathname === sub.href);
-        const isExpanded = expandedMenus[item.href];
-        const hasSubmenu = item.submenu && item.submenu.length > 0;
-
-        return (
-          <div key={item.href}>
-            {hasSubmenu ? (
-              <>
-                <button
-                  onClick={() => toggleSubmenu(item.href)}
-                  className={`flex items-center justify-between w-full px-4 py-3 rounded-lg transition-colors ${
-                    isActive
-                      ? 'text-white'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                  style={isActive ? { backgroundColor: primaryColor } : undefined}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon className="w-5 h-5" />
-                    <span className="font-medium">{item.label}</span>
-                  </div>
-                  {isExpanded ? (
-                    <ChevronDown className="w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4" />
-                  )}
-                </button>
-                {isExpanded && item.submenu && (
-                  <div className="ml-4 mt-1 space-y-1">
-                    {item.submenu.map((subItem) => {
-                      const isSubActive = pathname === subItem.href;
-                      return (
-                        <AppLink
-                          key={subItem.href}
-                          href={subItem.href}
-                          prefetch
-                          onClick={() => setIsMobileMenuOpen(false)}
-                          className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm ${
-                            isSubActive
-                              ? 'text-white'
-                              : 'text-gray-600 hover:bg-gray-100'
-                          }`}
-                          style={isSubActive ? { backgroundColor: primaryColor } : undefined}
-                        >
-                          <span>{subItem.name}</span>
-                        </AppLink>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            ) : (
-              <AppLink
-                href={item.href}
-                prefetch
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  isActive
-                    ? 'text-white'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`}
-                style={isActive ? { backgroundColor: primaryColor } : undefined}
-              >
-                <Icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
-              </AppLink>
-            )}
-          </div>
-        );
-      })}
+      <DashboardNavLinks
+        items={filteredNavItems}
+        pathname={pathname}
+        primaryColor={primaryColor}
+        expandedMenus={expandedMenus}
+        onToggleSubmenu={toggleSubmenu}
+        onNavigate={closeMobileMenu}
+      />
 
       <button
+        type="button"
         onClick={handleLogout}
         className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors w-full mt-4"
       >

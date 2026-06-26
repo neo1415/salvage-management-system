@@ -25,6 +25,7 @@ import {
 import { 
   assessDamageWithVision,
 } from '@/lib/integrations/vision-damage-detection';
+import { getGoogleCloudClientOptions } from '@/lib/integrations/google-cloud-client';
 import { 
   getGeminiRateLimiter 
 } from '@/lib/integrations/gemini-rate-limiter';
@@ -38,10 +39,17 @@ import { type QualityTier } from '@/features/valuations/services/condition-mappi
 // Check if we should use mock mode (for development without billing)
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
 
-// Initialize the Document AI client (only if not in mock mode)
-const documentAIClient = MOCK_MODE ? null : new DocumentProcessorServiceClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-});
+// Initialize Document AI client lazily (only if not in mock mode)
+let documentAIClient: DocumentProcessorServiceClient | null = null;
+
+function getDocumentAIClient(): DocumentProcessorServiceClient | null {
+  if (MOCK_MODE) return null;
+  if (documentAIClient) return documentAIClient;
+  const options = getGoogleCloudClientOptions();
+  if (!options) return null;
+  documentAIClient = new DocumentProcessorServiceClient(options);
+  return documentAIClient;
+}
 
 export interface AIAssessment {
   labels: string[];
@@ -300,7 +308,7 @@ export async function extractTextFromDocument(
   imageUrl: string
 ): Promise<OCRResult> {
   try {
-    if (!documentAIClient) {
+    if (!getDocumentAIClient()) {
       throw new Error('Document AI client not initialized. Set MOCK_AI_ASSESSMENT=false and configure Google Cloud credentials.');
     }
 
@@ -328,7 +336,7 @@ export async function extractTextFromDocument(
     };
 
     // Process the document
-    const [result] = await documentAIClient.processDocument(request);
+    const [result] = await getDocumentAIClient()!.processDocument(request);
     const { document } = result;
 
     if (!document || !document.text) {

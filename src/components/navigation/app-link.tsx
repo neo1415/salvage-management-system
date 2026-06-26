@@ -20,6 +20,15 @@ function hrefToString(href: LinkProps['href']): string {
   return `${path}${query}${hash}`;
 }
 
+function isPlainInternalNavigation(event: React.MouseEvent<HTMLAnchorElement>, href: string): boolean {
+  if (event.defaultPrevented) return false;
+  if (event.button !== 0) return false;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+  if (!href || href.startsWith('#')) return false;
+  if (/^[a-z][a-z\d+.-]*:/i.test(href)) return false;
+  return href.startsWith('/');
+}
+
 export const AppLink = forwardRef<HTMLAnchorElement, AppLinkProps>(function AppLink(
   { href, className, onClick, children, prefetch = true, ...props },
   ref
@@ -33,9 +42,19 @@ export const AppLink = forwardRef<HTMLAnchorElement, AppLinkProps>(function AppL
     (event: React.MouseEvent<HTMLAnchorElement>) => {
       onClick?.(event);
       if (event.defaultPrevented) return;
+
+      if (isPlainInternalNavigation(event, hrefString)) {
+        event.preventDefault();
+        if (hrefString !== window.location.pathname + window.location.search + window.location.hash) {
+          startNavigation(hrefString);
+          router.push(hrefString);
+        }
+        return;
+      }
+
       startNavigation(hrefString);
     },
-    [onClick, startNavigation, hrefString]
+    [onClick, router, startNavigation, hrefString]
   );
 
   const handleMouseEnter = useCallback(() => {

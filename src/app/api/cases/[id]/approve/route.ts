@@ -57,6 +57,7 @@ interface ApprovalRequest {
   brokerName?: string;
   agencyName?: string;
   branchName?: string;
+  locationName?: string;
   priceOverrides?: PriceOverrides;
   scheduleData?: {
     mode: 'now' | 'scheduled';
@@ -153,6 +154,9 @@ export async function POST(
     const brokerName = typeof body.brokerName === 'string' ? body.brokerName.trim() : caseRecord.brokerName?.trim();
     const agencyName = typeof body.agencyName === 'string' ? body.agencyName.trim() : caseRecord.agencyName?.trim();
     const branchName = typeof body.branchName === 'string' ? body.branchName.trim() : caseRecord.branchName?.trim();
+    const locationName = typeof body.locationName === 'string' && body.locationName.trim().length > 0
+      ? body.locationName.trim()
+      : caseRecord.locationName;
 
     if (body.action === 'approve') {
       if (brokerName && agencyName) {
@@ -264,6 +268,7 @@ export async function POST(
           brokerName: brokerName || null,
           agencyName: agencyName || null,
           branchName: branchName || null,
+          locationName,
           // Store original AI estimates for audit trail (Requirement: 6.4, 11.4)
           aiEstimates: aiEstimates,
           // Store manager overrides if any (Requirement: 6.4, 11.4)

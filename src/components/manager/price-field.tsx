@@ -56,6 +56,16 @@ interface PriceFieldProps {
    * Currency symbol (default: ₦)
    */
   currencySymbol?: string;
+
+  /**
+   * Short label when value is not ready (e.g. before AI analysis)
+   */
+  pendingLabel?: string;
+
+  /**
+   * Show analyzing state instead of numeric value
+   */
+  isAnalyzing?: boolean;
 }
 
 /**
@@ -63,6 +73,7 @@ interface PriceFieldProps {
  * Example: 1234567 -> "1,234,567"
  */
 function formatCurrency(value: number, symbol: string = '₦'): string {
+  if (!Number.isFinite(value) || Number.isNaN(value)) return 'Pending Analysis';
   return `${symbol}${value.toLocaleString('en-US')}`;
 }
 
@@ -90,8 +101,12 @@ export function PriceField({
   confidence,
   className = '',
   currencySymbol = '₦',
+  pendingLabel,
+  isAnalyzing = false,
 }: PriceFieldProps) {
-  const displayValue = overrideValue ?? aiValue;
+  const hasValidAiValue = Number.isFinite(aiValue) && !Number.isNaN(aiValue);
+  const isPendingValue = !hasValidAiValue || (pendingLabel && aiValue <= 0 && overrideValue === undefined);
+  const displayValue = overrideValue ?? (hasValidAiValue ? aiValue : 0);
   const hasOverride = overrideValue !== undefined;
   const isLowConfidence = confidence !== undefined && confidence < 70;
 
@@ -139,7 +154,7 @@ export function PriceField({
       {/* Label and Confidence */}
       <div className="flex justify-between items-center mb-1">
         <span className="text-sm font-medium text-gray-700">{label}</span>
-        {confidence !== undefined && (
+        {confidence !== undefined && !isPendingValue && !isAnalyzing && (
           <span
             className={`text-xs ${
               confidence >= 80
@@ -175,8 +190,12 @@ export function PriceField({
         </div>
       ) : (
         <div className="flex items-center justify-between">
-          <span className="text-lg font-bold text-gray-900">
-            {formatCurrency(displayValue, currencySymbol)}
+          <span className={`text-lg font-bold ${isPendingValue || isAnalyzing ? 'text-gray-500' : 'text-gray-900'}`}>
+            {isAnalyzing
+              ? 'Analyzing…'
+              : isPendingValue && pendingLabel
+                ? pendingLabel
+                : formatCurrency(displayValue, currencySymbol)}
           </span>
           {hasOverride && (
             <span className="text-xs text-blue-600">

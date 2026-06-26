@@ -33,11 +33,26 @@ import { resolveCaseDisplayStatus } from '@/lib/metrics/case-display-status';
 import { LocationMap } from '@/components/ui/location-map';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
-import { Star, Check, X, CheckCircle, Banknote } from 'lucide-react';
+import { Star, Check, X, CheckCircle, Banknote, Loader2, MapPin, Save, RotateCcw } from 'lucide-react';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
+import { formatNairaOrPending } from '@/lib/utils/currency-formatter';
+
+const AI_ANALYSIS_STEPS = ['Reading photos', 'Detecting damage', 'Valuing salvage'] as const;
+
+const INTERNAL_DAMAGE_LABELS = new Set(['assessment unavailable']);
+
+function formatSeverityLabel(severity?: string | null): string {
+  if (!severity || severity === 'unknown' || severity === 'none') return 'Pending';
+  return severity.charAt(0).toUpperCase() + severity.slice(1);
+}
+
+function getDisplayableDamageLabels(labels?: string[]): string[] {
+  if (!labels?.length) return [];
+  return labels.filter((label) => !INTERNAL_DAMAGE_LABELS.has(label.toLowerCase().trim()));
+}
 
 /**
  * Case data structure
@@ -87,6 +102,7 @@ interface CaseData {
       severity: 'minor' | 'moderate' | 'severe';
       confidence: number;
     }>;
+    recommendation?: string;
   } | null;
   gpsLocation?: {
     x: number; // longitude
@@ -186,6 +202,24 @@ function parseNumberLike(value: unknown): number | undefined {
   return undefined;
 }
 
+function parseFiniteNumber(value: unknown): number | undefined {
+  const parsed = parseNumberLike(value);
+  return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function formatPendingCurrency(value: unknown, pendingLabel = 'Pending Analysis'): string {
+  return formatNairaOrPending(value as string | number | null | undefined, pendingLabel, { treatZeroAsPending: true });
+}
+
+function buildCasePatchPayload(input: {
+  locationName?: string;
+}): Record<string, string> {
+  const payload: Record<string, string> = {};
+  const locationName = input.locationName?.trim();
+  if (locationName) payload.locationName = locationName;
+  return payload;
+}
+
 function normalizeCondition(value: unknown): CaseData['vehicleCondition'] | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.toLowerCase().trim();
@@ -243,8 +277,23 @@ export default function ApprovalsPage() {
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRunningManagerAi, setIsRunningManagerAi] = useState(false);
+  const [aiAnalysisStep, setAiAnalysisStep] = useState(0);
   const { policy: publicPolicy } = usePublicBusinessPolicy();
   const managerRunsAiAssessment = publicPolicy?.cases?.aiDamageAssessmentRunner === 'salvage_manager';
+
+  useEffect(() => {
+    if (!isRunningManagerAi) {
+      setAiAnalysisStep(0);
+      return;
+    }
+
+    setAiAnalysisStep(0);
+    const interval = window.setInterval(() => {
+      setAiAnalysisStep((prev) => (prev + 1) % AI_ANALYSIS_STEPS.length);
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, [isRunningManagerAi]);
   
   // Price override state
   const [isEditMode, setIsEditMode] = useState(false);
@@ -255,6 +304,8 @@ export default function ApprovalsPage() {
   const [brokerName, setBrokerName] = useState('');
   const [agencyName, setAgencyName] = useState('');
   const [branchName, setBranchName] = useState('');
+  const [locationName, setLocationName] = useState('');
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
   
   // Auction schedule state
   const [auctionSchedule, setAuctionSchedule] = useState<AuctionScheduleValue>({ 
@@ -399,6 +450,58 @@ export default function ApprovalsPage() {
     }
   };
 
+  const saveCaseLocation = async () => {
+    if (!selectedCase || selectedCase.status !== 'pending_approval') return;
+
+    const patchPayload = buildCasePatchPayload({ locationName });
+    if (!patchPayload.locationName) {
+      setResultModalData({
+        type: 'error',
+        title: 'Location required',
+        message: 'Enter a pickup or inspection location before saving.',
+      });
+      setShowResultModal(true);
+      return;
+    }
+
+    try {
+      setIsSavingLocation(true);
+      const response = await fetch(`/api/cases/${selectedCase.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patchPayload),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || 'Failed to update location');
+      }
+
+      const updatedCase = {
+        ...selectedCase,
+        locationName: patchPayload.locationName,
+      };
+      setSelectedCase(updatedCase);
+      setAllCases((current) => current.map((caseItem) => (
+        caseItem.id === updatedCase.id ? updatedCase : caseItem
+      )));
+      setResultModalData({
+        type: 'success',
+        title: 'Location updated',
+        message: 'The case location has been saved.',
+      });
+      setShowResultModal(true);
+    } catch (error) {
+      setResultModalData({
+        type: 'error',
+        title: 'Location update failed',
+        message: error instanceof Error ? error.message : 'Unable to update the case location',
+      });
+      setShowResultModal(true);
+    } finally {
+      setIsSavingLocation(false);
+    }
+  };
+
   /**
    * Handle case selection
    */
@@ -415,6 +518,7 @@ export default function ApprovalsPage() {
     setBrokerName(caseData.brokerName ?? '');
     setAgencyName(caseData.agencyName ?? '');
     setBranchName(caseData.branchName ?? '');
+    setLocationName(caseData.locationName ?? '');
     // Reset auction schedule to default
     setAuctionSchedule({ 
       mode: 'now',
@@ -554,6 +658,7 @@ export default function ApprovalsPage() {
         mode: 'now',
         durationHours: 120, // Default 5 days
       });
+      setLocationName('');
     }
   };
 
@@ -648,6 +753,7 @@ export default function ApprovalsPage() {
           brokerName: brokerName.trim() || undefined,
           agencyName: agencyName.trim() || undefined,
           branchName: branchName.trim() || undefined,
+          locationName: locationName.trim() || undefined,
           priceOverrides: hasOverrides ? priceOverrides : undefined,
           scheduleData: approvalAction === 'approve' ? auctionSchedule : undefined,
         }),
@@ -810,6 +916,11 @@ export default function ApprovalsPage() {
   if (selectedCase) {
     const vehicleMileage = getVehicleMileage(selectedCase);
     const vehicleCondition = getVehicleCondition(selectedCase);
+    const marketValue = parseFiniteNumber(selectedCase.marketValue);
+    const salvageValue = parseFiniteNumber(selectedCase.estimatedSalvageValue);
+    const reservePrice = parseFiniteNumber(selectedCase.reservePrice);
+    const canRunManagerAnalysis = managerRunsAiAssessment && selectedCase.status === 'pending_approval';
+    const displayDamageLabels = getDisplayableDamageLabels(selectedCase.aiAssessment?.labels);
 
     return (
       <div className="min-h-screen bg-gray-50 pb-32 overflow-y-auto">
@@ -842,7 +953,7 @@ export default function ApprovalsPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(selectedCase.damageSeverity)}`}>
-                  {selectedCase.damageSeverity ? selectedCase.damageSeverity.toUpperCase() : 'UNKNOWN'}
+                  {formatSeverityLabel(selectedCase.damageSeverity)}
                 </span>
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(selectedCase).color}`}>
                   {getStatusBadge(selectedCase).label}
@@ -865,22 +976,18 @@ export default function ApprovalsPage() {
               </div>
               <div>
                 <p className="text-gray-600">Market Value</p>
-                <p className="font-medium">₦{parseFloat(selectedCase.marketValue).toLocaleString()}</p>
+                <p className="font-medium">{formatPendingCurrency(marketValue)}</p>
               </div>
               <div>
                 <p className="text-gray-600">Estimated Value</p>
                 <p className="font-medium">
-                  {selectedCase.estimatedSalvageValue 
-                    ? `₦${parseFloat(selectedCase.estimatedSalvageValue).toLocaleString()}`
-                    : 'Pending Analysis'}
+                  {formatPendingCurrency(salvageValue)}
                 </p>
               </div>
               <div>
                 <p className="text-gray-600">Reserve Price</p>
                 <p className="font-medium">
-                  {selectedCase.reservePrice 
-                    ? `₦${parseFloat(selectedCase.reservePrice).toLocaleString()}`
-                    : 'Pending Analysis'}
+                  {formatPendingCurrency(reservePrice)}
                 </p>
               </div>
             </div>
@@ -932,10 +1039,50 @@ export default function ApprovalsPage() {
 
           {/* AI Assessment */}
           <div className="bg-white rounded-lg shadow-md p-4">
-            <h3 className="font-bold text-gray-900 mb-3 flex items-center">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-bold text-gray-900 flex items-center">
               <span className="mr-2">🤖</span>
               AI Damage Assessment
             </h3>
+              {canRunManagerAnalysis && selectedCase.aiAssessment && (
+                <OfflineAwareButton
+                  onClick={() => void runManagerAiAssessment()}
+                  disabled={isRunningManagerAi}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {isRunningManagerAi ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {isRunningManagerAi ? 'Running AI analysis...' : 'Re-run AI analysis'}
+                </OfflineAwareButton>
+              )}
+            </div>
+
+            {isRunningManagerAi && (
+              <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-blue-900">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    <span>{AI_ANALYSIS_STEPS[aiAnalysisStep]}</span>
+                  </div>
+                  <span className="text-xs text-blue-700">
+                    Step {aiAnalysisStep + 1} of {AI_ANALYSIS_STEPS.length}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {AI_ANALYSIS_STEPS.map((step, index) => (
+                    <div
+                      key={step}
+                      className={`h-1.5 rounded-full ${
+                        index <= aiAnalysisStep ? 'bg-blue-600' : 'bg-blue-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             
             {!selectedCase.aiAssessment ? (
               <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-3">
@@ -946,12 +1093,13 @@ export default function ApprovalsPage() {
                     ? 'Run AI damage analysis on the submitted photos before approving this case.'
                     : 'AI assessment data is not available for this case. Manual review is required.'}
                 </p>
-                {managerRunsAiAssessment && selectedCase.status === 'pending_approval' && (
+                {canRunManagerAnalysis && (
                   <OfflineAwareButton
                     onClick={() => void runManagerAiAssessment()}
                     disabled={isRunningManagerAi}
-                    className="bg-[var(--brand-primary)] text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-60"
+                    className="inline-flex items-center gap-2 bg-[var(--brand-primary)] text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-60"
                   >
+                    {isRunningManagerAi && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                     {isRunningManagerAi ? 'Running AI analysis...' : 'Run AI damage analysis'}
                   </OfflineAwareButton>
                 )}
@@ -1072,17 +1220,17 @@ export default function ApprovalsPage() {
                 <GeminiDamageDisplay
                   itemDetails={selectedCase.aiAssessment.itemDetails}
                   damagedParts={selectedCase.aiAssessment.damagedParts}
-                  summary={(selectedCase.aiAssessment as any).recommendation}
+                  summary={selectedCase.aiAssessment.recommendation}
                   showTitle={false}
                   assetType={selectedCase.assetType}
                 />
 
                 {/* Fallback: Detected Damage (for Vision API or old data) */}
-                {(!selectedCase.aiAssessment.damagedParts || selectedCase.aiAssessment.damagedParts.length === 0) && (
+                {(!selectedCase.aiAssessment.damagedParts || selectedCase.aiAssessment.damagedParts.length === 0) && displayDamageLabels.length > 0 && (
                   <div>
                     <p className="text-gray-600 mb-2">Detected Damage</p>
                     <div className="flex flex-wrap gap-2">
-                      {selectedCase.aiAssessment.labels.map((label, index) => (
+                      {displayDamageLabels.map((label, index) => (
                         <span
                           key={index}
                           className="inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-xl text-sm font-medium break-words"
@@ -1126,27 +1274,33 @@ export default function ApprovalsPage() {
             <div className="space-y-3">
               <PriceField
                 label="Market Value"
-                aiValue={parseFloat(selectedCase.marketValue)}
+                aiValue={marketValue ?? 0}
                 overrideValue={priceOverrides.marketValue}
                 isEditMode={isEditMode}
                 onChange={(value) => handlePriceChange('marketValue', value)}
-                confidence={selectedCase.aiAssessment?.confidenceScore ?? 0}
+                confidence={selectedCase.aiAssessment?.confidenceScore}
+                pendingLabel="Pending Analysis"
+                isAnalyzing={isRunningManagerAi}
               />
               
               <PriceField
                 label="Estimated Salvage Value"
-                aiValue={parseFloat(selectedCase.estimatedSalvageValue)}
+                aiValue={salvageValue ?? 0}
                 overrideValue={priceOverrides.salvageValue}
                 isEditMode={isEditMode}
                 onChange={(value) => handlePriceChange('salvageValue', value)}
+                pendingLabel="Pending Analysis"
+                isAnalyzing={isRunningManagerAi}
               />
               
               <PriceField
                 label="Reserve Price"
-                aiValue={parseFloat(selectedCase.reservePrice)}
+                aiValue={reservePrice ?? 0}
                 overrideValue={priceOverrides.reservePrice}
                 isEditMode={isEditMode}
                 onChange={(value) => handlePriceChange('reservePrice', value)}
+                pendingLabel="Pending Analysis"
+                isAnalyzing={isRunningManagerAi}
               />
             </div>
             
@@ -1199,12 +1353,45 @@ export default function ApprovalsPage() {
 
           {/* GPS Location */}
           <div className="bg-white rounded-lg shadow-md p-4">
-            <h3 className="font-bold text-gray-900 mb-3 flex items-center">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-bold text-gray-900 flex items-center">
               <span className="mr-2">📍</span>
               Location
             </h3>
+              {selectedCase.status === 'pending_approval' && (
+                <button
+                  type="button"
+                  onClick={() => void saveCaseLocation()}
+                  disabled={
+                    isSavingLocation ||
+                    !locationName.trim() ||
+                    locationName.trim() === (selectedCase.locationName ?? '').trim()
+                  }
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSavingLocation ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Save className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Save location
+                </button>
+              )}
+            </div>
             
-            <p className="text-gray-700 mb-3">{selectedCase.locationName || 'Location not specified'}</p>
+            {selectedCase.status === 'pending_approval' ? (
+              <label className="mb-3 block">
+                <span className="sr-only">Case pickup location</span>
+                <input
+                  value={locationName}
+                  onChange={(event) => setLocationName(event.target.value)}
+                  placeholder="Enter inspection or pickup location"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
+                />
+              </label>
+            ) : (
+              <p className="text-gray-700 mb-3">{selectedCase.locationName || 'Location not specified'}</p>
+            )}
             
             {/* Coordinates */}
             {selectedCase.gpsLocation?.y !== undefined && selectedCase.gpsLocation?.x !== undefined && (
@@ -1217,7 +1404,7 @@ export default function ApprovalsPage() {
             <LocationMap
               latitude={selectedCase.gpsLocation?.y}
               longitude={selectedCase.gpsLocation?.x}
-              address={selectedCase.locationName}
+              address={locationName.trim() || selectedCase.locationName}
               height="192px"
             />
           </div>

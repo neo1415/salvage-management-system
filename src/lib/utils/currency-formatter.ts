@@ -30,6 +30,30 @@ export function formatNaira(amount: number | string | null | undefined, includeS
 }
 
 /**
+ * Format currency or return a short pending label when value is not ready yet.
+ */
+export function formatNairaOrPending(
+  amount: number | string | null | undefined,
+  pendingLabel = 'Awaiting',
+  options?: { treatZeroAsPending?: boolean }
+): string {
+  if (amount === null || amount === undefined || amount === '') {
+    return pendingLabel;
+  }
+
+  const numericAmount = typeof amount === 'string' ? parseFloat(amount.replace(/[^\d.-]/g, '')) : amount;
+  if (!Number.isFinite(numericAmount)) {
+    return pendingLabel;
+  }
+
+  if (options?.treatZeroAsPending && numericAmount <= 0) {
+    return pendingLabel;
+  }
+
+  return formatNaira(numericAmount);
+}
+
+/**
  * Format analysis method for display
  * @param method - The analysis method from AI assessment
  * @param priceSource - Optional price source (internet_search, database, etc.)

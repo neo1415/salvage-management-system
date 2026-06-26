@@ -214,6 +214,63 @@ export function shouldApplyTotalLossCap(input: {
   };
 }
 
+export function computeVisualEvidenceDeductionFloor(input: {
+  itemType?: UniversalItemInfo['type'];
+  damagePercentage: number;
+  damagedParts?: Array<{ part: string; severity: 'minor' | 'moderate' | 'severe'; confidence: number }>;
+  aiTotalLoss?: boolean;
+}): number {
+  const itemType = input.itemType || 'general_asset';
+  if (BULK_RECOVERY_ASSET_TYPES.has(itemType as UniversalItemInfo['type'])) return 0;
+
+  const damagedParts = input.damagedParts || [];
+  const severityValue = { minor: 0.2, moderate: 0.48, severe: 0.86 } as const;
+  const confidenceWeightedSeverity = damagedParts.length > 0
+    ? damagedParts.reduce((sum, part) => {
+        const confidenceWeight = Math.max(0.45, Math.min(1, part.confidence / 100));
+        return sum + severityValue[part.severity] * confidenceWeight;
+      }, 0) / damagedParts.length
+    : 0;
+  const visibleDamageRatio = Math.max(input.damagePercentage / 100, confidenceWeightedSeverity * 0.85);
+  const severeRatio = damagedParts.length > 0
+    ? damagedParts.filter((part) => part.severity === 'severe').length / damagedParts.length
+    : 0;
+  const partSpread = damagedParts.length > 0
+    ? Math.min(1, Math.log1p(damagedParts.length) / Math.log1p(12))
+    : 0;
+
+  const policyByType: Partial<Record<UniversalItemInfo['type'] | 'general_asset', {
+    damageWeight: number;
+    severeWeight: number;
+    spreadWeight: number;
+    totalLossMinimum: number;
+    maximum: number;
+  }>> = {
+    vehicle: { damageWeight: 0.72, severeWeight: 0.16, spreadWeight: 0.12, totalLossMinimum: 0.72, maximum: 0.9 },
+    electronics: { damageWeight: 0.64, severeWeight: 0.14, spreadWeight: 0.1, totalLossMinimum: 0.7, maximum: 0.88 },
+    appliance: { damageWeight: 0.62, severeWeight: 0.14, spreadWeight: 0.1, totalLossMinimum: 0.68, maximum: 0.86 },
+    machinery: { damageWeight: 0.62, severeWeight: 0.14, spreadWeight: 0.1, totalLossMinimum: 0.68, maximum: 0.86 },
+    equipment: { damageWeight: 0.62, severeWeight: 0.14, spreadWeight: 0.1, totalLossMinimum: 0.68, maximum: 0.86 },
+    medical_equipment: { damageWeight: 0.66, severeWeight: 0.14, spreadWeight: 0.1, totalLossMinimum: 0.72, maximum: 0.9 },
+    energy_equipment: { damageWeight: 0.64, severeWeight: 0.14, spreadWeight: 0.1, totalLossMinimum: 0.7, maximum: 0.88 },
+    aviation_equipment: { damageWeight: 0.66, severeWeight: 0.14, spreadWeight: 0.1, totalLossMinimum: 0.72, maximum: 0.9 },
+    property: { damageWeight: 0.58, severeWeight: 0.12, spreadWeight: 0.1, totalLossMinimum: 0.65, maximum: 0.85 },
+    furniture: { damageWeight: 0.56, severeWeight: 0.12, spreadWeight: 0.08, totalLossMinimum: 0.62, maximum: 0.82 },
+    watch: { damageWeight: 0.48, severeWeight: 0.1, spreadWeight: 0.06, totalLossMinimum: 0.55, maximum: 0.78 },
+    jewelry: { damageWeight: 0.42, severeWeight: 0.08, spreadWeight: 0.05, totalLossMinimum: 0.5, maximum: 0.72 },
+    artwork: { damageWeight: 0.68, severeWeight: 0.14, spreadWeight: 0.08, totalLossMinimum: 0.75, maximum: 0.92 },
+    general_asset: { damageWeight: 0.58, severeWeight: 0.12, spreadWeight: 0.08, totalLossMinimum: 0.65, maximum: 0.85 },
+  };
+
+  const policy = policyByType[itemType] || policyByType.general_asset!;
+  const floor = (visibleDamageRatio * policy.damageWeight)
+    + (severeRatio * policy.severeWeight)
+    + (partSpread * policy.spreadWeight);
+  const withTotalLoss = input.aiTotalLoss ? Math.max(floor, policy.totalLossMinimum) : floor;
+
+  return Math.max(0, Math.min(policy.maximum, withTotalLoss));
+}
+
 // Backward compatibility alias
 export interface VehicleInfo {
   type?: 'vehicle';
@@ -1043,6 +1100,32 @@ export async function assessDamageEnhanced(params: {
       salvageValue = Math.round(salvageCalc.salvageValue);
       const partPricesFound = partPrices.filter(p => p.searchedPrice).length;
       const partPriceCoverage = damages.length > 0 ? partPricesFound / damages.length : 0;
+      const visualEvidenceFloor = computeVisualEvidenceDeductionFloor({
+        itemType: itemInfo?.type,
+        damagePercentage,
+        damagedParts: damageAnalysis.damagedParts,
+        aiTotalLoss: geminiTotalLoss,
+      });
+
+      if (visualEvidenceFloor > 0 && calculationDeductionPercent < visualEvidenceFloor) {
+        const originalSalvageValue = salvageValue;
+        calculationDeductionPercent = visualEvidenceFloor;
+        salvageValue = Math.round(conditionAdjustedMarketValue * (1 - visualEvidenceFloor));
+        repairCost = Math.round(conditionAdjustedMarketValue - salvageValue);
+        valuationReviewReasons.push(
+          `Photo evidence indicates a minimum ${(visualEvidenceFloor * 100).toFixed(0)}% value loss for this ${itemInfo?.type || 'asset'}; part-price repair evidence was lower and has been treated as incomplete.`
+        );
+        console.log('Applied visual evidence deduction floor:', {
+          assetType: itemInfo?.type,
+          originalSalvageValue,
+          adjustedSalvageValue: salvageValue,
+          originalDeduction: salvageCalc.totalDeductionPercent,
+          adjustedDeduction: visualEvidenceFloor,
+          damagePercentage,
+          partPriceCoverage,
+          aiTotalLoss: geminiTotalLoss,
+        });
+      }
 
       if (partPriceCoverage < 0.35 && damages.length >= 5) {
         const severeCount = damages.filter((d) => d.damageLevel === 'severe').length;
@@ -1108,7 +1191,7 @@ export async function assessDamageEnhanced(params: {
       // Update isTotalLoss to reflect Gemini's determination
       isTotalLoss = isActuallyTotalLoss;
       
-      repairCost = Math.round(salvageCalc.totalDeductionAmount);
+      repairCost = Math.max(0, Math.round(conditionAdjustedMarketValue - salvageValue));
       
       // Map deductions to ensure all required fields are present (Requirement 6.3)
       damageBreakdown = salvageCalc.deductions.map(d => {
@@ -1551,8 +1634,8 @@ async function analyzePhotosWithFallback(
   };
   
   const neutralVisionResults = {
-    labels: [{ description: 'Assessment unavailable', score: 0.5 }],
-    totalConfidence: 0.5,
+    labels: [],
+    totalConfidence: 0,
   };
   
   return { damageScore: neutralScore, visionResults: neutralVisionResults, method: 'neutral', geminiTotalLoss: undefined, itemDetails: undefined, damagedParts: undefined };
