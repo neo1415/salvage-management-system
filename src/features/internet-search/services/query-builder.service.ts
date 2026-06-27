@@ -564,6 +564,18 @@ export class QueryBuilderService {
     if (furniture.size) {
       query += ` ${furniture.size}`;
     }
+
+    const furnitureText = `${furniture.furnitureType} ${furniture.size || ''}`.toLowerCase();
+    const furnitureGroups = [
+      /\b(sofa|couch|settee)\b/,
+      /\b(armchair|chair|recliner)\b/,
+      /\b(coffee\s+table|table)\b/,
+      /\b(cabinet|sideboard|console|shelf|shelving)\b/,
+      /\b(wardrobe|bed|dresser)\b/,
+    ].filter((pattern) => pattern.test(furnitureText)).length;
+    if (furnitureGroups >= 2 && !/\b(set|suite|complete)\b/.test(furnitureText)) {
+      query += ' complete set';
+    }
     
     return query;
   }

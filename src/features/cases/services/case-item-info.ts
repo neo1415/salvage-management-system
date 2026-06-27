@@ -77,7 +77,11 @@ export function buildUniversalItemInfoFromCase(input: {
         type: 'furniture',
         brand: typeof details.brand === 'string' ? details.brand : undefined,
         model: String(details.type || details.description || ''),
+        description: [details.type, details.material, details.size]
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          .join(' '),
         material: typeof details.material === 'string' ? details.material : undefined,
+        size: typeof details.size === 'string' ? details.size : undefined,
       };
     case 'machinery':
       return {

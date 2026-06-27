@@ -136,6 +136,31 @@ describe('PriceAdjudicationService', () => {
     expect(result.reviewReasons.join(' ')).toContain('source-diverse');
   });
 
+  it('rejects single-item prices for a declared multi-item furniture set', async () => {
+    const item: ItemIdentifier = {
+      type: 'furniture',
+      furnitureType: '3-seater sofa armchair coffee table side cabinet',
+      material: 'leather wood',
+      size: '3 seater, 1 seater',
+      condition: 'Brand New',
+    };
+
+    const result = await service.adjudicate({
+      item,
+      mode: 'market',
+      policy,
+      priceData: priceData([
+        price({ price: 77_100, title: 'Single leather armchair', snippet: 'One chair only' }),
+        price({ price: 410_000, source: 'store.example.ng', title: 'Complete living room sofa and coffee table set', snippet: 'Sofa, armchair, table and cabinet' }),
+      ]),
+    });
+
+    expect(result.selectedPrice).toBe(410_000);
+    expect(result.rejectedPrices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ price: 77_100, rejectionReason: expect.stringContaining('multi-item') }),
+    ]));
+  });
+
   it('requires review for excessive price spread', async () => {
     const item: ItemIdentifier = {
       type: 'machinery',

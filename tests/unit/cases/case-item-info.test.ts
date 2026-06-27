@@ -26,6 +26,26 @@ describe('buildUniversalItemInfoFromCase', () => {
     });
   });
 
+  it('retains furniture type, material, and size for manager-run valuation', () => {
+    const itemInfo = buildUniversalItemInfoFromCase({
+      assetType: 'furniture',
+      assetDetails: {
+        type: 'Sofa, Table',
+        material: 'Leather, wood',
+        size: '3 seater, 1 seater',
+        condition: 'Brand New',
+      },
+    });
+
+    expect(itemInfo).toMatchObject({
+      type: 'furniture',
+      model: 'Sofa, Table',
+      material: 'Leather, wood',
+      size: '3 seater, 1 seater',
+    });
+    expect(itemInfo?.description).toContain('3 seater, 1 seater');
+  });
+
   it('keeps already-normalized universal conditions unchanged', () => {
     const itemInfo = buildUniversalItemInfoFromCase({
       assetType: 'vehicle',

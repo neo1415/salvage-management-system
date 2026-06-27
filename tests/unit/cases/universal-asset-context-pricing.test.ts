@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildUniversalSearchIdentifier,
   buildUniversalProviderContext,
+  calculateNonVehicleDamagePercentage,
   enrichItemInfoWithAiIdentification,
   estimateKnownBulkUnitMarketValue,
+  hasExplicitNoCommercialRecovery,
   scaleBulkInternetSearchPrice,
   type UniversalItemInfo,
 } from '@/features/cases/services/ai-assessment-enhanced.service';
@@ -124,6 +127,48 @@ describe('universal asset assessment context and pricing', () => {
     expect(context.make).toBe('leather, wood');
     expect(context.model).toContain('Sofa table shelf');
     expect(context.itemType).toBe('furniture');
+  });
+
+  it('preserves declared furniture-set specifications in market search context', () => {
+    const enriched = enrichItemInfoWithAiIdentification({
+      type: 'furniture',
+      condition: 'Brand New',
+      description: 'Sofa, Table Leather, wood 3 seater, 1 seater',
+      model: 'Sofa, Table',
+      material: 'Leather, wood',
+      size: '3 seater, 1 seater',
+    }, {
+      itemDetails: {
+        detectedModel: 'Sofa, armchair, coffee table, and side cabinet',
+      },
+    });
+
+    const identifier = buildUniversalSearchIdentifier(enriched!);
+    expect(identifier?.type).toBe('furniture');
+    if (identifier?.type !== 'furniture') throw new Error('Expected furniture identifier');
+    expect(identifier.furnitureType).toContain('Sofa, Table');
+    expect(identifier.furnitureType).toContain('side cabinet');
+    expect(identifier.size).toBe('3 seater, 1 seater');
+    expect(queryBuilder.buildMarketQuery(identifier)).toContain('complete set');
+  });
+
+  it('uses damaged-component evidence for non-vehicle damage percentage', () => {
+    const percentage = calculateNonVehicleDamagePercentage([
+      { severity: 'severe', confidence: 95 },
+      { severity: 'severe', confidence: 90 },
+      { severity: 'severe', confidence: 95 },
+    ], { structural: 0, mechanical: 0, cosmetic: 90, electrical: 0, interior: 0 });
+
+    expect(percentage).toBeGreaterThan(80);
+  });
+
+  it('recognizes explicit total commercial loss without inventing a 10% remainder', () => {
+    expect(hasExplicitNoCommercialRecovery({
+      itemType: 'furniture',
+      aiTotalLoss: false,
+      summary: 'All components are unusable and beyond repair with no resale value.',
+      damagedParts: Array.from({ length: 7 }, () => ({ severity: 'severe' as const })),
+    })).toBe(true);
   });
 
   it('keeps long luxury-item summaries instead of truncating at the old 500-character limit', () => {

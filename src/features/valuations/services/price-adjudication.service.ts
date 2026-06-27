@@ -155,6 +155,32 @@ function listingText(price: ExtractedPrice): string {
   return `${price.title || ''} ${price.snippet || ''} ${price.originalText || ''}`.toLowerCase();
 }
 
+const FURNITURE_ITEM_GROUPS = [
+  /\b(sofa|couch|settee)\b/,
+  /\b(armchair|chair|recliner)\b/,
+  /\b(coffee\s+table|table)\b/,
+  /\b(cabinet|sideboard|console|shelf|shelving)\b/,
+  /\b(wardrobe|bed|dresser)\b/,
+];
+
+function furnitureGroupCount(text: string): number {
+  return FURNITURE_ITEM_GROUPS.filter((pattern) => pattern.test(text)).length;
+}
+
+function isIncompleteFurnitureLotListing(item: ItemIdentifier, price: ExtractedPrice): boolean {
+  if (item.type !== 'furniture') return false;
+  const declaredText = `${item.furnitureType} ${item.size || ''}`.toLowerCase();
+  const declaredGroups = furnitureGroupCount(declaredText);
+  if (declaredGroups < 2) return false;
+
+  const resultText = listingText(price);
+  const resultGroups = furnitureGroupCount(resultText);
+  const namesSet = /\b(set|suite|complete|living\s+room)\b/.test(resultText);
+  return declaredGroups >= 3
+    ? resultGroups < 2
+    : resultGroups < 1 || !namesSet;
+}
+
 function median(values: number[]): number | undefined {
   if (!values.length) return undefined;
   const sorted = [...values].sort((a, b) => a - b);
@@ -346,6 +372,13 @@ export class PriceAdjudicationService {
       }
       if (COUNTERFEIT_OR_ACCESSORY_TERMS.some((term) => text.includes(term))) {
         rejectedPrices.push({ ...price, rejectionReason: 'Listing appears to be counterfeit, accessory-only, replica, or otherwise not the insured asset.' });
+        return false;
+      }
+      if (input.mode === 'market' && isIncompleteFurnitureLotListing(input.item, price)) {
+        rejectedPrices.push({
+          ...price,
+          rejectionReason: 'Listing does not represent the declared multi-item furniture set.',
+        });
         return false;
       }
       if (specialist && input.mode === 'market' && lowTrust && price.price < specialist) {

@@ -138,6 +138,7 @@ export interface UniversalItemInfo {
   // Machinery/furniture/jewelry helper fields
   machineryType?: string;
   material?: string;
+  size?: string;
 
   // Universal fields
   age?: number; // Years since manufacture
@@ -270,6 +271,38 @@ export function computeVisualEvidenceDeductionFloor(input: {
   const withTotalLoss = input.aiTotalLoss ? Math.max(floor, policy.totalLossMinimum) : floor;
 
   return Math.max(0, Math.min(policy.maximum, withTotalLoss));
+}
+
+export function calculateNonVehicleDamagePercentage(
+  damagedParts: Array<{ severity: 'minor' | 'moderate' | 'severe'; confidence: number }>,
+  fallback: DamageScore
+): number {
+  if (damagedParts.length === 0) return calculateDamagePercentage(fallback);
+  const severityScore = { minor: 30, moderate: 60, severe: 90 } as const;
+  const weighted = damagedParts.reduce((sum, part) => {
+    const confidence = Math.max(0.5, Math.min(1, part.confidence / 100));
+    return sum + severityScore[part.severity] * confidence;
+  }, 0) / damagedParts.length;
+  return Math.max(0, Math.min(100, weighted));
+}
+
+export function hasExplicitNoCommercialRecovery(input: {
+  itemType?: UniversalItemInfo['type'];
+  aiTotalLoss?: boolean;
+  summary?: string;
+  damagedParts?: Array<{ severity: 'minor' | 'moderate' | 'severe' }>;
+}): boolean {
+  if (!input.summary) return false;
+  if (input.itemType !== 'furniture' && input.itemType !== 'artwork') return false;
+  const parts = input.damagedParts || [];
+  const severeRatio = parts.length > 0
+    ? parts.filter((part) => part.severity === 'severe').length / parts.length
+    : 0;
+  if (severeRatio < 0.6) return false;
+
+  const explicitlyUnrecoverable = /\b(no (?:commercial |salvageable |recoverable )?(?:resale|recovery|value)|not (?:repairable|resaleable|recoverable)|unusable and beyond repair|beyond repair and (?:unusable|unsaleable)|commercially unrecoverable)\b/i
+    .test(input.summary);
+  return explicitlyUnrecoverable && (input.aiTotalLoss === true || severeRatio >= 0.8);
 }
 
 // Backward compatibility alias
@@ -509,7 +542,17 @@ export function enrichItemInfoWithAiIdentification(
   }
 
   if (details.detectedModel) {
-    enriched.model = details.detectedModel;
+    if (enriched.type === 'furniture') {
+      const declaredDescription = enriched.description || enriched.model;
+      enriched.description = Array.from(new Set(
+        [declaredDescription, details.detectedModel]
+          .filter((value): value is string => Boolean(value?.trim()))
+          .map((value) => value.trim())
+      )).join(' ');
+      enriched.model = enriched.model || details.detectedModel;
+    } else {
+      enriched.model = details.detectedModel;
+    }
     if (enriched.type === 'vehicle') {
       enriched.description = details.detectedModel;
     }
@@ -948,7 +991,9 @@ export async function assessDamageEnhanced(params: {
   const damageScore = damageAnalysis.damageScore;
   const damagePercentage = isBulkRecoveryAsset(itemInfo)
     ? calculateBulkDamagePercentage(damageAnalysis.damagedParts, damageScore)
-    : calculateDamagePercentage(damageScore);
+    : itemInfo?.type && itemInfo.type !== 'vehicle'
+      ? calculateNonVehicleDamagePercentage(damageAnalysis.damagedParts || [], damageScore)
+      : calculateDamagePercentage(damageScore);
   
   // Step 3: Determine market value (with universal item support)
   const userQuantityBeforeAi = itemInfo?.quantity;
@@ -1058,7 +1103,36 @@ export async function assessDamageEnhanced(params: {
       }
       
       let calculationDeductionPercent = 0;
-      if (isBulkRecoveryAsset(itemInfo)) {
+      const noCommercialRecovery = hasExplicitNoCommercialRecovery({
+        itemType: itemInfo?.type,
+        aiTotalLoss: geminiTotalLoss,
+        summary: damageAnalysis.summary,
+        damagedParts: damageAnalysis.damagedParts,
+      });
+
+      if (noCommercialRecovery) {
+        calculationDeductionPercent = 1;
+        salvageValue = 0;
+        repairCost = Math.round(conditionAdjustedMarketValue);
+        isTotalLoss = true;
+        const lossShare = damages.length > 0 ? conditionAdjustedMarketValue / damages.length : 0;
+        damageBreakdown = damages.map((damage) => ({
+          component: damage.component,
+          damageLevel: damage.damageLevel,
+          repairCost: 0,
+          deductionPercent: damages.length > 0 ? 1 / damages.length : 0,
+          deductionAmount: Math.round(lossShare),
+        }));
+        valuationReviewReasons.push(
+          `${damageAnalysis.method} identified a total commercial loss with no recoverable resale value; recovery value is recorded as zero rather than inferred from replacement-part costs.`
+        );
+        console.log('Applied explicit no-commercial-recovery result:', {
+          assetType: itemInfo?.type,
+          marketValue: conditionAdjustedMarketValue,
+          salvageValue,
+          source: damageAnalysis.method,
+        });
+      } else if (isBulkRecoveryAsset(itemInfo)) {
         const bulkCalc = calculateBulkRecoverySalvage(
           conditionAdjustedMarketValue,
           damageAnalysis.damagedParts,
@@ -2927,7 +3001,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
     }
   }
 
-  if (itemInfo.brand && itemInfo.model) {
+  if (!searchIdentifier && itemInfo.brand && itemInfo.model) {
     try {
       console.log(`🌐 Searching for ${itemInfo.type} market price: ${itemInfo.brand} ${itemInfo.model}...`);
       
@@ -3025,7 +3099,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
   };
 }
 
-function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdentifier | null {
+export function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdentifier | null {
   const brand = itemInfo.brand || itemInfo.make;
   const description = itemInfo.description || itemInfo.propertyType || itemInfo.machineryType || itemInfo.model;
 
@@ -3080,10 +3154,14 @@ function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdenti
       if (!description && !itemInfo.model && !brand) return null;
       return {
         type: 'furniture',
-        furnitureType: itemInfo.model || description || 'furniture',
+        furnitureType: Array.from(new Set(
+          [description, itemInfo.model]
+            .filter((value): value is string => Boolean(value?.trim()))
+            .map((value) => value.trim())
+        )).join(' ') || 'furniture',
         brand,
         material: itemInfo.material,
-        size: itemInfo.quantity || itemInfo.unitOfMeasure,
+        size: itemInfo.size || itemInfo.quantity || itemInfo.unitOfMeasure,
         condition: resolveSearchConditionForItem(itemInfo, 'furniture', undefined, itemInfo.model),
       };
     case 'jewelry':
