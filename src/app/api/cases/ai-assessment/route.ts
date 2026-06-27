@@ -352,6 +352,7 @@ export async function POST(request: NextRequest) {
       vehicleInfo: vehicleData, // For backward compatibility
       universalItemInfo: universalItemData, // New universal support
       forceRefresh: forceRefresh === true,
+      requireDetailedAnalysis: true,
     });
     
     console.log('Enhanced AI Assessment Result:', {
@@ -408,13 +409,15 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('AI assessment API error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const detailedAnalysisUnavailable = message.startsWith('Detailed AI damage analysis is temporarily unavailable.');
     
     return NextResponse.json(
       { 
         error: 'Failed to process AI assessment',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: message
       },
-      { status: 500 }
+      { status: detailedAnalysisUnavailable ? 503 : 500 }
     );
   }
 }

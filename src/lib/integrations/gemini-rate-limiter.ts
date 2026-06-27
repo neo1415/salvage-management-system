@@ -3,7 +3,7 @@
  * 
  * Enforces Gemini API free tier rate limits:
  * - 10 requests per minute (sliding window)
- * - 1,500 requests per day (counter with UTC midnight reset)
+ * - Conservative daily cap, configurable with GEMINI_DAILY_REQUEST_LIMIT
  * 
  * Uses in-memory counters for simplicity (no Redis dependency).
  * Thread-safe operations using atomic operations.
@@ -24,10 +24,10 @@ export class GeminiRateLimiter {
 
   // Rate limit constants
   private readonly MINUTE_LIMIT = 10;
-  private readonly DAILY_LIMIT = 1500;
+  private readonly DAILY_LIMIT = Math.max(1, Number(process.env.GEMINI_DAILY_REQUEST_LIMIT) || 20);
   private readonly MINUTE_WINDOW_MS = 60000; // 60 seconds
-  private readonly WARNING_THRESHOLD_80 = 1200; // 80% of daily quota
-  private readonly WARNING_THRESHOLD_90 = 1350; // 90% of daily quota
+  private readonly WARNING_THRESHOLD_80 = Math.ceil(this.DAILY_LIMIT * 0.8);
+  private readonly WARNING_THRESHOLD_90 = Math.ceil(this.DAILY_LIMIT * 0.9);
 
   constructor() {
     this.dailyResetAt = this.getNextMidnightUTC();
@@ -84,6 +84,18 @@ export class GeminiRateLimiter {
     }
 
     this.cleanupOldMinuteRequests();
+  }
+
+  /**
+   * Stop further calls after the provider reports that the project quota is exhausted.
+   * This protects paid fallbacks from repeated Gemini failures in warm processes.
+   */
+  markQuotaExceeded(): void {
+    this.dailyCount = this.DAILY_LIMIT;
+    this.minuteRequests = [];
+    console.warn(
+      `[Gemini Rate Limiter] Provider reported quota exhaustion. Blocking Gemini until ${this.dailyResetAt.toISOString()}.`
+    );
   }
 
   /**

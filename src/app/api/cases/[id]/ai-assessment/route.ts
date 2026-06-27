@@ -92,6 +92,7 @@ export async function POST(
       vehicleInfo,
       universalItemInfo,
       forceRefresh,
+      requireDetailedAnalysis: true,
     });
 
     const staffReviewReasons = formatStaffReviewNotes(
@@ -199,12 +200,14 @@ export async function POST(
     });
   } catch (error) {
     console.error('Manager case AI assessment failed:', error);
+    const message = error instanceof Error ? error.message : 'AI assessment failed';
+    const detailedAnalysisUnavailable = message.startsWith('Detailed AI damage analysis is temporarily unavailable.');
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'AI assessment failed',
+        error: message,
       },
-      { status: 500 }
+      { status: detailedAnalysisUnavailable ? 503 : 500 }
     );
   }
 }

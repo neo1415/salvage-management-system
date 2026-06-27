@@ -255,6 +255,10 @@ export async function initializeGeminiService(): Promise<void> {
     return;
   }
 
+  if (serviceConfig.enabled && serviceConfig.apiKey === apiKey && geminiClient && geminiModel) {
+    return;
+  }
+
   try {
     // Initialize the Gemini client with API key
     geminiClient = new GoogleGenerativeAI(apiKey);
@@ -283,8 +287,8 @@ export async function initializeGeminiService(): Promise<void> {
       const maskedKey = `...${apiKey.slice(-4)}`;
       console.info(
         `[Gemini Service] Initialized successfully with API key ending in ${maskedKey}. ` +
-        `Model: ${serviceConfig.model}. Rate limits: 10 requests/minute, 1,500 requests/day. ` +
-        `Connection validated.`
+        `Model: ${serviceConfig.model}. Local safety limit: ${Math.max(1, Number(process.env.GEMINI_DAILY_REQUEST_LIMIT) || 20)} requests/day. ` +
+        `Actual quota is controlled per Google project.`
       );
     } catch (validationError: any) {
       // Connection validation failed - likely invalid API key
@@ -1575,6 +1579,7 @@ async function convertPhotosToBase64(
  */
 enum ErrorType {
   TRANSIENT = 'transient',      // 5xx errors - retry once
+  RATE_LIMIT = 'rate_limit',    // Provider quota/rate limit - no retry
   AUTHENTICATION = 'authentication', // Invalid API key - no retry
   VALIDATION = 'validation',     // Invalid input/response - no retry
   TIMEOUT = 'timeout',           // Request timeout - no retry (already waited)
@@ -1593,6 +1598,18 @@ enum ErrorType {
 function classifyError(error: any, requestId: string): ErrorType {
   const errorMessage = error?.message || '';
   const errorString = String(error);
+
+  if (
+    error?.status === 429 ||
+    errorMessage.includes('429') ||
+    errorMessage.toLowerCase().includes('quota exceeded') ||
+    errorString.includes('RESOURCE_EXHAUSTED')
+  ) {
+    console.warn(
+      `[Gemini Service] Provider quota/rate limit reached. No retry will be attempted. Request ID: ${requestId}`
+    );
+    return ErrorType.RATE_LIMIT;
+  }
 
   // Authentication errors (invalid API key)
   if (

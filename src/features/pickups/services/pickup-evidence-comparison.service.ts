@@ -7,6 +7,7 @@ import {
   getClaudeModelName,
   isClaudeEnabled,
 } from '@/lib/integrations/claude-damage-detection';
+import { isClaudePickupFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 import type { PickupEvidenceComparison } from '@/lib/db/schema/pickup-evidence';
 
 type ComparisonStatus = PickupEvidenceComparison['status'];
@@ -324,6 +325,7 @@ async function compareWithClaude(
   input: PickupEvidenceComparisonInput,
   baseComparison: PickupEvidenceComparison
 ): Promise<PickupEvidenceComparison | null> {
+  if (!isClaudePickupFallbackEnabled()) return null;
   if (!isClaudeEnabled()) return null;
 
   const client = getClaudeClient();

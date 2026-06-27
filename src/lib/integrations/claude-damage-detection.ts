@@ -14,19 +14,16 @@
  * - Severity classification (minor/moderate/severe)
  * - Airbag deployment detection
  * - Conservative total loss determination
- * - Prompt caching for cost optimization (1-hour TTL)
- * - Automatic fallback to Gemini when unavailable
- * - Rate limiting to stay within budget
+ * - Prompt caching and per-request token usage logging
+ * - Local request limiting as an additional safety mechanism
  * 
- * Fallback Chain: Claude → Gemini → Vision API → Neutral scores
+ * Claude is an optional fallback after Gemini, never an automatic paid default.
  * 
- * Cost Optimization:
- * - Uses Claude Sonnet 4.6 (production workhorse)
- * - Implements prompt caching (90% cost reduction on cached input)
- * - Estimated: $0.60-$1.20/month for 45 assessments with 10 images
+ * Paid use is disabled unless CLAUDE_DAMAGE_FALLBACK_ENABLED=true.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 
 /**
  * Vehicle context for damage assessment
@@ -91,7 +88,7 @@ interface ClaudeConfig {
 let serviceConfig: ClaudeConfig = {
   apiKey: undefined,
   enabled: false,
-  model: 'claude-sonnet-4-6', // Latest Sonnet 4.6 model (February 2026)
+  model: process.env.CLAUDE_DAMAGE_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
 };
 
 let claudeClient: Anthropic | null = null;
@@ -123,6 +120,10 @@ export async function initializeClaudeService(): Promise<void> {
     serviceConfig.enabled = false;
     serviceConfig.apiKey = undefined;
     claudeClient = null;
+    return;
+  }
+
+  if (serviceConfig.enabled && serviceConfig.apiKey === apiKey && claudeClient) {
     return;
   }
 
@@ -580,14 +581,40 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function logClaudeUsage(response: Anthropic.Message, requestId: string): void {
+  const usage = response.usage as Anthropic.Message['usage'] & {
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
+  const input = usage.input_tokens || 0;
+  const output = usage.output_tokens || 0;
+  const cacheWrite = usage.cache_creation_input_tokens || 0;
+  const cacheRead = usage.cache_read_input_tokens || 0;
+  const usesSonnetPricing = serviceConfig.model.toLowerCase().includes('sonnet');
+  const estimatedCostUsd = usesSonnetPricing
+    ? (input * 3 + output * 15 + cacheWrite * 3.75 + cacheRead * 0.3) / 1_000_000
+    : null;
+
+  console.info('[Claude Service] Usage', {
+    requestId,
+    model: serviceConfig.model,
+    inputTokens: input,
+    outputTokens: output,
+    cacheWriteTokens: cacheWrite,
+    cacheReadTokens: cacheRead,
+    estimatedCostUsd: estimatedCostUsd === null ? null : Number(estimatedCostUsd.toFixed(6)),
+    pricingBasis: usesSonnetPricing ? 'Claude Sonnet published token rates' : 'token counts only',
+  });
+}
+
 /**
- * Assess vehicle damage using Claude 3.5 Haiku with prompt caching
+ * Assess asset damage using the configured Claude model with prompt caching.
  * 
  * This function:
  * - Validates service is enabled and inputs are valid
  * - Converts image URLs to base64 for Claude API
  * - Constructs optimized prompt with vehicle context
- * - Uses prompt caching to reduce costs (1-hour TTL)
+ * - Uses Anthropic prompt caching to reduce repeated prompt-input costs
  * - Calls Claude API with photos and prompt (with retry logic for 5xx errors)
  * - Parses and validates JSON response
  * - Returns structured damage assessment
@@ -682,7 +709,7 @@ export async function assessDamageWithClaude(
     try {
       const response = await claudeClient!.messages.create({
         model: serviceConfig.model,
-        max_tokens: 4096,
+        max_tokens: Math.max(800, Number(process.env.CLAUDE_DAMAGE_MAX_TOKENS) || 2200),
         messages: [{
           role: 'user',
           content
@@ -697,6 +724,7 @@ export async function assessDamageWithClaude(
       });
 
       const duration = Date.now() - startTime;
+      logClaudeUsage(response, requestId);
       console.info(`[Claude Service] API call succeeded in ${duration}ms. Request ID: ${requestId}`);
 
       // Extract text from response
@@ -753,7 +781,7 @@ export async function assessDamageWithClaude(
 
       const response = await claudeClient!.messages.create({
         model: serviceConfig.model,
-        max_tokens: 4096,
+        max_tokens: Math.max(800, Number(process.env.CLAUDE_DAMAGE_MAX_TOKENS) || 2200),
         messages: [{
           role: 'user',
           content
@@ -768,6 +796,7 @@ export async function assessDamageWithClaude(
       });
 
       const duration = Date.now() - startTime;
+      logClaudeUsage(response, requestId);
       console.info(`[Claude Service] Attempt 2: API call succeeded in ${duration}ms after retry. Request ID: ${requestId}`);
 
       const textContent = response.content.find(block => block.type === 'text');
@@ -821,12 +850,13 @@ export function resetClaudeService(): void {
   serviceConfig = {
     apiKey: undefined,
     enabled: false,
-    model: 'claude-3-5-haiku-20241022',
+    model: process.env.CLAUDE_DAMAGE_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
   };
   claudeClient = null;
 }
 
-// Auto-initialize on module load
-initializeClaudeService().catch((error) => {
-  console.error('[Claude Service] Failed to auto-initialize:', error);
-});
+if (isClaudeDamageFallbackEnabled()) {
+  initializeClaudeService().catch((error) => {
+    console.error('[Claude Service] Failed to auto-initialize:', error);
+  });
+}

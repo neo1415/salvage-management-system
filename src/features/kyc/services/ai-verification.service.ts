@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { isClaudeKycFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 
 interface VerificationInput {
   businessName: string;
@@ -51,7 +52,7 @@ export class AIVerificationService {
 
   constructor() {
     // Initialize Claude (fallback)
-    if (process.env.CLAUDE_API_KEY) {
+    if (process.env.CLAUDE_API_KEY && isClaudeKycFallbackEnabled()) {
       this.claude = new Anthropic({
         apiKey: process.env.CLAUDE_API_KEY,
       });

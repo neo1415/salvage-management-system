@@ -3,6 +3,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 import type { ExtractedPrice, PriceExtractionResult } from '@/features/internet-search/services/price-extraction.service';
 import type { ValuationPolicyConfig } from './valuation-policy.service';
+import {
+  isClaudePriceAdjudicationEnabled,
+  isGeminiPriceAdjudicationEnabled,
+  isPriceAdjudicationAiEnabled,
+} from '@/lib/ai/provider-cost-controls';
 
 type AdjudicationMode = 'market' | 'part';
 type AiProvider = 'gemini_grounded' | 'claude_web_search';
@@ -383,6 +388,7 @@ export class PriceAdjudicationService {
   }
 
   private async getGeminiGroundedOpinion(input: PriceAdjudicationInput, filteredPrices: ExtractedPrice[], rejectedPrices: Array<ExtractedPrice & { rejectionReason: string }>): Promise<AiPriceOpinion | null> {
+    if (!isGeminiPriceAdjudicationEnabled()) return null;
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === 'your-gemini-api-key') return null;
 
@@ -412,6 +418,7 @@ export class PriceAdjudicationService {
   }
 
   private async getClaudeWebOpinion(input: PriceAdjudicationInput, filteredPrices: ExtractedPrice[], rejectedPrices: Array<ExtractedPrice & { rejectionReason: string }>): Promise<AiPriceOpinion | null> {
+    if (!isClaudePriceAdjudicationEnabled()) return null;
     const apiKey = process.env.CLAUDE_API_KEY;
     if (!apiKey || !apiKey.startsWith('sk-ant-')) return null;
 
@@ -464,7 +471,7 @@ export class PriceAdjudicationService {
     const deterministic = this.applyDeterministicGuards(input);
     const guardedPriceData = rebuildPriceData(input.priceData, deterministic.filteredPrices);
 
-    const shouldAskAi = process.env.PRICE_ADJUDICATION_AI_ENABLED !== 'false';
+    const shouldAskAi = isPriceAdjudicationAiEnabled();
     const aiOpinions = shouldAskAi
       ? (await Promise.all([
           this.getGeminiGroundedOpinion(input, deterministic.filteredPrices, deterministic.rejectedPrices),

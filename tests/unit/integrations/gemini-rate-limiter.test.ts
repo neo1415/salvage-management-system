@@ -20,12 +20,14 @@ describe('GeminiRateLimiter', () => {
   let rateLimiter: GeminiRateLimiter;
 
   beforeEach(() => {
+    process.env.GEMINI_DAILY_REQUEST_LIMIT = '1500';
     // Create a fresh instance for each test
     rateLimiter = new GeminiRateLimiter();
     vi.useFakeTimers();
   });
 
   afterEach(() => {
+    delete process.env.GEMINI_DAILY_REQUEST_LIMIT;
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -132,6 +134,14 @@ describe('GeminiRateLimiter', () => {
   });
 
   describe('Daily rate limiting', () => {
+    it('blocks further calls when the provider reports project quota exhaustion', () => {
+      rateLimiter.recordRequest();
+      rateLimiter.markQuotaExceeded();
+
+      const status = rateLimiter.checkQuota();
+      expect(status.allowed).toBe(false);
+      expect(status.dailyRemaining).toBe(0);
+    });
     it('should allow exactly 1,500 requests per day', () => {
       // Directly set daily count to test the limit without time advancement issues
       // Make 1,499 requests instantly (no time advancement to avoid midnight crossing)

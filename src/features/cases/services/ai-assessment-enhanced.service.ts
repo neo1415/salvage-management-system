@@ -43,6 +43,7 @@ import {
   resolveRealisticMarketSearchCondition,
 } from '@/features/valuations/services/condition-mapping.service';
 import { getValuationPolicyConfig, shouldRequireManualReview } from '@/features/valuations/services/valuation-policy.service';
+import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
 /**
@@ -885,8 +886,9 @@ export async function assessDamageEnhanced(params: {
   vehicleInfo?: VehicleInfo; // For backward compatibility
   universalItemInfo?: UniversalItemInfo; // New universal support
   forceRefresh?: boolean;
+  requireDetailedAnalysis?: boolean;
 }): Promise<EnhancedDamageAssessment> {
-  const { photos, vehicleInfo, universalItemInfo, forceRefresh = false } = params;
+  const { photos, vehicleInfo, universalItemInfo, forceRefresh = false, requireDetailedAnalysis = false } = params;
   
   // Use universal item info if provided, otherwise fall back to vehicle info
   const itemInfo = universalItemInfo || (vehicleInfo ? {
@@ -930,6 +932,15 @@ export async function assessDamageEnhanced(params: {
   
   // Step 1: Analyze photos with Gemini → Vision fallback chain
   const damageAnalysis = await analyzePhotosWithFallback(photos, vehicleInfo, itemInfo);
+  const detailedAnalysisAvailable =
+    damageAnalysis.method === 'gemini' ||
+    damageAnalysis.method === 'claude' ||
+    MOCK_MODE;
+  if (requireDetailedAnalysis && !detailedAnalysisAvailable) {
+    throw new Error(
+      'Detailed AI damage analysis is temporarily unavailable. Gemini quota is unavailable and paid Claude fallback is disabled or unavailable. No valuation was saved; retry after Gemini quota resets or complete a manual assessment.'
+    );
+  }
   const visionResults = damageAnalysis.visionResults;
   const geminiTotalLoss = damageAnalysis.geminiTotalLoss; // Capture Gemini's total loss flag
   
@@ -1463,10 +1474,8 @@ async function analyzePhotosWithFallback(
           console.log(`   Universal item context: ${geminiContext.make} ${geminiContext.model} (${geminiContext.itemType})`);
         }
         
-        const geminiResult = await assessDamageWithGemini(photos, geminiContext);
-        
-        // Record successful request
         rateLimiter.recordRequest();
+        const geminiResult = await assessDamageWithGemini(photos, geminiContext);
         
         console.log('✅ Gemini assessment successful (FREE)');
         console.log(`   Severity: ${geminiResult.severity}`);
@@ -1508,6 +1517,10 @@ async function analyzePhotosWithFallback(
         console.warn(`⚠️ Gemini rate limit exceeded: ${reason}. Falling back to Claude.`);
       }
     } catch (geminiError: any) {
+      const geminiErrorMessage = geminiError?.message || String(geminiError);
+      if (/429|quota exceeded|resource[_\s-]?exhausted/i.test(geminiErrorMessage)) {
+        getGeminiRateLimiter().markQuotaExceeded();
+      }
       console.error('❌ Gemini assessment failed:', geminiError?.message || 'Unknown error');
       console.log('   Falling back to Claude...');
     }
@@ -1520,7 +1533,8 @@ async function analyzePhotosWithFallback(
   }
   
   // ATTEMPT 2: Try Claude as BACKUP (PAID - only if Gemini failed or unavailable)
-  if (isClaudeEnabled() && hasItemContext) {
+  const claudeFallbackEnabled = isClaudeDamageFallbackEnabled();
+  if (claudeFallbackEnabled && isClaudeEnabled() && hasItemContext) {
     try {
       // Check rate limiter
       const claudeRateLimiter = getClaudeRateLimiter();
@@ -1592,7 +1606,9 @@ async function analyzePhotosWithFallback(
       console.log('   Falling back to Vision API...');
     }
   } else {
-    if (!isClaudeEnabled()) {
+    if (!claudeFallbackEnabled) {
+      console.log('Paid Claude damage fallback is disabled. Set CLAUDE_DAMAGE_FALLBACK_ENABLED=true to opt in.');
+    } else if (!isClaudeEnabled()) {
       console.log('ℹ️ Claude not enabled. Using Vision API.');
     } else if (!hasItemContext) {
       console.log('ℹ️ Item context incomplete. Using Vision API.');
@@ -3336,7 +3352,36 @@ async function searchUniversalPartPrices(
 
   const partMapping = getPartMapping(itemInfo.type);
 
-  const partSearchPromises = damages.map(async (damage) => {
+  const maxPartSearches = Math.max(1, Number(process.env.PART_PRICE_SEARCH_LIMIT) || 8);
+  const severityRank: Record<DamageInput['damageLevel'], number> = {
+    severe: 3,
+    moderate: 2,
+    minor: 1,
+  };
+  const seenPartNames = new Set<string>();
+  const prioritizedDamages = [...damages].sort(
+    (left, right) => severityRank[right.damageLevel] - severityRank[left.damageLevel]
+  );
+  const searchableDamages = prioritizedDamages.filter((damage) => {
+    const partName = itemInfo.type === 'electronics'
+      ? damage.component
+      : (partMapping[damage.component] || damage.component);
+    const key = partName.trim().toLowerCase();
+    if (!key || seenPartNames.has(key) || seenPartNames.size >= maxPartSearches) return false;
+    seenPartNames.add(key);
+    return true;
+  });
+  const searchableComponents = new Set(searchableDamages.map((damage) => damage.component));
+  const skippedDamages = damages.filter((damage) => !searchableComponents.has(damage.component));
+
+  if (skippedDamages.length > 0) {
+    console.info(
+      `[Part Pricing] Limited searches to ${searchableDamages.length}/${damages.length} prioritized unique parts. ` +
+      'Set PART_PRICE_SEARCH_LIMIT to adjust the cap.'
+    );
+  }
+
+  const partSearchPromises = searchableDamages.map(async (damage) => {
     // For electronics, use the component name directly (it's already specific from Gemini)
     // For other types, use the mapping
     const partName = itemInfo.type === 'electronics' ? damage.component : (partMapping[damage.component] || damage.component);
@@ -3398,7 +3443,18 @@ async function searchUniversalPartPrices(
   });
 
   try {
-    return await Promise.all(partSearchPromises);
+    const searchedResults = await Promise.all(partSearchPromises);
+    return [
+      ...searchedResults,
+      ...skippedDamages.map((damage) => ({
+        component: damage.component,
+        source: 'not_found' as const,
+        evidence: {
+          reason: 'part_search_budget_cap',
+          damageLevel: damage.damageLevel,
+        },
+      })),
+    ];
   } catch (error) {
     console.error(`❌ ${itemInfo.type} part search batch failed:`, error);
     return damages.map(damage => ({

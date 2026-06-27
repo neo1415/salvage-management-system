@@ -1,26 +1,17 @@
 /**
  * Claude API Rate Limiter
  * 
- * Implements budget-aware rate limiting for Claude API to stay under $5/month.
+ * Implements a local safety limit for paid Claude damage requests.
  * 
- * Strategy: Use Claude as BACKUP only (Gemini is primary and FREE)
+ * Claude is available only when the paid fallback is explicitly enabled.
  * 
  * Limits:
- * - 20 requests/day (backup for complex cases only)
+ * - Conservative daily cap, configurable with CLAUDE_DAMAGE_DAILY_LIMIT
  * - 10 requests/minute (prevent burst costs)
  * 
- * Cost Calculation:
- * - 20 requests/day × 30 days = 600 requests/month (max)
- * - 600 requests × 5 images = 3,000 images/month (max)
- * - Estimated cost: ~$0.40-0.80/month (well under $5 budget)
- * 
- * Hybrid Strategy:
- * - Gemini handles 95%+ of cases (FREE - 1,500 requests/day limit)
- * - Claude handles complex cases only (PAID - when Gemini fails)
- * - Expected Claude usage: ~5-10 requests/day in practice
- * 
  * Storage: In-memory (resets on server restart)
- * Production: Consider Redis for persistent tracking
+ * Provider-side spend limits remain authoritative. Use shared persistent
+ * accounting when a hard organization-wide budget is required.
  */
 
 interface RateLimitState {
@@ -36,7 +27,7 @@ class ClaudeRateLimiter {
 
   // Rate limits
   private readonly REQUESTS_PER_MINUTE = 10;
-  private readonly REQUESTS_PER_DAY = 20; // ✅ Budget-friendly: max $0.80/month (Gemini handles most cases for FREE)
+  private readonly REQUESTS_PER_DAY = Math.max(1, Number(process.env.CLAUDE_DAMAGE_DAILY_LIMIT) || 2);
 
   /**
    * Check if a request is allowed under current rate limits
