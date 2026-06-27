@@ -21,7 +21,7 @@ export class ReportCacheService {
    */
   private static generateCacheKey(reportType: string, filters: any): string {
     const filterString = JSON.stringify(filters || {});
-    const hash = createHash('md5').update(`${reportType}:${filterString}`).digest('hex');
+    const hash = createHash('sha256').update(`${reportType}:${filterString}`).digest('hex');
     return hash;
   }
 

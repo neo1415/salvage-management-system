@@ -32,7 +32,17 @@ const SECRET_PATTERNS = [
   },
   {
     name: 'OpenAI API Key',
-    pattern: /sk-[A-Za-z0-9]{48}/g,
+    pattern: /sk-[A-Za-z0-9_-]{32,}/g,
+    severity: 'CRITICAL',
+  },
+  {
+    name: 'Anthropic API Key',
+    pattern: /sk-ant-[A-Za-z0-9_-]{32,}/g,
+    severity: 'CRITICAL',
+  },
+  {
+    name: 'Serper API Key Assignment',
+    pattern: /SERPER_API_KEY\s*=\s*['"][a-f0-9]{32,}['"]/gi,
     severity: 'CRITICAL',
   },
   {
@@ -84,6 +94,7 @@ const IGNORE_PATTERNS = [
   'yarn.lock',
   'pnpm-lock.yaml',
   'scripts/scan-for-secrets.ts', // Ignore this file itself
+  'salvage-codebase-scan.txt', // Security-tool output may quote historical findings
 ];
 
 interface Finding {
@@ -126,11 +137,6 @@ function scanFile(filePath: string): void {
         for (const match of matches) {
           const column = match.index || 0;
           
-          // Get context (surrounding lines)
-          const contextStart = Math.max(0, lineIndex - 1);
-          const contextEnd = Math.min(lines.length, lineIndex + 2);
-          const context = lines.slice(contextStart, contextEnd).join('\n');
-
           findings.push({
             file: filePath,
             line: lineIndex + 1,
@@ -138,7 +144,7 @@ function scanFile(filePath: string): void {
             secretType: name,
             severity,
             match: match[0],
-            context,
+            context: '[redacted]',
           });
         }
       });
@@ -200,8 +206,7 @@ function printFindings(): void {
       console.log(`\n${index + 1}. ${finding.secretType}`);
       console.log(`   File: ${finding.file}:${finding.line}:${finding.column}`);
       console.log(`   Match: ${maskSecret(finding.match)}`);
-      console.log(`   Context:`);
-      console.log(finding.context.split('\n').map(l => `     ${l}`).join('\n'));
+      console.log('   Context: [redacted]');
     });
   };
 

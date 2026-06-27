@@ -330,10 +330,11 @@ async function runDrizzlePush(appUrl: string): Promise<boolean> {
   console.log(`   drizzle-kit push via: ${redactUrl(pushUrl)}`);
   console.log('   (If this hangs at "Pulling schema", cancel and re-run without --use-push)\n');
 
-  const result = spawnSync('npx drizzle-kit push --force', {
+  const npxExecutable = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  const result = spawnSync(npxExecutable, ['drizzle-kit', 'push', '--force'], {
     stdio: 'inherit',
     env: { ...process.env, DATABASE_URL: pushUrl },
-    shell: true,
+    shell: false,
     timeout: 300000,
   });
 

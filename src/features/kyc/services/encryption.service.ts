@@ -1,12 +1,16 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
+const CURRENT_VERSION = 'v2';
+const GCM_ALGORITHM = 'aes-256-gcm';
+const GCM_IV_BYTES = 12;
+const GCM_AUTH_TAG_BYTES = 16;
+const LEGACY_ALGORITHM = 'aes-256-cbc';
+
 /**
- * EncryptionService
+ * Authenticated encryption for sensitive KYC data.
  *
- * AES-256-CBC encryption for sensitive KYC data (NIN, BVN).
- * Stores ciphertext as "{hex_iv}:{hex_ciphertext}".
- *
- * Requires env var ENCRYPTION_KEY — a 64-character hex string (32 bytes).
+ * New values use "v2:{iv}:{authTag}:{ciphertext}". Legacy CBC values remain
+ * decryptable so existing NIN/BVN records can be migrated without data loss.
  */
 export class EncryptionService {
   private readonly key: Buffer;
@@ -16,60 +20,101 @@ export class EncryptionService {
     if (!raw) {
       throw new Error('ENCRYPTION_KEY environment variable is not set');
     }
-    if (raw.length !== 64) {
-      throw new Error(
-        `ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes), got ${raw.length}`
-      );
+    if (!/^[a-f0-9]{64}$/i.test(raw)) {
+      throw new Error('ENCRYPTION_KEY must be exactly 64 hexadecimal characters (32 bytes)');
     }
     this.key = Buffer.from(raw, 'hex');
   }
 
-  /**
-   * Encrypt plaintext using AES-256-CBC.
-   * Returns "{hex_iv}:{hex_ciphertext}"
-   */
   encrypt(plaintext: string): string {
-    const iv = randomBytes(16);
-    const cipher = createCipheriv('aes-256-cbc', this.key, iv);
+    const iv = randomBytes(GCM_IV_BYTES);
+    const cipher = createCipheriv(GCM_ALGORITHM, this.key, iv, {
+      authTagLength: GCM_AUTH_TAG_BYTES,
+    });
     const encrypted = Buffer.concat([
       cipher.update(plaintext, 'utf8'),
       cipher.final(),
     ]);
-    return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
+    const authTag = cipher.getAuthTag();
+    return `${CURRENT_VERSION}:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
   }
 
-  /**
-   * Decrypt a value produced by encrypt().
-   * Expects "{hex_iv}:{hex_ciphertext}"
-   */
   decrypt(ciphertext: string): string {
-    const [ivHex, dataHex] = ciphertext.split(':');
-    if (!ivHex || !dataHex) {
-      throw new Error('Invalid ciphertext format — expected "{hex_iv}:{hex_ciphertext}"');
-    }
-    const iv = Buffer.from(ivHex, 'hex');
-    const data = Buffer.from(dataHex, 'hex');
-    const decipher = createDecipheriv('aes-256-cbc', this.key, iv);
-    const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
-    return decrypted.toString('utf8');
+    return ciphertext.startsWith(`${CURRENT_VERSION}:`)
+      ? this.decryptCurrent(ciphertext)
+      : this.decryptLegacy(ciphertext);
   }
 
-  /**
-   * Mask all but the last 4 characters of a sensitive value.
-   * e.g. "12345678901" → "*******8901"
-   */
+  isLegacyCiphertext(ciphertext: string): boolean {
+    return !ciphertext.startsWith(`${CURRENT_VERSION}:`);
+  }
+
+  reencryptIfLegacy(ciphertext: string): string {
+    return this.isLegacyCiphertext(ciphertext)
+      ? this.encrypt(this.decryptLegacy(ciphertext))
+      : ciphertext;
+  }
+
   mask(value: string): string {
     if (value.length <= 4) return value;
     return '*'.repeat(value.length - 4) + value.slice(-4);
   }
+
+  private decryptCurrent(ciphertext: string): string {
+    const [version, ivHex, authTagHex, dataHex, ...extra] = ciphertext.split(':');
+    if (
+      extra.length > 0 ||
+      version !== CURRENT_VERSION ||
+      !isHexOfBytes(ivHex, GCM_IV_BYTES) ||
+      !isHexOfBytes(authTagHex, GCM_AUTH_TAG_BYTES) ||
+      !isEvenHex(dataHex)
+    ) {
+      throw new Error('Invalid v2 ciphertext format');
+    }
+
+    const decipher = createDecipheriv(
+      GCM_ALGORITHM,
+      this.key,
+      Buffer.from(ivHex, 'hex'),
+      { authTagLength: GCM_AUTH_TAG_BYTES }
+    );
+    decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(dataHex, 'hex')),
+      decipher.final(),
+    ]);
+    return decrypted.toString('utf8');
+  }
+
+  private decryptLegacy(ciphertext: string): string {
+    const [ivHex, dataHex, ...extra] = ciphertext.split(':');
+    if (extra.length > 0 || !isHexOfBytes(ivHex, 16) || !isEvenHex(dataHex)) {
+      throw new Error('Invalid legacy ciphertext format');
+    }
+    const decipher = createDecipheriv(
+      LEGACY_ALGORITHM,
+      this.key,
+      Buffer.from(ivHex, 'hex')
+    );
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(dataHex, 'hex')),
+      decipher.final(),
+    ]);
+    return decrypted.toString('utf8');
+  }
 }
 
-/** Singleton instance — lazily created so tests can set env vars first */
-let _instance: EncryptionService | null = null;
+function isEvenHex(value: string | undefined): value is string {
+  return Boolean(value && value.length % 2 === 0 && /^[a-f0-9]+$/i.test(value));
+}
+
+function isHexOfBytes(value: string | undefined, bytes: number): value is string {
+  return Boolean(value && value.length === bytes * 2 && /^[a-f0-9]+$/i.test(value));
+}
+
+let instance: EncryptionService | null = null;
 
 export function getEncryptionService(): EncryptionService {
-  if (!_instance) {
-    _instance = new EncryptionService();
-  }
-  return _instance;
+  if (!instance) instance = new EncryptionService();
+  return instance;
 }

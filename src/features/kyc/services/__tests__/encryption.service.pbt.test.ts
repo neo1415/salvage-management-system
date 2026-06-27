@@ -1,6 +1,7 @@
 import { describe, it, beforeAll } from 'vitest';
 import { expect } from 'vitest';
 import fc from 'fast-check';
+import { createCipheriv } from 'crypto';
 import { EncryptionService } from '../encryption.service';
 
 // Valid 64-char hex key for testing (32 bytes)
@@ -37,13 +38,36 @@ describe('EncryptionService — Property-Based Tests', () => {
         (nin) => {
           const ct1 = enc.encrypt(nin);
           const ct2 = enc.encrypt(nin);
-          const iv1 = ct1.split(':')[0];
-          const iv2 = ct2.split(':')[0];
+          const iv1 = ct1.split(':')[1];
+          const iv2 = ct2.split(':')[1];
           expect(iv1).not.toBe(iv2);
         }
       ),
       { numRuns: 100 }
     );
+  });
+
+  it('authenticates ciphertext and rejects tampering', () => {
+    const ciphertext = enc.encrypt('12345678901');
+    const parts = ciphertext.split(':');
+    expect(parts[0]).toBe('v2');
+    const lastByte = parts[3].slice(-2) === '00' ? '01' : '00';
+    parts[3] = `${parts[3].slice(0, -2)}${lastByte}`;
+    expect(() => enc.decrypt(parts.join(':'))).toThrow();
+  });
+
+  it('decrypts and upgrades legacy AES-256-CBC values', () => {
+    const key = Buffer.from(TEST_KEY, 'hex');
+    const iv = Buffer.alloc(16, 7);
+    const cipher = createCipheriv('aes-256-cbc', key, iv);
+    const encrypted = Buffer.concat([cipher.update('12345678901', 'utf8'), cipher.final()]);
+    const legacy = `${iv.toString('hex')}:${encrypted.toString('hex')}`;
+
+    expect(enc.decrypt(legacy)).toBe('12345678901');
+    expect(enc.isLegacyCiphertext(legacy)).toBe(true);
+    const upgraded = enc.reencryptIfLegacy(legacy);
+    expect(upgraded.startsWith('v2:')).toBe(true);
+    expect(enc.decrypt(upgraded)).toBe('12345678901');
   });
 
   // Feature: tier-2-kyc-dojah-integration, Property 12: NIN/BVN masking

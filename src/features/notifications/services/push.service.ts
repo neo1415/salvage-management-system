@@ -18,6 +18,7 @@ import { smsService } from './sms.service';
 import { emailService } from './email.service';
 import { getEmailBranding, getSupportEmail, getSupportPhone } from '../templates/email-branding';
 import { wrapProfessionalEmail } from '../templates/wrap-professional-email';
+import { escapeHtml } from '@/lib/security/html';
 
 // Validate required environment variables
 if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
@@ -449,6 +450,11 @@ export class PushNotificationService {
         const branding = await getEmailBranding();
         const supportEmail = getSupportEmail(branding);
         const supportPhone = getSupportPhone(branding);
+        const safeTitle = escapeHtml(title);
+        const safeBody = escapeHtml(body);
+        const safeBrandName = escapeHtml(branding.brandName);
+        const safeSupportEmail = escapeHtml(supportEmail);
+        const safeSupportPhone = escapeHtml(supportPhone);
         const emailResult = await emailService.sendEmail({
           to: fallbackContact.email,
           subject: title,
@@ -456,17 +462,17 @@ export class PushNotificationService {
             title,
             `
             <div>
-              <h2 style="color: ${branding.primaryColor};">${title}</h2>
-              <p>${body}</p>
+              <h2 style="color: ${branding.primaryColor};">${safeTitle}</h2>
+              <p>${safeBody}</p>
               <hr style="border: 1px solid #eee; margin: 20px 0;">
               <p style="color: #666; font-size: 12px;">
-                This is a notification from ${branding.brandName}.
+                This is a notification from ${safeBrandName}.
                 <br>
-                If you have questions, contact us at ${supportEmail} or ${supportPhone}.
+                If you have questions, contact us at ${safeSupportEmail} or ${safeSupportPhone}.
               </p>
             </div>
           `,
-            `Notification from ${branding.brandName}`
+            `Notification from ${safeBrandName}`
           ),
         });
 

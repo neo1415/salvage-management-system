@@ -7,9 +7,8 @@ import dotenv from 'dotenv';
 // Load environment variables first
 dotenv.config();
 
-// Set the API key explicitly if needed
 if (!process.env.SERPER_API_KEY) {
-  process.env.SERPER_API_KEY = 'deaf9e2d081861f916db5db41e7c0001de699881';
+  throw new Error('SERPER_API_KEY is required to run this integration script');
 }
 
 import { internetSearchService } from '@/features/internet-search/services/internet-search.service';

@@ -21,9 +21,10 @@ if (existsSync(stagingPath)) {
 
 console.log('Using staging env. DATABASE_URL project:', process.env.DATABASE_URL?.match(/postgres\.([^:]+)/)?.[1] ?? 'unknown');
 
-const child = spawn('tsx', ['server.ts'], {
+const npxExecutable = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const child = spawn(npxExecutable, ['tsx', 'server.ts'], {
   stdio: 'inherit',
-  shell: true,
+  shell: false,
   env: process.env,
 });
 

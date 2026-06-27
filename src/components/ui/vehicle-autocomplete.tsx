@@ -284,25 +284,19 @@ export function VehicleAutocomplete({
 
   // Highlight matching text
   const highlightMatch = (text: string, query: string) => {
-    if (!query.trim()) return text
-
-    const regex = new RegExp(`(${query})`, 'gi')
-    const parts = text.split(regex)
+    const normalizedQuery = query.trim().toLocaleLowerCase()
+    if (!normalizedQuery) return text
+    const matchIndex = text.toLocaleLowerCase().indexOf(normalizedQuery)
+    if (matchIndex < 0) return text
+    const before = text.slice(0, matchIndex)
+    const match = text.slice(matchIndex, matchIndex + normalizedQuery.length)
+    const after = text.slice(matchIndex + normalizedQuery.length)
 
     return (
       <>
-        {parts.map((part, index) =>
-          regex.test(part) ? (
-            <mark
-              key={index}
-              className="bg-[var(--brand-primary)] text-white font-semibold"
-            >
-              {part}
-            </mark>
-          ) : (
-            <span key={index}>{part}</span>
-          )
-        )}
+        <span>{before}</span>
+        <mark className="bg-[var(--brand-primary)] text-white font-semibold">{match}</mark>
+        <span>{after}</span>
       </>
     )
   }
