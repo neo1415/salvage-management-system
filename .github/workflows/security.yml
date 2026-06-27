@@ -22,3 +22,6 @@ jobs:
       - run: npm ci
       - run: npm run security:scan
       - run: npm audit --omit=dev --audit-level=high
+      - run: npm ci --prefix socket-sidecar
+      - run: npm audit --prefix socket-sidecar --omit=dev --audit-level=high
+      - run: npm run build --prefix socket-sidecar
