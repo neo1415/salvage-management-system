@@ -1102,7 +1102,10 @@ export async function assessDamageEnhanced(params: {
           confidence: p.confidence,
           source: p.searchedPrice
             ? (p.source === 'ai_estimate' ? 'ai_estimate' as const : 'internet_search' as const)
-            : 'not_found' as const
+            : 'not_found' as const,
+          evidence: {
+            reason: typeof p.evidence?.reason === 'string' ? p.evidence.reason : undefined,
+          },
         })),
         itemMake // Pass item make/brand for make-specific deductions
       );
