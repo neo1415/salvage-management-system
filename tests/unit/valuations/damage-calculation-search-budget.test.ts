@@ -34,4 +34,48 @@ describe('damage calculation with bounded part-price searches', () => {
     expect(result.totalDeductionPercent).toBeLessThan(0.9);
     expect(result.salvageValue).toBeGreaterThan(basePrice * 0.1);
   });
+
+  it('does not add labour a second time to a complete repair estimate', async () => {
+    const damages: DamageInput[] = [{
+      component: 'left front door',
+      damageLevel: 'moderate',
+      recommendedAction: 'repair',
+    }];
+
+    const result = await service.calculateSalvageValueWithPartPrices(
+      10_000_000,
+      damages,
+      [{
+        component: 'left front door',
+        partPrice: 200_000,
+        action: 'repair',
+        confidence: 90,
+        source: 'internet_search',
+      }]
+    );
+
+    expect(result.totalDeductionAmount).toBe(200_000);
+  });
+
+  it('adds configured installation and logistics load to a replacement part price', async () => {
+    const damages: DamageInput[] = [{
+      component: 'left front door',
+      damageLevel: 'severe',
+      recommendedAction: 'replace',
+    }];
+
+    const result = await service.calculateSalvageValueWithPartPrices(
+      10_000_000,
+      damages,
+      [{
+        component: 'left front door',
+        partPrice: 200_000,
+        action: 'replace',
+        confidence: 90,
+        source: 'internet_search',
+      }]
+    );
+
+    expect(result.totalDeductionAmount).toBeGreaterThan(200_000);
+  });
 });

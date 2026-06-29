@@ -7,6 +7,12 @@ export const VENDOR_TIER2_PATH = '/vendor/kyc/tier2';
 
 export const VENDOR_TIER2_MANUAL_PATH = '/vendor/kyc/tier2-manual';
 
+export function isResolvedOnboardingTarget(pathname: string, redirectPath: string | null | undefined): boolean {
+  if (!redirectPath) return true;
+  const targetBase = redirectPath.split('?')[0];
+  return pathname === targetBase || pathname.startsWith(`${targetBase}/`);
+}
+
 export const VENDOR_ONBOARDING_PAGE_PREFIXES = [
   CHANGE_PASSWORD_PATH,
   '/vendor/settings/profile',

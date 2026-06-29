@@ -10,6 +10,7 @@ import { createHash } from 'crypto';
 import type { ItemIdentifier } from './query-builder.service';
 import type { PriceExtractionResult } from './price-extraction.service';
 import type { MarketPriceResult, PartPriceResult } from './internet-search.service';
+import type { DamageAction } from '@/lib/ai/damage-evidence';
 
 export interface CachedSearchResult {
   /** Unique identifier for the cached result */
@@ -67,13 +68,13 @@ export interface CacheMetrics {
 }
 
 export class CacheIntegrationService {
-  private readonly CACHE_VERSION = 'v3'; // Increment to invalidate old cache when valuation guards change
+  private readonly CACHE_VERSION = 'v4'; // Action-aware pricing invalidates mixed repair/replacement cache entries
   private readonly CACHE_TTL = 24 * 60 * 60; // 24 hours in seconds
   private readonly METRICS_TTL = 7 * 24 * 60 * 60; // 7 days for metrics
   
   // Cache key prefixes
-  private readonly SEARCH_CACHE_PREFIX = `internet_search:${this.CACHE_VERSION}:market:`;
-  private readonly PART_CACHE_PREFIX = `internet_search:${this.CACHE_VERSION}:part:`;
+  private readonly SEARCH_CACHE_PREFIX = `internet_search:market:${this.CACHE_VERSION}:`;
+  private readonly PART_CACHE_PREFIX = `internet_search:part:${this.CACHE_VERSION}:`;
   private readonly METRICS_KEY = 'internet_search:metrics';
   private readonly POPULAR_QUERIES_KEY = 'internet_search:popular_queries';
   /**
@@ -88,11 +89,12 @@ export class CacheIntegrationService {
   /**
    * Generate cache key for part price search
    */
-  private generatePartCacheKey(item: ItemIdentifier, partName: string, damageType?: string): string {
+  private generatePartCacheKey(item: ItemIdentifier, partName: string, damageType?: string, action?: DamageAction): string {
     const normalized = {
       item: this.normalizeItemIdentifier(item),
       partName: partName.toLowerCase().trim(),
-      damageType: damageType?.toLowerCase().trim()
+      damageType: damageType?.toLowerCase().trim(),
+      action,
     };
     const hash = createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
     return `${this.PART_CACHE_PREFIX}${hash}`;
@@ -101,52 +103,16 @@ export class CacheIntegrationService {
   /**
    * Normalize item identifier for consistent caching
    */
-  private normalizeItemIdentifier(item: ItemIdentifier): Record<string, any> {
-    const normalized: Record<string, any> = {
-      type: item.type
-    };
-
-    if (item.type === 'vehicle') {
-      if (item.make) normalized.make = item.make.toLowerCase().trim();
-      if (item.model) normalized.model = item.model.toLowerCase().trim();
-      if (item.year) normalized.year = item.year;
-      if (item.condition) normalized.condition = item.condition.toLowerCase().trim();
-    } else if (item.type === 'electronics') {
-      if (item.brand) normalized.brand = item.brand.toLowerCase().trim();
-      if (item.model) normalized.model = item.model.toLowerCase().trim();
-      if (item.storage) normalized.storage = item.storage.toLowerCase().trim();
-      if (item.condition) normalized.condition = item.condition.toLowerCase().trim();
-    } else if (item.type === 'appliance') {
-      if (item.brand) normalized.brand = item.brand.toLowerCase().trim();
-      if (item.model) normalized.model = item.model.toLowerCase().trim();
-      if (item.size) normalized.size = item.size.toLowerCase().trim();
-      if (item.condition) normalized.condition = item.condition.toLowerCase().trim();
-    } else if (item.type === 'property') {
-      if (item.propertyType) normalized.propertyType = item.propertyType.toLowerCase().trim();
-      if (item.location) normalized.location = item.location.toLowerCase().trim();
-      if (item.bedrooms) normalized.bedrooms = item.bedrooms;
-      if (item.condition) normalized.condition = item.condition.toLowerCase().trim();
-    } else if (item.type === 'jewelry') {
-      if (item.jewelryType) normalized.jewelryType = item.jewelryType.toLowerCase().trim();
-      if (item.brand) normalized.brand = item.brand.toLowerCase().trim();
-      if (item.material) normalized.material = item.material.toLowerCase().trim();
-      if (item.weight) normalized.weight = item.weight.toLowerCase().trim();
-      if (item.condition) normalized.condition = item.condition.toLowerCase().trim();
-    } else if (item.type === 'furniture') {
-      if (item.furnitureType) normalized.furnitureType = item.furnitureType.toLowerCase().trim();
-      if (item.brand) normalized.brand = item.brand.toLowerCase().trim();
-      if (item.material) normalized.material = item.material.toLowerCase().trim();
-      if (item.size) normalized.size = item.size;
-      if (item.condition) normalized.condition = item.condition.toLowerCase().trim();
-    } else if (item.type === 'machinery') {
-      if (item.brand) normalized.brand = item.brand.toLowerCase().trim();
-      if (item.machineryType) normalized.machineryType = item.machineryType.toLowerCase().trim();
-      if (item.model) normalized.model = item.model.toLowerCase().trim();
-      if (item.year) normalized.year = item.year;
-      if (item.condition) normalized.condition = item.condition.toLowerCase().trim();
-    }
-
-    return normalized;
+  private normalizeItemIdentifier(item: ItemIdentifier): Record<string, string | number | boolean> {
+    return Object.fromEntries(
+      Object.entries(item)
+        .filter(([, value]) => value !== undefined && value !== null && value !== '')
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => [
+          key,
+          typeof value === 'string' ? value.toLowerCase().trim().replace(/\s+/g, ' ') : value,
+        ])
+    ) as Record<string, string | number | boolean>;
   }
 
   /**
@@ -217,10 +183,11 @@ export class CacheIntegrationService {
   async getCachedPartPrice(
     item: ItemIdentifier,
     partName: string,
-    damageType?: string
+    damageType?: string,
+    action?: DamageAction
   ): Promise<CachedPartResult | null> {
     try {
-      const cacheKey = this.generatePartCacheKey(item, partName, damageType);
+      const cacheKey = this.generatePartCacheKey(item, partName, damageType, action);
       const cached = await redis.get<CachedPartResult>(cacheKey);
       
       if (!cached) {
@@ -253,10 +220,12 @@ export class CacheIntegrationService {
    */
   async setCachedPartPrice(
     item: ItemIdentifier,
-    result: PartPriceResult
+    result: PartPriceResult,
+    damageType?: string,
+    action?: DamageAction
   ): Promise<void> {
     try {
-      const cacheKey = this.generatePartCacheKey(item, result.partName);
+      const cacheKey = this.generatePartCacheKey(item, result.partName, damageType, action);
       const now = new Date();
       const expiresAt = new Date(now.getTime() + this.CACHE_TTL * 1000);
 
@@ -265,6 +234,7 @@ export class CacheIntegrationService {
         query: result.query,
         item,
         partName: result.partName,
+        damageType,
         priceData: result.priceData,
         cachedAt: now,
         expiresAt,

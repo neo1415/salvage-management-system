@@ -10,6 +10,7 @@ import {
   isUniversalMarketSearchCondition,
   isBrandNewMarketRealistic,
 } from '@/features/valuations/services/condition-mapping.service';
+import type { DamageAction } from '@/lib/ai/damage-evidence';
 
 // Types for different item categories
 export interface VehicleIdentifier {
@@ -67,6 +68,15 @@ export interface FurnitureIdentifier {
   condition?: UniversalCondition;
 }
 
+export interface ArtworkIdentifier {
+  type: 'artwork';
+  artworkType: string;
+  artist?: string;
+  medium?: string;
+  size?: string;
+  condition?: UniversalCondition;
+}
+
 export interface MachineryIdentifier {
   type: 'machinery';
   brand: string;
@@ -104,6 +114,7 @@ export type ItemIdentifier =
   | PropertyIdentifier
   | JewelryIdentifier
   | FurnitureIdentifier
+  | ArtworkIdentifier
   | MachineryIdentifier
   | BulkGoodsIdentifier
   | SpecialEquipmentIdentifier;
@@ -215,6 +226,9 @@ export class QueryBuilderService {
       case 'furniture':
         query = this.buildFurnitureQuery(item);
         break;
+      case 'artwork':
+        query = this.buildArtworkQuery(item);
+        break;
       case 'machinery':
         query = this.buildMachineryQuery(item);
         break;
@@ -285,50 +299,53 @@ export class QueryBuilderService {
   buildPartPriceQuery(
     item: ItemIdentifier, 
     partName: string, 
-    damageType?: string
+    damageType?: string,
+    action: DamageAction = 'specialist_review'
   ): string {
     const normalizedPart = partName.trim();
     const damageContext = damageType ? ` ${damageType}` : '';
+    const itemIdentity = this.buildPricingIdentity(item);
+    const actionTerms = this.getActionPricingTerms(action, item.type);
 
     switch (item.type) {
       case 'vehicle':
-        return this.buildPartQuery({
-          vehicleMake: item.make,
-          vehicleModel: item.model,
-          vehicleYear: item.year,
-          partName: normalizedPart,
-          partType: this.mapDamageTypeToPartType(damageType),
-          damageLevel: 'moderate'
-        });
+        return this.sanitizeQuery(
+          `${itemIdentity} ${normalizedPart}${damageContext} ${this.partTypeTerm(normalizedPart)} ${actionTerms} Nigeria`
+        );
 
       case 'electronics':
         return this.sanitizeQuery(
-          `${this.buildElectronicsQuery(item)} ${normalizedPart}${damageContext} replacement repair price Nigeria`
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
         );
 
       case 'appliance':
         return this.sanitizeQuery(
-          `${this.buildApplianceQuery(item)} ${normalizedPart}${damageContext} spare part repair price Nigeria`
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
         );
 
       case 'property':
         return this.sanitizeQuery(
-          `${this.buildPropertyQuery(item)} ${normalizedPart}${damageContext} repair replacement cost Nigeria`
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
         );
 
       case 'jewelry':
         return this.sanitizeQuery(
-          `${this.buildJewelryQuery(item)} ${normalizedPart}${damageContext} repair replacement cost Nigeria`
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
         );
 
       case 'furniture':
         return this.sanitizeQuery(
-          `${this.buildFurnitureQuery(item)} ${normalizedPart}${damageContext} repair replacement price Nigeria`
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
+        );
+
+      case 'artwork':
+        return this.sanitizeQuery(
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
         );
 
       case 'machinery':
         return this.sanitizeQuery(
-          `${this.buildMachineryQuery(item)} ${normalizedPart}${damageContext} spare part replacement repair price Nigeria`
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
         );
 
       case 'stock':
@@ -336,12 +353,12 @@ export class QueryBuilderService {
       case 'building_materials':
       case 'agriculture':
         return this.sanitizeQuery(
-          `${this.buildBulkGoodsQuery(item)} ${normalizedPart}${damageContext} damaged stock recoverable resale value Nigeria`
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
         );
 
       case 'scrap':
         return this.sanitizeQuery(
-          `${this.buildBulkGoodsQuery(item)} ${normalizedPart}${damageContext} scrap value price per kg Nigeria`
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
         );
 
       case 'equipment':
@@ -350,33 +367,45 @@ export class QueryBuilderService {
       case 'aviation_equipment':
       case 'other':
         return this.sanitizeQuery(
-          `${this.buildSpecialEquipmentQuery(item)} ${normalizedPart}${damageContext} spare part replacement repair price Nigeria`
+          `${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`
         );
 
       default:
-        return this.sanitizeQuery(`${normalizedPart}${damageContext} replacement repair price Nigeria`);
+        return this.sanitizeQuery(`${itemIdentity} ${normalizedPart}${damageContext} ${actionTerms} Nigeria`);
     }
   }
 
-  /**
-   * Map damage type to part type
-   */
-  private mapDamageTypeToPartType(damageType?: string): 'body' | 'mechanical' | 'electrical' | 'interior' {
-    if (!damageType) return 'body';
-    
-    const lowerDamageType = damageType.toLowerCase();
-    
-    if (lowerDamageType.includes('glass') || lowerDamageType.includes('body') || lowerDamageType.includes('paint')) {
-      return 'body';
-    } else if (lowerDamageType.includes('engine') || lowerDamageType.includes('transmission') || lowerDamageType.includes('brake')) {
-      return 'mechanical';
-    } else if (lowerDamageType.includes('light') || lowerDamageType.includes('electrical') || lowerDamageType.includes('battery')) {
-      return 'electrical';
-    } else if (lowerDamageType.includes('seat') || lowerDamageType.includes('interior') || lowerDamageType.includes('dashboard')) {
-      return 'interior';
+  private partTypeTerm(partName: string): string {
+    const part = partName.toLowerCase();
+    if (/engine|transmission|gearbox|suspension|brake|axle|radiator|steering/.test(part)) return 'mechanical component';
+    if (/light|lamp|wire|battery|sensor|module|electrical|alternator|starter/.test(part)) return 'electrical component';
+    if (/seat|dashboard|console|carpet|upholstery|interior|airbag/.test(part)) return 'interior component';
+    return 'body component';
+  }
+
+  private getActionPricingTerms(action: DamageAction, assetType: ItemIdentifier['type']): string {
+    if (assetType === 'scrap') return 'scrap dealer purchase price per kg tonne';
+    switch (action) {
+      case 'repair': return 'repair labour cost estimate';
+      case 'replace': return 'replacement part price installation labour';
+      case 'clean_or_restore': return 'professional cleaning restoration cost';
+      case 'sort_or_recover': return 'damaged stock recovery sorting resale value';
+      case 'dispose': return 'commercial disposal clearance cost';
+      default: return 'inspection diagnostic estimate';
     }
-    
-    return 'body'; // Default to body parts
+  }
+
+  getPartPricingContext(action: DamageAction = 'specialist_review', assetType: ItemIdentifier['type'] = 'other'): string {
+    return `${this.getActionPricingTerms(action, assetType)} Nigeria`;
+  }
+
+  private buildPricingIdentity(item: ItemIdentifier): string {
+    let identity = this.getBaseItemQuery(item);
+    if ('condition' in item && item.condition) {
+      const normalized = normalizeCondition(item.condition);
+      if (normalized) identity += ` ${conditionSearchTermsForAsset(normalized, item.type)[0]}`;
+    }
+    return this.sanitizeQuery(identity);
   }
 
   /**
@@ -491,6 +520,10 @@ export class QueryBuilderService {
     if (vehicle.year) {
       query += ` ${vehicle.year}`;
     }
+
+    if (vehicle.mileage && vehicle.mileage > 0) {
+      query += ` ${Math.round(vehicle.mileage).toLocaleString('en-US')} km`;
+    }
     
     // Add specific terms for luxury vehicles to get better pricing results
     const luxuryBrands = ['lamborghini', 'ferrari', 'mclaren', 'bugatti', 'koenigsegg', 'pagani', 'rolls-royce', 'bentley'];
@@ -599,6 +632,16 @@ export class QueryBuilderService {
     return query;
   }
 
+  private buildArtworkQuery(artwork: ArtworkIdentifier): string {
+    return this.compactTerms([
+      artwork.artist,
+      artwork.artworkType,
+      artwork.medium,
+      artwork.size,
+      'artwork',
+    ]);
+  }
+
   private buildMachineryQuery(machinery: MachineryIdentifier): string {
     let query = `${machinery.brand}`;
     
@@ -641,6 +684,8 @@ export class QueryBuilderService {
         return this.buildJewelryQuery(item);
       case 'furniture':
         return this.buildFurnitureQuery(item);
+      case 'artwork':
+        return this.buildArtworkQuery(item);
       case 'machinery':
         return this.buildMachineryQuery(item);
       case 'stock':
@@ -661,10 +706,13 @@ export class QueryBuilderService {
   }
 
   private buildBulkGoodsQuery(item: BulkGoodsIdentifier): string {
-    const identityTerms =
-      item.type === 'scrap'
-        ? [item.brand, this.stripBulkNarrative(item.model), this.stripBulkNarrative(item.description)]
-        : [item.brand, this.stripBulkNarrative(item.model), item.packagingType];
+    const identityTerms = [
+      item.brand,
+      this.stripBulkNarrative(item.model),
+      this.stripBulkNarrative(item.description),
+      item.packagingType,
+      item.unitOfMeasure,
+    ];
 
     const base = this.dedupeSearchTerms(this.compactTerms(identityTerms));
     const normalizedBase = base || item.type.replace(/_/g, ' ');
@@ -707,20 +755,22 @@ export class QueryBuilderService {
       this.stripBulkNarrative(item.description),
     ]);
     const base = description || item.type.replace(/_/g, ' ');
+    const year = item.year ? ` ${item.year}` : '';
+    const unit = item.unitOfMeasure ? ` ${item.unitOfMeasure}` : '';
 
     if (item.type === 'medical_equipment') {
-      return `${base} medical equipment used`;
+      return `${base}${year}${unit} medical equipment used`;
     }
 
     if (item.type === 'energy_equipment') {
-      return `${base} industrial energy oil gas equipment`;
+      return `${base}${year}${unit} industrial energy oil gas equipment`;
     }
 
     if (item.type === 'aviation_equipment') {
-      return `${base} aviation ground support equipment aircraft part`;
+      return `${base}${year}${unit} aviation ground support equipment aircraft part`;
     }
 
-    return `${base} equipment used`;
+    return `${base}${year}${unit} equipment used`;
   }
 
   private buildAssetSpecificVariations(item: ItemIdentifier): string[] {
@@ -733,6 +783,11 @@ export class QueryBuilderService {
           this.sanitizeQuery(`${base} site:buildingsandmoreng.com`),
         ];
       }
+      case 'artwork':
+        return [
+          this.sanitizeQuery(`${this.buildArtworkQuery(item)} Nigeria gallery auction price`),
+          this.sanitizeQuery(`${this.buildArtworkQuery(item)} secondary market value`),
+        ];
       case 'stock':
       case 'goods_in_transit':
         return [
@@ -800,7 +855,7 @@ export class QueryBuilderService {
       .replace(/[;&|`$()]/g, '') // Remove shell injection chars
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim()
-      .substring(0, 160); // Keep Serper queries short and product-focused
+      .substring(0, 240); // Preserve model, specification and action terms in precise pricing searches
   }
 }
 

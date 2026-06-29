@@ -173,6 +173,8 @@ export interface CreateCaseInput {
       part: string;
       damageType?: string;
       description?: string;
+      recommendedAction?: import('@/lib/ai/damage-evidence').DamageAction;
+      actionConfidence?: number;
       severity: 'minor' | 'moderate' | 'severe';
       confidence: number;
     }>;
@@ -330,8 +332,8 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
   }
 
   // Validate photos
-  if (!input.photos || input.photos.length < 3) {
-    errors.push('At least 3 photos are required');
+  if (!input.photos || input.photos.length < 5) {
+    errors.push('At least 5 photos are required');
     console.error('❌ Photos validation failed:', {
       hasPhotos: !!input.photos,
       photoCount: input.photos?.length,

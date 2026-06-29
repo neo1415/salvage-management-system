@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
 import { resolveVendorOnboardingPath } from '@/lib/auth/vendor-onboarding-navigation';
 import {
+  isResolvedOnboardingTarget,
   VENDOR_REGISTRATION_FEE_PATH,
   VENDOR_VERIFY_ACCOUNT_PATH,
 } from '@/lib/auth/vendor-onboarding-paths';
@@ -96,5 +97,16 @@ describe('resolveVendorOnboardingPath', () => {
     });
 
     expect(path).toBe(VENDOR_VERIFY_ACCOUNT_PATH);
+  });
+});
+
+describe('isResolvedOnboardingTarget', () => {
+  it('does not treat a different onboarding page as the required policy step', () => {
+    expect(isResolvedOnboardingTarget('/vendor/kyc/tier1', VENDOR_REGISTRATION_FEE_PATH)).toBe(false);
+  });
+
+  it('accepts the exact required page and its child routes', () => {
+    expect(isResolvedOnboardingTarget('/vendor/registration-fee', VENDOR_REGISTRATION_FEE_PATH)).toBe(true);
+    expect(isResolvedOnboardingTarget('/vendor/registration-fee/verify', VENDOR_REGISTRATION_FEE_PATH)).toBe(true);
   });
 });

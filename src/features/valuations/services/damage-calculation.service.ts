@@ -228,6 +228,7 @@ export class DamageCalculationService {
     partPrices?: Array<{
       component: string;
       partPrice?: number;
+      action?: DamageInput['recommendedAction'];
       confidence?: number;
       source: 'internet_search' | 'ai_estimate' | 'not_found';
       evidence?: { reason?: string };
@@ -263,6 +264,7 @@ export class DamageCalculationService {
     partPrices: Array<{
       component: string;
       partPrice?: number;
+      action?: DamageInput['recommendedAction'];
       confidence?: number;
       source: 'internet_search' | 'ai_estimate' | 'not_found';
       evidence?: { reason?: string };
@@ -286,7 +288,7 @@ export class DamageCalculationService {
     const componentsWithRealPrices = new Set(partsWithRealPrices.map(p => p.component));
     const budgetExcludedComponents = new Set(
       partPrices
-        .filter((part) => part.evidence?.reason === 'part_search_budget_cap')
+        .filter((part) => ['part_search_budget_cap', 'specialist_review_required', 'disposal_not_repair_priced'].includes(part.evidence?.reason || ''))
         .map((part) => part.component)
     );
     const componentsWithoutPrices = deduplicatedDamages.filter(damage => 
@@ -311,14 +313,13 @@ export class DamageCalculationService {
       repairMultipliers.paintAndMaterialsPercent +
       repairMultipliers.logisticsPercent
     ) / 100;
-    const getSeverityLoad = (component: string) => {
-      const matchingDamage = deduplicatedDamages.find(d => d.component === component);
-      if (matchingDamage?.damageLevel === 'severe') return repairMultipliers.severeDamageMultiplier;
-      if (matchingDamage?.damageLevel === 'moderate') return repairMultipliers.moderateDamageMultiplier;
-      return 1;
+    const loadedPartCost = (part: { component: string; partPrice?: number; action?: DamageInput['recommendedAction'] }) => {
+      const price = part.partPrice || 0;
+      // Repair, cleaning and recovery searches ask for complete service estimates.
+      // Replacement searches ask for a part price, so configured installation,
+      // paint/material and logistics costs are added once here.
+      return part.action === 'replace' ? price * repairLoadFactor : price;
     };
-    const loadedPartCost = (part: { component: string; partPrice?: number }) =>
-      (part.partPrice || 0) * repairLoadFactor * getSeverityLoad(part.component);
 
     const totalRealPartsCost = partsWithRealPrices.reduce((sum, part) => sum + loadedPartCost(part), 0);
     const realPartsDeductionPercent = totalRealPartsCost / basePrice;

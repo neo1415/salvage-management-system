@@ -41,7 +41,7 @@ import { AIAnalysisStatusBadge } from '@/components/cases/ai-analysis-status-bad
 import { compressImage } from '@/utils/image-compression';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
-import { formatDamageEvidence } from '@/lib/ai/damage-evidence';
+import { formatDamageAction, formatDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
 import { getEnabledCaseAssetTypeOptions } from '@/features/business-policy/case-asset-type-options';
 import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
 import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
@@ -335,7 +335,7 @@ const caseFormSchema = z.object({
   itemCondition: z.enum(['Brand New', 'Foreign Used (Tokunbo)', 'Nigerian Used', 'Heavily Used']).optional(),
   
   // Common fields
-  photos: z.array(z.string()).min(3, 'At least 3 photos required').max(10, 'Maximum 10 photos allowed'),
+  photos: z.array(z.string()).min(5, 'At least 5 photos required').max(10, 'Maximum 10 photos allowed'),
   locationName: z.string().min(1, 'Location name is required'),
   unifiedVoiceContent: z.string().optional(),
 }).refine((data) => {
@@ -453,6 +453,8 @@ interface AIAssessmentResult {
     part: string;
     damageType?: string;
     description?: string;
+    recommendedAction?: DamageAction;
+    actionConfidence?: number;
     severity: 'minor' | 'moderate' | 'severe';
     confidence: number;
   }>;
@@ -972,7 +974,7 @@ function NewCasePageContent() {
     if (isOffline) return false;
     
     const currentPhotos = watch('photos') || [];
-    if (currentPhotos.length < 3) return false;
+    if (currentPhotos.length < 5) return false;
     
     const currentAssetType = watch('assetType');
     const assetConfig = currentAssetType ? enabledAssetTypesPolicy?.[currentAssetType] : null;
@@ -3059,7 +3061,7 @@ function NewCasePageContent() {
         {/* Photos */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Photos (3-10 required) <span className="text-red-500">*</span>
+            Photos (5-10 required) <span className="text-red-500">*</span>
           </label>
           <input
             ref={fileInputRef}
@@ -3119,7 +3121,7 @@ function NewCasePageContent() {
           )}
           
           {/* Manual AI Assessment Button */}
-          {!isOffline && adjusterRunsAiAnalysis && photos && photos.length >= 3 && photos.length <= 10 && shouldRunAIAssessment() && searchProgress.stage === 'idle' && (
+          {!isOffline && adjusterRunsAiAnalysis && photos && photos.length >= 5 && photos.length <= 10 && shouldRunAIAssessment() && searchProgress.stage === 'idle' && (
             <div className="mt-4 space-y-3">
               {/* AI Analysis Status Badge */}
               <AIAnalysisStatusBadge
@@ -3182,14 +3184,14 @@ function NewCasePageContent() {
           )}
           
           {/* Photo Count Warning */}
-          {!isOffline && photos && photos.length < 3 && (
+          {!isOffline && photos && photos.length < 5 && (
             <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
               <div className="flex items-center space-x-2">
                 <svg className="w-5 h-5 text-amber-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                 </svg>
                 <div>
-                  <p className="text-sm font-medium text-amber-900">Upload at least 3 photos to analyze</p>
+                  <p className="text-sm font-medium text-amber-900">Upload at least 5 photos to analyze</p>
                   <p className="text-xs text-amber-700">You have {photos.length} photo{photos.length !== 1 ? 's' : ''} uploaded</p>
                 </div>
               </div>
@@ -3197,7 +3199,7 @@ function NewCasePageContent() {
           )}
           
           {/* Item Details Required Notice */}
-          {!isOffline && photos && photos.length >= 3 && !shouldRunAIAssessment() && assetType && searchProgress.stage === 'idle' && (
+          {!isOffline && photos && photos.length >= 5 && !shouldRunAIAssessment() && assetType && searchProgress.stage === 'idle' && (
             <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
               <div className="flex items-center space-x-2">
                 <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -3220,7 +3222,7 @@ function NewCasePageContent() {
           )}
           
           {/* Offline AI Notice */}
-          {isOffline && photos && photos.length >= 3 && (
+          {isOffline && photos && photos.length >= 5 && (
             <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-xl">
               <div className="flex items-center space-x-2">
                 <svg className="w-5 h-5 text-yellow-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -3243,7 +3245,7 @@ function NewCasePageContent() {
                 setIsProcessingAI(false);
               }}
               onRetry={() => {
-                if (photos && photos.length >= 3) {
+                if (photos && photos.length >= 5) {
                   runAIAssessment(photos);
                 }
               }}
@@ -3384,7 +3386,12 @@ function NewCasePageContent() {
                   <div className="space-y-2">
                     {aiAssessment.damagedParts.map((part, index) => (
                       <div key={index} className="flex items-center justify-between gap-2 p-2 bg-gray-50 rounded">
-                        <span className="text-xs md:text-sm text-gray-800 font-medium flex-1">{formatDamageEvidence(part)}</span>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-xs md:text-sm text-gray-800 font-medium">{formatDamageEvidence(part)}</span>
+                          {formatDamageAction(part.recommendedAction) && (
+                            <span className="block text-xs text-gray-500">{formatDamageAction(part.recommendedAction)}{part.actionConfidence ? ` (${part.actionConfidence}%)` : ''}</span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <span className={`px-2 py-0.5 rounded text-xs font-bold ${
                             part.severity === 'minor' ? 'bg-yellow-100 text-yellow-800' :

@@ -23,8 +23,9 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import sharp from 'sharp';
 import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
-import { normalizeDamageEvidence } from '@/lib/ai/damage-evidence';
+import { normalizeDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
 
 /**
  * Vehicle context for damage assessment
@@ -58,6 +59,8 @@ export interface DamagedPart {
   part: string;
   damageType?: string;
   description?: string;
+  recommendedAction?: DamageAction;
+  actionConfidence?: number;
   severity: 'minor' | 'moderate' | 'severe';
   confidence: number;
 }
@@ -224,10 +227,12 @@ const CLAUDE_RESPONSE_SCHEMA = {
           part: { type: "string" },
           damageType: { type: "string" },
           description: { type: "string" },
+          recommendedAction: { type: "string", enum: ["repair", "replace", "clean_or_restore", "sort_or_recover", "dispose", "specialist_review"] },
+          actionConfidence: { type: "number", minimum: 0, maximum: 100 },
           severity: { type: "string", enum: ["minor", "moderate", "severe"] },
           confidence: { type: "number", minimum: 0, maximum: 100 }
         },
-        required: ["part", "damageType", "description", "severity", "confidence"]
+        required: ["part", "damageType", "description", "recommendedAction", "actionConfidence", "severity", "confidence"]
       }
     },
     severity: { type: "string", enum: ["minor", "moderate", "severe"] },
@@ -309,6 +314,8 @@ export function parseAndValidateClaudeResponse(responseText: string, requestId: 
           part: part.part,
           damageType: typeof part.damageType === 'string' ? part.damageType : undefined,
           description: typeof part.description === 'string' ? part.description : undefined,
+          recommendedAction: part.recommendedAction,
+          actionConfidence: part.actionConfidence,
           severity: part.severity as 'minor' | 'moderate' | 'severe',
           confidence: part.confidence
         });
@@ -440,34 +447,34 @@ const constructGeneralAssetPrompt = (category: string, description: string, item
  * Convert image URL to base64 for Claude API
  */
 async function convertImageToBase64(imageUrl: string): Promise<{ data: string; mimeType: string }> {
+  let sourceBuffer: Buffer;
+
   // Check if it's already a base64 data URL
   if (imageUrl.toLowerCase().startsWith('data:image/')) {
     const base64Match = imageUrl.match(/^data:image\/([^;]+);base64,(.+)$/);
     if (base64Match) {
-      return {
-        mimeType: `image/${base64Match[1]}`,
-        data: base64Match[2],
-      };
+      sourceBuffer = Buffer.from(base64Match[2], 'base64');
+    } else {
+      throw new Error('Invalid base64 data URL format');
     }
-    throw new Error('Invalid base64 data URL format');
+  } else {
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    sourceBuffer = Buffer.from(await response.arrayBuffer());
   }
 
-  // For regular URLs, fetch and convert
-  const response = await fetch(imageUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
-  }
+  // Anthropic recommends keeping images near 1.15 MP and within 1568 px.
+  // Normalizing once avoids paying vision tokens for camera-resolution pixels
+  // that the model downsizes internally without improving the assessment.
+  const normalized = await sharp(sourceBuffer, { failOn: 'none' })
+    .rotate()
+    .resize({ width: 1100, height: 1100, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 84, mozjpeg: true })
+    .toBuffer();
 
-  const arrayBuffer = await response.arrayBuffer();
-  const base64 = Buffer.from(arrayBuffer).toString('base64');
-  
-  // Infer MIME type from URL
-  const lowerUrl = imageUrl.toLowerCase();
-  let mimeType = 'image/jpeg';
-  if (lowerUrl.includes('.png')) mimeType = 'image/png';
-  if (lowerUrl.includes('.webp')) mimeType = 'image/webp';
-
-  return { data: base64, mimeType };
+  return { data: normalized.toString('base64'), mimeType: 'image/jpeg' };
 }
 
 /**
@@ -716,7 +723,7 @@ export async function assessDamageWithClaude(
     try {
       const response = await claudeClient!.messages.create({
         model: serviceConfig.model,
-        max_tokens: Math.max(800, Number(process.env.CLAUDE_DAMAGE_MAX_TOKENS) || 2200),
+        max_tokens: Math.max(800, Number(process.env.CLAUDE_DAMAGE_MAX_TOKENS) || 1600),
         messages: [{
           role: 'user',
           content
@@ -788,7 +795,7 @@ export async function assessDamageWithClaude(
 
       const response = await claudeClient!.messages.create({
         model: serviceConfig.model,
-        max_tokens: Math.max(800, Number(process.env.CLAUDE_DAMAGE_MAX_TOKENS) || 2200),
+        max_tokens: Math.max(800, Number(process.env.CLAUDE_DAMAGE_MAX_TOKENS) || 1600),
         messages: [{
           role: 'user',
           content

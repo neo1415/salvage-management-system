@@ -14,7 +14,7 @@
 
 import React from 'react';
 import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
-import { formatDamageEvidence } from '@/lib/ai/damage-evidence';
+import { formatDamageAction, formatDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
 
 /**
  * Item details from Gemini AI
@@ -38,6 +38,8 @@ export interface DamagedPart {
   part: string;
   damageType?: string;
   description?: string;
+  recommendedAction?: DamageAction;
+  actionConfidence?: number;
   severity: 'minor' | 'moderate' | 'severe';
   confidence: number;
 }
@@ -246,7 +248,14 @@ export function GeminiDamageDisplay({
                 key={index}
                 className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg shadow-sm"
               >
-                <span className="text-sm text-gray-800 font-medium flex-1">{formatDamageEvidence(part)}</span>
+                <div className="min-w-0 flex-1">
+                  <span className="block text-sm text-gray-800 font-medium">{formatDamageEvidence(part)}</span>
+                  {formatDamageAction(part.recommendedAction) && (
+                    <span className="mt-0.5 block text-xs text-gray-500">
+                      {formatDamageAction(part.recommendedAction)}{part.actionConfidence ? ` (${part.actionConfidence}%)` : ''}
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className={`px-2 py-1 rounded-full text-xs font-bold ${getSeverityColor(part.severity)}`}>
                     {part.severity.toUpperCase()}
@@ -350,7 +359,12 @@ export function GeminiDamageDisplayCompact({
           <div className="space-y-1.5 max-h-40 overflow-y-auto">
             {damagedParts.map((part, index) => (
               <div key={index} className="flex items-center justify-between gap-2 p-2 bg-white rounded text-xs">
-                <span className="text-gray-800 font-medium flex-1 truncate">{formatDamageEvidence(part)}</span>
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-gray-800 font-medium">{formatDamageEvidence(part)}</span>
+                  {formatDamageAction(part.recommendedAction) && (
+                    <span className="block truncate text-[11px] text-gray-500">{formatDamageAction(part.recommendedAction)}</span>
+                  )}
+                </div>
                 <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${getSeverityColor(part.severity)}`}>
                   {part.severity}
                 </span>

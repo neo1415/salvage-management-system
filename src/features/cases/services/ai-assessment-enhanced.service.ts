@@ -1023,9 +1023,20 @@ export async function assessDamageEnhanced(params: {
   if (damageAnalysis.damagedParts && damageAnalysis.damagedParts.length > 0) {
     damages = damageAnalysis.damagedParts.map(part => ({
       component: part.part,
-      damageLevel: part.severity
+      damageLevel: part.severity,
+      damageType: part.damageType,
+      recommendedAction: (part.actionConfidence ?? 0) >= 70
+        ? part.recommendedAction
+        : 'specialist_review',
+      actionConfidence: part.actionConfidence,
     }));
     console.log(`Using AI loss evidence for ${itemInfo?.type || 'asset'}:`, damages.map(d => d.component).join(', '));
+    const specialistReviewCount = damages.filter((damage) => damage.recommendedAction === 'specialist_review').length;
+    if (specialistReviewCount > 0) {
+      valuationReviewReasons.push(
+        `${specialistReviewCount} affected ${specialistReviewCount === 1 ? 'item requires' : 'items require'} specialist inspection before repair-versus-replacement cost can be finalized.`
+      );
+    }
   } else {
     damages = identifyDamagedComponents(damageScore);
   }
@@ -1163,6 +1174,7 @@ export async function assessDamageEnhanced(params: {
         partPrices.map(p => ({
           component: p.component,
           partPrice: p.searchedPrice,
+          action: p.action,
           confidence: p.confidence,
           source: p.searchedPrice
             ? (p.source === 'ai_estimate' ? 'ai_estimate' as const : 'internet_search' as const)
@@ -1995,6 +2007,7 @@ async function searchPartPrices(
 ): Promise<Array<{
   component: string;
   searchedPrice?: number;
+  action?: DamageInput['recommendedAction'];
   confidence?: number;
   source: 'internet_search' | 'ai_estimate' | 'not_found';
   evidence?: Record<string, unknown>;
@@ -2028,7 +2041,8 @@ async function searchPartPrices(
       const partResult = await internetSearchService.searchPartPrice({
         item: itemIdentifier,
         partName,
-        damageType: damage.damageLevel,
+        damageType: damage.damageType || damage.damageLevel,
+        action: damage.recommendedAction,
         maxResults: 8,
         timeout: 5000,
       });
@@ -3101,6 +3115,7 @@ export function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): Ite
         make: vehicleMake,
         model: itemInfo.model,
         year: itemInfo.year,
+        mileage: itemInfo.mileage,
         condition: resolveSearchConditionForItem(itemInfo, 'vehicle', itemInfo.year, itemInfo.model),
       };
     case 'property':
@@ -3127,6 +3142,7 @@ export function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): Ite
         type: 'appliance',
         brand,
         model: itemInfo.model,
+        size: itemInfo.size,
         condition: resolveSearchConditionForItem(itemInfo, 'appliance', undefined, itemInfo.model),
       };
     case 'machinery':
@@ -3152,6 +3168,16 @@ export function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): Ite
         material: itemInfo.material,
         size: itemInfo.size || itemInfo.quantity || itemInfo.unitOfMeasure,
         condition: resolveSearchConditionForItem(itemInfo, 'furniture', undefined, itemInfo.model),
+      };
+    case 'artwork':
+      if (!description && !brand && !itemInfo.model) return null;
+      return {
+        type: 'artwork',
+        artworkType: itemInfo.model || description || 'artwork',
+        artist: brand,
+        medium: itemInfo.material,
+        size: itemInfo.size,
+        condition: resolveSearchConditionForItem(itemInfo, 'artwork', undefined, itemInfo.model),
       };
     case 'jewelry':
     case 'watch':
@@ -3327,6 +3353,7 @@ async function searchUniversalPartPrices(
 ): Promise<Array<{
   component: string;
   searchedPrice?: number;
+  action?: DamageInput['recommendedAction'];
   confidence?: number;
   source: 'internet_search' | 'ai_estimate' | 'not_found';
   evidence?: Record<string, unknown>;
@@ -3468,6 +3495,7 @@ async function searchUniversalPartPrices(
     (left, right) => severityRank[right.damageLevel] - severityRank[left.damageLevel]
   );
   const searchableDamages = prioritizedDamages.filter((damage) => {
+    if (damage.recommendedAction === 'specialist_review' || damage.recommendedAction === 'dispose') return false;
     const partName = itemInfo.type === 'electronics'
       ? damage.component
       : (partMapping[damage.component] || damage.component);
@@ -3497,7 +3525,8 @@ async function searchUniversalPartPrices(
       const partResult = await internetSearchService.searchPartPrice({
         item: itemIdentifier,
         partName,
-        damageType: damage.damageLevel,
+        damageType: damage.damageType || damage.damageLevel,
+        action: damage.recommendedAction,
         maxResults: 8,
         timeout: 7500,
         forceRefresh: options.forceRefresh,
@@ -3512,6 +3541,7 @@ async function searchUniversalPartPrices(
 
         return {
           component: damage.component,
+          action: damage.recommendedAction,
           searchedPrice: resolved.price,
           confidence: resolved.confidence,
           source: resolved.source,
@@ -3527,6 +3557,7 @@ async function searchUniversalPartPrices(
         console.log(`⚠️ No price found for ${itemInfo.type} part: ${partName}`);
         return {
           component: damage.component,
+          action: damage.recommendedAction,
           source: 'not_found' as const,
           evidence: {
             searchedPart: partName,
@@ -3538,6 +3569,7 @@ async function searchUniversalPartPrices(
       console.error(`❌ ${itemInfo.type} part search failed for ${partName}:`, error);
       return {
         component: damage.component,
+        action: damage.recommendedAction,
         source: 'not_found' as const,
         evidence: {
           searchedPart: partName,
@@ -3553,9 +3585,14 @@ async function searchUniversalPartPrices(
       ...searchedResults,
       ...skippedDamages.map((damage) => ({
         component: damage.component,
+        action: damage.recommendedAction,
         source: 'not_found' as const,
         evidence: {
-          reason: 'part_search_budget_cap',
+          reason: damage.recommendedAction === 'specialist_review'
+            ? 'specialist_review_required'
+            : damage.recommendedAction === 'dispose'
+              ? 'disposal_not_repair_priced'
+              : 'part_search_budget_cap',
           damageLevel: damage.damageLevel,
         },
       })),

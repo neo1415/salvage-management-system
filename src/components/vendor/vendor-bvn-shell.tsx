@@ -8,10 +8,10 @@ import DashboardSidebar from '@/components/layout/dashboard-sidebar';
 import { DashboardTopBar } from '@/components/layout/dashboard-top-bar';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { SyncProgressIndicator } from '@/components/ui/sync-progress-indicator';
-import { isVendorOnboardingPage } from '@/lib/auth/vendor-bvn-access';
 import { Loader2 } from 'lucide-react';
 import { RoleMobileNav } from '@/components/layout/role-mobile-nav';
 import { DashboardRouteGuard } from '@/components/layout/dashboard-route-guard';
+import { isResolvedOnboardingTarget } from '@/lib/auth/vendor-onboarding-paths';
 
 type OnboardingStatus = {
   redirectPath: string | null;
@@ -25,7 +25,6 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
   const [initialLoad, setInitialLoad] = useState(true);
 
   const isVendor = session?.user?.role === 'vendor';
-  const onOnboardingPage = isVendorOnboardingPage(pathname);
 
   useEffect(() => {
     if (status !== 'authenticated' || !isVendor) {
@@ -59,13 +58,12 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
     if (status !== 'authenticated' || !isVendor || initialLoad) return;
 
     const redirectPath = onboardingStatus?.redirectPath;
-    if (redirectPath && !onOnboardingPage) {
-      const targetBase = redirectPath.split('?')[0];
-      if (pathname !== targetBase && !pathname.startsWith(`${targetBase}/`)) {
+    if (redirectPath) {
+      if (!isResolvedOnboardingTarget(pathname, redirectPath)) {
         replace(redirectPath);
       }
     }
-  }, [status, isVendor, initialLoad, onboardingStatus, onOnboardingPage, pathname, replace]);
+  }, [status, isVendor, initialLoad, onboardingStatus, pathname, replace]);
 
   if (status === 'loading' || (isVendor && initialLoad)) {
     return (
@@ -78,7 +76,9 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
   const forcedOnboardingPath = onboardingStatus?.redirectPath;
   const needsOnboardingGate = Boolean(forcedOnboardingPath);
 
-  if (isVendor && needsOnboardingGate && !onOnboardingPage) {
+  const onForcedOnboardingPage = isResolvedOnboardingTarget(pathname, forcedOnboardingPath);
+
+  if (isVendor && needsOnboardingGate && !onForcedOnboardingPage) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--brand-primary)]" />
@@ -86,7 +86,7 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
     );
   }
 
-  if (isVendor && needsOnboardingGate && onOnboardingPage) {
+  if (isVendor && needsOnboardingGate && onForcedOnboardingPage) {
     return <div className="min-h-screen">{children}</div>;
   }
 

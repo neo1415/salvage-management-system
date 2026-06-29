@@ -20,7 +20,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { internetSearchService } from '@/features/internet-search/services/internet-search.service';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
-import { normalizeDamageEvidence } from '@/lib/ai/damage-evidence';
+import { normalizeDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
 
 /**
  * Vehicle context for damage assessment
@@ -54,6 +54,8 @@ export interface DamagedPart {
   part: string;              // Specific part name (e.g., "driver front door", "front bumper")
   damageType?: string;
   description?: string;
+  recommendedAction?: DamageAction;
+  actionConfidence?: number;
   severity: 'minor' | 'moderate' | 'severe';
   confidence: number;        // 0-100: Confidence in this part's damage assessment
 }
@@ -88,6 +90,8 @@ export interface DamageDetectionResult {
   overallConfidence: number;
   damagedComponents: Array<{
     component: string;
+    damageType?: string;
+    recommendedAction?: DamageAction;
     severity: string;
     confidence: number;
   }>;
@@ -105,7 +109,7 @@ export interface DamageDetectionResult {
  */
 async function searchPartPricesForDamage(
   vehicleInfo: { make?: string; model?: string; year?: number },
-  damagedComponents: Array<{ component: string; severity: string }>
+  damagedComponents: Array<{ component: string; severity: string; damageType?: string; recommendedAction?: DamageAction }>
 ): Promise<Array<{
   component: string;
   partPrice?: number;
@@ -128,7 +132,8 @@ async function searchPartPricesForDamage(
   // These are already optimized for search - don't map them to generic terms!
   const partsToSearch = damagedComponents.map(damage => ({
     name: damage.component, // Use the actual part name from Gemini
-    damageType: damage.severity
+    damageType: damage.damageType || damage.severity,
+    action: damage.recommendedAction,
   }));
 
   console.log(`🔍 Searching for ${partsToSearch.length} part prices for ${vehicleInfo.make} ${vehicleInfo.model}`);
@@ -401,6 +406,17 @@ const GEMINI_RESPONSE_SCHEMA = {
             type: "string",
             description: "Concise observed evidence combining damage and identity (e.g., 'shattered front windscreen')"
           },
+          recommendedAction: {
+            type: "string",
+            enum: ["repair", "replace", "clean_or_restore", "sort_or_recover", "dispose", "specialist_review"],
+            description: "Most defensible next action from visible evidence; use specialist_review when inspection, testing, disassembly, authenticity, safety or hidden damage determines the decision"
+          },
+          actionConfidence: {
+            type: "number",
+            minimum: 0,
+            maximum: 100,
+            description: "Confidence in the recommended action, separate from confidence that damage is present"
+          },
           severity: { 
             type: "string",
             enum: ["minor", "moderate", "severe"],
@@ -413,7 +429,7 @@ const GEMINI_RESPONSE_SCHEMA = {
             description: "Confidence in this part's damage assessment (0-100)"
           }
         },
-        required: ["part", "damageType", "description", "severity", "confidence"]
+        required: ["part", "damageType", "description", "recommendedAction", "actionConfidence", "severity", "confidence"]
       },
       description: "Array of damaged parts only (exclude undamaged parts)"
     },
@@ -693,6 +709,8 @@ export function parseAndValidateResponse(responseText: string, requestId: string
       part: part.part,
       damageType: typeof part.damageType === 'string' ? part.damageType : undefined,
       description: typeof part.description === 'string' ? part.description : undefined,
+      recommendedAction: part.recommendedAction,
+      actionConfidence: part.actionConfidence,
       severity: part.severity as 'minor' | 'moderate' | 'severe',
       confidence: part.confidence
     });
@@ -861,11 +879,15 @@ export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext):
     `- part: canonical ${profile.evidenceNoun} identity without a damage adjective\n` +
     `- damageType: the observed state/mechanism, such as shattered, dented, crushed, burnt, contaminated, missing, corroded, or water-damaged\n` +
     `- description: a concise staff-facing phrase combining what happened and where/what was affected\n` +
+    `- recommendedAction: repair | replace | clean_or_restore | sort_or_recover | dispose | specialist_review\n` +
+    `- actionConfidence: number (0-100), distinct from damage confidence\n` +
     `- severity: \"minor\" | \"moderate\" | \"severe\"\n` +
     `- confidence: number (0-100)\n` +
     `Top-level airbagDeployed and totalLoss fields must be boolean values.\n` +
     `Severity scoring guide: minor 10-30, moderate 40-60, severe 70-90.\n` +
     `Examples for this asset type: ${profile.evidenceExamples.join('; ')}.\n` +
+    `Choose repair only for visibly repairable damage, replace only when visible destruction or mandatory replacement is clear, and specialist_review whenever testing, disassembly, OEM procedure, safety, authenticity, contamination testing or hidden damage controls the decision. ` +
+    `For stock/material assets, prefer sort_or_recover, dispose, clean_or_restore or specialist_review instead of vehicle repair language. ` +
     `Never return a bare component name when visible damage can be described. Do not invent hidden damage. ` +
     `Keep the summary complete but concise, with a maximum of 1200 characters.`;
 }
@@ -1000,8 +1022,8 @@ Return your assessment as JSON:
     "overallCondition": "Good"
   },
   "damagedParts": [
-    {"part": "driver front door", "damageType": "crushed", "description": "crushed driver front door", "severity": "severe", "confidence": 85},
-    {"part": "front bumper", "damageType": "smashed", "description": "smashed front bumper", "severity": "severe", "confidence": 90}
+    {"part": "driver front door", "damageType": "crushed", "description": "crushed driver front door", "recommendedAction": "replace", "actionConfidence": 88, "severity": "severe", "confidence": 85},
+    {"part": "front bumper", "damageType": "smashed", "description": "smashed front bumper", "recommendedAction": "specialist_review", "actionConfidence": 70, "severity": "severe", "confidence": 90}
   ],
   "severity": "severe",
   "airbagDeployed": true,

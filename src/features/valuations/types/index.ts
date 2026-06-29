@@ -3,6 +3,7 @@
  */
 
 import type { QualityTier } from '../services/condition-mapping.service';
+import type { DamageAction } from '@/lib/ai/damage-evidence';
 
 export interface ValuationQueryParams {
   make: string;
@@ -37,6 +38,9 @@ export interface ValuationResult {
 export interface DamageInput {
   component: string;
   damageLevel: 'minor' | 'moderate' | 'severe';
+  damageType?: string;
+  recommendedAction?: DamageAction;
+  actionConfidence?: number;
 }
 
 export interface DamageDeduction {

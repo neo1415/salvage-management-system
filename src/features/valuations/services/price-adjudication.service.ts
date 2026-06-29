@@ -116,6 +116,9 @@ function textForItem(item: ItemIdentifier, partName?: string): string {
     case 'furniture':
       values.push(item.brand, item.furnitureType, item.material, item.size, item.condition);
       break;
+    case 'artwork':
+      values.push(item.artist, item.artworkType, item.medium, item.size, item.condition);
+      break;
     case 'machinery':
       values.push(item.brand, item.machineryType, item.model, String(item.year || ''), item.condition);
       break;

@@ -42,4 +42,19 @@ describe('damage evidence', () => {
       description: 'smoke-contaminated sealed cartons',
     });
   });
+
+  it('normalizes the repair disposition independently from damage confidence', () => {
+    expect(normalizeDamageEvidence({
+      part: 'left front door',
+      damageType: 'dented',
+      recommendedAction: 'repair',
+      actionConfidence: 82,
+      severity: 'moderate',
+      confidence: 96,
+    })).toMatchObject({
+      recommendedAction: 'repair',
+      actionConfidence: 82,
+      confidence: 96,
+    });
+  });
 });

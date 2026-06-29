@@ -16,6 +16,7 @@ import {
   priceAdjudicationService,
   type PriceAdjudicationResult,
 } from '@/features/valuations/services/price-adjudication.service';
+import type { DamageAction } from '@/lib/ai/damage-evidence';
 
 const LUXURY_JEWELRY_PRICE_FLOORS_NGN: Record<string, number> = {
   rolex: 8_000_000,
@@ -62,6 +63,8 @@ export interface SearchPartPriceOptions {
   partName: string;
   /** Damage type context (optional) */
   damageType?: string;
+  /** Pricing operation inferred from visible evidence */
+  action?: DamageAction;
   /** Maximum number of search results to process */
   maxResults?: number;
   /** Search timeout in milliseconds (default: 3000) */
@@ -565,11 +568,11 @@ export class InternetSearchService {
    */
   async searchPartPrice(options: SearchPartPriceOptions): Promise<PartPriceResult> {
     const startTime = Date.now();
-    const { item, partName, damageType, maxResults = 10, timeout = 3000, forceRefresh = false } = options;
+    const { item, partName, damageType, action = 'specialist_review', maxResults = 10, timeout = 3000, forceRefresh = false } = options;
     
     try {
       // Check cache first
-      const cachedResult = forceRefresh ? null : await cacheIntegrationService.getCachedPartPrice(item, partName, damageType);
+      const cachedResult = forceRefresh ? null : await cacheIntegrationService.getCachedPartPrice(item, partName, damageType, action);
       if (cachedResult) {
         const executionTime = Date.now() - startTime;
         const adjudication = await this.adjudicatePriceData({
@@ -596,10 +599,11 @@ export class InternetSearchService {
       // the additional market variations improve resilience when sellers describe
       // parts in broader item listing language.
       const valuationPolicy = await getValuationPolicyConfig();
-      const primaryQuery = queryBuilder.buildPartPriceQuery(item, partName, damageType);
+      const primaryQuery = queryBuilder.buildPartPriceQuery(item, partName, damageType, action);
+      const actionContext = queryBuilder.getPartPricingContext(action, item.type);
       const contextQueries = queryBuilder
         .generateQueryVariations(item, 2)
-        .map((contextQuery) => `${contextQuery} ${partName} replacement part price Nigeria`);
+        .map((contextQuery) => `${contextQuery} ${partName} ${damageType || ''} ${actionContext}`.trim());
       const queries = [primaryQuery, ...contextQueries];
       const query = queries.join(' | ');
       
@@ -701,13 +705,13 @@ export class InternetSearchService {
       };
       
       // Cache the result for future use
-      await cacheIntegrationService.setCachedPartPrice(item, result);
+      await cacheIntegrationService.setCachedPartPrice(item, result, damageType, action);
       
       return result;
       
     } catch (error) {
       const executionTime = Date.now() - startTime;
-      const fallbackQuery = queryBuilder.buildPartPriceQuery(item, partName, damageType);
+      const fallbackQuery = queryBuilder.buildPartPriceQuery(item, partName, damageType, action);
 
       try {
         const aiAdjudication = await this.tryAiPriceEstimate({
@@ -741,7 +745,7 @@ export class InternetSearchService {
           currency: 'NGN',
           extractedAt: new Date()
         },
-        query: queryBuilder.buildPartPriceQuery(item, partName, damageType),
+        query: queryBuilder.buildPartPriceQuery(item, partName, damageType, action),
         resultsProcessed: 0,
         executionTime,
         dataSource: 'internet_search',
@@ -763,7 +767,7 @@ export class InternetSearchService {
    */
   async searchMultiplePartPrices(
     item: ItemIdentifier,
-    parts: Array<{ name: string; damageType?: string }>,
+    parts: Array<{ name: string; damageType?: string; action?: DamageAction }>,
     options: { 
       maxResults?: number; 
       timeout?: number;
@@ -882,10 +886,10 @@ export class InternetSearchService {
    */
   private async checkMultiplePartCache(
     item: ItemIdentifier,
-    parts: Array<{ name: string; damageType?: string }>
+    parts: Array<{ name: string; damageType?: string; action?: DamageAction }>
   ): Promise<Array<PartPriceResult | null>> {
     const cachePromises = parts.map(part => 
-      cacheIntegrationService.getCachedPartPrice(item, part.name, part.damageType)
+      cacheIntegrationService.getCachedPartPrice(item, part.name, part.damageType, part.action)
         .then(cached => cached ? this.convertCachedPartToResult(cached) : null)
         .catch(() => null) // Ignore cache errors
     );
@@ -912,9 +916,9 @@ export class InternetSearchService {
    * Prioritize common parts that are more likely to have good search results
    */
   private prioritizeCommonParts(
-    parts: Array<{ name: string; damageType?: string }>,
+    parts: Array<{ name: string; damageType?: string; action?: DamageAction }>,
     itemType: string
-  ): Array<{ name: string; damageType?: string }> {
+  ): Array<{ name: string; damageType?: string; action?: DamageAction }> {
     if (itemType !== 'vehicle') {
       return parts; // No prioritization for non-vehicle items
     }
@@ -985,7 +989,7 @@ export class InternetSearchService {
    */
   private async executeConcurrentPartSearches(
     item: ItemIdentifier,
-    parts: Array<{ name: string; damageType?: string }>,
+    parts: Array<{ name: string; damageType?: string; action?: DamageAction }>,
     options: { maxResults: number; timeout: number; concurrencyLimit: number }
   ): Promise<PartPriceResult[]> {
     const { maxResults, timeout } = options;
@@ -996,6 +1000,7 @@ export class InternetSearchService {
         item,
         partName: part.name,
         damageType: part.damageType,
+        action: part.action,
         maxResults,
         timeout
       }).catch(error => ({
@@ -1006,7 +1011,7 @@ export class InternetSearchService {
           currency: 'NGN',
           extractedAt: new Date()
         },
-        query: queryBuilder.buildPartPriceQuery(item, part.name, part.damageType),
+        query: queryBuilder.buildPartPriceQuery(item, part.name, part.damageType, part.action),
         resultsProcessed: 0,
         executionTime: 0,
         dataSource: 'internet_search' as const,
@@ -1026,7 +1031,7 @@ export class InternetSearchService {
    * Reorder results to match the original input order
    */
   private reorderResultsToMatchInput(
-    originalParts: Array<{ name: string; damageType?: string }>,
+    originalParts: Array<{ name: string; damageType?: string; action?: DamageAction }>,
     results: PartPriceResult[]
   ): PartPriceResult[] {
     return originalParts.map(originalPart => {
@@ -1042,7 +1047,7 @@ export class InternetSearchService {
           currency: 'NGN',
           extractedAt: new Date()
         },
-        query: queryBuilder.buildPartPriceQuery({} as ItemIdentifier, originalPart.name, originalPart.damageType),
+        query: queryBuilder.buildPartPriceQuery({ type: 'other', description: 'asset' }, originalPart.name, originalPart.damageType, originalPart.action),
         resultsProcessed: 0,
         executionTime: 0,
         dataSource: 'internet_search',

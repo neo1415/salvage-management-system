@@ -155,9 +155,9 @@ export async function POST(request: NextRequest) {
     const { photos, vehicleInfo, itemInfo, forceRefresh } = body;
 
     // Validate photos
-    if (!photos || !Array.isArray(photos) || photos.length < 3) {
+    if (!photos || !Array.isArray(photos) || photos.length < 5) {
       return NextResponse.json(
-        { error: 'At least 3 photos are required for AI assessment' },
+        { error: 'At least 5 photos are required for AI assessment' },
         { status: 400 }
       );
     }

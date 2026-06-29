@@ -120,6 +120,20 @@ describe('QueryBuilderService', () => {
       expect(query).toBe('Honda Accord price Nigeria');
     });
 
+    it('builds artwork identity with artist, medium, dimensions and condition', () => {
+      const query = service.buildMarketQuery({
+        type: 'artwork',
+        artworkType: 'abstract painting',
+        artist: 'Bruce Onobrakpeya',
+        medium: 'oil on canvas',
+        size: '120 x 90 cm',
+        condition: 'Nigerian Used',
+      });
+
+      expect(query).toContain('Bruce Onobrakpeya abstract painting oil on canvas 120 x 90 cm artwork');
+      expect(query).toContain('used fair condition price Nigeria');
+    });
+
     it('should respect options flags', () => {
       const vehicle: VehicleIdentifier = {
         type: 'vehicle',
@@ -193,6 +207,49 @@ describe('QueryBuilderService', () => {
       });
       
       expect(query).toBe('Toyota headlight price');
+    });
+  });
+
+  describe('buildPartPriceQuery', () => {
+    it('builds a repair query with vehicle identity, mileage, damage and labour context', () => {
+      const query = service.buildPartPriceQuery({
+        type: 'vehicle', make: 'Toyota', model: 'Camry', year: 2018,
+        mileage: 200000, condition: 'Foreign Used (Tokunbo)'
+      }, 'left front door', 'dented', 'repair');
+
+      expect(query).toContain('Toyota Camry 2018 200,000 km tokunbo');
+      expect(query).toContain('left front door dented body component repair labour cost estimate Nigeria');
+      expect(query).not.toContain('replacement part');
+    });
+
+    it('builds a replacement query for a model-specific electronic component', () => {
+      const query = service.buildPartPriceQuery({
+        type: 'electronics', brand: 'Apple', model: 'iPhone 14 Pro',
+        storageCapacity: '256GB', condition: 'Nigerian Used'
+      }, 'display assembly', 'shattered', 'replace');
+
+      expect(query).toContain('Apple iPhone 14 Pro 256GB used fair condition');
+      expect(query).toContain('display assembly shattered replacement part price installation labour Nigeria');
+    });
+
+    it('keeps bulk product specifications in recovery pricing queries', () => {
+      const query = service.buildPartPriceQuery({
+        type: 'building_materials', brand: 'Dangote', description: 'cement',
+        model: '3X 42.5R cement', unitOfMeasure: '50kg bags', packagingType: 'paper sacks'
+      }, 'water-damaged bags', 'water-contaminated', 'sort_or_recover');
+
+      expect(query).toContain('Dangote 3X 42.5R cement paper sacks 50kg bags');
+      expect(query).toContain('damaged stock recovery sorting resale value Nigeria');
+    });
+
+    it('uses specialist inspection language for safety-sensitive uncertain equipment', () => {
+      const query = service.buildPartPriceQuery({
+        type: 'medical_equipment', brand: 'GE', model: 'CARESCAPE B650',
+        description: 'patient monitor', year: 2022, condition: 'Nigerian Used'
+      }, 'sensor module', 'fluid-contaminated', 'specialist_review');
+
+      expect(query).toContain('GE CARESCAPE B650 patient monitor 2022');
+      expect(query).toContain('inspection diagnostic estimate Nigeria');
     });
   });
 
