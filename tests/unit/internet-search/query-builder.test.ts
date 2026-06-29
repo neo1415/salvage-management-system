@@ -134,6 +134,19 @@ describe('QueryBuilderService', () => {
       expect(query).toContain('used fair condition price Nigeria');
     });
 
+    it('deduplicates repeated furniture descriptions before searching', () => {
+      const query = service.buildMarketQuery({
+        type: 'furniture',
+        furnitureType: 'Sofa, Table',
+        material: 'Leather, wood',
+        size: '3 seater, 1 seater',
+        brand: 'Sofa, Table',
+        condition: 'Brand New',
+      });
+
+      expect(query).toBe('Sofa, Table Leather, wood 3 seater, 1 seater complete set brand new price Nigeria');
+    });
+
     it('should respect options flags', () => {
       const vehicle: VehicleIdentifier = {
         type: 'vehicle',

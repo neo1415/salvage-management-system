@@ -8,6 +8,15 @@ export function registerServiceWorker() {
     return;
   }
 
+  if (process.env.NODE_ENV !== 'production') {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+        .catch(() => undefined);
+    }
+    return;
+  }
+
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker

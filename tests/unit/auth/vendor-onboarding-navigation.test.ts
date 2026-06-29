@@ -25,6 +25,20 @@ describe('resolveVendorOnboardingPath', () => {
     expect(path).toBe(VENDOR_REGISTRATION_FEE_PATH);
   });
 
+  it('keeps fee-before-tier1 ahead of account verification when phone already exists', () => {
+    const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
+    policy.onboarding.mode = 'fee_before_tier1';
+    policy.onboarding.registrationFeeRequired = true;
+
+    const path = resolveVendorOnboardingPath(policy, {
+      ...baseVendor,
+      needsAccountVerification: true,
+      needsPhoneNumber: false,
+    });
+
+    expect(path).toBe(VENDOR_REGISTRATION_FEE_PATH);
+  });
+
   it('still redirects to registration fee for fee-before-tier1 when registration fee toggle is off', () => {
     const policy = structuredClone(DEFAULT_BUSINESS_POLICY);
     policy.onboarding.mode = 'fee_before_tier1';

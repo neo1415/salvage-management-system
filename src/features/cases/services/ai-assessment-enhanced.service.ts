@@ -48,6 +48,29 @@ import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-pro
 import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
+const AI_ASSESSMENT_CONCURRENCY = Math.max(
+  1,
+  Math.min(Number(process.env.AI_ASSESSMENT_CONCURRENCY || 1), 3)
+);
+let activeAssessmentRuns = 0;
+const queuedAssessmentResolvers: Array<() => void> = [];
+
+async function acquireAssessmentSlot(): Promise<() => void> {
+  if (activeAssessmentRuns >= AI_ASSESSMENT_CONCURRENCY) {
+    await new Promise<void>((resolve) => queuedAssessmentResolvers.push(resolve));
+  }
+
+  activeAssessmentRuns += 1;
+  let released = false;
+
+  return () => {
+    if (released) return;
+    released = true;
+    activeAssessmentRuns = Math.max(0, activeAssessmentRuns - 1);
+    const next = queuedAssessmentResolvers.shift();
+    if (next) next();
+  };
+}
 /**
  * Determines quality tier based on damage assessment and vehicle context
  * 
@@ -911,10 +934,25 @@ export interface EnhancedDamageAssessment {
   analysisMethod: 'claude' | 'gemini' | 'vision' | 'neutral' | 'mock';
 }
 
+export async function assessDamageEnhanced(params: {
+  photos: string[];
+  vehicleInfo?: VehicleInfo; // For backward compatibility
+  universalItemInfo?: UniversalItemInfo; // New universal support
+  forceRefresh?: boolean;
+  requireDetailedAnalysis?: boolean;
+}): Promise<EnhancedDamageAssessment> {
+  const release = await acquireAssessmentSlot();
+  try {
+    return await assessDamageEnhancedCore(params);
+  } finally {
+    release();
+  }
+}
+
 /**
  * Enhanced damage assessment with universal item support
  */
-export async function assessDamageEnhanced(params: {
+async function assessDamageEnhancedCore(params: {
   photos: string[];
   vehicleInfo?: VehicleInfo; // For backward compatibility
   universalItemInfo?: UniversalItemInfo; // New universal support

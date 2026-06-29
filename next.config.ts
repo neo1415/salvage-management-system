@@ -59,6 +59,11 @@ const nextConfig: NextConfig = {
   
   // Compression
   compress: true,
+
+  // Google Cloud SDK packages use dynamic filesystem loading internally.
+  // Keep them external on the server so production tracing does not try to
+  // bundle credential/protobuf helper paths into the app build.
+  serverExternalPackages: ['@google-cloud/documentai', '@google-cloud/vision', 'google-gax'],
   
   // Production optimizations
   

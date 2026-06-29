@@ -10,7 +10,7 @@ let warnedMissingCredentialsFile = false;
 
 function resolveCredentialsPath(keyFile: string): string | null {
   if (fs.existsSync(keyFile)) return keyFile;
-  const resolved = path.resolve(process.cwd(), keyFile);
+  const resolved = path.resolve(/*turbopackIgnore: true*/ process.cwd(), keyFile);
   if (fs.existsSync(resolved)) return resolved;
   return null;
 }

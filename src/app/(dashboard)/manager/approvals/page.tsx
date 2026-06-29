@@ -166,6 +166,15 @@ function isConfiguredNextImageHost(hostname: string): boolean {
   return NEXT_IMAGE_REMOTE_HOSTS.has(normalizedHostname) || normalizedHostname.endsWith('.cloudinary.com');
 }
 
+function isCloudinaryImageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.toLowerCase() === 'res.cloudinary.com' || parsed.hostname.toLowerCase().endsWith('.cloudinary.com');
+  } catch {
+    return false;
+  }
+}
+
 const isValidPhotoUrl = (url: any): url is string => {
   if (!url || typeof url !== 'string') return false;
   const trimmed = url.trim();
@@ -262,8 +271,14 @@ function parseFiniteNumber(value: unknown): number | undefined {
   return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function formatPendingCurrency(value: unknown, pendingLabel = 'Pending Analysis'): string {
-  return formatNairaOrPending(value as string | number | null | undefined, pendingLabel, { treatZeroAsPending: true });
+function formatPendingCurrency(
+  value: unknown,
+  pendingLabel = 'Pending Analysis',
+  options: { treatZeroAsPending?: boolean } = {}
+): string {
+  return formatNairaOrPending(value as string | number | null | undefined, pendingLabel, {
+    treatZeroAsPending: options.treatZeroAsPending ?? false,
+  });
 }
 
 function buildCasePatchPayload(input: {
@@ -1049,10 +1064,12 @@ export default function ApprovalsPage() {
               </div>
               <div>
                 <p className="text-gray-600">Market Value</p>
-                <p className="font-medium">{formatPendingCurrency(marketValue)}</p>
+                <p className="font-medium">
+                  {formatPendingCurrency(marketValue, 'Pending Analysis', { treatZeroAsPending: !selectedCase.aiAssessment })}
+                </p>
               </div>
               <div>
-                <p className="text-gray-600">Estimated Value</p>
+                <p className="text-gray-600">Estimated Salvage Value</p>
                 <p className="font-medium">
                   {formatPendingCurrency(salvageValue)}
                 </p>
@@ -1347,7 +1364,7 @@ export default function ApprovalsPage() {
             <div className="space-y-3">
               <PriceField
                 label="Market Value"
-                aiValue={marketValue ?? 0}
+                aiValue={marketValue}
                 overrideValue={priceOverrides.marketValue}
                 isEditMode={isEditMode}
                 onChange={(value) => handlePriceChange('marketValue', value)}
@@ -1358,7 +1375,7 @@ export default function ApprovalsPage() {
               
               <PriceField
                 label="Estimated Salvage Value"
-                aiValue={salvageValue ?? 0}
+                aiValue={salvageValue}
                 overrideValue={priceOverrides.salvageValue}
                 isEditMode={isEditMode}
                 onChange={(value) => handlePriceChange('salvageValue', value)}
@@ -1368,7 +1385,7 @@ export default function ApprovalsPage() {
               
               <PriceField
                 label="Reserve Price"
-                aiValue={reservePrice ?? 0}
+                aiValue={reservePrice}
                 overrideValue={priceOverrides.reservePrice}
                 isEditMode={isEditMode}
                 onChange={(value) => handlePriceChange('reservePrice', value)}
@@ -1886,8 +1903,10 @@ export default function ApprovalsPage() {
                       <p className="font-medium">{caseData.policyNumber || '-'}</p>
                     </div>
                     <div>
-                      <p className="text-gray-600">Estimated Value</p>
-                      <p className="font-medium">₦{parseFloat(caseData.estimatedSalvageValue).toLocaleString()}</p>
+                      <p className="text-gray-600">Estimated Salvage Value</p>
+                      <p className="font-medium">
+                        {formatPendingCurrency(parseFiniteNumber(caseData.estimatedSalvageValue))}
+                      </p>
                     </div>
                     <div>
                       <p className="text-gray-600">Branch</p>
@@ -1915,6 +1934,7 @@ export default function ApprovalsPage() {
                         alt={`Preview ${index + 1}`}
                         width={80}
                         height={60}
+                        unoptimized={isCloudinaryImageUrl(photo)}
                         className="w-20 h-16 object-cover rounded flex-shrink-0"
                       />
                     ))}

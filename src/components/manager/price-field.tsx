@@ -25,7 +25,7 @@ interface PriceFieldProps {
   /**
    * AI-estimated value
    */
-  aiValue: number;
+  aiValue?: number | null;
 
   /**
    * Manager's override value (if any)
@@ -72,8 +72,8 @@ interface PriceFieldProps {
  * Format number with thousand separators
  * Example: 1234567 -> "1,234,567"
  */
-function formatCurrency(value: number, symbol: string = '₦'): string {
-  if (!Number.isFinite(value) || Number.isNaN(value)) return 'Pending Analysis';
+function formatCurrency(value: number | null | undefined, symbol: string = '₦'): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || Number.isNaN(value)) return 'Pending Analysis';
   return `${symbol}${value.toLocaleString('en-US')}`;
 }
 
@@ -104,8 +104,8 @@ export function PriceField({
   pendingLabel,
   isAnalyzing = false,
 }: PriceFieldProps) {
-  const hasValidAiValue = Number.isFinite(aiValue) && !Number.isNaN(aiValue);
-  const isPendingValue = !hasValidAiValue || (pendingLabel && aiValue <= 0 && overrideValue === undefined);
+  const hasValidAiValue = typeof aiValue === 'number' && Number.isFinite(aiValue) && !Number.isNaN(aiValue);
+  const isPendingValue = !hasValidAiValue && overrideValue === undefined;
   const displayValue = overrideValue ?? (hasValidAiValue ? aiValue : 0);
   const hasOverride = overrideValue !== undefined;
   const isLowConfidence = confidence !== undefined && confidence < 70;

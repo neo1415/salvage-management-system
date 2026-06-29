@@ -39,6 +39,7 @@ export default function Tier1KYCPage() {
   const [nameDraft, setNameDraft] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [nameMessage, setNameMessage] = useState<string | null>(null);
+  const [checkingOnboardingGate, setCheckingOnboardingGate] = useState(true);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -47,15 +48,37 @@ export default function Tier1KYCPage() {
     }
     if (status !== 'authenticated') return;
 
+    let active = true;
+    setCheckingOnboardingGate(true);
+
     fetch('/api/vendor/onboarding-status', { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload) => {
-        const redirectPath = payload?.data?.redirectPath;
-        if (redirectPath === '/vendor/registration-fee') {
+        if (!active) return;
+        const data = payload?.data;
+        const redirectPath = data?.redirectPath;
+        const feeBeforeTier1Unpaid =
+          data?.onboardingMode === 'fee_before_tier1' &&
+          data?.registrationFeeRequired !== false &&
+          data?.registrationFeePaid !== true;
+
+        if (redirectPath === '/vendor/registration-fee' || feeBeforeTier1Unpaid) {
           router.replace('/vendor/registration-fee');
+          return;
         }
+        setCheckingOnboardingGate(false);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setCheckingOnboardingGate(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [status, router]);
+
+  useEffect(() => {
+    if (status !== 'authenticated') return;
 
     fetch('/api/settings/profile')
       .then((r) => (r.ok ? r.json() : null))
@@ -87,7 +110,7 @@ export default function Tier1KYCPage() {
           setNameDraft(session.user.name || '');
         }
       });
-  }, [status, session, router]);
+  }, [status, session]);
 
   const handleBvnChange = (value: string) => {
     const digitsOnly = value.replace(/\D/g, '');
@@ -190,7 +213,7 @@ export default function Tier1KYCPage() {
     }
   };
 
-  if (status === 'loading') {
+  if (status === 'loading' || checkingOnboardingGate) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-[var(--brand-primary)] animate-spin" />

@@ -19,6 +19,7 @@ function RegistrationFeePageContent() {
   const searchParams = useSearchParams();
   const paymentStatus = searchParams.get('payment');
   const [onboardingMode, setOnboardingMode] = useState<string | undefined>();
+  const [onboardingLoaded, setOnboardingLoaded] = useState(false);
 
   const [status, setStatus] = useState<'loading' | 'paid' | 'unpaid' | 'success' | 'failed'>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -35,10 +36,13 @@ function RegistrationFeePageContent() {
           setOnboardingMode(payload.data.onboardingMode);
         }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setOnboardingLoaded(true));
   }, []);
 
   useEffect(() => {
+    if (!onboardingLoaded) return;
+
     if (paymentStatus === 'success') {
       setStatus('success');
       setTimeout(() => goToNextStep(), 3000);
@@ -51,11 +55,11 @@ function RegistrationFeePageContent() {
     }
 
     checkPaymentStatus();
-  }, [paymentStatus, onboardingMode]);
+  }, [paymentStatus, onboardingMode, onboardingLoaded]);
 
   const checkPaymentStatus = async () => {
     try {
-      const response = await fetch('/api/vendors/registration-fee/status');
+      const response = await fetch('/api/vendors/registration-fee/status', { cache: 'no-store' });
       const result = await response.json();
 
       if (!result.data?.required) {

@@ -62,7 +62,7 @@ export function resolveVendorOnboardingPath(
     return CHANGE_PASSWORD_PATH;
   }
 
-  if (vendor.needsPhoneNumber || vendor.needsAccountVerification) {
+  if (vendor.needsPhoneNumber) {
     return VENDOR_VERIFY_ACCOUNT_PATH;
   }
 
@@ -75,6 +75,10 @@ export function resolveVendorOnboardingPath(
 
   if (vendorMustPayRegistrationFeeBeforeTier1(policy, vendor)) {
     return VENDOR_REGISTRATION_FEE_PATH;
+  }
+
+  if (vendor.needsAccountVerification) {
+    return VENDOR_VERIFY_ACCOUNT_PATH;
   }
 
   if (mode === 'single_full_kyc') {

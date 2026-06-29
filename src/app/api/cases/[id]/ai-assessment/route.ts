@@ -202,10 +202,13 @@ export async function POST(
     console.error('Manager case AI assessment failed:', error);
     const message = error instanceof Error ? error.message : 'AI assessment failed';
     const detailedAnalysisUnavailable = message.startsWith('Detailed AI damage analysis is temporarily unavailable.');
+    const userMessage = detailedAnalysisUnavailable
+      ? 'AI damage analysis is temporarily unavailable. Please try again shortly or complete a manual valuation review.'
+      : 'AI damage analysis could not be completed. Please try again or complete a manual valuation review.';
     return NextResponse.json(
       {
         success: false,
-        error: message,
+        error: userMessage,
       },
       { status: detailedAnalysisUnavailable ? 503 : 500 }
     );

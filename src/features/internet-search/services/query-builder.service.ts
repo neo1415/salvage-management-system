@@ -603,19 +603,12 @@ export class QueryBuilderService {
   }
 
   private buildFurnitureQuery(furniture: FurnitureIdentifier): string {
-    let query = `${furniture.furnitureType}`;
-    
-    if (furniture.brand) {
-      query += ` ${furniture.brand}`;
-    }
-    
-    if (furniture.material) {
-      query += ` ${furniture.material}`;
-    }
-    
-    if (furniture.size) {
-      query += ` ${furniture.size}`;
-    }
+    let query = this.compactUniquePhrases([
+      furniture.furnitureType,
+      furniture.brand,
+      furniture.material,
+      furniture.size,
+    ]);
 
     const furnitureText = `${furniture.furnitureType} ${furniture.size || ''}`.toLowerCase();
     const furnitureGroups = [
@@ -749,7 +742,7 @@ export class QueryBuilderService {
   }
 
   private buildSpecialEquipmentQuery(item: SpecialEquipmentIdentifier): string {
-    const description = this.compactTerms([
+    const description = this.compactUniquePhrases([
       item.brand,
       this.stripBulkNarrative(item.model),
       this.stripBulkNarrative(item.description),
@@ -822,6 +815,22 @@ export class QueryBuilderService {
     return parts
       .map(part => String(part || '').trim())
       .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private compactUniquePhrases(parts: Array<string | number | undefined | null>): string {
+    const seen = new Set<string>();
+    return parts
+      .map(part => String(part || '').trim())
+      .filter(Boolean)
+      .filter((part) => {
+        const key = part.toLowerCase().replace(/\s+/g, ' ');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
       .join(' ')
       .replace(/\s+/g, ' ')
       .trim();

@@ -18,6 +18,7 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
   const [feeAmount, setFeeAmount] = useState<number>(0);
   const [feeRequired, setFeeRequired] = useState(true);
   const [loadingFee, setLoadingFee] = useState(true);
+  const feeBeforeTier1 = policy?.onboarding.mode === 'fee_before_tier1';
 
   useEffect(() => {
     setMounted(true);
@@ -121,7 +122,9 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
                   <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
                     <CheckCircle2 className="w-5 h-5 text-green-600" />
                   </div>
-                  <span className="text-gray-700 font-medium">BVN Verified</span>
+                  <span className="text-gray-700 font-medium">
+                    {feeBeforeTier1 ? 'Account created' : 'Identity verified'}
+                  </span>
                 </div>
                 
                 <div className="flex items-center gap-2">
