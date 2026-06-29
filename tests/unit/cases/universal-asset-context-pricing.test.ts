@@ -102,6 +102,34 @@ describe('universal asset assessment context and pricing', () => {
     expect(context.model).not.toBe('120');
   });
 
+  it('builds a market search identifier for unbranded agricultural produce', () => {
+    const identifier = buildUniversalSearchIdentifier({
+      type: 'agriculture',
+      condition: 'Nigerian Used',
+      description: 'yellow maize cobs',
+      quantity: '120',
+      unitOfMeasure: 'bags',
+    });
+
+    expect(identifier).toMatchObject({
+      type: 'agriculture',
+      model: 'yellow maize cobs',
+      quantity: '120',
+      unitOfMeasure: 'bags',
+    });
+  });
+
+  it('does not use vehicle-only Tokunbo language for furniture searches', () => {
+    const query = queryBuilder.buildMarketQuery({
+      type: 'furniture',
+      furnitureType: 'leather sofa set',
+      condition: 'Foreign Used (Tokunbo)',
+    });
+
+    expect(query).toContain('used good condition');
+    expect(query).not.toContain('tokunbo');
+  });
+
   it('builds scrap searches around scrap value and weight units, not stock packaging', () => {
     const query = queryBuilder.buildMarketQuery({
       type: 'scrap',

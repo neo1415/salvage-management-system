@@ -76,6 +76,8 @@ export const salvageCases = pgTable('salvage_cases', {
       };
       damagedParts?: Array<{
         part: string;
+        damageType?: string;
+        description?: string;
         severity: 'minor' | 'moderate' | 'severe';
         confidence: number;
       }>;

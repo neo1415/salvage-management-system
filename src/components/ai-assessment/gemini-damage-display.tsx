@@ -13,6 +13,8 @@
  */
 
 import React from 'react';
+import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
+import { formatDamageEvidence } from '@/lib/ai/damage-evidence';
 
 /**
  * Item details from Gemini AI
@@ -34,6 +36,8 @@ export interface ItemDetails {
  */
 export interface DamagedPart {
   part: string;
+  damageType?: string;
+  description?: string;
   severity: 'minor' | 'moderate' | 'severe';
   confidence: number;
 }
@@ -66,37 +70,15 @@ const getSeverityColor = (severity: 'minor' | 'moderate' | 'severe'): string => 
   }
 };
 
-const BULK_ASSET_TYPES = new Set([
-  'stock',
-  'goods_in_transit',
-  'building_materials',
-  'scrap',
-  'agriculture',
-]);
-
-function isBulkAsset(assetType?: string): boolean {
-  return Boolean(assetType && BULK_ASSET_TYPES.has(assetType));
-}
-
 function getDisplayLabels(assetType?: string) {
-  if (isBulkAsset(assetType)) {
-    return {
-      make: 'Brand / Manufacturer',
-      model: 'Stock / Package',
-      condition: 'Visible Condition',
-      damageTitle: 'Affected Stock / Loss Evidence',
-      summaryTitle: 'Recovery Summary',
-      title: 'AI Stock Assessment',
-    };
-  }
-
+  const profile = getAssetAssessmentProfile(assetType);
   return {
-    make: 'Make',
-    model: 'Model',
-    condition: 'Overall Condition',
-    damageTitle: 'Damaged Parts',
-    summaryTitle: 'Damage Summary',
-    title: 'AI Damage Analysis',
+    make: profile.identificationMakeLabel,
+    model: profile.identificationModelLabel,
+    condition: profile.conditionLabel,
+    damageTitle: profile.evidenceTitle,
+    summaryTitle: profile.summaryTitle,
+    title: 'AI Damage Assessment',
   };
 }
 
@@ -264,7 +246,7 @@ export function GeminiDamageDisplay({
                 key={index}
                 className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg shadow-sm"
               >
-                <span className="text-sm text-gray-800 font-medium flex-1">{part.part}</span>
+                <span className="text-sm text-gray-800 font-medium flex-1">{formatDamageEvidence(part)}</span>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className={`px-2 py-1 rounded-full text-xs font-bold ${getSeverityColor(part.severity)}`}>
                     {part.severity.toUpperCase()}
@@ -368,7 +350,7 @@ export function GeminiDamageDisplayCompact({
           <div className="space-y-1.5 max-h-40 overflow-y-auto">
             {damagedParts.map((part, index) => (
               <div key={index} className="flex items-center justify-between gap-2 p-2 bg-white rounded text-xs">
-                <span className="text-gray-800 font-medium flex-1 truncate">{part.part}</span>
+                <span className="text-gray-800 font-medium flex-1 truncate">{formatDamageEvidence(part)}</span>
                 <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${getSeverityColor(part.severity)}`}>
                   {part.severity}
                 </span>

@@ -59,4 +59,43 @@ describe('buildUniversalItemInfoFromCase', () => {
 
     expect(itemInfo?.condition).toBe('Nigerian Used');
   });
+
+  it('rebuilds unbranded agricultural produce from its description and quantity', () => {
+    const itemInfo = buildUniversalItemInfoFromCase({
+      assetType: 'agriculture',
+      assetDetails: {
+        description: 'yellow maize cobs',
+        quantity: '120',
+        unitOfMeasure: 'bags',
+        packagingType: 'woven sacks',
+      },
+    });
+
+    expect(itemInfo).toMatchObject({
+      type: 'agriculture',
+      description: 'yellow maize cobs',
+      quantity: '120',
+      unitOfMeasure: 'bags',
+      packagingType: 'woven sacks',
+    });
+  });
+
+  it('preserves specialist equipment model and serial separately', () => {
+    const itemInfo = buildUniversalItemInfoFromCase({
+      assetType: 'medical_equipment',
+      assetDetails: {
+        description: 'patient monitor',
+        brand: 'Philips',
+        model: 'IntelliVue MX450',
+        serialOrReference: 'SN-1234',
+      },
+    });
+
+    expect(itemInfo).toMatchObject({
+      type: 'medical_equipment',
+      brand: 'Philips',
+      model: 'IntelliVue MX450',
+      batchOrSerial: 'SN-1234',
+    });
+  });
 });

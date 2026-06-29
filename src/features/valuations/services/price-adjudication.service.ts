@@ -45,6 +45,7 @@ export interface PriceAdjudicationResult {
 
 const AI_ADJUDICATION_TIMEOUT_MS = 12_000;
 const MIN_AI_CONFIDENCE_TO_SELECT = 65;
+const CLAUDE_WEB_SEARCH_COST_USD = 0.01;
 
 const LOW_TRUST_MARKETPLACE_DOMAINS = [
   'jumia',
@@ -316,7 +317,7 @@ function promptForAdjudication(input: PriceAdjudicationInput, filteredPrices: Ex
       partMinimums: input.policy.pricePlausibility.partMinimums,
       partMaximums: input.policy.pricePlausibility.partMaximums,
     },
-    acceptedSerperPrices: filteredPrices.map((price) => ({
+    acceptedSerperPrices: filteredPrices.slice(0, 12).map((price) => ({
       price: price.price,
       source: price.source,
       title: price.title,
@@ -326,12 +327,67 @@ function promptForAdjudication(input: PriceAdjudicationInput, filteredPrices: Ex
       originalText: price.originalText,
       url: price.url,
     })),
-    rejectedSerperPrices: rejectedPrices.slice(0, 20).map((price) => ({
+    rejectedSerperPrices: rejectedPrices.slice(0, 8).map((price) => ({
       price: price.price,
       source: price.source,
       title: price.title,
       reason: price.rejectionReason,
     })),
+  });
+}
+
+export function shouldEscalatePriceAdjudication(input: {
+  mode: AdjudicationMode;
+  acceptedPriceCount: number;
+  uniqueSourceCount: number;
+  spreadPercent: number;
+  specialistReviewRequired: boolean;
+  minimumMarketSourceCount: number;
+  sourceDiversityRequired: boolean;
+  maxAllowedPriceSpreadPercent: number;
+}): boolean {
+  if (input.acceptedPriceCount === 0) return true;
+  if (input.mode === 'part') return false;
+  if (input.specialistReviewRequired) return true;
+  if (input.acceptedPriceCount < input.minimumMarketSourceCount) return true;
+  if (input.sourceDiversityRequired && input.uniqueSourceCount < 2) return true;
+  return input.spreadPercent > input.maxAllowedPriceSpreadPercent;
+}
+
+export function shouldUseClaudeWebFallback(mode: AdjudicationMode, geminiOpinion: AiPriceOpinion | null): boolean {
+  if (mode !== 'market') return false;
+  return !geminiOpinion?.recommendedPrice || geminiOpinion.confidence < MIN_AI_CONFIDENCE_TO_SELECT;
+}
+
+function logClaudeAdjudicationUsage(response: Anthropic.Message, input: PriceAdjudicationInput): void {
+  const usage = response.usage as Anthropic.Message['usage'] & {
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+    server_tool_use?: { web_search_requests?: number };
+  };
+  const inputTokens = usage.input_tokens || 0;
+  const outputTokens = usage.output_tokens || 0;
+  const cacheWriteTokens = usage.cache_creation_input_tokens || 0;
+  const cacheReadTokens = usage.cache_read_input_tokens || 0;
+  const webSearchRequests = usage.server_tool_use?.web_search_requests || 0;
+  const tokenCostUsd = (
+    (inputTokens * 3) +
+    (outputTokens * 15) +
+    (cacheWriteTokens * 3.75) +
+    (cacheReadTokens * 0.3)
+  ) / 1_000_000;
+  const estimatedCostUsd = tokenCostUsd + (webSearchRequests * CLAUDE_WEB_SEARCH_COST_USD);
+
+  console.info('[Price Adjudication] Claude usage', {
+    mode: input.mode,
+    itemType: input.item.type,
+    partName: input.partName,
+    inputTokens,
+    outputTokens,
+    cacheWriteTokens,
+    cacheReadTokens,
+    webSearchRequests,
+    estimatedCostUsd: Number(estimatedCostUsd.toFixed(6)),
   });
 }
 
@@ -436,8 +492,15 @@ export class PriceAdjudicationService {
         generationConfig: {
           responseMimeType: 'application/json',
           temperature: 0.1,
+          maxOutputTokens: 900,
         },
       } as any), AI_ADJUDICATION_TIMEOUT_MS);
+      console.info('[Price Adjudication] Gemini usage', {
+        mode: input.mode,
+        itemType: input.item.type,
+        partName: input.partName,
+        usage: result.response.usageMetadata,
+      });
       const text = result.response.text();
       return coerceAiOpinion('gemini_grounded', text);
     } catch (error) {
@@ -459,7 +522,7 @@ export class PriceAdjudicationService {
       const client = new Anthropic({ apiKey });
       const response = await withTimeout(client.messages.create({
         model: process.env.CLAUDE_PRICE_ADJUDICATION_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
-        max_tokens: 1600,
+        max_tokens: 800,
         temperature: 0.1,
         tools: [{
           type: 'web_search_20260318',
@@ -471,6 +534,7 @@ export class PriceAdjudicationService {
           content: promptForAdjudication(input, filteredPrices, rejectedPrices),
         }],
       } as any), AI_ADJUDICATION_TIMEOUT_MS);
+      logClaudeAdjudicationUsage(response, input);
       const text = response.content
         .filter((block) => block.type === 'text')
         .map((block) => (block as { text?: string }).text || '')
@@ -504,13 +568,57 @@ export class PriceAdjudicationService {
     const deterministic = this.applyDeterministicGuards(input);
     const guardedPriceData = rebuildPriceData(input.priceData, deterministic.filteredPrices);
 
-    const shouldAskAi = isPriceAdjudicationAiEnabled();
-    const aiOpinions = shouldAskAi
-      ? (await Promise.all([
-          this.getGeminiGroundedOpinion(input, deterministic.filteredPrices, deterministic.rejectedPrices),
-          this.getClaudeWebOpinion(input, deterministic.filteredPrices, deterministic.rejectedPrices),
-        ])).filter((opinion): opinion is AiPriceOpinion => Boolean(opinion))
-      : [];
+    const uniqueSourceCount = new Set(deterministic.filteredPrices.map((price) => price.source)).size;
+    const center = median(deterministic.filteredPrices.map((price) => price.price));
+    const spread = center
+      ? spreadPercent(deterministic.filteredPrices.map((price) => price.price), center)
+      : 0;
+    const specialistReviewRequired = specialistReviewThreshold(input.item, input.policy, input.partName) !== null;
+    const shouldAskAi = isPriceAdjudicationAiEnabled() && shouldEscalatePriceAdjudication({
+      mode: input.mode,
+      acceptedPriceCount: deterministic.filteredPrices.length,
+      uniqueSourceCount,
+      spreadPercent: spread,
+      specialistReviewRequired,
+      minimumMarketSourceCount: input.policy.minimumMarketSourceCount,
+      sourceDiversityRequired: input.policy.sourceDiversityRequired,
+      maxAllowedPriceSpreadPercent: input.policy.maxAllowedPriceSpreadPercent,
+    });
+
+    console.info('[Price Adjudication] Provider plan', {
+      mode: input.mode,
+      itemType: input.item.type,
+      partName: input.partName,
+      acceptedPriceCount: deterministic.filteredPrices.length,
+      uniqueSourceCount,
+      spreadPercent: spread,
+      aiEscalationRequired: shouldAskAi,
+      sequence: shouldAskAi
+        ? (input.mode === 'market' ? ['gemini_grounded', 'claude_market_fallback'] : ['gemini_grounded'])
+        : ['serper'],
+    });
+
+    const aiOpinions: AiPriceOpinion[] = [];
+    if (shouldAskAi) {
+      const geminiOpinion = await this.getGeminiGroundedOpinion(
+        input,
+        deterministic.filteredPrices,
+        deterministic.rejectedPrices
+      );
+      if (geminiOpinion) aiOpinions.push(geminiOpinion);
+
+      // Claude remains available for live market-value escalation. Part prices
+      // use Serper plus Gemini and deterministic missing-part allowances so one
+      // assessment cannot fan out into many paid Claude web searches.
+      if (shouldUseClaudeWebFallback(input.mode, geminiOpinion)) {
+        const claudeOpinion = await this.getClaudeWebOpinion(
+          input,
+          deterministic.filteredPrices,
+          deterministic.rejectedPrices
+        );
+        if (claudeOpinion) aiOpinions.push(claudeOpinion);
+      }
+    }
 
     const selectedAiOpinion = this.selectAiOpinion(aiOpinions, deterministic.filteredPrices);
     const serperCount = deterministic.filteredPrices.length;

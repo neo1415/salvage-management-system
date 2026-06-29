@@ -43,6 +43,8 @@ import {
   resolveRealisticMarketSearchCondition,
 } from '@/features/valuations/services/condition-mapping.service';
 import { getValuationPolicyConfig, shouldRequireManualReview } from '@/features/valuations/services/valuation-policy.service';
+import type { DamageEvidence } from '@/lib/ai/damage-evidence';
+import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
 import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
@@ -153,24 +155,16 @@ export interface UniversalItemInfo {
   declaredCondition?: string;
 }
 
-const REPAIRABLE_TOTAL_LOSS_ASSET_TYPES = new Set<UniversalItemInfo['type']>([
-  'vehicle',
-  'electronics',
-  'appliance',
-  'machinery',
-  'equipment',
-  'medical_equipment',
-  'energy_equipment',
-  'aviation_equipment',
-]);
+function isRepairableAssetType(itemType: UniversalItemInfo['type']): boolean {
+  if (itemType === 'equipment') return true;
+  const family = getAssetAssessmentProfile(itemType).family;
+  return family === 'vehicle' || family === 'repairable_equipment';
+}
 
-const BULK_RECOVERY_ASSET_TYPES = new Set<UniversalItemInfo['type']>([
-  'stock',
-  'goods_in_transit',
-  'building_materials',
-  'scrap',
-  'agriculture',
-]);
+function isUnitOrMaterialRecoveryType(itemType: UniversalItemInfo['type']): boolean {
+  const family = getAssetAssessmentProfile(itemType).family;
+  return family === 'unit_recovery' || family === 'material_recovery';
+}
 
 export function shouldApplyTotalLossCap(input: {
   itemType?: UniversalItemInfo['type'];
@@ -182,7 +176,7 @@ export function shouldApplyTotalLossCap(input: {
 }): { applyCap: boolean; aiOnlyNonVehicleReview: boolean; reason: 'damage_calculation' | 'ai_vehicle' | 'ai_unpriced_high_damage' | 'none' } {
   const itemType = input.itemType || 'vehicle';
   const isVehicle = itemType === 'vehicle';
-  const repairableTotalLossType = REPAIRABLE_TOTAL_LOSS_ASSET_TYPES.has(itemType);
+  const repairableTotalLossType = isRepairableAssetType(itemType);
   const aiTotalLoss = input.aiTotalLoss === true;
   const calculationTotalLoss = repairableTotalLossType && (
     input.damageCalculationTotalLoss === true || (input.totalDeductionPercent ?? 0) >= 0.7
@@ -219,11 +213,11 @@ export function shouldApplyTotalLossCap(input: {
 export function computeVisualEvidenceDeductionFloor(input: {
   itemType?: UniversalItemInfo['type'];
   damagePercentage: number;
-  damagedParts?: Array<{ part: string; severity: 'minor' | 'moderate' | 'severe'; confidence: number }>;
+  damagedParts?: DamageEvidence[];
   aiTotalLoss?: boolean;
 }): number {
   const itemType = input.itemType || 'general_asset';
-  if (BULK_RECOVERY_ASSET_TYPES.has(itemType as UniversalItemInfo['type'])) return 0;
+  if (isUnitOrMaterialRecoveryType(itemType as UniversalItemInfo['type'])) return 0;
 
   const damagedParts = input.damagedParts || [];
   const severityValue = { minor: 0.2, moderate: 0.48, severe: 0.86 } as const;
@@ -274,7 +268,7 @@ export function computeVisualEvidenceDeductionFloor(input: {
 }
 
 export function calculateNonVehicleDamagePercentage(
-  damagedParts: Array<{ severity: 'minor' | 'moderate' | 'severe'; confidence: number }>,
+  damagedParts: Array<Pick<DamageEvidence, 'severity' | 'confidence'>>,
   fallback: DamageScore
 ): number {
   if (damagedParts.length === 0) return calculateDamagePercentage(fallback);
@@ -290,7 +284,7 @@ export function hasExplicitNoCommercialRecovery(input: {
   itemType?: UniversalItemInfo['type'];
   aiTotalLoss?: boolean;
   summary?: string;
-  damagedParts?: Array<{ severity: 'minor' | 'moderate' | 'severe' }>;
+  damagedParts?: Array<Pick<DamageEvidence, 'severity'>>;
 }): boolean {
   if (!input.summary) return false;
   if (input.itemType !== 'furniture' && input.itemType !== 'artwork') return false;
@@ -341,7 +335,7 @@ export interface DamageScore {
  * @param damagedParts - Array of damaged parts from Gemini
  * @returns DamageScore with 0-100 scores for each category
  */
-function convertDamagedPartsToScores(damagedParts: Array<{ part: string; severity: 'minor' | 'moderate' | 'severe'; confidence: number }>): DamageScore {
+function convertDamagedPartsToScores(damagedParts: DamageEvidence[]): DamageScore {
   // Initialize scores
   const scores: DamageScore = {
     structural: 0,
@@ -457,7 +451,7 @@ export function buildUniversalProviderContext(itemInfo: UniversalItemInfo): {
 }
 
 function isBulkRecoveryAsset(itemInfo?: UniversalItemInfo): boolean {
-  return Boolean(itemInfo?.type && BULK_RECOVERY_ASSET_TYPES.has(itemInfo.type));
+  return Boolean(itemInfo?.type && isUnitOrMaterialRecoveryType(itemInfo.type));
 }
 
 const LUXURY_JEWELRY_BRAND_FLOORS_NGN: Record<string, number> = {
@@ -727,7 +721,7 @@ export function estimateKnownBulkUnitMarketValue(itemInfo: UniversalItemInfo): n
 }
 
 function calculateBulkDamagePercentage(
-  damagedParts: Array<{ part: string; severity: 'minor' | 'moderate' | 'severe'; confidence: number }> | undefined,
+  damagedParts: DamageEvidence[] | undefined,
   fallbackDamageScore: DamageScore
 ): number {
   if (!damagedParts || damagedParts.length === 0) {
@@ -750,7 +744,7 @@ function calculateBulkDamagePercentage(
 
 function calculateBulkRecoverySalvage(
   marketValue: number,
-  damagedParts: Array<{ part: string; severity: 'minor' | 'moderate' | 'severe'; confidence: number }> | undefined,
+  damagedParts: DamageEvidence[] | undefined,
   damageScore: DamageScore,
   itemInfo?: UniversalItemInfo,
   aiTotalLoss?: boolean
@@ -875,11 +869,7 @@ export interface EnhancedDamageAssessment {
     overallCondition?: string;
     notes?: string;
   };
-  damagedParts?: Array<{
-    part: string;
-    severity: 'minor' | 'moderate' | 'severe';
-    confidence: number;
-  }>;
+  damagedParts?: DamageEvidence[];
   
   // Financial estimates
   marketValue: number;
@@ -1513,11 +1503,7 @@ async function analyzePhotosWithFallback(
     overallCondition?: string;
     notes?: string;
   };
-  damagedParts?: Array<{
-    part: string;
-    severity: 'minor' | 'moderate' | 'severe';
-    confidence: number;
-  }>;
+  damagedParts?: DamageEvidence[];
 }> {
   const requestId = `enhanced-assess-${Date.now()}`;
   
@@ -2300,6 +2286,9 @@ function getUniversalAdjustment(itemInfo: UniversalItemInfo, skipConditionAdjust
       break;
 
     case 'equipment':
+    case 'medical_equipment':
+    case 'energy_equipment':
+    case 'aviation_equipment':
       adjustment *= getEquipmentAdjustment(itemInfo);
       break;
 
@@ -3180,11 +3169,14 @@ export function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): Ite
     case 'building_materials':
     case 'scrap':
     case 'agriculture':
-      if (!brand && !itemInfo.model) return null;
+      if (!brand && !itemInfo.model && !description) return null;
       return {
         type: itemInfo.type,
         brand,
-        model: stripBulkNarrative(itemInfo.model),
+        description,
+        model: stripBulkNarrative(itemInfo.model || description),
+        quantity: itemInfo.quantity,
+        unitOfMeasure: itemInfo.unitOfMeasure,
         packagingType: itemInfo.packagingType,
       };
     case 'equipment':
@@ -3404,6 +3396,38 @@ async function searchUniversalPartPrices(
           'electrical': 'electrical parts',
           'body': 'body panel',
           'interior': 'cabin parts'
+        };
+      case 'furniture':
+        return {
+          'structure': 'frame',
+          'engine': 'recliner mechanism',
+          'electrical': 'recliner motor wiring',
+          'body': 'upholstery surface',
+          'interior': 'foam padding'
+        };
+      case 'medical_equipment':
+        return {
+          'structure': 'equipment frame housing',
+          'engine': 'pump motor assembly',
+          'electrical': 'control board wiring',
+          'body': 'outer casing',
+          'interior': 'sensor internal module'
+        };
+      case 'energy_equipment':
+        return {
+          'structure': 'equipment frame tank',
+          'engine': 'pump motor assembly',
+          'electrical': 'power control panel',
+          'body': 'housing enclosure',
+          'interior': 'internal module'
+        };
+      case 'aviation_equipment':
+        return {
+          'structure': 'ground equipment frame',
+          'engine': 'drive motor assembly',
+          'electrical': 'avionics electrical module',
+          'body': 'equipment casing',
+          'interior': 'internal assembly'
         };
       case 'artwork':
         return {

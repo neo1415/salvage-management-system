@@ -30,7 +30,7 @@ export const CASE_ASSET_TYPE_CATALOG: CaseAssetTypeOption[] = [
   { value: 'appliance', label: 'Appliance', icon: 'Appl' },
   { value: 'furniture', label: 'Furniture / Contents', icon: 'Furn' },
   { value: 'scrap', label: 'Scrap / Recoverable Parts', icon: 'Scrap' },
-  { value: 'agriculture', label: 'Agricultural Stock / Equipment', icon: 'Agri' },
+  { value: 'agriculture', label: 'Agricultural Stock / Produce', icon: 'Agri' },
   { value: 'medical_equipment', label: 'Medical Equipment', icon: 'Med' },
   { value: 'energy_equipment', label: 'Energy / Oil & Gas Equipment', icon: 'Energy' },
   { value: 'aviation_equipment', label: 'Aviation / Special Risk Equipment', icon: 'Air' },

@@ -131,6 +131,24 @@ const CONDITION_SEARCH_TERMS: Record<UniversalCondition, string[]> = {
   'Heavily Used': ['fairly used', 'old', 'used', 'cheap']
 };
 
+function conditionSearchTermsForAsset(condition: UniversalCondition, assetType: ItemIdentifier['type']): string[] {
+  if (condition === 'Brand New' || assetType === 'vehicle') return CONDITION_SEARCH_TERMS[condition];
+  if (condition === 'Foreign Used (Tokunbo)') {
+    if (assetType === 'electronics' || assetType === 'appliance') return ['foreign used', 'uk used', 'clean used'];
+    if (assetType === 'jewelry') return ['pre-owned', 'used excellent condition'];
+    if (assetType === 'property') return ['good condition', 'well maintained'];
+    return ['used good condition', 'clean used'];
+  }
+  if (condition === 'Nigerian Used') {
+    return assetType === 'property'
+      ? ['fair condition', 'requires minor repairs']
+      : ['used fair condition', 'locally used'];
+  }
+  return assetType === 'property'
+    ? ['poor condition', 'requires renovation']
+    : ['used poor condition', 'as-is'];
+}
+
 // Quality tier to condition mapping for backward compatibility
 const QUALITY_TO_CONDITION_MAPPING: Record<string, UniversalCondition> = {
   'excellent': 'Brand New',
@@ -239,7 +257,7 @@ export class QueryBuilderService {
           model,
         });
       }
-      const conditionTerms = CONDITION_SEARCH_TERMS[searchCondition as keyof typeof CONDITION_SEARCH_TERMS];
+      const conditionTerms = conditionSearchTermsForAsset(searchCondition as UniversalCondition, item.type);
       if (conditionTerms && conditionTerms.length > 0) {
         query += ` ${conditionTerms[0]}`;
         console.log(`🔍 Including condition in search: "${conditionTerms[0]}" for ${searchCondition} (user: ${item.condition})`);
@@ -405,14 +423,14 @@ export class QueryBuilderService {
   /**
    * Build condition-specific query variations
    */
-  buildConditionQuery(baseQuery: string, condition: UniversalCondition): string[] {
+  buildConditionQuery(baseQuery: string, condition: UniversalCondition, assetType: ItemIdentifier['type'] = 'vehicle'): string[] {
     const normalizedCondition = normalizeCondition(condition);
     if (!normalizedCondition) {
       // Return base query without condition if condition not supported
       return [this.sanitizeQuery(`${baseQuery} price Nigeria`)];
     }
     
-    const conditionTerms = CONDITION_SEARCH_TERMS[normalizedCondition];
+    const conditionTerms = conditionSearchTermsForAsset(normalizedCondition, assetType);
     if (!conditionTerms || conditionTerms.length === 0) {
       // Return base query without condition if condition not supported
       return [this.sanitizeQuery(`${baseQuery} price Nigeria`)];
@@ -446,7 +464,8 @@ export class QueryBuilderService {
     if ('condition' in item && item.condition && variations.length < maxVariations) {
       const conditionQueries = this.buildConditionQuery(
         this.getBaseItemQuery(item), 
-        item.condition
+        item.condition,
+        item.type
       );
       variations.push(...conditionQueries.slice(0, maxVariations - variations.length));
     }
@@ -589,17 +608,6 @@ export class QueryBuilderService {
     
     if (machinery.year) {
       query += ` ${machinery.year}`;
-    }
-    
-    // Add condition terms for better accuracy
-    if (machinery.condition) {
-      const normalizedCondition = normalizeCondition(machinery.condition);
-      if (normalizedCondition) {
-        const conditionTerms = CONDITION_SEARCH_TERMS[normalizedCondition];
-        if (conditionTerms && conditionTerms.length > 0) {
-          query += ` ${conditionTerms[0]}`;
-        }
-      }
     }
     
     // Add machinery type

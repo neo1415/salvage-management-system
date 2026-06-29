@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   PriceAdjudicationService,
+  shouldEscalatePriceAdjudication,
+  shouldUseClaudeWebFallback,
 } from '@/features/valuations/services/price-adjudication.service';
 import { getDefaultValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
 import type { ExtractedPrice, PriceExtractionResult } from '@/features/internet-search/services/price-extraction.service';
@@ -230,5 +232,44 @@ describe('PriceAdjudicationService', () => {
     expect(result.selectedPrice).toBeUndefined();
     expect(result.manualReviewRequired).toBe(true);
     expect(result.reviewReasons.join(' ')).toContain('No accepted market evidence');
+  });
+
+  it('does not spend AI search calls when Serper market evidence is sufficient', () => {
+    expect(shouldEscalatePriceAdjudication({
+      mode: 'market',
+      acceptedPriceCount: 5,
+      uniqueSourceCount: 3,
+      spreadPercent: 20,
+      specialistReviewRequired: false,
+      minimumMarketSourceCount: 3,
+      sourceDiversityRequired: true,
+      maxAllowedPriceSpreadPercent: 80,
+    })).toBe(false);
+  });
+
+  it('escalates unresolved market evidence but not an accepted part price', () => {
+    const shared = {
+      uniqueSourceCount: 0,
+      spreadPercent: 0,
+      specialistReviewRequired: false,
+      minimumMarketSourceCount: 3,
+      sourceDiversityRequired: true,
+      maxAllowedPriceSpreadPercent: 80,
+    };
+
+    expect(shouldEscalatePriceAdjudication({ ...shared, mode: 'market', acceptedPriceCount: 0 })).toBe(true);
+    expect(shouldEscalatePriceAdjudication({ ...shared, mode: 'part', acceptedPriceCount: 1 })).toBe(false);
+  });
+
+  it('uses Claude web search only as a market fallback after weak Gemini evidence', () => {
+    expect(shouldUseClaudeWebFallback('part', null)).toBe(false);
+    expect(shouldUseClaudeWebFallback('market', null)).toBe(true);
+    expect(shouldUseClaudeWebFallback('market', {
+      provider: 'gemini_grounded',
+      recommendedPrice: 1_000_000,
+      confidence: 85,
+      manualReviewRequired: false,
+      reasons: [],
+    })).toBe(false);
   });
 });

@@ -173,7 +173,7 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
         requiresInspectionLocation: true,
       },
       jewelry: {
-        enabled: false,
+        enabled: true,
         label: 'Jewelry & Watches',
         promptProfile: 'jewelry',
         requiredFields: ['jewelryType'],
@@ -182,7 +182,7 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
         requiresInspectionLocation: true,
       },
       appliance: {
-        enabled: false,
+        enabled: true,
         label: 'Appliance',
         promptProfile: 'electronics',
         requiredFields: ['applianceBrand', 'applianceModel'],
@@ -237,7 +237,7 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
       },
       agriculture: {
         enabled: true,
-        label: 'Agricultural Stock / Equipment',
+        label: 'Agricultural Stock / Produce',
         promptProfile: 'general_asset',
         requiredFields: ['stockDescription'],
         requiresAiAnalysis: true,

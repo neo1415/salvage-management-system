@@ -116,8 +116,10 @@ export function buildUniversalItemInfoFromCase(input: {
         type: input.assetType as UniversalItemInfo['type'],
         brand: typeof details.brand === 'string' ? details.brand : undefined,
         description: String(details.description || ''),
+        model: typeof details.model === 'string' ? details.model : undefined,
         quantity: typeof details.quantity === 'string' ? details.quantity : String(details.quantity || ''),
         unitOfMeasure: typeof details.unitOfMeasure === 'string' ? details.unitOfMeasure : undefined,
+        batchOrSerial: typeof details.serialOrReference === 'string' ? details.serialOrReference : undefined,
       };
     default:
       return undefined;

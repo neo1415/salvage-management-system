@@ -304,7 +304,7 @@ describe('Gemini Prompt Construction', () => {
       expect(prompt.toLowerCase()).toContain('total loss');
     });
 
-    it('should specify 75% threshold for total loss', () => {
+    it('should specify the conservative 80% threshold for total loss', () => {
       // Arrange
       const vehicleContext: VehicleContext = {
         make: 'Toyota',
@@ -316,7 +316,7 @@ describe('Gemini Prompt Construction', () => {
       const prompt = constructDamageAssessmentPrompt(vehicleContext);
 
       // Assert
-      expect(prompt).toContain('75%');
+      expect(prompt).toContain('80%');
     });
 
     it('should mention vehicle value in total loss criteria', () => {
@@ -352,222 +352,30 @@ describe('Gemini Prompt Construction', () => {
   });
 
   describe('JSON Response Schema', () => {
-    it('should specify JSON response format', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
+    const vehicleContext: VehicleContext = { make: 'Toyota', model: 'Camry', year: 2021 };
 
-      // Act
+    it('requests structured descriptive evidence instead of legacy category scores', () => {
       const prompt = constructDamageAssessmentPrompt(vehicleContext);
 
-      // Assert
       expect(prompt.toLowerCase()).toContain('json');
+      expect(prompt).toContain('"damagedParts"');
+      expect(prompt).toContain('damageType');
+      expect(prompt).toContain('description');
+      expect(prompt).toContain('"severity"');
+      expect(prompt).toContain('"airbagDeployed"');
+      expect(prompt).toContain('"totalLoss"');
+      expect(prompt).toContain('"summary"');
     });
 
-    it('should include structural field in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
+    it('specifies evidence confidence and severity types', () => {
       const prompt = constructDamageAssessmentPrompt(vehicleContext);
 
-      // Assert
-      expect(prompt).toMatch(/"structural".*:/);
-    });
-
-    it('should include mechanical field in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toMatch(/"mechanical".*:/);
-    });
-
-    it('should include cosmetic field in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toMatch(/"cosmetic".*:/);
-    });
-
-    it('should include electrical field in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toMatch(/"electrical".*:/);
-    });
-
-    it('should include interior field in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toMatch(/"interior".*:/);
-    });
-
-    it('should include severity field in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toMatch(/"severity".*:/);
-    });
-
-    it('should include airbagDeployed field in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toMatch(/"airbagDeployed".*:/);
-    });
-
-    it('should include totalLoss field in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toMatch(/"totalLoss".*:/);
-    });
-
-    it('should include summary field in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toMatch(/"summary".*:/);
-    });
-
-    it('should specify all required fields in schema', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert - All 9 required fields should be present
-      expect(prompt).toMatch(/"structural".*:/);
-      expect(prompt).toMatch(/"mechanical".*:/);
-      expect(prompt).toMatch(/"cosmetic".*:/);
-      expect(prompt).toMatch(/"electrical".*:/);
-      expect(prompt).toMatch(/"interior".*:/);
-      expect(prompt).toMatch(/"severity".*:/);
-      expect(prompt).toMatch(/"airbagDeployed".*:/);
-      expect(prompt).toMatch(/"totalLoss".*:/);
-      expect(prompt).toMatch(/"summary".*:/);
-    });
-
-    it('should specify number type for damage scores', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toMatch(/number.*\(0-100\)/);
-    });
-
-    it('should specify severity enum values', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
+      expect(prompt).toMatch(/confidence: number.*\(0-100\)/i);
       expect(prompt).toMatch(/"minor".*\|.*"moderate".*\|.*"severe"/);
     });
 
-    it('should specify 500 character limit for summary', () => {
-      // Arrange
-      const vehicleContext: VehicleContext = {
-        make: 'Toyota',
-        model: 'Camry',
-        year: 2021
-      };
-
-      // Act
-      const prompt = constructDamageAssessmentPrompt(vehicleContext);
-
-      // Assert
-      expect(prompt).toContain('500');
+    it('allows complete summaries up to 1200 characters', () => {
+      expect(constructDamageAssessmentPrompt(vehicleContext)).toContain('1200');
     });
   });
 

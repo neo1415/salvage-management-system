@@ -40,6 +40,8 @@ import { DraftList } from '@/components/cases/draft-list';
 import { AIAnalysisStatusBadge } from '@/components/cases/ai-analysis-status-badge';
 import { compressImage } from '@/utils/image-compression';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
+import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
+import { formatDamageEvidence } from '@/lib/ai/damage-evidence';
 import { getEnabledCaseAssetTypeOptions } from '@/features/business-policy/case-asset-type-options';
 import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
 import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
@@ -131,24 +133,14 @@ function isBulkAssetType(assetType?: string): boolean {
 }
 
 function getAssessmentDisplayLabels(assetType?: string) {
-  if (isBulkAssetType(assetType)) {
-    return {
-      make: 'Brand / Manufacturer',
-      model: 'Stock / Package',
-      condition: 'Visible Condition',
-      evidenceTitle: 'Affected Stock / Loss Evidence',
-      summaryTitle: 'Recovery Summary',
-      salvageValue: 'Estimated Recovery Value',
-      };
-  }
-
+  const profile = getAssetAssessmentProfile(assetType);
   return {
-    make: 'Make',
-    model: 'Model',
-    condition: 'Condition',
-    evidenceTitle: 'Damaged Parts',
-    summaryTitle: 'AI Assessment Summary',
-    salvageValue: 'Estimated Salvage Value',
+    make: profile.identificationMakeLabel,
+    model: profile.identificationModelLabel,
+    condition: profile.conditionLabel,
+    evidenceTitle: profile.evidenceTitle,
+    summaryTitle: profile.summaryTitle,
+    salvageValue: profile.valueLabel,
   };
 }
 
@@ -175,7 +167,7 @@ function getStockFormLabels(assetType?: string) {
       title: 'Agricultural Stock Details',
       description: 'Capture produce type, quantity, and storage context; AI will assess spoilage and resale safety from the photos',
       itemLabel: 'Produce / Asset Description',
-      itemPlaceholder: 'e.g., maize cobs, rice bags, cocoa sacks, irrigation pump',
+      itemPlaceholder: 'e.g., maize cobs, rice bags, cocoa sacks, poultry feed',
       brandLabel: 'Variety / Grade (Optional)',
       brandPlaceholder: 'e.g., yellow maize, long grain rice, grade A cocoa',
       quantityLabel: 'Quantity',
@@ -294,6 +286,7 @@ const caseFormSchema = z.object({
   cargoBrand: z.string().optional(),
   equipmentDescription: z.string().optional(),
   equipmentBrand: z.string().optional(),
+  equipmentModel: z.string().optional(),
   quantity: z.string().optional(),
   unitOfMeasure: z.string().optional(),
   packagingType: z.string().optional(),
@@ -458,6 +451,8 @@ interface AIAssessmentResult {
   };
   damagedParts?: Array<{
     part: string;
+    damageType?: string;
+    description?: string;
     severity: 'minor' | 'moderate' | 'severe';
     confidence: number;
   }>;
@@ -1304,7 +1299,7 @@ function NewCasePageContent() {
             ...itemInfo,
             description: watch('equipmentDescription'),
             brand: watch('equipmentBrand'),
-            model: watch('batchOrSerial') || [watch('quantity'), watch('unitOfMeasure')].filter(Boolean).join(' '),
+            model: watch('equipmentModel'),
             quantity: watch('quantity'),
             unitOfMeasure: watch('unitOfMeasure'),
             batchOrSerial: watch('batchOrSerial'),
@@ -1886,6 +1881,7 @@ function NewCasePageContent() {
         assetDetails = {
           description: data.equipmentDescription,
           brand: data.equipmentBrand,
+          model: data.equipmentModel,
           quantity: data.quantity,
           unitOfMeasure: data.unitOfMeasure,
           serialOrReference: data.batchOrSerial,
@@ -2667,6 +2663,10 @@ function NewCasePageContent() {
                 <ModernInput {...register('equipmentBrand')} variant="filled" placeholder="e.g., Siemens, CAT, Perkins, Huawei" />
               </FormField>
 
+              <FormField label="Model / Specification">
+                <ModernInput {...register('equipmentModel')} variant="filled" placeholder="e.g., model number, capacity, or configuration" />
+              </FormField>
+
               <FormField label="Quantity">
                 <ModernInput {...register('quantity')} variant="filled" placeholder="e.g., 1, 12, 4 sets" />
               </FormField>
@@ -3384,7 +3384,7 @@ function NewCasePageContent() {
                   <div className="space-y-2">
                     {aiAssessment.damagedParts.map((part, index) => (
                       <div key={index} className="flex items-center justify-between gap-2 p-2 bg-gray-50 rounded">
-                        <span className="text-xs md:text-sm text-gray-800 font-medium flex-1">{part.part}</span>
+                        <span className="text-xs md:text-sm text-gray-800 font-medium flex-1">{formatDamageEvidence(part)}</span>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <span className={`px-2 py-0.5 rounded text-xs font-bold ${
                             part.severity === 'minor' ? 'bg-yellow-100 text-yellow-800' :

@@ -39,6 +39,7 @@ import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-san
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 import { formatNairaOrPending } from '@/lib/utils/currency-formatter';
+import { normalizeDamageEvidence } from '@/lib/ai/damage-evidence';
 
 const AI_ANALYSIS_STEPS = ['Reading photos', 'Detecting damage', 'Valuing salvage'] as const;
 
@@ -56,6 +57,8 @@ function getDisplayableDamageLabels(labels?: string[]): string[] {
 
 type DisplayDamagedPart = {
   part: string;
+  damageType?: string;
+  description?: string;
   severity: 'minor' | 'moderate' | 'severe';
   confidence: number;
 };
@@ -105,6 +108,8 @@ interface CaseData {
     };
     damagedParts?: Array<{
       part: string;
+      damageType?: string;
+      description?: string;
       severity: 'minor' | 'moderate' | 'severe';
       confidence: number;
     }>;
@@ -222,8 +227,10 @@ function normalizeDamagedParts(assessment: CaseData['aiAssessment']): DisplayDam
   if (Array.isArray(assessment.damagedParts) && assessment.damagedParts.length > 0) {
     return assessment.damagedParts
       .filter((part) => typeof part?.part === 'string' && part.part.trim().length > 0)
-      .map((part) => ({
+      .map((part) => normalizeDamageEvidence({
         part: part.part.trim(),
+        damageType: part.damageType,
+        description: part.description,
         severity: part.severity,
         confidence: Number.isFinite(part.confidence) ? part.confidence : 75,
       }));
@@ -239,11 +246,11 @@ function normalizeDamagedParts(assessment: CaseData['aiAssessment']): DisplayDam
             ? normalizedSeverity
             : 'moderate';
 
-        return {
+        return normalizeDamageEvidence({
           part: part.component.trim(),
           severity,
           confidence: 70,
-        };
+        });
       });
   }
 

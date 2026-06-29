@@ -19,6 +19,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { internetSearchService } from '@/features/internet-search/services/internet-search.service';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
+import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
+import { normalizeDamageEvidence } from '@/lib/ai/damage-evidence';
 
 /**
  * Vehicle context for damage assessment
@@ -50,6 +52,8 @@ export interface ItemDetails {
  */
 export interface DamagedPart {
   part: string;              // Specific part name (e.g., "driver front door", "front bumper")
+  damageType?: string;
+  description?: string;
   severity: 'minor' | 'moderate' | 'severe';
   confidence: number;        // 0-100: Confidence in this part's damage assessment
 }
@@ -387,7 +391,15 @@ const GEMINI_RESPONSE_SCHEMA = {
         properties: {
           part: { 
             type: "string",
-            description: "Specific part name with location (e.g., 'driver front door', 'front bumper')"
+            description: "Canonical component/unit/section name without damage adjective (e.g., 'front windscreen', 'left front door')"
+          },
+          damageType: {
+            type: "string",
+            description: "Observed damage state only (e.g., shattered, dented, water-contaminated, missing)"
+          },
+          description: {
+            type: "string",
+            description: "Concise observed evidence combining damage and identity (e.g., 'shattered front windscreen')"
           },
           severity: { 
             type: "string",
@@ -401,7 +413,7 @@ const GEMINI_RESPONSE_SCHEMA = {
             description: "Confidence in this part's damage assessment (0-100)"
           }
         },
-        required: ["part", "severity", "confidence"]
+        required: ["part", "damageType", "description", "severity", "confidence"]
       },
       description: "Array of damaged parts only (exclude undamaged parts)"
     },
@@ -677,11 +689,13 @@ export function parseAndValidateResponse(responseText: string, requestId: string
       part.confidence = 70;
     }
 
-    return {
+    return normalizeDamageEvidence({
       part: part.part,
+      damageType: typeof part.damageType === 'string' ? part.damageType : undefined,
+      description: typeof part.description === 'string' ? part.description : undefined,
       severity: part.severity as 'minor' | 'moderate' | 'severe',
       confidence: part.confidence
-    };
+    });
   });
 
   // Validate severity format
@@ -828,17 +842,32 @@ export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext):
     'other',
   ].includes(itemType || '');
 
+  let basePrompt: string;
   if (isVehicle) {
-    return constructVehiclePrompt(year, make, model);
+    basePrompt = constructVehiclePrompt(year, make, model);
   } else if (isElectronics) {
-    return constructElectronicsPrompt(make, model, year);
+    basePrompt = constructElectronicsPrompt(make, model, year);
   } else if (isMachinery) {
-    return constructMachineryPrompt(make, model, year);
+    basePrompt = constructMachineryPrompt(make, model, year);
   } else if (isGeneralAsset) {
-    return constructGeneralAssetPrompt(make, model, itemType || 'other', year);
+    basePrompt = constructGeneralAssetPrompt(make, model, itemType || 'other', year);
   } else {
-    return constructGeneralAssetPrompt(make, model, itemType || 'other', year);
+    basePrompt = constructGeneralAssetPrompt(make, model, itemType || 'other', year);
   }
+
+  const profile = getAssetAssessmentProfile(itemType || 'vehicle');
+  return `${basePrompt}\n\n**MANDATORY DESCRIPTIVE EVIDENCE CONTRACT:**\n` +
+    `For every damagedParts entry, return all fields below:\n` +
+    `- part: canonical ${profile.evidenceNoun} identity without a damage adjective\n` +
+    `- damageType: the observed state/mechanism, such as shattered, dented, crushed, burnt, contaminated, missing, corroded, or water-damaged\n` +
+    `- description: a concise staff-facing phrase combining what happened and where/what was affected\n` +
+    `- severity: \"minor\" | \"moderate\" | \"severe\"\n` +
+    `- confidence: number (0-100)\n` +
+    `Top-level airbagDeployed and totalLoss fields must be boolean values.\n` +
+    `Severity scoring guide: minor 10-30, moderate 40-60, severe 70-90.\n` +
+    `Examples for this asset type: ${profile.evidenceExamples.join('; ')}.\n` +
+    `Never return a bare component name when visible damage can be described. Do not invent hidden damage. ` +
+    `Keep the summary complete but concise, with a maximum of 1200 characters.`;
 }
 
 /**
@@ -971,8 +1000,8 @@ Return your assessment as JSON:
     "overallCondition": "Good"
   },
   "damagedParts": [
-    {"part": "driver front door", "severity": "severe", "confidence": 85},
-    {"part": "front bumper", "severity": "severe", "confidence": 90}
+    {"part": "driver front door", "damageType": "crushed", "description": "crushed driver front door", "severity": "severe", "confidence": 85},
+    {"part": "front bumper", "damageType": "smashed", "description": "smashed front bumper", "severity": "severe", "confidence": 90}
   ],
   "severity": "severe",
   "airbagDeployed": true,
@@ -1092,8 +1121,8 @@ Return your assessment as JSON:
     "overallCondition": "Fair"
   },
   "damagedParts": [
-    {"part": "front screen glass", "severity": "moderate", "confidence": 90},
-    {"part": "rear camera lens", "severity": "minor", "confidence": 85}
+    {"part": "front screen glass", "damageType": "cracked", "description": "cracked front screen glass", "severity": "moderate", "confidence": 90},
+    {"part": "rear camera lens", "damageType": "scratched", "description": "scratched rear camera lens", "severity": "minor", "confidence": 85}
   ],
   "severity": "moderate",
   "airbagDeployed": false,
@@ -1203,8 +1232,8 @@ Return your assessment as JSON:
     "notes": "Portable generator"
   },
   "damagedParts": [
-    {"part": "engine housing", "severity": "moderate", "confidence": 85},
-    {"part": "control panel display", "severity": "minor", "confidence": 90}
+    {"part": "engine housing", "damageType": "dented", "description": "dented engine housing", "severity": "moderate", "confidence": 85},
+    {"part": "control panel display", "damageType": "cracked", "description": "cracked control panel display", "severity": "minor", "confidence": 90}
   ],
   "severity": "moderate",
   "airbagDeployed": false,
@@ -1222,7 +1251,11 @@ Return your assessment as JSON:
 function constructGeneralAssetPrompt(brandOrCategory: string, modelOrDescription: string, itemType: string, year?: number): string {
   const assetDescription = [brandOrCategory, modelOrDescription].filter(Boolean).join(' ').trim() || itemType;
   const yearContext = year ? ` (${year})` : '';
-  const assetProfile = getGeneralAssetPromptProfile(itemType);
+  const sharedProfile = getAssetAssessmentProfile(itemType);
+  const assetProfile = [
+    ...sharedProfile.promptGuidance.map((guidance) => `- ${guidance}`),
+    `- Use descriptive evidence such as: ${sharedProfile.evidenceExamples.join('; ')}.`,
+  ].join('\n');
 
   return `You are an expert insurance salvage assessor for mixed asset classes. Analyze the provided photos of ${assetDescription}${yearContext} and provide an insurance-grade assessment.
 
@@ -1299,8 +1332,8 @@ Return your assessment as JSON:
     "notes": "Visible wet and torn bags; quantity visible is lower than stated"
   },
   "damagedParts": [
-    {"part": "water-stained cement bags", "severity": "severe", "confidence": 88},
-    {"part": "torn packaging", "severity": "moderate", "confidence": 82}
+    {"part": "cement bags", "damageType": "water-damaged", "description": "water-damaged cement bags", "severity": "severe", "confidence": 88},
+    {"part": "packaging", "damageType": "torn", "description": "torn cement-bag packaging", "severity": "moderate", "confidence": 82}
   ],
   "severity": "severe",
   "airbagDeployed": false,

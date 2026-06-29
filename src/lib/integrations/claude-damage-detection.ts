@@ -24,6 +24,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
+import { normalizeDamageEvidence } from '@/lib/ai/damage-evidence';
 
 /**
  * Vehicle context for damage assessment
@@ -55,6 +56,8 @@ export interface ItemDetails {
  */
 export interface DamagedPart {
   part: string;
+  damageType?: string;
+  description?: string;
   severity: 'minor' | 'moderate' | 'severe';
   confidence: number;
 }
@@ -219,10 +222,12 @@ const CLAUDE_RESPONSE_SCHEMA = {
         type: "object",
         properties: {
           part: { type: "string" },
+          damageType: { type: "string" },
+          description: { type: "string" },
           severity: { type: "string", enum: ["minor", "moderate", "severe"] },
           confidence: { type: "number", minimum: 0, maximum: 100 }
         },
-        required: ["part", "severity", "confidence"]
+        required: ["part", "damageType", "description", "severity", "confidence"]
       }
     },
     severity: { type: "string", enum: ["minor", "moderate", "severe"] },
@@ -300,11 +305,13 @@ export function parseAndValidateClaudeResponse(responseText: string, requestId: 
           part.confidence = 70;
         }
 
-        return {
+        return normalizeDamageEvidence({
           part: part.part,
+          damageType: typeof part.damageType === 'string' ? part.damageType : undefined,
+          description: typeof part.description === 'string' ? part.description : undefined,
           severity: part.severity as 'minor' | 'moderate' | 'severe',
           confidence: part.confidence
-        };
+        });
       })
     : [];
 
