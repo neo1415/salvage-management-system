@@ -25,7 +25,11 @@ export function ProductShowcase() {
   const opacity = useTransform(scrollYProgress, [0, 0.3, 0.7, 1], [0, 1, 1, 0]);
 
   return (
-    <section ref={containerRef} className="py-20 md:py-32 bg-white relative overflow-hidden">
+    <section
+      ref={containerRef}
+      className="py-20 md:py-32 bg-white relative overflow-hidden"
+      style={{ position: 'relative' }}
+    >
       {/* Background decoration */}
       <div className="absolute inset-0 bg-gradient-to-br from-[color-mix(in_srgb,var(--brand-primary)_8%,white)] to-[color-mix(in_srgb,var(--brand-accent)_10%,white)] opacity-30" />
 

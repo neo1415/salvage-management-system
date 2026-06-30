@@ -21,8 +21,20 @@ export type RiskMfaInput = {
   userAgent: string;
 };
 
+let riskStorageWarningLogged = false;
+
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function logRiskStorageUnavailable(error: unknown): void {
+  if (riskStorageWarningLogged) return;
+  riskStorageWarningLogged = true;
+
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn('[Risk MFA] Login context storage unavailable; risk step-up is temporarily bypassed.', {
+    error: message,
+  });
 }
 
 function normalizeIpPrefix(ipAddress: string): string {
@@ -79,7 +91,19 @@ export async function evaluateRiskBasedMfa(input: RiskMfaInput): Promise<RiskMfa
       ),
       orderBy: [desc(userTrustedLoginContexts.lastSeenAt)],
     });
+  }).catch((error) => {
+    logRiskStorageUnavailable(error);
+    return undefined;
   });
+
+  if (!context && riskStorageWarningLogged) {
+    return {
+      required: false,
+      reason: 'disabled',
+      riskScore: 0,
+      ...hashes,
+    };
+  }
 
   if (context?.trusted) {
     return {
@@ -111,6 +135,8 @@ export async function recordLoginRiskDecision(input: RiskMfaInput, decision: Ris
       riskScore: decision.riskScore,
       decision: decision.required ? 'mfa_required' : 'allowed',
     });
+  }).catch((error) => {
+    logRiskStorageUnavailable(error);
   });
 }
 
@@ -157,6 +183,7 @@ export async function recordSuccessfulRiskLogin(input: RiskMfaInput): Promise<vo
         userAgentHash: hashes.userAgentHash,
       })
       .where(eq(userTrustedLoginContexts.id, existing.id));
+  }).catch((error) => {
+    logRiskStorageUnavailable(error);
   });
 }
-

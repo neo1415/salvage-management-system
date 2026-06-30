@@ -225,7 +225,7 @@ export function HeroSection({ brandingOverride }: { brandingOverride?: BrandingP
                       fill
                       className="object-cover"
                       priority={currentSlide === 0}
-                      sizes="100vw"
+                      sizes="(max-width: 640px) calc(100vw - 2rem), (max-width: 1024px) calc(100vw - 4rem), 100vw"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[var(--brand-primary)]/20 to-transparent" />
                   </div>

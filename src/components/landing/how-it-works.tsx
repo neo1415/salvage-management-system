@@ -85,6 +85,7 @@ export function HowItWorksSection() {
       id="how-it-works"
       ref={containerRef}
       className="py-20 md:py-32 bg-gradient-to-b from-white to-gray-50 relative overflow-hidden"
+      style={{ position: 'relative' }}
     >
       <div className="container mx-auto px-4">
         <motion.div
