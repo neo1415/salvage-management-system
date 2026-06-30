@@ -28,6 +28,26 @@ const loginSchema = z.object({
 
 type LoginInput = z.infer<typeof loginSchema>;
 
+const BLOCKED_CALLBACK_PATHS = new Set(['/', '/login', '/launch', '/register']);
+const SENSITIVE_QUERY_PARAMS = new Set([
+  'password',
+  'pass',
+  'pwd',
+  'emailorphone',
+  'mfacode',
+  'token',
+]);
+
+function hasSensitiveSearchParams(params: URLSearchParams): boolean {
+  for (const key of params.keys()) {
+    const normalizedKey = key.toLowerCase();
+    if (SENSITIVE_QUERY_PARAMS.has(normalizedKey) || normalizedKey.includes('password')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Login Form Component
  * Separated to use useSearchParams with Suspense boundary
@@ -52,13 +72,12 @@ function LoginForm() {
   const successMessage = searchParams.get('message') || null;
   const emailParam = searchParams.get('email') || '';
 
-  const BLOCKED_CALLBACK_PATHS = new Set(['/', '/login', '/launch', '/register']);
-
   const getSafeCallbackUrl = (url: string | null): string | null => {
     if (!url) return null;
     if (!url.startsWith('/') || url.startsWith('//')) return null;
-    const base = url.split('?')[0];
+    const [base, query = ''] = url.split('?');
     if (BLOCKED_CALLBACK_PATHS.has(base)) return null;
+    if (query && hasSensitiveSearchParams(new URLSearchParams(query))) return null;
     return url;
   };
 
@@ -104,6 +123,24 @@ function LoginForm() {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (hasSensitiveSearchParams(params)) {
+      for (const key of Array.from(params.keys())) {
+        const normalizedKey = key.toLowerCase();
+        if (SENSITIVE_QUERY_PARAMS.has(normalizedKey) || normalizedKey.includes('password')) {
+          params.delete(key);
+        }
+      }
+      const cleanSearch = params.toString();
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`
+      );
+    }
+  }, []);
+
+  useEffect(() => {
     const updateOfflineState = () => {
       const offline = !navigator.onLine;
       setIsOffline(offline);
@@ -137,8 +174,6 @@ function LoginForm() {
     setIsSubmitting(true);
 
     try {
-      const userAgent = navigator.userAgent;
-
       if (!mfaRequired) {
         const mfaResponse = await fetch('/api/auth/mfa/start', {
           method: 'POST',
@@ -176,7 +211,6 @@ function LoginForm() {
         emailOrPhone: data.emailOrPhone,
         password: data.password,
         mfaCode: data.mfaCode,
-        userAgent,
         callbackUrl: buildPostLoginRedirect(),
         redirect: false,
       });
@@ -258,7 +292,7 @@ function LoginForm() {
           )}
 
           {/* Login Form */}
-          <form onSubmit={handleSubmit(handleLogin)} className="space-y-4">
+          <form method="post" onSubmit={handleSubmit(handleLogin)} className="space-y-4" autoComplete="on">
             {/* Email or Phone */}
             <div>
               <label htmlFor="emailOrPhone" className="block text-sm font-medium text-gray-700 mb-1">

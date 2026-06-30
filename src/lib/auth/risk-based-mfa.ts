@@ -8,7 +8,12 @@ const TRUSTED_LOGIN_THRESHOLD = Number(process.env.TRUSTED_LOGIN_THRESHOLD || 5)
 
 export type RiskMfaDecision = {
   required: boolean;
-  reason: 'disabled' | 'trusted_context' | 'new_login_context' | 'changed_login_context';
+  reason:
+    | 'disabled'
+    | 'trusted_context'
+    | 'observing_login_context'
+    | 'new_login_context'
+    | 'changed_login_context';
   riskScore: number;
   deviceFingerprintHash: string;
   ipPrefixHash: string;
@@ -69,6 +74,45 @@ export function getLoginContextHashes(input: RiskMfaInput) {
   };
 }
 
+type StoredLoginContext = {
+  trusted: boolean;
+};
+
+type RiskDecisionInput = {
+  exactContext?: StoredLoginContext;
+  hasOtherContext: boolean;
+};
+
+export function decideRiskMfaFromContext(
+  input: RiskDecisionInput,
+  hashes: ReturnType<typeof getLoginContextHashes>
+): RiskMfaDecision {
+  if (input.exactContext?.trusted) {
+    return {
+      required: false,
+      reason: 'trusted_context',
+      riskScore: 10,
+      ...hashes,
+    };
+  }
+
+  if (input.exactContext) {
+    return {
+      required: false,
+      reason: 'observing_login_context',
+      riskScore: 35,
+      ...hashes,
+    };
+  }
+
+  return {
+    required: true,
+    reason: input.hasOtherContext ? 'changed_login_context' : 'new_login_context',
+    riskScore: input.hasOtherContext ? 70 : 80,
+    ...hashes,
+  };
+}
+
 export async function evaluateRiskBasedMfa(input: RiskMfaInput): Promise<RiskMfaDecision> {
   const hashes = getLoginContextHashes(input);
 
@@ -81,8 +125,9 @@ export async function evaluateRiskBasedMfa(input: RiskMfaInput): Promise<RiskMfa
     };
   }
 
-  const context = await withRetry(async () => {
-    return db.query.userTrustedLoginContexts.findFirst({
+  let storageUnavailable = false;
+  const contextState = await withRetry(async () => {
+    const exactContext = await db.query.userTrustedLoginContexts.findFirst({
       where: and(
         eq(userTrustedLoginContexts.userId, input.userId),
         eq(userTrustedLoginContexts.deviceFingerprintHash, hashes.deviceFingerprintHash),
@@ -91,12 +136,25 @@ export async function evaluateRiskBasedMfa(input: RiskMfaInput): Promise<RiskMfa
       ),
       orderBy: [desc(userTrustedLoginContexts.lastSeenAt)],
     });
+
+    const otherContext = exactContext
+      ? undefined
+      : await db.query.userTrustedLoginContexts.findFirst({
+          where: and(
+            eq(userTrustedLoginContexts.userId, input.userId),
+            isNull(userTrustedLoginContexts.revokedAt)
+          ),
+          orderBy: [desc(userTrustedLoginContexts.lastSeenAt)],
+        });
+
+    return { exactContext, hasOtherContext: Boolean(otherContext) };
   }).catch((error) => {
+    storageUnavailable = true;
     logRiskStorageUnavailable(error);
-    return undefined;
+    return { exactContext: undefined, hasOtherContext: false };
   });
 
-  if (!context && riskStorageWarningLogged) {
+  if (storageUnavailable) {
     return {
       required: false,
       reason: 'disabled',
@@ -105,21 +163,7 @@ export async function evaluateRiskBasedMfa(input: RiskMfaInput): Promise<RiskMfa
     };
   }
 
-  if (context?.trusted) {
-    return {
-      required: false,
-      reason: 'trusted_context',
-      riskScore: 10,
-      ...hashes,
-    };
-  }
-
-  return {
-    required: true,
-    reason: context ? 'changed_login_context' : 'new_login_context',
-    riskScore: context ? 70 : 80,
-    ...hashes,
-  };
+  return decideRiskMfaFromContext(contextState, hashes);
 }
 
 export async function recordLoginRiskDecision(input: RiskMfaInput, decision: RiskMfaDecision): Promise<void> {

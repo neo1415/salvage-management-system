@@ -11,19 +11,21 @@
  * Mock Mode: Set MOCK_AI_ASSESSMENT=true in .env to use mock data for testing
  */
 
-import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { getGoogleCloudClientOptions } from '@/lib/integrations/google-cloud-client';
+
+type ImageAnnotatorClient = import('@google-cloud/vision').ImageAnnotatorClient;
 
 // Check if we should use mock mode (for development without billing)
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
 
 let visionClient: ImageAnnotatorClient | null = null;
 
-function getVisionClient(): ImageAnnotatorClient | null {
+async function getVisionClient(): Promise<ImageAnnotatorClient | null> {
   if (MOCK_MODE) return null;
   if (visionClient) return visionClient;
   const options = getGoogleCloudClientOptions();
   if (!options) return null;
+  const { ImageAnnotatorClient } = await import('@google-cloud/vision');
   visionClient = new ImageAnnotatorClient(options);
   return visionClient;
 }
@@ -131,7 +133,7 @@ export async function assessDamageWithVision(
       totalConfidence = avgConfidencePerImage * imageUrls.length;
     } else {
       // REAL MODE: Use Google Cloud Vision API
-      const client = getVisionClient();
+      const client = await getVisionClient();
       if (!client) {
         throw new Error('Vision API client not configured');
       }

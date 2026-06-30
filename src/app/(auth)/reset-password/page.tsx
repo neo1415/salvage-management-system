@@ -26,7 +26,6 @@ function ResetPasswordForm() {
   const [tokenValid, setTokenValid] = useState(false);
 
   // Password validation states
-  const [passwordTouched, setPasswordTouched] = useState(false);
   const [confirmTouched, setConfirmTouched] = useState(false);
 
   useEffect(() => {
@@ -47,7 +46,7 @@ function ResetPasswordForm() {
         } else {
           setError(data.error || 'Invalid or expired reset token');
         }
-      } catch (err) {
+      } catch {
         setError('Failed to validate reset token');
       } finally {
         setValidating(false);
@@ -93,7 +92,6 @@ function ResetPasswordForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setPasswordTouched(true);
     setConfirmTouched(true);
 
     // Validation
@@ -126,7 +124,14 @@ function ResetPasswordForm() {
       if (!response.ok) {
         // Handle validation errors from API
         if (data.details && Array.isArray(data.details)) {
-          const errorMessages = data.details.map((d: any) => d.message).join(', ');
+          const errorMessages = data.details
+            .map((detail: unknown) => {
+              if (typeof detail === 'object' && detail !== null && 'message' in detail) {
+                return String(detail.message);
+              }
+              return String(detail);
+            })
+            .join(', ');
           throw new Error(errorMessages);
         }
         throw new Error(data.error || 'Failed to reset password');
@@ -203,7 +208,7 @@ function ResetPasswordForm() {
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit}>
+          <form method="post" onSubmit={handleSubmit}>
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
                 {error}
@@ -220,7 +225,6 @@ function ResetPasswordForm() {
                   id="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  onBlur={() => setPasswordTouched(true)}
                   className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-primary)] focus:border-transparent"
                   placeholder="Enter new password"
                   required

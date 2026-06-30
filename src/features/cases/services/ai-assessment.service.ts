@@ -16,7 +16,6 @@
  * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 6.3, 9.3
  */
 
-import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { 
   assessDamageWithGemini, 
   isGeminiEnabled,
@@ -36,17 +35,25 @@ import {
 } from './damage-response-adapter';
 import { type QualityTier } from '@/features/valuations/services/condition-mapping.service';
 
+type DocumentProcessorServiceClient =
+  import('@google-cloud/documentai').DocumentProcessorServiceClient;
+
 // Check if we should use mock mode (for development without billing)
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
+}
 
 // Initialize Document AI client lazily (only if not in mock mode)
 let documentAIClient: DocumentProcessorServiceClient | null = null;
 
-function getDocumentAIClient(): DocumentProcessorServiceClient | null {
+async function getDocumentAIClient(): Promise<DocumentProcessorServiceClient | null> {
   if (MOCK_MODE) return null;
   if (documentAIClient) return documentAIClient;
   const options = getGoogleCloudClientOptions();
   if (!options) return null;
+  const { DocumentProcessorServiceClient } = await import('@google-cloud/documentai');
   documentAIClient = new DocumentProcessorServiceClient(options);
   return documentAIClient;
 }
@@ -193,8 +200,8 @@ export async function assessDamage(
           
           return result;
         }
-      } catch (geminiError: any) {
-        const geminiErrorMessage = geminiError?.message || 'Unknown error';
+      } catch (geminiError: unknown) {
+        const geminiErrorMessage = getErrorMessage(geminiError);
         const geminiDuration = Date.now() - startTime;
         
         console.error(
@@ -247,8 +254,8 @@ export async function assessDamage(
       );
       
       return result;
-    } catch (visionError: any) {
-      const visionErrorMessage = visionError?.message || 'Unknown error';
+    } catch (visionError: unknown) {
+      const visionErrorMessage = getErrorMessage(visionError);
       const visionDuration = Date.now() - startTime;
       
       console.error(
@@ -282,8 +289,8 @@ export async function assessDamage(
     );
     
     return result;
-  } catch (error: any) {
-    const errorMessage = error?.message || 'Unknown error';
+  } catch (error: unknown) {
+    const errorMessage = getErrorMessage(error);
     const totalDuration = Date.now() - startTime;
     
     console.error(
@@ -308,7 +315,8 @@ export async function extractTextFromDocument(
   imageUrl: string
 ): Promise<OCRResult> {
   try {
-    if (!getDocumentAIClient()) {
+    const client = await getDocumentAIClient();
+    if (!client) {
       throw new Error('Document AI client not initialized. Set MOCK_AI_ASSESSMENT=false and configure Google Cloud credentials.');
     }
 
@@ -336,7 +344,7 @@ export async function extractTextFromDocument(
     };
 
     // Process the document
-    const [result] = await getDocumentAIClient()!.processDocument(request);
+    const [result] = await client.processDocument(request);
     const { document } = result;
 
     if (!document || !document.text) {

@@ -1,4 +1,4 @@
-import exifr from 'exifr';
+import exifr from 'exifr/dist/lite.esm.mjs';
 import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
 
 function toIsoDate(value: unknown): string | undefined {

@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "start:custom": "NODE_ENV=production tsx server.ts",
-    "lint": "next lint",
+    "lint": "eslint .",
     "security:scan": "tsx scripts/scan-for-secrets.ts",
     "test:dojah": "vitest run --config vitest.dojah-targeted.config.ts",
     "test:unit": "vitest run",

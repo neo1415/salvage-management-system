@@ -6,13 +6,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useSession, signOut } from 'next-auth/react';
-import { useAppRouter } from '@/hooks/use-app-router';
+import { signOut } from 'next-auth/react';
 
 export default function ChangePasswordPage() {
-  const { data: session, update } = useSession();
-  const router = useAppRouter();
-
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -23,7 +19,6 @@ export default function ChangePasswordPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Password validation states
-  const [newPasswordTouched, setNewPasswordTouched] = useState(false);
   const [confirmTouched, setConfirmTouched] = useState(false);
 
   // Password strength validation
@@ -62,7 +57,6 @@ export default function ChangePasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setNewPasswordTouched(true);
     setConfirmTouched(true);
 
     console.log('[Change Password] Starting password change process...');
@@ -107,7 +101,14 @@ export default function ChangePasswordPage() {
       if (!response.ok) {
         // Handle validation errors from API
         if (data.details && Array.isArray(data.details)) {
-          const errorMessages = data.details.map((d: any) => d.message).join(', ');
+          const errorMessages = data.details
+            .map((detail: unknown) => {
+              if (typeof detail === 'object' && detail !== null && 'message' in detail) {
+                return String(detail.message);
+              }
+              return String(detail);
+            })
+            .join(', ');
           throw new Error(errorMessages);
         }
         throw new Error(data.error || 'Failed to change password');
@@ -152,7 +153,7 @@ export default function ChangePasswordPage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form method="post" onSubmit={handleSubmit}>
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
               {error}
@@ -203,7 +204,6 @@ export default function ChangePasswordPage() {
                 id="newPassword"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                onBlur={() => setNewPasswordTouched(true)}
                 className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-primary)] focus:border-transparent"
                 placeholder="Enter new password"
                 required
@@ -364,22 +364,4 @@ export default function ChangePasswordPage() {
       </div>
     </div>
   );
-}
-
-function getDashboardUrl(role: string): string {
-  switch (role) {
-    case 'vendor':
-      return '/vendor/dashboard';
-    case 'salvage_manager':
-      return '/manager/dashboard';
-    case 'claims_adjuster':
-      return '/adjuster/dashboard';
-    case 'finance_officer':
-      return '/finance/dashboard';
-    case 'system_admin':
-    case 'admin':
-      return '/admin/dashboard';
-    default:
-      return '/login';
-  }
 }

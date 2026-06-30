@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import sharp from 'sharp';
-import exifr from 'exifr';
+import exifr from 'exifr/dist/lite.esm.mjs';
 import { desc, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {

@@ -313,7 +313,7 @@ function VerifyOTPForm() {
           )}
 
           {/* OTP Input Form */}
-          <form onSubmit={handleSubmit}>
+          <form method="post" onSubmit={handleSubmit}>
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-3 text-center">
                 Enter Verification Code

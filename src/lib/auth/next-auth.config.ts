@@ -11,7 +11,6 @@ import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq, inArray } from 'drizzle-orm';
 import {
   looksLikeEmail,
-  normalizeNigerianPhone,
   nigerianPhoneLookupVariants,
 } from '@/lib/utils/phone';
 import { kv } from '@vercel/kv';
@@ -27,7 +26,7 @@ import {
   recordLoginRiskDecision,
   recordSuccessfulRiskLogin,
 } from '@/lib/auth/risk-based-mfa';
-import { AuditActionType } from '@/lib/utils/audit-logger';
+import { AuditActionType, getIpAddress } from '@/lib/utils/audit-logger';
 import {
   businessPolicyService,
   isBusinessPolicyEnforcementEnabled,
@@ -165,10 +164,8 @@ export const authConfig: NextAuthConfig = {
         emailOrPhone: { label: 'Email or Phone', type: 'text' },
         password: { label: 'Password', type: 'password' },
         mfaCode: { label: 'MFA Code', type: 'text' },
-        ipAddress: { label: 'IP Address', type: 'hidden' },
-        userAgent: { label: 'User Agent', type: 'hidden' },
       },
-      async authorize(credentials, _req) {
+      async authorize(credentials, request) {
         if (!credentials?.emailOrPhone || !credentials?.password) {
           throw new Error('Email/Phone and password are required');
         }
@@ -176,8 +173,8 @@ export const authConfig: NextAuthConfig = {
         const emailOrPhone = credentials.emailOrPhone as string;
         const password = credentials.password as string;
         const mfaCode = typeof credentials.mfaCode === 'string' ? credentials.mfaCode.trim() : '';
-        const ipAddress = (credentials.ipAddress as string) || 'unknown';
-        const userAgent = (credentials.userAgent as string) || '';
+        const ipAddress = getIpAddress(request.headers);
+        const userAgent = request.headers.get('user-agent') || '';
         const deviceType = getDeviceType(userAgent);
 
         const policy = await businessPolicyService.getEffectivePolicy();
@@ -440,7 +437,7 @@ export const authConfig: NextAuthConfig = {
       return baseUrl;
     },
 
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account, profile: _profile }) {
       // For OAuth providers, check if user exists or handle new registration
       if (account?.provider === 'google' || account?.provider === 'facebook') {
         const email = user.email;
