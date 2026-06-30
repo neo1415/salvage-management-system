@@ -22,6 +22,11 @@ import {
   sendLoginMfaCode,
   verifyLoginMfaCode,
 } from '@/lib/auth/mfa';
+import {
+  evaluateRiskBasedMfa,
+  recordLoginRiskDecision,
+  recordSuccessfulRiskLogin,
+} from '@/lib/auth/risk-based-mfa';
 import { AuditActionType } from '@/lib/utils/audit-logger';
 import {
   businessPolicyService,
@@ -273,7 +278,19 @@ export const authConfig: NextAuthConfig = {
           vendorMfaRequired: effectivePolicy.auth.vendorMfaRequired,
         };
 
-        if (isMfaRequiredForUser(user, mfaAuthPolicy)) {
+        const policyRequiresMfa = isMfaRequiredForUser(user, mfaAuthPolicy);
+        const riskMfaDecision = await evaluateRiskBasedMfa({
+          userId: user.id,
+          ipAddress,
+          userAgent,
+        });
+        await recordLoginRiskDecision(
+          { userId: user.id, ipAddress, userAgent },
+          riskMfaDecision
+        );
+        const requiresMfa = policyRequiresMfa || riskMfaDecision.required;
+
+        if (requiresMfa) {
           if (!mfaCode) {
             const mfaResult = await sendLoginMfaCode(user, ipAddress, deviceType);
             await createAuditLog(
@@ -285,6 +302,8 @@ export const authConfig: NextAuthConfig = {
               {
                 channel: mfaResult.channel,
                 success: mfaResult.success,
+                reason: policyRequiresMfa ? 'policy_or_user_mfa' : riskMfaDecision.reason,
+                riskScore: riskMfaDecision.riskScore,
               }
             );
 
@@ -306,6 +325,8 @@ export const authConfig: NextAuthConfig = {
             userAgent,
             {
               channel: user.mfaChannel || 'email',
+              reason: policyRequiresMfa ? 'policy_or_user_mfa' : riskMfaDecision.reason,
+              riskScore: riskMfaDecision.riskScore,
             }
           );
 
@@ -313,6 +334,12 @@ export const authConfig: NextAuthConfig = {
             throw new Error(mfaVerification.message || 'Invalid verification code');
           }
         }
+
+        await recordSuccessfulRiskLogin({
+          userId: user.id,
+          ipAddress,
+          userAgent,
+        });
 
         // Reset failed login attempts on successful login
         await resetFailedLogins(emailOrPhone);

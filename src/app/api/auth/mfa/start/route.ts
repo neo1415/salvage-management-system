@@ -14,6 +14,10 @@ import {
   sendLoginMfaCode,
 } from '@/lib/auth/mfa';
 import {
+  evaluateRiskBasedMfa,
+  recordLoginRiskDecision,
+} from '@/lib/auth/risk-based-mfa';
+import {
   AuditActionType,
   AuditEntityType,
   DeviceType,
@@ -100,7 +104,18 @@ export async function POST(request: NextRequest) {
       vendorMfaRequired: effectivePolicy.auth.vendorMfaRequired,
     };
 
-    if (!isMfaRequiredForUser(user, mfaAuthPolicy)) {
+    const policyRequiresMfa = isMfaRequiredForUser(user, mfaAuthPolicy);
+    const riskDecision = await evaluateRiskBasedMfa({
+      userId: user.id,
+      ipAddress,
+      userAgent,
+    });
+    await recordLoginRiskDecision(
+      { userId: user.id, ipAddress, userAgent },
+      riskDecision
+    );
+
+    if (!policyRequiresMfa && !riskDecision.required) {
       return NextResponse.json({ required: false });
     }
 
