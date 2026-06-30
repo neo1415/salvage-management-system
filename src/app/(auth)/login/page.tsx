@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { useForm } from 'react-hook-form';
@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { AlertCircle, Eye, EyeOff, Loader2, Lock } from 'lucide-react';
 import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
 import { getAuthSurfaceCopy, normalizeHomepageTemplate, resolveTemplateTheme } from '@/components/landing/template-config';
+import { getOfflineUnlockGrant, refreshOfflineUnlockGrantFromSession } from '@/lib/auth/offline-unlock';
 
 /**
  * Login validation schema
@@ -43,6 +44,8 @@ function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mfaRequired, setMfaRequired] = useState(false);
   const [mfaDestination, setMfaDestination] = useState<string | null>(null);
+  const [canUseOfflineFieldMode, setCanUseOfflineFieldMode] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
 
   // Don't set a default callbackUrl - let the middleware handle role-based redirect
   const callbackUrl = searchParams.get('callbackUrl') || null;
@@ -99,6 +102,23 @@ function LoginForm() {
     }
     return '/api/auth/after-login';
   };
+
+  useEffect(() => {
+    const updateOfflineState = () => {
+      const offline = !navigator.onLine;
+      setIsOffline(offline);
+      setCanUseOfflineFieldMode(offline && Boolean(getOfflineUnlockGrant()));
+    };
+
+    updateOfflineState();
+    window.addEventListener('online', updateOfflineState);
+    window.addEventListener('offline', updateOfflineState);
+
+    return () => {
+      window.removeEventListener('online', updateOfflineState);
+      window.removeEventListener('offline', updateOfflineState);
+    };
+  }, []);
 
   const {
     register,
@@ -173,6 +193,7 @@ function LoginForm() {
         return;
       }
 
+      await refreshOfflineUnlockGrantFromSession();
       window.location.assign(result?.url || buildPostLoginRedirect());
     } catch (err) {
       setError(formatLoginError(err instanceof Error ? err.message : null));
@@ -351,6 +372,22 @@ function LoginForm() {
                 'Sign In'
               )}
             </button>
+
+            {isOffline && canUseOfflineFieldMode && (
+              <button
+                type="button"
+                onClick={() => window.location.assign('/adjuster/cases/new?offline=1')}
+                className="w-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950 transition-colors hover:bg-amber-100"
+              >
+                Open offline field mode
+              </button>
+            )}
+
+            {isOffline && !canUseOfflineFieldMode && (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Offline field mode is available after a claims adjuster signs in online on this device.
+              </p>
+            )}
           </form>
 
           {/* Register Link */}

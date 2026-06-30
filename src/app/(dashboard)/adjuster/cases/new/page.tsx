@@ -45,6 +45,7 @@ import { formatDamageAction, formatDamageEvidence, type DamageAction } from '@/l
 import { getEnabledCaseAssetTypeOptions } from '@/features/business-policy/case-asset-type-options';
 import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
 import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
+import { getOfflineUnlockGrant, type OfflineUnlockGrant } from '@/lib/auth/offline-unlock';
 
 /**
  * Web Speech API types (not fully supported in TypeScript)
@@ -467,6 +468,7 @@ function NewCasePageContent() {
   const isOffline = useOffline();
   const { pendingCount } = useOfflineSync();
   const toast = useToast();
+  const [offlineUnlockGrant, setOfflineUnlockGrant] = useState<OfflineUnlockGrant | null>(null);
   
   // Form state
   const {
@@ -649,6 +651,15 @@ function NewCasePageContent() {
   
   // Form state persistence key
   const FORM_STATE_KEY = 'case-creation-form-state';
+
+  useEffect(() => {
+    if (!isOffline) {
+      setOfflineUnlockGrant(null);
+      return;
+    }
+
+    setOfflineUnlockGrant(getOfflineUnlockGrant());
+  }, [isOffline]);
 
   /**
    * Auto-capture GPS location on mount
@@ -1996,8 +2007,9 @@ function NewCasePageContent() {
       });
 
       if (isOffline) {
-        if (!session?.user?.id) {
-          throw new Error('Your login session could not be confirmed. Please reconnect and sign in again before saving an offline case.');
+        const offlineCreatedBy = session?.user?.id || offlineUnlockGrant?.userId;
+        if (!offlineCreatedBy) {
+          throw new Error('Offline field mode is not available on this device. Reconnect and sign in once before saving cases offline.');
         }
 
         // Save to IndexedDB for offline sync
@@ -2005,7 +2017,7 @@ function NewCasePageContent() {
           ...caseData,
           marketValue: caseData.marketValue ?? 0,
           gpsLocation: caseData.gpsLocation ?? { latitude: 0, longitude: 0 },
-          createdBy: session.user.id,
+          createdBy: offlineCreatedBy,
           syncStatus: 'pending',
         });
         
@@ -2126,7 +2138,9 @@ function NewCasePageContent() {
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-amber-900">You're offline</h3>
               <p className="text-sm text-amber-700 mt-1">
-                Changes will sync automatically when connection is restored.
+                {session?.user?.id || offlineUnlockGrant
+                  ? 'Field mode is unlocked. Cases are saved locally until connection is restored.'
+                  : 'Reconnect and sign in once to unlock offline field mode on this device.'}
                 {pendingCount > 0 && (
                   <span className="inline-flex items-center ml-2 px-2 py-1 bg-amber-200 text-amber-800 text-xs font-medium rounded-full">
                     {pendingCount} pending
