@@ -62,6 +62,7 @@ export interface SyncResult {
 }
 
 let isSyncing = false;
+let activeSyncPromise: Promise<SyncResult> | null = null;
 let syncProgressCallback: SyncProgressCallback | null = null;
 
 /**
@@ -80,7 +81,7 @@ function notifySyncProgress(progress: SyncProgress): void {
   }
   
   // Also notify Service Worker for cross-tab sync
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+  if ('serviceWorker' in navigator && navigator.serviceWorker?.controller) {
     navigator.serviceWorker.controller.postMessage({
       type: 'SYNC_PROGRESS',
       progress,
@@ -162,8 +163,8 @@ async function syncSingleCase(
  * Sync all pending offline cases
  */
 export async function syncOfflineCases(): Promise<SyncResult> {
-  if (isSyncing) {
-    throw new Error('Sync already in progress');
+  if (activeSyncPromise) {
+    return activeSyncPromise;
   }
 
   if (!navigator.onLine) {
@@ -171,102 +172,108 @@ export async function syncOfflineCases(): Promise<SyncResult> {
   }
 
   isSyncing = true;
+  activeSyncPromise = performOfflineCaseSync();
 
   try {
-    // Get all pending cases
-    const pendingCases = await getOfflineCasesByStatus('pending');
-    const errorCases = await getOfflineCasesByStatus('error');
-    const allCasesToSync = [...pendingCases, ...errorCases];
+    return await activeSyncPromise;
+  } finally {
+    isSyncing = false;
+    activeSyncPromise = null;
+  }
+}
 
-    if (allCasesToSync.length === 0) {
-      notifySyncProgress({
-        total: 0,
-        completed: 0,
-        failed: 0,
-        status: 'completed',
-      });
-      
-      return {
-        success: true,
-        synced: 0,
-        failed: 0,
-        conflicts: [],
-        errors: [],
-      };
-    }
+async function performOfflineCaseSync(): Promise<SyncResult> {
+  // Get all pending cases
+  const pendingCases = await getOfflineCasesByStatus('pending');
+  const errorCases = await getOfflineCasesByStatus('error');
+  const allCasesToSync = [...pendingCases, ...errorCases];
 
-    const result: SyncResult = {
+  if (allCasesToSync.length === 0) {
+    notifySyncProgress({
+      total: 0,
+      completed: 0,
+      failed: 0,
+      status: 'completed',
+    });
+
+    return {
       success: true,
       synced: 0,
       failed: 0,
       conflicts: [],
       errors: [],
     };
+  }
 
-    // Notify start of sync
-    notifySyncProgress({
-      total: allCasesToSync.length,
-      completed: 0,
-      failed: 0,
-      status: 'syncing',
-    });
+  const result: SyncResult = {
+    success: true,
+    synced: 0,
+    failed: 0,
+    conflicts: [],
+    errors: [],
+  };
 
-    // Sync each case
-    for (let i = 0; i < allCasesToSync.length; i++) {
-      const offlineCase = allCasesToSync[i];
+  // Notify start of sync
+  notifySyncProgress({
+    total: allCasesToSync.length,
+    completed: 0,
+    failed: 0,
+    status: 'syncing',
+  });
 
-      // Notify current case
-      notifySyncProgress({
-        total: allCasesToSync.length,
-        completed: result.synced,
-        failed: result.failed,
-        current: offlineCase.claimReference,
-        status: 'syncing',
-      });
+  // Sync each case
+  for (let i = 0; i < allCasesToSync.length; i++) {
+    const offlineCase = allCasesToSync[i];
 
-      const syncResult = await syncSingleCase(offlineCase);
-
-      if (syncResult.success) {
-        result.synced++;
-      } else {
-        result.failed++;
-        
-        if (syncResult.conflict) {
-          result.conflicts.push(syncResult.conflict);
-        }
-        
-        if (syncResult.error) {
-          result.errors.push({
-            caseId: offlineCase.id,
-            error: syncResult.error,
-          });
-        }
-      }
-    }
-
-    // Notify completion
+    // Notify current case
     notifySyncProgress({
       total: allCasesToSync.length,
       completed: result.synced,
       failed: result.failed,
-      status: result.failed > 0 ? 'error' : 'completed',
+      current: offlineCase.claimReference,
+      status: 'syncing',
     });
 
-    result.success = result.failed === 0;
-    
-    // Notify Service Worker of completion
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type: result.success ? 'SYNC_COMPLETE' : 'SYNC_ERROR',
-        result,
-        error: result.failed > 0 ? `${result.failed} cases failed to sync` : undefined,
-      });
+    const syncResult = await syncSingleCase(offlineCase);
+
+    if (syncResult.success) {
+      result.synced++;
+    } else {
+      result.failed++;
+
+      if (syncResult.conflict) {
+        result.conflicts.push(syncResult.conflict);
+      }
+
+      if (syncResult.error) {
+        result.errors.push({
+          caseId: offlineCase.id,
+          error: syncResult.error,
+        });
+      }
     }
-    
-    return result;
-  } finally {
-    isSyncing = false;
   }
+
+  // Notify completion
+  notifySyncProgress({
+    total: allCasesToSync.length,
+    completed: result.synced,
+    failed: result.failed,
+    status: result.failed > 0 ? 'error' : 'completed',
+  });
+
+  result.success = result.failed === 0;
+
+  // Notify Service Worker of completion
+  if ('serviceWorker' in navigator && navigator.serviceWorker?.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: result.success ? 'SYNC_COMPLETE' : 'SYNC_ERROR',
+      result,
+      error: result.failed > 0 ? `${result.failed} cases failed to sync` : undefined,
+    });
+  }
+
+  return result;
 }
 
 /**
@@ -371,14 +378,14 @@ export function setupAutoSync(): () => void {
 
   window.addEventListener('online', handleOnline);
   
-  if ('serviceWorker' in navigator) {
+  if ('serviceWorker' in navigator && navigator.serviceWorker) {
     navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
   }
 
   // Return cleanup function
   return () => {
     window.removeEventListener('online', handleOnline);
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && navigator.serviceWorker) {
       navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
     }
   };

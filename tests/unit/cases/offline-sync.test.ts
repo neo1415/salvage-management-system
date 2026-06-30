@@ -9,13 +9,78 @@
  * - P13.3: Conflict resolution maintains data integrity
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import * as fc from 'fast-check';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const updateOfflineCase = vi.fn();
+const deleteOfflineCase = vi.fn();
+const removeFromSyncQueue = vi.fn();
+const getSyncQueue = vi.fn();
+const getOfflineCasesByStatus = vi.fn();
+
+vi.mock('@/lib/db/indexeddb', () => ({
+  getDB: vi.fn(),
+  getOfflineCasesByStatus,
+  updateOfflineCase,
+  deleteOfflineCase,
+  getSyncQueue,
+  removeFromSyncQueue,
+}));
 
 // Simple test to verify file loads
 describe('Offline Case Sync - Property-Based Tests', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+
+    Object.defineProperty(global.navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    });
+
+    Object.defineProperty(global.navigator, 'serviceWorker', {
+      configurable: true,
+      value: undefined,
+    });
+
+    global.fetch = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return {
+        ok: true,
+        json: async () => ({ data: { synced: 1, errors: [] } }),
+      } as Response;
+    });
+
+    getSyncQueue.mockResolvedValue([]);
+    getOfflineCasesByStatus.mockImplementation(async (status: string) => {
+      if (status !== 'pending') return [];
+      return [
+        {
+          id: 'offline-case-1',
+          claimReference: 'CLM-001',
+          syncStatus: 'pending',
+        },
+      ];
+    });
+  });
+
   it('should load test file', () => {
     expect(true).toBe(true);
+  });
+
+  it('shares one in-flight sync across simultaneous callers', async () => {
+    const { syncOfflineCases } = await import('@/features/cases/services/offline-sync.service');
+
+    const [firstResult, secondResult] = await Promise.all([
+      syncOfflineCases(),
+      syncOfflineCases(),
+    ]);
+
+    expect(firstResult).toEqual(secondResult);
+    expect(firstResult).toMatchObject({ success: true, synced: 1, failed: 0 });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(getOfflineCasesByStatus).toHaveBeenCalledWith('pending');
+    expect(updateOfflineCase).toHaveBeenCalledWith('offline-case-1', expect.objectContaining({ syncStatus: 'syncing' }));
+    expect(updateOfflineCase).toHaveBeenCalledWith('offline-case-1', expect.objectContaining({ syncStatus: 'synced' }));
   });
 
   /**
