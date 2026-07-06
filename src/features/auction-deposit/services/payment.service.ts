@@ -11,7 +11,7 @@
  * - Requirement 28: Idempotent Payment Processing
  */
 
-import { db } from '@/lib/db/drizzle';
+import { db, type DbTransaction } from '@/lib/db/drizzle';
 import { escrowWallets, walletTransactions } from '@/lib/db/schema/escrow';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
@@ -31,10 +31,16 @@ import { formatAssetName } from '@/lib/utils/asset-name';
 import { getEmailBranding } from '@/features/notifications/templates/email-branding';
 import { businessPolicyService } from '@/features/business-policy';
 import { appPath } from '@/features/notifications/templates/email-urls';
+import {
+  calculateAuctionPaymentAllocation,
+  calculateWalletSettlementBalances,
+} from './payment-allocation';
 
 export interface PaymentBreakdown {
   finalBid: number;
   depositAmount: number;
+  depositApplied: number;
+  depositSurplus: number;
   remainingAmount: number;
   availableBalance: number;
   walletPortion: number;
@@ -151,8 +157,10 @@ export class PaymentService {
 
     const availableBalance = parseFloat(wallet.availableBalance);
 
-    // Requirement 21.4: For legacy auctions, remaining amount = full bid (no deposit deduction)
-    const remainingAmount = isLegacyAuction ? finalBid : (finalBid - depositAmount);
+    const allocation = calculateAuctionPaymentAllocation(finalBid, depositAmount, {
+      applyDeposit: !isLegacyAuction,
+    });
+    const remainingAmount = allocation.remainingAmount;
 
     // Calculate wallet and Paystack portions
     const walletPortion = Math.min(availableBalance, remainingAmount);
@@ -164,6 +172,8 @@ export class PaymentService {
     return {
       finalBid,
       depositAmount,
+      depositApplied: allocation.depositApplied,
+      depositSurplus: allocation.depositSurplus,
       remainingAmount,
       availableBalance,
       walletPortion,
@@ -398,6 +408,7 @@ export class PaymentService {
     auctionId: string;
     availableAmount: number;
     frozenAmount: number;
+    frozenSurplusAmount?: number;
     totalAmount: number;
     reason: string;
   }): Promise<void> {
@@ -458,6 +469,7 @@ export class PaymentService {
       const currentAvailable = parseFloat(lockedWallet.availableBalance);
       const currentFrozen = parseFloat(lockedWallet.frozenAmount);
       const currentForfeited = parseFloat(lockedWallet.forfeitedAmount || '0');
+      const frozenSurplusAmount = params.frozenSurplusAmount ?? 0;
 
       if (currentAvailable < params.availableAmount) {
         throw new Error(
@@ -471,16 +483,19 @@ export class PaymentService {
         );
       }
 
-      const newBalance = currentBalance - params.totalAmount;
-      const newAvailable = currentAvailable - params.availableAmount;
-      const newFrozen = currentFrozen - params.frozenAmount;
-      const expectedBalance = newAvailable + newFrozen + currentForfeited;
-
-      if (Math.abs(expectedBalance - newBalance) > 0.01) {
-        throw new Error(
-          `Wallet invariant violation during settlement. Balance: ${newBalance}, Expected: ${expectedBalance}`
-        );
-      }
+      const nextBalances = calculateWalletSettlementBalances({
+        balance: currentBalance,
+        availableBalance: currentAvailable,
+        frozenAmount: currentFrozen,
+        forfeitedAmount: currentForfeited,
+        availableCharge: params.availableAmount,
+        frozenAmountToClose: params.frozenAmount,
+        frozenSurplusToReturn: frozenSurplusAmount,
+        totalDebit: params.totalAmount,
+      });
+      const newBalance = nextBalances.balance;
+      const newAvailable = nextBalances.availableBalance;
+      const newFrozen = nextBalances.frozenAmount;
 
       await tx
         .update(escrowWallets)
@@ -515,7 +530,11 @@ export class PaymentService {
           frozenAfter: newFrozen.toFixed(2),
           availableBefore: currentAvailable.toFixed(2),
           availableAfter: newAvailable.toFixed(2),
-          description: `Auction-specific frozen funds settled after payment confirmation`,
+          description: frozenSurplusAmount > 0
+            ? `Auction deposit closed: ${(
+                params.frozenAmount - frozenSurplusAmount
+              ).toFixed(2)} applied to the winning bid and ${frozenSurplusAmount.toFixed(2)} returned to available wallet balance`
+            : `Auction-specific frozen funds settled after payment confirmation`,
         });
       }
 
@@ -538,7 +557,8 @@ export class PaymentService {
   ): Promise<PaymentResult> {
     const { auctionId, vendorId, finalBid, depositAmount, idempotencyKey } = params;
 
-    const remainingAmount = finalBid - depositAmount;
+    const allocation = calculateAuctionPaymentAllocation(finalBid, depositAmount);
+    const remainingAmount = allocation.remainingAmount;
 
     // Check for existing payment with same idempotency key
     const existingPayment = await this.checkIdempotency(auctionId, idempotencyKey);
@@ -582,8 +602,8 @@ export class PaymentService {
 
       // Calculate new wallet values
       // Deduct remaining amount from available, unfreeze deposit
-      const newBalance = currentBalance - remainingAmount - depositAmount;
-      const newAvailable = currentAvailable - remainingAmount;
+      const newBalance = currentBalance - finalBid;
+      const newAvailable = currentAvailable - remainingAmount + allocation.depositSurplus;
       const newFrozen = currentFrozen - depositAmount;
 
       // Verify invariant before update
@@ -733,7 +753,8 @@ export class PaymentService {
     params: ProcessWalletPaymentParams
   ): Promise<PaymentResult> {
     const { auctionId, vendorId, finalBid, depositAmount, idempotencyKey } = params;
-    const remainingAmount = finalBid - depositAmount;
+    const allocation = calculateAuctionPaymentAllocation(finalBid, depositAmount);
+    const remainingAmount = allocation.remainingAmount;
 
     const existingPayment = await this.checkIdempotency(auctionId, idempotencyKey);
     if (existingPayment) return existingPayment;
@@ -816,6 +837,7 @@ export class PaymentService {
       auctionId,
       availableAmount: remainingAmount,
       frozenAmount: depositAmount,
+      frozenSurplusAmount: allocation.depositSurplus,
       totalAmount: finalBid,
       reason: `Wallet auction payment settlement for auction ${auctionId}`,
     });
@@ -857,7 +879,12 @@ export class PaymentService {
   ): Promise<PaymentResult & { authorizationUrl: string; accessCode: string }> {
     const { auctionId, vendorId, finalBid, depositAmount, idempotencyKey } = params;
 
-    const remainingAmount = finalBid - depositAmount;
+    const allocation = calculateAuctionPaymentAllocation(finalBid, depositAmount);
+    const remainingAmount = allocation.remainingAmount;
+
+    if (remainingAmount <= 0) {
+      throw new Error('The auction deposit covers the full winning bid. Complete payment from the deposit instead.');
+    }
 
     // CHECK FIRST: Look for existing pending PAYSTACK payment to prevent duplicates
     // CRITICAL FIX: Only block if there's a pending PAYSTACK payment, not escrow_wallet
@@ -1184,15 +1211,18 @@ export class PaymentService {
       // Step 2: Settle auction-specific frozen wallet funds.
       // Paystack-only settles the winner deposit. Hybrid settles the winner
       // deposit plus the wallet portion reserved for this payment.
+      const allocation = calculateAuctionPaymentAllocation(parseFloat(winner.bidAmount), depositAmount);
       const hybridWalletPortion = await this.getHybridFrozenWalletPortion(payment.id);
-      const walletSettlementAmount = depositAmount + hybridWalletPortion;
+      const frozenSettlementAmount = depositAmount + hybridWalletPortion;
+      const walletSettlementAmount = allocation.depositApplied + hybridWalletPortion;
 
       await this.settleAuctionWalletFunds({
         paymentId: payment.id,
         vendorId,
         auctionId,
         availableAmount: 0,
-        frozenAmount: walletSettlementAmount,
+        frozenAmount: frozenSettlementAmount,
+        frozenSurplusAmount: allocation.depositSurplus,
         totalAmount: walletSettlementAmount,
         reason: hybridWalletPortion > 0
           ? `Hybrid auction wallet settlement for auction ${auctionId}`
@@ -1573,7 +1603,7 @@ export class PaymentService {
   ): Promise<PaymentResult> {
     const { auctionId, vendorId, finalBid, depositAmount, idempotencyKey, vendorEmail } = params;
 
-    const remainingAmount = finalBid - depositAmount;
+    const remainingAmount = calculateAuctionPaymentAllocation(finalBid, depositAmount).remainingAmount;
 
     // Check for existing payment with same idempotency key
     const existingPayment = await this.checkIdempotency(auctionId, idempotencyKey);
@@ -1844,7 +1874,8 @@ export class PaymentService {
     params: ProcessHybridPaymentParams
   ): Promise<PaymentResult> {
     const { auctionId, vendorId, finalBid, depositAmount, idempotencyKey, vendorEmail } = params;
-    const remainingAmount = finalBid - depositAmount;
+    const allocation = calculateAuctionPaymentAllocation(finalBid, depositAmount);
+    const remainingAmount = allocation.remainingAmount;
 
     const existingPayment = await this.checkIdempotency(auctionId, idempotencyKey);
     if (existingPayment) return existingPayment;
@@ -2118,7 +2149,7 @@ export class PaymentService {
    * @throws Error if invariant violation detected
    */
   private async verifyInvariantInTransaction(
-    tx: any,
+    tx: DbTransaction,
     vendorId: string
   ): Promise<void> {
     const [wallet] = await tx

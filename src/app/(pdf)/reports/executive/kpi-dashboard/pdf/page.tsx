@@ -6,23 +6,20 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { PDFLayout } from '@/components/reports/common/pdf-layout';
 import { formatReportCurrency } from '@/components/reports/common/report-currency';
 import { MetricGrid, ReportKPICard } from '@/components/reports/common/report-ui';
+import type { KPIDashboardReport } from '@/features/reports/executive/services/kpi-dashboard.service';
 
 export default function KPIDashboardPDFPage() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<KPIDashboardReport | null>(null);
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async () => {
     try {
       // Get filters from URL params
       const params = new URLSearchParams();
@@ -36,16 +33,20 @@ export default function KPIDashboardPDFPage() {
       const result = await response.json();
       
       if (result.status === 'success') {
-        setReportData(result.data);
+        setReportData(result.data as KPIDashboardReport);
       }
     } catch (error) {
       console.error('Failed to fetch report:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchParams]);
 
-  const KPICard = ({ title, value, subtitle, trend, className }: any) => (
+  useEffect(() => {
+    void fetchReport();
+  }, [fetchReport]);
+
+  const KPICard = ({ title, value, subtitle, trend, className }: ComponentProps<typeof ReportKPICard>) => (
     <ReportKPICard
       className={`pdf-no-break ${className ?? ''}`}
       title={title}
@@ -193,7 +194,7 @@ export default function KPIDashboardPDFPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.cases.map((c: any) => (
+                          {reportData.breakdowns.cases.map((c) => (
                             <tr key={c.id} className="border-b">
                               <td className="p-2">{c.claimReference}</td>
                               <td className="p-2">{c.policyNumber || '—'}</td>
@@ -242,7 +243,7 @@ export default function KPIDashboardPDFPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.auctions.map((a: any) => (
+                          {reportData.breakdowns.auctions.map((a) => (
                             <tr key={a.id} className="border-b">
                               <td className="p-2">{a.caseReference}</td>
                               <td className="text-right p-2">{a.uniqueBidders}</td>
@@ -290,7 +291,7 @@ export default function KPIDashboardPDFPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.adjusters.map((adj: any) => (
+                          {reportData.breakdowns.adjusters.map((adj) => (
                             <tr key={adj.id} className="border-b">
                               <td className="p-2">{adj.name}</td>
                               <td className="text-right p-2">{adj.totalCases}</td>
@@ -298,7 +299,7 @@ export default function KPIDashboardPDFPage() {
                               <td className="text-right p-2 text-red-600">{adj.rejected}</td>
                               <td className="text-right p-2">{adj.approvalRate}%</td>
                               <td className="text-right p-2">{adj.avgProcessingTime}h</td>
-                              <td className="text-right p-2">{formatReportCurrency(parseFloat(adj.revenue || '0'))}</td>
+                              <td className="text-right p-2">{formatReportCurrency(adj.revenue || 0)}</td>
                               <td className="text-right p-2">
                                 <span className={`px-2 py-1 rounded text-xs font-semibold ${
                                   adj.qualityScore >= 80 ? 'bg-green-100 text-green-800' :
@@ -339,7 +340,7 @@ export default function KPIDashboardPDFPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportData.breakdowns.vendors.map((v: any) => (
+                          {reportData.breakdowns.vendors.map((v) => (
                             <tr key={v.id} className="border-b">
                               <td className="p-2">{v.businessName}</td>
                               <td className="p-2">
@@ -354,8 +355,8 @@ export default function KPIDashboardPDFPage() {
                               <td className="text-right p-2">{v.auctionsParticipated}</td>
                               <td className="text-right p-2">{v.auctionsWon}</td>
                               <td className="text-right p-2">{v.winRate}%</td>
-                              <td className="text-right p-2">{formatReportCurrency(parseFloat(v.totalSpent || '0'))}</td>
-                              <td className="text-right p-2">{formatReportCurrency(parseFloat(v.avgBid || '0'))}</td>
+                              <td className="text-right p-2">{formatReportCurrency(v.totalSpent || 0)}</td>
+                              <td className="text-right p-2">{formatReportCurrency(v.avgBid || 0)}</td>
                               <td className="text-right p-2">
                                 <span className={`px-2 py-1 rounded text-xs ${
                                   v.paymentRate >= 90 ? 'bg-green-100 text-green-800' :

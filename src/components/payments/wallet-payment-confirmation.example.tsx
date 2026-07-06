@@ -30,7 +30,7 @@ export function WalletPaymentConfirmationExample() {
     // In a real application, this would call the API endpoint:
     // POST /api/payments/[id]/confirm-wallet
     
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve, _reject) => {
       setTimeout(() => {
         // Simulate success
         setIsConfirmed(true);

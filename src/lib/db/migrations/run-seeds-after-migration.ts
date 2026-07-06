@@ -71,12 +71,15 @@ export async function runSeedsAfterMigration(): Promise<void> {
     
     console.log('\n✅ Seed execution completed successfully');
     console.log('='.repeat(60) + '\n');
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const processError: Error & { stdout?: string; stderr?: string } = error instanceof Error
+      ? error as Error & { stdout?: string; stderr?: string }
+      : new Error(String(error));
     console.error('\n❌ Seed execution failed:');
-    console.error(error.message);
+    console.error(processError.message);
     
-    if (error.stdout) console.log('\nStdout:', error.stdout);
-    if (error.stderr) console.error('\nStderr:', error.stderr);
+    if (processError.stdout) console.log('\nStdout:', processError.stdout);
+    if (processError.stderr) console.error('\nStderr:', processError.stderr);
     
     console.log('\n⚠️  Deployment will continue despite seed failure');
     console.log('💡 Seeds can be run manually later with: tsx scripts/seeds/run-all-seeds.ts');

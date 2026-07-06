@@ -386,9 +386,12 @@ export async function generateDocument(
           })
           .returning();
       });
-    } catch (insertError: any) {
+    } catch (insertError: unknown) {
+      const databaseError: Error & { code?: string } = insertError instanceof Error
+        ? insertError as Error & { code?: string }
+        : new Error(String(insertError));
       // Handle unique constraint violation (duplicate document)
-      if (insertError.code === '23505' || insertError.message?.includes('duplicate key') || insertError.message?.includes('unique constraint')) {
+      if (databaseError.code === '23505' || databaseError.message.includes('duplicate key') || databaseError.message.includes('unique constraint')) {
         console.log(`⚠️  Duplicate document detected during insert: ${documentType} for auction ${auctionId}`);
         console.log(`   - This is expected during race conditions (offline/online, multiple closure requests)`);
         console.log(`   - Fetching existing document instead...`);
@@ -785,7 +788,7 @@ export async function signDocument(
           if (vendor) {
             const [user] = await db.select().from(users).where(eq(users.id, vendor.userId)).limit(1);
             if (user) {
-              const { createNotification, createRoleNotifications } = await import('@/features/notifications/services/notification.service');
+              const { createNotification } = await import('@/features/notifications/services/notification.service');
               await createNotification({
                 userId: user.id,
                 type: 'PAYMENT_METHOD_SELECTION_REQUIRED',
@@ -1265,7 +1268,7 @@ export async function triggerFundReleaseOnDocumentCompletion(
   vendorId: string,
   userId: string
 ): Promise<void> {
-  let payment: any = null; // Declare outside try block so it's accessible in catch block
+  let payment: typeof payments.$inferSelect | null = null; // Declare outside try block so it's accessible in catch block
   
   try {
     console.log(`🔄 Checking if fund release should be triggered for auction ${auctionId}...`);

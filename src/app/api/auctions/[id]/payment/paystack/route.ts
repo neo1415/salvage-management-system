@@ -25,6 +25,7 @@ import {
   resolveAuctionPaymentMethodAccess,
 } from '@/features/business-policy';
 import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
+import { calculateAuctionPaymentAllocation } from '@/features/auction-deposit/services/payment-allocation';
 
 /**
  * POST /api/auctions/[id]/payment/paystack
@@ -141,6 +142,14 @@ export async function POST(
     // Get finalBid and depositAmount from winner record
     const finalBid = parseFloat(winner.bidAmount);
     const depositAmount = parseFloat(winner.depositAmount);
+    const allocation = calculateAuctionPaymentAllocation(finalBid, depositAmount);
+
+    if (allocation.remainingAmount <= 0) {
+      return NextResponse.json(
+        { success: false, error: 'The auction deposit covers the full winning bid. Complete payment from the deposit instead.' },
+        { status: 400 }
+      );
+    }
 
     // Initialize Paystack payment
     const result = await paymentService.initializePaystackPayment({

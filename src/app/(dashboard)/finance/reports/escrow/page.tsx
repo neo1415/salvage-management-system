@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useSession } from 'next-auth/react';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import { StatCard, StatGrid, StatTile, MetricValue } from '@/components/ui/stat-card';
 
 interface EscrowReportSummary {
@@ -46,7 +45,6 @@ interface DetailedPayment {
 }
 
 export default function EscrowPerformanceReportPage() {
-  const { data: session } = useSession();
   const [summary, setSummary] = useState<EscrowReportSummary | null>(null);
   const hasReportDataRef = useRef(false);
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData[]>([]);

@@ -17,6 +17,7 @@ import { wrapProfessionalEmail } from '../templates/wrap-professional-email';
 import { businessPolicyService } from '@/features/business-policy';
 import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
 import { canUserReceiveEmail } from './notification-channel-guard';
+import { isTestOrPlaceholderEmail } from '@/lib/utils/notification-recipients';
 
 // Validate required environment variables
 if (!process.env.RESEND_API_KEY) {
@@ -153,6 +154,18 @@ export class EmailService {
    * @returns Email result
    */
   private async sendEmailWithRetry(options: EmailOptions): Promise<EmailResult> {
+    if (
+      isTestOrPlaceholderEmail(options.to)
+      && process.env.ALLOW_TEST_EMAIL_RECIPIENTS !== 'true'
+    ) {
+      console.log(`[EMAIL SKIPPED] Test or placeholder recipient: ${options.to}`);
+      return {
+        success: true,
+        messageId: 'test-recipient-skipped',
+        skipped: true,
+      };
+    }
+
     if (!await this.canSendPolicyEmail(options)) {
       return {
         success: true,

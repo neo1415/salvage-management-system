@@ -16,7 +16,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { auctionClosureService } from '@/features/auctions/services/closure.service';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
-import { eq, and, lte } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 export async function POST(request: NextRequest) {
   try {

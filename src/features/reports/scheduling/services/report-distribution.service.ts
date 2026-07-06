@@ -177,7 +177,7 @@ export class ReportDistributionService {
   static async archiveReport(
     reportId: string,
     reportData: Buffer,
-    metadata: any
+    _metadata: unknown
   ): Promise<string> {
     // Scale extension: archive scheduled reports to cloud storage when retention is finalized.
     // For now, just return a placeholder archive ID

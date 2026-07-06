@@ -43,8 +43,6 @@ export default function WalletPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [fundingAmount, setFundingAmount] = useState<string>('');
   const [isFunding, setIsFunding] = useState(false);
-  const [vendorId, setVendorId] = useState<string | null>(null);
-  
   // Export states
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -93,10 +91,10 @@ export default function WalletPage() {
   } = useCachedWallet(session?.user?.id || null, fetchWalletData);
 
   // Extract balance and transactions from wallet data
-  const balance = wallet ? {
+  const balance: WalletBalance | null = wallet ? {
     balance: wallet.balance,
-    availableBalance: (wallet as any).availableBalance || 0,
-    frozenAmount: (wallet as any).frozenAmount || 0,
+    availableBalance: wallet.availableBalance ?? 0,
+    frozenAmount: wallet.frozenAmount ?? 0,
   } : null;
 
   const allTransactions = (wallet?.transactions || []) as unknown as WalletTransaction[];
@@ -136,24 +134,6 @@ export default function WalletPage() {
       setError(walletError.message);
     }
   }, [walletError]);
-
-  // Fetch vendor ID
-  useEffect(() => {
-    const fetchVendorId = async () => {
-      if (session?.user?.id) {
-        try {
-          const response = await fetch('/api/vendors/me');
-          if (response.ok) {
-            const data = await response.json();
-            setVendorId(data.vendor.id);
-          }
-        } catch (error) {
-          console.error('Failed to fetch vendor ID:', error);
-        }
-      }
-    };
-    fetchVendorId();
-  }, [session?.user?.id]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -777,15 +757,6 @@ export default function WalletPage() {
             </div>
           )}
         </div>
-
-        {/* Wallet & Deposits section removed — see transaction history above */}
-        {/*
-        {vendorId && (
-          <div className="mt-8">
-            <DepositHistory vendorId={vendorId} />
-          </div>
-        )}
-        */}
 
         {/* Info Section */}
         <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">

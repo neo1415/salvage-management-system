@@ -96,10 +96,6 @@ export async function GET(request: NextRequest) {
     if (!testingMode && isBusinessPolicyEnforcementEnabled()) {
       effectiveBufferHours = fallbackBufferDecision.value ?? effectiveBufferHours;
     }
-    const effectiveForfeiturePercentage = isBusinessPolicyEnforcementEnabled()
-      ? forfeitureDecision.value ?? config.forfeiturePercentage
-      : config.forfeiturePercentage;
-
     console.log(`[Payment Deadline Cron] Buffer period: ${effectiveBufferHours} hours ${testingMode ? '(TESTING MODE)' : ''}`);
     const systemActorId = await getSystemActorId();
 

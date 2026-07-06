@@ -59,6 +59,19 @@ export interface SearchError {
   rateLimited: boolean;
 }
 
+function isSearchError(error: unknown): error is SearchError {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as Partial<SearchError>;
+  return typeof candidate.code === 'string'
+    && typeof candidate.message === 'string'
+    && typeof candidate.retryable === 'boolean'
+    && typeof candidate.rateLimited === 'boolean';
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // Rate limiter class
 class SerperRateLimiter {
   private monthlyUsage = 0;
@@ -208,8 +221,8 @@ export class SerperApiClient {
     try {
       await this.searchGoogle('test query', { num: 1 });
       return true;
-    } catch (error: any) {
-      if (error.code === 'UNAUTHORIZED' || error.code === 'INVALID_API_KEY') {
+    } catch (error: unknown) {
+      if (isSearchError(error) && (error.code === 'UNAUTHORIZED' || error.code === 'INVALID_API_KEY')) {
         return false;
       }
       // Other errors don't necessarily mean invalid API key
@@ -273,18 +286,18 @@ export class SerperApiClient {
         }
       }
 
-      const data = await response.json();
+      const data: unknown = await response.json();
       
       // Validate response structure
-      if (!data.organic || !Array.isArray(data.organic)) {
+      if (typeof data !== 'object' || data === null || !('organic' in data) || !Array.isArray(data.organic)) {
         throw this.createError('INVALID_RESPONSE', 'Invalid API response structure', false, false);
       }
 
-      return data;
+      return data as SerperResponse;
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Retry logic for retryable errors
-      if (error.retryable && retryCount < maxRetries) {
+      if (isSearchError(error) && error.retryable && retryCount < maxRetries) {
         await new Promise(resolve => setTimeout(resolve, retryDelay));
         return this.makeRequest(options, retryCount + 1);
       }
@@ -337,7 +350,7 @@ export class SerperApiClient {
     response: SerperResponse | null,
     responseTime: number,
     success: boolean,
-    error?: any
+    error?: unknown
   ): Promise<void> {
     try {
       const logData = {
@@ -354,9 +367,9 @@ export class SerperApiClient {
         resultCount: response?.organic?.length || 0,
         credits: response?.credits,
         error: error ? {
-          code: error.code || 'UNKNOWN',
-          message: error.message,
-          retryable: error.retryable
+          code: isSearchError(error) ? error.code : 'UNKNOWN',
+          message: errorMessage(error),
+          retryable: isSearchError(error) ? error.retryable : false
         } : undefined,
         timestamp: new Date().toISOString()
       };
@@ -402,14 +415,14 @@ export const serperApi = {
 };
 
 // Export helper functions
-export function handleApiError(error: any): SearchError {
-  if (error && typeof error === 'object' && 'code' in error) {
-    return error as SearchError;
+export function handleApiError(error: unknown): SearchError {
+  if (isSearchError(error)) {
+    return error;
   }
   
   return {
     code: 'UNKNOWN_ERROR',
-    message: error?.message || 'Unknown error occurred',
+    message: errorMessage(error) || 'Unknown error occurred',
     retryable: false,
     rateLimited: false
   };

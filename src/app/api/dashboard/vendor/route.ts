@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions, bids, payments, vendors, salvageCases, releaseForms } from '@/lib/db/schema';
@@ -33,6 +33,23 @@ interface PerformanceStats {
   totalVendors: number;
   totalBids: number;
   totalWins: number;
+}
+
+type SqlNumeric = string | number | null;
+
+interface WinCountRow {
+  total_wins?: SqlNumeric;
+}
+
+interface VendorWinRow extends WinCountRow {
+  vendor_id: string;
+}
+
+interface VendorOperationsRow {
+  won_awaiting_payment?: SqlNumeric;
+  signed_awaiting_payment?: SqlNumeric;
+  avg_payment_hours?: SqlNumeric;
+  avg_pickup_hours?: SqlNumeric;
 }
 
 interface Badge {
@@ -341,7 +358,7 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
     )
     SELECT COUNT(DISTINCT auction_id)::int AS total_wins
     FROM win_events
-  `)) as any[];
+  `)) as unknown as WinCountRow[];
 
   const totalWins = numberFrom(winsRow?.total_wins);
 
@@ -437,7 +454,7 @@ async function calculatePerformanceStats(vendorId: string): Promise<PerformanceS
     LEFT JOIN win_events we ON we.vendor_id = v.id
     GROUP BY v.id
     ORDER BY COUNT(DISTINCT we.auction_id) DESC, v.created_at ASC
-  `)) as any[];
+  `)) as unknown as VendorWinRow[];
 
   const vendorsWithTotalWins = allVendorsResult.map(v => ({
     vendorId: v.vendor_id,
@@ -509,7 +526,7 @@ async function calculateVendorOperationsControl(
     LEFT JOIN release_forms rf
       ON rf.auction_id = a.id
       AND rf.vendor_id = ${vendorId}
-  `)) as any[];
+  `)) as unknown as VendorOperationsRow[];
 
   return {
     bidLimit,
@@ -623,7 +640,7 @@ async function calculateComparisons(
     )
     SELECT COUNT(DISTINCT auction_id)::int AS total_wins
     FROM win_events
-  `)) as any[];
+  `)) as unknown as WinCountRow[];
 
   const lastMonthWins = numberFrom(lastMonthWinsRow?.total_wins);
 

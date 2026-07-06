@@ -5,7 +5,7 @@
  * Returns all auctions won by the current vendor
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
@@ -13,8 +13,9 @@ import { salvageCases } from '@/lib/db/schema/cases';
 import { payments } from '@/lib/db/schema/payments';
 import { eq, and, desc, or } from 'drizzle-orm';
 import { formatAssetName } from '@/lib/utils/asset-name';
+import { getEffectiveSaleAmount } from '@/lib/finance/effective-sale-amount';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Authenticate user
     const session = await auth();
@@ -41,6 +42,7 @@ export async function GET(request: NextRequest) {
         id: auctions.id,
         caseId: auctions.caseId,
         currentBid: auctions.currentBid,
+        finalSettledAmount: auctions.finalSettledAmount,
         status: auctions.status,
         endTime: auctions.endTime,
         assetType: salvageCases.assetType,
@@ -76,7 +78,10 @@ export async function GET(request: NextRequest) {
       return {
         id: auction.id,
         caseId: auction.caseId,
-        currentBid: auction.currentBid,
+        currentBid: getEffectiveSaleAmount({
+          currentBid: auction.currentBid,
+          finalSettledAmount: auction.finalSettledAmount,
+        }).toFixed(2),
         status: auction.status,
         closedAt: auction.endTime,
         assetName,

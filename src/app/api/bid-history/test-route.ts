@@ -1,9 +1,6 @@
 // Test file to verify bid history API structure
 // This file can be deleted after testing
 
-import { NextRequest } from 'next/server';
-import { GET } from './route';
-
 // Mock test to verify the API structure
 export async function testBidHistoryAPI() {
   console.log('Bid History API structure verified');

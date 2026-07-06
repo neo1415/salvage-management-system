@@ -21,14 +21,10 @@ import { useState } from 'react';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 
 interface PickupConfirmationProps {
-  auctionId: string;
-  vendorId: string;
   onConfirm: (pickupAuthCode: string) => Promise<void>;
 }
 
 export function PickupConfirmation({
-  auctionId,
-  vendorId,
   onConfirm,
 }: PickupConfirmationProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -169,7 +165,6 @@ export function PickupConfirmation({
         }}
         onConfirm={() => {
           // ConfirmationModal expects sync handler; we wrap with async.
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           void handleConfirm();
         }}
         title="Confirm Pickup"

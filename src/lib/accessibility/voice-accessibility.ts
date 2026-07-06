@@ -5,6 +5,13 @@
  * Ensures WCAG 2.1 AA compliance and enhanced screen reader support
  */
 
+import type { AriaAttributes, AriaRole } from 'react';
+
+export type VoiceAccessibilityProps = AriaAttributes & {
+  role?: AriaRole;
+  tabIndex?: number;
+};
+
 export interface AccessibilityAnnouncement {
   message: string;
   priority: 'polite' | 'assertive';
@@ -180,8 +187,8 @@ export const voiceAnnouncementManager = new AccessibilityAnnouncementManager();
 export function getVoiceAccessibilityProps(
   componentType: 'recordButton' | 'pauseButton' | 'textArea' | 'transcriptionOverlay' | 'audioVisualizer',
   state: Partial<VoiceAccessibilityState> = {}
-) {
-  const { isRecording = false, isPaused = false, duration = 0, transcriptionText = '', error } = state;
+): VoiceAccessibilityProps {
+  const { isRecording = false, isPaused = false, error } = state;
 
   switch (componentType) {
     case 'recordButton':

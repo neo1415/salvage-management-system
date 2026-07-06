@@ -33,7 +33,7 @@ import { resolveCaseDisplayStatus } from '@/lib/metrics/case-display-status';
 import { LocationMap } from '@/components/ui/location-map';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { ResultModal } from '@/components/ui/result-modal';
-import { Star, Check, X, CheckCircle, Banknote, Loader2, MapPin, Save, RotateCcw } from 'lucide-react';
+import { Star, Check, X, CheckCircle, Banknote, Loader2, Save, RotateCcw } from 'lucide-react';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
@@ -175,7 +175,7 @@ function isCloudinaryImageUrl(url: string): boolean {
   }
 }
 
-const isValidPhotoUrl = (url: any): url is string => {
+const isValidPhotoUrl = (url: unknown): url is string => {
   if (!url || typeof url !== 'string') return false;
   const trimmed = url.trim();
   if (!trimmed) return false;
@@ -450,15 +450,6 @@ export default function ApprovalsPage() {
   }, []);
 
   /**
-   * Validate whenever price overrides change
-   */
-  useEffect(() => {
-    if (isEditMode && selectedCase) {
-      validatePriceOverridesLocal();
-    }
-  }, [priceOverrides, isEditMode, selectedCase]);
-
-  /**
    * Fetch all cases from API (no filtering - get everything)
    * Add cache-busting timestamp to force fresh data
    */
@@ -650,29 +641,21 @@ export default function ApprovalsPage() {
     }
   };
 
-  /**
-   * Validate price overrides using extracted utility
-   */
-  const validatePriceOverridesLocal = (): void => {
-    if (!selectedCase) {
+  useEffect(() => {
+    if (!isEditMode || !selectedCase) {
       setValidationErrors([]);
       setValidationWarnings([]);
       return;
     }
-    
-    const result = validatePrices(
-      priceOverrides,
-      {
-        marketValue: parseFloat(selectedCase.marketValue),
-        salvageValue: parseFloat(selectedCase.estimatedSalvageValue),
-        reservePrice: parseFloat(selectedCase.reservePrice),
-      }
-    );
-    
-    // Separate errors and warnings
+
+    const result = validatePrices(priceOverrides, {
+      marketValue: parseFloat(selectedCase.marketValue),
+      salvageValue: parseFloat(selectedCase.estimatedSalvageValue),
+      reservePrice: parseFloat(selectedCase.reservePrice),
+    });
     setValidationErrors(result.errors);
     setValidationWarnings(result.warnings);
-  };
+  }, [priceOverrides, isEditMode, selectedCase]);
 
   /**
    * Handle price change
@@ -850,8 +833,6 @@ export default function ApprovalsPage() {
         const error = await response.json();
         throw new Error(error.error || 'Failed to process approval');
       }
-
-      const result = await response.json();
 
       // Show success message in modal
       if (approvalAction === 'approve') {

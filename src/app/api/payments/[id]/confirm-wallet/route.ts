@@ -4,7 +4,7 @@ import { db } from '@/lib/db/drizzle';
 import { payments } from '@/lib/db/schema/payments';
 import { vendors } from '@/lib/db/schema/vendors';
 import { escrowWallets } from '@/lib/db/schema/escrow';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
 
 /**

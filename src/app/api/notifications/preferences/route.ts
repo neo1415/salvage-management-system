@@ -19,7 +19,7 @@ const preferencesSchema = z.object({
  * GET /api/notifications/preferences
  * Get user notification preferences
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
             .where(eq(notificationPreferences.userId, session.user.id))
             .limit(1);
         }
-      } catch (error) {
+      } catch {
         // If insert fails due to race condition, fetch the existing record
         console.log('Notification preferences already exist, fetching...');
         [preferences] = await db

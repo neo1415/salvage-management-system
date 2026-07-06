@@ -9,32 +9,10 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { useCachedLeaderboard } from '@/hooks/use-cached-leaderboard';
 import { Trophy, Medal, Award, Star, TrendingUp, Target, Clock, WifiOff, AlertTriangle, Banknote } from 'lucide-react';
 
-interface LeaderboardEntry {
-  rank: number;
-  vendorId: string;
-  vendorName: string;
-  businessName: string | null;
-  profilePictureUrl?: string | null;
-  tier: string;
-  totalBids: number;
-  wins: number;
-  totalSpent: string;
-  winRate: number;
-  participationRate: number;
-  onTimePickupRate: number;
-  rating: string;
-}
-
-interface LeaderboardResponse {
-  leaderboard: LeaderboardEntry[];
-  lastUpdated: string;
-  nextUpdate: string;
-}
-
 export default function VendorLeaderboardPage() {
   const router = useAppRouter();
   const { user, isAuthenticated, isLoading } = useAuth();
-  const { data: leaderboardData, isLoading: isLoadingData, isOffline, lastCached, refresh, error: cacheError } = useCachedLeaderboard();
+  const { data: leaderboardData, isLoading: isLoadingData, isOffline, lastCached, error: cacheError } = useCachedLeaderboard();
 
   const [error, setError] = useState<string | null>(null);
   const [currentVendorId, setCurrentVendorId] = useState<string | null>(null);

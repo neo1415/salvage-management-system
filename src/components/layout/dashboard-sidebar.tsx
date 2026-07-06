@@ -23,8 +23,6 @@ import {
   History,
   Settings,
   User as UserIcon,
-  TrendingUp,
-  Brain,
   Database,
   Building2,
   PackageCheck,

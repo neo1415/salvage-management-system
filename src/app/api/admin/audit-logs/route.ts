@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, gte, lte, desc, sql, or } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
 
 /**
  * GET /api/admin/audit-logs

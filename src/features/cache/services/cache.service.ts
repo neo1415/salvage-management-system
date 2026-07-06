@@ -16,9 +16,6 @@ import {
   getCachedWallet,
   clearExpiredCache,
   getCacheStorageUsage,
-  type CachedAuction,
-  type CachedDocument,
-  type CachedWallet,
 } from '@/lib/db/indexeddb';
 
 export interface CacheConfig {

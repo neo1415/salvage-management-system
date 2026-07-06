@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react';
 
-interface AssetPerformance {
+export interface AssetPerformance {
   assetType?: string;
   make: string;
   model: string;

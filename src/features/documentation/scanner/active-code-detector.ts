@@ -6,7 +6,7 @@
  * are potentially abandoned code.
  */
 
-import type { FileEntry, ActiveCodeMap, CategorizedFiles } from '../types';
+import type { FileEntry, ActiveCodeMap } from '../types';
 import type { DependencyGraph } from './import-graph';
 import { getTransitiveDependencies } from './import-graph';
 

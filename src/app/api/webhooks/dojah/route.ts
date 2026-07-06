@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
   let payload: z.infer<typeof DojahWebhookSchema>;
   try {
     payload = DojahWebhookSchema.parse(JSON.parse(rawBody));
-  } catch (error) {
+  } catch {
     console.error('[Dojah Webhook] Invalid payload shape');
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
   }

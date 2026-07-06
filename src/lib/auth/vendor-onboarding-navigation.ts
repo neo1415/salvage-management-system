@@ -10,15 +10,11 @@ import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import {
   CHANGE_PASSWORD_PATH,
-  VENDOR_PROFILE_PHONE_PATH,
   VENDOR_REGISTRATION_FEE_PATH,
   VENDOR_VERIFY_ACCOUNT_PATH,
 } from '@/lib/auth/vendor-onboarding-paths';
 import { hasRealVendorPhone } from '@/lib/auth/vendor-phone';
-import {
-  fullVerificationLabel,
-  usesSingleFullKycFlow,
-} from '@/lib/vendor/onboarding-policy-ui';
+import { fullVerificationLabel } from '@/lib/vendor/onboarding-policy-ui';
 import {
   isRegistrationFeeRequiredForPolicy,
   vendorMustPayRegistrationFeeBeforeTier1,

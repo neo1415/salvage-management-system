@@ -12,9 +12,24 @@ import { db } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 import { redis } from '@/lib/cache/redis';
 
+interface HealthCheck {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  responseTime?: number;
+  error?: string;
+  tablesFound?: number;
+  missingTables?: string[];
+  viewsFound?: number;
+  expectedViews?: number;
+  recentCount?: number;
+}
+
+interface CountRow {
+  count?: string | number;
+}
+
 export async function GET() {
   const startTime = Date.now();
-  const checks: Record<string, any> = {};
+  const checks: Record<string, HealthCheck> = {};
 
   try {
     // Check database connectivity
@@ -63,7 +78,7 @@ export async function GET() {
           )
       `);
       
-      const tableNames = tables.map((t: any) => t.table_name);
+      const tableNames = (tables as unknown as Array<{ table_name: string }>).map((table) => table.table_name);
       const requiredTables = [
         'predictions',
         'recommendations',
@@ -109,7 +124,7 @@ export async function GET() {
 
     // Check recent predictions
     try {
-      const recentPredictions: any = await db.execute(sql`
+      const recentPredictions = await db.execute(sql`
         SELECT COUNT(*) as count
         FROM predictions
         WHERE created_at > NOW() - INTERVAL '1 hour'
@@ -117,7 +132,7 @@ export async function GET() {
       
       checks.predictions = {
         status: 'healthy',
-        recentCount: parseInt(recentPredictions[0]?.count || '0'),
+        recentCount: Number((recentPredictions as unknown as CountRow[])[0]?.count || 0),
       };
     } catch (error) {
       checks.predictions = {
@@ -128,7 +143,7 @@ export async function GET() {
 
     // Check recent recommendations
     try {
-      const recentRecommendations: any = await db.execute(sql`
+      const recentRecommendations = await db.execute(sql`
         SELECT COUNT(*) as count
         FROM recommendations
         WHERE created_at > NOW() - INTERVAL '1 hour'
@@ -136,7 +151,7 @@ export async function GET() {
       
       checks.recommendations = {
         status: 'healthy',
-        recentCount: parseInt(recentRecommendations[0]?.count || '0'),
+        recentCount: Number((recentRecommendations as unknown as CountRow[])[0]?.count || 0),
       };
     } catch (error) {
       checks.recommendations = {
@@ -147,7 +162,7 @@ export async function GET() {
 
     // Overall health status
     const allHealthy = Object.values(checks).every(
-      (check: any) => check.status === 'healthy' || check.status === 'degraded'
+      (check) => check.status === 'healthy' || check.status === 'degraded'
     );
 
     const overallStatus = allHealthy ? 'healthy' : 'unhealthy';

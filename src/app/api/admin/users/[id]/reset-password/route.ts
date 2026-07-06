@@ -59,15 +59,14 @@ export async function POST(
     const passwordHash = await hash(temporaryPassword, 12);
 
     // Update user with new password and require password change
-    const [updatedUser] = await db
+    await db
       .update(users)
       .set({
         passwordHash,
         requirePasswordChange: 'true',
         updatedAt: new Date(),
       })
-      .where(eq(users.id, id))
-      .returning();
+      .where(eq(users.id, id));
 
     // Send password reset email
     try {

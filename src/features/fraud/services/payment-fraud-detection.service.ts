@@ -1,7 +1,8 @@
 import { db } from '@/lib/db';
 import { payments } from '@/lib/db/schema/payments';
-import { vendors } from '@/lib/db/schema/vendors';
 import { eq, and, gte, desc, sql } from 'drizzle-orm';
+
+type PaymentRow = typeof payments.$inferSelect;
 
 interface PaymentFraudAnalysis {
   vendorId: string;
@@ -124,9 +125,9 @@ export class PaymentFraudDetectionService {
    * Pattern 1: Multiple failed payments
    * Fraudsters often have multiple failed payment attempts
    */
-  private analyzeFailedPayments(paymentHistory: any[]): FailedPaymentPattern {
+  private analyzeFailedPayments(paymentHistory: PaymentRow[]): FailedPaymentPattern {
     const failedPayments = paymentHistory.filter(
-      p => p.status === 'failed' || p.status === 'rejected'
+      p => p.status === 'rejected'
     );
     
     // Count recent failures (last 24 hours)
@@ -159,13 +160,13 @@ export class PaymentFraudDetectionService {
    */
   private async analyzeOverpayments(
     vendorId: string,
-    paymentHistory: any[]
+    paymentHistory: PaymentRow[]
   ): Promise<OverpaymentPattern> {
     const overpayments: number[] = [];
     
     // Check each payment against required amount
     for (const payment of paymentHistory) {
-      if (payment.status === 'completed' && payment.auctionId) {
+      if (payment.status === 'verified' && payment.auctionId) {
         // Get auction to check required payment
         const auction = await db.execute(sql`
           SELECT 
@@ -210,7 +211,7 @@ export class PaymentFraudDetectionService {
    * Pattern 3: Payment method switching
    * Fraudsters often switch payment methods frequently
    */
-  private analyzePaymentMethodSwitching(paymentHistory: any[]): PaymentMethodPattern {
+  private analyzePaymentMethodSwitching(paymentHistory: PaymentRow[]): PaymentMethodPattern {
     const paymentMethods = new Set<string>();
     
     paymentHistory.forEach(payment => {
@@ -238,12 +239,10 @@ export class PaymentFraudDetectionService {
    * Pattern 4: Chargeback pattern
    * High chargeback rate indicates fraud
    */
-  private analyzeChargebacks(paymentHistory: any[]): ChargebackPattern {
-    // Note: Chargebacks might be tracked in payment metadata or status
-    const chargebacks = paymentHistory.filter(
-      p => p.status === 'refunded' || 
-           (p.metadata && (p.metadata as any).chargeback === true)
-    );
+  private analyzeChargebacks(paymentHistory: PaymentRow[]): ChargebackPattern {
+    // The current payment record has no chargeback status or metadata field.
+    // Keep this signal neutral until a verified payment-provider dispute source is stored.
+    const chargebacks: PaymentRow[] = [];
     
     const totalPayments = paymentHistory.length;
     const chargebackRate = totalPayments > 0 ? chargebacks.length / totalPayments : 0;

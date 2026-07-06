@@ -10,7 +10,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-interface TemporalPattern {
+export interface TemporalPattern {
   hour: number;
   dayOfWeek: number;
   activityScore: number | string;

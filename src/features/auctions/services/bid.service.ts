@@ -256,9 +256,6 @@ export class BidService {
           })
           .returning();
 
-        // Get previous bidder
-        const previousBidderId = auction.currentBidder;
-
         // Update auction with new current bid and bidder
         await tx
           .update(auctions)

@@ -2,6 +2,8 @@ import {
   getGeminiModel,
   isGeminiEnabled,
 } from '@/lib/integrations/gemini-damage-detection';
+import type { Part, Schema } from '@google/generative-ai';
+import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import {
   getClaudeClient,
   getClaudeModelName,
@@ -11,6 +13,8 @@ import { isClaudePickupFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 import type { PickupEvidenceComparison } from '@/lib/db/schema/pickup-evidence';
 
 type ComparisonStatus = PickupEvidenceComparison['status'];
+type UnknownRecord = Record<string, unknown>;
+type ClaudeImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 
 let pickupGeminiDisabledForProcess = false;
 
@@ -53,14 +57,33 @@ const PICKUP_COMPARISON_SCHEMA = {
       type: 'string',
       enum: ['acceptable', 'minor_review', 'major_review', 'material_discrepancy'],
     },
+    identityFinding: {
+      type: 'string',
+      description: 'Specific asset identity finding with the visible distinguishing evidence compared',
+    },
+    quantityFinding: {
+      type: 'string',
+      description: 'Specific count, stock quantity, or major-component completeness finding',
+    },
+    conditionFinding: {
+      type: 'string',
+      description: 'Specific visible condition comparison, including named damage where supported',
+    },
+    coverageFinding: {
+      type: 'string',
+      description: 'Specific evidence coverage or uncertainty finding for staff review',
+    },
     findings: {
       type: 'array',
       items: { type: 'string' },
-      description: 'Short staff-facing findings',
+      minItems: 4,
+      maxItems: 8,
+      description: 'Four to eight specific staff-facing findings covering identity, quantity or components, condition, and evidence coverage',
     },
     observedDifferences: {
       type: 'array',
       items: { type: 'string' },
+      maxItems: 8,
       description: 'Visible differences between original inspection photos and pickup photos',
     },
     recommendedStaffAction: {
@@ -76,6 +99,10 @@ const PICKUP_COMPARISON_SCHEMA = {
     'quantityMatchScore',
     'conditionMatchScore',
     'reviewBand',
+    'identityFinding',
+    'quantityFinding',
+    'conditionFinding',
+    'coverageFinding',
     'findings',
     'observedDifferences',
     'recommendedStaffAction',
@@ -151,7 +178,15 @@ function mimeTypeFromUrl(url: string): string {
   return 'image/jpeg';
 }
 
-async function imageUrlToBase64(url: string): Promise<{ mimeType: string; data: string }> {
+function normalizeImageMediaType(value: string | null, url: string): ClaudeImageMediaType {
+  const candidate = value?.split(';')[0]?.trim().toLowerCase();
+  if (candidate === 'image/png' || candidate === 'image/gif' || candidate === 'image/webp') {
+    return candidate;
+  }
+  return mimeTypeFromUrl(url) as ClaudeImageMediaType;
+}
+
+async function imageUrlToBase64(url: string): Promise<{ mimeType: ClaudeImageMediaType; data: string }> {
   const response = await fetch(url, {
     signal: AbortSignal.timeout(12000),
   });
@@ -160,8 +195,7 @@ async function imageUrlToBase64(url: string): Promise<{ mimeType: string; data: 
     throw new Error(`Could not fetch pickup comparison image (${response.status})`);
   }
 
-  const contentType = response.headers.get('content-type');
-  const mimeType = contentType?.startsWith('image/') ? contentType.split(';')[0] : mimeTypeFromUrl(url);
+  const mimeType = normalizeImageMediaType(response.headers.get('content-type'), url);
   const data = Buffer.from(await response.arrayBuffer()).toString('base64');
 
   return { mimeType, data };
@@ -194,7 +228,7 @@ function formatAsset(assetType: string, assetDetails?: Record<string, unknown> |
   return `${parts.join(' ') || assetType} (${assetType})`;
 }
 
-function buildPickupComparisonPrompt(input: PickupEvidenceComparisonInput): string {
+export function buildPickupComparisonPrompt(input: PickupEvidenceComparisonInput): string {
   return [
     'You are comparing insurance salvage pickup evidence.',
     'Original photos show the asset during adjuster inspection. Pickup photos show the asset when the winning buyer arrived for handoff.',
@@ -208,26 +242,37 @@ function buildPickupComparisonPrompt(input: PickupEvidenceComparisonInput): stri
     'Use review_needed when photo angles are insufficient, image quality is poor, or differences are possible but not certain.',
     'Score assetIdentityScore, quantityMatchScore, conditionMatchScore, and overallMatchScore from 0-100.',
     'Threshold guide: 85-100 acceptable, 75-84 minor_review, 60-74 major_review, below 60 material_discrepancy. Use status material_discrepancy only when a material issue is clearly visible.',
+    'Write 4-8 non-repetitive findings. Each finding must state what was actually compared and the visible evidence supporting it.',
+    'The findings must collectively cover: (1) asset identity and distinguishing cues, (2) visible item count, stock quantity, or major-component completeness, (3) visible condition and whether prior damage is consistent, worsened, or improved, and (4) photo coverage or any uncertainty that staff must review.',
+    'Populate identityFinding, quantityFinding, conditionFinding, and coverageFinding with those four evidence-specific conclusions, then use findings for any additional non-repetitive observations.',
+    'Name separately visible items, packages, components, or damage zones when the photos support it. For a furniture set, for example, address each visible sofa, chair, table, or cabinet rather than calling everything furniture.',
+    'When the sets match, explain the affirmative matching evidence in detail. Do not collapse a high match into one generic sentence.',
+    'Put only genuine visible differences in observedDifferences. Return an empty array when no difference is visible; never invent a discrepancy to fill the array.',
+    'recommendedStaffAction must be a specific, complete instruction based on the scores, findings, differences, and evidence limitations.',
     `Asset: ${formatAsset(input.assetType, input.assetDetails)}`,
-    `Original AI assessment summary: ${JSON.stringify(input.aiAssessment || {}).slice(0, 1800)}`,
+    `Declared asset details: ${JSON.stringify(input.assetDetails || {}).slice(0, 2500)}`,
+    `Original AI assessment and damage record: ${JSON.stringify(input.aiAssessment || {}).slice(0, 6000)}`,
     `Original photo count: ${input.originalPhotoUrls.length}. Pickup photo count: ${input.pickupPhotoUrls.length}.`,
-    'Return concise JSON for staff.',
+    'Return detailed but direct JSON for an insurance salvage manager. Do not include prose outside the JSON object.',
   ].join('\n');
 }
 
 function normalizeAiComparison(
-  parsed: any,
+  parsed: unknown,
   input: PickupEvidenceComparisonInput,
   baseComparison: PickupEvidenceComparison,
   method: 'gemini_ai' | 'claude_ai',
   provider: 'gemini' | 'claude'
 ): PickupEvidenceComparison {
-  const status = normalizeStatus(parsed.status);
-  const assetIdentityScore = clampScore(parsed.assetIdentityScore, status === 'matches_expected' ? 86 : 70);
-  const quantityMatchScore = clampScore(parsed.quantityMatchScore, status === 'matches_expected' ? 86 : 70);
-  const conditionMatchScore = clampScore(parsed.conditionMatchScore, status === 'matches_expected' ? 86 : 70);
+  const result: UnknownRecord = typeof parsed === 'object' && parsed !== null
+    ? parsed as UnknownRecord
+    : {};
+  const status = normalizeStatus(result.status);
+  const assetIdentityScore = clampScore(result.assetIdentityScore, status === 'matches_expected' ? 86 : 70);
+  const quantityMatchScore = clampScore(result.quantityMatchScore, status === 'matches_expected' ? 86 : 70);
+  const conditionMatchScore = clampScore(result.conditionMatchScore, status === 'matches_expected' ? 86 : 70);
   const overallMatchScore = clampScore(
-    parsed.overallMatchScore,
+    result.overallMatchScore,
     Math.round((assetIdentityScore * 0.4) + (quantityMatchScore * 0.35) + (conditionMatchScore * 0.25))
   );
   const scoreAdjustedStatus = derivePickupComparisonStatusFromScores(status, {
@@ -236,10 +281,20 @@ function normalizeAiComparison(
     condition: conditionMatchScore,
     overall: overallMatchScore,
   });
-  const findings = normalizeTextArray(parsed.findings, baseComparison.findings);
-  const observedDifferences = normalizeTextArray(parsed.observedDifferences, []);
+  const structuredFindings = [
+    result.identityFinding,
+    result.quantityFinding,
+    result.conditionFinding,
+    result.coverageFinding,
+  ].filter((finding): finding is string => typeof finding === 'string' && finding.trim().length > 0);
+  const additionalFindings = Array.isArray(result.findings) ? result.findings : [];
+  const findings = normalizeTextArray(
+    [...structuredFindings, ...additionalFindings],
+    baseComparison.findings
+  );
+  const observedDifferences = normalizeTextArray(result.observedDifferences, []);
   const confidenceScore = Math.min(
-    clampScore(parsed.confidenceScore, baseComparison.confidenceScore),
+    clampScore(result.confidenceScore, baseComparison.confidenceScore),
     input.pickupPhotoUrls.length < 3 ? 80 : 95
   );
 
@@ -250,12 +305,12 @@ function normalizeAiComparison(
     assetIdentityScore,
     quantityMatchScore,
     conditionMatchScore,
-    reviewBand: normalizeReviewBand(parsed.reviewBand, scoreAdjustedStatus),
+    reviewBand: normalizeReviewBand(result.reviewBand, scoreAdjustedStatus),
     findings,
     observedDifferences,
     recommendedStaffAction:
-      typeof parsed.recommendedStaffAction === 'string' && parsed.recommendedStaffAction.trim()
-        ? parsed.recommendedStaffAction.trim()
+      typeof result.recommendedStaffAction === 'string' && result.recommendedStaffAction.trim()
+        ? result.recommendedStaffAction.trim()
         : baseComparison.recommendedStaffAction,
     originalPhotoCount: input.originalPhotoUrls.length,
     pickupPhotoCount: input.pickupPhotoUrls.length,
@@ -265,7 +320,7 @@ function normalizeAiComparison(
   };
 }
 
-function parseClaudeJson(responseText: string): any {
+function parseClaudeJson(responseText: string): unknown {
   const cleaned = responseText
     .trim()
     .replace(/^```(?:json)?\s*\n?/i, '')
@@ -284,12 +339,12 @@ async function compareWithGemini(
   const model = getGeminiModel();
   if (!model) return null;
 
-  const originalPhotos = input.originalPhotoUrls.slice(0, 4);
-  const pickupPhotos = input.pickupPhotoUrls.slice(0, 4);
+  const originalPhotos = input.originalPhotoUrls.slice(0, 5);
+  const pickupPhotos = input.pickupPhotoUrls.slice(0, 5);
   const originalParts = await Promise.all(originalPhotos.map(imageUrlToInlinePart));
   const pickupParts = await Promise.all(pickupPhotos.map(imageUrlToInlinePart));
 
-  const contentParts: any[] = [{ text: buildPickupComparisonPrompt(input) }];
+  const contentParts: Part[] = [{ text: buildPickupComparisonPrompt(input) }];
   originalParts.forEach((part, index) => {
     contentParts.push({ text: `Original inspection photo ${index + 1}` }, part);
   });
@@ -300,10 +355,10 @@ async function compareWithGemini(
   let result;
   try {
     result = await model.generateContent({
-      contents: [{ parts: contentParts }],
+      contents: [{ role: 'user', parts: contentParts }],
       generationConfig: {
         responseMimeType: 'application/json',
-        responseSchema: PICKUP_COMPARISON_SCHEMA,
+        responseSchema: PICKUP_COMPARISON_SCHEMA as Schema,
       },
     });
   } catch (error) {
@@ -331,12 +386,12 @@ async function compareWithClaude(
   const client = getClaudeClient();
   if (!client) return null;
 
-  const originalPhotos = input.originalPhotoUrls.slice(0, 4);
-  const pickupPhotos = input.pickupPhotoUrls.slice(0, 4);
+  const originalPhotos = input.originalPhotoUrls.slice(0, 5);
+  const pickupPhotos = input.pickupPhotoUrls.slice(0, 5);
   const originalParts = await Promise.all(originalPhotos.map(imageUrlToBase64));
   const pickupParts = await Promise.all(pickupPhotos.map(imageUrlToBase64));
 
-  const content: any[] = [{ type: 'text', text: buildPickupComparisonPrompt(input) }];
+  const content: ContentBlockParam[] = [{ type: 'text', text: buildPickupComparisonPrompt(input) }];
   originalParts.forEach((photo, index) => {
     content.push({ type: 'text', text: `Original inspection photo ${index + 1}` });
     content.push({
@@ -365,7 +420,7 @@ async function compareWithClaude(
     max_tokens: 1400,
     messages: [{ role: 'user', content }],
     system:
-      'You are an insurance salvage evidence reviewer. Return ONLY valid JSON with status, confidenceScore, overallMatchScore, assetIdentityScore, quantityMatchScore, conditionMatchScore, reviewBand, findings, observedDifferences, and recommendedStaffAction.',
+      'You are an insurance salvage evidence reviewer. Return ONLY valid JSON with status, confidenceScore, overallMatchScore, assetIdentityScore, quantityMatchScore, conditionMatchScore, reviewBand, identityFinding, quantityFinding, conditionFinding, coverageFinding, findings, observedDifferences, and recommendedStaffAction.',
   });
 
   const textContent = response.content.find((block) => block.type === 'text');

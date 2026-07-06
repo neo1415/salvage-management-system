@@ -31,7 +31,7 @@ export interface NotificationPayload {
   body: string;
   icon?: string;
   badge?: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   tag?: string;
   requireInteraction?: boolean;
   actions?: Array<{
@@ -164,8 +164,9 @@ export async function sendPushToUser(
     }
 
     // Bidding OTP push must not be blocked by bid-alert preference toggles.
+    const notificationType = typeof payload.data?.type === 'string' ? payload.data.type : undefined;
     const preferenceKey =
-      payload.data?.type === 'bidding_otp' ? null : preferenceKeyForType(payload.data?.type);
+      notificationType === 'bidding_otp' ? null : preferenceKeyForType(notificationType);
     if (preferences && preferenceKey && !preferences[preferenceKey]) {
       console.log(`Push notification ${payload.data?.type} disabled for user ${userId}`);
       return { success: false, sentCount: 0, errors: ['Notification type disabled'] };

@@ -32,7 +32,7 @@ export interface DependencyEdge {
 /**
  * Extract import statements from TypeScript/JavaScript code
  */
-export function extractImports(code: string, filePath: string): ImportStatement[] {
+export function extractImports(code: string, _filePath: string): ImportStatement[] {
   const imports: ImportStatement[] = [];
   const seenImports = new Map<string, ImportStatement>();
 
@@ -130,7 +130,7 @@ export function extractImports(code: string, filePath: string): ImportStatement[
 export function resolveImportPath(
   importPath: string,
   fromFile: string,
-  rootPath: string
+  _rootPath: string
 ): string | null {
   // Skip external modules (node_modules)
   if (!importPath.startsWith('.') && !importPath.startsWith('/') && !importPath.startsWith('@/')) {

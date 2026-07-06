@@ -217,7 +217,7 @@ export class SchemaParser {
   private parseColumnDefinition(
     columnName: string,
     initializer: ts.Expression,
-    sourceCode: string
+    _sourceCode: string
   ): ColumnDefinition | null {
     const columnText = initializer.getText();
 

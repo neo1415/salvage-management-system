@@ -24,7 +24,7 @@ export async function POST(
 ) {
   try {
     // Await params (Next.js 15+)
-    const { id: auctionId } = await params;
+    await params;
 
     // Get session
     const session = await auth();

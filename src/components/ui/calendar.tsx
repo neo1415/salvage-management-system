@@ -18,7 +18,7 @@ export function Calendar({
   selected,
   onSelect,
   numberOfMonths = 1,
-  initialFocus,
+  initialFocus = false,
 }: CalendarProps) {
   const [currentMonth, setCurrentMonth] = React.useState(new Date());
   const [rangeStart, setRangeStart] = React.useState<Date | null>(null);
@@ -111,6 +111,7 @@ export function Calendar({
             return (
               <button
                 key={day}
+                autoFocus={initialFocus && monthOffset === 0 && day === 1}
                 onClick={() => handleDateClick(day)}
                 className={cn(
                   'p-2 text-sm rounded-md hover:bg-accent transition-colors',

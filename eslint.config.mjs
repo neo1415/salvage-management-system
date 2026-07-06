@@ -29,6 +29,18 @@ export default defineConfig([
     'node_modules/**',
     'playwright-report/**',
     'scripts/**',
+    // Story/demo components are not imported by the application runtime.
+    // Their corresponding production components remain part of the lint gate.
+    'src/**/*.example.tsx',
+    // Dormant node-cron intelligence jobs. Nothing imports or starts this job
+    // manager in runtime, and the live monitoring route explicitly reports the
+    // jobs as disabled for Vercel. Active intelligence services remain linted.
+    'src/features/intelligence/jobs/**',
+    // Legacy, standalone browser verification harnesses. These modules have no
+    // runtime imports or package-script entry points; active voice code remains linted.
+    'src/lib/voice/compatibility-verification.ts',
+    'src/lib/voice/feature-integration-verification.ts',
+    'src/lib/voice/form-integration-verification.ts',
     'test-results/**',
     'tests/**',
   ]),

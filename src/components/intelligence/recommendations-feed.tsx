@@ -8,21 +8,26 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RecommendationCard } from './recommendation-card';
+import { RecommendationCard, type RecommendationAuctionDetails } from './recommendation-card';
 import { Loader2, Sparkles } from 'lucide-react';
 
 interface Recommendation {
   auctionId: string;
   matchScore: number;
   reasonCodes: string[];
-  auctionDetails: {
-    assetType: string;
-    assetDetails: any;
-    marketValue: number;
-    reservePrice: number;
-    currentBid: number | null;
-    watchingCount: number;
-    endTime: Date;
+  auctionDetails: RecommendationAuctionDetails;
+}
+
+interface FallbackAuction {
+  id: string;
+  currentBid?: string | number | null;
+  watchingCount?: string | number | null;
+  endTime: string;
+  case?: {
+    assetType?: string;
+    assetDetails?: Record<string, unknown>;
+    marketValue?: string | number | null;
+    reservePrice?: string | number | null;
   };
 }
 
@@ -57,7 +62,7 @@ export function RecommendationsFeed({
     const data = await response.json();
     const auctions = data.auctions || [];
 
-    return auctions.map((auction: any) => ({
+    return auctions.map((auction: FallbackAuction) => ({
       auctionId: auction.id,
       matchScore: 50,
       reasonCodes: ['Available now', 'Recently listed'],

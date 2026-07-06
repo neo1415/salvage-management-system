@@ -74,7 +74,7 @@ export const valuationAuditLogs = pgTable('valuation_audit_logs', {
   entityId: uuid('entity_id').notNull(),
   
   // Change tracking
-  changedFields: jsonb('changed_fields').$type<Record<string, { old: any; new: any }>>(),
+  changedFields: jsonb('changed_fields').$type<Record<string, { old: unknown; new: unknown }>>(),
   
   // User tracking
   userId: uuid('user_id').notNull().references(() => users.id),

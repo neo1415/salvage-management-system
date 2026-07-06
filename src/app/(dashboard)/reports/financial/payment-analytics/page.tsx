@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -12,24 +12,21 @@ import { ExportButton } from '@/components/reports/common/export-button';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { formatReportCurrency } from '@/components/reports/common/report-currency';
 import { ReportSummaryGrid, ReportSummaryStat, MetricValue } from '@/components/reports/common/report-ui';
+import type { PaymentAnalyticsReport } from '@/features/reports/financial/services/payment-analytics.service';
 
 export default function PaymentAnalyticsPage() {
   const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<PaymentAnalyticsReport | null>(null);
   const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async (force = false) => {
+  const fetchReport = useCallback(async (force = false) => {
     startFetch();
     try {
       const result = await loadReportFromApi('/api/reports/financial/payment-analytics', filters, { force });
-      if (result.status === 'success') {
-        setReportData(result.data);
+      if (result.status === 'success' && result.data) {
+        setReportData(result.data as PaymentAnalyticsReport);
         markHasData();
       }
     } catch (error) {
@@ -37,7 +34,9 @@ export default function PaymentAnalyticsPage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endFetch, filters, markHasData, startFetch]);
+
+  useEffect(() => { void fetchReport(); }, [fetchReport]);
 
   return (
     <>
@@ -196,7 +195,7 @@ export default function PaymentAnalyticsPage() {
                   <ReportSummaryStat label="Total Payments" value={reportData.summary?.totalPayments || 0} />
                   <ReportSummaryStat label="Total Amount" value={formatReportCurrency(reportData.summary?.totalAmount || 0)} />
                   <ReportSummaryStat label="Success Rate" value={`${reportData.summary?.successRate || 0}%`} />
-                  <ReportSummaryStat label="Avg Payment Time" value={`${reportData.summary?.averagePaymentTime || 0}h`} />
+                  <ReportSummaryStat label="Avg Payment Time" value={`${reportData.summary?.averageProcessingTimeHours || 0}h`} />
                 </ReportSummaryGrid>
               </CardContent>
             </Card>
@@ -211,7 +210,7 @@ export default function PaymentAnalyticsPage() {
                   The total amount includes all auction payments regardless of status. Here's the breakdown:
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {(reportData.byStatus || []).map((status: any) => {
+                  {(reportData.byStatus || []).map((status) => {
                     const isVerified = status.status === 'verified' || status.status === 'completed';
                     return (
                       <div 
@@ -255,12 +254,16 @@ export default function PaymentAnalyticsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(reportData.byMethod || []).map((method: any) => (
+                      {(reportData.byMethod || []).map((method) => (
                         <tr key={method.method} className="border-b">
                           <td className="p-2 capitalize">{(method.method || '').replace('_', ' ')}</td>
                           <td className="text-right p-2">{method.count || 0}</td>
                           <td className="text-right p-2">{formatReportCurrency(method.totalAmount || 0)}</td>
-                          <td className="text-right p-2">{method.percentage || 0}%</td>
+                          <td className="text-right p-2">
+                            {reportData.summary.totalPayments > 0
+                              ? ((method.count / reportData.summary.totalPayments) * 100).toFixed(2)
+                              : '0.00'}%
+                          </td>
                           <td className="text-right p-2">{method.successRate || 0}%</td>
                         </tr>
                       ))}

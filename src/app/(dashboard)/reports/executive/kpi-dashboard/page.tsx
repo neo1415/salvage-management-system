@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -13,24 +13,21 @@ import { ExportButton } from '@/components/reports/common/export-button';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 import { formatReportCurrency } from '@/components/reports/common/report-currency';
 import { MetricGrid, ReportKPICard } from '@/components/reports/common/report-ui';
+import type { KPIDashboardReport } from '@/features/reports/executive/services/kpi-dashboard.service';
 
 export default function KPIDashboardPage() {
   const router = useAppRouter();
-  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+  const { loading, isRefreshing, startFetch, endFetch, markHasData } =
     useReportFetchState();
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<KPIDashboardReport | null>(null);
   const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async (force = false) => {
+  const fetchReport = useCallback(async (force = false) => {
     startFetch();
     try {
       const result = await loadReportFromApi('/api/reports/executive/kpi-dashboard', filters, { force });
-      if (result.status === 'success') {
-        setReportData(result.data);
+      if (result.status === 'success' && result.data) {
+        setReportData(result.data as KPIDashboardReport);
         markHasData();
       }
     } catch (error) {
@@ -38,7 +35,11 @@ export default function KPIDashboardPage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endFetch, filters, markHasData, startFetch]);
+
+  useEffect(() => {
+    void fetchReport();
+  }, [fetchReport]);
 
   const KPICard = ReportKPICard;
 
@@ -293,7 +294,7 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((c: any, index: number) => (
+                          {rows.map((c, index) => (
                             <tr key={`case-${c.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{c.claimReference}</td>
                               <td className="p-2">{c.policyNumber || '—'}</td>
@@ -344,13 +345,13 @@ export default function KPIDashboardPage() {
                               </tr>
                             </thead>
                             <tbody>
-                              {rows.map((branch: any, index: number) => (
+                              {rows.map((branch, index) => (
                                 <tr key={`branch-${branch.branchName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                                   <td className="p-2 font-medium">{branch.branchName || 'Unassigned'}</td>
                                   <td className="text-right p-2">{branch.totalCases || 0}</td>
                                   <td className="text-right p-2">{branch.soldCases || 0}</td>
-                                  <td className="text-right p-2">{formatReportCurrency(parseFloat(branch.claimsValue || '0'))}</td>
-                                  <td className="text-right p-2 font-semibold">{formatReportCurrency(parseFloat(branch.verifiedRecovery || '0'))}</td>
+                                  <td className="text-right p-2">{formatReportCurrency(branch.claimsValue || 0)}</td>
+                                  <td className="text-right p-2 font-semibold">{formatReportCurrency(branch.verifiedRecovery || 0)}</td>
                                   <td className="text-right p-2">{branch.recoveryRate || 0}%</td>
                                 </tr>
                               ))}
@@ -384,7 +385,7 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((a: any, index: number) => (
+                          {rows.map((a, index) => (
                             <tr key={`auction-${a.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{a.caseReference}</td>
                               <td className="text-right p-2">{a.uniqueBidders}</td>
@@ -434,7 +435,7 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((adj: any, index: number) => (
+                          {rows.map((adj, index) => (
                             <tr key={`adjuster-${adj.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{adj.name}</td>
                               <td className="text-right p-2">{adj.totalCases}</td>
@@ -442,7 +443,7 @@ export default function KPIDashboardPage() {
                               <td className="text-right p-2 text-red-600">{adj.rejected}</td>
                               <td className="text-right p-2">{adj.approvalRate}%</td>
                               <td className="text-right p-2">{adj.avgProcessingTime}h</td>
-                              <td className="text-right p-2">{formatReportCurrency(parseFloat(adj.revenue || '0'))}</td>
+                              <td className="text-right p-2">{formatReportCurrency(adj.revenue || 0)}</td>
                               <td className="text-right p-2">
                                 <span className={`px-2 py-1 rounded text-xs font-semibold ${
                                   adj.qualityScore >= 80 ? 'bg-green-100 text-green-800' :
@@ -485,7 +486,7 @@ export default function KPIDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((v: any, index: number) => (
+                          {rows.map((v, index) => (
                             <tr key={`vendor-${v.id}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2">{v.businessName}</td>
                               <td className="p-2">
@@ -500,8 +501,8 @@ export default function KPIDashboardPage() {
                               <td className="text-right p-2">{v.auctionsParticipated}</td>
                               <td className="text-right p-2">{v.auctionsWon}</td>
                               <td className="text-right p-2">{v.winRate}%</td>
-                              <td className="text-right p-2">{formatReportCurrency(parseFloat(v.totalSpent || '0'))}</td>
-                              <td className="text-right p-2">{formatReportCurrency(parseFloat(v.avgBid || '0'))}</td>
+                              <td className="text-right p-2">{formatReportCurrency(v.totalSpent || 0)}</td>
+                              <td className="text-right p-2">{formatReportCurrency(v.avgBid || 0)}</td>
                               <td className="text-right p-2">
                                 <span className={`px-2 py-1 rounded text-xs ${
                                   v.paymentRate >= 90 ? 'bg-green-100 text-green-800' :

@@ -20,12 +20,11 @@ import { eq, and, lte, sql } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
-import { escrowService } from '@/features/payments/services/escrow.service';
 import {
   createAuctionWonNotification,
-  createAuctionLostNotification,
 } from '@/features/notifications/services/notification.service';
 import { generateDocument } from '@/features/documents/services/document.service';
+import type { ReleaseForm } from '@/lib/db/schema/release-forms';
 import { broadcastAuctionClosure, broadcastAuctionUpdate, broadcastAuctionClosing, broadcastDocumentGenerated, broadcastDocumentGenerationComplete } from '@/lib/socket/server';
 import { getAppUrl } from '@/features/notifications/templates/email-urls';
 import { configService } from '@/features/auction-deposit/services/config.service';
@@ -663,7 +662,7 @@ export class AuctionClosureService {
     createdBy: string,
     userId: string,
     maxRetries = 3
-  ): Promise<any> {
+  ): Promise<ReleaseForm> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const document = await generateDocument(auctionId, vendorId, documentType, createdBy);
@@ -1071,16 +1070,6 @@ export class AuctionClosureService {
       1,
       Math.round((paymentDeadline.getTime() - Date.now()) / (1000 * 60 * 60))
     );
-    const deadlineFormatted = paymentDeadline.toLocaleString('en-NG', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Africa/Lagos',
-    });
-
     return `
       <!DOCTYPE html>
       <html lang="en">

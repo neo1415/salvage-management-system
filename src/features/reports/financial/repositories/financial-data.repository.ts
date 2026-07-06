@@ -6,10 +6,12 @@
  */
 
 import { db } from '@/lib/db/drizzle';
-import { salvageCases, auctions, payments, vendors, users } from '@/lib/db/schema';
-import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
+import { salvageCases, auctions, payments, vendors } from '@/lib/db/schema';
+import { eq, and, gte, lte, sql, inArray, desc, type AnyColumn } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
 import { resolveReportIsoDateRange } from '../../utils/report-date-range';
+
+type RawRevenueRow = Record<string, string>;
 
 export interface RevenueData {
   caseId: string;
@@ -56,7 +58,7 @@ export class FinancialDataRepository {
   /**
    * Build date range condition
    */
-  private static buildDateCondition(dateColumn: any, startDate?: string, endDate?: string) {
+  private static buildDateCondition(dateColumn: AnyColumn, startDate?: string, endDate?: string) {
     const conditions = [];
     if (startDate) conditions.push(gte(dateColumn, new Date(startDate)));
     if (endDate) conditions.push(lte(dateColumn, new Date(endDate)));
@@ -111,9 +113,9 @@ export class FinancialDataRepository {
         ${assetTypeFilter}
         ${brokerFilter}
       ORDER BY sc.id, p.verified_at DESC NULLS LAST, p.created_at DESC
-    `) as any[];
+    `) as unknown as RawRevenueRow[];
 
-    return results.map((row: any) => {
+    return results.map((row) => {
       const marketValue = parseFloat(row.market_value || '0'); // ACV - claim payout
       // Only use actual verified payment amounts, not bids
       const salvageRecovery = parseFloat(row.payment_amount || '0');

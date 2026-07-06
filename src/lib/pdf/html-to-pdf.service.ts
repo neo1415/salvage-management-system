@@ -3,7 +3,7 @@
  * Converts HTML pages to PDF with full styling, charts, and tables
  */
 
-import puppeteer, { Browser, Page } from 'puppeteer';
+import puppeteer, { Browser } from 'puppeteer';
 
 export interface HtmlToPdfOptions {
   html: string;
@@ -146,7 +146,7 @@ export class HtmlToPdfService {
         await page.waitForSelector('canvas, svg, [data-report-content]', {
           timeout: 10000,
         });
-      } catch (e) {
+      } catch {
         // Continue even if selectors not found
         console.warn('Chart selectors not found, continuing anyway');
       }

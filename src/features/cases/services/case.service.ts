@@ -8,10 +8,10 @@
 import { db } from '@/lib/db/drizzle';
 import { salvageCases, valuationEvidence } from '@/lib/db/schema/cases';
 import { eq } from 'drizzle-orm';
-import { assessDamageEnhanced, type EnhancedDamageAssessment, type VehicleInfo, type UniversalItemInfo } from './ai-assessment-enhanced.service';
+import type { EnhancedDamageAssessment } from './ai-assessment-enhanced.service';
 import { uploadFile, getSalvageCaseFolder, TRANSFORMATION_PRESETS } from '@/lib/storage/cloudinary';
 import { logAction, AuditActionType, AuditEntityType, type DeviceType } from '@/lib/utils/audit-logger';
-import { mapQualityToUniversalCondition } from '@/features/valuations/services/condition-mapping.service';
+import { mapAnyConditionToQuality } from '@/features/valuations/services/condition-mapping.service';
 import {
   recordImageUploadMetadataBatch,
 } from '@/features/media/services/image-upload-metadata.service';
@@ -525,14 +525,14 @@ export async function createCase(
         valuationEvidence: input.aiAssessmentResult.valuationEvidence,
         analysisMethod: input.aiAssessmentResult.analysisMethod || 'gemini' as const,
         photoCount: photoUrls.length,
-        qualityTier: (input.aiAssessmentResult.qualityTier || 'fair') as any,
+        qualityTier: mapAnyConditionToQuality(input.aiAssessmentResult.qualityTier || 'fair'),
         marketValue: resolvedMarketValue,
         // CRITICAL: Extract detailed Gemini analysis results
         itemDetails: input.aiAssessmentResult.itemDetails,
         damagedParts: input.aiAssessmentResult.damagedParts,
       };
       
-      console.log('🎯 Using frontend severity assessment:', aiAssessment.damageSeverity);
+      console.log('🎯 Using frontend severity assessment:', aiAssessment?.damageSeverity);
     } else if (managerRunsAiAssessment) {
       console.log('Salvage manager AI mode: adjuster submitted without AI assessment — pending manager analysis');
       aiAssessment = null;
@@ -690,7 +690,11 @@ export async function createCase(
       damageSeverity: createdCase.damageSeverity,
       estimatedSalvageValue: createdCase.estimatedSalvageValue,
       reservePrice: createdCase.reservePrice,
-      aiConfidence: (createdCase.aiAssessment as any)?.confidenceScore,
+      aiConfidence: createdCase.aiAssessment
+        && typeof createdCase.aiAssessment === 'object'
+        && 'confidenceScore' in createdCase.aiAssessment
+        ? createdCase.aiAssessment.confidenceScore
+        : undefined,
     });
 
     // Create audit log entry

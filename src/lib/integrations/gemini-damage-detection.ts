@@ -16,11 +16,27 @@
  * Requirements: 2.3, 2.4, 2.5
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, type GenerativeModel, type GenerateContentResult, type Part, type Schema } from '@google/generative-ai';
 import { internetSearchService } from '@/features/internet-search/services/internet-search.service';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
-import { normalizeDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
+import { normalizeDamageAction, normalizeDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function getErrorStack(error: unknown): string {
+  return error instanceof Error && error.stack ? error.stack : 'No stack trace available';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSeverity(value: unknown): value is 'minor' | 'moderate' | 'severe' {
+  return value === 'minor' || value === 'moderate' || value === 'severe';
+}
 
 /**
  * Vehicle context for damage assessment
@@ -220,7 +236,7 @@ let serviceConfig: GeminiConfig = {
 };
 
 let geminiClient: GoogleGenerativeAI | null = null;
-let geminiModel: any | null = null;
+let geminiModel: GenerativeModel | null = null;
 
 /**
  * Initialize the Gemini service with API key validation
@@ -299,9 +315,9 @@ export async function initializeGeminiService(): Promise<void> {
         `Model: ${serviceConfig.model}. Local safety limit: ${Math.max(1, Number(process.env.GEMINI_DAILY_REQUEST_LIMIT) || 20)} requests/day. ` +
         `Actual quota is controlled per Google project.`
       );
-    } catch (validationError: any) {
+    } catch (validationError: unknown) {
       // Connection validation failed - likely invalid API key
-      const errorMessage = validationError?.message || 'Unknown error';
+      const errorMessage = getErrorMessage(validationError) || 'Unknown error';
       console.error(
         `[Gemini Service] Connection validation failed. API key may be invalid. ` +
         `Error: ${errorMessage}. Key ends with: ...${apiKey.slice(-4)}. ` +
@@ -312,10 +328,10 @@ export async function initializeGeminiService(): Promise<void> {
       geminiClient = null;
       geminiModel = null;
     }
-  } catch (initError: any) {
+  } catch (initError: unknown) {
     // Initialization failed - log error with context for traceability
-    const errorMessage = initError?.message || 'Unknown error';
-    const errorStack = initError?.stack || 'No stack trace available';
+    const errorMessage = getErrorMessage(initError) || 'Unknown error';
+    const errorStack = getErrorStack(initError);
     console.error(
       `[Gemini Service] Initialization failed. Error: ${errorMessage}. ` +
       `Key ends with: ...${apiKey.slice(-4)}. ` +
@@ -344,7 +360,7 @@ export function isGeminiEnabled(): boolean {
  * @returns The configured Gemini model or null if not initialized
  * @internal
  */
-export function getGeminiModel(): any | null {
+export function getGeminiModel(): GenerativeModel | null {
   return geminiModel;
 }
 
@@ -479,7 +495,7 @@ function clamp(value: number, min: number, max: number): number {
  * @param requestId - Request ID for logging
  * @returns Clamped score between 0 and 100
  */
-export function validateDamageScore(score: any, fieldName: string, requestId: string): number {
+export function validateDamageScore(score: unknown, fieldName: string, requestId: string): number {
   // Check if score is a number
   if (typeof score !== 'number' || isNaN(score)) {
     console.warn(
@@ -571,7 +587,7 @@ export function validateAndCorrectSeverity(
  * @param requestId - Request ID for logging
  * @returns Valid boolean value
  */
-export function validateBoolean(value: any, fieldName: string, requestId: string): boolean {
+export function validateBoolean(value: unknown, fieldName: string, requestId: string): boolean {
   if (typeof value === 'boolean') {
     return value;
   }
@@ -592,7 +608,7 @@ export function validateBoolean(value: any, fieldName: string, requestId: string
  * @param requestId - Request ID for logging
  * @returns Valid summary text
  */
-export function validateSummary(summary: any, requestId: string): string {
+export function validateSummary(summary: unknown, requestId: string): string {
   // Check if summary is a string
   if (typeof summary !== 'string') {
     console.warn(
@@ -644,13 +660,17 @@ export function validateSummary(summary: any, requestId: string): string {
  */
 export function parseAndValidateResponse(responseText: string, requestId: string): GeminiDamageAssessment {
   // Parse JSON response
-  let parsedResponse: any;
+  let parsedResponse: Record<string, unknown>;
   try {
-    parsedResponse = JSON.parse(responseText);
-  } catch (parseError: any) {
+    const parsed: unknown = JSON.parse(responseText);
+    if (!isRecord(parsed)) {
+      throw new Error('Gemini response must be a JSON object');
+    }
+    parsedResponse = parsed;
+  } catch (parseError: unknown) {
     const errorMsg = 
       `Failed to parse Gemini response as JSON. Response: ${responseText.substring(0, 200)}... ` +
-      `Error: ${parseError?.message || 'Unknown error'}. Request ID: ${requestId}`;
+      `Error: ${getErrorMessage(parseError) || 'Unknown error'}. Request ID: ${requestId}`;
     console.error(`[Gemini Service] ${errorMsg}`);
     throw new Error(errorMsg);
   }
@@ -679,48 +699,53 @@ export function parseAndValidateResponse(responseText: string, requestId: string
   }
 
   // Validate each damaged part
-  const damagedParts: DamagedPart[] = parsedResponse.damagedParts.map((part: any, index: number) => {
-    if (!part.part || typeof part.part !== 'string') {
+  const damagedParts: DamagedPart[] = parsedResponse.damagedParts.map((value: unknown, index: number) => {
+    const part = isRecord(value) ? value : {};
+    const partName = typeof part.part === 'string' && part.part.trim()
+      ? part.part
+      : 'unknown part';
+    if (partName === 'unknown part') {
       console.warn(
         `[Gemini Service] Invalid part name at index ${index}. Using "unknown part". ` +
         `Request ID: ${requestId}`
       );
-      part.part = 'unknown part';
     }
 
-    const validSeverities: Array<'minor' | 'moderate' | 'severe'> = ['minor', 'moderate', 'severe'];
-    if (!validSeverities.includes(part.severity)) {
+    const partSeverity = isSeverity(part.severity) ? part.severity : 'moderate';
+    if (!isSeverity(part.severity)) {
       console.warn(
-        `[Gemini Service] Invalid severity "${part.severity}" at index ${index}. Defaulting to "moderate". ` +
+        `[Gemini Service] Invalid severity "${String(part.severity)}" at index ${index}. Defaulting to "moderate". ` +
         `Request ID: ${requestId}`
       );
-      part.severity = 'moderate';
     }
 
-    if (typeof part.confidence !== 'number' || part.confidence < 0 || part.confidence > 100) {
+    const partConfidence = typeof part.confidence === 'number'
+      && part.confidence >= 0
+      && part.confidence <= 100
+      ? part.confidence
+      : 70;
+    if (partConfidence === 70 && part.confidence !== 70) {
       console.warn(
-        `[Gemini Service] Invalid confidence ${part.confidence} at index ${index}. Defaulting to 70. ` +
+        `[Gemini Service] Invalid confidence ${String(part.confidence)} at index ${index}. Defaulting to 70. ` +
         `Request ID: ${requestId}`
       );
-      part.confidence = 70;
     }
 
     return normalizeDamageEvidence({
-      part: part.part,
+      part: partName,
       damageType: typeof part.damageType === 'string' ? part.damageType : undefined,
       description: typeof part.description === 'string' ? part.description : undefined,
-      recommendedAction: part.recommendedAction,
-      actionConfidence: part.actionConfidence,
-      severity: part.severity as 'minor' | 'moderate' | 'severe',
-      confidence: part.confidence
+      recommendedAction: normalizeDamageAction(part.recommendedAction),
+      actionConfidence: typeof part.actionConfidence === 'number' ? part.actionConfidence : 0,
+      severity: partSeverity,
+      confidence: partConfidence
     });
   });
 
   // Validate severity format
-  const validSeverities: Array<'minor' | 'moderate' | 'severe'> = ['minor', 'moderate', 'severe'];
   let severity: 'minor' | 'moderate' | 'severe';
-  if (typeof parsedResponse.severity === 'string' && validSeverities.includes(parsedResponse.severity as any)) {
-    severity = parsedResponse.severity as 'minor' | 'moderate' | 'severe';
+  if (isSeverity(parsedResponse.severity)) {
+    severity = parsedResponse.severity;
   } else {
     console.warn(
       `[Gemini Service] Invalid severity value: ${parsedResponse.severity}. ` +
@@ -735,9 +760,10 @@ export function parseAndValidateResponse(responseText: string, requestId: string
 
   // Parse itemDetails if present
   let itemDetails: ItemDetails | undefined;
-  if (parsedResponse.itemDetails && typeof parsedResponse.itemDetails === 'object') {
+  if (isRecord(parsedResponse.itemDetails)) {
+    const rawItemDetails = parsedResponse.itemDetails;
     // Helper function to sanitize field values
-    const sanitizeField = (value: any): string | undefined => {
+    const sanitizeField = (value: unknown): string | undefined => {
       if (typeof value !== 'string') return undefined;
       const trimmed = value.trim();
       // Reject empty strings
@@ -751,15 +777,15 @@ export function parseAndValidateResponse(responseText: string, requestId: string
     };
 
     itemDetails = {
-      detectedMake: sanitizeField(parsedResponse.itemDetails.detectedMake),
-      detectedModel: sanitizeField(parsedResponse.itemDetails.detectedModel),
-      detectedYear: sanitizeField(parsedResponse.itemDetails.detectedYear),
-      color: sanitizeField(parsedResponse.itemDetails.color),
-      trim: sanitizeField(parsedResponse.itemDetails.trim),
-      bodyStyle: sanitizeField(parsedResponse.itemDetails.bodyStyle),
-      storage: sanitizeField(parsedResponse.itemDetails.storage),
-      overallCondition: sanitizeField(parsedResponse.itemDetails.overallCondition),
-      notes: sanitizeField(parsedResponse.itemDetails.notes),
+      detectedMake: sanitizeField(rawItemDetails.detectedMake),
+      detectedModel: sanitizeField(rawItemDetails.detectedModel),
+      detectedYear: sanitizeField(rawItemDetails.detectedYear),
+      color: sanitizeField(rawItemDetails.color),
+      trim: sanitizeField(rawItemDetails.trim),
+      bodyStyle: sanitizeField(rawItemDetails.bodyStyle),
+      storage: sanitizeField(rawItemDetails.storage),
+      overallCondition: sanitizeField(rawItemDetails.overallCondition),
+      notes: sanitizeField(rawItemDetails.notes),
     };
     
     // Remove undefined fields for cleaner output
@@ -1364,7 +1390,7 @@ Return your assessment as JSON:
 }`;
 }
 
-function getGeneralAssetPromptProfile(itemType: string): string {
+export function getGeneralAssetPromptProfile(itemType: string): string {
   switch (itemType) {
     case 'stock':
       return [
@@ -1555,8 +1581,8 @@ async function convertImageToBase64(imageUrl: string): Promise<{ data: string; m
       data: base64,
       mimeType,
     };
-  } catch (error: any) {
-    const errorMessage = error?.message || 'Unknown error';
+  } catch (error: unknown) {
+    const errorMessage = getErrorMessage(error) || 'Unknown error';
     throw new Error(
       `Failed to convert image to base64. URL: ${imageUrl.substring(0, 100)}... Error: ${errorMessage}`
     );
@@ -1608,8 +1634,8 @@ async function convertPhotosToBase64(
         `Format: ${result.mimeType}. Request ID: ${requestId}`
       );
       return result;
-    } catch (error: any) {
-      const errorMessage = error?.message || 'Unknown error';
+    } catch (error: unknown) {
+      const errorMessage = getErrorMessage(error) || 'Unknown error';
       console.error(
         `[Gemini Service] Failed to convert photo ${index + 1}/${photosToProcess.length}. ` +
         `Error: ${errorMessage}. Request ID: ${requestId}`
@@ -1650,12 +1676,13 @@ enum ErrorType {
  * @param requestId - Request ID for logging
  * @returns Error type classification
  */
-function classifyError(error: any, requestId: string): ErrorType {
-  const errorMessage = error?.message || '';
+function classifyError(error: unknown, requestId: string): ErrorType {
+  const errorMessage = getErrorMessage(error);
   const errorString = String(error);
+  const errorStatus = isRecord(error) ? error.status : undefined;
 
   if (
-    error?.status === 429 ||
+    errorStatus === 429 ||
     errorMessage.includes('429') ||
     errorMessage.toLowerCase().includes('quota exceeded') ||
     errorString.includes('RESOURCE_EXHAUSTED')
@@ -1768,12 +1795,12 @@ function sleep(ms: number): Promise<void> {
  * @throws Error if API call fails after retry (if applicable)
  */
 async function callGeminiAPIWithRetry(
-  contentParts: any[],
+  contentParts: Part[],
   requestId: string
-): Promise<any> {
+): Promise<GenerateContentResult> {
   const timeoutMs = 30000; // 30 seconds per request (increased for multiple photos)
   const retryDelayMs = 2000; // 2 seconds delay before retry
-  let lastError: any = null;
+  let lastError: unknown = null;
 
   // Attempt 1: Initial API call
   try {
@@ -1784,21 +1811,21 @@ async function callGeminiAPIWithRetry(
     const startTime = Date.now();
     
     const apiCallPromise = geminiModel!.generateContent({
-      contents: [{ parts: contentParts }],
+      contents: [{ role: 'user', parts: contentParts }],
       generationConfig: {
         responseMimeType: "application/json",
-        responseSchema: GEMINI_RESPONSE_SCHEMA,
+        responseSchema: GEMINI_RESPONSE_SCHEMA as Schema,
       }
     });
 
     // Implement timeout
-    const timeoutPromise = new Promise((_, reject) => {
+    const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
         reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`));
       }, timeoutMs);
     });
 
-    const result = await Promise.race([apiCallPromise, timeoutPromise]) as any;
+    const result = await Promise.race([apiCallPromise, timeoutPromise]);
     const duration = Date.now() - startTime;
 
     console.info(
@@ -1807,9 +1834,9 @@ async function callGeminiAPIWithRetry(
     );
 
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
     lastError = error;
-    const errorMessage = error?.message || 'Unknown error';
+    const errorMessage = getErrorMessage(error) || 'Unknown error';
     
     console.error(
       `[Gemini Service] Attempt 1: API call failed. Error: ${errorMessage}. ` +
@@ -1855,21 +1882,21 @@ async function callGeminiAPIWithRetry(
     const startTime = Date.now();
     
     const apiCallPromise = geminiModel!.generateContent({
-      contents: [{ parts: contentParts }],
+      contents: [{ role: 'user', parts: contentParts }],
       generationConfig: {
         responseMimeType: "application/json",
-        responseSchema: GEMINI_RESPONSE_SCHEMA,
+        responseSchema: GEMINI_RESPONSE_SCHEMA as Schema,
       }
     });
 
     // Implement timeout
-    const timeoutPromise = new Promise((_, reject) => {
+    const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
         reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`));
       }, timeoutMs);
     });
 
-    const result = await Promise.race([apiCallPromise, timeoutPromise]) as any;
+    const result = await Promise.race([apiCallPromise, timeoutPromise]);
     const duration = Date.now() - startTime;
 
     console.info(
@@ -1878,12 +1905,12 @@ async function callGeminiAPIWithRetry(
     );
 
     return result;
-  } catch (retryError: any) {
-    const retryErrorMessage = retryError?.message || 'Unknown error';
+  } catch (retryError: unknown) {
+    const retryErrorMessage = getErrorMessage(retryError) || 'Unknown error';
     
     console.error(
       `[Gemini Service] Attempt 2: Retry failed. Error: ${retryErrorMessage}. ` +
-      `Original error: ${lastError?.message || 'Unknown'}. ` +
+      `Original error: ${getErrorMessage(lastError) || 'Unknown'}. ` +
       `Request ID: ${requestId}`
     );
 
@@ -1968,7 +1995,7 @@ export async function assessDamageWithGemini(
 
     // Build the content parts for Gemini API
     // Format: [text prompt, image1, image2, ...]
-    const contentParts: any[] = [
+    const contentParts: Part[] = [
       { text: prompt }
     ];
 
@@ -2024,9 +2051,9 @@ export async function assessDamageWithGemini(
     );
 
     return assessment;
-  } catch (error: any) {
-    const errorMessage = error?.message || 'Unknown error';
-    const errorStack = error?.stack || 'No stack trace available';
+  } catch (error: unknown) {
+    const errorMessage = getErrorMessage(error) || 'Unknown error';
+    const errorStack = getErrorStack(error);
     const errorType = classifyError(error, requestId);
     
     console.error(
@@ -2158,8 +2185,8 @@ export async function detectDamageWithGemini(
       salvageCalculation
     };
 
-  } catch (error: any) {
-    console.error(`[Enhanced Gemini] Damage detection failed: ${error.message}. Request ID: ${requestId}`);
+  } catch (error: unknown) {
+    console.error(`[Enhanced Gemini] Damage detection failed: ${getErrorMessage(error)}. Request ID: ${requestId}`);
     throw error;
   }
 }

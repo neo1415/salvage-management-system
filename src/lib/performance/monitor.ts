@@ -31,6 +31,30 @@ export interface PerformanceMetrics {
   timestamp: number;
 }
 
+interface LargestContentfulPaintEntry extends PerformanceEntry {
+  renderTime?: number;
+  loadTime?: number;
+}
+
+interface FirstInputEntry extends PerformanceEntry {
+  processingStart: number;
+}
+
+interface LayoutShiftEntry extends PerformanceEntry {
+  hadRecentInput: boolean;
+  value: number;
+}
+
+interface NetworkConnectionInfo {
+  effectiveType?: string;
+}
+
+interface NavigatorWithConnection extends Navigator {
+  connection?: NetworkConnectionInfo;
+  mozConnection?: NetworkConnectionInfo;
+  webkitConnection?: NetworkConnectionInfo;
+}
+
 // Performance thresholds
 const THRESHOLDS = {
   LCP: 2500, // milliseconds
@@ -73,7 +97,7 @@ class PerformanceMonitor {
       try {
         const lcpObserver = new PerformanceObserver((list) => {
           const entries = list.getEntries();
-          const lastEntry = entries[entries.length - 1] as any;
+          const lastEntry = entries[entries.length - 1] as LargestContentfulPaintEntry;
           this.metrics.lcp = lastEntry.renderTime || lastEntry.loadTime;
           this.checkThreshold('LCP', this.metrics.lcp, THRESHOLDS.LCP);
         });
@@ -87,7 +111,7 @@ class PerformanceMonitor {
       try {
         const fidObserver = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {
-            const fidEntry = entry as any;
+            const fidEntry = entry as FirstInputEntry;
             this.metrics.fid = fidEntry.processingStart - fidEntry.startTime;
             this.checkThreshold('FID', this.metrics.fid, THRESHOLDS.FID);
           }
@@ -103,7 +127,7 @@ class PerformanceMonitor {
         let clsValue = 0;
         const clsObserver = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {
-            const layoutShift = entry as any;
+            const layoutShift = entry as LayoutShiftEntry;
             if (!layoutShift.hadRecentInput) {
               clsValue += layoutShift.value;
               this.metrics.cls = clsValue;
@@ -161,7 +185,10 @@ class PerformanceMonitor {
   private getConnectionType(): string {
     if (typeof navigator === 'undefined') return 'unknown';
     
-    const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+    const connectionNavigator = navigator as NavigatorWithConnection;
+    const connection = connectionNavigator.connection
+      || connectionNavigator.mozConnection
+      || connectionNavigator.webkitConnection;
     return connection?.effectiveType || 'unknown';
   }
 

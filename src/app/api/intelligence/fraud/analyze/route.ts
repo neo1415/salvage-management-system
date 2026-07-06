@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     // Use FraudDetectionService based on entity type
     const fraudService = new FraudDetectionService();
-    let analysisResult: any;
+    let analysisResult: Record<string, unknown>;
     let riskScore = 0;
     let flagReasons: string[] = [];
 
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       case 'case':
         // Analyze claim patterns
         const claimResult = await fraudService.analyzeClaimPatterns(entityId);
-        analysisResult = claimResult;
+        analysisResult = { ...claimResult };
         riskScore = claimResult.riskScore;
         flagReasons = claimResult.flagReasons;
         break;
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
       case 'auction':
         // Detect shill bidding
         const shillResult = await fraudService.detectShillBidding(entityId);
-        analysisResult = shillResult;
+        analysisResult = { ...shillResult };
         riskScore = shillResult.riskScore;
         flagReasons = shillResult.flagReasons;
         break;
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       case 'vendor':
         // Detect collusion
         const collusionResult = await fraudService.detectCollusion(entityId);
-        analysisResult = collusionResult;
+        analysisResult = { ...collusionResult };
         riskScore = collusionResult.riskScore;
         flagReasons = collusionResult.flagReasons;
         break;
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
     await db.insert(auditLogs).values({
       userId: session.user.id,
       actionType: 'fraud_analysis_performed',
-      entityType: entityType as any,
+      entityType,
       entityId,
       ipAddress,
       deviceType: deviceType as 'mobile' | 'desktop' | 'tablet',

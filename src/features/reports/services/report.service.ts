@@ -62,12 +62,12 @@ export class ReportService {
   /**
    * Filter data based on user role and permissions
    */
-  static filterDataByRole(
-    data: any[],
+  static filterDataByRole<T extends { userId?: string; vendorId?: string; id?: string }>(
+    data: T[],
     userRole: string | null | undefined,
     userId: string | null | undefined,
     dataType: 'user' | 'vendor' | 'general'
-  ): any[] {
+  ): T[] {
     if (!userRole || !(userRole in ROLE_PERMISSIONS)) {
       return [];
     }
@@ -95,7 +95,7 @@ export class ReportService {
   /**
    * Generate report with caching and audit logging
    */
-  static async generateReport<T = any>(
+  static async generateReport<T = unknown>(
     config: ReportConfig,
     userId: string | null | undefined,
     userRole: string | null | undefined,

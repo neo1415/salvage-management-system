@@ -24,7 +24,7 @@ import { getAppUrl } from '@/features/notifications/templates/email-urls';
 export interface ExtensionCheckResult {
   shouldExtend: boolean;
   newEndTime?: Date;
-  newStatus?: string;
+  newStatus?: typeof auctions.$inferSelect.status;
   newExtensionCount?: number;
   timeRemainingMs?: number;
 }
@@ -38,7 +38,7 @@ export interface ExtensionResult {
     id: string;
     endTime: Date;
     extensionCount: number;
-    status: string;
+    status: typeof auctions.$inferSelect.status;
   };
   error?: string;
 }
@@ -167,7 +167,7 @@ export class AutoExtendService {
         .update(auctions)
         .set({
           endTime: extensionCheck.newEndTime,
-          status: extensionCheck.newStatus as any,
+          status: extensionCheck.newStatus,
           extensionCount: extensionCheck.newExtensionCount,
           updatedAt: new Date(),
         })

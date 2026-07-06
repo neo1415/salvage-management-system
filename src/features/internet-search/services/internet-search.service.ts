@@ -10,7 +10,7 @@ import { serperApi } from '@/lib/integrations/serper-api';
 import { queryBuilder, type ItemIdentifier } from './query-builder.service';
 import { priceExtractor, type ExtractedPrice, type PriceExtractionResult } from './price-extraction.service';
 import { performanceMonitor, createSearchTimer } from '../utils/performance-monitor';
-import { cacheIntegrationService } from './cache-integration.service';
+import { cacheIntegrationService, type CachedPartResult } from './cache-integration.service';
 import { getValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
 import {
   priceAdjudicationService,
@@ -900,7 +900,7 @@ export class InternetSearchService {
   /**
    * Convert cached part result to PartPriceResult format
    */
-  private convertCachedPartToResult(cached: any): PartPriceResult {
+  private convertCachedPartToResult(cached: CachedPartResult): PartPriceResult {
     return {
       partName: cached.partName,
       priceData: cached.priceData,
@@ -1157,7 +1157,7 @@ export class InternetSearchService {
     const startTime = Date.now();
     
     try {
-      const testResult = await serperApi.search('test query', { num: 1 });
+      await serperApi.search('test query', { num: 1 });
       const responseTime = Date.now() - startTime;
       
       // Serper API returns SerperResponse on success, throws on error

@@ -20,11 +20,11 @@ const ActionSchema = z.object({
 });
 
 function appendReviewHistory(
-  metadata: unknown,
+  metadata: typeof fraudAlerts.$inferSelect.metadata,
   entry: { action: string; reason?: string; actorId: string; actorName: string }
-) {
-  const existing = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;
-  const history = Array.isArray(existing.reviewHistory) ? existing.reviewHistory : [];
+): NonNullable<typeof fraudAlerts.$inferInsert.metadata> {
+  const existing = metadata ?? {};
+  const history = existing.reviewHistory ?? [];
 
   return {
     ...existing,
@@ -107,7 +107,7 @@ export async function POST(
       status: nextStatus,
       reviewedBy: actor.id,
       reviewedAt: new Date(),
-      metadata: metadata as any,
+      metadata,
     })
     .where(eq(fraudAlerts.id, id))
     .returning();

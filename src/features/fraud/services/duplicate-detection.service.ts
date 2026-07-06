@@ -1,11 +1,14 @@
 import { db } from '@/lib/db';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { sql, and, eq } from 'drizzle-orm';
+import { sql, and } from 'drizzle-orm';
+
+type SalvageCase = typeof salvageCases.$inferSelect;
+type VehicleAssetDetails = VehicleData['assetDetails'];
 
 interface DuplicateCheckResult {
   isDuplicate: boolean;
   confidence: number; // 0-1
-  matchedCase: any | null;
+  matchedCase: SalvageCase | null;
   reasoning: string;
 }
 
@@ -14,11 +17,11 @@ interface VehicleData {
   assetDetails: {
     make?: string;
     model?: string;
-    year?: string;
+    year?: string | number;
     color?: string;
     vin?: string;
     licensePlate?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -132,7 +135,7 @@ async function performQuickChecks(data: VehicleData): Promise<DuplicateCheckResu
 /**
  * Find vehicles with similar characteristics
  */
-async function findSimilarVehicles(assetDetails: any) {
+async function findSimilarVehicles(assetDetails: VehicleAssetDetails) {
   if (!assetDetails.make || !assetDetails.model || !assetDetails.year) {
     return [];
   }
@@ -156,75 +159,13 @@ async function findSimilarVehicles(assetDetails: any) {
 /**
  * Use AI to compare vehicle photos and determine if they're the same vehicle
  */
-async function compareVehiclePhotos(data: {
+async function compareVehiclePhotos(_data: {
   newPhotos: string[];
   existingPhotos: string[];
-  newDetails: any;
-  existingDetails: any;
+  newDetails: VehicleAssetDetails;
+  existingDetails: VehicleAssetDetails;
 }): Promise<{ confidence: number; reasoning: string }> {
   
-  const prompt = `Compare these two vehicles to determine if they are the EXACT SAME vehicle:
-
-Vehicle A (New Submission):
-- Make: ${data.newDetails.make}
-- Model: ${data.newDetails.model}
-- Year: ${data.newDetails.year}
-- Color: ${data.newDetails.color}
-- Photos: ${data.newPhotos.length} images
-
-Vehicle B (Existing Case):
-- Make: ${data.existingDetails.make}
-- Model: ${data.existingDetails.model}
-- Year: ${data.existingDetails.year}
-- Color: ${data.existingDetails.color}
-- Photos: ${data.existingPhotos.length} images
-
-CRITICAL ANALYSIS REQUIRED:
-Analyze these specific features to determine if this is the EXACT SAME vehicle:
-
-1. UNIQUE DAMAGE PATTERNS:
-   - Specific scratches, dents, or damage locations
-   - Damage severity and patterns
-   - Any unique collision damage
-
-2. INTERIOR FEATURES:
-   - Seats condition and wear patterns
-   - Dashboard condition
-   - Steering wheel wear
-   - Interior color and material
-
-3. MODIFICATIONS & ACCESSORIES:
-   - Aftermarket parts
-   - Custom modifications
-   - Accessories or add-ons
-   - Non-standard features
-
-4. PAINT & BODY:
-   - Paint condition and wear
-   - Rust patterns
-   - Body panel alignment
-   - Paint color variations
-
-5. IDENTIFIERS:
-   - Any visible VIN numbers
-   - License plate (if visible)
-   - Stickers or decals
-   - Unique markings
-
-6. TIRES & WHEELS:
-   - Tire brand and condition
-   - Wheel type and condition
-   - Tire wear patterns
-
-Return ONLY valid JSON (no markdown):
-{
-  "isSameVehicle": boolean,
-  "confidence": 0.0-1.0,
-  "reasoning": "Detailed explanation of why they match or don't match",
-  "matchingFeatures": ["list", "of", "matching", "features"],
-  "differingFeatures": ["list", "of", "differences"]
-}`;
-
   // For now, return low confidence - AI photo comparison disabled
   // Production extension: re-enable when AI services are configured for image hashing.
   return {

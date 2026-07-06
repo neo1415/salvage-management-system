@@ -6,7 +6,12 @@
  */
 
 import { ReportFilters } from '../../types';
-import { OperationalDataRepository } from '../repositories/operational-data.repository';
+import {
+  OperationalDataRepository,
+  type AuctionPerformanceData,
+  type CaseProcessingData,
+  type VendorPerformanceData,
+} from '../repositories/operational-data.repository';
 import { DataAggregationService } from '../../services/data-aggregation.service';
 import {
   buildCategoryBreakdown,
@@ -16,7 +21,6 @@ import {
 } from '../../utils/case-breakdown';
 import {
   buildAuctionCategoryBreakdown,
-  mapAuctionToBreakdownRow,
   type AuctionCategoryBreakdownGroup,
 } from '../../utils/auction-breakdown';
 import { resolveCaseChannelLabel } from '../../utils/case-channel-label';
@@ -138,7 +142,7 @@ export class CaseProcessingService {
     };
   }
 
-  private static calculateSummary(data: any[]) {
+  private static calculateSummary(data: CaseProcessingData[]) {
     // FIX: Match Master Report status categories
     const approved = data.filter(c => c.status === 'approved').length;
     const sold = data.filter(c => c.status === 'sold').length;
@@ -181,7 +185,7 @@ export class CaseProcessingService {
     };
   }
 
-  private static calculateByAssetType(data: any[]) {
+  private static calculateByAssetType(data: CaseProcessingData[]) {
     if (data.length === 0) return [];
     
     const grouped = DataAggregationService.groupBy(data, 'assetType');
@@ -224,7 +228,7 @@ export class CaseProcessingService {
     });
   }
 
-  private static calculateByStatus(data: any[]) {
+  private static calculateByStatus(data: CaseProcessingData[]) {
     if (data.length === 0) return [];
     
     const grouped = DataAggregationService.groupBy(data, 'status');
@@ -239,7 +243,7 @@ export class CaseProcessingService {
     }));
   }
 
-  private static calculateByBranch(data: any[]) {
+  private static calculateByBranch(data: CaseProcessingData[]) {
     if (data.length === 0) return [];
 
     const grouped = DataAggregationService.groupBy(data, 'branchName');
@@ -268,10 +272,10 @@ export class CaseProcessingService {
     }).sort((a, b) => b.totalSalvageValue - a.totalSalvageValue);
   }
 
-  private static calculateByBroker(data: any[]) {
+  private static calculateByBroker(data: CaseProcessingData[]) {
     if (data.length === 0) return [];
 
-    const grouped: Record<string, any[]> = {};
+    const grouped: Record<string, CaseProcessingData[]> = {};
     for (const row of data) {
       const channel = resolveCaseChannelLabel(row.brokerName, row.agencyName);
       const key = `${channel.type}:${channel.label}`;
@@ -279,7 +283,7 @@ export class CaseProcessingService {
       grouped[key].push(row);
     }
 
-    return Object.entries(grouped).map(([key, items]) => {
+    return Object.entries(grouped).map(([_key, items]) => {
       const channel = resolveCaseChannelLabel(items[0].brokerName, items[0].agencyName);
       const approved = items.filter((c) =>
         ['approved', 'active_auction', 'awaiting_payment', 'sold'].includes(c.status)
@@ -315,7 +319,7 @@ export class CaseProcessingService {
     }).sort((a, b) => b.totalSalvageValue - a.totalSalvageValue);
   }
 
-  private static calculateByAdjuster(data: any[]) {
+  private static calculateByAdjuster(data: CaseProcessingData[]) {
     if (data.length === 0) return [];
     
     const grouped = DataAggregationService.groupBy(data, 'adjusterId');
@@ -345,7 +349,7 @@ export class CaseProcessingService {
     }).sort((a, b) => b.casesProcessed - a.casesProcessed);
   }
 
-  private static calculateTrend(data: any[]) {
+  private static calculateTrend(data: CaseProcessingData[]) {
     if (data.length === 0) return [];
     
     const grouped: Record<string, { count: number; approved: number; sold: number }> = {};
@@ -368,7 +372,7 @@ export class CaseProcessingService {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  private static identifyBottlenecks(data: any[]) {
+  private static identifyBottlenecks(data: CaseProcessingData[]) {
     if (data.length === 0) return [];
     
     // Identify stages with longest processing times
@@ -531,7 +535,7 @@ export interface AuctionPerformanceReport {
 }
 
 export class AuctionPerformanceService {
-  private static isSoldAuction(auction: any) {
+  private static isSoldAuction(auction: AuctionPerformanceData) {
     return auction.status === 'sold' && !!auction.winningBid;
   }
 
@@ -571,7 +575,7 @@ export class AuctionPerformanceService {
     };
   }
 
-  private static calculateSummary(data: any[]) {
+  private static calculateSummary(data: AuctionPerformanceData[]) {
     const successful = data.filter(a => this.isSoldAuction(a)).length;
     const successRate = data.length > 0 ? (successful / data.length) * 100 : 0;
     
@@ -618,7 +622,7 @@ export class AuctionPerformanceService {
     };
   }
 
-  private static calculateByAssetType(data: any[]) {
+  private static calculateByAssetType(data: AuctionPerformanceData[]) {
     if (data.length === 0) return [];
     
     const grouped = DataAggregationService.groupBy(data, 'assetType');
@@ -653,7 +657,7 @@ export class AuctionPerformanceService {
     });
   }
 
-  private static calculateByBranch(data: any[]) {
+  private static calculateByBranch(data: AuctionPerformanceData[]) {
     if (data.length === 0) return [];
 
     const grouped = DataAggregationService.groupBy(data, 'branchName');
@@ -676,10 +680,10 @@ export class AuctionPerformanceService {
     }).sort((a, b) => b.totalRevenue - a.totalRevenue);
   }
 
-  private static calculateByBroker(data: any[]) {
+  private static calculateByBroker(data: AuctionPerformanceData[]) {
     if (data.length === 0) return [];
 
-    const grouped: Record<string, any[]> = {};
+    const grouped: Record<string, AuctionPerformanceData[]> = {};
     for (const row of data) {
       const channel = resolveCaseChannelLabel(row.brokerName, row.agencyName);
       const key = `${channel.type}:${channel.label}`;
@@ -706,7 +710,7 @@ export class AuctionPerformanceService {
     }).sort((a, b) => b.totalRevenue - a.totalRevenue);
   }
 
-  private static calculateByStatus(data: any[]) {
+  private static calculateByStatus(data: AuctionPerformanceData[]) {
     if (data.length === 0) return [];
     
     const grouped = DataAggregationService.groupBy(data, 'status');
@@ -719,7 +723,7 @@ export class AuctionPerformanceService {
     }));
   }
 
-  private static calculateBiddingMetrics(data: any[]) {
+  private static calculateBiddingMetrics(data: AuctionPerformanceData[]) {
     const totalBids = data.reduce((sum, a) => sum + a.bidCount, 0);
     const avgBids = data.length > 0 ? totalBids / data.length : 0;
     const competitive = data.filter(a => a.uniqueBidders >= 2).length;
@@ -749,7 +753,7 @@ export class AuctionPerformanceService {
     };
   }
 
-  private static calculateTimingMetrics(data: any[]) {
+  private static calculateTimingMetrics(data: AuctionPerformanceData[]) {
     if (data.length === 0) {
       return { 
         averageDuration: 0, 
@@ -766,7 +770,7 @@ export class AuctionPerformanceService {
     // Time to first bid
     const auctionsWithFirstBid = data.filter(a => a.timeToFirstBidMinutes !== null);
     const avgTimeToFirstBid = auctionsWithFirstBid.length > 0
-      ? auctionsWithFirstBid.reduce((sum, a) => sum + a.timeToFirstBidMinutes, 0) / auctionsWithFirstBid.length
+      ? auctionsWithFirstBid.reduce((sum, a) => sum + (a.timeToFirstBidMinutes ?? 0), 0) / auctionsWithFirstBid.length
       : 0;
     
     // Last minute bidding
@@ -782,7 +786,7 @@ export class AuctionPerformanceService {
     };
   }
 
-  private static calculateVendorParticipation(data: any[]) {
+  private static calculateVendorParticipation(data: AuctionPerformanceData[]) {
     const allBidders = data.flatMap(a => a.bidderIds || []);
     const uniqueVendors = new Set(allBidders).size;
     const avgVendorsPerAuction = data.length > 0 ? allBidders.length / data.length : 0;
@@ -806,7 +810,7 @@ export class AuctionPerformanceService {
     };
   }
 
-  private static calculateCompetitionLevels(data: any[]) {
+  private static calculateCompetitionLevels(data: AuctionPerformanceData[]) {
     return {
       noBids: data.filter(a => a.bidCount === 0).length,
       oneBidder: data.filter(a => a.uniqueBidders === 1).length,
@@ -815,7 +819,7 @@ export class AuctionPerformanceService {
     };
   }
 
-  private static calculateFinancialMetrics(data: any[]) {
+  private static calculateFinancialMetrics(data: AuctionPerformanceData[]) {
     const soldAuctions = data.filter(a => this.isSoldAuction(a));
     const totalRevenue = soldAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
     const avgWinningBid = soldAuctions.length > 0 ? totalRevenue / soldAuctions.length : 0;
@@ -852,7 +856,7 @@ export class AuctionPerformanceService {
     };
   }
 
-  private static calculateTrend(data: any[]) {
+  private static calculateTrend(data: AuctionPerformanceData[]) {
     if (data.length === 0) return [];
     
     const grouped: Record<string, { 
@@ -891,7 +895,7 @@ export class AuctionPerformanceService {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  private static buildAuctionList(data: any[]) {
+  private static buildAuctionList(data: AuctionPerformanceData[]) {
     return data.map(a => {
       const channel = resolveCaseChannelLabel(a.brokerName, a.agencyName);
       return {
@@ -918,7 +922,7 @@ export class AuctionPerformanceService {
     }).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
   }
 
-  private static generateInsights(data: any[]) {
+  private static generateInsights(data: AuctionPerformanceData[]) {
     const bestPerforming: Array<{ metric: string; value: string; description: string }> = [];
     const underperforming: Array<{ metric: string; value: string; description: string }> = [];
     const recommendations: string[] = [];
@@ -1010,7 +1014,7 @@ export interface DocumentManagementReport {
 }
 
 export class DocumentManagementService {
-  static async generateReport(filters: ReportFilters): Promise<DocumentManagementReport> {
+  static async generateReport(_filters: ReportFilters): Promise<DocumentManagementReport> {
     // Document management metrics would require document table queries
     // Simplified for now - can be expanded when document schema is available
     return {
@@ -1072,7 +1076,7 @@ export class VendorPerformanceService {
     };
   }
 
-  private static calculateSummary(data: any[]) {
+  private static calculateSummary(data: VendorPerformanceData[]) {
     const avgWinRate = data.length > 0
       ? data.reduce((sum, v) => sum + v.winRate, 0) / data.length
       : 0;
@@ -1091,7 +1095,7 @@ export class VendorPerformanceService {
     };
   }
 
-  private static calculateRankings(data: any[]) {
+  private static calculateRankings(data: VendorPerformanceData[]) {
     if (data.length === 0) return [];
     
     return data.map((vendor, index) => ({
@@ -1111,10 +1115,10 @@ export class VendorPerformanceService {
     })).slice(0, 20); // Top 20
   }
 
-  private static calculateByTier(data: any[]) {
+  private static calculateByTier(data: VendorPerformanceData[]) {
     if (data.length === 0) return [];
     
-    const grouped: Record<string, any[]> = {};
+    const grouped: Record<string, VendorPerformanceData[]> = {};
     
     for (const vendor of data) {
       if (!grouped[vendor.tier]) grouped[vendor.tier] = [];
@@ -1137,7 +1141,7 @@ export class VendorPerformanceService {
     });
   }
 
-  private static calculateEngagement(data: any[]) {
+  private static calculateEngagement(data: VendorPerformanceData[]) {
     const highlyActive = data.filter(v => v.participationRate >= 50).length;
     const moderatelyActive = data.filter(v => v.participationRate >= 20 && v.participationRate < 50).length;
     const lowActivity = data.filter(v => v.participationRate < 20).length;

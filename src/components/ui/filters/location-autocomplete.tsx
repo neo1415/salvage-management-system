@@ -107,6 +107,7 @@ export function LocationAutocomplete({
           placeholder={placeholder}
           className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
           aria-label="Location filter"
+          role="combobox"
           aria-autocomplete="list"
           aria-expanded={isOpen}
           aria-controls="location-suggestions"

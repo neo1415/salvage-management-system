@@ -310,7 +310,7 @@ export interface ComponentDefinition {
 
 export interface ConfigDefinition {
   type: 'package' | 'next' | 'env' | 'middleware';
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -626,10 +626,10 @@ export interface GeneratedDocumentation {
 
 export interface RoundTripResult {
   success: boolean;
-  originalData: any;
-  parsedData: any;
+  originalData: unknown;
+  parsedData: unknown;
   prettyPrinted: string;
-  reparsedData: any;
+  reparsedData: unknown;
   differences: string[];
 }
 

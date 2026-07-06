@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import {
   getPwaSplashDurationMs,
   isStandalonePwa,
@@ -112,9 +113,13 @@ export function PwaSplashScreen() {
 
       <div className="relative flex flex-col items-center px-8">
         <div className="relative mb-8 rounded-2xl bg-white p-4 shadow-2xl shadow-black/25">
-          <img
+          <Image
             src={branding.logoPath || '/icons/icon-192.png'}
             alt={branding.brandName}
+            width={96}
+            height={96}
+            priority
+            unoptimized
             className="h-24 w-24 object-contain"
           />
           <div className="absolute -inset-1 rounded-2xl ring-2 ring-[var(--brand-accent)]" />

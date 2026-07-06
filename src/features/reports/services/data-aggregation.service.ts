@@ -7,7 +7,7 @@
 
 import { db } from '@/lib/db/drizzle';
 import { salvageCases, auctions, payments, bids, vendors, users } from '@/lib/db/schema';
-import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
+import { eq, and, gte, lte, sql, inArray, desc, type AnyColumn } from 'drizzle-orm';
 import { ReportFilters } from '../types';
 import { formatVendorDisplayName } from '@/lib/utils/vendor-display-name';
 
@@ -16,7 +16,7 @@ export class DataAggregationService {
    * Build date range condition
    */
   private static buildDateRangeCondition(
-    dateColumn: any,
+    dateColumn: AnyColumn,
     startDate?: string,
     endDate?: string
   ) {
@@ -212,9 +212,8 @@ export class DataAggregationService {
     // Get bids for these auctions
     const auctionIds = auctionData.map(a => a.auctionId);
     
-    let bidData: any[] = [];
-    if (auctionIds.length > 0) {
-      bidData = await db
+    const bidData = auctionIds.length > 0
+      ? await db
         .select({
           bidId: bids.id,
           auctionId: bids.auctionId,
@@ -224,8 +223,8 @@ export class DataAggregationService {
         })
         .from(bids)
         .where(inArray(bids.auctionId, auctionIds))
-        .orderBy(desc(bids.createdAt));
-    }
+        .orderBy(desc(bids.createdAt))
+      : [];
 
     return { auctions: auctionData, bids: bidData };
   }
@@ -275,7 +274,7 @@ export class DataAggregationService {
   /**
    * Calculate summary statistics
    */
-  static calculateSummaryStats(data: any[], valueField: string) {
+  static calculateSummaryStats<T>(data: T[], valueField: keyof T) {
     if (data.length === 0) {
       return {
         count: 0,
@@ -286,7 +285,7 @@ export class DataAggregationService {
       };
     }
 
-    const values = data.map(item => parseFloat(item[valueField] || '0'));
+    const values = data.map(item => Number(item[valueField] || 0));
     const sum = values.reduce((acc, val) => acc + val, 0);
     const average = sum / values.length;
     const min = Math.min(...values);
@@ -323,16 +322,16 @@ export class DataAggregationService {
   /**
    * Calculate trend data by date
    */
-  static calculateTrend(
-    data: any[],
-    dateField: string,
-    valueField: string,
+  static calculateTrend<T>(
+    data: T[],
+    dateField: keyof T,
+    valueField: keyof T,
     groupBy: 'day' | 'week' | 'month' = 'day'
   ) {
     const grouped: Record<string, { values: number[]; count: number }> = {};
 
     for (const item of data) {
-      const date = new Date(item[dateField]);
+      const date = new Date(String(item[dateField]));
       let key: string;
 
       if (groupBy === 'day') {
@@ -349,7 +348,7 @@ export class DataAggregationService {
         grouped[key] = { values: [], count: 0 };
       }
 
-      grouped[key].values.push(parseFloat(item[valueField] || '0'));
+      grouped[key].values.push(Number(item[valueField] || 0));
       grouped[key].count++;
     }
 

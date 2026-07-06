@@ -28,7 +28,6 @@ import type { PropertyIdentifier } from '@/features/market-data/types';
 import { internetSearchService } from '@/features/internet-search/services/internet-search.service';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 import type { UniversalCondition } from '@/features/internet-search/services/query-builder.service';
-import { valuationQueryService } from '@/features/valuations/services/valuation-query.service';
 import { damageCalculationService } from '@/features/valuations/services/damage-calculation.service';
 import type { DamageInput } from '@/features/valuations/types';
 import { assessDamageWithClaude, initializeClaudeService, isClaudeEnabled } from '@/lib/integrations/claude-damage-detection';
@@ -71,51 +70,6 @@ async function acquireAssessmentSlot(): Promise<() => void> {
     if (next) next();
   };
 }
-/**
- * Determines quality tier based on damage assessment and vehicle context
- * 
- * Quality Tier Logic (Requirements 4.1, 4.2, 4.3, 4.4, 4.5, 4.6):
- * - Excellent: < 10% damage, recent vehicle (≤3 years old)
- * - Good: 10-30% damage, or older vehicle with minimal damage
- * - Fair: 30-60% damage, significant wear
- * - Poor: > 60% damage, major structural issues
- * 
- * @param damageSeverity - The damage severity classification
- * @param damagePercentage - The overall damage percentage (0-100)
- * @param vehicleInfo - Optional vehicle info (includes year)
- * @returns Quality tier: "excellent", "good", "fair", or "poor"
- */
-function determineQualityTier(
-  damageSeverity: 'minor' | 'moderate' | 'severe',
-  damagePercentage: number,
-  vehicleInfo?: VehicleInfo
-): QualityTier {
-  const currentYear = new Date().getFullYear();
-  const vehicleAge = vehicleInfo?.year ? currentYear - vehicleInfo.year : null;
-  
-  // Excellent: < 10% damage AND recent vehicle (≤3 years old)
-  // Requirement 4.3: minimal damage on a recent vehicle
-  if (damagePercentage < 10 && vehicleAge !== null && vehicleAge <= 3) {
-    return 'excellent';
-  }
-  
-  // Good: 10-30% damage OR older vehicle with minimal damage
-  // Requirement 4.4: moderate wear on an imported vehicle
-  if (damagePercentage < 30) {
-    return 'good';
-  }
-  
-  // Fair: 30-60% damage
-  // Requirement 4.5: significant wear on a locally used vehicle
-  if (damagePercentage < 60) {
-    return 'fair';
-  }
-  
-  // Poor: > 60% damage
-  // Requirement 4.6: severe damage or poor maintenance
-  return 'poor';
-}
-
 // Universal Item Information (replaces VehicleInfo)
 export interface UniversalItemInfo {
   // Universal fields
@@ -177,7 +131,6 @@ export interface UniversalItemInfo {
   batchOrSerial?: string;
   declaredCondition?: string;
 }
-
 function isRepairableAssetType(itemType: UniversalItemInfo['type']): boolean {
   if (itemType === 'equipment') return true;
   const family = getAssetAssessmentProfile(itemType).family;
@@ -1555,8 +1508,6 @@ async function analyzePhotosWithFallback(
   };
   damagedParts?: DamageEvidence[];
 }> {
-  const requestId = `enhanced-assess-${Date.now()}`;
-  
   // Support both vehicle and universal item contexts
   const hasVehicleContext = vehicleInfo?.make && vehicleInfo?.model && vehicleInfo?.year;
   const hasUniversalContext = hasUsableUniversalContext(universalItemInfo);
@@ -1574,12 +1525,13 @@ async function analyzePhotosWithFallback(
         console.log(`   Quota: ${quotaStatus.minuteRemaining}/minute, ${quotaStatus.dailyRemaining}/day`);
         
         // Prepare context for Gemini - support both vehicle and universal items
-        let geminiContext: any;
+        let geminiContext: ReturnType<typeof buildUniversalProviderContext> | undefined;
         if (hasVehicleContext) {
           geminiContext = {
-            make: vehicleInfo!.make,
-            model: vehicleInfo!.model,
+            make: vehicleInfo!.make!,
+            model: vehicleInfo!.model!,
             year: vehicleInfo!.year,
+            itemType: 'vehicle',
           };
           console.log(`   Vehicle context: ${vehicleInfo!.make} ${vehicleInfo!.model} ${vehicleInfo!.year}`);
         } else if (hasUniversalContext) {
@@ -1587,6 +1539,7 @@ async function analyzePhotosWithFallback(
           console.log(`   Universal item context: ${geminiContext.make} ${geminiContext.model} (${geminiContext.itemType})`);
         }
         
+        if (!geminiContext) throw new Error('Gemini item context is unavailable');
         rateLimiter.recordRequest();
         const geminiResult = await assessDamageWithGemini(photos, geminiContext);
         
@@ -1629,12 +1582,12 @@ async function analyzePhotosWithFallback(
           : `Minute quota exhausted`;
         console.warn(`⚠️ Gemini rate limit exceeded: ${reason}. Falling back to Claude.`);
       }
-    } catch (geminiError: any) {
-      const geminiErrorMessage = geminiError?.message || String(geminiError);
+    } catch (geminiError: unknown) {
+      const geminiErrorMessage = geminiError instanceof Error ? geminiError.message : String(geminiError);
       if (/429|quota exceeded|resource[_\s-]?exhausted/i.test(geminiErrorMessage)) {
         getGeminiRateLimiter().markQuotaExceeded();
       }
-      console.error('❌ Gemini assessment failed:', geminiError?.message || 'Unknown error');
+      console.error('❌ Gemini assessment failed:', geminiErrorMessage || 'Unknown error');
       console.log('   Falling back to Claude...');
     }
   } else {
@@ -1658,12 +1611,13 @@ async function analyzePhotosWithFallback(
         console.log(`   Quota: ${quotaStatus.minuteRemaining}/minute, ${quotaStatus.dailyRemaining}/day`);
         
         // Prepare context for Claude - support both vehicle and universal items
-        let claudeContext: any;
+        let claudeContext: ReturnType<typeof buildUniversalProviderContext> | undefined;
         if (hasVehicleContext) {
           claudeContext = {
-            make: vehicleInfo!.make,
-            model: vehicleInfo!.model,
+            make: vehicleInfo!.make!,
+            model: vehicleInfo!.model!,
             year: vehicleInfo!.year,
+            itemType: 'vehicle',
           };
           console.log(`   Vehicle context: ${vehicleInfo!.make} ${vehicleInfo!.model} ${vehicleInfo!.year}`);
         } else if (hasUniversalContext) {
@@ -1671,6 +1625,7 @@ async function analyzePhotosWithFallback(
           console.log(`   Universal item context: ${claudeContext.make} ${claudeContext.model} (${claudeContext.itemType})`);
         }
         
+        if (!claudeContext) throw new Error('Claude item context is unavailable');
         const claudeResult = await assessDamageWithClaude(photos, claudeContext);
         
         // Record successful request
@@ -1714,8 +1669,8 @@ async function analyzePhotosWithFallback(
           : `Minute quota exhausted`;
         console.warn(`⚠️ Claude rate limit exceeded: ${reason}. Falling back to Vision API.`);
       }
-    } catch (claudeError: any) {
-      console.error('❌ Claude assessment failed:', claudeError?.message || 'Unknown error');
+    } catch (claudeError: unknown) {
+      console.error('❌ Claude assessment failed:', claudeError instanceof Error ? claudeError.message : String(claudeError));
       console.log('   Falling back to Vision API...');
     }
   } else {
@@ -1747,8 +1702,8 @@ async function analyzePhotosWithFallback(
     console.log('✅ Vision API assessment successful');
     
     return { damageScore, visionResults, method: 'vision', geminiTotalLoss: undefined, itemDetails: undefined, damagedParts: undefined };
-  } catch (visionError: any) {
-    console.error('❌ Vision API assessment failed:', visionError?.message || 'Unknown error');
+  } catch (visionError: unknown) {
+    console.error('❌ Vision API assessment failed:', visionError instanceof Error ? visionError.message : String(visionError));
     console.log('   Using neutral scores...');
   }
   
@@ -1905,239 +1860,6 @@ function calculateDamageScore(labels: Array<{ description: string; score: number
 }
 
 /**
- * Score a damage category based on detected labels
- */
-function scoreCategory(
-  labels: Array<{ description: string; score: number }>,
-  keywords: string[]
-): number {
-  let score = 0;
-  let count = 0;
-  
-  labels.forEach(label => {
-    const isMatch = keywords.some(keyword => 
-      label.description.toLowerCase().includes(keyword.toLowerCase())
-    );
-    
-    if (isMatch) {
-      score += label.score * 100;
-      count++;
-    }
-  });
-  
-  if (count === 0) return 0;
-  
-  // Average score, capped at 100
-  return Math.min(100, score / count);
-}
-
-/**
- * Get market value with database-first approach and internet search fallback
- * 
- * Requirements: 5.1, 5.2, 6.1, 6.4
- */
-async function getMarketValueWithScraping(vehicleInfo?: VehicleInfo): Promise<{
-  value: number;
-  confidence: number;
-  source: 'database' | 'user_provided' | 'internet_search' | 'scraping' | 'estimated';
-}> {
-  // If user provided market value, use it with high confidence
-  if (vehicleInfo?.marketValue && vehicleInfo.marketValue > 0) {
-    console.log('💰 Using user-provided market value:', vehicleInfo.marketValue);
-    return {
-      value: vehicleInfo.marketValue,
-      confidence: 90,
-      source: 'user_provided'
-    };
-  }
-  
-  // Use the updated market data service (internet-search-first with database fallback)
-  if (vehicleInfo?.make && vehicleInfo?.model && vehicleInfo?.year) {
-    try {
-      console.log('🌐 Using market data service (internet-search-first)...');
-      
-      const property: PropertyIdentifier = {
-        type: 'vehicle',
-        make: vehicleInfo.make,
-        model: vehicleInfo.model,
-        year: vehicleInfo.year,
-        mileage: vehicleInfo.mileage,
-        condition: vehicleInfo.condition // Pass condition to market data service
-      };
-      
-      const marketPrice = await getMarketPrice(property);
-      
-      console.log('✅ Market data service result:', {
-        median: marketPrice.median,
-        sources: marketPrice.count,
-        confidence: marketPrice.confidence,
-        isFresh: marketPrice.isFresh,
-        dataSource: marketPrice.dataSource
-      });
-      
-      // Apply universal adjustments if needed
-      let adjustedPrice = marketPrice.median;
-      
-      if (vehicleInfo) {
-        const universalItem: UniversalItemInfo = {
-          type: 'vehicle',
-          condition: vehicleInfo.condition || 'Nigerian Used',
-          make: vehicleInfo.make,
-          model: vehicleInfo.model,
-          year: vehicleInfo.year,
-          mileage: vehicleInfo.mileage,
-          age: vehicleInfo.year ? new Date().getFullYear() - vehicleInfo.year : undefined,
-          brandPrestige: vehicleInfo.brandPrestige,
-          description: vehicleInfo.description
-        };
-        
-        // Skip condition adjustment only for internet search (already condition-specific)
-        const skipConditionAdjustment = marketPrice.dataSource === 'internet_search';
-        const universalAdjustment = getUniversalAdjustment(universalItem, skipConditionAdjustment);
-        adjustedPrice *= universalAdjustment;
-        
-        if (skipConditionAdjustment) {
-          console.log('🔧 Applied universal adjustment (mileage only):', universalAdjustment);
-        } else {
-          console.log('🔧 Applied universal adjustment (condition + mileage):', universalAdjustment);
-        }
-      }
-      
-      // Convert confidence to percentage and determine source
-      const confidencePercent = Math.round(marketPrice.confidence * 100);
-      const source = marketPrice.dataSource === 'internet_search' ? 'internet_search' : 
-                    marketPrice.dataSource === 'database' ? 'database' : 'scraping';
-      const adjudication = (marketPrice as { adjudication?: { reviewReasons?: string[] } }).adjudication;
-      
-      return {
-        value: Math.round(adjustedPrice),
-        confidence: confidencePercent,
-        source
-      };
-    } catch (error) {
-      console.error('❌ Market data service failed, falling back to estimation:', error);
-      // Fall back to existing estimation logic
-      const estimatedValue = estimateMarketValue(vehicleInfo, 5);
-      return {
-        value: estimatedValue,
-        confidence: 30,
-        source: 'estimated'
-      };
-    }
-  }
-  
-  // Fall back to existing estimation logic
-  console.log('⚠️ No vehicle info provided, using generic estimation');
-  const estimatedValue = estimateMarketValue(vehicleInfo, 5);
-  return {
-    value: estimatedValue,
-    confidence: 30,
-    source: 'estimated'
-  };
-}
-
-/**
- * Search for part prices using internet search (NEW for Task 7.4)
- */
-async function searchPartPrices(
-  vehicleInfo: VehicleInfo | undefined,
-  damages: DamageInput[]
-): Promise<Array<{
-  component: string;
-  searchedPrice?: number;
-  action?: DamageInput['recommendedAction'];
-  confidence?: number;
-  source: 'internet_search' | 'ai_estimate' | 'not_found';
-  evidence?: Record<string, unknown>;
-}>> {
-  if (!vehicleInfo?.make || !vehicleInfo?.model || damages.length === 0) {
-    return [];
-  }
-
-  const itemIdentifier: ItemIdentifier = {
-    type: 'vehicle',
-    make: vehicleInfo.make,
-    model: vehicleInfo.model,
-    year: vehicleInfo.year
-  };
-
-  // Map damage components to searchable part names
-  const partMapping: Record<string, string> = {
-    'structure': 'body panel',
-    'engine': 'engine parts',
-    'body': 'bumper',
-    'electrical': 'headlight',
-    'interior': 'seat'
-  };
-
-  const partSearchPromises = damages.map(async (damage) => {
-    const partName = partMapping[damage.component] || damage.component;
-    
-    try {
-      console.log(`🔍 Searching for part price: ${partName} for ${vehicleInfo.make} ${vehicleInfo.model}`);
-      
-      const partResult = await internetSearchService.searchPartPrice({
-        item: itemIdentifier,
-        partName,
-        damageType: damage.damageType || damage.damageLevel,
-        action: damage.recommendedAction,
-        maxResults: 8,
-        timeout: 5000,
-      });
-
-      const resolved = resolvePartPriceFromSearchResult(partResult);
-
-      if (resolved.price) {
-        console.log(`✅ Found part price for ${partName}: ₦${resolved.price.toLocaleString()} (${resolved.source})`);
-
-        return {
-          component: damage.component,
-          searchedPrice: resolved.price,
-          confidence: resolved.confidence,
-          source: resolved.source,
-          evidence: {
-            query: partResult.query,
-            resultsProcessed: partResult.resultsProcessed,
-            priceData: partResult.priceData,
-            adjudication: partResult.adjudication,
-            priceSource: resolved.source,
-          },
-        };
-      } else {
-        console.log(`⚠️ No price found for ${partName}`);
-        return {
-          component: damage.component,
-          source: 'not_found' as const,
-          evidence: {
-            searchedPart: partName,
-            reason: partResult.error || 'no_average_price',
-          },
-        };
-      }
-    } catch (error) {
-      console.error(`❌ Part search failed for ${partName}:`, error);
-      return {
-        component: damage.component,
-        source: 'not_found' as const,
-        evidence: {
-          searchedPart: partName,
-          reason: error instanceof Error ? error.message : 'search_failed',
-        },
-      };
-    }
-  });
-
-  try {
-    return await Promise.all(partSearchPromises);
-  } catch (error) {
-    console.error('❌ Part search batch failed:', error);
-    return damages.map(damage => ({
-      component: damage.component,
-      source: 'not_found' as const
-    }));
-  }
-}
-/**
  * Identify damaged components from damage score
  * Maps damage scores to component-level damage inputs
  * Requirements: 6.2
@@ -2206,57 +1928,6 @@ function identifyDamagedComponents(damageScore: DamageScore): DamageInput[] {
   }
   
   return damages;
-}
-
-/**
- * Estimate market value if not provided
- */
-function estimateMarketValue(vehicleInfo?: VehicleInfo, photoCount: number = 5): number {
-  // If we have vehicle info, use it
-  if (vehicleInfo?.make && vehicleInfo?.model && vehicleInfo?.year) {
-    // Simple estimation based on year (should be replaced with real valuation API)
-    const currentYear = new Date().getFullYear();
-    const age = currentYear - vehicleInfo.year;
-    
-    // Base values for common vehicles (in Naira)
-    const baseValues: Record<string, number> = {
-      'Toyota Camry': 10000000,
-      'Honda Accord': 9500000,
-      'Toyota Corolla': 7500000,
-      'Honda Civic': 7000000,
-      'Toyota RAV4': 12000000,
-      'Lexus ES': 15000000,
-    };
-    
-    const key = `${vehicleInfo.make} ${vehicleInfo.model}`;
-    const baseValue = baseValues[key] || 8000000; // Default
-    
-    // Apply depreciation (15% per year)
-    let depreciatedValue = baseValue * Math.pow(0.85, age);
-    
-    // Apply universal adjustments instead of vehicle-specific ones
-    if (vehicleInfo) {
-      const universalItem: UniversalItemInfo = {
-        type: 'vehicle',
-        condition: vehicleInfo.condition || 'Nigerian Used',
-        make: vehicleInfo.make,
-        model: vehicleInfo.model,
-        year: vehicleInfo.year,
-        mileage: vehicleInfo.mileage,
-        age: age,
-        ...vehicleInfo
-      };
-      
-      const universalAdjustment = getUniversalAdjustment(universalItem);
-      depreciatedValue *= universalAdjustment;
-    }
-    
-    return Math.round(depreciatedValue);
-  }
-  
-  // Fallback: estimate based on photo count (very rough)
-  // Fallback: estimate based on photo count (very rough)
-  return 2500000 + (photoCount * 100000); // Reasonable fallback: 2.5M + 100k per photo
 }
 
 /**
@@ -2640,7 +2311,6 @@ function assessRepairability(
   isRepairable: boolean;
   recommendation: string;
 } {
-  const itemName = itemType || 'item';
   const itemLabel = itemType === 'vehicle' ? 'vehicle' :
                     itemType === 'electronics' ? 'device' :
                     itemType === 'appliance' ? 'appliance' :
@@ -2674,129 +2344,6 @@ function assessRepairability(
     isRepairable: true,
     recommendation: `${itemLabel.charAt(0).toUpperCase() + itemLabel.slice(1)} is repairable - estimated repair cost: ₦${repairCost.toLocaleString()}`
   };
-}
-
-/**
- * Calculate confidence scores
- */
-function calculateConfidence(
-  photos: string[],
-  vehicleInfo: VehicleInfo | undefined,
-  visionResults: { labels: Array<{ description: string; score: number }>; totalConfidence: number },
-  damageScore: DamageScore,
-  marketDataConfidence?: number
-): AssessmentConfidence {
-  const confidence: AssessmentConfidence = {
-    overall: 0,
-    vehicleDetection: 0,
-    damageDetection: 0,
-    valuationAccuracy: 0,
-    photoQuality: 0,
-    reasons: []
-  };
-  
-  // Photo quality (need 5+ photos for good assessment)
-  if (photos.length < 3) {
-    confidence.photoQuality = 30;
-    confidence.reasons.push('Very few photos - need at least 5 for accurate assessment');
-  } else if (photos.length < 5) {
-    confidence.photoQuality = 60;
-    confidence.reasons.push('Limited photos - 5+ recommended for best accuracy');
-  } else {
-    confidence.photoQuality = Math.min(100, 60 + (photos.length * 8));
-  }
-  
-  // Vehicle detection
-  if (vehicleInfo?.make && vehicleInfo?.model && vehicleInfo?.year) {
-    // Base confidence for having make/model/year
-    confidence.vehicleDetection = 90;
-    
-    // Bonus for having mileage
-    if (vehicleInfo.mileage) {
-      confidence.vehicleDetection = Math.min(95, confidence.vehicleDetection + 3);
-    } else {
-      confidence.reasons.push('Mileage not provided - using estimated mileage for valuation');
-    }
-    
-    // Bonus for having condition
-    if (vehicleInfo.condition) {
-      confidence.vehicleDetection = Math.min(98, confidence.vehicleDetection + 3);
-    } else {
-      confidence.reasons.push('Condition not provided - assuming "good" condition for valuation');
-    }
-  } else if (vehicleInfo?.make || vehicleInfo?.model) {
-    confidence.vehicleDetection = 60;
-    confidence.reasons.push('Incomplete vehicle information - affects valuation accuracy');
-  } else {
-    confidence.vehicleDetection = 30;
-    confidence.reasons.push('No vehicle information provided - using generic estimates');
-  }
-  
-  // Damage detection (based on Vision API confidence)
-  confidence.damageDetection = Math.round(visionResults.totalConfidence * 100);
-  
-  // Debug logging
-  console.log(`🔍 Regular confidence calculation:`, {
-    visionResultsTotalConfidence: visionResults.totalConfidence,
-    damageDetection: confidence.damageDetection
-  });
-  
-  if (confidence.damageDetection < 70) {
-    confidence.reasons.push('Low AI confidence in damage detection - manual review recommended');
-  }
-  
-  // Valuation accuracy (enhanced with market data confidence)
-  if (marketDataConfidence !== undefined) {
-    // Use market data confidence directly
-    confidence.valuationAccuracy = marketDataConfidence;
-    
-    if (marketDataConfidence >= 90) {
-      confidence.reasons.push(`Market value from real market data (${marketDataConfidence}% confidence)`);
-    } else if (marketDataConfidence >= 70) {
-      confidence.reasons.push(`Market value from limited market data (${marketDataConfidence}% confidence)`);
-    } else if (marketDataConfidence >= 50) {
-      confidence.reasons.push(`Market value from single source (${marketDataConfidence}% confidence)`);
-    } else {
-      confidence.reasons.push(`Market value estimated - limited data available (${marketDataConfidence}% confidence)`);
-    }
-  } else if (vehicleInfo?.marketValue && vehicleInfo.marketValue > 0) {
-    // User provided market value - highest confidence
-    confidence.valuationAccuracy = 90;
-    
-    // Bonus if we also have mileage and condition to validate the value
-    if (vehicleInfo.mileage && vehicleInfo.condition) {
-      confidence.valuationAccuracy = 95;
-    }
-  } else if (vehicleInfo?.make && vehicleInfo?.model && vehicleInfo?.year) {
-    // Estimated from vehicle info
-    let baseAccuracy = 60;
-    
-    // Bonus for having mileage
-    if (vehicleInfo.mileage) {
-      baseAccuracy += 10;
-    }
-    
-    // Bonus for having condition
-    if (vehicleInfo.condition) {
-      baseAccuracy += 10;
-    }
-    
-    confidence.valuationAccuracy = baseAccuracy;
-    confidence.reasons.push('Market value estimated from vehicle info - actual value may vary');
-  } else {
-    confidence.valuationAccuracy = 30;
-    confidence.reasons.push('Market value estimated without vehicle info - high uncertainty');
-  }
-  
-  // Overall confidence (weighted average)
-  confidence.overall = Math.round(
-    (confidence.vehicleDetection * 0.25) +
-    (confidence.damageDetection * 0.35) +
-    (confidence.valuationAccuracy * 0.25) +
-    (confidence.photoQuality * 0.15)
-  );
-  
-  return confidence;
 }
 
 function resolveSearchConditionForItem(
@@ -3832,42 +3379,4 @@ function validateAssessment(params: {
   }
   
   return warnings;
-}
-
-function getSalvageDiscount(itemType: string, condition?: string): number {
-  // Salvage discount factors - internet search often finds retail prices
-  // but salvage market is typically lower
-
-  const baseDiscounts: Record<string, number> = {
-    'electronics': 0.55,    // Electronics salvage ~55% of retail (more aggressive)
-    'appliance': 0.65,      // Appliances salvage ~65% of retail
-    'watch': 0.50,          // Watches salvage ~50% of retail
-    'artwork': 0.70,        // Artwork holds value better
-    'equipment': 0.65,      // Equipment salvage ~65% of retail
-    'vehicle': 0.80,        // Vehicles already handled separately
-    'other': 0.60           // Default salvage discount
-  };
-
-  let discount = baseDiscounts[itemType] || baseDiscounts['other'];
-
-  // Adjust based on condition - Brand New should get HIGHER salvage value than used items
-  if (condition) {
-    const qualityTier = mapAnyConditionToQuality(condition, 'Salvage discount');
-    switch (qualityTier) {
-      case 'excellent':
-        discount *= 1.25; // Brand new items get highest salvage value
-        break;
-      case 'good':
-        discount *= 1.10; // Foreign used items get moderate salvage value
-        break;
-      case 'fair':
-        discount *= 1.00; // Fair condition gets base salvage value
-        break;
-      case 'poor':
-        discount *= 0.85; // Poor condition gets reduced salvage value
-        break;
-    }
-  }
-
-  return Math.min(discount, 0.85); // Cap at 85% of retail
 }

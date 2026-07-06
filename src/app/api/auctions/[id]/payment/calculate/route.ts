@@ -19,6 +19,7 @@ import {
   ensurePaymentReadinessContext,
   PaymentReadinessError,
 } from '@/features/auction-deposit/services/payment-readiness.service';
+import { calculateAuctionPaymentAllocation } from '@/features/auction-deposit/services/payment-allocation';
 
 /**
  * GET /api/auctions/[id]/payment/calculate
@@ -93,7 +94,8 @@ export async function GET(
     // Calculate payment breakdown
     const finalBid = parseFloat(winner.bidAmount);
     const depositAmount = parseFloat(winner.depositAmount);
-    const remainingAmount = finalBid - depositAmount;
+    const allocation = calculateAuctionPaymentAllocation(finalBid, depositAmount);
+    const remainingAmount = allocation.remainingAmount;
     const availableBalance = escrowWallet ? parseFloat(escrowWallet.availableBalance) : 0;
 
     // Determine payment options
@@ -140,6 +142,9 @@ export async function GET(
       breakdown: {
         finalBid,
         depositAmount,
+        depositApplied: allocation.depositApplied,
+        depositSurplus: allocation.depositSurplus,
+        depositCoversBid: remainingAmount === 0 && allocation.depositApplied > 0,
         remainingAmount,
         walletBalance: availableBalance, // Frontend expects walletBalance
         canPayWithWallet: canPayWithWalletOnly,
@@ -164,7 +169,7 @@ export async function GET(
           amount: remainingAmount,
         },
         paystackOnly: {
-          available: paymentMethods.paystack,
+          available: paymentMethods.paystack && remainingAmount > 0,
           amount: remainingAmount,
         },
         hybrid: {

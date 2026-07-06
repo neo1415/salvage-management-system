@@ -7,9 +7,8 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DataLoadingState } from '@/components/ui/loading-states';
-import { useSession } from 'next-auth/react';
 import { MetricValue } from '@/components/ui/stat-card';
 import { TrendingUp, BarChart3, MapPin, Clock, Download, Filter } from 'lucide-react';
 
@@ -42,7 +41,6 @@ interface GeographicPattern {
  * Task 10.3.1: Create vendor market insights page
  */
 export default function MarketInsightsPage() {
-  const { data: session } = useSession();
   const [assetType, setAssetType] = useState('all');
   const [dateRange, setDateRange] = useState('30d');
   const [region, setRegion] = useState('all');
@@ -52,11 +50,7 @@ export default function MarketInsightsPage() {
   const [geographicPatterns, setGeographicPatterns] = useState<GeographicPattern[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchMarketData();
-  }, [assetType, dateRange, region]);
-
-  const fetchMarketData = async () => {
+  const fetchMarketData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     
@@ -113,7 +107,9 @@ export default function MarketInsightsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [assetType, dateRange, region]);
+
+  useEffect(() => { void fetchMarketData(); }, [fetchMarketData]);
 
   const handleDownloadReport = async () => {
     try {

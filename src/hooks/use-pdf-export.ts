@@ -16,7 +16,7 @@ interface UsePDFExportOptions {
 export function usePDFExport({ reportType, onSuccess, onError }: UsePDFExportOptions) {
   const [isExporting, setIsExporting] = useState(false);
 
-  const exportToPDF = async (data?: any, filters?: { startDate?: string; endDate?: string }) => {
+  const exportToPDF = async (_data?: unknown, filters?: { startDate?: string; endDate?: string }) => {
     setIsExporting(true);
 
     try {

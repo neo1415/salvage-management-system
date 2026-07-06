@@ -25,6 +25,7 @@ import {
   resolveAuctionPaymentMethodAccess,
 } from '@/features/business-policy';
 import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
+import { calculateAuctionPaymentAllocation } from '@/features/auction-deposit/services/payment-allocation';
 
 /**
  * POST /api/auctions/[id]/payment/wallet
@@ -146,7 +147,7 @@ export async function POST(
     // Calculate payment breakdown directly (no HTTP call needed)
     const finalBid = parseFloat(winner.bidAmount);
     const depositAmount = parseFloat(winner.depositAmount);
-    const remainingAmount = finalBid - depositAmount;
+    const { remainingAmount } = calculateAuctionPaymentAllocation(finalBid, depositAmount);
     const availableBalance = parseFloat(escrowWallet.availableBalance);
     const canPayWithWallet = availableBalance >= remainingAmount;
 

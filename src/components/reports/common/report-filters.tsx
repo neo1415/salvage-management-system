@@ -107,7 +107,7 @@ export function ReportFiltersComponent({
             <PopoverContent className="w-auto p-0 bg-white min-w-[280px]" align="start">
               <Calendar
                 mode="single"
-                selected={filters.startDate as any}
+                selected={filters.startDate}
                 onSelect={(date) => handleDateChange('startDate', date instanceof Date ? date : undefined)}
                 initialFocus
               />
@@ -132,7 +132,7 @@ export function ReportFiltersComponent({
             <PopoverContent className="w-auto p-0 bg-white min-w-[280px]" align="start">
               <Calendar
                 mode="single"
-                selected={filters.endDate as any}
+                selected={filters.endDate}
                 onSelect={(date) => handleDateChange('endDate', date instanceof Date ? date : undefined)}
                 initialFocus
               />

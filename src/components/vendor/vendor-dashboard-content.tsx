@@ -6,7 +6,7 @@ import { MetricValue, StatCard, StatGrid, StatTile } from '@/components/ui/stat-
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth/use-auth';
-import { KYCStatusCard, type VendorTier } from '@/components/vendor/kyc-status-card';
+import { KYCStatusCard } from '@/components/vendor/kyc-status-card';
 import { usePaymentUnlockedModal } from '@/hooks/use-payment-unlocked-modal';
 import { useVendorDashboard } from '@/hooks/queries/use-vendor-dashboard';
 import { Check, Star, Trophy, Rocket, ClipboardList } from 'lucide-react';
@@ -14,6 +14,7 @@ import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
 import { PageLoadingSkeleton } from '@/components/ui/loading-states';
 import { formatAssetName as formatCaseAssetName } from '@/lib/utils/asset-name';
 import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
+import { uploadPickupEvidenceFiles } from '@/features/pickups/client/pickup-evidence-upload';
 
 const PaymentUnlockedModal = dynamic(
   () => import('@/components/modals/payment-unlocked-modal'),
@@ -34,8 +35,11 @@ type PickupEvidenceFormState = {
   notes: string;
   files: File[];
   submitting: boolean;
+  submissionStage: 'uploading' | 'comparing' | null;
+  uploadProgress: number;
   message: string | null;
   error: string | null;
+  submitted: boolean;
 };
 
 function formatHours(value: number | null | undefined): string {
@@ -60,7 +64,12 @@ function VendorDashboardContentInner() {
   } = usePaymentUnlockedModal();
 
   // Fetch dashboard data with TanStack Query (cached, instant on return)
-  const { data: dashboardData, isLoading: isLoadingData, error: queryError } = useVendorDashboard();
+  const {
+    data: dashboardData,
+    isLoading: isLoadingData,
+    error: queryError,
+    refetch: refetchDashboard,
+  } = useVendorDashboard();
 
   // Convert query error to string
   const error = queryError ? (queryError instanceof Error ? queryError.message : 'Failed to load dashboard data') : null;
@@ -96,7 +105,7 @@ function VendorDashboardContentInner() {
       router.push('/login');
       return;
     }
-  }, [isAuthenticated, isAuthLoading, user, router.push]);
+  }, [isAuthenticated, isAuthLoading, user, router]);
 
   // Get trend indicator
   const getTrendIndicator = (trend: 'up' | 'down' | 'neutral') => {
@@ -145,61 +154,24 @@ function VendorDashboardContentInner() {
     notes: '',
     files: [],
     submitting: false,
+    submissionStage: null,
+    uploadProgress: 0,
     message: null,
     error: null,
+    submitted: false,
   };
 
   const updateEvidenceForm = (auctionId: string, patch: Partial<PickupEvidenceFormState>) => {
     setPickupEvidenceForms((current) => ({
       ...current,
       [auctionId]: {
-        ...evidenceFormFor(auctionId),
+        ...(current[auctionId] || {
+          pickupAuthCode: '', notes: '', files: [], submitting: false,
+          submissionStage: null, uploadProgress: 0, message: null, error: null, submitted: false,
+        }),
         ...patch,
       },
     }));
-  };
-
-  const uploadPickupEvidenceFile = async (auctionId: string, file: File): Promise<string> => {
-    const signResponse = await fetch('/api/upload/sign', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        entityType: 'pickup-evidence',
-        entityId: auctionId,
-        transformation: 'compressed',
-      }),
-    });
-
-    if (!signResponse.ok) {
-      throw new Error('Could not prepare pickup evidence upload.');
-    }
-
-    const signData = await signResponse.json();
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('signature', signData.signature);
-    formData.append('timestamp', String(signData.timestamp));
-    formData.append('folder', signData.folder);
-    formData.append('api_key', signData.apiKey);
-    if (signData.transformation) {
-      formData.append('transformation', signData.transformation);
-    }
-
-    const uploadResponse = await fetch(signData.uploadUrl, {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!uploadResponse.ok) {
-      throw new Error(`Upload failed for ${file.name}.`);
-    }
-
-    const uploadResult = await uploadResponse.json();
-    if (!uploadResult.secure_url) {
-      throw new Error(`Upload response for ${file.name} did not include a secure URL.`);
-    }
-
-    return uploadResult.secure_url;
   };
 
   const submitPickupEvidence = async (pickup: PendingPickupConfirmation) => {
@@ -222,12 +194,20 @@ function VendorDashboardContentInner() {
     }
 
     try {
-      updateEvidenceForm(pickup.auctionId, { submitting: true, error: null, message: null });
-      const photoMetadata = await collectImageFilesMetadata(form.files, 'dashboard_file_input');
-      const photoUrls = [];
-      for (const file of form.files) {
-        photoUrls.push(await uploadPickupEvidenceFile(pickup.auctionId, file));
-      }
+      updateEvidenceForm(pickup.auctionId, {
+        submitting: true,
+        submissionStage: 'uploading',
+        uploadProgress: 0,
+        error: null,
+        message: null,
+      });
+      const [photoMetadata, photoUrls] = await Promise.all([
+        collectImageFilesMetadata(form.files, 'browser_camera_input'),
+        uploadPickupEvidenceFiles(pickup.auctionId, form.files, (uploaded, total) => {
+          updateEvidenceForm(pickup.auctionId, { uploadProgress: Math.round((uploaded / total) * 100) });
+        }),
+      ]);
+      updateEvidenceForm(pickup.auctionId, { submissionStage: 'comparing' });
 
       const response = await fetch(`/api/auctions/${pickup.auctionId}/pickup-evidence`, {
         method: 'POST',
@@ -248,13 +228,18 @@ function VendorDashboardContentInner() {
 
       updateEvidenceForm(pickup.auctionId, {
         submitting: false,
+        submissionStage: null,
+        uploadProgress: 100,
         message: data.message || 'Pickup evidence submitted.',
         error: null,
         files: [],
+        submitted: true,
       });
+      await refetchDashboard();
     } catch (error) {
       updateEvidenceForm(pickup.auctionId, {
         submitting: false,
+        submissionStage: null,
         error: error instanceof Error ? error.message : 'Pickup evidence submission failed.',
         message: null,
       });
@@ -353,7 +338,7 @@ function VendorDashboardContentInner() {
             <div className="space-y-3">
               {visiblePickups.map((pickup) => {
                 const evidenceForm = evidenceFormFor(pickup.auctionId);
-                const evidenceSubmitted = pickup.pickupEvidence?.submitted ?? false;
+                const evidenceSubmitted = (pickup.pickupEvidence?.submitted ?? false) || evidenceForm.submitted;
 
                 return (
                 <div
@@ -452,6 +437,7 @@ function VendorDashboardContentInner() {
                             message: null,
                           })}
                           placeholder="AUTH-..."
+                          disabled={evidenceForm.submitting}
                           className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono uppercase focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
                         />
                       </label>
@@ -460,12 +446,20 @@ function VendorDashboardContentInner() {
                         <input
                           type="file"
                           accept="image/jpeg,image/png,image/webp,image/heic"
+                          capture="environment"
                           multiple
-                          onChange={(event) => updateEvidenceForm(pickup.auctionId, {
-                            files: Array.from(event.target.files || []).slice(0, 12),
-                            error: null,
-                            message: null,
-                          })}
+                          disabled={evidenceForm.submitting}
+                          onChange={(event) => {
+                            updateEvidenceForm(pickup.auctionId, {
+                              files: [
+                                ...evidenceForm.files,
+                                ...Array.from(event.target.files || []),
+                              ].slice(0, 12),
+                              error: null,
+                              message: null,
+                            });
+                            event.currentTarget.value = '';
+                          }}
                           className="mt-1 block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[var(--brand-primary)] hover:file:bg-gray-100"
                         />
                         <span className="mt-1 block text-[11px] text-gray-500">
@@ -485,6 +479,7 @@ function VendorDashboardContentInner() {
                           message: null,
                         })}
                         rows={2}
+                        disabled={evidenceForm.submitting}
                         placeholder="Condition observed at pickup, missing parts, quantity notes, or handoff remarks"
                         className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]"
                       />
@@ -495,8 +490,17 @@ function VendorDashboardContentInner() {
                       disabled={evidenceForm.submitting}
                       className="mt-3 rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--brand-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {evidenceForm.submitting ? 'Submitting evidence...' : 'Submit Evidence'}
+                      {evidenceForm.submitting
+                        ? evidenceForm.submissionStage === 'uploading'
+                          ? `Uploading photos ${evidenceForm.uploadProgress}%`
+                          : 'Comparing evidence'
+                        : 'Submit Evidence'}
                     </button>
+                    {evidenceForm.submitting && (
+                      <p className="mt-2 text-xs text-gray-600" role="status" aria-live="polite">
+                        Evidence is being secured. This may take a moment.
+                      </p>
+                    )}
                   </div>
                     )}
                 </div>

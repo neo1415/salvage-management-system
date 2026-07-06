@@ -3,11 +3,11 @@
  * Clears autocomplete cache and forces fresh data
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { autocompleteCache } from '@/lib/cache/autocomplete-cache';
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const session = await auth();
     if (!session?.user?.id) {

@@ -12,7 +12,7 @@ import axios, { AxiosError } from 'axios';
 import * as cheerio from 'cheerio';
 import type { PropertyIdentifier, SourcePrice, ScrapeResult, ScraperConfig } from '../types';
 import { buildSearchQuery, buildFullUrl, getSupportedSources } from './query-builder.service';
-import { checkRateLimit, recordRequest, waitForRateLimit } from './rate-limiter.service';
+import { recordRequest, waitForRateLimit } from './rate-limiter.service';
 import { extractYear } from './year-extraction.service';
 import { filterByYear } from './year-filter.service';
 import type { QualityTier } from '@/features/valuations/services/condition-mapping.service';

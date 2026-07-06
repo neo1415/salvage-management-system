@@ -151,9 +151,9 @@ export interface ReportFilters {
 }
 
 export interface CachedReportData {
-  summary: Record<string, any>;
-  details?: any[];
-  charts?: any[];
+  summary: Record<string, unknown>;
+  details?: unknown[];
+  charts?: unknown[];
   metadata: {
     generatedAt: string;
     recordCount: number;

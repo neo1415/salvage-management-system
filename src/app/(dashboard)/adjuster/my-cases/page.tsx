@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { useSession } from 'next-auth/react';
 import { useAppRouter } from '@/hooks/use-app-router';
 import Link from 'next/link';
@@ -20,6 +20,7 @@ import {
   AlertCircle,
   RefreshCw
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
 import {
   isCaseInLiveAuction,
@@ -120,34 +121,6 @@ export function CasePortfolioPage() {
   const isSalvageManager = userRole === 'salvage_manager';
   const isManagerPortfolio = isSalvageManager;
 
-  useEffect(() => {
-    if (status === 'loading') return;
-    
-    if (status === 'unauthenticated') {
-      router.push('/login');
-      return;
-    }
-
-    if (status === 'authenticated') {
-      if (isClaimsAdjuster) {
-        router.push('/adjuster/cases/new');
-        return;
-      }
-
-      if (!isSalvageManager) {
-        router.push('/login');
-        return;
-      }
-
-      // Only fetch once on mount, not on every navigation
-      fetchMyCases();
-    }
-  }, [status, isClaimsAdjuster, isSalvageManager]); // Keep role-aware routing stable after session hydration
-
-  useEffect(() => {
-    filterCases();
-  }, [cases, statusFilter, searchQuery]);
-
   // Close export menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -165,7 +138,7 @@ export function CasePortfolioPage() {
     }
   }, [showExportMenu]);
 
-  const fetchMyCases = async () => {
+  const fetchMyCases = useCallback(async () => {
     try {
       setLoading(true);
       setLoadError(null);
@@ -248,9 +221,9 @@ export function CasePortfolioPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isClaimsAdjuster, isOffline, isSalvageManager]);
 
-  const filterCases = () => {
+  const filterCases = useCallback(() => {
     // Combine online cases and offline cases
     let filtered = [...cases];
     
@@ -327,12 +300,39 @@ export function CasePortfolioPage() {
     }
 
     setFilteredCases(filtered);
-  };
+  }, [cases, offlineCases, searchQuery, statusFilter]);
+
+  useEffect(() => {
+    if (status === 'loading') return;
+
+    if (status === 'unauthenticated') {
+      router.push('/login');
+      return;
+    }
+
+    if (status === 'authenticated') {
+      if (isClaimsAdjuster) {
+        router.push('/adjuster/cases/new');
+        return;
+      }
+
+      if (!isSalvageManager) {
+        router.push('/login');
+        return;
+      }
+
+      void fetchMyCases();
+    }
+  }, [fetchMyCases, isClaimsAdjuster, isSalvageManager, router, status]);
+
+  useEffect(() => {
+    filterCases();
+  }, [filterCases]);
 
   const getStatusBadge = (caseItem: Case) => {
     const displayStatus: CaseDisplayStatus = resolveCaseDisplayStatus(caseItem);
 
-    const statusConfig: Record<string, { label: string; className: string; icon: any }> = {
+    const statusConfig: Record<string, { label: string; className: string; icon: LucideIcon }> = {
       draft: {
         label: 'Draft',
         className: 'bg-gray-100 text-gray-800',
@@ -875,8 +875,6 @@ function CaseCard({
   showSubmittedBy = false,
 }: CaseCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const router = useAppRouter();
-
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();

@@ -36,7 +36,6 @@ interface BidFormProps {
   onClose: () => void;
   onSuccess?: () => void;
   vendorTier?: VendorTier;
-  auctionValue?: number; // For tier upgrade checks
 }
 
 export function BidForm({
@@ -48,7 +47,6 @@ export function BidForm({
   onClose,
   onSuccess,
   vendorTier = 'tier1_bvn',
-  auctionValue,
 }: BidFormProps) {
   const { data: session } = useSession();
   const toast = useToast();
@@ -136,7 +134,7 @@ export function BidForm({
     }
 
     return null;
-  }, [minimumBidAmount, getTierLimit, vendorTier]);
+  }, [minimumBidAmount, getTierLimit]);
 
   // Handle bid amount change with real-time validation
   const handleBidAmountChange = (value: string) => {

@@ -6,12 +6,11 @@
  */
 
 import { ReportFilters } from '../../types';
-import { FinancialDataRepository } from '../repositories/financial-data.repository';
+import { FinancialDataRepository, type RevenueData } from '../repositories/financial-data.repository';
 import { DataAggregationService } from '../../services/data-aggregation.service';
 import {
   buildFinancialBranchBreakdown,
   buildFinancialBrokerBreakdown,
-  buildFinancialBranchSummary,
   buildFinancialBrokerSummary,
   mapRevenueToFinancialDetail,
   type FinancialBreakdownGroup,
@@ -179,7 +178,7 @@ export class RevenueAnalysisService {
   /**
    * Calculate metrics by asset type
    */
-  private static calculateByAssetType(data: any[]) {
+  private static calculateByAssetType(data: RevenueData[]) {
     const grouped = DataAggregationService.groupBy(data, 'assetType');
     if (!grouped || Object.keys(grouped).length === 0) return [];
     
@@ -203,7 +202,7 @@ export class RevenueAnalysisService {
   /**
    * Calculate metrics by region
    */
-  private static calculateByRegion(data: any[]) {
+  private static calculateByRegion(data: RevenueData[]) {
     const grouped = DataAggregationService.groupBy(data, 'region');
     if (!grouped || Object.keys(grouped).length === 0) return [];
     
@@ -225,7 +224,7 @@ export class RevenueAnalysisService {
   /**
    * Calculate metrics by insurer branch
    */
-  private static calculateByBranch(data: any[]) {
+  private static calculateByBranch(data: RevenueData[]) {
     const grouped = DataAggregationService.groupBy(data, 'branchName');
     if (!grouped || Object.keys(grouped).length === 0) return [];
 
@@ -249,7 +248,7 @@ export class RevenueAnalysisService {
   /**
    * Calculate salvage recovery trend over time
    */
-  private static calculateTrend(data: any[]) {
+  private static calculateTrend(data: RevenueData[]) {
     const grouped: Record<string, {
       claimsPaid: number;
       salvageRecovered: number;
@@ -284,7 +283,7 @@ export class RevenueAnalysisService {
   /**
    * Generate salvage recovery forecast based on historical trend
    */
-  private static generateForecast(trend: any[]) {
+  private static generateForecast(trend: RevenueAnalysisReport['trend']) {
     if (trend.length < 7) {
       return undefined; // Need at least 7 days of data
     }

@@ -19,6 +19,18 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq, sql } from 'drizzle-orm';
 
+interface PredictionExportRow {
+  id: string;
+  auction_id: string;
+  predicted_price: string;
+  lower_bound: string;
+  upper_bound: string;
+  confidence_score: string;
+  confidence_level: string;
+  method: string;
+  created_at: Date;
+}
+
 /**
  * GET /api/intelligence/privacy/export
  * 
@@ -53,7 +65,7 @@ export async function GET(request: NextRequest) {
     const vendorId = vendorData[0].id;
 
     // Get all predictions for user's auctions
-    const userPredictions: any = await db.execute(sql`
+    const predictionResult = await db.execute(sql`
       SELECT 
         p.id,
         p.auction_id,
@@ -70,6 +82,10 @@ export async function GET(request: NextRequest) {
       WHERE sc.user_id = ${session.user.id}
       ORDER BY p.created_at DESC
     `);
+
+    const userPredictions = Array.from(
+      predictionResult as unknown as Iterable<PredictionExportRow>
+    );
 
     // Get all recommendations for user's vendor
     const userRecommendations = await db
@@ -110,7 +126,7 @@ export async function GET(request: NextRequest) {
         email: 'REDACTED', // Anonymize email
         exportDate: new Date().toISOString(),
       },
-      predictions: Array.from(userPredictions as Iterable<any>).map((p: any) => ({
+      predictions: userPredictions.map((p) => ({
         id: p.id,
         auctionId: p.auction_id,
         predictedPrice: parseFloat(p.predicted_price),

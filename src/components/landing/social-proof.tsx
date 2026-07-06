@@ -1,7 +1,7 @@
 'use client';
 
-import { motion, useInView, useMotionValue, useSpring } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import { Star, Shield, Lock, CheckCircle } from 'lucide-react';
 import { usePublicBranding } from '@/hooks/use-public-branding';
 

@@ -25,7 +25,23 @@
 import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
 import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
-import { normalizeDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
+import { normalizeDamageAction, normalizeDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function getErrorStack(error: unknown): string {
+  return error instanceof Error && error.stack ? error.stack : 'No stack trace available';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSeverity(value: unknown): value is 'minor' | 'moderate' | 'severe' {
+  return value === 'minor' || value === 'moderate' || value === 'severe';
+}
 
 /**
  * Vehicle context for damage assessment
@@ -149,8 +165,8 @@ export async function initializeClaudeService(): Promise<void> {
       `[Claude Service] Initialized successfully with API key ending in ${maskedKey}. ` +
       `Model: ${serviceConfig.model}. Prompt caching enabled for cost optimization.`
     );
-  } catch (initError: any) {
-    const errorMessage = initError?.message || 'Unknown error';
+  } catch (initError: unknown) {
+    const errorMessage = getErrorMessage(initError) || 'Unknown error';
     console.error(
       `[Claude Service] Initialization failed. Error: ${errorMessage}. ` +
       `Key starts with: ${apiKey.substring(0, 7)}... ` +
@@ -199,57 +215,12 @@ export function getClaudeServiceConfig(): {
 }
 
 /**
- * Claude response schema for structured JSON output
- * This matches Gemini's schema exactly for compatibility
- */
-const CLAUDE_RESPONSE_SCHEMA = {
-  type: "object",
-  properties: {
-    itemDetails: {
-      type: "object",
-      properties: {
-        detectedMake: { type: "string" },
-        detectedModel: { type: "string" },
-        detectedYear: { type: "string" },
-        color: { type: "string" },
-        trim: { type: "string" },
-        bodyStyle: { type: "string" },
-        storage: { type: "string" },
-        overallCondition: { type: "string" },
-        notes: { type: "string" }
-      }
-    },
-    damagedParts: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          part: { type: "string" },
-          damageType: { type: "string" },
-          description: { type: "string" },
-          recommendedAction: { type: "string", enum: ["repair", "replace", "clean_or_restore", "sort_or_recover", "dispose", "specialist_review"] },
-          actionConfidence: { type: "number", minimum: 0, maximum: 100 },
-          severity: { type: "string", enum: ["minor", "moderate", "severe"] },
-          confidence: { type: "number", minimum: 0, maximum: 100 }
-        },
-        required: ["part", "damageType", "description", "recommendedAction", "actionConfidence", "severity", "confidence"]
-      }
-    },
-    severity: { type: "string", enum: ["minor", "moderate", "severe"] },
-    airbagDeployed: { type: "boolean" },
-    totalLoss: { type: "boolean" },
-    summary: { type: "string", maxLength: 1500 }
-  },
-  required: ["itemDetails", "damagedParts", "severity", "airbagDeployed", "totalLoss", "summary"]
-};
-
-/**
  * Parse and validate Claude JSON response
  * Reuses Gemini's validation logic for consistency
  */
 export function parseAndValidateClaudeResponse(responseText: string, requestId: string): ClaudeDamageAssessment {
   // Parse JSON response - Claude sometimes wraps JSON in markdown code blocks
-  let parsedResponse: any;
+  let parsedResponse: Record<string, unknown>;
   try {
     // Remove markdown code blocks if present (```json ... ``` or ``` ... ```)
     let cleanedResponse = responseText.trim();
@@ -270,12 +241,16 @@ export function parseAndValidateClaudeResponse(responseText: string, requestId: 
       console.info(`[Claude Service] Cleaned response (first 100 chars): ${cleanedResponse.substring(0, 100)}... Request ID: ${requestId}`);
     }
     
-    parsedResponse = JSON.parse(cleanedResponse);
-  } catch (parseError: any) {
+    const parsed: unknown = JSON.parse(cleanedResponse);
+    if (!isRecord(parsed)) {
+      throw new Error('Claude response must be a JSON object');
+    }
+    parsedResponse = parsed;
+  } catch (parseError: unknown) {
     const errorMsg = 
       `Failed to parse Claude response as JSON. Response: ${responseText.substring(0, 200)}... ` +
       `Cleaned: ${responseText.trim().replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').substring(0, 200)}... ` +
-      `Error: ${parseError?.message || 'Unknown error'}. Request ID: ${requestId}`;
+      `Error: ${getErrorMessage(parseError) || 'Unknown error'}. Request ID: ${requestId}`;
     console.error(`[Claude Service] ${errorMsg}`);
     throw new Error(errorMsg);
   }
@@ -293,40 +268,45 @@ export function parseAndValidateClaudeResponse(responseText: string, requestId: 
 
   // Validate and sanitize damaged parts
   const damagedParts: DamagedPart[] = Array.isArray(parsedResponse.damagedParts)
-    ? parsedResponse.damagedParts.map((part: any, index: number) => {
-        if (!part.part || typeof part.part !== 'string') {
+    ? parsedResponse.damagedParts.map((value: unknown, index: number) => {
+        const part = isRecord(value) ? value : {};
+        const partName = typeof part.part === 'string' && part.part.trim()
+          ? part.part
+          : 'unknown part';
+        if (partName === 'unknown part') {
           console.warn(`[Claude Service] Invalid part name at index ${index}. Using "unknown part". Request ID: ${requestId}`);
-          part.part = 'unknown part';
         }
 
-        const validSeverities: Array<'minor' | 'moderate' | 'severe'> = ['minor', 'moderate', 'severe'];
-        if (!validSeverities.includes(part.severity)) {
-          console.warn(`[Claude Service] Invalid severity "${part.severity}" at index ${index}. Defaulting to "moderate". Request ID: ${requestId}`);
-          part.severity = 'moderate';
+        const partSeverity = isSeverity(part.severity) ? part.severity : 'moderate';
+        if (!isSeverity(part.severity)) {
+          console.warn(`[Claude Service] Invalid severity "${String(part.severity)}" at index ${index}. Defaulting to "moderate". Request ID: ${requestId}`);
         }
 
-        if (typeof part.confidence !== 'number' || part.confidence < 0 || part.confidence > 100) {
-          console.warn(`[Claude Service] Invalid confidence ${part.confidence} at index ${index}. Defaulting to 70. Request ID: ${requestId}`);
-          part.confidence = 70;
+        const partConfidence = typeof part.confidence === 'number'
+          && part.confidence >= 0
+          && part.confidence <= 100
+          ? part.confidence
+          : 70;
+        if (partConfidence === 70 && part.confidence !== 70) {
+          console.warn(`[Claude Service] Invalid confidence ${String(part.confidence)} at index ${index}. Defaulting to 70. Request ID: ${requestId}`);
         }
 
         return normalizeDamageEvidence({
-          part: part.part,
+          part: partName,
           damageType: typeof part.damageType === 'string' ? part.damageType : undefined,
           description: typeof part.description === 'string' ? part.description : undefined,
-          recommendedAction: part.recommendedAction,
-          actionConfidence: part.actionConfidence,
-          severity: part.severity as 'minor' | 'moderate' | 'severe',
-          confidence: part.confidence
+          recommendedAction: normalizeDamageAction(part.recommendedAction),
+          actionConfidence: typeof part.actionConfidence === 'number' ? part.actionConfidence : 0,
+          severity: partSeverity,
+          confidence: partConfidence
         });
       })
     : [];
 
   // Validate severity
-  const validSeverities: Array<'minor' | 'moderate' | 'severe'> = ['minor', 'moderate', 'severe'];
   let severity: 'minor' | 'moderate' | 'severe';
-  if (typeof parsedResponse.severity === 'string' && validSeverities.includes(parsedResponse.severity as any)) {
-    severity = parsedResponse.severity as 'minor' | 'moderate' | 'severe';
+  if (isSeverity(parsedResponse.severity)) {
+    severity = parsedResponse.severity;
   } else {
     console.warn(`[Claude Service] Invalid severity value: ${parsedResponse.severity}. Defaulting to "moderate". Request ID: ${requestId}`);
     severity = 'moderate';
@@ -345,8 +325,9 @@ export function parseAndValidateClaudeResponse(responseText: string, requestId: 
 
   // Parse itemDetails if present
   let itemDetails: ItemDetails | undefined;
-  if (parsedResponse.itemDetails && typeof parsedResponse.itemDetails === 'object') {
-    const sanitizeField = (value: any): string | undefined => {
+  if (isRecord(parsedResponse.itemDetails)) {
+    const rawItemDetails = parsedResponse.itemDetails;
+    const sanitizeField = (value: unknown): string | undefined => {
       if (typeof value !== 'string') return undefined;
       const trimmed = value.trim();
       if (!trimmed) return undefined;
@@ -358,15 +339,15 @@ export function parseAndValidateClaudeResponse(responseText: string, requestId: 
     };
 
     itemDetails = {
-      detectedMake: sanitizeField(parsedResponse.itemDetails.detectedMake),
-      detectedModel: sanitizeField(parsedResponse.itemDetails.detectedModel),
-      detectedYear: sanitizeField(parsedResponse.itemDetails.detectedYear),
-      color: sanitizeField(parsedResponse.itemDetails.color),
-      trim: sanitizeField(parsedResponse.itemDetails.trim),
-      bodyStyle: sanitizeField(parsedResponse.itemDetails.bodyStyle),
-      storage: sanitizeField(parsedResponse.itemDetails.storage),
-      overallCondition: sanitizeField(parsedResponse.itemDetails.overallCondition),
-      notes: sanitizeField(parsedResponse.itemDetails.notes),
+      detectedMake: sanitizeField(rawItemDetails.detectedMake),
+      detectedModel: sanitizeField(rawItemDetails.detectedModel),
+      detectedYear: sanitizeField(rawItemDetails.detectedYear),
+      color: sanitizeField(rawItemDetails.color),
+      trim: sanitizeField(rawItemDetails.trim),
+      bodyStyle: sanitizeField(rawItemDetails.bodyStyle),
+      storage: sanitizeField(rawItemDetails.storage),
+      overallCondition: sanitizeField(rawItemDetails.overallCondition),
+      notes: sanitizeField(rawItemDetails.notes),
     };
 
     Object.keys(itemDetails).forEach(key => {
@@ -506,8 +487,8 @@ async function convertPhotosToBase64(
         `Format: ${result.mimeType}. Request ID: ${requestId}`
       );
       return result;
-    } catch (error: any) {
-      const errorMessage = error?.message || 'Unknown error';
+    } catch (error: unknown) {
+      const errorMessage = getErrorMessage(error) || 'Unknown error';
       console.error(
         `[Claude Service] Failed to convert photo ${index + 1}/${photosToProcess.length}. ` +
         `Error: ${errorMessage}. Request ID: ${requestId}`
@@ -540,9 +521,8 @@ enum ErrorType {
 /**
  * Classify error type for retry logic
  */
-function classifyError(error: any, requestId: string): ErrorType {
-  const errorMessage = error?.message || '';
-  const errorString = String(error);
+function classifyError(error: unknown, requestId: string): ErrorType {
+  const errorMessage = getErrorMessage(error);
 
   if (
     errorMessage.includes('API key') ||
@@ -717,7 +697,7 @@ export async function assessDamageWithClaude(
 
     // Call Claude API with retry logic
     const startTime = Date.now();
-    let lastError: any = null;
+    let lastError: unknown = null;
 
     // Attempt 1: Initial API call
     try {
@@ -770,9 +750,9 @@ export async function assessDamageWithClaude(
 
       return assessment;
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       lastError = error;
-      const errorMessage = error?.message || 'Unknown error';
+      const errorMessage = getErrorMessage(error) || 'Unknown error';
       console.error(`[Claude Service] Attempt 1: API call failed. Error: ${errorMessage}. Request ID: ${requestId}`);
 
       // Classify the error
@@ -829,18 +809,18 @@ export async function assessDamageWithClaude(
 
       return assessment;
 
-    } catch (retryError: any) {
-      const retryErrorMessage = retryError?.message || 'Unknown error';
+    } catch (retryError: unknown) {
+      const retryErrorMessage = getErrorMessage(retryError) || 'Unknown error';
       console.error(
         `[Claude Service] Attempt 2: Retry failed. Error: ${retryErrorMessage}. ` +
-        `Original error: ${lastError?.message || 'Unknown'}. Request ID: ${requestId}`
+        `Original error: ${getErrorMessage(lastError) || 'Unknown'}. Request ID: ${requestId}`
       );
       throw retryError;
     }
 
-  } catch (error: any) {
-    const errorMessage = error?.message || 'Unknown error';
-    const errorStack = error?.stack || 'No stack trace available';
+  } catch (error: unknown) {
+    const errorMessage = getErrorMessage(error) || 'Unknown error';
+    const errorStack = getErrorStack(error);
     const errorType = classifyError(error, requestId);
 
     console.error(

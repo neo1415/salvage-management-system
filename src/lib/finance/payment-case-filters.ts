@@ -1,6 +1,5 @@
 import { and, eq, gte, isNotNull, lte, or, type SQL } from 'drizzle-orm';
 import { payments } from '@/lib/db/schema/payments';
-import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 
 export type FinancePaymentFilters = {

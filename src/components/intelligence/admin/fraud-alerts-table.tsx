@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { AlertTriangle, Eye, CheckCircle, XCircle } from 'lucide-react';
+import { Eye, CheckCircle, XCircle } from 'lucide-react';
 import { FraudAlertDetailModal } from './fraud-alert-detail-modal';
 
 interface FraudAlert {

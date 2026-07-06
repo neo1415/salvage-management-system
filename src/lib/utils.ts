@@ -34,7 +34,7 @@ export function formatDate(date: Date | string): string {
 /**
  * Debounce function to limit the rate of function calls
  */
-export function debounce<T extends (...args: any[]) => any>(
+export function debounce<T extends (...args: never[]) => unknown>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
@@ -48,7 +48,7 @@ export function debounce<T extends (...args: any[]) => any>(
 /**
  * Throttle function to limit the rate of function calls
  */
-export function throttle<T extends (...args: any[]) => any>(
+export function throttle<T extends (...args: never[]) => unknown>(
   func: T,
   limit: number
 ): (...args: Parameters<T>) => void {
@@ -74,7 +74,7 @@ export function generateId(length: number = 8): string {
 /**
  * Check if a value is empty (null, undefined, empty string, empty array, empty object)
  */
-export function isEmpty(value: any): boolean {
+export function isEmpty(value: unknown): boolean {
   if (value == null) return true;
   if (typeof value === 'string') return value.trim().length === 0;
   if (Array.isArray(value)) return value.length === 0;
@@ -167,9 +167,9 @@ export function isProduction(): boolean {
 /**
  * Safe JSON parse that returns null on error
  */
-export function safeJsonParse<T = any>(str: string): T | null {
+export function safeJsonParse<T = unknown>(str: string): T | null {
   try {
-    return JSON.parse(str);
+    return JSON.parse(str) as T;
   } catch {
     return null;
   }

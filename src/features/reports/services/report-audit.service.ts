@@ -8,7 +8,7 @@
 import { db } from '@/lib/db/drizzle';
 import { reportAuditLog } from '@/lib/db/schema/reports';
 import { eq, desc } from 'drizzle-orm';
-import { ReportAuditEntry, ReportType, ExportFormat, ReportFilters } from '../types';
+import { ReportType, ExportFormat, ReportFilters } from '../types';
 
 export class ReportAuditService {
   /**

@@ -124,9 +124,12 @@ export async function recordImageUploadMetadata(input: RecordImageMetadataInput)
     : { exif: {}, warnings: [], sha256Hash: undefined, width: undefined, height: undefined };
   const exif = serverMetadata.exif;
   const clientMetadata = input.clientMetadata;
+  const serverWarnings = clientMetadata
+    ? serverMetadata.warnings.filter((warning) => !warning.includes('No EXIF metadata was found'))
+    : serverMetadata.warnings;
   const warnings = [
     ...(clientMetadata?.metadataWarnings || []),
-    ...serverMetadata.warnings,
+    ...serverWarnings,
   ];
   const capturedAt = dateFromValue(
     clientMetadata?.exifCapturedAt ||
@@ -164,10 +167,14 @@ export async function recordImageUploadMetadata(input: RecordImageMetadataInput)
       height: numericString(height),
       metadataStatus: metadataStatus(clientMetadata, exif, warnings),
       metadataWarnings: warnings.length ? warnings : null,
-      sha256Hash: serverMetadata.sha256Hash || null,
+      sha256Hash: serverMetadata.sha256Hash || clientMetadata?.clientSha256Hash || null,
       rawMetadata: {
         client: clientMetadata || null,
         serverExif: Object.keys(exif).length ? exif : null,
+        browserRecordedAt: clientMetadata?.browserRecordedAt || null,
+        locationSource: clientMetadata?.locationSource || null,
+        gpsAccuracy: clientMetadata?.gpsAccuracy ?? null,
+        originalFileSha256: clientMetadata?.clientSha256Hash || null,
       },
     });
   } catch (error) {

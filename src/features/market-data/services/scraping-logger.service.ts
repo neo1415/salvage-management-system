@@ -57,8 +57,6 @@ export async function logScrapingStart(
   sources: string[]
 ): Promise<void> {
   const propertyHash = generatePropertyHash(property);
-  const startTime = Date.now();
-
   try {
     // Log start for each source
     const logPromises = sources.map(source =>

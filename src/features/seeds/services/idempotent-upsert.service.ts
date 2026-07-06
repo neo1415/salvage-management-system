@@ -275,7 +275,7 @@ export class IdempotentUpsertService {
     action: 'create' | 'update' | 'delete',
     entityType: 'valuation' | 'deduction',
     entityId: string,
-    changedFields: Record<string, { old: any; new: any }>
+    changedFields: Record<string, { old: unknown; new: unknown }>
   ): Promise<void> {
     try {
       await db.insert(valuationAuditLogs).values({

@@ -5,7 +5,13 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { uploadFile } from '@/lib/storage/cloudinary';
-import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress, logAction } from '@/lib/utils/audit-logger';
+import {
+  AuditActionType,
+  AuditEntityType,
+  getDeviceTypeFromUserAgent,
+  getIpAddress,
+  logAction,
+} from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { extractNINFromDocument } from '@/lib/integrations/google-document-ai';
@@ -210,8 +216,8 @@ export async function POST(request: NextRequest) {
     // Log KYC initiation
     await logAction({
       userId,
-      actionType: 'tier2_kyc_initiated' as any,
-      entityType: 'kyc' as any,
+      actionType: AuditActionType.TIER2_KYC_INITIATED,
+      entityType: AuditEntityType.KYC,
       entityId: vendor.id,
       ipAddress,
       deviceType,
@@ -301,8 +307,10 @@ export async function POST(request: NextRequest) {
 
         await logAction({
           userId,
-          actionType: (ninVerified ? 'nin_verified' : 'bvn_verification_failed') as any,
-          entityType: 'kyc' as any,
+          actionType: ninVerified
+            ? AuditActionType.NIN_VERIFIED
+            : AuditActionType.BVN_VERIFICATION_FAILED,
+          entityType: AuditEntityType.KYC,
           entityId: vendor.id,
           ipAddress,
           deviceType,
@@ -340,8 +348,10 @@ export async function POST(request: NextRequest) {
 
       await logAction({
         userId,
-        actionType: (bankAccountVerified ? 'bank_details_verified' : 'bvn_verification_failed') as any,
-        entityType: 'kyc' as any,
+        actionType: bankAccountVerified
+          ? AuditActionType.BANK_DETAILS_VERIFIED
+          : AuditActionType.BVN_VERIFICATION_FAILED,
+        entityType: AuditEntityType.KYC,
         entityId: vendor.id,
         ipAddress,
         deviceType,
@@ -380,8 +390,8 @@ export async function POST(request: NextRequest) {
     // Log CAC upload
     await logAction({
       userId,
-      actionType: 'cac_uploaded' as any,
-      entityType: 'kyc' as any,
+      actionType: AuditActionType.CAC_UPLOADED,
+      entityType: AuditEntityType.KYC,
       entityId: vendor.id,
       ipAddress,
       deviceType,
@@ -392,8 +402,8 @@ export async function POST(request: NextRequest) {
     // Log Tier 2 KYC submission
     await logAction({
       userId,
-      actionType: 'tier2_kyc_submitted' as any,
-      entityType: 'kyc' as any,
+      actionType: AuditActionType.TIER2_KYC_SUBMITTED,
+      entityType: AuditEntityType.KYC,
       entityId: vendor.id,
       ipAddress,
       deviceType,

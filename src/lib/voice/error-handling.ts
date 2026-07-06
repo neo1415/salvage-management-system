@@ -13,7 +13,7 @@ export interface VoiceError {
   recoverable: boolean;
   retryAction?: () => void;
   fallbackAction?: () => void;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 type SpeechRecognitionConstructor = new () => unknown;
@@ -308,7 +308,7 @@ export class PermissionManager {
     try {
       const permission = await navigator.permissions.query({ name: 'microphone' as PermissionName });
       return permission.state;
-    } catch (error) {
+    } catch {
       return 'prompt';
     }
   }
@@ -326,7 +326,7 @@ export class PermissionManager {
       // Stop the stream immediately as we only needed permission
       stream.getTracks().forEach(track => track.stop());
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -417,24 +417,28 @@ export class NetworkStatusMonitor {
 /**
  * Create a voice error from a native error
  */
-export function createVoiceErrorFromNative(error: any): VoiceError {
-  if (error?.error === 'not-allowed' || error?.name === 'NotAllowedError') {
+export function createVoiceErrorFromNative(error: unknown): VoiceError {
+  const nativeError = typeof error === 'object' && error !== null
+    ? error as { error?: string; name?: string }
+    : {};
+
+  if (nativeError.error === 'not-allowed' || nativeError.name === 'NotAllowedError') {
     return { ...VOICE_ERRORS['permission-denied'] };
   }
   
-  if (error?.error === 'no-speech') {
+  if (nativeError.error === 'no-speech') {
     return { ...VOICE_ERRORS['no-speech'] };
   }
   
-  if (error?.error === 'audio-capture' || error?.name === 'NotReadableError') {
+  if (nativeError.error === 'audio-capture' || nativeError.name === 'NotReadableError') {
     return { ...VOICE_ERRORS['audio-capture'] };
   }
   
-  if (error?.error === 'network') {
+  if (nativeError.error === 'network') {
     return { ...VOICE_ERRORS['network-error'] };
   }
   
-  if (error?.error === 'service-not-allowed') {
+  if (nativeError.error === 'service-not-allowed') {
     return { ...VOICE_ERRORS['service-unavailable'] };
   }
   

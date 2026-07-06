@@ -345,18 +345,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function payloadStatusLooksSubmitted(status: string | null | undefined): boolean {
-  const normalized = String(status ?? '').toLowerCase();
-  return [
-    'review_required',
-    'pending',
-    'pending_review',
-    'submitted',
-    'submitted_for_review',
-    'manual_review',
-  ].includes(normalized);
-}
-
 function recordFrom(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>

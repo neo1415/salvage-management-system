@@ -33,6 +33,11 @@ const logsSearchSchema = z.object({
   limit: z.number().int().min(1).max(1000).optional().default(100),
 });
 
+type IntelligenceLog =
+  | typeof predictionLogs.$inferSelect
+  | typeof recommendationLogs.$inferSelect
+  | typeof fraudDetectionLogs.$inferSelect;
+
 /**
  * POST /api/intelligence/logs/search
  * 
@@ -75,7 +80,7 @@ export async function POST(request: NextRequest) {
     const startDate = filters?.startDate ? new Date(filters.startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const endDate = filters?.endDate ? new Date(filters.endDate) : new Date();
 
-    let logs: any[] = [];
+    let logs: IntelligenceLog[] = [];
 
     // Query logs based on type
     switch (logType) {

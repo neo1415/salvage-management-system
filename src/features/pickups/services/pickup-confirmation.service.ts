@@ -1,13 +1,11 @@
 import { randomUUID, timingSafeEqual } from 'crypto';
+import { after } from 'next/server';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
   auctions,
-  payments,
   releaseForms,
   salvageCases,
-  users,
-  vendors,
   featureVectors,
   pickupEvidence,
 } from '@/lib/db/schema';
@@ -21,6 +19,10 @@ import { createNotification } from '@/features/notifications/services/notificati
 import { cache } from '@/lib/redis/client';
 import { formatAssetName } from '@/lib/utils/asset-name';
 import { getEffectiveSaleAmount, parseNumericAmount } from '@/lib/finance/effective-sale-amount';
+import {
+  notifyStaffPickupCompleted,
+  sendVendorPickupCompletedEmail,
+} from './pickup-lifecycle-notifications.service';
 
 export type PickupLifecycleStatus =
   | 'not_ready'
@@ -43,6 +45,7 @@ export interface PickupContext {
   vendorEmail: string;
   vendorPhone: string | null;
   saleAmount: string | null;
+  collectedAmount: string | null;
   paymentId: string | null;
   paymentStatus: string | null;
   paymentVerifiedAt: string | null;
@@ -63,6 +66,34 @@ export interface PickupAuditRequestContext {
   ipAddress: string;
   deviceType: DeviceType;
   userAgent: string;
+}
+
+interface PickupQueryRow {
+  auction_id: string;
+  case_id: string;
+  current_bid: string | number | null;
+  final_settled_amount: string | number | null;
+  vendor_id: string;
+  pickup_confirmed_vendor: boolean | null;
+  pickup_confirmed_vendor_at: Date | string | null;
+  pickup_confirmed_admin: boolean | null;
+  pickup_confirmed_admin_at: Date | string | null;
+  pickup_confirmed_admin_by: string | null;
+  claim_reference: string | null;
+  asset_type: string | null;
+  asset_details: unknown;
+  location_name: string | null;
+  business_name: string | null;
+  full_name: string | null;
+  vendor_user_id: string;
+  email: string | null;
+  phone: string | null;
+  payment_id: string | null;
+  payment_amount: string | number | null;
+  payment_status: string | null;
+  verified_at: Date | string | null;
+  pickup_auth_document_id: string | null;
+  pickup_deadline: string | null;
 }
 
 const STAFF_PICKUP_ROLES = new Set(['salvage_manager', 'system_admin']);
@@ -136,6 +167,7 @@ async function invalidatePickupCaches(vendorId: string, auctionId: string) {
     cache.del(`dashboard:vendor:${vendorId}`),
     cache.del(`auction:details:${auctionId}`),
     cache.del('dashboard:admin'),
+    cache.del('dashboard:finance:v4:||||'),
   ]);
 }
 
@@ -199,7 +231,7 @@ async function recordPickupTrainingSignal(context: PickupContext, confirmedAt: D
   }
 }
 
-async function mapPickupRow(row: any): Promise<PickupContext> {
+function mapPickupRow(row: PickupQueryRow): PickupContext {
   const assetDetails = normalizeAssetDetails(row.asset_details);
   const hasVerifiedPayment = row.payment_status === 'verified';
   const hasPickupAuthorization = !!row.pickup_auth_document_id;
@@ -225,6 +257,9 @@ async function mapPickupRow(row: any): Promise<PickupContext> {
       );
       return effective > 0 ? effective.toFixed(2) : null;
     })(),
+    collectedAmount: row.payment_amount == null
+      ? null
+      : (parseNumericAmount(row.payment_amount) ?? 0).toFixed(2),
     paymentId: row.payment_id || null,
     paymentStatus: row.payment_status || null,
     paymentVerifiedAt: toIso(row.verified_at),
@@ -283,7 +318,7 @@ export async function getPickupContextByAuction(auctionId: string): Promise<Pick
       AND rf.status != 'voided'
     WHERE a.id = ${auctionId}
     ORDER BY a.id, p.verified_at DESC NULLS LAST, rf.created_at DESC NULLS LAST
-  `) as any[];
+  `) as unknown as PickupQueryRow[];
 
   return rows[0] ? mapPickupRow(rows[0]) : null;
 }
@@ -329,15 +364,13 @@ export async function getPickupContextByCode(pickupAuthCode: string): Promise<Pi
       AND rf.status != 'voided'
       AND regexp_replace(upper(COALESCE(rf.document_data->>'pickupAuthCode', '')), '[^A-Z0-9]', '', 'g') = ${normalizedCode}
     ORDER BY a.id, p.verified_at DESC NULLS LAST, rf.created_at DESC NULLS LAST
-  `) as any[];
+  `) as unknown as PickupQueryRow[];
 
   return rows[0] ? mapPickupRow(rows[0]) : null;
 }
 
 async function notifyVendorPickupConfirmedChannels(context: PickupContext, confirmedAt: Date) {
   const smsMessage = `Pickup confirmed: ${context.assetName}. Your transaction is complete.`;
-  const emailSubject = 'Pickup confirmed — transaction complete';
-  const emailBody = `${context.assetName} has been released. Your pickup was confirmed on ${confirmedAt.toLocaleString('en-NG')}. The transaction is complete.`;
 
   if (context.vendorPhone) {
     try {
@@ -358,18 +391,7 @@ async function notifyVendorPickupConfirmedChannels(context: PickupContext, confi
 
   if (context.vendorEmail) {
     try {
-      const { emailService } = await import('@/features/notifications/services/email.service');
-      const { getAppUrl } = await import('@/features/notifications/templates/email-urls');
-      const auctionUrl = `${getAppUrl()}/vendor/auctions/${context.auctionId}`;
-      await emailService.sendEmail({
-        to: context.vendorEmail,
-        subject: emailSubject,
-        html: `
-          <p>Hi ${context.vendorName},</p>
-          <p>${emailBody}</p>
-          <p><a href="${auctionUrl}">View auction details</a></p>
-        `,
-      });
+      await sendVendorPickupCompletedEmail(context, confirmedAt);
     } catch (error) {
       console.warn('[Pickup] Email notification failed', {
         auctionId: context.auctionId,
@@ -427,6 +449,9 @@ export async function confirmPickupByStaff(input: {
   const evidenceNeedsReview =
     latestEvidence?.comparisonStatus === 'review_needed'
     || latestEvidence?.comparisonStatus === 'material_discrepancy';
+  if (latestEvidence?.comparisonStatus === 'not_reviewed') {
+    throw new Error('Pickup evidence comparison is still processing. Try again shortly.');
+  }
   const reviewNotes = input.notes?.trim() || '';
   const requestedResolutionStatus = input.resolutionStatus?.trim() || '';
   const resolutionStatus = evidenceNeedsReview
@@ -521,20 +546,24 @@ export async function confirmPickupByStaff(input: {
     lifecycleStatus: 'staff_confirmed' as const,
   };
 
-  await Promise.allSettled([
-    createNotification({
-      userId: context.vendorUserId,
-      type: 'PICKUP_CONFIRMED_ADMIN',
-      title: 'Pickup Confirmed',
-      message: `${context.assetName} has been released. The transaction is complete.`,
-      data: {
-        auctionId: context.auctionId,
-        caseId: context.caseId,
-        pickupConfirmedAt: now.toISOString(),
-      },
-    }),
-    notifyVendorPickupConfirmedChannels(context, now),
-    logAction({
+  await invalidatePickupCaches(context.vendorId, context.auctionId);
+
+  after(async () => {
+    await Promise.allSettled([
+      createNotification({
+        userId: context.vendorUserId,
+        type: 'PICKUP_CONFIRMED_ADMIN',
+        title: 'Pickup Confirmed',
+        message: `${context.assetName} pickup is confirmed. Review the receipt for final settlement details.`,
+        data: {
+          auctionId: context.auctionId,
+          caseId: context.caseId,
+          pickupConfirmedAt: now.toISOString(),
+        },
+      }),
+      notifyVendorPickupConfirmedChannels(finalContext, now),
+      notifyStaffPickupCompleted(finalContext, now),
+      logAction({
       userId: input.actor.userId,
       actionType: AuditActionType.PICKUP_CONFIRMED_ADMIN,
       entityType: AuditEntityType.AUCTION,
@@ -566,10 +595,10 @@ export async function confirmPickupByStaff(input: {
           : undefined,
         caseStatus: 'sold',
       },
-    }),
-    recordPickupTrainingSignal(finalContext, now),
-    invalidatePickupCaches(context.vendorId, context.auctionId),
-  ]);
+      }),
+      recordPickupTrainingSignal(finalContext, now),
+    ]);
+  });
 
   return finalContext;
 }

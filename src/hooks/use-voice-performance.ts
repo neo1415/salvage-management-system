@@ -25,6 +25,10 @@ interface UseVoicePerformanceOptions extends Partial<VoicePerformanceOptions> {
   debounceDelay?: number;
 }
 
+interface WindowWithOptionalGc extends Window {
+  gc?: () => void;
+}
+
 interface UseVoicePerformanceReturn {
   // Performance monitoring
   performanceMonitor: VoicePerformanceMonitor;
@@ -32,7 +36,7 @@ interface UseVoicePerformanceReturn {
   isOptimal: boolean;
   
   // Optimized callbacks
-  throttledCallback: <T extends (...args: any[]) => any>(callback: T, delay?: number) => T;
+  throttledCallback: <T extends (...args: never[]) => unknown>(callback: T, delay?: number) => T;
   debouncedStateUpdate: <T>(callback: (state: Partial<T>) => void, delay?: number) => DebouncedStateManager<T>;
   
   // Text virtualization
@@ -120,7 +124,7 @@ export function useVoicePerformance(
   /**
    * Create throttled callback with performance optimization
    */
-  const throttledCallback = useCallback(<T extends (...args: any[]) => any>(
+  const throttledCallback = useCallback(<T extends (...args: never[]) => unknown>(
     callback: T,
     delay: number = 16 // ~60fps
   ): T => {
@@ -174,9 +178,7 @@ export function useVoicePerformance(
   /**
    * Check if performance is optimal
    */
-  const isOptimal = useMemo(() => {
-    return performanceMonitorRef.current?.isPerformanceOptimal() ?? false;
-  }, [metricsRef.current]);
+  const isOptimal = performanceMonitorRef.current?.isPerformanceOptimal() ?? false;
 
   return {
     performanceMonitor: performanceMonitorRef.current!,
@@ -288,8 +290,9 @@ export function useMemoryEfficientState<T>(
     historyRef.current = [stateRef.current];
     
     // Force garbage collection if available
-    if ('gc' in window && typeof (window as any).gc === 'function') {
-      (window as any).gc();
+    const windowWithGc = window as WindowWithOptionalGc;
+    if (typeof windowWithGc.gc === 'function') {
+      windowWithGc.gc();
     }
   }, []);
 

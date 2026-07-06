@@ -7,7 +7,8 @@
  * Tasks: 11.2.1-11.2.8
  */
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
+import Image from 'next/image';
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
 import { MetricValue } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -39,7 +39,41 @@ interface FraudAlert {
   flagReasons: string[];
   status: string;
   createdAt: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
+}
+
+interface VendorDetail {
+  businessName: string;
+  totalBids: number;
+  winRate: number;
+  accountAge: number;
+}
+
+interface CaseDetail {
+  assetType: string;
+  damageSeverity: string;
+  marketValue: number | null;
+  photoCount: number;
+}
+
+interface DuplicatePhoto {
+  url: string;
+  similarity: number;
+  caseId: string;
+}
+
+interface CollusionItem {
+  vendorId: string;
+  adjusterId: string;
+  winRate: number;
+  suspiciousWins: number;
+}
+
+interface FraudAlertDetails {
+  vendorDetails?: VendorDetail;
+  caseDetails?: CaseDetail;
+  duplicatePhotos?: DuplicatePhoto[];
+  collusionEvidence?: CollusionItem[];
 }
 
 interface FraudAlertDetailModalProps {
@@ -55,32 +89,32 @@ export function FraudAlertDetailModal({
   onClose,
   onAlertUpdated,
 }: FraudAlertDetailModalProps) {
-  const [details, setDetails] = useState<any>(null);
+  const [details, setDetails] = useState<FraudAlertDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const toast = useToast();
+  const { error: toastError, success: toastSuccess } = useToast();
 
-  useEffect(() => {
-    if (open) {
-      fetchAlertDetails();
-    }
-  }, [open, alert.id]);
-
-  async function fetchAlertDetails() {
+  const fetchAlertDetails = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch(`/api/intelligence/fraud/alerts/${alert.id}`);
       if (response.ok) {
-        const data = await response.json();
-        setDetails(data);
+        const data: unknown = await response.json();
+        setDetails(data && typeof data === 'object' ? data as FraudAlertDetails : null);
       }
     } catch (error) {
       console.error('Error fetching alert details:', error);
-      toast.error('Failed to load alert details');
+      toastError('Failed to load alert details');
     } finally {
       setLoading(false);
     }
-  }
+  }, [alert.id, toastError]);
+
+  useEffect(() => {
+    if (open) {
+      void fetchAlertDetails();
+    }
+  }, [fetchAlertDetails, open]);
 
   async function handleAction(action: 'confirm' | 'dismiss' | 'suspend') {
     try {
@@ -92,7 +126,7 @@ export function FraudAlertDetailModal({
       });
 
       if (response.ok) {
-        toast.success(`Alert ${action}ed successfully`);
+        toastSuccess(`Alert ${action}ed successfully`);
         onAlertUpdated();
         onClose();
       } else {
@@ -100,7 +134,7 @@ export function FraudAlertDetailModal({
       }
     } catch (error) {
       console.error('Error updating alert:', error);
-      toast.error('Failed to update alert');
+      toastError('Failed to update alert');
     } finally {
       setActionLoading(false);
     }
@@ -228,7 +262,7 @@ export function FraudAlertDetailModal({
   );
 }
 
-function VendorDetails({ details }: { details: any }) {
+function VendorDetails({ details }: { details: VendorDetail }) {
   return (
     <div>
       <h3 className="font-semibold mb-2 flex items-center gap-2">
@@ -259,7 +293,7 @@ function VendorDetails({ details }: { details: any }) {
   );
 }
 
-function CaseDetails({ details }: { details: any }) {
+function CaseDetails({ details }: { details: CaseDetail }) {
   return (
     <div>
       <h3 className="font-semibold mb-2 flex items-center gap-2">
@@ -290,7 +324,7 @@ function CaseDetails({ details }: { details: any }) {
   );
 }
 
-function DuplicatePhotoComparison({ photos }: { photos: any[] }) {
+function DuplicatePhotoComparison({ photos }: { photos: DuplicatePhoto[] }) {
   return (
     <div>
       <h3 className="font-semibold mb-2 flex items-center gap-2">
@@ -300,9 +334,12 @@ function DuplicatePhotoComparison({ photos }: { photos: any[] }) {
       <div className="grid grid-cols-2 gap-4">
         {photos.map((photo, index) => (
           <div key={index} className="border rounded-lg p-3">
-            <img
+            <Image
               src={photo.url}
               alt={`Duplicate ${index + 1}`}
+              width={640}
+              height={384}
+              unoptimized
               className="w-full h-48 object-cover rounded mb-2"
             />
             <div className="space-y-1 text-sm">
@@ -320,7 +357,7 @@ function DuplicatePhotoComparison({ photos }: { photos: any[] }) {
   );
 }
 
-function CollusionEvidence({ evidence }: { evidence: any[] }) {
+function CollusionEvidence({ evidence }: { evidence: CollusionItem[] }) {
   return (
     <div>
       <h3 className="font-semibold mb-2">Collusion Evidence</h3>

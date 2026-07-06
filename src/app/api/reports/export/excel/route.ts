@@ -7,6 +7,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 
+interface ExcelReportData {
+  totalRevenue?: number;
+  recoveryRate?: number;
+  byAssetType?: Array<{ assetType: string; count: number; revenue: number }>;
+  trends?: Array<{ period: string; revenue: number; recoveryRate: number }>;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -18,7 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { reportType, data, filters } = body;
+    const { reportType, data } = body as { reportType: string; data: ExcelReportData };
 
     // Generate CSV (Excel-compatible)
     const csv = generateCSV(reportType, data);
@@ -26,7 +33,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(csv, {
       headers: {
         'Content-Type': 'application/vnd.ms-excel',
-        'Content-Disposition': `attachment; filename="${reportType}-${new Date().toISOString().split('T')[0]}.xlsx"`,
+        'Content-Disposition': `attachment; filename="${reportType}-${new Date().toISOString().split('T')[0]}.xls"`,
       },
     });
   } catch (error) {
@@ -38,7 +45,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function generateCSV(reportType: string, data: any): string {
+function generateCSV(reportType: string, data: ExcelReportData): string {
   let csv = `${reportType.replace(/-/g, ' ').toUpperCase()} Report\n`;
   csv += `Generated: ${new Date().toLocaleString()}\n\n`;
   
@@ -52,7 +59,7 @@ function generateCSV(reportType: string, data: any): string {
   if (data?.byAssetType && data.byAssetType.length > 0) {
     csv += 'Asset Type Breakdown\n';
     csv += 'Asset Type,Count,Revenue\n';
-    data.byAssetType.forEach((asset: any) => {
+    data.byAssetType.forEach((asset) => {
       csv += `${asset.assetType},${asset.count},${asset.revenue}\n`;
     });
     csv += '\n';
@@ -62,7 +69,7 @@ function generateCSV(reportType: string, data: any): string {
   if (data?.trends && data.trends.length > 0) {
     csv += 'Revenue Trends\n';
     csv += 'Period,Revenue,Recovery Rate\n';
-    data.trends.forEach((trend: any) => {
+    data.trends.forEach((trend) => {
       csv += `${trend.period},${trend.revenue},${trend.recoveryRate}%\n`;
     });
   }

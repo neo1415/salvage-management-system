@@ -21,19 +21,19 @@ import {
   FileText, 
   BarChart3,
   Clock,
-  Star,
   ChevronRight,
   Shield,
   Briefcase,
   PieChart
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { ROLE_PERMISSIONS } from '@/features/reports/types';
 
 interface ReportCategory {
   id: string;
   name: string;
   description: string;
-  icon: any;
+  icon: LucideIcon;
   reports: ReportItem[];
   requiredPermission: keyof typeof ROLE_PERMISSIONS[keyof typeof ROLE_PERMISSIONS];
 }
@@ -43,7 +43,8 @@ interface ReportItem {
   name: string;
   description: string;
   path: string;
-  icon: any;
+  icon: LucideIcon;
+  generatedAt?: string;
 }
 
 const REPORT_CATEGORIES: ReportCategory[] = [
@@ -189,8 +190,7 @@ export default function ReportsHubPage() {
   const { data: session } = useSession();
   const router = useAppRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [recentReports, setRecentReports] = useState<any[]>([]);
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [recentReports, setRecentReports] = useState<ReportItem[]>([]);
 
   const userRole = session?.user?.role as keyof typeof ROLE_PERMISSIONS || 'vendor';
   const permissions = ROLE_PERMISSIONS[userRole];
@@ -216,7 +216,6 @@ export default function ReportsHubPage() {
   // are left empty until a persisted user preference API is enabled.
   useEffect(() => {
     setRecentReports([]);
-    setFavorites([]);
   }, []);
 
   return (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -13,24 +13,21 @@ import { ExportButton } from '@/components/reports/common/export-button';
 import { formatReportCurrency } from '@/components/reports/common/report-currency';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
 import { ReportSummaryGrid, ReportSummaryStat } from '@/components/reports/common/report-ui';
+import type { AdjusterMetricsReport } from '@/features/reports/user-performance/services';
 
 export default function AdjusterMetricsPage() {
   const router = useAppRouter();
-  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+  const { loading, isRefreshing, startFetch, endFetch, markHasData } =
     useReportFetchState();
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<AdjusterMetricsReport | null>(null);
   const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async (force = false) => {
+  const fetchReport = useCallback(async (force = false) => {
     startFetch();
     try {
       const result = await loadReportFromApi('/api/reports/user-performance/adjusters', filters, { force });
-      if (result.status === 'success') {
-        setReportData(result.data);
+      if (result.status === 'success' && result.data) {
+        setReportData(result.data as AdjusterMetricsReport);
         markHasData();
       }
     } catch (error) {
@@ -38,7 +35,9 @@ export default function AdjusterMetricsPage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endFetch, filters, markHasData, startFetch]);
+
+  useEffect(() => { void fetchReport(); }, [fetchReport]);
 
   return (
     <>
@@ -213,7 +212,7 @@ export default function AdjusterMetricsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((adj: any) => (
+                      {rows.map((adj) => (
                         <tr key={adj.adjusterId} className="border-b">
                           <td className="p-2">{adj.adjusterName}</td>
                           <td className="text-right p-2">{adj.casesProcessed}</td>

@@ -6,7 +6,7 @@
  */
 
 import { ReportFilters } from '../../types';
-import { FinancialDataRepository } from '../repositories/financial-data.repository';
+import { FinancialDataRepository, type RevenueData } from '../repositories/financial-data.repository';
 import {
   buildFinancialBranchBreakdown,
   buildFinancialBrokerBreakdown,
@@ -147,7 +147,7 @@ export class ProfitabilityService {
   /**
    * Calculate profit distribution
    */
-  private static calculateProfitDistribution(data: any[]) {
+  private static calculateProfitDistribution(data: RevenueData[]) {
     // In salvage recovery, "profitable" means high recovery rate (>50%)
     const profitable = data.filter(item => item.recoveryRate > 50).length;
     const breakEven = data.filter(item => item.recoveryRate >= 20 && item.recoveryRate <= 50).length;
@@ -163,10 +163,10 @@ export class ProfitabilityService {
   /**
    * Get top and bottom performers
    */
-  private static getPerformers(data: any[]) {
+  private static getPerformers(data: RevenueData[]) {
     const sorted = [...data].sort((a, b) => b.recoveryRate - a.recoveryRate);
 
-    const formatPerformer = (item: any) => ({
+    const formatPerformer = (item: RevenueData) => ({
       caseId: item.caseId,
       claimReference: item.claimReference,
       assetType: item.assetType,
@@ -184,7 +184,7 @@ export class ProfitabilityService {
   /**
    * Calculate profitability trend over time
    */
-  private static calculateTrend(data: any[]) {
+  private static calculateTrend(data: RevenueData[]) {
     const grouped: Record<string, {
       salvageRecovered: number;
       claimsPaid: number;

@@ -12,7 +12,6 @@
 import { createNotification } from '@/features/notifications/services/notification.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { smsService } from '@/features/notifications/services/sms.service';
-import { pushNotificationService } from '@/features/notifications/services/push.service';
 import { db } from '@/lib/db/drizzle';
 import { users, vendors, auctions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';

@@ -4,13 +4,12 @@
  * Cached for 1 hour in Redis
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { vehicleValuations } from '@/lib/db/schema/vehicle-valuations';
-import { sql } from 'drizzle-orm';
 import { autocompleteCache } from '@/lib/cache/autocomplete-cache';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const startTime = Date.now();
   
   try {

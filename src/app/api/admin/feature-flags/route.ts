@@ -22,7 +22,7 @@ import { patchLegacyAuctionConfigPolicy } from '@/features/business-policy/legac
  * GET /api/admin/feature-flags
  * Get feature flag status
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
 

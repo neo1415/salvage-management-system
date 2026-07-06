@@ -148,7 +148,7 @@ export function VehicleAutocomplete({
         setInternalLoading(false)
       }
     },
-    [endpoint, queryParams, disabled, isOffline, maxDisplaySuggestions]
+    [endpoint, queryParams, disabled, isOffline, maxDisplaySuggestions, name]
   )
 
   // Debounced fetch

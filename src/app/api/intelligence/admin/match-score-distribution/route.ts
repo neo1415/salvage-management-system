@@ -13,6 +13,12 @@ import { db } from '@/lib/db';
 import { recommendations } from '@/lib/db/schema/intelligence';
 import { sql } from 'drizzle-orm';
 
+interface MatchScoreDistributionRow {
+  range: string;
+  count: string | number;
+  percentage: string | number;
+}
+
 export async function GET(_request: NextRequest) {
   try {
     const session = await auth();
@@ -37,7 +43,7 @@ export async function GET(_request: NextRequest) {
     const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
 
     // Get match score distribution
-    const distribution: any = await db.execute(sql`
+    const distributionResult = await db.execute(sql`
       WITH score_ranges AS (
         SELECT 
           CASE 
@@ -67,10 +73,13 @@ export async function GET(_request: NextRequest) {
         END
     `);
 
-    const formattedData = distribution.map((row: any) => ({
+    const distribution = Array.from(
+      distributionResult as unknown as Iterable<MatchScoreDistributionRow>
+    );
+    const formattedData = distribution.map((row) => ({
       range: row.range,
-      count: parseInt(row.count || '0'),
-      percentage: parseFloat(row.percentage || '0'),
+      count: Number(row.count || 0),
+      percentage: Number(row.percentage || 0),
     }));
 
     return NextResponse.json({

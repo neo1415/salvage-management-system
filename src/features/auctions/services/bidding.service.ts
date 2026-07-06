@@ -359,7 +359,7 @@ export class BiddingService {
           depositAmount = Math.max(Math.ceil(data.amount * depositRateDecimal), config.minimumDepositFloor);
           incrementalDeposit = depositAmount;
           console.log(`⚠️ Using fallback deposit calculation with config defaults: ₦${depositAmount.toLocaleString()}`);
-        } catch (configError) {
+        } catch {
           // Ultimate fallback if even config fetch fails
           depositAmount = Math.max(Math.ceil(data.amount * 0.10), 100000);
           incrementalDeposit = depositAmount;
@@ -534,10 +534,9 @@ export class BiddingService {
         console.error('Failed to check auction extension:', error);
       });
 
-      // Analyze IP patterns for fraud detection (async, don't wait)
-      this.analyzeIPPatterns(data.vendorId, data.ipAddress, data.auctionId).catch((error) => {
-        console.error('Failed to analyze IP patterns:', error);
-      });
+      // Fraud evidence must be persisted before a serverless request can finish.
+      // Fire-and-forget work may be terminated before the alert reaches the database.
+      await this.analyzeIPPatterns(data.vendorId, data.ipAddress, data.auctionId);
 
       // Notify previous highest bidder (async, don't wait)
       // Requirement 19.4: Notify within 5 seconds
@@ -783,7 +782,7 @@ export class BiddingService {
         const config = await configService.getConfig();
         const depositRateDecimal = config.depositRate / 100;
         requiredDeposit = Math.max(Math.ceil(bidAmount * depositRateDecimal), config.minimumDepositFloor);
-      } catch (configError) {
+      } catch {
         // Ultimate fallback if even config fetch fails
         requiredDeposit = Math.max(Math.ceil(bidAmount * 0.10), 100000);
       }

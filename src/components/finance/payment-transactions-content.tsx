@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { AuctionCardWithActions } from './auction-card-with-actions';
 import { Filter } from 'lucide-react';
 
@@ -43,11 +43,7 @@ export function PaymentTransactionsContent() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  useEffect(() => {
-    fetchAuctions();
-  }, [page, selectedStatus]);
-
-  const fetchAuctions = async () => {
+  const fetchAuctions = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams({
@@ -67,7 +63,11 @@ export function PaymentTransactionsContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, selectedStatus]);
+
+  useEffect(() => {
+    void fetchAuctions();
+  }, [fetchAuctions]);
 
   const handleRefresh = () => {
     fetchAuctions();

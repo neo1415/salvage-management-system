@@ -95,10 +95,9 @@ interface CaseProcessingData {
 
 interface CaseProcessingReportProps {
   data: CaseProcessingData;
-  loading?: boolean;
 }
 
-export function CaseProcessingReport({ data, loading }: CaseProcessingReportProps) {
+export function CaseProcessingReport({ data }: CaseProcessingReportProps) {
   if (!data || !data.byStatus || !data.byAssetType || !data.trend) {
     return <div>No data available</div>;
   }

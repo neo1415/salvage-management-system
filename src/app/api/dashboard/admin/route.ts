@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { users, auditLogs, auctions, payments, releaseForms } from '@/lib/db/schema';
+import { users, auctions, payments, releaseForms } from '@/lib/db/schema';
 import { fraudAlerts } from '@/lib/db/schema/intelligence';
-import { eq, and, gte, lt, sql, desc } from 'drizzle-orm';
+import { eq, and, gte, lt, sql } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
 
 /**
@@ -32,7 +32,7 @@ interface DashboardStats {
   healthReasons: string[];
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Authenticate user
     const session = await auth();
@@ -195,7 +195,7 @@ async function calculateAdminStats(): Promise<DashboardStats> {
     )
     SELECT
       (SELECT COUNT(*)::int FROM overdue_signed_unpaid) AS overdue_signed_unpaid
-  `)) as any[];
+  `)) as unknown as Array<{ overdue_signed_unpaid?: string | number | null }>;
 
   const overdueSignedUnpaid = numberFrom(operationsRow?.overdue_signed_unpaid);
 

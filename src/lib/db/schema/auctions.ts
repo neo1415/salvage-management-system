@@ -11,6 +11,13 @@ export const auctionStatusEnum = pgEnum('auction_status', [
   'extended',
   'closed',
   'awaiting_payment', // Documents signed, vendor must choose payment method
+  'awaiting_documents',
+  'deposit_forfeited',
+  'forfeiture_collected',
+  'failed_all_fallbacks',
+  'manual_resolution',
+  'paid',
+  'completed',
   'cancelled',
   'forfeited',
 ]);

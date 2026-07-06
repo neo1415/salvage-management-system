@@ -180,7 +180,8 @@ export function AuctionTimerExtension({
     }
   };
 
-  const isDisabled = isLoading || isSubmitting || !isValidAmount;
+  const controlsDisabled = isLoading || isSubmitting;
+  const submitDisabled = controlsDisabled || !isValidAmount;
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
@@ -227,7 +228,7 @@ export function AuctionTimerExtension({
             max="999"
             value={amount}
             onChange={handleAmountChange}
-            disabled={isDisabled}
+            disabled={controlsDisabled}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ minHeight: '44px' }} // Mobile touch target
             placeholder="1-999"
@@ -245,7 +246,7 @@ export function AuctionTimerExtension({
           <Select
             value={unit}
             onValueChange={handleUnitChange}
-            disabled={isDisabled}
+            disabled={controlsDisabled}
           >
             <SelectTrigger
               id="extension-unit"
@@ -345,7 +346,7 @@ export function AuctionTimerExtension({
       {/* Confirm Button */}
       <Button
         onClick={handleConfirm}
-        disabled={isDisabled}
+        disabled={submitDisabled}
         className="w-full"
         style={{ minHeight: '44px' }} // Mobile touch target
       >

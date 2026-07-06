@@ -2,7 +2,6 @@ import { db } from '@/lib/db';
 import { vendorInteractions, vendorRecommendations } from '@/lib/db/schema/fraud-tracking';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { vendors } from '@/lib/db/schema/vendors';
 import { eq, desc, and, inArray, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 
@@ -18,6 +17,20 @@ interface ScoredAuction {
   auctionId: string;
   matchScore: number;
   reason: string;
+}
+
+type VendorInteraction = typeof vendorInteractions.$inferSelect;
+type AuctionRow = typeof auctions.$inferSelect;
+type CaseRow = typeof salvageCases.$inferSelect;
+
+interface RecommendationCandidate {
+  auction: AuctionRow;
+  caseData: CaseRow;
+}
+
+interface GeoPoint {
+  latitude: number;
+  longitude: number;
 }
 
 /**
@@ -58,8 +71,9 @@ export class RecommendationGenerationService {
       
       // 3. Find active auctions
       const activeAuctions = await db
-        .select()
+        .select({ auction: auctions, caseData: salvageCases })
         .from(auctions)
+        .innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
         .where(
           and(
             inArray(auctions.status, ['active', 'extended', 'scheduled']),
@@ -77,7 +91,7 @@ export class RecommendationGenerationService {
       
       // 4. Score each auction
       const scoredAuctions = activeAuctions.map(auction => ({
-        auctionId: auction.id,
+        auctionId: auction.auction.id,
         matchScore: this.calculateMatchScore(auction, preferences),
         reason: this.generateReason(auction, preferences),
       }));
@@ -102,7 +116,7 @@ export class RecommendationGenerationService {
    */
   private async extractVendorPreferences(
     vendorId: string,
-    interactions: any[]
+    interactions: VendorInteraction[]
   ): Promise<VendorPreferences> {
     // Get auctions the vendor interacted with
     const auctionIds = interactions.map(i => i.auctionId);
@@ -129,11 +143,6 @@ export class RecommendationGenerationService {
       .map(a => a.caseData.damageSeverity)
       .filter(Boolean);
     
-    // Get vendor location
-    const vendor = await db.query.vendors.findFirst({
-      where: eq(vendors.id, vendorId),
-    });
-    
     return {
       preferredAssetTypes: this.getMostCommon(assetTypes, 3),
       minPrice: prices.length > 0 ? Math.min(...prices) * 0.8 : 0,
@@ -146,16 +155,17 @@ export class RecommendationGenerationService {
   /**
    * Calculate match score for an auction (0-100)
    */
-  private calculateMatchScore(auction: any, preferences: VendorPreferences): number {
+  private calculateMatchScore(candidate: RecommendationCandidate, preferences: VendorPreferences): number {
+    const { auction, caseData } = candidate;
     let score = 0;
     
     // Asset type match (40 points)
-    if (preferences.preferredAssetTypes.includes(auction.case?.assetType)) {
+    if (preferences.preferredAssetTypes.includes(caseData.assetType)) {
       score += 40;
     }
     
     // Price range match (30 points)
-    const price = parseFloat(auction.currentBid || auction.case?.reservePrice || '0');
+    const price = parseFloat(auction.currentBid || caseData.reservePrice || '0');
     if (price >= preferences.minPrice && price <= preferences.maxPrice) {
       score += 30;
     } else if (price < preferences.minPrice) {
@@ -163,15 +173,16 @@ export class RecommendationGenerationService {
     }
     
     // Condition match (20 points)
-    if (preferences.preferredConditions.includes(auction.case?.damageSeverity)) {
+    if (caseData.damageSeverity && preferences.preferredConditions.includes(caseData.damageSeverity)) {
       score += 20;
     }
     
     // Location proximity (10 points)
-    if (preferences.location && auction.case?.gpsLocation) {
+    const auctionLocation = this.parseGeoPoint(caseData.gpsLocation);
+    if (preferences.location && auctionLocation) {
       const distance = this.calculateDistance(
         preferences.location,
-        auction.case.gpsLocation
+        auctionLocation
       );
       if (distance < 50) score += 10;
       else if (distance < 100) score += 5;
@@ -183,28 +194,30 @@ export class RecommendationGenerationService {
   /**
    * Generate human-readable reason for recommendation
    */
-  private generateReason(auction: any, preferences: VendorPreferences): string {
+  private generateReason(candidate: RecommendationCandidate, preferences: VendorPreferences): string {
+    const { auction, caseData } = candidate;
     const reasons = [];
     
-    if (preferences.preferredAssetTypes.includes(auction.case?.assetType)) {
-      reasons.push(`Matches your interest in ${auction.case?.assetType}s`);
+    if (preferences.preferredAssetTypes.includes(caseData.assetType)) {
+      reasons.push(`Matches your interest in ${caseData.assetType}s`);
     }
     
-    const price = parseFloat(auction.currentBid || auction.case?.reservePrice || '0');
+    const price = parseFloat(auction.currentBid || caseData.reservePrice || '0');
     if (price < preferences.minPrice) {
       reasons.push('Below your usual price range - great deal!');
     } else if (price >= preferences.minPrice && price <= preferences.maxPrice) {
       reasons.push('Within your typical price range');
     }
     
-    if (preferences.preferredConditions.includes(auction.case?.damageSeverity)) {
-      reasons.push(`${auction.case?.damageSeverity} damage level you prefer`);
+    if (caseData.damageSeverity && preferences.preferredConditions.includes(caseData.damageSeverity)) {
+      reasons.push(`${caseData.damageSeverity} damage level you prefer`);
     }
     
-    if (preferences.location && auction.case?.gpsLocation) {
+    const auctionLocation = this.parseGeoPoint(caseData.gpsLocation);
+    if (preferences.location && auctionLocation) {
       const distance = this.calculateDistance(
         preferences.location,
-        auction.case.gpsLocation
+        auctionLocation
       );
       if (distance < 50) {
         reasons.push('Located nearby');
@@ -250,6 +263,26 @@ export class RecommendationGenerationService {
     
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
+  }
+
+  private parseGeoPoint(value: unknown): GeoPoint | undefined {
+    if (Array.isArray(value) && value.length >= 2) {
+      const [longitude, latitude] = value;
+      if (typeof latitude === 'number' && typeof longitude === 'number') {
+        return { latitude, longitude };
+      }
+    }
+
+    if (value && typeof value === 'object') {
+      const point = value as Record<string, unknown>;
+      const latitude = point.latitude ?? point.y;
+      const longitude = point.longitude ?? point.x;
+      if (typeof latitude === 'number' && typeof longitude === 'number') {
+        return { latitude, longitude };
+      }
+    }
+
+    return undefined;
   }
   
   private toRad(degrees: number): number {

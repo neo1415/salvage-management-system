@@ -56,6 +56,7 @@ const client = postgres(connectionString, {
 
 // Create drizzle instance
 export const db = drizzle(client, { schema });
+export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // Export client for cleanup in tests
 export { client };

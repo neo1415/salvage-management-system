@@ -438,9 +438,10 @@ export class TypeScriptParser {
    * Extract JSDoc comments
    */
   private extractJSDoc(node: ts.Node): string | undefined {
-    const jsDocTags = (node as any).jsDoc;
+    const jsDocTags = (node as ts.Node & { jsDoc?: readonly ts.JSDoc[] }).jsDoc;
     if (jsDocTags && jsDocTags.length > 0) {
-      return jsDocTags[0].comment;
+      const comment = jsDocTags[0].comment;
+      return typeof comment === 'string' ? comment : undefined;
     }
     return undefined;
   }

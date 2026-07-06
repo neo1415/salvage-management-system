@@ -27,12 +27,12 @@ export async function GET(request: NextRequest) {
       status: 'success',
       data: report,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Auction Performance Report Error:', error);
     return NextResponse.json(
       {
         status: 'error',
-        message: error.message || 'Failed to generate auction performance report',
+        message: error instanceof Error ? error.message : 'Failed to generate auction performance report',
       },
       { status: 500 }
     );

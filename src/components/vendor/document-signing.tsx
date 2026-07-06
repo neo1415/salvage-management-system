@@ -19,7 +19,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { FileText, Clock, CheckCircle2, AlertTriangle, Download, Eye } from 'lucide-react';
 
 interface Document {
@@ -51,9 +51,24 @@ export function DocumentSigning({
   const [timeRemaining, setTimeRemaining] = useState('');
   const [isExpired, setIsExpired] = useState(false);
 
-  useEffect(() => {
-    fetchDocuments();
+  const fetchDocuments = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/auctions/${auctionId}/documents`);
+      if (response.ok) {
+        const data = await response.json();
+        setDocuments(data.documents);
+      }
+    } catch (error) {
+      console.error('Failed to fetch documents:', error);
+    } finally {
+      setLoading(false);
+    }
   }, [auctionId]);
+
+  useEffect(() => {
+    void fetchDocuments();
+  }, [fetchDocuments]);
 
   useEffect(() => {
     const updateCountdown = () => {
@@ -85,21 +100,6 @@ export function DocumentSigning({
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
   }, [validityDeadline]);
-
-  const fetchDocuments = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/auctions/${auctionId}/documents`);
-      if (response.ok) {
-        const data = await response.json();
-        setDocuments(data.documents);
-      }
-    } catch (error) {
-      console.error('Failed to fetch documents:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSign = async (documentId: string) => {
     try {

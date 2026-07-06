@@ -4,6 +4,10 @@ import { fraudAlerts } from '@/lib/db/schema/intelligence';
 import { desc, eq } from 'drizzle-orm';
 import crypto from 'crypto';
 
+interface MatchedCaseSummary {
+  claimReference?: string | null;
+}
+
 interface FraudAttemptData {
   type: string;
   userId: string;
@@ -11,8 +15,8 @@ interface FraudAttemptData {
   userName: string;
   ipAddress: string;
   userAgent: string | null;
-  attemptedData: any;
-  matchedCase?: any;
+  attemptedData: unknown;
+  matchedCase?: MatchedCaseSummary | null;
   confidence?: number;
   timestamp: Date;
 }

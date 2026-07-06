@@ -11,7 +11,7 @@
  */
 
 import { db } from '@/lib/db';
-import { eq, and, sql, desc, gte, lte, isNotNull } from 'drizzle-orm';
+import { eq, and, sql, desc } from 'drizzle-orm';
 import { 
   predictions, 
   algorithmConfig,
@@ -39,7 +39,7 @@ export interface PredictionResult {
   upperBound: number;
   confidenceScore: number;
   confidenceLevel: 'High' | 'Medium' | 'Low';
-  method: string;
+  method: PredictionMethod;
   sampleSize: number;
   metadata: {
     similarAuctions?: number;
@@ -90,6 +90,53 @@ interface PredictionConfig {
   confidenceBase: number;
 }
 
+type PredictionMethod = typeof predictions.$inferInsert.method;
+type AssetType = typeof salvageCases.$inferSelect.assetType;
+type PredictionAssetDetails = typeof salvageCases.$inferSelect.assetDetails & {
+  brand?: string;
+  manufacturer?: string;
+  trim?: string;
+  region?: string;
+};
+type PredictionCalculationDetails = NonNullable<typeof predictionLogs.$inferInsert.calculationDetails>;
+
+interface AuctionData {
+  auctionId: string;
+  caseId: string;
+  currentBid: string | null;
+  reservePrice: string | null;
+  watchingCount: number;
+  extensionCount: number;
+  status: typeof auctions.$inferSelect.status;
+  assetType: AssetType;
+  assetDetails: PredictionAssetDetails;
+  damageSeverity: typeof salvageCases.$inferSelect.damageSeverity;
+  marketValue: string;
+  estimatedSalvageValue: string | null;
+  aiAssessment: typeof salvageCases.$inferSelect.aiAssessment;
+  locationName: string;
+}
+
+interface SimilarAuctionRow {
+  auction_id: string;
+  final_price: string;
+  similarity_score: string;
+  time_weight: string;
+  bid_count: string;
+  damage_severity: string | null;
+  market_value: string;
+  estimated_salvage_value: string | null;
+  reserve_price: string | null;
+  end_time: string | Date;
+}
+
+interface MarketMetricsRow {
+  avg_bids_recent: string | null;
+  avg_bids_historical: string | null;
+  avg_price_recent: string | null;
+  avg_price_historical: string | null;
+}
+
 export class PredictionService {
   private readonly ALGORITHM_VERSION = 'v1.1';
   private readonly CACHE_TTL_SECONDS = 300; // 5 minutes
@@ -135,7 +182,7 @@ export class PredictionService {
       await this.storePrediction(auctionId, historicalResult);
       
       // Task 2.4.4: Log prediction to prediction_logs
-      await this.logPrediction(auctionId, historicalResult, auctionData);
+      await this.logPrediction(auctionId, historicalResult);
       
       // Task 2.4.2: Cache result in Redis
       await setCached(cacheKey, historicalResult, CACHE_TTL.PREDICTION);
@@ -145,15 +192,14 @@ export class PredictionService {
 
     // Fallback to cold-start strategies
     const fallbackResult = await this.generateFallbackPrediction(
-      auctionData,
-      config
+      auctionData
     );
 
     // Store prediction
     await this.storePrediction(auctionId, fallbackResult);
     
     // Task 2.4.4: Log prediction to prediction_logs
-    await this.logPrediction(auctionId, fallbackResult, auctionData);
+    await this.logPrediction(auctionId, fallbackResult);
     
     // Task 2.4.2: Cache result in Redis
     await setCached(cacheKey, fallbackResult, CACHE_TTL.PREDICTION);
@@ -217,7 +263,7 @@ export class PredictionService {
    * Task 2.2.3-2.2.7: Enhanced with analytics integrations
    */
   private async generateHistoricalPrediction(
-    auctionData: any,
+    auctionData: AuctionData,
     config: PredictionConfig
   ): Promise<PredictionResult | null> {
     // Find similar historical auctions
@@ -261,7 +307,7 @@ export class PredictionService {
     adjustedPrice *= temporalAdjustment.priceMultiplier;
 
     // Task 2.2.6: Apply geographic adjustments
-    const region = auctionData.region || auctionData.assetDetails?.region || this.extractRegionFromLocation(auctionData.locationName);
+    const region = auctionData.assetDetails.region || this.extractRegionFromLocation(auctionData.locationName);
     const geoAdjustment = await this.getGeographicAdjustment(auctionData.assetType, region);
     adjustedPrice *= geoAdjustment.demandMultiplier;
 
@@ -292,7 +338,7 @@ export class PredictionService {
     const { lowerBound, upperBound } = this.calculateConfidenceIntervals(
       adjustedPrice,
       confidenceScore,
-      auctionData.reservePrice,
+      Number(auctionData.reservePrice || 0),
       geoAdjustment.priceVariance
     );
 
@@ -331,7 +377,7 @@ export class PredictionService {
    * Implements Tasks 2.1.1, 2.1.2, 2.1.3, 2.2.1, 2.2.2
    */
   private async findSimilarAuctions(
-    auctionData: any,
+    auctionData: AuctionData,
     config: PredictionConfig
   ): Promise<SimilarAuction[]> {
     const assetType = auctionData.assetType;
@@ -339,8 +385,8 @@ export class PredictionService {
     const targetMake = assetDetails.make;
     const targetModel = assetDetails.model;
     const targetYear = Number.isFinite(Number(assetDetails.year)) ? parseInt(String(assetDetails.year), 10) : null;
-    const targetDamage = auctionData.damageSeverity;
-    const targetMarketValue = auctionData.marketValue || 0;
+    const targetDamage = auctionData.damageSeverity ?? 'none';
+    const targetMarketValue = Number(auctionData.marketValue || 0);
     const targetColor = assetDetails.color; // Task 2.2.1
     const targetTrim = assetDetails.trim; // Task 2.2.2
 
@@ -395,16 +441,17 @@ export class PredictionService {
       LIMIT 50
     `;
 
-    const results: any = await db.execute(query);
+    const result = await db.execute(query);
+    const results = result as unknown as SimilarAuctionRow[];
 
-    return (results as any[]).map(row => ({
+    return results.map(row => ({
         auctionId: row.auction_id,
         finalPrice: parseFloat(row.final_price),
         outcomeSource: 'verified_payment',
         similarityScore: parseFloat(row.similarity_score),
         timeWeight: parseFloat(row.time_weight),
         bidCount: parseInt(row.bid_count),
-        damageSeverity: row.damage_severity,
+        damageSeverity: row.damage_severity ?? 'none',
         marketValue: parseFloat(row.market_value),
         estimatedSalvageValue: parseFloat(row.estimated_salvage_value || '0'),
         reservePrice: parseFloat(row.reserve_price || '0'),
@@ -609,7 +656,7 @@ export class PredictionService {
     };
   }
 
-  private calculateCaseValueAnchor(auctionData: any): number {
+  private calculateCaseValueAnchor(auctionData: AuctionData): number {
     const salvageValue = Number(auctionData.estimatedSalvageValue || 0);
     const reservePrice = Number(auctionData.reservePrice || 0);
     const marketValue = Number(auctionData.marketValue || 0);
@@ -628,7 +675,7 @@ export class PredictionService {
     }
 
     if (marketValue > 0) {
-      return marketValue * (1 - this.getDamageMultiplier(damageSeverity));
+      return marketValue * (1 - this.getDamageMultiplier(damageSeverity ?? 'none'));
     }
 
     return 0;
@@ -670,7 +717,7 @@ export class PredictionService {
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
     const ninetyDaysAgoISO = ninetyDaysAgo.toISOString();
 
-    const recentMetrics: any = await db.execute(sql`
+    const result = await db.execute(sql`
       WITH recent_auctions AS (
         SELECT 
           a.id,
@@ -713,7 +760,8 @@ export class PredictionService {
       FROM recent_auctions ra
     `);
 
-    const metrics = recentMetrics[0] as any;
+    const recentMetrics = result as unknown as MarketMetricsRow[];
+    const metrics = recentMetrics[0];
 
     // Calculate competition multiplier
     const avgBidsRecent = parseFloat(metrics?.avg_bids_recent || '0');
@@ -904,16 +952,15 @@ export class PredictionService {
    * Tasks 2.3.1, 2.3.2, 2.3.3, 2.3.4: Cold-start and fallback strategies
    */
   private async generateFallbackPrediction(
-    auctionData: any,
-    config: PredictionConfig
+    auctionData: AuctionData
   ): Promise<PredictionResult> {
-    const estimatedSalvageValue = auctionData.estimatedSalvageValue;
-    const marketValue = auctionData.marketValue;
-    const reservePrice = auctionData.reservePrice;
-    const damageSeverity = auctionData.damageSeverity;
+    const estimatedSalvageValue = Number(auctionData.estimatedSalvageValue || 0);
+    const marketValue = Number(auctionData.marketValue || 0);
+    const reservePrice = Number(auctionData.reservePrice || 0);
+    const damageSeverity = auctionData.damageSeverity ?? 'none';
 
     let predictedPrice: number;
-    let method: string;
+    let method: PredictionMethod;
     let confidenceScore: number;
 
     // Task 2.3.1: Salvage value fallback
@@ -932,7 +979,7 @@ export class PredictionService {
     // Last resort: use reserve price
     else if (reservePrice && reservePrice > 0) {
       predictedPrice = reservePrice * 1.15;
-      method = 'reserve_price_estimate';
+      method = 'no_prediction';
       confidenceScore = 0.15;
     }
     else {
@@ -964,7 +1011,7 @@ export class PredictionService {
     }
 
     // Handle no bids scenario
-    if (!auctionData.currentBid || auctionData.currentBid === 0) {
+    if (!auctionData.currentBid || Number(auctionData.currentBid) === 0) {
       warnings.push('No bids placed yet - prediction may change significantly');
     }
 
@@ -1009,7 +1056,7 @@ export class PredictionService {
   /**
    * Generate prediction notes
    */
-  private generatePredictionNotes(auctionData: any, similarAuctions: SimilarAuction[], anchorValue?: number): string[] {
+  private generatePredictionNotes(auctionData: AuctionData, similarAuctions: SimilarAuction[], anchorValue?: number): string[] {
     const notes: string[] = [];
 
     if (similarAuctions.length < 5) {
@@ -1046,7 +1093,7 @@ export class PredictionService {
       confidenceScore: result.confidenceScore.toString(),
       confidenceLevel: result.confidenceLevel,
       algorithmVersion: result.algorithmVersion,
-      method: result.method as any,
+      method: result.method,
       sampleSize: result.sampleSize,
       metadata: result.metadata,
     });
@@ -1058,8 +1105,7 @@ export class PredictionService {
    */
   private async logPrediction(
     auctionId: string,
-    result: PredictionResult,
-    auctionData: any
+    result: PredictionResult
   ): Promise<void> {
     try {
       // Get the prediction ID from the predictions table
@@ -1078,9 +1124,11 @@ export class PredictionService {
       const predictionId = predictionRecord[0].id;
 
       // Extract calculation details
-      const calculationDetails: any = {
+      const calculationDetails: PredictionCalculationDetails = {
         similarAuctionsCount: result.sampleSize,
-        method: result.method,
+        similarAuctionIds: null,
+        weights: null,
+        marketAdjustments: null,
         confidenceFactors: {
           sampleSize: result.sampleSize,
           confidenceScore: result.confidenceScore,
@@ -1090,7 +1138,7 @@ export class PredictionService {
       if (result.metadata?.marketAdjustment) {
         calculationDetails.marketAdjustments = {
           competitionMultiplier: result.metadata.marketAdjustment,
-          seasonalFactor: result.metadata.seasonalFactor,
+          seasonalFactor: result.metadata.seasonalFactor ?? 1,
         };
       }
 
@@ -1119,7 +1167,7 @@ export class PredictionService {
    * Task 2.2.3: Integrate asset_performance_analytics for demand adjustments
    */
   private async getAssetDemandAdjustment(
-    assetType: string,
+    assetType: AssetType,
     make?: string,
     model?: string
   ): Promise<number> {
@@ -1131,7 +1179,7 @@ export class PredictionService {
         .from(assetPerformanceAnalytics)
         .where(
           and(
-            eq(assetPerformanceAnalytics.assetType, assetType as any),
+            eq(assetPerformanceAnalytics.assetType, assetType),
             make ? eq(assetPerformanceAnalytics.make, make) : sql`TRUE`,
             model ? eq(assetPerformanceAnalytics.model, model) : sql`TRUE`
           )
@@ -1168,7 +1216,7 @@ export class PredictionService {
    * Task 2.2.4: Integrate attribute_performance_analytics for color/trim adjustments
    */
   private async getAttributeAdjustments(
-    assetType: string,
+    assetType: AssetType,
     color?: string,
     trim?: string
   ): Promise<number> {
@@ -1186,7 +1234,7 @@ export class PredictionService {
           .from(attributePerformanceAnalytics)
           .where(
             and(
-              eq(attributePerformanceAnalytics.assetType, assetType as any),
+              eq(attributePerformanceAnalytics.assetType, assetType),
               eq(attributePerformanceAnalytics.attributeType, 'color'),
               eq(attributePerformanceAnalytics.attributeValue, color)
             )
@@ -1215,7 +1263,7 @@ export class PredictionService {
           .from(attributePerformanceAnalytics)
           .where(
             and(
-              eq(attributePerformanceAnalytics.assetType, assetType as any),
+              eq(attributePerformanceAnalytics.assetType, assetType),
               eq(attributePerformanceAnalytics.attributeType, 'trim'),
               eq(attributePerformanceAnalytics.attributeValue, trim)
             )
@@ -1253,7 +1301,7 @@ export class PredictionService {
    * Task 2.2.5: Integrate temporal_patterns_analytics for peak hour adjustments
    */
   private async getTemporalAdjustment(
-    assetType: string
+    assetType: AssetType
   ): Promise<{ priceMultiplier: number; confidenceAdjustment: number }> {
     try {
       const now = new Date();
@@ -1268,7 +1316,7 @@ export class PredictionService {
         .from(temporalPatternsAnalytics)
         .where(
           and(
-            eq(temporalPatternsAnalytics.assetType, assetType as any),
+            eq(temporalPatternsAnalytics.assetType, assetType),
             eq(temporalPatternsAnalytics.hourOfDay, hourOfDay),
             eq(temporalPatternsAnalytics.dayOfWeek, dayOfWeek)
           )
@@ -1309,7 +1357,7 @@ export class PredictionService {
    * Task 2.2.6: Integrate geographic_patterns_analytics for regional price variance
    */
   private async getGeographicAdjustment(
-    assetType: string,
+    assetType: AssetType,
     region?: string
   ): Promise<{ priceVariance: number; demandMultiplier: number }> {
     try {
@@ -1326,7 +1374,7 @@ export class PredictionService {
         .where(
           and(
             eq(geographicPatternsAnalytics.region, region),
-            eq(geographicPatternsAnalytics.assetType, assetType as any)
+            eq(geographicPatternsAnalytics.assetType, assetType)
           )
         )
         .orderBy(desc(geographicPatternsAnalytics.updatedAt))

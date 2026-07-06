@@ -26,7 +26,6 @@ export async function getBidAlertEmailTemplate(data: BidAlertTemplateData): Prom
   const paymentDeadlineDecision = resolvePaymentDeadlineHours(policy);
   const paymentDeadlineHours = paymentDeadlineDecision.value ?? policy.payments.paymentDeadlineAfterSigningHours;
   
-  let statusIcon = '';
   let statusTitle = 'Bid Alert';
   let statusMessage = '';
   let actionButton = '';
@@ -36,21 +35,18 @@ export async function getBidAlertEmailTemplate(data: BidAlertTemplateData): Prom
   if (alertType === 'outbid') {
     alertColor = '#dc3545';
     alertBg = '#f8d7da';
-    statusIcon = '';
     statusTitle = 'You\'ve Been Outbid!';
     statusMessage = `Another vendor has placed a higher bid on <strong>${assetName}</strong>. Your bid of <strong>₦${yourBid.toLocaleString()}</strong> is no longer the highest.`;
     actionButton = 'Place Higher Bid';
   } else if (alertType === 'winning') {
     alertColor = '#28a745';
     alertBg = '#d4edda';
-    statusIcon = '';
     statusTitle = 'You\'re Winning!';
     statusMessage = `Congratulations! Your bid of <strong>₦${yourBid.toLocaleString()}</strong> is currently the highest for <strong>${assetName}</strong>.`;
     actionButton = 'View Auction';
   } else if (alertType === 'won') {
     alertColor = branding.accentColor;
     alertBg = '#fff9e6';
-    statusIcon = '';
     statusTitle = 'You Won the Auction!';
     statusMessage = `Congratulations! You have won the auction for <strong>${assetName}</strong> with your bid of <strong>₦${yourBid.toLocaleString()}</strong>.`;
     actionButton = 'Complete Payment';

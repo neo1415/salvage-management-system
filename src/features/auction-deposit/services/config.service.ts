@@ -282,12 +282,6 @@ export class ConfigService {
   ): Promise<ConfigChangeRecord[]> {
     const { parameter, startDate, endDate, changedBy, limit = 100 } = params;
 
-    let query = db
-      .select()
-      .from(configChangeHistory)
-      .orderBy(desc(configChangeHistory.createdAt))
-      .limit(limit);
-
     // Apply filters
     const conditions = [];
     if (parameter) {
@@ -303,11 +297,18 @@ export class ConfigService {
       conditions.push(eq(configChangeHistory.changedBy, changedBy));
     }
 
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
-    }
-
-    const records = await query;
+    const records = conditions.length > 0
+      ? await db
+        .select()
+        .from(configChangeHistory)
+        .where(and(...conditions))
+        .orderBy(desc(configChangeHistory.createdAt))
+        .limit(limit)
+      : await db
+        .select()
+        .from(configChangeHistory)
+        .orderBy(desc(configChangeHistory.createdAt))
+        .limit(limit);
 
     return records.map((record) => ({
       id: record.id,
@@ -440,14 +441,14 @@ export class ConfigService {
    * @param dataType - Data type
    * @returns Parsed value
    */
-  private parseValue(value: string, dataType: string): any {
+  private parseValue(value: string, dataType: string): number {
     switch (dataType) {
       case 'number':
         return parseFloat(value);
       case 'boolean':
-        return value === 'true';
+        return value === 'true' ? 1 : 0;
       default:
-        return value;
+        return Number(value);
     }
   }
 

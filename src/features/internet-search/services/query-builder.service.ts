@@ -247,7 +247,7 @@ export class QueryBuilderService {
         query = this.buildSpecialEquipmentQuery(item);
         break;
       default:
-        throw new Error(`Unsupported item type: ${(item as any).type}`);
+        throw new Error(`Unsupported item type: ${String((item as { type?: unknown }).type)}`);
     }
     
     // Add condition terms — search the realistic condition directly (no post-search multipliers)

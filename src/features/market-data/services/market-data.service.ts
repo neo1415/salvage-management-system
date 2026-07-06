@@ -49,7 +49,7 @@ function convertToItemIdentifier(property: PropertyIdentifier): ItemIdentifier |
         model: property.model,
         year: property.year,
         mileage: property.mileage,
-        condition: property.condition as any // Pass through condition from PropertyIdentifier
+        condition: resolveRealisticMarketSearchCondition(property.condition).searchCondition
       };
     case 'electronics':
       // ElectronicsIdentifier requires brand and model as strings
@@ -65,7 +65,7 @@ function convertToItemIdentifier(property: PropertyIdentifier): ItemIdentifier |
         ...(property.storageType && { storageType: property.storageType }),
         ...(property.storage && !property.storageCapacity && !property.storageType && { storage: property.storage }),
         ...(property.color && { color: property.color }),
-        condition: property.condition as any // Pass through condition
+        condition: resolveRealisticMarketSearchCondition(property.condition).searchCondition
       };
     case 'building':
       // PropertyIdentifier requires propertyType and location as strings
@@ -77,7 +77,7 @@ function convertToItemIdentifier(property: PropertyIdentifier): ItemIdentifier |
         propertyType: property.propertyType,
         location: property.location,
         bedrooms: property.bedrooms,
-        condition: property.condition as any // Pass through condition
+        condition: resolveRealisticMarketSearchCondition(property.condition).searchCondition
       };
     default:
       return null;
@@ -104,8 +104,6 @@ export async function getMarketPrice(
   property: PropertyIdentifier,
   options: { forceRefresh?: boolean } = {}
 ): Promise<MarketPrice> {
-  const startTime = Date.now();
-
   // Validate property type - now supports universal types
   if (!['vehicle', 'electronics', 'building'].includes(property.type)) {
     throw new Error(`Unsupported property type: ${property.type}`);

@@ -25,6 +25,10 @@ export function getVendorDocumentsUrl(auctionId: string): string {
   return `${getAppUrl()}/vendor/documents#auction-${auctionId}`;
 }
 
+export function getVendorPickupsUrl(): string {
+  return `${getAppUrl()}/vendor/pickups`;
+}
+
 export function appPath(path: string): string {
   const base = getAppUrl();
   const normalized = path.startsWith('/') ? path : `/${path}`;

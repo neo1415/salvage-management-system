@@ -24,6 +24,8 @@ interface RatingModalProps {
   vendorName: string;
   auctionId: string;
   onSubmit: (data: {
+    vendorId: string;
+    auctionId: string;
     overallRating: number;
     categoryRatings: CategoryRatings;
     review?: string;
@@ -164,6 +166,8 @@ export function RatingModal({
 
     try {
       await onSubmit({
+        vendorId,
+        auctionId,
         overallRating,
         categoryRatings,
         review: review.trim() || undefined,

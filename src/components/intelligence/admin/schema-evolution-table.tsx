@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { CheckCircle, XCircle, Clock } from 'lucide-react';
 
 interface SchemaChange {
   id: string;
@@ -30,7 +30,7 @@ interface SchemaChange {
   status: 'pending' | 'approved' | 'rejected';
   sampleCount: number;
   confidence: number;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 }
 
 export function SchemaEvolutionTable() {

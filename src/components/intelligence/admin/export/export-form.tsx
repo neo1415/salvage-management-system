@@ -19,11 +19,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Download, Calendar as CalendarIcon } from 'lucide-react';
 import { format as formatDate } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { ExportJob } from './data-export-content';
+import { ExportJob, type ExportMetadata } from './data-export-content';
 
 interface ExportFormProps {
   onExportStart: (job: ExportJob) => void;
-  onExportComplete: (jobId: string, downloadUrl: string, metadata: any) => void;
+  onExportComplete: (jobId: string, downloadUrl: string, metadata: ExportMetadata) => void;
   onExportError: (jobId: string, error: string) => void;
 }
 
@@ -80,8 +80,12 @@ export function ExportForm({ onExportStart, onExportComplete, onExportError }: E
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Export failed');
+        const errorPayload: unknown = await response.json();
+        const message = errorPayload && typeof errorPayload === 'object' &&
+          typeof (errorPayload as Record<string, unknown>).error === 'string'
+          ? String((errorPayload as Record<string, unknown>).error)
+          : 'Export failed';
+        throw new Error(message);
       }
 
       // Get the blob
@@ -123,7 +127,11 @@ export function ExportForm({ onExportStart, onExportComplete, onExportError }: E
           {/* Data Type Selection */}
           <div className="space-y-2">
             <Label htmlFor="dataType">Data Type</Label>
-            <Select value={dataType} onValueChange={(value: any) => setDataType(value)}>
+            <Select value={dataType} onValueChange={(value) => {
+              if (['predictions', 'recommendations', 'interactions', 'fraud_alerts', 'analytics'].includes(value)) {
+                setDataType(value as ExportJob['dataType']);
+              }
+            }}>
               <SelectTrigger id="dataType">
                 <SelectValue />
               </SelectTrigger>
@@ -147,7 +155,11 @@ export function ExportForm({ onExportStart, onExportComplete, onExportError }: E
           {/* Format Selection */}
           <div className="space-y-2">
             <Label htmlFor="format">Export Format</Label>
-            <Select value={exportFormat} onValueChange={(value: any) => setExportFormat(value)}>
+            <Select value={exportFormat} onValueChange={(value) => {
+              if (['csv', 'json', 'excel'].includes(value)) {
+                setExportFormat(value as ExportJob['format']);
+              }
+            }}>
               <SelectTrigger id="format">
                 <SelectValue />
               </SelectTrigger>

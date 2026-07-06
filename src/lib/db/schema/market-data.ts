@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, decimal, integer, timestamp, jsonb, text, boolean, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, decimal, integer, timestamp, jsonb, text, index } from 'drizzle-orm/pg-core';
 
 export const marketDataCache = pgTable('market_data_cache', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -25,6 +25,10 @@ export interface ImageUploadClientMetadata {
   gpsLatitude?: number;
   gpsLongitude?: number;
   gpsAltitude?: number;
+  gpsAccuracy?: number;
+  locationSource?: 'exif' | 'browser_geolocation';
+  browserRecordedAt?: string;
+  clientSha256Hash?: string;
   deviceMake?: string;
   deviceModel?: string;
   deviceSoftware?: string;

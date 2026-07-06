@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, type PieLabelRenderProps } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface SegmentData {
@@ -16,6 +16,18 @@ interface SegmentData {
   count: number;
   percentage: number;
   color: string;
+}
+
+interface SegmentApiRow {
+  segment: string;
+  count: number | string;
+}
+
+function isSegmentApiRow(value: unknown): value is SegmentApiRow {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.segment === 'string' &&
+    (typeof row.count === 'number' || typeof row.count === 'string');
 }
 
 // Map database activitySegment values to display names
@@ -51,13 +63,18 @@ export function VendorSegmentsPieChart() {
     try {
       const response = await fetch('/api/intelligence/admin/vendor-segments');
       if (response.ok) {
-        const result = await response.json();
-        const segments = result.segments || [];
+        const result: unknown = await response.json();
+        const resultRecord = result && typeof result === 'object'
+          ? result as Record<string, unknown>
+          : {};
+        const segments = Array.isArray(resultRecord.segments)
+          ? resultRecord.segments.filter(isSegmentApiRow)
+          : [];
         
         // Group by display name (map database values to display names)
         const groupedSegments: Record<string, { count: number; dbSegments: string[] }> = {};
         
-        segments.forEach((s: any) => {
+        segments.forEach((s) => {
           const displayName = SEGMENT_DISPLAY_NAMES[s.segment] || 'Inactive';
           if (!groupedSegments[displayName]) {
             groupedSegments[displayName] = { count: 0, dbSegments: [] };
@@ -131,7 +148,12 @@ export function VendorSegmentsPieChart() {
               cx="50%"
               cy="50%"
               labelLine={false}
-              label={(entry: any) => `${entry.segment}: ${entry.percentage.toFixed(1)}%`}
+              label={(entry: PieLabelRenderProps) => {
+                const payload = entry.payload as SegmentData | undefined;
+                return payload
+                  ? `${payload.segment}: ${payload.percentage.toFixed(1)}%`
+                  : '';
+              }}
               outerRadius={80}
               fill="#8884d8"
               dataKey="count"

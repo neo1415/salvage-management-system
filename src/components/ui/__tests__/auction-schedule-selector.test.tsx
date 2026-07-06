@@ -69,7 +69,7 @@ describe('AuctionScheduleSelector', () => {
     const onChange = vi.fn();
     const value: AuctionScheduleValue = { mode: 'now' };
 
-    const { container } = render(
+    render(
       <AuctionScheduleSelector value={value} onChange={onChange} />
     );
 

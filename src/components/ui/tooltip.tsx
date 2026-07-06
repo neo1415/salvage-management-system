@@ -50,9 +50,19 @@ export function TooltipTrigger({ asChild, children }: TooltipTriggerProps) {
   const handleMouseLeave = () => setOpen(false);
 
   if (asChild && React.isValidElement(children)) {
-    return React.cloneElement(children as React.ReactElement<any>, {
-      onMouseEnter: handleMouseEnter,
-      onMouseLeave: handleMouseLeave,
+    const child = children as React.ReactElement<{
+      onMouseEnter?: React.MouseEventHandler<HTMLElement>;
+      onMouseLeave?: React.MouseEventHandler<HTMLElement>;
+    }>;
+    return React.cloneElement(child, {
+      onMouseEnter: (event: React.MouseEvent<HTMLElement>) => {
+        child.props.onMouseEnter?.(event);
+        handleMouseEnter();
+      },
+      onMouseLeave: (event: React.MouseEvent<HTMLElement>) => {
+        child.props.onMouseLeave?.(event);
+        handleMouseLeave();
+      },
     });
   }
 

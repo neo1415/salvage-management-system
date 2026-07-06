@@ -22,6 +22,22 @@ import { bids } from '@/lib/db/schema/bids';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq, sql, desc } from 'drizzle-orm';
 
+interface SimilarAuctionRow {
+  id: string;
+  current_bid: string;
+  asset_details: unknown;
+  damage_severity: string | null;
+  market_value: string;
+  bid_count: string | number;
+  end_time: Date;
+}
+
+interface MarketConditionsRow {
+  total_auctions: string | number | null;
+  avg_price: string | number | null;
+  avg_bids: string | number | null;
+}
+
 /**
  * GET /api/intelligence/admin/inspect/[predictionId]
  * 
@@ -85,7 +101,7 @@ export async function GET(
     const algorithmSteps = logs.length > 0 ? logs[0].calculationDetails : null;
 
     // Find similar auctions used in prediction
-    const similarAuctions: any = await db.execute(sql`
+    const similarAuctionsResult = await db.execute(sql`
       WITH similar_auctions AS (
         SELECT 
           a.id,
@@ -112,8 +128,12 @@ export async function GET(
       SELECT * FROM similar_auctions
     `);
 
+    const similarAuctions = Array.from(
+      similarAuctionsResult as unknown as Iterable<SimilarAuctionRow>
+    );
+
     // Get market conditions
-    const marketConditions: any = await db.execute(sql`
+    const marketConditionsResult = await db.execute(sql`
       WITH recent_auctions AS (
         SELECT 
           COUNT(*) AS total_auctions,
@@ -132,6 +152,10 @@ export async function GET(
       )
       SELECT * FROM recent_auctions
     `);
+
+    const marketConditions = Array.from(
+      marketConditionsResult as unknown as Iterable<MarketConditionsRow>
+    );
 
     // Audit logging
     const ipAddress = request.headers.get('x-forwarded-for') || 
@@ -186,19 +210,19 @@ export async function GET(
           marketValue: caseData.marketValue,
           estimatedSalvageValue: caseData.estimatedSalvageValue,
         },
-        similarAuctions: similarAuctions.map((a: any) => ({
+        similarAuctions: similarAuctions.map((a) => ({
           id: a.id,
           finalPrice: parseFloat(a.current_bid),
           assetDetails: a.asset_details,
           damageSeverity: a.damage_severity,
           marketValue: parseFloat(a.market_value),
-          bidCount: parseInt(a.bid_count),
+          bidCount: Number(a.bid_count),
           endTime: a.end_time,
         })),
         marketConditions: marketConditions.length > 0 ? {
-          totalAuctions: parseInt(marketConditions[0].total_auctions || '0'),
-          avgPrice: parseFloat(marketConditions[0].avg_price || '0'),
-          avgBids: parseFloat(marketConditions[0].avg_bids || '0'),
+          totalAuctions: Number(marketConditions[0].total_auctions || 0),
+          avgPrice: Number(marketConditions[0].avg_price || 0),
+          avgBids: Number(marketConditions[0].avg_bids || 0),
         } : null,
         algorithmSteps,
       },

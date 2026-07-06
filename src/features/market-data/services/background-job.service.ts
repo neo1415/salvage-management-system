@@ -208,7 +208,7 @@ export async function cleanupOldJobs(): Promise<number> {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const result = await db
+    await db
       .delete(backgroundJobs)
       .where(
         and(

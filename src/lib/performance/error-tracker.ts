@@ -20,7 +20,7 @@ export interface ErrorReport {
   timestamp: number;
   errorType: 'javascript' | 'promise' | 'api' | 'boundary';
   severity: 'low' | 'medium' | 'high' | 'critical';
-  additionalContext?: Record<string, any>;
+  additionalContext?: Record<string, unknown>;
 }
 
 interface ErrorTrackerConfig {
@@ -36,14 +36,14 @@ interface IErrorTracker {
     componentStack?: string;
     errorType: ErrorReport['errorType'];
     severity: ErrorReport['severity'];
-    additionalContext?: Record<string, any>;
+    additionalContext?: Record<string, unknown>;
   }) => ErrorReport;
   captureAPIError: (
     url: string,
     method: string,
     status: number,
     statusText: string,
-    responseBody?: any
+    responseBody?: unknown
   ) => ErrorReport;
   captureComponentError: (
     error: Error,
@@ -137,7 +137,7 @@ class ErrorTracker implements IErrorTracker {
     componentStack?: string;
     errorType: ErrorReport['errorType'];
     severity: ErrorReport['severity'];
-    additionalContext?: Record<string, any>;
+    additionalContext?: Record<string, unknown>;
   }) {
     const report: ErrorReport = {
       message: error.message,
@@ -180,7 +180,7 @@ class ErrorTracker implements IErrorTracker {
     method: string,
     status: number,
     statusText: string,
-    responseBody?: any
+    responseBody?: unknown
   ) {
     return this.captureError({
       message: `API request failed: ${method} ${url}`,

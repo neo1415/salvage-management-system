@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Trophy, TrendingUp, Star } from 'lucide-react';
 
-interface TopVendor {
+export interface TopVendor {
   vendorId: string;
   vendorName: string;
   winRate: number | string;
@@ -20,7 +20,7 @@ interface TopVendor {
   totalRevenue: number | string;
 }
 
-interface TopAsset {
+export interface TopAsset {
   assetId: string;
   make: string;
   model: string;
@@ -30,7 +30,7 @@ interface TopAsset {
   totalAuctions: number | string;
 }
 
-interface TopMake {
+export interface TopMake {
   make: string;
   totalAuctions: number | string;
   avgPrice: number | string;

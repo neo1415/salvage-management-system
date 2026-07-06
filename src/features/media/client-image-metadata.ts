@@ -15,6 +15,37 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+async function sha256File(file: File): Promise<string | undefined> {
+  if (!globalThis.crypto?.subtle) return undefined;
+
+  try {
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return undefined;
+  }
+}
+
+function getBrowserLocation(): Promise<{
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+} | null> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      }),
+      () => resolve(null),
+      { enableHighAccuracy: true, maximumAge: 60_000, timeout: 8_000 }
+    );
+  });
+}
+
 async function getImageDimensions(file: File): Promise<{ width?: number; height?: number }> {
   if (!file.type.startsWith('image/')) return {};
 
@@ -36,20 +67,20 @@ async function getImageDimensions(file: File): Promise<{ width?: number; height?
 export async function collectImageFileMetadata(
   file: File,
   index: number,
-  captureSource: string
+  captureSource: string,
+  browserLocation?: { latitude: number; longitude: number; accuracy: number } | null
 ): Promise<ImageUploadClientMetadata> {
   const warnings: string[] = [];
-  const dimensions = await getImageDimensions(file);
+  const [dimensions, clientSha256Hash] = await Promise.all([
+    getImageDimensions(file),
+    sha256File(file),
+  ]);
   let rawExif: Record<string, unknown> | undefined;
 
   try {
     rawExif = await exifr.parse(file, true) as Record<string, unknown> | undefined;
   } catch (error) {
     warnings.push(`EXIF metadata could not be read before upload: ${error instanceof Error ? error.message : 'unknown error'}`);
-  }
-
-  if (!rawExif || Object.keys(rawExif).length === 0) {
-    warnings.push('No EXIF metadata was found on the original file before upload.');
   }
 
   return {
@@ -63,9 +94,13 @@ export async function collectImageFileMetadata(
     height: dimensions.height,
     hasClientExif: Boolean(rawExif && Object.keys(rawExif).length > 0),
     exifCapturedAt: toIsoDate(rawExif?.DateTimeOriginal || rawExif?.CreateDate || rawExif?.ModifyDate),
-    gpsLatitude: numberValue(rawExif?.latitude || rawExif?.GPSLatitude),
-    gpsLongitude: numberValue(rawExif?.longitude || rawExif?.GPSLongitude),
+    gpsLatitude: numberValue(rawExif?.latitude || rawExif?.GPSLatitude) ?? browserLocation?.latitude,
+    gpsLongitude: numberValue(rawExif?.longitude || rawExif?.GPSLongitude) ?? browserLocation?.longitude,
     gpsAltitude: numberValue(rawExif?.GPSAltitude),
+    gpsAccuracy: browserLocation?.accuracy,
+    locationSource: rawExif?.latitude || rawExif?.GPSLatitude ? 'exif' : browserLocation ? 'browser_geolocation' : undefined,
+    browserRecordedAt: new Date().toISOString(),
+    clientSha256Hash,
     deviceMake: stringValue(rawExif?.Make),
     deviceModel: stringValue(rawExif?.Model),
     deviceSoftware: stringValue(rawExif?.Software),
@@ -80,5 +115,9 @@ export async function collectImageFilesMetadata(
   files: File[],
   captureSource: string
 ): Promise<ImageUploadClientMetadata[]> {
-  return Promise.all(files.map((file, index) => collectImageFileMetadata(file, index, captureSource)));
+  const shouldRequestLocation = captureSource.includes('camera');
+  const browserLocation = shouldRequestLocation ? await getBrowserLocation() : null;
+  return Promise.all(
+    files.map((file, index) => collectImageFileMetadata(file, index, captureSource, browserLocation))
+  );
 }

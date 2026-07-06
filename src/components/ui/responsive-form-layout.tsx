@@ -32,7 +32,6 @@ export const ResponsiveFormLayout: React.FC<ResponsiveFormLayoutProps> = ({
   children,
   variant = 'auto',
   spacing = 'comfortable',
-  theme = 'auto',
   className,
   voiceButtonPosition = 'sticky',
   enableVoiceOptimization = true,

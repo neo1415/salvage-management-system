@@ -4,7 +4,6 @@
  * Unified loading UI. Colors are provided by the active public brand policy.
  */
 
-import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useNavigation } from '@/components/navigation/navigation-provider';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';

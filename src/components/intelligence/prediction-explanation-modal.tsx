@@ -7,7 +7,7 @@
 
 'use client';
 
-import { X, TrendingUp, Database, BarChart3, Calendar, MapPin } from 'lucide-react';
+import { X, TrendingUp, Database, BarChart3, Calendar } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEffect } from 'react';
 

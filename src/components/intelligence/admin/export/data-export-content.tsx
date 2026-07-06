@@ -13,7 +13,6 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ExportForm } from './export-form';
 import { ExportProgress } from './export-progress';
 import { ExportHistory } from './export-history';
@@ -27,13 +26,19 @@ export interface ExportJob {
   progress: number;
   startDate?: string;
   endDate?: string;
-  filters?: Record<string, any>;
+  filters?: Record<string, unknown>;
   downloadUrl?: string;
   createdAt: string;
   completedAt?: string;
   error?: string;
   fileSize?: number;
   recordCount?: number;
+}
+
+export interface ExportMetadata {
+  fileSize: number;
+  recordCount: number;
+  filename?: string;
 }
 
 export function DataExportContent() {
@@ -45,7 +50,7 @@ export function DataExportContent() {
     setExportHistory(prev => [job, ...prev]);
   };
 
-  const handleExportComplete = (jobId: string, downloadUrl: string, metadata: any) => {
+  const handleExportComplete = (jobId: string, downloadUrl: string, metadata: ExportMetadata) => {
     setActiveExport(prev => {
       if (prev?.id === jobId) {
         return {

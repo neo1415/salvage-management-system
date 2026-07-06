@@ -5,7 +5,7 @@
  * Comprehensive Executive Dashboard - 2026 BI Best Practices
  */
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -30,21 +30,17 @@ export default function MasterReportPage() {
   const [branchText, setBranchText] = useState('');
   const [brokerText, setBrokerText] = useState('');
 
-  const selectedBranches = branchText
-    .split(',')
-    .map((branch) => branch.trim())
-    .filter(Boolean);
+  const selectedBranches = useMemo(
+    () => branchText.split(',').map((branch) => branch.trim()).filter(Boolean),
+    [branchText]
+  );
 
-  const selectedBrokers = brokerText
-    .split(',')
-    .map((broker) => broker.trim())
-    .filter(Boolean);
+  const selectedBrokers = useMemo(
+    () => brokerText.split(',').map((broker) => broker.trim()).filter(Boolean),
+    [brokerText]
+  );
 
-  useEffect(() => {
-    fetchMasterReport();
-  }, []);
-
-  const fetchMasterReport = async (force = false) => {
+  const fetchMasterReport = useCallback(async (force = false) => {
     startFetch();
     try {
       const result = await loadReportFromApi(
@@ -64,7 +60,9 @@ export default function MasterReportPage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endDate, endFetch, markHasData, selectedBranches, selectedBrokers, startDate, startFetch]);
+
+  useEffect(() => { void fetchMasterReport(); }, [fetchMasterReport]);
 
   if (loading && !reportData) {
     return (

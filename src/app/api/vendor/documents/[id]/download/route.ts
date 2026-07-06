@@ -31,7 +31,7 @@ export async function GET(
     const deviceType = userAgent.includes('Mobile') ? 'mobile' : 'desktop';
 
     // Download document (with audit logging)
-    const { pdfUrl, title, documentType, assetDescription, createdAt } = await downloadDocument(
+    const { pdfUrl, documentType, assetDescription, createdAt } = await downloadDocument(
       documentId,
       session.user.vendorId,
       'direct_download',

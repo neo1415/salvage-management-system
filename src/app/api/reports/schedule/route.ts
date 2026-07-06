@@ -11,11 +11,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { ReportSchedulerService, ScheduleConfig } from '@/features/reports/scheduling/services/report-scheduler.service';
 import { ReportService } from '@/features/reports/services/report.service';
+import type { ReportType } from '@/features/reports/types';
 import { z } from 'zod';
+
+const REPORT_TYPES = [
+  'revenue-analysis', 'payment-analytics', 'vendor-spending', 'profitability',
+  'case-processing', 'auction-performance', 'document-management', 'vendor-performance',
+  'adjuster-metrics', 'finance-metrics', 'manager-metrics', 'admin-metrics', 'my-performance',
+  'regulatory-compliance', 'audit-trail', 'document-compliance',
+  'kpi-dashboard', 'strategic-insights', 'comprehensive-report', 'role-specific-report',
+  'ai-magazine',
+] as const satisfies readonly ReportType[];
 
 // Validation schema
 const scheduleSchema = z.object({
-  reportType: z.string(),
+  reportType: z.enum(REPORT_TYPES),
   frequency: z.enum(['daily', 'weekly', 'monthly', 'quarterly']),
   scheduleConfig: z.object({
     dayOfWeek: z.number().min(0).max(6).optional(),
@@ -38,7 +48,7 @@ const scheduleSchema = z.object({
 /**
  * GET - List user's scheduled reports
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Authentication
     const session = await auth();
@@ -127,7 +137,7 @@ export async function POST(request: NextRequest) {
     const config = validation.data as ScheduleConfig;
 
     // Check if user has permission to schedule this report type
-    if (!ReportService.hasPermission(session.user.role, config.reportType as any)) {
+    if (!ReportService.hasPermission(session.user.role, config.reportType)) {
       return NextResponse.json(
         {
           status: 'error',

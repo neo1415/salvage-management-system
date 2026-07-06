@@ -62,4 +62,30 @@ describe('summarizeImageIntegrity', () => {
     expect(summary.status).toBe('warning');
     expect(summary.warnings).toEqual(['Photo 1: Image resolution is low for evidence review.']);
   });
+
+  it('uses original dimensions instead of a low-resolution processed derivative', () => {
+    const results: ImageIntegrityResult[] = [
+      {
+        index: 0,
+        status: 'warning',
+        warnings: ['Image resolution is low for evidence review.'],
+        width: 320,
+        height: 240,
+        hasMetadata: false,
+        hashSha256: 'processed-hash',
+      },
+    ];
+
+    const summary = summarizeImageIntegrity(results, [
+      {
+        index: 0,
+        width: 1920,
+        height: 1080,
+        lastModified: Date.now(),
+        captureSource: 'browser_camera_input',
+      },
+    ]);
+
+    expect(summary).toEqual({ status: 'passed', warnings: [] });
+  });
 });

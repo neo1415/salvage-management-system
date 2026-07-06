@@ -12,14 +12,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Clock, FileText, TrendingDown } from 'lucide-react';
 
-interface SessionMetrics {
+export interface SessionMetrics {
   avgSessionDuration: number | string; // in seconds
   avgPagesPerSession: number | string;
   bounceRate: number | string;
   totalSessions: number | string;
 }
 
-interface SessionTrend {
+export interface SessionTrend {
   date: string;
   avgDuration: number | string;
   pagesPerSession: number | string;
@@ -27,7 +27,7 @@ interface SessionTrend {
 }
 
 interface SessionAnalyticsMetricsProps {
-  metrics: SessionMetrics;
+  metrics: SessionMetrics | null;
   trends: SessionTrend[];
   loading?: boolean;
 }

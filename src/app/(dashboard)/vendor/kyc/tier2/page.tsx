@@ -255,29 +255,31 @@ function Tier2WidgetKYCPage() {
   const [verificationError, setVerificationError] = useState<ResolvedVerificationError | null>(null);
   const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [connect, setConnect] = useState<DojahConnect | null>(null);
-  const [cameraPermissionGranted, setCameraPermissionGranted] = useState(false);
-  const [geolocationPermissionGranted, setGeolocationPermissionGranted] = useState(false);
+  const [, setCameraPermissionGranted] = useState(false);
+  const [, setGeolocationPermissionGranted] = useState(false);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
-  const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean | null>(null);
+  const [, setRegistrationFeePaid] = useState<boolean | null>(null);
   const [widgetSessionActive, setWidgetSessionActive] = useState(false);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [successModalCopy, setSuccessModalCopy] = useState({ title: '', message: '' });
   const submissionFinishedRef = useRef(false);
   const pendingWidgetCompletionRef = useRef<string | null>(null);
+  const handleVerificationCompleteRef = useRef(handleVerificationComplete);
+  handleVerificationCompleteRef.current = handleVerificationComplete;
 
   const goToDashboard = useCallback(() => {
     setSuccessModalOpen(false);
     router.push('/vendor/dashboard');
   }, [router]);
 
-  const showVerificationError = (
+  const showVerificationError = useCallback((
     error: ResolvedVerificationError,
     options?: { openDialog?: boolean; nextPageState?: PageState }
   ) => {
     setVerificationError(error);
     if (options?.openDialog) setErrorDialogOpen(true);
     if (options?.nextPageState) setPageState(options.nextPageState);
-  };
+  }, []);
 
   const clearVerificationError = () => {
     setVerificationError(null);
@@ -338,7 +340,7 @@ function Tier2WidgetKYCPage() {
     }
   }, [authStatus, router]);
 
-  async function loadWidgetConfig() {
+  const loadWidgetConfig = useCallback(async () => {
     const configRes = await fetchWithTimeout('/api/kyc/widget-config');
     if (!configRes.ok) {
       setPageState('error');
@@ -352,7 +354,7 @@ function Tier2WidgetKYCPage() {
     const config = await configRes.json();
     setWidgetConfig(config);
     return true;
-  }
+  }, [showVerificationError]);
 
   // Load current KYC status first. Only create/load a new widget reference when the
   // vendor is actually ready to start or resubmit verification.
@@ -411,7 +413,7 @@ function Tier2WidgetKYCPage() {
     }
 
     init();
-  }, [authStatus, router]);
+  }, [authStatus, router, loadWidgetConfig, showVerificationError]);
 
   // Surface a recoverable error if initialization hangs (slow network / API).
   useEffect(() => {
@@ -429,7 +431,7 @@ function Tier2WidgetKYCPage() {
     }, LOADING_WATCHDOG_MS);
 
     return () => window.clearTimeout(timer);
-  }, [authStatus, pageState]);
+  }, [authStatus, pageState, showVerificationError]);
 
   // Initialise Dojah widget once script is loaded and config is available
   const initWidget = useCallback(() => {
@@ -536,7 +538,7 @@ function Tier2WidgetKYCPage() {
         return;
       }
 
-      await handleVerificationComplete(referenceId, true);
+      await handleVerificationCompleteRef.current(referenceId, true);
     };
 
     const options: DojahWidgetOptions = {
@@ -628,7 +630,7 @@ function Tier2WidgetKYCPage() {
         const pendingReference = pendingWidgetCompletionRef.current;
         pendingWidgetCompletionRef.current = null;
         if (pendingReference && !submissionFinishedRef.current) {
-          void handleVerificationComplete(pendingReference, true);
+          void handleVerificationCompleteRef.current(pendingReference, true);
           return;
         }
         if (pageState === 'verifying') {
@@ -649,7 +651,7 @@ function Tier2WidgetKYCPage() {
         { nextPageState: 'error', openDialog: true }
       );
     }
-  }, [widgetConfig, session, pageState]);
+  }, [widgetConfig, session, pageState, recoverSubmissionFromServer, showVerificationError]);
 
   useEffect(() => {
     if (widgetConfig && window.Connect) {

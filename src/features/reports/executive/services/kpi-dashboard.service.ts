@@ -9,6 +9,9 @@ import { ReportFilters } from '../../types';
 import { resolveReportIsoDateRange } from '../../utils/report-date-range';
 import { formatCaseChannelDisplay, resolveCaseChannelLabel } from '../../utils/case-channel-label';
 
+// PostgreSQL aggregate aliases in this report are returned as text.
+type SqlReportRow = Record<string, string>;
+
 export interface KPIDashboardReport {
   financial: {
     totalRevenue: number;
@@ -264,7 +267,7 @@ export class KPIDashboardService {
       FROM revenue_data r, recovery_data rd, previous_revenue p
     `);
 
-    const row = result[0] as any;
+    const row = result[0] as unknown as SqlReportRow;
     return {
       totalRevenue: Math.round(parseFloat(row?.total_revenue || '0') * 100) / 100,
       averageRecoveryRate: Math.round(parseFloat(row?.avg_recovery_rate || '0') * 100) / 100,
@@ -335,7 +338,7 @@ export class KPIDashboardService {
       FROM case_data c, auction_data a, vendor_data v
     `);
 
-    const row = result[0] as any;
+    const row = result[0] as unknown as SqlReportRow;
     return {
       totalCases: parseInt(row?.total_cases || '0'),
       caseProcessingTime: Math.round(parseFloat(row?.avg_processing_hours || '0') * 100) / 100,
@@ -394,7 +397,7 @@ export class KPIDashboardService {
       CROSS JOIN payment_data pd
     `);
 
-    const row = result[0] as any;
+    const row = result[0] as unknown as SqlReportRow;
     return {
       topAdjusterPerformance: Math.round(parseFloat(row?.top_adjuster_cases || '0')),
       averageAdjusterPerformance: Math.round(parseFloat(row?.avg_adjuster_cases || '0') * 100) / 100,
@@ -492,15 +495,15 @@ export class KPIDashboardService {
     `);
 
     return {
-      revenueByMonth: (revenueByMonth as any[]).map(r => ({
+      revenueByMonth: (revenueByMonth as unknown as SqlReportRow[]).map(r => ({
         month: r.month,
         revenue: Math.round(parseFloat(r.revenue) * 100) / 100,
       })).reverse(),
-      casesByMonth: (casesByMonth as any[]).map(c => ({
+      casesByMonth: (casesByMonth as unknown as SqlReportRow[]).map(c => ({
         month: c.month,
         cases: parseInt(c.cases),
       })).reverse(),
-      successRateByMonth: (successRateByMonth as any[]).map(s => ({
+      successRateByMonth: (successRateByMonth as unknown as SqlReportRow[]).map(s => ({
         month: s.month,
         rate: Math.round(parseFloat(s.rate) * 100) / 100,
       })).reverse(),
@@ -685,7 +688,7 @@ export class KPIDashboardService {
     `);
 
     // Calculate quality scores for adjusters
-    const adjusters = (adjustersResult as any[]).map(adj => {
+    const adjusters = (adjustersResult as unknown as SqlReportRow[]).map(adj => {
       const approvalRate = parseFloat(adj.approval_rate || '0');
       const rejectionRate = 100 - approvalRate;
       const avgTime = parseFloat(adj.avg_processing_days || '0');
@@ -711,7 +714,7 @@ export class KPIDashboardService {
     });
 
     return {
-      cases: (casesResult as any[]).map(c => {
+      cases: (casesResult as unknown as SqlReportRow[]).map(c => {
         const channel = resolveCaseChannelLabel(c.broker_name, c.agency_name);
         return {
           id: c.id,
@@ -727,7 +730,7 @@ export class KPIDashboardService {
           status: c.status,
         };
       }),
-      auctions: (auctionsResult as any[]).map(a => ({
+      auctions: (auctionsResult as unknown as SqlReportRow[]).map(a => ({
         id: a.id,
         caseReference: a.case_reference || 'N/A',
         uniqueBidders: parseInt(a.unique_bidders || '0'),
@@ -738,7 +741,7 @@ export class KPIDashboardService {
         status: a.status,
       })),
       adjusters,
-      vendors: (vendorsResult as any[]).map(v => ({
+      vendors: (vendorsResult as unknown as SqlReportRow[]).map(v => ({
         id: v.id,
         businessName: v.business_name,
         tier: vendorTierToNumber(v.tier),
@@ -749,7 +752,7 @@ export class KPIDashboardService {
         avgBid: Math.round(parseFloat(v.avg_bid) * 100) / 100,
         paymentRate: Math.round(parseFloat(v.payment_rate) * 100) / 100,
       })),
-      branches: (branchesResult as any[]).map(branch => {
+      branches: (branchesResult as unknown as SqlReportRow[]).map(branch => {
         const claimsValue = parseFloat(branch.claims_value || '0');
         const verifiedRecovery = parseFloat(branch.verified_recovery || '0');
         return {

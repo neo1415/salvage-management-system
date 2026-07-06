@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth/use-auth';
 import { useParams } from 'next/navigation';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -10,9 +10,6 @@ import {
   ArrowLeft, 
   Clock, 
   TrendingUp, 
-  Users, 
-  Eye, 
-  Banknote, 
   Calendar,
   MapPin,
   Car,
@@ -25,16 +22,13 @@ import {
   Gavel,
   Timer,
   StopCircle,
-  Building,
   User,
   Phone,
   ExternalLink,
-  Play,
-  Pause
 } from 'lucide-react';
 import { formatNaira } from '@/lib/utils/currency-formatter';
 import { AuctionTimerExtension } from '@/components/manager/auction-timer-extension';
-import { AuctionScheduleSelector, type AuctionScheduleValue } from '@/components/ui/auction-schedule-selector';
+import type { AuctionScheduleValue } from '@/components/ui/auction-schedule-selector';
 import { BidHistoryChart } from '@/components/charts/bid-history-chart';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { SuccessModal } from '@/components/modals/success-modal';
@@ -65,7 +59,15 @@ interface DetailedAuctionData {
     id: string;
     claimReference: string;
     assetType: string;
-    assetDetails: any;
+    assetDetails: {
+      make?: string;
+      model?: string;
+      year?: string | number;
+      propertyType?: string;
+      brand?: string;
+      vin?: string;
+      serialNumber?: string;
+    };
     marketValue: string;
     estimatedSalvageValue: string | null;
     reservePrice: string | null;
@@ -79,7 +81,7 @@ interface DetailedAuctionData {
       y: number;
     };
     approvedAt?: string | null;
-    aiAssessment?: any;
+    aiAssessment?: Record<string, unknown> | null;
   };
   currentBidder: {
     vendor: {
@@ -129,7 +131,6 @@ export default function AuctionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [endingAuction, setEndingAuction] = useState(false);
-  const [playingVoiceNote, setPlayingVoiceNote] = useState<string | null>(null);
   const [showEndAuctionModal, setShowEndAuctionModal] = useState(false);
   const [extendingAuction, setExtendingAuction] = useState(false);
   const [showRestartModal, setShowRestartModal] = useState(false);
@@ -157,18 +158,7 @@ export default function AuctionDetailPage() {
     }
   }, [isAuthenticated, isLoading, user, router]);
 
-  // Fetch auction details
-  useEffect(() => {
-    if (!isAuthenticated || !user || !auctionId) return;
-    
-    // Only fetch if we don't have data yet or if explicitly needed
-    // This prevents automatic refresh when tab becomes visible again
-    if (!data) {
-      fetchAuctionDetails();
-    }
-  }, [auctionId, isAuthenticated, user]); // Removed data from dependencies to prevent refresh loop
-
-  const fetchAuctionDetails = async () => {
+  const fetchAuctionDetails = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -190,7 +180,13 @@ export default function AuctionDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [auctionId]);
+
+  // Fetch auction details once the authenticated route context is ready.
+  useEffect(() => {
+    if (!isAuthenticated || !user || !auctionId || data) return;
+    void fetchAuctionDetails();
+  }, [auctionId, data, fetchAuctionDetails, isAuthenticated, user]);
   // Early auction closure (salvage managers only)
   const handleEndAuctionEarly = async () => {
     if (user?.role !== 'salvage_manager') {
@@ -407,21 +403,6 @@ export default function AuctionDetailPage() {
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
-
-  const playVoiceNote = (url: string) => {
-    if (playingVoiceNote === url) {
-      // Stop playing
-      setPlayingVoiceNote(null);
-      // In a real implementation, you'd pause the audio
-    } else {
-      // Start playing
-      setPlayingVoiceNote(url);
-      // In a real implementation, you'd play the audio
-      const audio = new Audio(url);
-      audio.play().catch(console.error);
-      audio.onended = () => setPlayingVoiceNote(null);
-    }
   };
 
   if (loading) {

@@ -17,7 +17,7 @@ import type { PropertyIdentifier, SourcePrice, CachedMarketData } from '../types
  */
 export function generatePropertyHash(property: PropertyIdentifier): string {
   // Normalize property details for consistent hashing
-  const normalized: Record<string, any> = {
+  const normalized: Record<string, unknown> = {
     type: property.type,
   };
 
@@ -221,7 +221,7 @@ export async function setCachedPrice(
           .values({
             propertyHash,
             propertyType: property.type,
-            propertyDetails: property as any,
+            propertyDetails: property,
             medianPrice: medianPrice.toString(),
             minPrice: minPrice.toString(),
             maxPrice: maxPrice.toString(),

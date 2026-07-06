@@ -195,8 +195,6 @@ export default function FraudAlertDashboard() {
   const [selectedAlert, setSelectedAlert] = useState<FraudAlert | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [ipFraudEnabled, setIpFraudEnabled] = useState(true);
-  const [settingsLoading, setSettingsLoading] = useState(false);
 
   // Modal states
   const [showDismissModal, setShowDismissModal] = useState(false);
@@ -246,45 +244,7 @@ export default function FraudAlertDashboard() {
       return;
     }
     fetchFraudAlerts();
-    fetchFraudSettings();
   }, [sessionStatus, session?.user?.role, router]);
-
-  const fetchFraudSettings = async () => {
-    try {
-      const response = await fetch('/api/admin/fraud-settings');
-      if (!response.ok) return;
-      const data = await response.json();
-      setIpFraudEnabled(Boolean(data.ipFraudDetectionEnabled));
-    } catch (err) {
-      console.error('Failed to fetch fraud settings:', err);
-    }
-  };
-
-  const toggleIPFraudDetection = async () => {
-    const nextValue = !ipFraudEnabled;
-    setIpFraudEnabled(nextValue);
-    setSettingsLoading(true);
-
-    try {
-      const response = await fetch('/api/admin/fraud-settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ipFraudDetectionEnabled: nextValue }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update fraud setting');
-      }
-
-      const data = await response.json();
-      setIpFraudEnabled(Boolean(data.ipFraudDetectionEnabled));
-    } catch (err) {
-      setIpFraudEnabled(!nextValue);
-      setError(err instanceof Error ? err.message : 'Failed to update fraud setting');
-    } finally {
-      setSettingsLoading(false);
-    }
-  };
 
   const fetchFraudAlerts = async () => {
     const showFullPageLoader = fraudAlertsRef.current.length === 0;
@@ -595,32 +555,6 @@ export default function FraudAlertDashboard() {
             {isRefreshing && <DataRefreshingHint className="inline-flex mb-0 ml-2" />}
           </p>
         </div>
-
-        {/* IP-based fraud detection toggle — hidden after verification; re-enable when product needs the admin switch again.
-        <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="font-semibold text-gray-900">IP-based fraud detection</h2>
-            <p className="text-sm text-gray-600">
-              Turn this off for one-device demos. Bidding still works; only same-IP fraud alerts pause.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={toggleIPFraudDetection}
-            disabled={settingsLoading}
-            className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-60 ${
-              ipFraudEnabled ? 'bg-[var(--brand-primary)]' : 'bg-gray-300'
-            }`}
-            aria-pressed={ipFraudEnabled}
-          >
-            <span
-              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                ipFraudEnabled ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-        */}
 
         <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
           <p className="font-medium text-gray-900 mb-1">What the actions do</p>

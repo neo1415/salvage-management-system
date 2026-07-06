@@ -80,7 +80,7 @@ export const mlTrainingDatasets = pgTable('ml_training_datasets', {
     description: string | null;
     version: string | null;
     anonymized: boolean | null;
-    filters: any;
+    filters: unknown;
   }>(),
   createdBy: uuid('created_by'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -248,7 +248,7 @@ export const recommendationLogs = pgTable('recommendation_logs', {
     collaborativeWeight: number | null;
     contentWeight: number | null;
     similarAuctions: string[] | null;
-    vendorPreferences: any;
+    vendorPreferences: unknown;
   }>(),
   // Interaction tracking
   clicked: boolean('clicked').notNull().default(false),
@@ -280,8 +280,8 @@ export const fraudDetectionLogs = pgTable('fraud_detection_logs', {
   flagReasons: jsonb('flag_reasons').$type<string[]>().notNull(),
   // Analysis details
   analysisDetails: jsonb('analysis_details').$type<{
-    patterns: any;
-    evidence: any;
+    patterns: unknown;
+    evidence: unknown;
     confidence: number | null;
     falsePositiveRisk: number | null;
   }>(),

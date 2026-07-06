@@ -4,12 +4,32 @@
  */
 
 import { db } from '@/lib/db';
-import { eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { featureVectors } from '@/lib/db/schema/ml-training';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { vendors } from '@/lib/db/schema/vendors';
 import { bids } from '@/lib/db/schema/bids';
+
+type FeatureVector = NonNullable<typeof featureVectors.$inferInsert.features>;
+type AssetDetails = typeof salvageCases.$inferSelect.assetDetails;
+
+interface AuctionFeatureRow {
+  asset_type: string;
+  asset_details: AssetDetails;
+  damage_severity: string | null;
+  market_value: string;
+  estimated_salvage_value: string | null;
+  end_time: string | Date;
+  damaged_parts: unknown[] | null;
+}
+
+interface VendorFeatureRow {
+  rating: string | null;
+  total_bids: string;
+  avg_bid_amount: string | null;
+  win_rate: string | null;
+}
 
 export class FeatureEngineeringService {
   /**
@@ -51,11 +71,11 @@ export class FeatureEngineeringService {
    * Task 6.1.6: Implement missing value imputation strategies
    */
   imputeMissingValues(
-    features: Record<string, any>,
+    features: Record<string, unknown>,
     strategy: 'mean' | 'median' | 'mode' | 'zero' = 'mean',
     historicalData?: Record<string, number[]>
-  ): Record<string, any> {
-    const imputed: Record<string, any> = { ...features };
+  ): Record<string, unknown> {
+    const imputed: Record<string, unknown> = { ...features };
     
     for (const [key, value] of Object.entries(imputed)) {
       if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
@@ -95,7 +115,7 @@ export class FeatureEngineeringService {
   }
 
   async computeAuctionFeatures(auctionId: string): Promise<void> {
-    const auctionData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         a.id,
         a.current_bid,
@@ -106,7 +126,7 @@ export class FeatureEngineeringService {
         sc.damage_severity,
         sc.market_value,
         sc.estimated_salvage_value,
-        sc.damaged_parts,
+        sc.ai_assessment->'damagedParts' AS damaged_parts,
         COUNT(b.id) AS bid_count,
         AVG(b.amount) AS avg_bid_amount
       FROM ${auctions} a
@@ -116,16 +136,17 @@ export class FeatureEngineeringService {
       GROUP BY a.id, sc.id
     `);
 
+    const auctionData = result as unknown as AuctionFeatureRow[];
     if (auctionData.length === 0) return;
 
     const row = auctionData[0];
     const endTime = new Date(row.end_time);
 
-    const features = {
+    const features: FeatureVector = {
       assetType: row.asset_type,
-      make: row.asset_details?.make,
-      model: row.asset_details?.model,
-      year: row.asset_details?.year ? parseInt(row.asset_details.year) : null,
+      make: row.asset_details?.make ?? null,
+      model: row.asset_details?.model ?? null,
+      year: row.asset_details?.year ?? null,
       damageSeverity: row.damage_severity,
       marketValue: parseFloat(row.market_value || '0'),
       estimatedSalvageValue: parseFloat(row.estimated_salvage_value || '0'),
@@ -147,23 +168,20 @@ export class FeatureEngineeringService {
       vendorWinRate: null,
       vendorTotalBids: null,
       vendorAvgBidAmount: null,
-      vendorLocationLat: null,
-      vendorLocationLng: null,
       regionalDemandScore: null,
-      seasonalDemandScore: null,
       regionalPriceVariance: null,
     };
 
     await db.insert(featureVectors).values({
       entityType: 'auction',
       entityId: auctionId,
-      features: features as any,
+      features,
       version: 'v1.0',
     });
   }
 
   async computeVendorFeatures(vendorId: string): Promise<void> {
-    const vendorData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         v.id,
         v.rating,
@@ -178,11 +196,12 @@ export class FeatureEngineeringService {
       GROUP BY v.id
     `);
 
+    const vendorData = result as unknown as VendorFeatureRow[];
     if (vendorData.length === 0) return;
 
     const row = vendorData[0];
 
-    const features = {
+    const features: FeatureVector = {
       assetType: null,
       make: null,
       model: null,
@@ -208,17 +227,14 @@ export class FeatureEngineeringService {
       vendorWinRate: parseFloat(row.win_rate || '0'),
       vendorTotalBids: parseInt(row.total_bids || '0'),
       vendorAvgBidAmount: parseFloat(row.avg_bid_amount || '0'),
-      vendorLocationLat: null,
-      vendorLocationLng: null,
       regionalDemandScore: null,
-      seasonalDemandScore: null,
       regionalPriceVariance: null,
     };
 
     await db.insert(featureVectors).values({
       entityType: 'vendor',
       entityId: vendorId,
-      features: features as any,
+      features,
       version: 'v1.0',
     });
   }

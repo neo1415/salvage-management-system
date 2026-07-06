@@ -7,8 +7,7 @@
 
 'use client';
 
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useRef, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface VirtualizedListProps<T> {
   items: T[];
@@ -32,58 +31,81 @@ export function VirtualizedList<T>({
   className = '',
 }: VirtualizedListProps<T>) {
   const parentRef = useRef<HTMLDivElement>(null);
-  
-  const virtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => estimateSize,
-    overscan,
-  });
-  
-  const virtualItems = virtualizer.getVirtualItems();
+  const [viewport, setViewport] = useState({ height: 0, scrollTop: 0 });
+  const visibleIndexes = useMemo(() => {
+    if (items.length === 0) return [];
+
+    const first = Math.max(0, Math.floor(viewport.scrollTop / estimateSize) - overscan);
+    const visibleCount = Math.ceil(viewport.height / estimateSize);
+    const last = Math.min(items.length - 1, first + visibleCount + (overscan * 2));
+    return Array.from({ length: last - first + 1 }, (_, offset) => first + offset);
+  }, [estimateSize, items.length, overscan, viewport.height, viewport.scrollTop]);
+
+  useEffect(() => {
+    const element = parentRef.current;
+    if (!element) return;
+
+    const updateHeight = () => {
+      setViewport((current) => ({
+        ...current,
+        height: element.clientHeight,
+      }));
+    };
+    updateHeight();
+
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   
   // Load more when scrolled near bottom
   useEffect(() => {
-    const [lastItem] = [...virtualItems].reverse();
-    
-    if (!lastItem) return;
+    const lastIndex = visibleIndexes.at(-1);
+    if (lastIndex === undefined) return;
     
     if (
-      lastItem.index >= items.length - 1 &&
+      lastIndex >= items.length - 1 &&
       hasMore &&
       !isLoading &&
       onLoadMore
     ) {
       onLoadMore();
     }
-  }, [hasMore, isLoading, onLoadMore, items.length, virtualItems]);
+  }, [hasMore, isLoading, onLoadMore, items.length, visibleIndexes]);
   
   return (
     <div
       ref={parentRef}
+      onScroll={(event) => {
+        const element = event.currentTarget;
+        setViewport({
+          height: element.clientHeight,
+          scrollTop: element.scrollTop,
+        });
+      }}
       className={`h-full overflow-auto ${className}`}
       style={{ contain: 'strict' }}
     >
       <div
         style={{
-          height: `${virtualizer.getTotalSize()}px`,
+          height: `${items.length * estimateSize}px`,
           width: '100%',
           position: 'relative',
         }}
       >
-        {virtualItems.map((virtualItem) => (
+        {visibleIndexes.map((index) => (
           <div
-            key={virtualItem.key}
+            key={index}
             style={{
               position: 'absolute',
               top: 0,
               left: 0,
               width: '100%',
-              height: `${virtualItem.size}px`,
-              transform: `translateY(${virtualItem.start}px)`,
+              height: `${estimateSize}px`,
+              transform: `translateY(${index * estimateSize}px)`,
             }}
           >
-            {renderItem(items[virtualItem.index], virtualItem.index)}
+            {renderItem(items[index], index)}
           </div>
         ))}
       </div>

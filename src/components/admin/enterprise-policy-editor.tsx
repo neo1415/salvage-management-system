@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, type MouseEvent } from 'react';
+import Image from 'next/image';
 import { AlertTriangle, CheckCircle2, MonitorSmartphone, Rocket, Save, ShieldAlert, Upload } from 'lucide-react';
 import type { BusinessPolicy, PolicyValidationResult } from '@/features/business-policy/types';
 import { validateBusinessPolicy } from '@/features/business-policy/policy-validation';
@@ -155,9 +156,12 @@ function BrandAssetUploadCard({
         <div className="flex items-center gap-3">
           <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
             {value ? (
-              <img
+              <Image
                 src={value}
                 alt={`${brandName || 'Brand'} ${target} preview`}
+                width={56}
+                height={48}
+                unoptimized
                 className={`${target === 'favicon' ? 'h-9 w-9' : target === 'authorized-signature' ? 'h-10 w-14' : 'h-12 w-12'} object-contain`}
               />
             ) : (
@@ -1069,7 +1073,7 @@ function TemplateMiniPreview({
             </div>
           </div>
           <div className="relative overflow-hidden">
-            <img src="/assets/auction-pulse/mobile-auction.png" alt="" className="h-full w-full object-cover opacity-90" />
+            <Image src="/assets/auction-pulse/mobile-auction.png" alt="" fill sizes="240px" className="object-cover opacity-90" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
             <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-black/40 p-3 backdrop-blur">
               <div className="h-2 w-16 rounded bg-white/70" />
@@ -1099,7 +1103,7 @@ function TemplateMiniPreview({
           </div>
         </div>
         <div className="relative overflow-hidden rounded-2xl shadow-sm">
-          <img src="/assets/recovery-command/hero-yard.png" alt="" className="h-full w-full object-cover" />
+          <Image src="/assets/recovery-command/hero-yard.png" alt="" fill sizes="240px" className="object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-transparent" />
           <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-white/85 p-2">
             <div className="h-2 w-20 rounded bg-slate-300" />
@@ -1136,7 +1140,7 @@ function TemplateMiniPreview({
             </div>
           </div>
           <div className="relative overflow-hidden">
-            <img src="/assets/Hero-3.png" alt="" className="h-full w-full object-cover" />
+            <Image src="/assets/Hero-3.png" alt="" fill sizes="240px" className="object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
             <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-white/88 p-3 shadow-sm backdrop-blur">
               <div className="flex items-center justify-between">
@@ -1155,7 +1159,7 @@ function TemplateMiniPreview({
   return (
     <div className="mt-4 overflow-hidden rounded-2xl bg-[#0C0C0B] text-white">
       <div className="relative h-40 p-3">
-      <img src={guide.image} alt="" className="absolute inset-0 h-full w-full object-cover opacity-25" />
+      <Image src={guide.image} alt="" fill sizes="480px" className="object-cover opacity-25" />
       <div className="absolute inset-0 bg-gradient-to-br from-black/80 via-black/50 to-black/75" />
       <div className="relative z-10">
       <div className="flex items-center justify-between">
@@ -1360,7 +1364,6 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
     [policy.cases.enabledAssetTypes]
   );
   const errors = validation.issues.filter((issue) => issue.severity === 'error');
-  const warnings = validation.issues.filter((issue) => issue.severity === 'warning');
   const normalizedTemplate = normalizeHomepageTemplate(policy.branding.homepageTemplate);
   const selectedCopyMap = TEMPLATE_COPY_MAP[normalizedTemplate] ?? TEMPLATE_COPY_MAP.reclaim_editorial;
   const activeStepIndex = SETUP_STEPS.findIndex((step) => step.id === activeStep);

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { cache } from '@/lib/redis/client';
 
@@ -9,7 +9,7 @@ import { cache } from '@/lib/redis/client';
  * 
  * Clears the cached finance dashboard data to force a fresh calculation
  */
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     // Authenticate user
     const session = await auth();
@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
 
     // Clear current and legacy keys so manual refreshes keep working after cache-version bumps.
     await Promise.all([
+      cache.del('dashboard:finance:v4:||||'),
       cache.del('dashboard:finance:v3'),
       cache.del('dashboard:finance:v2'),
       cache.del('dashboard:finance'),

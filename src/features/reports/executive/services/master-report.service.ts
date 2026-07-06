@@ -9,6 +9,9 @@ import { ReportFilters } from '../../types';
 import { resolveReportIsoDateRange } from '../../utils/report-date-range';
 import { formatVendorDisplayName } from '@/lib/utils/vendor-display-name';
 
+// Raw PostgreSQL aggregate aliases are returned as text by the driver.
+type SqlReportRow = Record<string, string>;
+
 export interface MasterReportData {
   executiveSummary: {
     totalRevenue: number;
@@ -300,9 +303,9 @@ export class MasterReportService {
       FROM current_period c, previous_period p
     `);
 
-    const row = result[0] as any;
-    const currentRevenue = parseFloat((revenueResult[0] as any)?.total_revenue || '0');
-    const prevRevenue = parseFloat((prevRevenueResult[0] as any)?.total_revenue || '0');
+    const row = result[0] as unknown as SqlReportRow;
+    const currentRevenue = Number((revenueResult[0] as unknown as SqlReportRow)?.total_revenue || 0);
+    const prevRevenue = Number((prevRevenueResult[0] as unknown as SqlReportRow)?.total_revenue || 0);
     const currentCases = parseInt(row?.current_cases || '0');
     const prevCases = parseInt(row?.prev_cases || '0');
 
@@ -418,7 +421,7 @@ export class MasterReportService {
       LIMIT 10
     `);
 
-    const totalRevenue = (revenueByMonth as any[]).reduce((sum, r) => sum + parseFloat(r.amount), 0);
+    const totalRevenue = (revenueByMonth as unknown as SqlReportRow[]).reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
     // NOTE: Profitability section REMOVED per user request
     // User said: "remove operational costs from the report, I don't know why you would hardcode something like that"
@@ -482,22 +485,23 @@ export class MasterReportService {
       LIMIT 12
     `);
 
-    const avgRecoveryRate = (recoveryByAssetType as any[]).length > 0
-      ? (recoveryByAssetType as any[]).reduce((sum, r) => sum + parseFloat(r.rate || '0'), 0) / (recoveryByAssetType as any[]).length
+    const recoveryRows = recoveryByAssetType as unknown as SqlReportRow[];
+    const avgRecoveryRate = recoveryRows.length > 0
+      ? recoveryRows.reduce((sum, r) => sum + Number(r.rate || 0), 0) / recoveryRows.length
       : 0;
 
     return {
       revenue: {
         total: Math.round(totalRevenue * 100) / 100,
-        byMonth: (revenueByMonth as any[]).map(r => ({
+        byMonth: (revenueByMonth as unknown as SqlReportRow[]).map(r => ({
           month: r.month,
           amount: Math.round(parseFloat(r.amount) * 100) / 100,
         })).reverse(),
-        byAssetType: (revenueByAssetType as any[]).map(r => ({
+        byAssetType: (revenueByAssetType as unknown as SqlReportRow[]).map(r => ({
           assetType: r.asset_type,
           amount: Math.round(parseFloat(r.amount) * 100) / 100,
         })),
-        topCases: (topCases as any[]).map(c => ({
+        topCases: (topCases as unknown as SqlReportRow[]).map(c => ({
           claimRef: c.claim_reference,
           assetType: c.asset_type,
           amount: Math.round(parseFloat(c.amount) * 100) / 100,
@@ -511,11 +515,11 @@ export class MasterReportService {
       },
       recovery: {
         averageRate: Math.round(avgRecoveryRate * 100) / 100,
-        byAssetType: (recoveryByAssetType as any[]).map(r => ({
+        byAssetType: recoveryRows.map(r => ({
           assetType: r.asset_type,
           rate: Math.round(parseFloat(r.rate || '0') * 100) / 100,
         })),
-        trend: (recoveryTrend as any[]).map(t => ({
+        trend: (recoveryTrend as unknown as SqlReportRow[]).map(t => ({
           month: t.month,
           rate: Math.round(parseFloat(t.rate || '0') * 100) / 100,
         })).reverse(),
@@ -555,7 +559,7 @@ export class MasterReportService {
       GROUP BY status
     `);
 
-    const totalCases = (casesByStatus as any[]).reduce((sum, s) => sum + parseInt(s.count), 0);
+    const totalCases = (casesByStatus as unknown as SqlReportRow[]).reduce((sum, s) => sum + Number(s.count || 0), 0);
 
     const casesByAssetType = await db.execute(sql`
       SELECT 
@@ -665,7 +669,7 @@ export class MasterReportService {
       WHERE created_at >= ${startDate} AND created_at <= ${endDate}
     `);
 
-    const auctionRow = auctionsData[0] as any;
+    const auctionRow = auctionsData[0] as unknown as SqlReportRow;
     const totalAuctions = parseInt(auctionRow?.total || '0');
     const successfulAuctions = parseInt(auctionRow?.successful || '0');
     const auctionsWithMultipleBidders = await db.execute(sql`
@@ -674,7 +678,7 @@ export class MasterReportService {
       WHERE a.created_at >= ${startDate} AND a.created_at <= ${endDate}
         AND (SELECT COUNT(DISTINCT vendor_id) FROM bids WHERE auction_id = a.id) >= 2
     `);
-    const competitiveAuctions = parseInt((auctionsWithMultipleBidders[0] as any)?.count || '0');
+    const competitiveAuctions = Number((auctionsWithMultipleBidders[0] as unknown as SqlReportRow)?.count || 0);
 
     // Top auctions
     const topAuctions = await db.execute(sql`
@@ -703,7 +707,7 @@ export class MasterReportService {
       WHERE a.created_at >= ${startDate} AND a.created_at <= ${endDate}
     `);
 
-    const docRow = documentsData[0] as any;
+    const docRow = documentsData[0] as unknown as SqlReportRow;
     const totalDocs = parseInt(docRow?.total || '0');
     const completedDocs = parseInt(docRow?.completed || '0');
     const avgHours = parseFloat(docRow?.avg_hours || '0');
@@ -711,18 +715,18 @@ export class MasterReportService {
     return {
       cases: {
         total: totalCases,
-        byStatus: (casesByStatus as any[]).map(s => ({
+        byStatus: (casesByStatus as unknown as SqlReportRow[]).map(s => ({
           status: s.status,
           count: parseInt(s.count),
           percentage: totalCases > 0 ? (parseInt(s.count) / totalCases * 100) : 0,
         })),
-        byAssetType: (casesByAssetType as any[]).map(a => ({
+        byAssetType: (casesByAssetType as unknown as SqlReportRow[]).map(a => ({
           assetType: a.asset_type,
           count: parseInt(a.count),
           avgTime: Math.round(parseFloat(a.avg_time || '0') * 100) / 100,
         })),
       },
-      branches: (branchesResult as any[]).map(branch => {
+      branches: (branchesResult as unknown as SqlReportRow[]).map(branch => {
         const claimsValue = parseFloat(branch.claims_value || '0');
         const verifiedRecovery = parseFloat(branch.verified_recovery || '0');
         return {
@@ -734,7 +738,7 @@ export class MasterReportService {
           recoveryRate: claimsValue > 0 ? Math.round((verifiedRecovery / claimsValue) * 10000) / 100 : 0,
         };
       }),
-      brokers: (brokersResult as any[]).map((row) => {
+      brokers: (brokersResult as unknown as SqlReportRow[]).map((row) => {
         const claimsValue = parseFloat(row.claims_value || '0');
         const verifiedRecovery = parseFloat(row.verified_recovery || '0');
         return {
@@ -754,7 +758,7 @@ export class MasterReportService {
         successRate: totalAuctions > 0 ? (successfulAuctions / totalAuctions * 100) : 0,
         competitiveRate: totalAuctions > 0 ? (competitiveAuctions / totalAuctions * 100) : 0,
         avgBidders: Math.round(parseFloat(auctionRow?.avg_bidders || '0') * 100) / 100,
-        topAuctions: (topAuctions as any[]).map(a => ({
+        topAuctions: (topAuctions as unknown as SqlReportRow[]).map(a => ({
           claimRef: a.claim_reference,
           bidders: parseInt(a.bidders || '0'),
           bids: parseInt(a.bids || '0'),
@@ -798,7 +802,7 @@ export class MasterReportService {
     `);
 
     // Calculate quality scores
-    const adjusters = (adjustersData as any[]).map(adj => {
+    const adjusters = (adjustersData as unknown as SqlReportRow[]).map(adj => {
       const approvalRate = parseFloat(adj.approval_rate || '0');
       const avgTime = parseFloat(adj.avg_processing_days || '0');
       const targetDays = 2;
@@ -881,7 +885,7 @@ export class MasterReportService {
         totalAdjusters: adjusters.length,
         avgQualityScore: Math.round(avgQualityScore * 100) / 100,
         topPerformer,
-        activeVendors: parseInt((activeVendors[0] as any)?.count || '0'),
+        activeVendors: Number((activeVendors[0] as unknown as SqlReportRow)?.count || 0),
       },
       adjusters,
       vendors: (vendorsData as unknown as Array<{
@@ -922,8 +926,8 @@ export class MasterReportService {
       WHERE created_at >= ${startDate} AND created_at <= ${endDate}
     `);
 
-    const totalBidsCount = parseInt((totalBids[0] as any)?.count || '0');
-    const auctionsCount = parseInt((auctionsWithBids[0] as any)?.count || '0');
+    const totalBidsCount = Number((totalBids[0] as unknown as SqlReportRow)?.count || 0);
+    const auctionsCount = Number((auctionsWithBids[0] as unknown as SqlReportRow)?.count || 0);
     const avgBidsPerAuction = auctionsCount > 0 ? totalBidsCount / auctionsCount : 0;
 
     let competitionLevel = 'Low';
@@ -956,7 +960,7 @@ export class MasterReportService {
         AND sc.status != 'draft'
     `);
 
-    const pricingRow = pricingData[0] as any;
+    const pricingRow = pricingData[0] as unknown as SqlReportRow;
     const avgStartingBid = parseFloat(pricingRow?.avg_starting_bid || '0');
     const avgWinningBid = parseFloat(pricingRow?.avg_winning_bid || '0');
 
@@ -971,7 +975,7 @@ export class MasterReportService {
       WHERE created_at >= ${startDate} AND created_at <= ${endDate}
     `);
 
-    const timingRow = timingData[0] as any;
+    const timingRow = timingData[0] as unknown as SqlReportRow;
     const totalAuctions = parseInt(timingRow?.total_auctions || '0');
     const extendedAuctions = parseInt(timingRow?.extended_auctions || '0');
     const successfulClosures = parseInt(timingRow?.successful_closures || '0');
@@ -981,7 +985,7 @@ export class MasterReportService {
         totalBids: totalBidsCount,
         avgBidsPerAuction: Math.round(avgBidsPerAuction * 100) / 100,
         competitionLevel,
-        peakBiddingHours: (peakHours as any[]).map(h => ({
+        peakBiddingHours: (peakHours as unknown as SqlReportRow[]).map(h => ({
           hour: parseInt(h.hour),
           count: parseInt(h.count),
         })),
@@ -1020,7 +1024,7 @@ export class MasterReportService {
       WHERE created_at >= ${startDate} AND created_at <= ${endDate}
     `);
 
-    const dataRow = dataQualityData[0] as any;
+    const dataRow = dataQualityData[0] as unknown as SqlReportRow;
     const totalCases = parseInt(dataRow?.total_cases || '0');
     const completeCases = parseInt(dataRow?.complete_cases || '0');
     const missingData = parseInt(dataRow?.missing_data || '0');
@@ -1042,7 +1046,7 @@ export class MasterReportService {
       WHERE created_at >= ${startDate} AND created_at <= ${endDate}
     `);
 
-    const complianceRow = complianceData[0] as any;
+    const complianceRow = complianceData[0] as unknown as SqlReportRow;
     const totalActions = parseInt(complianceRow?.total_actions || '0');
     const auditedActions = parseInt(complianceRow?.audited_actions || '0');
     const auditCoverage = totalActions > 0 ? (auditedActions / totalActions * 100) : 100;

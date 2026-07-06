@@ -41,47 +41,40 @@ export async function GET(request: NextRequest) {
     }
 
     const searchParams = request.nextUrl.searchParams;
-    
-    // Make datasetType optional - don't validate if not provided
-    const datasetType = searchParams.get('datasetType');
-    const limit = searchParams.get('limit');
-    
-    // Only validate if datasetType is provided
-    if (datasetType && !['price_prediction', 'recommendation', 'fraud_detection'].includes(datasetType)) {
+    const parsedQuery = querySchema.safeParse({
+      datasetType: searchParams.get('datasetType') ?? undefined,
+      limit: searchParams.get('limit') ?? undefined,
+    });
+
+    if (!parsedQuery.success) {
       return NextResponse.json(
-        { error: 'Invalid datasetType. Must be one of: price_prediction, recommendation, fraud_detection' },
+        { error: 'Invalid query parameters', details: parsedQuery.error.issues },
         { status: 400 }
       );
     }
-    
-    // Validate limit if provided
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
-    if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
-      return NextResponse.json(
-        { error: 'Invalid limit. Must be between 1 and 100' },
-        { status: 400 }
-      );
-    }
+
+    const { datasetType, limit } = parsedQuery.data;
 
     // Query datasets
-    let query = db
-      .select()
-      .from(mlTrainingDatasets)
-      .orderBy(desc(mlTrainingDatasets.createdAt))
-      .limit(parsedLimit);
-
-    if (datasetType) {
-      query = query.where(eq(mlTrainingDatasets.datasetType, datasetType as any)) as any;
-    }
-
-    const datasets = await query;
+    const datasets = datasetType
+      ? await db
+          .select()
+          .from(mlTrainingDatasets)
+          .where(eq(mlTrainingDatasets.datasetType, datasetType))
+          .orderBy(desc(mlTrainingDatasets.createdAt))
+          .limit(limit)
+      : await db
+          .select()
+          .from(mlTrainingDatasets)
+          .orderBy(desc(mlTrainingDatasets.createdAt))
+          .limit(limit);
 
     return NextResponse.json({
       success: true,
       data: datasets,
       meta: {
         count: datasets.length,
-        filters: { datasetType: datasetType || null },
+        filters: { datasetType: datasetType ?? null },
       },
     });
 

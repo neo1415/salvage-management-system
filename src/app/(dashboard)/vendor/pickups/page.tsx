@@ -7,14 +7,18 @@ import { useAuth } from '@/lib/auth/use-auth';
 import { useVendorDashboard } from '@/hooks/queries/use-vendor-dashboard';
 import { formatAssetName } from '@/lib/utils/asset-name';
 import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
+import { uploadPickupEvidenceFiles } from '@/features/pickups/client/pickup-evidence-upload';
 
 type FormState = {
   pickupAuthCode: string;
   notes: string;
   files: File[];
   submitting: boolean;
+  submissionStage: 'uploading' | 'comparing' | null;
+  uploadProgress: number;
   message: string | null;
   error: string | null;
+  submitted: boolean;
 };
 
 const emptyForm: FormState = {
@@ -22,55 +26,15 @@ const emptyForm: FormState = {
   notes: '',
   files: [],
   submitting: false,
+  submissionStage: null,
+  uploadProgress: 0,
   message: null,
   error: null,
+  submitted: false,
 };
 
 function assetLabel(assetType: string, details: Record<string, unknown>) {
   return formatAssetName(assetType, details, 'Auction item');
-}
-
-async function uploadPickupEvidenceFile(auctionId: string, file: File): Promise<string> {
-  const signResponse = await fetch('/api/upload/sign', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      entityType: 'pickup-evidence',
-      entityId: auctionId,
-      transformation: 'compressed',
-    }),
-  });
-
-  if (!signResponse.ok) {
-    throw new Error('Could not prepare pickup evidence upload.');
-  }
-
-  const signData = await signResponse.json();
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('signature', signData.signature);
-  formData.append('timestamp', String(signData.timestamp));
-  formData.append('folder', signData.folder);
-  formData.append('api_key', signData.apiKey);
-  if (signData.transformation) {
-    formData.append('transformation', signData.transformation);
-  }
-
-  const uploadResponse = await fetch(signData.uploadUrl, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!uploadResponse.ok) {
-    throw new Error(`Upload failed for ${file.name}.`);
-  }
-
-  const uploadResult = await uploadResponse.json();
-  if (!uploadResult.secure_url) {
-    throw new Error(`Upload response for ${file.name} did not include a secure URL.`);
-  }
-
-  return uploadResult.secure_url;
 }
 
 type CompletedPickup = {
@@ -137,7 +101,7 @@ export default function VendorPickupsPage() {
     setForms((current) => ({
       ...current,
       [auctionId]: {
-        ...formFor(auctionId),
+        ...(current[auctionId] || emptyForm),
         ...patch,
       },
     }));
@@ -163,12 +127,20 @@ export default function VendorPickupsPage() {
     }
 
     try {
-      updateForm(pickup.auctionId, { submitting: true, error: null, message: null });
-      const photoMetadata = await collectImageFilesMetadata(form.files, 'browser_camera_input');
-      const photoUrls = [];
-      for (const file of form.files) {
-        photoUrls.push(await uploadPickupEvidenceFile(pickup.auctionId, file));
-      }
+      updateForm(pickup.auctionId, {
+        submitting: true,
+        submissionStage: 'uploading',
+        uploadProgress: 0,
+        error: null,
+        message: null,
+      });
+      const [photoMetadata, photoUrls] = await Promise.all([
+        collectImageFilesMetadata(form.files, 'browser_camera_input'),
+        uploadPickupEvidenceFiles(pickup.auctionId, form.files, (uploaded, total) => {
+          updateForm(pickup.auctionId, { uploadProgress: Math.round((uploaded / total) * 100) });
+        }),
+      ]);
+      updateForm(pickup.auctionId, { submissionStage: 'comparing' });
 
       const response = await fetch(`/api/auctions/${pickup.auctionId}/pickup-evidence`, {
         method: 'POST',
@@ -189,15 +161,19 @@ export default function VendorPickupsPage() {
 
       updateForm(pickup.auctionId, {
         submitting: false,
+        submissionStage: null,
+        uploadProgress: 100,
         message: result.message || 'Pickup evidence submitted.',
         error: null,
         files: [],
+        submitted: true,
       });
       await refetch();
       await loadHistory();
     } catch (submitError) {
       updateForm(pickup.auctionId, {
         submitting: false,
+        submissionStage: null,
         error: submitError instanceof Error ? submitError.message : 'Pickup evidence submission failed.',
         message: null,
       });
@@ -250,7 +226,7 @@ export default function VendorPickupsPage() {
           <div className="grid gap-5">
             {pickups.map((pickup) => {
               const form = formFor(pickup.auctionId);
-              const evidenceSubmitted = pickup.pickupEvidence?.submitted ?? false;
+              const evidenceSubmitted = (pickup.pickupEvidence?.submitted ?? false) || form.submitted;
               return (
                 <section key={pickup.auctionId} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -291,6 +267,7 @@ export default function VendorPickupsPage() {
                       <label className="block text-sm font-medium text-gray-700">Pickup authorization code</label>
                       <input
                         value={form.pickupAuthCode}
+                        disabled={form.submitting}
                         onChange={(event) => updateForm(pickup.auctionId, { pickupAuthCode: event.target.value })}
                         className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20"
                         placeholder="Enter code from pickup document"
@@ -299,6 +276,7 @@ export default function VendorPickupsPage() {
                       <label className="mt-4 block text-sm font-medium text-gray-700">Notes</label>
                       <textarea
                         value={form.notes}
+                        disabled={form.submitting}
                         onChange={(event) => updateForm(pickup.auctionId, { notes: event.target.value })}
                         className="mt-2 min-h-24 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20"
                         placeholder="Optional handoff notes"
@@ -313,7 +291,9 @@ export default function VendorPickupsPage() {
                       <p className="mt-1 text-xs text-gray-500">Upload at least 3 photos from different angles. Staff will review the private comparison.</p>
                       <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-lg bg-gray-50 px-4 py-8 text-center hover:bg-gray-100">
                         <UploadCloud className="h-8 w-8 text-gray-500" />
-                        <span className="mt-2 text-sm font-medium text-gray-800">Choose photos</span>
+                        <span className="mt-2 text-sm font-medium text-gray-800">
+                          {form.files.length > 0 ? 'Add another photo' : 'Take or choose photos'}
+                        </span>
                         <span className="mt-1 text-xs text-gray-500">{form.files.length} selected</span>
                         <input
                           type="file"
@@ -321,9 +301,14 @@ export default function VendorPickupsPage() {
                           capture="environment"
                           multiple
                           className="sr-only"
+                          disabled={form.submitting}
                           onChange={(event) => {
-                            const files = Array.from(event.target.files || []).slice(0, 12);
+                            const files = [
+                              ...form.files,
+                              ...Array.from(event.target.files || []),
+                            ].slice(0, 12);
                             updateForm(pickup.auctionId, { files, error: null, message: null });
+                            event.currentTarget.value = '';
                           }}
                         />
                       </label>
@@ -348,7 +333,15 @@ export default function VendorPickupsPage() {
                     </p>
                   )}
 
-                  <div className="mt-5 flex justify-end">
+                  <div className="mt-5 flex flex-col items-end gap-2">
+                    {form.submitting && (
+                      <p className="text-xs font-medium text-gray-600" role="status" aria-live="polite">
+                        {form.submissionStage === 'uploading'
+                          ? `Uploading photos ${form.uploadProgress}%`
+                          : 'Comparing evidence'}
+                        <span className="font-normal"> · This may take a moment.</span>
+                      </p>
+                    )}
                     <button
                       type="button"
                       onClick={() => submitEvidence(pickup)}
@@ -356,7 +349,9 @@ export default function VendorPickupsPage() {
                       className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
-                      {form.submitting ? 'Submitting evidence' : 'Submit evidence'}
+                      {form.submitting
+                        ? form.submissionStage === 'uploading' ? 'Uploading photos' : 'Comparing evidence'
+                        : 'Submit evidence'}
                     </button>
                   </div>
                   </>

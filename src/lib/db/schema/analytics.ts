@@ -229,8 +229,8 @@ export const schemaEvolutionLog = pgTable('schema_evolution_log', {
   entityType: varchar('entity_type', { length: 50 }).notNull(), // 'asset_type', 'attribute', 'table'
   entityName: varchar('entity_name', { length: 100 }).notNull(),
   changeDetails: jsonb('change_details').$type<{
-    oldValue?: any;
-    newValue?: any;
+    oldValue?: unknown;
+    newValue?: unknown;
     reason?: string;
     impact?: string;
     occurrenceCount?: number;

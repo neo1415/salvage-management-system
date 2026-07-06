@@ -25,7 +25,7 @@ interface UseVoiceAccessibilityOptions {
 
 interface UseVoiceAccessibilityReturn {
   // Accessibility props to spread on component
-  accessibilityProps: Record<string, any>;
+  accessibilityProps: ReturnType<typeof getVoiceAccessibilityProps>;
   
   // State management
   updateState: (newState: Partial<VoiceAccessibilityState>) => void;
@@ -86,7 +86,7 @@ export function useVoiceAccessibility(
       
       return updatedState;
     });
-  }, []); // Remove announceStateChanges from dependencies to prevent infinite loop
+  }, [announceStateChanges]);
 
   /**
    * Manual announcement method
@@ -103,7 +103,7 @@ export function useVoiceAccessibility(
    * Handle keyboard events for accessibility
    */
   const handleKeyDown = useCallback((event: React.KeyboardEvent): boolean => {
-    const { key, code, ctrlKey, metaKey, shiftKey, altKey } = event;
+    const { code, ctrlKey, metaKey, shiftKey, altKey } = event;
     
     // Handle component-specific keyboard shortcuts
     switch (componentType) {
@@ -259,14 +259,12 @@ export function useCharacterCountAccessibility(
   maxLength: number,
   enabled: boolean = true
 ) {
-  const previousCountRef = useRef(characterCount);
   const hasAnnouncedWarning = useRef(false);
   const hasAnnouncedLimit = useRef(false);
 
   useEffect(() => {
     if (!enabled) return;
 
-    const previousCount = previousCountRef.current;
     const isNearLimit = characterCount > maxLength * 0.8;
     const isAtLimit = characterCount >= maxLength;
 
@@ -294,7 +292,6 @@ export function useCharacterCountAccessibility(
       hasAnnouncedLimit.current = false;
     }
 
-    previousCountRef.current = characterCount;
   }, [characterCount, maxLength, enabled]);
 }
 

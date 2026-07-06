@@ -14,7 +14,6 @@ import {
   Car,
   Home,
   Smartphone,
-  Award,
   AlertCircle,
   CheckCircle,
   XCircle,
@@ -27,14 +26,13 @@ import {
 import { formatNaira } from '@/lib/utils/currency-formatter';
 import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import { useToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import { useCachedBidHistory } from '@/hooks/use-cached-bid-history';
 import {
   bidHistoryBadgeClassName,
   resolveBidHistoryBadge,
   type BidHistoryBadgeTone,
 } from '@/lib/auctions/bid-history-display';
-import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
+import { DataLoadingState } from '@/components/ui/loading-states';
 import { SwipeTabsBody } from '@/components/ui/swipe-tabs-body';
 import { sortBidHistoryItems } from '@/lib/auctions/bid-history-sort';
 
@@ -57,7 +55,13 @@ interface BidHistoryItem {
     id: string;
     claimReference: string;
     assetType: string;
-    assetDetails: any;
+    assetDetails: {
+      make?: string;
+      model?: string;
+      year?: string | number;
+      brand?: string;
+      propertyType?: string;
+    };
     marketValue: string;
     estimatedSalvageValue: string | null;
     reservePrice: string | null;

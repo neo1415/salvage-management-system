@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Image from 'next/image';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { usePublicBranding } from '@/hooks/use-public-branding';
 import { formatNgnAmount } from '@/lib/utils/format-ngn';
@@ -10,6 +11,14 @@ interface PaymentDetails {
   id: string;
   auctionId: string;
   amount: string;
+  effectiveSaleAmount?: string | null;
+  settlement?: {
+    paidAmount: string;
+    settledAmount: string;
+    paidVsSettledDelta: string;
+    hasPriceAdjustment: boolean;
+    note: string;
+  } | null;
   status: 'pending' | 'verified' | 'rejected' | 'overdue';
   paymentDeadline: string | null;
   escrowStatus?: 'none' | 'frozen' | 'released';
@@ -29,6 +38,8 @@ interface PaymentDetails {
     id: string;
     caseId: string;
     currentBid: string;
+    effectiveSaleAmount: string;
+    priceAdjustedAt?: string | null;
     case: {
       claimReference: string;
       assetType: string;
@@ -255,10 +266,12 @@ export default function PublicReceiptPage() {
               <div className="mb-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   {payment.auction.case.photos.slice(0, 3).map((photo, index) => (
-                    <img
+                    <Image
                       key={index}
                       src={photo}
                       alt={`Item photo ${index + 1}`}
+                      width={320}
+                      height={128}
                       className="w-full h-32 object-cover rounded-lg"
                     />
                   ))}
@@ -320,15 +333,31 @@ export default function PublicReceiptPage() {
             </div>
           </div>
 
-          {/* Payment Amount */}
+          {/* Payment and settlement amounts */}
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Payment Amount</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              {payment.settlement?.hasPriceAdjustment ? 'Payment and Final Settlement' : 'Payment Amount'}
+            </h2>
             <div className="bg-green-50 rounded-lg p-4">
               <p className="text-sm text-gray-600 mb-1">Total Amount Paid</p>
               <p className="text-3xl font-bold text-green-700">
                 {formatNgnAmount(payment.amount)}
               </p>
             </div>
+            {payment.settlement?.hasPriceAdjustment && payment.effectiveSaleAmount && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm text-amber-900">Final settled sale amount</p>
+                <p className="text-2xl font-bold text-amber-950">
+                  {formatNgnAmount(payment.effectiveSaleAmount)}
+                </p>
+                <p className="mt-2 text-sm text-amber-900">{payment.settlement.note}</p>
+                {payment.auction.priceAdjustedAt && (
+                  <p className="mt-1 text-xs text-amber-800">
+                    Revised {new Date(payment.auction.priceAdjustedAt).toLocaleString('en-NG')}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Receipt Details */}

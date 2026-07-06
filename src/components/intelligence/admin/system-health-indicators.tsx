@@ -10,7 +10,7 @@
 import { MetricValue } from '@/components/ui/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, AlertCircle, Clock, Database, Zap } from 'lucide-react';
+import { CheckCircle, Clock, Database, Zap } from 'lucide-react';
 
 interface SystemHealthMetrics {
   cacheHitRate: number;

@@ -25,8 +25,15 @@ function normalizeIpAddress(ipAddress: string): string {
 function isUnusableIpForAnalysis(ipAddress: string): boolean {
   const normalized = normalizeIpAddress(ipAddress);
   if (!normalized || normalized === 'unknown') return true;
-  if (normalized === '127.0.0.1' || normalized === '::1' || normalized === 'localhost') return true;
+  if (
+    process.env.NODE_ENV === 'production'
+    && (normalized === '127.0.0.1' || normalized === '::1' || normalized === 'localhost')
+  ) return true;
   return false;
+}
+
+function normalizedIpSql() {
+  return sql`regexp_replace(lower(trim(${bids.ipAddress})), '^::ffff:', '')`;
 }
 
 export class IPAnalysisService {
@@ -53,7 +60,7 @@ export class IPAnalysisService {
         .from(bids)
         .where(
           and(
-            sql`lower(trim(${bids.ipAddress})) = ${normalizedIp}`,
+            sql`${normalizedIpSql()} = ${normalizedIp}`,
             gte(bids.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
           )
         );
@@ -74,7 +81,7 @@ export class IPAnalysisService {
         .where(
           and(
             inArray(bids.vendorId, vendorIds),
-            sql`lower(trim(${bids.ipAddress})) = ${normalizedIp}`,
+            sql`${normalizedIpSql()} = ${normalizedIp}`,
             gte(bids.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
           )
         )
@@ -138,7 +145,7 @@ export class IPAnalysisService {
       .from(bids)
       .where(
         and(
-          sql`lower(trim(${bids.ipAddress})) = ${normalizedIp}`,
+          sql`${normalizedIpSql()} = ${normalizedIp}`,
           gte(bids.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
         )
       );
@@ -164,7 +171,7 @@ export class IPAnalysisService {
       .where(
         and(
           inArray(bids.vendorId, vendorIds),
-          sql`lower(trim(${bids.ipAddress})) = ${normalizedIp}`,
+          sql`${normalizedIpSql()} = ${normalizedIp}`,
           gte(bids.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
         )
       )
@@ -192,12 +199,16 @@ export class IPAnalysisService {
     }
 
     const rows = await db.execute(sql`
-      SELECT DISTINCT lower(trim(ip_address)) AS ip_address
+      SELECT DISTINCT regexp_replace(lower(trim(ip_address)), '^::ffff:', '') AS ip_address
       FROM bids
       WHERE created_at >= NOW() - (${days}::int * INTERVAL '1 day')
         AND ip_address IS NOT NULL
         AND trim(ip_address) <> ''
-        AND lower(trim(ip_address)) NOT IN ('unknown', 'localhost', '127.0.0.1', '::1')
+        AND lower(trim(ip_address)) <> 'unknown'
+        AND (
+          ${process.env.NODE_ENV !== 'production'}
+          OR lower(trim(ip_address)) NOT IN ('localhost', '127.0.0.1', '::1', '::ffff:127.0.0.1')
+        )
     `);
 
     const ipAddresses = Array.isArray(rows)
@@ -252,6 +263,7 @@ export class IPAnalysisService {
           eq(fraudAlerts.entityType, 'auction'),
           eq(fraudAlerts.entityId, data.primaryAuctionId),
           eq(fraudAlerts.status, 'pending'),
+          sql`${fraudAlerts.metadata}->>'source' = 'ip_analysis'`,
           gte(fraudAlerts.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
         )
       )
@@ -259,25 +271,23 @@ export class IPAnalysisService {
 
     if (existingAlerts.length > 0) {
       const existing = existingAlerts[0];
-      const metadata = (existing.metadata as { source?: string; vendorIds?: string[] } | null) ?? null;
-      if (metadata?.source === 'ip_analysis') {
-        const mergedVendorIds = Array.from(new Set([...(metadata.vendorIds ?? []), ...data.vendorIds]));
-        await db
-          .update(fraudAlerts)
-          .set({
-            flagReasons: [
-              'Multiple vendors from the same IP address are bidding on the same auction',
-              `${mergedVendorIds.length} vendor accounts share IP ${data.ipAddress}`,
-            ],
-            metadata: {
-              source: 'ip_analysis',
-              ipAddress: data.ipAddress,
-              vendorIds: mergedVendorIds,
-              competingAuctions: data.competingAuctions,
-            },
-          } as Partial<typeof fraudAlerts.$inferInsert>)
-          .where(eq(fraudAlerts.id, existing.id));
-      }
+      const metadata = (existing.metadata as { vendorIds?: string[] } | null) ?? null;
+      const mergedVendorIds = Array.from(new Set([...(metadata?.vendorIds ?? []), ...data.vendorIds]));
+      await db
+        .update(fraudAlerts)
+        .set({
+          flagReasons: [
+            'Multiple vendors from the same IP address are bidding on the same auction',
+            `${mergedVendorIds.length} vendor accounts share IP ${data.ipAddress}`,
+          ],
+          metadata: {
+            source: 'ip_analysis',
+            ipAddress: data.ipAddress,
+            vendorIds: mergedVendorIds,
+            competingAuctions: data.competingAuctions,
+          },
+        } as Partial<typeof fraudAlerts.$inferInsert>)
+        .where(eq(fraudAlerts.id, existing.id));
       return;
     }
 

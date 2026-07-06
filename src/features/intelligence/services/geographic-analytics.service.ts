@@ -9,9 +9,20 @@ import { geographicPatternsAnalytics } from '@/lib/db/schema/analytics';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 
+type AssetType = typeof salvageCases.$inferSelect.assetType;
+
+interface GeographicPatternRow {
+  asset_type: AssetType;
+  region: string;
+  total_auctions: string;
+  avg_final_price: string | null;
+  price_variance: string | null;
+  avg_vendor_count: string;
+}
+
 export class GeographicAnalyticsService {
   async calculateGeographicPatterns(periodStart: Date, periodEnd: Date): Promise<void> {
-    const geoData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         sc.asset_type,
         sc.asset_details->>'region' AS region,
@@ -27,6 +38,8 @@ export class GeographicAnalyticsService {
         AND sc.asset_details->>'region' IS NOT NULL
       GROUP BY sc.asset_type, sc.asset_details->>'region'
     `);
+
+    const geoData = result as unknown as GeographicPatternRow[];
 
     for (const row of geoData) {
       const demandScore = Math.min(100, Math.round((parseInt(row.total_auctions) / 10) * 50 + (parseInt(row.avg_vendor_count) / 5) * 50));

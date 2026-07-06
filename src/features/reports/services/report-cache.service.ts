@@ -10,6 +10,12 @@ import { reportCache } from '@/lib/db/schema/reports';
 import { eq, lt } from 'drizzle-orm';
 import { createHash } from 'crypto';
 
+function isConnectionTimeout(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const details = error as { code?: unknown; errno?: unknown };
+  return details.code === 'CONNECT_TIMEOUT' || details.errno === 'CONNECT_TIMEOUT';
+}
+
 export class ReportCacheService {
   /**
    * Default cache TTL in minutes
@@ -19,7 +25,7 @@ export class ReportCacheService {
   /**
    * Generate cache key from report type and filters
    */
-  private static generateCacheKey(reportType: string, filters: any): string {
+  private static generateCacheKey(reportType: string, filters: unknown): string {
     const filterString = JSON.stringify(filters || {});
     const hash = createHash('sha256').update(`${reportType}:${filterString}`).digest('hex');
     return hash;
@@ -28,7 +34,7 @@ export class ReportCacheService {
   /**
    * Get cached report data
    */
-  static async getCachedReport(reportType: string, filters: any): Promise<any | null> {
+  static async getCachedReport<T>(reportType: string, filters: unknown): Promise<T | null> {
     try {
       const key = this.generateCacheKey(reportType, filters);
       const now = new Date();
@@ -52,10 +58,10 @@ export class ReportCacheService {
         return null;
       }
 
-      return entry.reportData;
-    } catch (error: any) {
+      return entry.reportData as T;
+    } catch (error: unknown) {
       // Handle database connection timeouts gracefully
-      if (error?.code === 'CONNECT_TIMEOUT' || error?.errno === 'CONNECT_TIMEOUT') {
+      if (isConnectionTimeout(error)) {
         console.warn('Database connection timeout - skipping cache lookup');
         return null;
       }
@@ -67,10 +73,10 @@ export class ReportCacheService {
   /**
    * Cache report data
    */
-  static async cacheReport(
+  static async cacheReport<T>(
     reportType: string,
-    filters: any,
-    data: any,
+    filters: unknown,
+    data: T,
     ttlMinutes: number = this.DEFAULT_TTL_MINUTES
   ): Promise<void> {
     try {
@@ -94,9 +100,9 @@ export class ReportCacheService {
             expiresAt,
           },
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Handle database connection timeouts gracefully
-      if (error?.code === 'CONNECT_TIMEOUT' || error?.errno === 'CONNECT_TIMEOUT') {
+      if (isConnectionTimeout(error)) {
         console.warn('Database connection timeout - skipping cache write');
         return;
       }
@@ -119,7 +125,7 @@ export class ReportCacheService {
   /**
    * Invalidate specific cache entry
    */
-  static async invalidateCache(reportType: string, filters: any): Promise<void> {
+  static async invalidateCache(reportType: string, filters: unknown): Promise<void> {
     try {
       const key = this.generateCacheKey(reportType, filters);
       await db.delete(reportCache).where(eq(reportCache.reportKey, key));

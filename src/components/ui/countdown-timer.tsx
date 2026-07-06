@@ -134,6 +134,18 @@ export function CountdownTimer({
   // Track if notifications have been sent
   const oneHourNotificationSent = useRef(false);
   const thirtyMinutesNotificationSent = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+  const onOneHourRemainingRef = useRef(onOneHourRemaining);
+  const onThirtyMinutesRemainingRef = useRef(onThirtyMinutesRemaining);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    onOneHourRemainingRef.current = onOneHourRemaining;
+    onThirtyMinutesRemainingRef.current = onThirtyMinutesRemaining;
+  }, [onOneHourRemaining, onThirtyMinutesRemaining]);
 
   /**
    * Calculate time remaining with server time sync
@@ -156,9 +168,7 @@ export function CountdownTimer({
 
     if (remaining <= 0) {
       setIsExpired(true);
-      if (onComplete) {
-        onComplete();
-      }
+      onCompleteRef.current?.();
       return;
     }
 
@@ -170,9 +180,7 @@ export function CountdownTimer({
       if (newRemaining <= 0) {
         setIsExpired(true);
         clearInterval(interval);
-        if (onComplete) {
-          onComplete();
-        }
+        onCompleteRef.current?.();
       }
     }, 1000);
 
@@ -187,15 +195,15 @@ export function CountdownTimer({
     const minutes = timeRemaining / (1000 * 60);
 
     // Send push notification at 1 hour remaining (once)
-    if (hours <= 1 && hours > 0 && !oneHourNotificationSent.current && onOneHourRemaining) {
+    if (hours <= 1 && hours > 0 && !oneHourNotificationSent.current && onOneHourRemainingRef.current) {
       oneHourNotificationSent.current = true;
-      onOneHourRemaining();
+      onOneHourRemainingRef.current();
     }
 
     // Send SMS notification at 30 minutes remaining (once)
-    if (minutes <= 30 && minutes > 0 && !thirtyMinutesNotificationSent.current && onThirtyMinutesRemaining) {
+    if (minutes <= 30 && minutes > 0 && !thirtyMinutesNotificationSent.current && onThirtyMinutesRemainingRef.current) {
       thirtyMinutesNotificationSent.current = true;
-      onThirtyMinutesRemaining();
+      onThirtyMinutesRemainingRef.current();
     }
   }, [timeRemaining]);
 

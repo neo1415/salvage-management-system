@@ -193,11 +193,11 @@ export async function PATCH(
       );
     }
 
-    const body = await request.json();
+    const body = await request.json() as Record<string, unknown>;
     const { status, ...otherUpdates } = body;
 
     // Validate status transitions
-    if (status) {
+    if (typeof status === 'string') {
       const validTransitions: Record<string, string[]> = {
         draft: ['pending_approval', 'cancelled'],
         pending_approval: ['approved', 'cancelled'],
@@ -218,13 +218,13 @@ export async function PATCH(
     }
 
     // Update the case
-    const updateData: any = {
-      ...otherUpdates,
+    const updateData: Partial<typeof salvageCases.$inferInsert> = {
+      ...(otherUpdates as Partial<typeof salvageCases.$inferInsert>),
       updatedAt: new Date(),
     };
 
-    if (status) {
-      updateData.status = status;
+    if (typeof status === 'string') {
+      updateData.status = status as NonNullable<typeof salvageCases.$inferInsert.status>;
     }
 
     await db

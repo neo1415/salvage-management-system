@@ -16,8 +16,8 @@ import html2canvas from 'html2canvas';
 
 interface ExportButtonProps {
   reportType: string;
-  reportData: any;
-  filters: any;
+  reportData: unknown;
+  filters: unknown;
   disabled?: boolean;
 }
 

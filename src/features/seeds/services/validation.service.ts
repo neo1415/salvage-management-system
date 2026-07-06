@@ -52,7 +52,7 @@ export class ValidationService {
    * @param record - The valuation record to validate
    * @returns ValidationResult with valid flag and errors array
    */
-  validateValuation(record: any): ValidationResult {
+  validateValuation(record: Partial<ValuationRecord>): ValidationResult {
     const errors: ValidationError[] = [];
     
     // Required fields validation
@@ -124,7 +124,7 @@ export class ValidationService {
    * @param record - The deduction record to validate
    * @returns ValidationResult with valid flag and errors array
    */
-  validateDeduction(record: any): ValidationResult {
+  validateDeduction(record: Partial<DeductionRecord>): ValidationResult {
     const errors: ValidationError[] = [];
     
     // Required fields validation

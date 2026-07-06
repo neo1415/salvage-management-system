@@ -19,15 +19,32 @@ import { verify } from 'jsonwebtoken';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
-import { redis } from '@/lib/redis/client';
 import { configService } from '@/features/auction-deposit/services/config.service';
 import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 // Socket.io event types
+export interface RealtimeAuctionData {
+  currentBid?: string | number | null;
+  currentBidder?: string | null;
+  endTime?: string;
+  extensionCount?: number;
+  hasVerifiedPayment?: boolean;
+  status?: string;
+  [key: string]: unknown;
+}
+
+export interface RealtimeBidData {
+  amount: number | string;
+  id: string;
+  vendorId: string;
+  minimumBid?: number;
+  [key: string]: unknown;
+}
+
 export interface ServerToClientEvents {
   // Auction updates
-  'auction:updated': (data: { auctionId: string; auction: any }) => void;
-  'auction:new-bid': (data: { auctionId: string; bid: any }) => void;
+  'auction:updated': (data: { auctionId: string; auction: RealtimeAuctionData }) => void;
+  'auction:new-bid': (data: { auctionId: string; bid: RealtimeBidData }) => void;
   'auction:extended': (data: { auctionId: string; newEndTime: Date }) => void;
   'auction:closed': (data: { auctionId: string; winnerId: string }) => void;
   'auction:watching-count': (data: { auctionId: string; count: number }) => void;
@@ -49,7 +66,7 @@ export interface ServerToClientEvents {
   'vendor:won': (data: { auctionId: string; amount: number }) => void;
 
   // System notifications
-  'notification:new': (data: { notification: any }) => void;
+  'notification:new': (data: { notification: unknown }) => void;
 
   // Intelligence events (Phase 8)
   'prediction:updated': (data: {
@@ -112,7 +129,7 @@ export interface ClientToServerEvents {
   'bid:place': (data: { auctionId: string; amount: number; otp: string }) => void;
 
   // Subscriptions
-  'subscribe:auctions': (data: { filters?: any }) => void;
+  'subscribe:auctions': (data: { filters?: { assetType?: string } }) => void;
   'unsubscribe:auctions': () => void;
 }
 
@@ -439,7 +456,7 @@ async function handleDisconnection(socket: AuthenticatedSocket) {
 /**
  * Broadcast new bid to all auction viewers
  */
-export async function broadcastNewBid(auctionId: string, bid: any) {
+export async function broadcastNewBid<T extends RealtimeBidData>(auctionId: string, bid: T) {
   console.log(`🔔 broadcastNewBid() called for auction ${auctionId}`);
   
   // CRITICAL FIX: Use getSocketServer() instead of module-level io variable
@@ -496,7 +513,10 @@ export async function broadcastNewBid(auctionId: string, bid: any) {
 /**
  * Broadcast auction update
  */
-export async function broadcastAuctionUpdate(auctionId: string, auction: any) {
+export async function broadcastAuctionUpdate(
+  auctionId: string,
+  auction: Omit<RealtimeAuctionData, 'endTime'> & { endTime?: string | Date }
+) {
   console.log(`🔔 broadcastAuctionUpdate() called for auction ${auctionId}`);
   
   const socketServer = getSocketServer();
@@ -512,11 +532,19 @@ export async function broadcastAuctionUpdate(auctionId: string, auction: any) {
     
     console.log(`📢 Broadcasting auction update to room: auction:${auctionId}`);
     console.log(`   - Clients in room: ${clientCount}`);
-    console.log(`   - Status: ${auction.status}`);
+    const status = 'status' in auction ? auction.status : 'unknown';
+    const { endTime, ...auctionWithoutEndTime } = auction;
+    const realtimeAuction: RealtimeAuctionData = {
+      ...auctionWithoutEndTime,
+      ...(endTime !== undefined && {
+        endTime: endTime instanceof Date ? endTime.toISOString() : endTime,
+      }),
+    };
+    console.log(`   - Status: ${String(status)}`);
 
     socketServer.to(`auction:${auctionId}`).emit('auction:updated', {
       auctionId,
-      auction,
+      auction: realtimeAuction,
     });
 
     console.log(`✅ Auction update broadcast successful for ${auctionId}`);
@@ -627,7 +655,7 @@ export async function notifyVendorWon(vendorId: string, auctionId: string, amoun
 /**
  * Send notification to specific user
  */
-export async function sendNotificationToUser(userId: string, notification: any) {
+export async function sendNotificationToUser(userId: string, notification: unknown) {
   const socketServer = getSocketServer();
   
   if (!socketServer) {

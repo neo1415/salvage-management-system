@@ -12,7 +12,7 @@
  * - Color-coded amounts (green for credit, red for debit)
  */
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 
 interface DateRange {
   startDate: string;
@@ -52,11 +52,7 @@ export default function TransactionHistory({
 
   const pageSize = 20;
 
-  useEffect(() => {
-    fetchTransactions();
-  }, [transactionType, filters, page]);
-
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -86,7 +82,11 @@ export default function TransactionHistory({
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, page, transactionType]);
+
+  useEffect(() => {
+    void fetchTransactions();
+  }, [fetchTransactions]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {

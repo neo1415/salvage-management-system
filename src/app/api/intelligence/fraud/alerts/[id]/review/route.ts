@@ -92,7 +92,7 @@ export async function POST(
 /**
  * Handle confirmed fraud cases
  */
-async function handleConfirmedFraud(alert: any) {
+async function handleConfirmedFraud(alert: typeof fraudAlerts.$inferSelect) {
   // Import dynamically to avoid circular dependencies
   const { vendors } = await import('@/lib/db/schema/vendors');
   const { users } = await import('@/lib/db/schema/users');
@@ -110,8 +110,8 @@ async function handleConfirmedFraud(alert: any) {
         
         if (currentVendor[0]) {
           const updatedStats = {
-            ...(currentVendor[0].performanceStats as any),
-            fraudFlags: ((currentVendor[0].performanceStats as any)?.fraudFlags || 0) + 1,
+            ...currentVendor[0].performanceStats,
+            fraudFlags: currentVendor[0].performanceStats.fraudFlags + 1,
           };
           
           await db

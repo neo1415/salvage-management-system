@@ -8,23 +8,25 @@
 'use client';
 
 import { useState } from 'react';
-import { Heart, Clock, Eye, TrendingUp, X } from 'lucide-react';
+import { Clock, Eye, TrendingUp, X } from 'lucide-react';
 import Link from 'next/link';
 import { formatAssetName } from '@/lib/utils/asset-name';
+
+export interface RecommendationAuctionDetails {
+  assetType: string;
+  assetDetails: Record<string, unknown>;
+  marketValue: number;
+  reservePrice: number;
+  currentBid: number | null;
+  watchingCount: number;
+  endTime: Date | string;
+}
 
 interface RecommendationCardProps {
   auctionId: string;
   matchScore: number;
   reasonCodes: string[];
-  auctionDetails: {
-    assetType: string;
-    assetDetails: any;
-    marketValue: number;
-    reservePrice: number;
-    currentBid: number | null;
-    watchingCount: number;
-    endTime: Date;
-  };
+  auctionDetails: RecommendationAuctionDetails;
   onNotInterested?: (auctionId: string) => void;
 }
 

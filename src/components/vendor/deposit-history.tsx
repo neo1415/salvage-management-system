@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Wallet, TrendingUp, TrendingDown, Lock, AlertCircle, ExternalLink } from 'lucide-react';
+import { useCallback, useState, useEffect } from 'react';
+import { Wallet, TrendingUp, Lock, AlertCircle, ExternalLink } from 'lucide-react';
 import { MetricValue, StatGrid } from '@/components/ui/stat-card';
 import Link from 'next/link';
 
@@ -44,6 +44,8 @@ interface DepositHistoryProps {
   className?: string;
 }
 
+const toAmount = (value: number | string | null | undefined) => Number(value || 0);
+
 export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps) {
   const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null);
   const [depositEvents, setDepositEvents] = useState<DepositEvent[]>([]);
@@ -53,15 +55,9 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
   const [totalPages, setTotalPages] = useState(1);
   const limit = 10;
 
-  const toAmount = (value: number | string | null | undefined) => Number(value || 0);
   const formatAmount = (value: number | string | null | undefined) => toAmount(value).toLocaleString();
 
-  useEffect(() => {
-    fetchWalletBalance();
-    fetchDepositHistory();
-  }, [vendorId, page]);
-
-  const fetchWalletBalance = async () => {
+  const fetchWalletBalance = useCallback(async () => {
     try {
       const response = await fetch(`/api/vendors/${vendorId}/wallet`);
       if (response.ok) {
@@ -81,9 +77,9 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
     } catch (error) {
       console.error('Failed to fetch wallet balance:', error);
     }
-  };
+  }, [vendorId]);
 
-  const fetchDepositHistory = async () => {
+  const fetchDepositHistory = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch(
@@ -108,7 +104,12 @@ export function DepositHistory({ vendorId, className = '' }: DepositHistoryProps
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, vendorId]);
+
+  useEffect(() => {
+    void fetchWalletBalance();
+    void fetchDepositHistory();
+  }, [fetchDepositHistory, fetchWalletBalance]);
 
   const getEventIcon = (eventType: string) => {
     switch (eventType) {

@@ -40,6 +40,7 @@ import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { useVendorOnboardingStatus } from '@/hooks/use-vendor-onboarding-status';
 import { formatAssetName } from '@/lib/utils/asset-name';
 import type { DocumentType } from '@/lib/db/schema/release-forms';
+import { PaymentOptions } from '@/components/vendor/payment-options';
 
 const DEFAULT_AUCTION_DOCUMENTS: DocumentType[] = ['bill_of_sale', 'liability_waiver'];
 
@@ -52,16 +53,6 @@ function getDocumentLabel(documentType: string): string {
 
 const PaymentUnlockedModal = dynamic(
   () => import('@/components/modals/payment-unlocked-modal'),
-  { ssr: false }
-);
-
-const PaymentOptions = dynamic(
-  () => import('@/components/vendor/payment-options').then(mod => ({ default: mod.PaymentOptions })),
-  { ssr: false, loading: () => null }
-);
-
-const DocumentSigning = dynamic(
-  () => import('@/components/vendor/document-signing').then(mod => ({ default: mod.DocumentSigning })),
   { ssr: false }
 );
 
@@ -79,6 +70,7 @@ interface AuctionDetails {
   status: 'scheduled' | 'active' | 'extended' | 'closed' | 'awaiting_payment' | 'cancelled';
   scheduledStartTime?: string | null;
   watchingCount: number;
+  hasVerifiedPayment?: boolean;
   case: {
     id: string;
     claimReference: string;
@@ -111,6 +103,7 @@ interface AuctionDetails {
         severity: 'minor' | 'moderate' | 'severe';
         confidence: number;
       }>;
+      recommendation?: string;
     };
     gpsLocation: {
       x: number; // longitude
@@ -128,6 +121,43 @@ interface AuctionDetails {
     createdAt: string;
     vendorId: string;
   }>;
+}
+
+interface AuctionPrediction {
+  predictedPrice: number;
+  lowerBound: number;
+  upperBound: number;
+  confidenceScore: number;
+  confidenceLevel: 'High' | 'Medium' | 'Low';
+  method: string;
+  sampleSize: number;
+  metadata?: {
+    similarAuctions?: number;
+    marketAdjustment?: number;
+    competitionLevel?: string;
+    seasonalFactor?: number;
+    warnings?: string[];
+    notes?: string[];
+  };
+}
+
+interface AuctionDocumentResponse {
+  id: string;
+  documentType: 'bill_of_sale' | 'liability_waiver' | 'pickup_authorization';
+  title: string;
+  status: 'pending' | 'signed' | 'voided';
+  signedAt?: string | null;
+}
+
+interface PaymentNotification {
+  type: string;
+  data?: {
+    auctionId?: string;
+    paymentId?: string;
+    pickupAuthCode?: string;
+    pickupLocation?: string;
+    pickupDeadline?: string;
+  };
 }
 
 interface PageProps {
@@ -185,9 +215,6 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     pickupDeadline: string;
   } | null>(null);
 
-  // Track if payment processing has been attempted to prevent duplicate calls
-  const paymentProcessingAttemptedRef = useRef(false);
-
   // Track document count to prevent infinite polling loop
   const documentCountRef = useRef(0);
 
@@ -200,15 +227,15 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   const [paystackReturnStatus, setPaystackReturnStatus] = useState<'idle' | 'verifying' | 'verified' | 'pending' | 'error'>('idle');
   const [paystackReturnMessage, setPaystackReturnMessage] = useState('');
   const paystackReturnHandledRef = useRef(false);
+  const auctionCloseAttemptedRef = useRef<string | null>(null);
 
   // Prediction state
-  const [prediction, setPrediction] = useState<any>(null);
-  const [predictionLoading, setPredictionLoading] = useState(false);
+  const [prediction, setPrediction] = useState<AuctionPrediction | null>(null);
 
   // Set hasVerifiedPayment from initial auction data (no separate API call needed)
   useEffect(() => {
     if (auction && 'hasVerifiedPayment' in auction) {
-      setHasVerifiedPayment((auction as any).hasVerifiedPayment || false);
+      setHasVerifiedPayment(auction.hasVerifiedPayment || false);
     }
   }, [auction]);
 
@@ -412,7 +439,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     };
 
     verifyReturnedPayment();
-  }, [auction?.id, session?.user?.vendorId, toast]);
+  }, [auction, session?.user?.vendorId, toast]);
 
   // Real-time notification listener for PAYMENT_UNLOCKED
   const { newNotification } = useRealtimeNotifications();
@@ -435,6 +462,10 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
       // Check if payment page has been visited
       const paymentId = newNotification.data.paymentId;
+      if (!paymentId) {
+        console.warn('Payment unlock notification is missing its payment ID.');
+        return;
+      }
       if (paymentId) {
         const hasVisited = localStorage.getItem(`payment-visited-${paymentId}`);
         if (hasVisited) {
@@ -449,7 +480,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
       // Show modal immediately
       setPaymentUnlockedData({
-        paymentId: newNotification.data.paymentId,
+        paymentId,
         auctionId: auction.id,
         assetDescription,
         winningBid: parseFloat(auction.currentBid || '0'),
@@ -460,7 +491,42 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       setShowPaymentUnlockedModal(true);
       console.log('✅ Payment unlocked modal triggered from real-time notification!');
     }
-  }, [newNotification, auction?.id, auction?.currentBidder, auction?.currentBid, session?.user?.vendorId]);
+  }, [newNotification, auction, session?.user?.vendorId]);
+
+  const handleAuctionClose = useCallback(async () => {
+    if (!auction) return;
+
+    if (auctionCloseAttemptedRef.current === auction.id) return;
+    auctionCloseAttemptedRef.current = auction.id;
+
+    try {
+      console.log(`🎯 Closing auction ${auction.id}...`);
+      toast.info('Closing Auction', 'Auction time has expired');
+
+      const response = await fetch(`/api/auctions/${auction.id}/close`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`✅ Auction closure initiated:`, data);
+        // Socket.io will handle real-time updates
+      } else {
+        const error = await response.json();
+        console.error(`❌ Failed to close auction:`, error);
+        toast.error('Closure Failed', error.error || 'Please refresh the page');
+        window.setTimeout(() => {
+          auctionCloseAttemptedRef.current = null;
+        }, 5000);
+      }
+    } catch (error) {
+      console.error('Error closing auction:', error);
+      toast.error('Closure Failed', 'Please refresh the page');
+      window.setTimeout(() => {
+        auctionCloseAttemptedRef.current = null;
+      }, 5000);
+    }
+  }, [auction, toast]);
 
   // Client-side timer to close auction when it expires (replaces useAuctionExpiryCheck)
   useEffect(() => {
@@ -480,11 +546,12 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     });
 
     if (timeUntilEnd <= 0) {
-      // Already expired - close immediately
       console.log(`🎯 Auction already expired, closing now`);
       handleAuctionClose();
     } else {
-      // Set timer to close when expires
+      if (auctionCloseAttemptedRef.current === auction.id) {
+        auctionCloseAttemptedRef.current = null;
+      }
       const timer = setTimeout(() => {
         console.log(`⏰ Timer fired! Closing auction ${auction.id}`);
         handleAuctionClose();
@@ -495,33 +562,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         clearTimeout(timer);
       };
     }
-  }, [auction?.id, auction?.endTime, auction?.status]);
-
-  const handleAuctionClose = async () => {
-    if (!auction) return;
-
-    try {
-      console.log(`🎯 Closing auction ${auction.id}...`);
-      toast.info('Closing Auction', 'Auction time has expired');
-
-      const response = await fetch(`/api/auctions/${auction.id}/close`, {
-        method: 'POST',
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`✅ Auction closure initiated:`, data);
-        // Socket.io will handle real-time updates
-      } else {
-        const error = await response.json();
-        console.error(`❌ Failed to close auction:`, error);
-        toast.error('Closure Failed', error.error || 'Please refresh the page');
-      }
-    } catch (error) {
-      console.error('Error closing auction:', error);
-      toast.error('Closure Failed', 'Please refresh the page');
-    }
-  };
+  }, [auction, handleAuctionClose]);
 
   // Use ref to track if we've already shown notification for this bid
   const lastNotifiedBidRef = useRef<string | null>(null);
@@ -562,7 +603,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       // Update previousCurrentBidderRef to the new current bidder for next comparison
       previousCurrentBidderRef.current = auction.currentBidder;
     }
-  }, [latestBid?.id, auction?.currentBidder, session?.user?.vendorId, toast]); // Add stable dependencies
+  }, [latestBid, auction, session?.user?.vendorId, toast]);
 
   // Show extension notification
   const lastExtensionCountRef = useRef<number>(0);
@@ -590,7 +631,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     if (auction) {
       lastAuctionStatusRef.current = auction.status;
     }
-  }, [auction?.extensionCount, toast]);
+  }, [auction, toast]);
 
   // Fetch documents for closed auction
   const fetchDocuments = useCallback(async (auctionId: string, vendorId: string) => {
@@ -606,7 +647,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       if (response.ok) {
         const data = await response.json();
         if (data.status === 'success' && data.data.documents) {
-          const docs = data.data.documents.map((doc: any) => ({
+          const docs = (data.data.documents as AuctionDocumentResponse[]).map((doc) => ({
             id: doc.id,
             documentType: doc.documentType,
             title: doc.title,
@@ -617,7 +658,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
           setDocuments(docs);
 
           // Update ref with count of expected documents (bill_of_sale and liability_waiver)
-          const expectedDocs = docs.filter((d: any) =>
+          const expectedDocs = docs.filter((d) =>
             d.documentType === 'bill_of_sale' || d.documentType === 'liability_waiver'
           );
           documentCountRef.current = expectedDocs.length;
@@ -743,7 +784,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         clearInterval(pollInterval);
       };
     }
-  }, [auction?.id, auction?.status, auction?.currentBidder, session?.user?.vendorId, fetchDocuments]);
+  }, [auction, session?.user?.vendorId, fetchDocuments]);
 
   // Fetch prediction for active/extended auctions
   useEffect(() => {
@@ -754,7 +795,6 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       }
 
       try {
-        setPredictionLoading(true);
         const response = await fetch(`/api/auctions/${auction.id}/prediction`);
         if (response.ok) {
           const data = await response.json();
@@ -768,12 +808,12 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         console.error('Error fetching prediction:', error);
         setPrediction(null);
       } finally {
-        setPredictionLoading(false);
+        // The prediction card appears when data is available; no separate spinner is rendered.
       }
     };
 
     fetchPrediction();
-  }, [auction?.id, auction?.status]);
+  }, [auction]);
 
   // Show payment unlocked modal if notification exists (for page refreshes)
   // CHANGED: Use polling to check for notification every 5 seconds
@@ -807,8 +847,8 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         const notifications = notificationsData.data?.notifications || [];
 
         // Check if PAYMENT_UNLOCKED notification exists for this auction
-        const paymentUnlockedNotification = notifications.find(
-          (n: any) => n.type === 'PAYMENT_UNLOCKED' && n.data?.auctionId === auction.id
+        const paymentUnlockedNotification = (notifications as PaymentNotification[]).find(
+          (notification) => notification.type === 'PAYMENT_UNLOCKED' && notification.data?.auctionId === auction.id
         );
 
         if (paymentUnlockedNotification) {
@@ -852,7 +892,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     const pollInterval = setInterval(checkForExistingPaymentNotification, 5000);
 
     return () => clearInterval(pollInterval);
-  }, [auction?.id, auction?.status, auction?.currentBidder, auction?.currentBid, session?.user?.vendorId, session?.user?.id]); // Removed auction?.case from dependencies
+  }, [auction, session?.user?.vendorId, session?.user?.id]);
 
 
   // Update auction with real-time data - CRITICAL FIX for real-time UI updates
@@ -927,7 +967,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         };
       });
     }
-  }, [latestBid?.id]); // Only depend on bid ID
+  }, [latestBid]);
 
   // Handle watch/unwatch - wrapped in useCallback to prevent recreation
   const handleToggleWatch = useCallback(async () => {
@@ -980,25 +1020,20 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     }
   }, [isWatchLoading, isWatching, resolvedParams.id, toast]);
 
-  // Format asset name - wrapped in useCallback
-  const getAssetName = useCallback(() => {
-    if (!auction) return '';
-    return formatAssetName(auction.case.assetType, auction.case.assetDetails, 'Auction item');
-  }, [auction?.case.assetType, auction?.case.assetDetails]);
+  const assetName = auction
+    ? formatAssetName(auction.case.assetType, auction.case.assetDetails, 'Auction item')
+    : '';
 
-  // Prepare bid history chart data - wrapped in useCallback
-  const getBidHistoryData = useCallback(() => {
-    if (!auction) return [];
-
-    return auction.bids.map((bid, index) => ({
+  const bidHistoryData = auction
+    ? auction.bids.map((bid, index) => ({
       index: index + 1,
       amount: Number(bid.amount),
       time: new Date(bid.createdAt).toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
       }),
-    }));
-  }, [auction?.bids]);
+    }))
+    : [];
 
   if (isLoading) {
     return <DataLoadingState label="Auction details" variant="page" />;
@@ -1036,7 +1071,6 @@ export default function AuctionDetailsPage({ params }: PageProps) {
     ? latestBid.minimumBid
     : (currentBid ? currentBid + minimumIncrement : reservePrice);
 
-  const bidHistoryData = getBidHistoryData();
 
   // DEBUG: Log render-time state values
   console.log('🎯 Component render state:', {
@@ -1505,7 +1539,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
 
             {/* Asset Details */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">{getAssetName()}</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">{assetName}</h2>
 
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div>
@@ -1571,7 +1605,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               <GeminiDamageDisplay
                 itemDetails={auction.case.aiAssessment.itemDetails}
                 damagedParts={auction.case.aiAssessment.damagedParts}
-                summary={(auction.case.aiAssessment as any).recommendation}
+                summary={auction.case.aiAssessment.recommendation}
                 showTitle={true}
                 assetType={auction.case.assetType}
               />
@@ -2026,7 +2060,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
         auctionId={auction.id}
         currentBid={currentBid}
         minimumBid={minimumBid} // Pass the calculated minimum bid (reserve price or current bid + ₦20,000)
-        assetName={getAssetName()}
+        assetName={assetName}
         isOpen={showBidForm}
         onClose={() => setShowBidForm(false)}
         vendorTier={vendorTier} // Pass the vendor's actual tier
@@ -2117,7 +2151,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                       ? 'Payment Successful'
                       : 'Payment Confirmation Pending'}
                 </h3>
-                <p className="text-sm text-white/80">{getAssetName()}</p>
+                <p className="text-sm text-white/80">{assetName}</p>
                 </div>
               </div>
             </div>

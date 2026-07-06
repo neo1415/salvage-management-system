@@ -119,7 +119,7 @@ function AdjusterCasesContentInner() {
       // Search in assetDetails JSON fields
       let matchesAssetDetails = false;
       if (caseItem.assetDetails) {
-        const details = caseItem.assetDetails as Record<string, any>;
+        const details = caseItem.assetDetails as Record<string, unknown>;
         // Search in common fields across all asset types
         const searchableFields = ['make', 'model', 'year', 'brand', 'description', 'propertyType'];
         matchesAssetDetails = searchableFields.some(field => {

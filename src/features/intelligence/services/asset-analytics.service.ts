@@ -17,6 +17,42 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { bids } from '@/lib/db/schema/bids';
 
+type AssetType = typeof salvageCases.$inferSelect.assetType;
+type DamageSeverity = typeof salvageCases.$inferSelect.damageSeverity;
+
+interface AssetPerformanceRow {
+  asset_type: AssetType;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  damage_severity: DamageSeverity;
+  total_auctions: string;
+  total_bids: string;
+  avg_bids_per_auction: string;
+  avg_final_price: string | null;
+  avg_sell_through_rate: string;
+  avg_time_to_sell: string | null;
+}
+
+interface AttributePerformanceRow {
+  asset_type: AssetType;
+  total_auctions: string;
+  avg_price_premium: string | null;
+  avg_bid_count: string;
+}
+
+interface ColorPerformanceRow extends AttributePerformanceRow {
+  color: string;
+}
+
+interface TrimPerformanceRow extends AttributePerformanceRow {
+  trim: string;
+}
+
+interface StoragePerformanceRow extends AttributePerformanceRow {
+  storage: string;
+}
+
 export class AssetAnalyticsService {
   /**
    * Calculate asset performance metrics
@@ -27,7 +63,7 @@ export class AssetAnalyticsService {
     periodEnd: Date
   ): Promise<void> {
     // Calculate performance for each asset type/make/model/year combination
-    const performanceData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       WITH auction_stats AS (
         SELECT 
           sc.asset_type,
@@ -62,6 +98,8 @@ export class AssetAnalyticsService {
       FROM auction_stats
       GROUP BY asset_type, make, model, year, damage_severity
     `);
+
+    const performanceData = result as unknown as AssetPerformanceRow[];
 
     // Insert or update performance analytics
     for (const row of performanceData) {
@@ -109,7 +147,7 @@ export class AssetAnalyticsService {
   }
 
   private async calculateColorPerformance(periodStart: Date, periodEnd: Date): Promise<void> {
-    const colorData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       WITH color_stats AS (
         SELECT 
           sc.asset_type,
@@ -143,6 +181,8 @@ export class AssetAnalyticsService {
       GROUP BY cs.asset_type, cs.color
     `);
 
+    const colorData = result as unknown as ColorPerformanceRow[];
+
     for (const row of colorData) {
       const popularityScore = this.calculatePopularityScore(
         parseInt(row.total_auctions),
@@ -164,7 +204,7 @@ export class AssetAnalyticsService {
   }
 
   private async calculateTrimPerformance(periodStart: Date, periodEnd: Date): Promise<void> {
-    const trimData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       WITH trim_stats AS (
         SELECT 
           sc.asset_type,
@@ -198,6 +238,8 @@ export class AssetAnalyticsService {
       GROUP BY ts.asset_type, ts.trim
     `);
 
+    const trimData = result as unknown as TrimPerformanceRow[];
+
     for (const row of trimData) {
       const popularityScore = this.calculatePopularityScore(
         parseInt(row.total_auctions),
@@ -219,7 +261,7 @@ export class AssetAnalyticsService {
   }
 
   private async calculateStoragePerformance(periodStart: Date, periodEnd: Date): Promise<void> {
-    const storageData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       WITH storage_stats AS (
         SELECT 
           sc.asset_type,
@@ -253,6 +295,8 @@ export class AssetAnalyticsService {
       JOIN baseline b ON ss.asset_type = b.asset_type
       GROUP BY ss.asset_type, ss.storage
     `);
+
+    const storageData = result as unknown as StoragePerformanceRow[];
 
     for (const row of storageData) {
       const popularityScore = this.calculatePopularityScore(

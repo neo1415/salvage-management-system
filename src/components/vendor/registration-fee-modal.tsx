@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Loader2, CheckCircle2, Crown, Shield, Trophy, Headphones, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
@@ -20,14 +20,7 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
   const [loadingFee, setLoadingFee] = useState(true);
   const feeBeforeTier1 = policy?.onboarding.mode === 'fee_before_tier1';
 
-  useEffect(() => {
-    setMounted(true);
-    
-    // Fetch current registration fee from config
-    fetchRegistrationFee();
-  }, []);
-
-  const fetchRegistrationFee = async () => {
+  const fetchRegistrationFee = useCallback(async () => {
     try {
       setLoadingFee(true);
       const response = await fetch('/api/vendors/registration-fee/status');
@@ -49,7 +42,14 @@ export function RegistrationFeeModal({ onClose, showCloseButton = true }: Regist
     } finally {
       setLoadingFee(false);
     }
-  };
+  }, [onClose]);
+
+  useEffect(() => {
+    setMounted(true);
+
+    // Fetch current registration fee from config
+    void fetchRegistrationFee();
+  }, [fetchRegistrationFee]);
 
   const handlePayNow = async () => {
     setIsLoading(true);

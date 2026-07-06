@@ -15,7 +15,6 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { payments } from '@/lib/db/schema/payments';
 import { users } from '@/lib/db/schema/users';
 import { eq, and, isNull } from 'drizzle-orm';
-import crypto from 'crypto';
 import { appPath } from '@/features/notifications/templates/email-urls';
 import { businessPolicyService } from '@/features/business-policy';
 import { isRegistrationFeeRequiredForPolicy } from '@/features/business-policy/onboarding-decisions';

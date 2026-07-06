@@ -185,7 +185,7 @@ export class ConfigParser {
       const content = fs.readFileSync(filePath, 'utf-8');
 
       // Extract key configuration values using regex
-      const configuration: Record<string, any> = {};
+      const configuration: Record<string, unknown> = {};
 
       // Extract experimental features (using multiline flag instead of 's' flag)
       const experimentalMatch = content.match(/experimental:\s*\{([^}]+)\}/);
@@ -248,7 +248,7 @@ export class ConfigParser {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
 
-      const configuration: Record<string, any> = {};
+      const configuration: Record<string, unknown> = {};
 
       // Extract matcher config
       const matcherMatch = content.match(/matcher:\s*(\[[\s\S]*?\]|['"][^'"]+['"])/);
@@ -304,7 +304,7 @@ export class ConfigParser {
       const content = fs.readFileSync(filePath, 'utf-8');
       const ext = path.extname(filePath);
 
-      let configuration: Record<string, any> = {};
+      let configuration: Record<string, unknown> = {};
 
       // Try to parse as JSON
       if (ext === '.json') {

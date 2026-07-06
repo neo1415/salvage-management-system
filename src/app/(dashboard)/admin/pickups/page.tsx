@@ -85,6 +85,7 @@ export default function AdminPickupsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedPickup, setSelectedPickup] = useState<PickupConfirmation | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [retryingComparison, setRetryingComparison] = useState(false);
   
   // Filter states
   const [statusFilter, setStatusFilter] = useState<'pending' | 'evidence_issues' | 'all'>('pending');
@@ -139,6 +140,21 @@ export default function AdminPickupsPage() {
   useEffect(() => {
     fetchPickups();
   }, [fetchPickups]);
+
+  useEffect(() => {
+    if (!allPickups.some((pickup) => pickup.pickupEvidence?.status === 'not_reviewed')) return;
+    const interval = window.setInterval(() => {
+      void fetchPickups();
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [allPickups, fetchPickups]);
+
+  useEffect(() => {
+    setSelectedPickup((current) => {
+      if (!current) return null;
+      return allPickups.find((pickup) => pickup.auctionId === current.auctionId) ?? current;
+    });
+  }, [allPickups]);
 
   const pickups = useMemo(() => {
     let list = [...allPickups];
@@ -213,6 +229,26 @@ export default function AdminPickupsPage() {
     }
   };
 
+  const retryEvidenceComparison = async () => {
+    if (!selectedPickup || retryingComparison) return;
+    setRetryingComparison(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/auctions/${selectedPickup.auctionId}/pickup-evidence`, {
+        method: 'PATCH',
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || 'Could not retry the evidence comparison.');
+      }
+      await fetchPickups();
+    } catch (retryError) {
+      setError(retryError instanceof Error ? retryError.message : 'Could not retry the evidence comparison.');
+    } finally {
+      setRetryingComparison(false);
+    }
+  };
+
   // Format asset name
   const formatAssetName = (pickup: PickupConfirmation) => {
     const details = pickup.assetDetails as Record<string, string>;
@@ -232,7 +268,7 @@ export default function AdminPickupsPage() {
   const evidenceLabel = (status?: string | null) => {
     if (status === 'material_discrepancy') return 'Discrepancy';
     if (status === 'review_needed') return 'Review needed';
-    if (status === 'not_reviewed') return 'Not reviewed';
+    if (status === 'not_reviewed') return 'Analyzing';
     if (status === 'matches_expected') return 'Evidence ok';
     return 'No evidence';
   };
@@ -527,7 +563,11 @@ export default function AdminPickupsPage() {
                       <div className="mt-3 rounded-md bg-white/70 p-3 text-xs">
                         <p className="font-semibold">Resolution: {pickup.pickupEvidence.resolutionStatus.replace(/_/g, ' ')}</p>
                         {pickup.pickupEvidence.adjustmentAmount && (
-                          <p>Adjustment: NGN {Number(pickup.pickupEvidence.adjustmentAmount).toLocaleString('en-NG')}</p>
+                          <p>
+                            {pickup.pickupEvidence.resolutionStatus === 'price_adjustment_recorded'
+                              ? 'Final sale amount'
+                              : 'Reimbursement'}: NGN {Number(pickup.pickupEvidence.adjustmentAmount).toLocaleString('en-NG')}
+                          </p>
                         )}
                         {pickup.pickupEvidence.reimbursementMethod && (
                           <p>Method: {pickup.pickupEvidence.reimbursementMethod}</p>
@@ -610,6 +650,14 @@ export default function AdminPickupsPage() {
                             : ''}
                         </p>
                       </div>
+                      {selectedPickup.pickupEvidence.status !== 'not_reviewed' && (
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                          <p>Identity: <span className="font-semibold">{selectedPickup.pickupEvidence.assetIdentityScore ?? 'N/A'}%</span></p>
+                          <p>Quantity: <span className="font-semibold">{selectedPickup.pickupEvidence.quantityMatchScore ?? 'N/A'}%</span></p>
+                          <p>Condition: <span className="font-semibold">{selectedPickup.pickupEvidence.conditionMatchScore ?? 'N/A'}%</span></p>
+                          <p>Overall: <span className="font-semibold">{selectedPickup.pickupEvidence.overallMatchScore ?? 'N/A'}%</span></p>
+                        </div>
+                      )}
                       {selectedPickup.pickupEvidence.findings.length > 0 && (
                         <ul className="mt-3 list-disc space-y-1 pl-5 text-xs">
                           {selectedPickup.pickupEvidence.findings.map((finding, index) => (
@@ -632,12 +680,26 @@ export default function AdminPickupsPage() {
                           Action: {selectedPickup.pickupEvidence.recommendedStaffAction}
                         </p>
                       )}
+                      {!selectedPickup.adminConfirmation.confirmed && (
+                        <button
+                          type="button"
+                          onClick={() => void retryEvidenceComparison()}
+                          disabled={retryingComparison}
+                          className="mt-3 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 disabled:opacity-60"
+                        >
+                          {retryingComparison ? 'Comparing evidence...' : 'Re-run comparison'}
+                        </button>
+                      )}
                       {selectedPickup.pickupEvidence.resolutionStatus && selectedPickup.pickupEvidence.resolutionStatus !== 'not_required' && (
                         <div className="mt-3 rounded-md bg-white/70 p-3 text-xs">
                           <p className="font-semibold">Recorded resolution</p>
                           <p>{selectedPickup.pickupEvidence.resolutionStatus.replace(/_/g, ' ')}</p>
                           {selectedPickup.pickupEvidence.adjustmentAmount && (
-                            <p>Adjustment: NGN {Number(selectedPickup.pickupEvidence.adjustmentAmount).toLocaleString('en-NG')}</p>
+                            <p>
+                              {selectedPickup.pickupEvidence.resolutionStatus === 'price_adjustment_recorded'
+                                ? 'Final sale amount'
+                                : 'Reimbursement'}: NGN {Number(selectedPickup.pickupEvidence.adjustmentAmount).toLocaleString('en-NG')}
+                            </p>
                           )}
                           {selectedPickup.pickupEvidence.reimbursementMethod && (
                             <p>Method: {selectedPickup.pickupEvidence.reimbursementMethod}</p>
@@ -649,8 +711,6 @@ export default function AdminPickupsPage() {
 
                   {/* AdminPickupConfirmation Component */}
                   <AdminPickupConfirmation
-                    auctionId={selectedPickup.auctionId}
-                    adminId={session.user.id}
                     vendorPickupStatus={{
                       confirmed: selectedPickup.vendorConfirmation.confirmed,
                       confirmedAt: selectedPickup.vendorConfirmation.confirmedAt,
@@ -659,6 +719,7 @@ export default function AdminPickupsPage() {
                       selectedPickup.pickupEvidence?.status === 'review_needed'
                       || selectedPickup.pickupEvidence?.status === 'material_discrepancy'
                     }
+                    evidenceProcessing={selectedPickup.pickupEvidence?.status === 'not_reviewed'}
                     onConfirm={handleConfirmPickup}
                   />
                 </div>

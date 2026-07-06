@@ -24,7 +24,6 @@ import { relations } from 'drizzle-orm';
 import { auctions } from './auctions';
 import { vendors } from './vendors';
 import { users } from './users';
-import { salvageCases } from './cases';
 
 // ============================================================================
 // ENUMS
@@ -232,6 +231,13 @@ export const fraudAlerts = pgTable('fraud_alerts', {
     checksCompleted?: string[];
     failedChecks?: string[];
     reasonCodes?: string[];
+    reviewHistory?: Array<{
+      action: string;
+      reason?: string;
+      actorId: string;
+      actorName: string;
+      createdAt: string;
+    }>;
   }>(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, (table) => ({

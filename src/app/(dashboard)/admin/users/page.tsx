@@ -16,9 +16,8 @@ import Image from 'next/image';
 import { User as UserIcon } from 'lucide-react';
 import ActionModal from './action-modal';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
-import { useVirtualizedList } from '@/hooks/use-virtualized-list';
 import { User } from '@/hooks/queries/use-users';
-import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
+import { DataLoadingState } from '@/components/ui/loading-states';
 
 type ActionModalType = 'suspend' | 'unsuspend' | 'delete' | 'resetPassword' | 'changeRole' | 'view' | null;
 

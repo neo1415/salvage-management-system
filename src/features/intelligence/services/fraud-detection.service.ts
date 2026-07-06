@@ -9,21 +9,69 @@
  */
 
 import { db } from '@/lib/db';
-import { eq, and, sql, desc, gte, lte, inArray } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { 
   fraudAlerts,
 } from '@/lib/db/schema/intelligence';
 import {
   photoHashes,
   photoHashIndex,
-  duplicatePhotoMatches,
 } from '@/lib/db/schema/fraud-detection';
 import { fraudDetectionLogs } from '@/lib/db/schema/ml-training';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { auctions } from '@/lib/db/schema/auctions';
 import { bids } from '@/lib/db/schema/bids';
-import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
+
+type DuplicateMatch = PhotoAuthenticityResult['duplicateMatches'][number];
+type ExifAnalysis = NonNullable<PhotoAuthenticityResult['exifAnalysis']>;
+type AiAnalysis = NonNullable<PhotoAuthenticityResult['aiAnalysis']>;
+type FraudAlertMetadata = NonNullable<typeof fraudAlerts.$inferInsert.metadata> & Record<string, unknown>;
+
+interface PotentialPhotoMatchRow {
+  case_id: string;
+  photo_url: string;
+  full_p_hash: string;
+}
+
+interface ConsecutiveBidRow { vendor_id: string; consecutive_count: string; }
+interface TimingPatternRow { vendor_id: string; avg_time_between_bids: string; }
+interface IpCollusionRow {
+  ip_address: string | null;
+  device_fingerprint: string | null;
+  vendor_ids: string[];
+}
+interface RepeatClaimRow {
+  id: string;
+  damaged_parts: unknown;
+  days_ago: string | number;
+}
+interface GeoClusterRow {
+  region: string;
+  city: string | null;
+  case_count: string;
+  most_recent_days_ago: string | number;
+}
+interface WinPatternRow {
+  vendor_id: string;
+  adjuster_id: string;
+  wins: string;
+  win_rate: string;
+}
+interface LastMinuteBidRow {
+  vendor_id: string;
+  adjuster_id: string;
+  last_minute_wins: string;
+}
+
+function rowsFromExecute<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (result && typeof result === 'object' && 'rows' in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows as T[];
+  }
+  return [];
+}
 
 /**
  * Photo authenticity result interface
@@ -61,7 +109,7 @@ export interface ShillBiddingResult {
   suspiciousPatterns: Array<{
     vendorId: string;
     pattern: string;
-    evidence: any;
+    evidence: Record<string, unknown>;
   }>;
 }
 
@@ -182,7 +230,7 @@ export class FraudDetectionService {
    * Extract EXIF metadata from photo
    * Task 4.1.5: Implement EXIF metadata extraction
    */
-  private async extractExifMetadata(photoUrl: string): Promise<any> {
+  private async extractExifMetadata(_photoUrl: string): Promise<ExifAnalysis> {
     // In production, use 'exif-parser' or 'exifr' library
     // ML extension: extract EXIF metadata when the image-analysis provider is enabled.
     
@@ -211,7 +259,7 @@ export class FraudDetectionService {
     ];
 
     // Find potential matches using segment matching
-    const potentialMatches: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT DISTINCT
         phi.case_id,
         phi.photo_url,
@@ -223,7 +271,8 @@ export class FraudDetectionService {
     `);
 
     // Calculate Hamming distance for each match
-    const matches = [];
+    const potentialMatches = rowsFromExecute<PotentialPhotoMatchRow>(result);
+    const matches: DuplicateMatch[] = [];
     for (const match of potentialMatches) {
       const hammingDistance = this.calculateHammingDistance(pHash, match.full_p_hash);
       
@@ -265,8 +314,8 @@ export class FraudDetectionService {
    */
   private async analyzePhotoContext(
     caseId: string,
-    duplicates: any[],
-    exifData: any
+    duplicates: DuplicateMatch[],
+    exifData: ExifAnalysis
   ): Promise<number> {
     if (duplicates.length === 0) {
       return 0;
@@ -314,7 +363,7 @@ export class FraudDetectionService {
    * Analyze photo with Gemini AI
    * Task 4.1.6: Gemini AI integration
    */
-  private async analyzePhotoWithGemini(photoUrl: string): Promise<{ isAiGenerated: boolean; confidence: number }> {
+  private async analyzePhotoWithGemini(_photoUrl: string): Promise<AiAnalysis> {
     // ML extension: integrate photo-authenticity analysis when the provider is enabled.
     // For now, return placeholder
     return {
@@ -327,10 +376,10 @@ export class FraudDetectionService {
    * Calculate overall photo risk score
    */
   private calculatePhotoRiskScore(
-    duplicates: any[],
+    duplicates: DuplicateMatch[],
     contextualRisk: number,
-    exifData: any,
-    aiAnalysis: any
+    _exifData: ExifAnalysis,
+    aiAnalysis: AiAnalysis
   ): number {
     let riskScore = 0;
 
@@ -358,8 +407,8 @@ export class FraudDetectionService {
     photoUrl: string,
     photoIndex: number,
     pHash: string,
-    exifData: any,
-    aiAnalysis: any
+    exifData: ExifAnalysis,
+    aiAnalysis: AiAnalysis
   ): Promise<void> {
     // Insert photo hash
     const [photoHashRecord] = await db
@@ -369,7 +418,12 @@ export class FraudDetectionService {
         photoUrl,
         photoIndex,
         pHash,
-        exifData: exifData.hasExif ? exifData : null,
+        exifData: exifData.hasExif ? {
+          timestamp: exifData.timestamp,
+          gpsLatitude: exifData.gpsCoordinates?.lat,
+          gpsLongitude: exifData.gpsCoordinates?.lng,
+          cameraModel: exifData.cameraModel,
+        } : null,
         complexity: 50, // ML extension: calculate actual complexity
         isLowComplexity: false,
         authenticityAnalysis: {
@@ -405,11 +459,11 @@ export class FraudDetectionService {
    */
   async detectShillBidding(auctionId: string): Promise<ShillBiddingResult> {
     const flagReasons: string[] = [];
-    const suspiciousPatterns: Array<{ vendorId: string; pattern: string; evidence: any }> = [];
+    const suspiciousPatterns: Array<{ vendorId: string; pattern: string; evidence: Record<string, unknown> }> = [];
     let riskScore = 0;
 
     // Task 4.2.1: Detect consecutive bids from same vendor
-    const consecutiveBids: any = await db.execute(sql`
+    const consecutiveResult = await db.execute(sql`
       WITH bid_sequence AS (
         SELECT 
           b.vendor_id,
@@ -430,6 +484,7 @@ export class FraudDetectionService {
       HAVING COUNT(*) >= 3
     `);
 
+    const consecutiveBids = rowsFromExecute<ConsecutiveBidRow>(consecutiveResult);
     if (consecutiveBids.length > 0) {
       for (const pattern of consecutiveBids) {
         flagReasons.push(`Vendor ${pattern.vendor_id} placed ${pattern.consecutive_count} consecutive bids`);
@@ -443,7 +498,7 @@ export class FraudDetectionService {
     }
 
     // Task 4.2.2: Analyze bid timing patterns
-    const timingPatterns: any = await db.execute(sql`
+    const timingResult = await db.execute(sql`
       SELECT 
         b.vendor_id,
         COUNT(*) AS bid_count,
@@ -455,6 +510,7 @@ export class FraudDetectionService {
         AND AVG(EXTRACT(EPOCH FROM (b.created_at - LAG(b.created_at) OVER (ORDER BY b.created_at)))) < 60
     `);
 
+    const timingPatterns = rowsFromExecute<TimingPatternRow>(timingResult);
     if (timingPatterns.length > 0) {
       for (const pattern of timingPatterns) {
         flagReasons.push(`Vendor ${pattern.vendor_id} has suspicious rapid bidding pattern`);
@@ -469,7 +525,7 @@ export class FraudDetectionService {
 
     // Task 4.2.3: Detect vendor collusion (multiple vendors from same IP/device)
     // Task 4.2.4: Implement IP address and device fingerprint analysis
-    const ipCollusion: any = await db.execute(sql`
+    const collusionResult = await db.execute(sql`
       WITH vendor_ips AS (
         SELECT 
           b.vendor_id,
@@ -492,6 +548,7 @@ export class FraudDetectionService {
       HAVING COUNT(DISTINCT vendor_id) >= 2
     `);
 
+    const ipCollusion = rowsFromExecute<IpCollusionRow>(collusionResult);
     if (ipCollusion.length > 0) {
       for (const pattern of ipCollusion) {
         const vendorIds = pattern.vendor_ids.join(', ');
@@ -548,7 +605,7 @@ export class FraudDetectionService {
     const targetCase = caseData[0];
 
     // Task 4.3.1: Detect repeat claimants
-    const repeatClaims: any = await db.execute(sql`
+    const repeatResult = await db.execute(sql`
       SELECT 
         sc.id,
         sc.created_at,
@@ -564,6 +621,7 @@ export class FraudDetectionService {
       LIMIT 10
     `);
 
+    const repeatClaims = rowsFromExecute<RepeatClaimRow>(repeatResult);
     if (repeatClaims.length >= 3) {
       flagReasons.push(`User has ${repeatClaims.length} claims in past 12 months`);
       riskScore += 20;
@@ -572,12 +630,12 @@ export class FraudDetectionService {
     // Task 4.3.2: Detect similar damage patterns (Jaccard similarity)
     for (const claim of repeatClaims) {
       const similarity = this.calculateDamageSimilarity(
-        ((targetCase.aiAssessment as { damagedParts?: string[] } | null)?.damagedParts || []),
-        claim.damaged_parts || []
+        this.extractDamagePartNames(targetCase.aiAssessment?.damagedParts),
+        this.extractDamagePartNames(claim.damaged_parts)
       );
 
       if (similarity > 0.7) {
-        const daysBetween = Math.round(claim.days_ago);
+        const daysBetween = Math.round(Number(claim.days_ago));
         similarClaims.push({
           caseId: claim.id,
           similarity: Math.round(similarity * 100),
@@ -592,7 +650,7 @@ export class FraudDetectionService {
     }
 
     // Task 4.3.3: Geographic clustering detection
-    const geoClusters: any = await db.execute(sql`
+    const geoResult = await db.execute(sql`
       WITH case_locations AS (
         SELECT 
           sc.id,
@@ -616,6 +674,7 @@ export class FraudDetectionService {
       HAVING COUNT(*) >= 2
     `);
 
+    const geoClusters = rowsFromExecute<GeoClusterRow>(geoResult);
     if (geoClusters.length > 0) {
       for (const cluster of geoClusters) {
         const caseCount = parseInt(cluster.case_count);
@@ -624,7 +683,7 @@ export class FraudDetectionService {
         if (caseCount >= 3) {
           flagReasons.push(`${caseCount} claims from same location: ${location}`);
           riskScore += 30;
-        } else if (caseCount === 2 && cluster.most_recent_days_ago < 60) {
+        } else if (caseCount === 2 && Number(cluster.most_recent_days_ago) < 60) {
           flagReasons.push(`Multiple recent claims from ${location}`);
           riskScore += 15;
         }
@@ -632,7 +691,7 @@ export class FraudDetectionService {
     }
 
     // Task 4.3.4: Case creation velocity
-    const recentCases = repeatClaims.filter((c: any) => c.days_ago < 30);
+    const recentCases = repeatClaims.filter((claim) => Number(claim.days_ago) < 30);
     if (recentCases.length >= 2) {
       flagReasons.push(`${recentCases.length} cases created in past 30 days`);
       riskScore += 20;
@@ -661,6 +720,18 @@ export class FraudDetectionService {
     return intersection.size / union.size;
   }
 
+  private extractDamagePartNames(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((entry) => {
+      if (typeof entry === 'string') return [entry];
+      if (entry && typeof entry === 'object') {
+        const part = (entry as Record<string, unknown>).part;
+        return typeof part === 'string' ? [part] : [];
+      }
+      return [];
+    });
+  }
+
   /**
    * Detect vendor-adjuster collusion
    * Tasks 4.4.1-4.4.4
@@ -671,11 +742,11 @@ export class FraudDetectionService {
     let riskScore = 0;
 
     // Task 4.4.1: Analyze win patterns for vendor-adjuster pairs
-    const winPatterns: any = await db.execute(sql`
+    const winResult = await db.execute(sql`
       WITH vendor_adjuster_pairs AS (
         SELECT 
           a.current_bidder AS vendor_id,
-          sc.adjuster_id,
+          sc.created_by AS adjuster_id,
           COUNT(*) AS total_auctions,
           COUNT(*) FILTER (WHERE a.current_bidder IS NOT NULL) AS wins,
           COUNT(*) FILTER (WHERE a.current_bidder IS NOT NULL)::float / NULLIF(COUNT(*), 0) AS win_rate
@@ -684,8 +755,8 @@ export class FraudDetectionService {
         WHERE a.status = 'closed'
           AND a.end_time > NOW() - INTERVAL '6 months'
           ${vendorId ? sql`AND a.current_bidder = ${vendorId}` : sql``}
-          ${adjusterId ? sql`AND sc.adjuster_id = ${adjusterId}` : sql``}
-        GROUP BY a.current_bidder, sc.adjuster_id
+          ${adjusterId ? sql`AND sc.created_by = ${adjusterId}` : sql``}
+        GROUP BY a.current_bidder, sc.created_by
         HAVING COUNT(*) >= 5
       )
       SELECT *
@@ -695,6 +766,7 @@ export class FraudDetectionService {
       LIMIT 20
     `);
 
+    const winPatterns = rowsFromExecute<WinPatternRow>(winResult);
     for (const pair of winPatterns) {
       const winRate = parseFloat(pair.win_rate);
       const wins = parseInt(pair.wins);
@@ -712,10 +784,10 @@ export class FraudDetectionService {
     }
 
     // Task 4.4.2: Analyze bid timing patterns (last 5 minutes)
-    const lastMinuteBids: any = await db.execute(sql`
+    const lastMinuteResult = await db.execute(sql`
       SELECT 
         b.vendor_id,
-        sc.adjuster_id,
+        sc.created_by AS adjuster_id,
         COUNT(*) AS last_minute_wins
       FROM ${bids} b
       JOIN ${auctions} a ON b.auction_id = a.id
@@ -725,11 +797,12 @@ export class FraudDetectionService {
         AND b.created_at > a.end_time - INTERVAL '5 minutes'
         AND a.end_time > NOW() - INTERVAL '6 months'
         ${vendorId ? sql`AND b.vendor_id = ${vendorId}` : sql``}
-        ${adjusterId ? sql`AND sc.adjuster_id = ${adjusterId}` : sql``}
-      GROUP BY b.vendor_id, sc.adjuster_id
+        ${adjusterId ? sql`AND sc.created_by = ${adjusterId}` : sql``}
+      GROUP BY b.vendor_id, sc.created_by
       HAVING COUNT(*) >= 3
     `);
 
+    const lastMinuteBids = rowsFromExecute<LastMinuteBidRow>(lastMinuteResult);
     if (lastMinuteBids.length > 0) {
       for (const pattern of lastMinuteBids) {
         flagReasons.push(`Vendor ${pattern.vendor_id} has ${pattern.last_minute_wins} last-minute wins with adjuster ${pattern.adjuster_id}`);
@@ -754,7 +827,7 @@ export class FraudDetectionService {
     entityId: string,
     riskScore: number,
     flagReasons: string[],
-    metadata?: any
+    metadata?: FraudAlertMetadata
   ): Promise<string> {
     // Task 4.5.1: Create fraud alert
     const [alert] = await db
@@ -777,7 +850,12 @@ export class FraudDetectionService {
       detectionType: flagReasons[0] || 'unknown',
       riskScore,
       flagReasons,
-      analysisDetails: metadata,
+      analysisDetails: {
+        patterns: metadata ?? null,
+        evidence: { flagReasons },
+        confidence: null,
+        falsePositiveRisk: null,
+      },
     });
 
     // Task 4.5.2: Send Socket.IO notification to admins

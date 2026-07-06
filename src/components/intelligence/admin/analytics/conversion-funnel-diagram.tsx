@@ -11,7 +11,7 @@ import { MetricValue } from '@/components/ui/stat-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowRight } from 'lucide-react';
 
-interface ConversionFunnelData {
+export interface ConversionFunnelData {
   views: number | string;
   bids: number | string;
   wins: number | string;
@@ -21,7 +21,7 @@ interface ConversionFunnelData {
 }
 
 interface ConversionFunnelDiagramProps {
-  data: ConversionFunnelData;
+  data: ConversionFunnelData | null;
   loading?: boolean;
 }
 

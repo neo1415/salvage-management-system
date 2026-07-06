@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
@@ -111,6 +111,21 @@ function cardTone(value: string) {
   return 'border-green-200 bg-green-50 text-green-900';
 }
 
+function getManualFindings(data?: Record<string, unknown>): {
+  documentQuality?: string;
+  dataConsistency?: string;
+  authenticity?: string;
+} | null {
+  const findings = data?.findings;
+  if (!findings || typeof findings !== 'object' || Array.isArray(findings)) return null;
+  const record = findings as Record<string, unknown>;
+  return {
+    documentQuality: typeof record.documentQuality === 'string' ? record.documentQuality : undefined,
+    dataConsistency: typeof record.dataConsistency === 'string' ? record.dataConsistency : undefined,
+    authenticity: typeof record.authenticity === 'string' ? record.authenticity : undefined,
+  };
+}
+
 export default function KYCApprovalDetailPage() {
   const router = useAppRouter();
   const params = useParams();
@@ -140,7 +155,7 @@ export default function KYCApprovalDetailPage() {
     if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
 
-  async function loadApproval(refresh = false) {
+  const loadApproval = useCallback(async (refresh = false) => {
     setLoading(true);
     setError(null);
     try {
@@ -161,12 +176,12 @@ export default function KYCApprovalDetailPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [vendorId]);
 
   useEffect(() => {
     if (status !== 'authenticated') return;
     void loadApproval(false);
-  }, [status, vendorId]);
+  }, [status, loadApproval]);
 
   async function handleRefreshProviderEvidence() {
     setRefreshingEvidence(true);
@@ -323,6 +338,7 @@ export default function KYCApprovalDetailPage() {
   const manualRecommendation = typeof (approval.ninVerificationData as Record<string, unknown> | undefined)?.recommendation === 'string'
     ? String((approval.ninVerificationData as Record<string, unknown>).recommendation)
     : null;
+  const manualFindings = getManualFindings(approval.ninVerificationData);
   const managerDecision = (normalized.managerDecision ?? {}) as Record<string, unknown>;
   const managerDecisionReviewedAt = managerDecision.reviewedAt
     ? String(managerDecision.reviewedAt)
@@ -748,19 +764,19 @@ export default function KYCApprovalDetailPage() {
                 </p>
               </div>
             </div>
-            {(approval.ninVerificationData as any).findings && (
+            {manualFindings && (
               <div className="space-y-2 text-sm">
                 <div>
                   <span className="font-medium text-gray-700">Document Quality:</span>
-                  <span className="ml-2 text-gray-600">{(approval.ninVerificationData as any).findings.documentQuality}</span>
+                  <span className="ml-2 text-gray-600">{manualFindings.documentQuality || 'Not available'}</span>
                 </div>
                 <div>
                   <span className="font-medium text-gray-700">Data Consistency:</span>
-                  <span className="ml-2 text-gray-600">{(approval.ninVerificationData as any).findings.dataConsistency}</span>
+                  <span className="ml-2 text-gray-600">{manualFindings.dataConsistency || 'Not available'}</span>
                 </div>
                 <div>
                   <span className="font-medium text-gray-700">Authenticity:</span>
-                  <span className="ml-2 text-gray-600">{(approval.ninVerificationData as any).findings.authenticity}</span>
+                  <span className="ml-2 text-gray-600">{manualFindings.authenticity || 'Not available'}</span>
                 </div>
               </div>
             )}

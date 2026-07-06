@@ -42,8 +42,9 @@ export async function GET(
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Remove sensitive data
-    const { passwordHash, ...userWithoutPassword } = user;
+    // Remove sensitive data before serializing the response.
+    const userWithoutPassword: Partial<typeof user> = { ...user };
+    delete userWithoutPassword.passwordHash;
 
     return NextResponse.json({ success: true, user: userWithoutPassword });
   } catch (error) {

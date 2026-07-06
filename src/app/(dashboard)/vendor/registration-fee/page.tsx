@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useCallback, useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { RegistrationFeeModal } from '@/components/vendor/registration-fee-modal';
@@ -22,11 +22,31 @@ function RegistrationFeePageContent() {
   const [onboardingLoaded, setOnboardingLoaded] = useState(false);
 
   const [status, setStatus] = useState<'loading' | 'paid' | 'unpaid' | 'success' | 'failed'>('loading');
-  const [error, setError] = useState<string | null>(null);
-
-  const goToNextStep = () => {
+  const goToNextStep = useCallback(() => {
     router.push(resolvePostPaymentPath(onboardingMode));
-  };
+  }, [onboardingMode, router]);
+
+  const checkPaymentStatus = useCallback(async () => {
+    try {
+      const response = await fetch('/api/vendors/registration-fee/status', { cache: 'no-store' });
+      const result = await response.json();
+
+      if (!result.data?.required) {
+        goToNextStep();
+        return;
+      }
+
+      if (result.data?.paid) {
+        setStatus('paid');
+        setTimeout(goToNextStep, 2000);
+      } else {
+        setStatus('unpaid');
+      }
+    } catch (err) {
+      console.error('Failed to check payment status:', err);
+      setStatus('unpaid');
+    }
+  }, [goToNextStep]);
 
   useEffect(() => {
     fetch('/api/vendor/onboarding-status', { cache: 'no-store' })
@@ -45,7 +65,7 @@ function RegistrationFeePageContent() {
 
     if (paymentStatus === 'success') {
       setStatus('success');
-      setTimeout(() => goToNextStep(), 3000);
+      setTimeout(goToNextStep, 3000);
       return;
     }
 
@@ -54,31 +74,8 @@ function RegistrationFeePageContent() {
       return;
     }
 
-    checkPaymentStatus();
-  }, [paymentStatus, onboardingMode, onboardingLoaded]);
-
-  const checkPaymentStatus = async () => {
-    try {
-      const response = await fetch('/api/vendors/registration-fee/status', { cache: 'no-store' });
-      const result = await response.json();
-
-      if (!result.data?.required) {
-        goToNextStep();
-        return;
-      }
-
-      if (result.data?.paid) {
-        setStatus('paid');
-        setTimeout(() => goToNextStep(), 2000);
-      } else {
-        setStatus('unpaid');
-      }
-    } catch (err) {
-      console.error('Failed to check payment status:', err);
-      setError(err instanceof Error ? err.message : 'Failed to check payment status');
-      setStatus('unpaid');
-    }
-  };
+    void checkPaymentStatus();
+  }, [checkPaymentStatus, goToNextStep, onboardingLoaded, paymentStatus]);
 
   if (status === 'loading') {
     return (

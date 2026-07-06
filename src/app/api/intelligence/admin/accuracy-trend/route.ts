@@ -13,6 +13,14 @@ import { db } from '@/lib/db/drizzle';
 import { predictions } from '@/lib/db/schema/intelligence';
 import { sql } from 'drizzle-orm';
 
+interface AccuracyTrendRow {
+  date: string | Date;
+  accuracy: string;
+  avg_error: string;
+  predictions: string;
+  avg_confidence: string | null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
@@ -74,12 +82,14 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: Array.from(accuracyData).map((row: any) => ({
+      data: Array.from(
+        accuracyData as unknown as Iterable<AccuracyTrendRow>
+      ).map((row) => ({
         date: row.date,
         accuracy: parseFloat(row.accuracy),
         avgError: parseFloat(row.avg_error),
         predictions: parseInt(row.predictions, 10),
-        confidence: parseFloat(row.avg_confidence || 0),
+        confidence: Number(row.avg_confidence || 0),
       })),
     });
   } catch (error) {

@@ -8,23 +8,23 @@
  * Requirements: 13.1, 13.2, 13.3
  */
 
-export interface BatchResult {
+export interface BatchResult<T = unknown> {
   imported: number;
   updated: number;
   skipped: number;
-  errors: Array<{ record: any; error: Error }>;
+  errors: Array<{ record: T; error: Error }>;
 }
 
-export interface ProcessingStats {
+export interface ProcessingStats<T = unknown> {
   totalRecords: number;
   totalImported: number;
   totalUpdated: number;
   totalSkipped: number;
   totalErrors: number;
-  errors: Array<{ record: any; error: Error }>;
+  errors: Array<{ record: T; error: Error }>;
 }
 
-export class BatchProcessor<T = any> {
+export class BatchProcessor<T = unknown> {
   /**
    * Process records in batches
    * 
@@ -36,9 +36,9 @@ export class BatchProcessor<T = any> {
   async processBatch(
     records: T[],
     batchSize: number,
-    processor: (batch: T[]) => Promise<BatchResult>
-  ): Promise<ProcessingStats> {
-    const stats: ProcessingStats = {
+    processor: (batch: T[]) => Promise<BatchResult<T>>
+  ): Promise<ProcessingStats<T>> {
+    const stats: ProcessingStats<T> = {
       totalRecords: records.length,
       totalImported: 0,
       totalUpdated: 0,
@@ -116,9 +116,9 @@ export class BatchProcessor<T = any> {
    */
   private async processIndividually(
     records: T[],
-    processor: (batch: T[]) => Promise<BatchResult>
-  ): Promise<BatchResult> {
-    const result: BatchResult = {
+    processor: (batch: T[]) => Promise<BatchResult<T>>
+  ): Promise<BatchResult<T>> {
+    const result: BatchResult<T> = {
       imported: 0,
       updated: 0,
       skipped: 0,

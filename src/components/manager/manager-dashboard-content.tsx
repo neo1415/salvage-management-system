@@ -132,13 +132,6 @@ const COLORS = {
   info: '#3B82F6',
 };
 
-const PAYMENT_STATUS_COLORS: Record<string, string> = {
-  pending: COLORS.warning,
-  verified: COLORS.success,
-  rejected: COLORS.danger,
-  overdue: '#DC2626',
-};
-
 function formatNaira(value: number): string {
   return new Intl.NumberFormat('en-NG', {
     style: 'currency',
@@ -236,7 +229,7 @@ function ManagerDashboardContentInner() {
       setIsLoadingData(false);
       setIsRefreshing(false);
     }
-  }, [dateRange, customStartDate, customEndDate, assetType, branchName, brokerQuery, router.push]);
+  }, [dateRange, customStartDate, customEndDate, assetType, branchName, brokerQuery, router]);
 
   // Initial fetch and auth check
   useEffect(() => {
@@ -254,7 +247,7 @@ function ManagerDashboardContentInner() {
     if (isAuthenticated && user) {
       fetchDashboardData();
     }
-  }, [isAuthenticated, isLoading, user, router.push, fetchDashboardData]);
+  }, [isAuthenticated, isLoading, user, router, fetchDashboardData]);
 
   // Refresh dashboard when page becomes visible (e.g., returning from another page)
   useEffect(() => {

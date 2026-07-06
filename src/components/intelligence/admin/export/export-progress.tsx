@@ -183,8 +183,8 @@ export function ExportProgress({ job, onComplete }: ExportProgressProps) {
             <div className="flex justify-between">
               <span className="text-muted-foreground">Filters</span>
               <span>
-                {job.filters.anonymize && 'Anonymized, '}
-                {job.filters.includeFeatures && 'With Features'}
+                {job.filters.anonymize === true && 'Anonymized, '}
+                {job.filters.includeFeatures === true && 'With Features'}
               </span>
             </div>
           )}

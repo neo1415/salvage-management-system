@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -18,24 +18,21 @@ import {
   AuctionCategoryBreakdownSection,
 } from '@/components/reports/common/auction-breakdown-table';
 import { mapAuctionListToBreakdownRow } from '@/features/reports/utils/auction-breakdown';
+import type { AuctionPerformanceReport } from '@/features/reports/operational/services';
 
 export default function AuctionPerformancePage() {
   const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<AuctionPerformanceReport | null>(null);
   const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async (force = false) => {
+  const fetchReport = useCallback(async (force = false) => {
     startFetch();
     try {
       const result = await loadReportFromApi('/api/reports/operational/auction-performance', filters, { force });
-      if (result.status === 'success') {
-        setReportData(result.data);
+      if (result.status === 'success' && result.data) {
+        setReportData(result.data as AuctionPerformanceReport);
         markHasData();
       }
     } catch (error) {
@@ -43,7 +40,11 @@ export default function AuctionPerformancePage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endFetch, filters, markHasData, startFetch]);
+
+  useEffect(() => {
+    void fetchReport();
+  }, [fetchReport]);
 
   return (
     <>
@@ -235,7 +236,7 @@ export default function AuctionPerformancePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {reportData.byAssetType.map((item: any) => (
+                      {reportData.byAssetType.map((item) => (
                         <tr key={item.assetType} className="border-b">
                           <td className="p-2 capitalize">{item.assetType}</td>
                           <td className="text-right p-2">{item.count}</td>
@@ -275,7 +276,7 @@ export default function AuctionPerformancePage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((branch: any, index: number) => (
+                          {rows.map((branch, index) => (
                             <tr key={`${branch.branchName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2 font-medium">{branch.branchName || 'Unassigned'}</td>
                               <td className="text-right p-2">{branch.auctionCount || 0}</td>
@@ -316,7 +317,7 @@ export default function AuctionPerformancePage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((broker: any, index: number) => (
+                          {rows.map((broker, index) => (
                             <tr key={`${broker.channelName}-${startIndex + index}`} className="border-b hover:bg-gray-50">
                               <td className="p-2 font-medium">{broker.channelName || 'Unassigned'}</td>
                               <td className="p-2 capitalize">{broker.channelType}</td>
@@ -365,7 +366,7 @@ export default function AuctionPerformancePage() {
                 <div>
                   <h4 className="font-semibold mb-2">Revenue by Asset Type</h4>
                   <div className="space-y-2">
-                    {reportData.financialMetrics.revenueByAssetType.map((item: any) => (
+                    {reportData.financialMetrics.revenueByAssetType.map((item) => (
                       <div key={item.assetType} className="flex justify-between items-center">
                         <span className="capitalize">{item.assetType}</span>
                         <div className="flex items-center gap-4">
@@ -443,7 +444,7 @@ export default function AuctionPerformancePage() {
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">Detailed Auction List</h3>
                 <AuctionBreakdownTable
-                  rows={reportData.auctionList.map((auction: any) =>
+                  rows={reportData.auctionList.map((auction) =>
                     mapAuctionListToBreakdownRow(auction)
                   )}
                 />
@@ -464,7 +465,7 @@ export default function AuctionPerformancePage() {
                         Best Performing
                       </h4>
                       <div className="space-y-3">
-                        {reportData.insights.bestPerforming.map((item: any, idx: number) => (
+                        {reportData.insights.bestPerforming.map((item, idx) => (
                           <div key={idx} className="p-3 bg-green-50 rounded-lg">
                             <p className="font-semibold text-sm">{item.metric}</p>
                             <p className="text-lg font-bold text-green-700">{item.value}</p>
@@ -481,7 +482,7 @@ export default function AuctionPerformancePage() {
                         Underperforming
                       </h4>
                       <div className="space-y-3">
-                        {reportData.insights.underperforming.map((item: any, idx: number) => (
+                        {reportData.insights.underperforming.map((item, idx) => (
                           <div key={idx} className="p-3 bg-red-50 rounded-lg">
                             <p className="font-semibold text-sm">{item.metric}</p>
                             <p className="text-lg font-bold text-red-700">{item.value}</p>

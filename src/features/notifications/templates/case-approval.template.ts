@@ -25,7 +25,7 @@ export interface CaseApprovalTemplateData {
 }
 
 export async function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateData): Promise<string> {
-  const { adjusterName, caseId, claimReference, assetType, status, comment, managerName, appUrl, priceAdjustments } = data;
+  const { adjusterName, caseId, claimReference, assetType, status, comment, managerName, priceAdjustments } = data;
   const branding = await getEmailBranding();
   
   const isApproved = status === 'approved';

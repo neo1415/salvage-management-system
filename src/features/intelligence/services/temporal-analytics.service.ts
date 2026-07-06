@@ -8,11 +8,32 @@
  */
 
 import { db } from '@/lib/db';
-import { sql, eq, and, gte, lte, desc } from 'drizzle-orm';
+import { sql, and, gte, lte, desc } from 'drizzle-orm';
 import { temporalPatternsAnalytics } from '@/lib/db/schema/analytics';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { bids } from '@/lib/db/schema/bids';
+
+type AssetType = typeof salvageCases.$inferSelect.assetType;
+
+interface TemporalPatternRow {
+  asset_type: AssetType;
+  bid_count: string;
+  avg_bid_amount: string | null;
+  vendor_activity: string;
+}
+
+interface HourlyPatternRow extends TemporalPatternRow {
+  hour_of_day: string;
+}
+
+interface DailyPatternRow extends TemporalPatternRow {
+  day_of_week: string;
+}
+
+interface SeasonalPatternRow extends TemporalPatternRow {
+  month_of_year: string;
+}
 
 export class TemporalAnalyticsService {
   /**
@@ -20,7 +41,7 @@ export class TemporalAnalyticsService {
    * Task 5.2.1: Implement hourly bidding pattern analysis
    */
   async calculateHourlyPatterns(periodStart: Date, periodEnd: Date): Promise<void> {
-    const hourlyData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         sc.asset_type,
         EXTRACT(HOUR FROM b.created_at) AS hour_of_day,
@@ -33,6 +54,8 @@ export class TemporalAnalyticsService {
       WHERE b.created_at BETWEEN ${periodStart.toISOString()} AND ${periodEnd.toISOString()}
       GROUP BY sc.asset_type, EXTRACT(HOUR FROM b.created_at)
     `);
+
+    const hourlyData = result as unknown as HourlyPatternRow[];
 
     for (const row of hourlyData) {
       const peakScore = this.calculatePeakActivityScore(
@@ -60,7 +83,7 @@ export class TemporalAnalyticsService {
    * Task 5.2.2: Implement daily pattern analysis
    */
   async calculateDailyPatterns(periodStart: Date, periodEnd: Date): Promise<void> {
-    const dailyData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         sc.asset_type,
         EXTRACT(DOW FROM b.created_at) AS day_of_week,
@@ -73,6 +96,8 @@ export class TemporalAnalyticsService {
       WHERE b.created_at BETWEEN ${periodStart.toISOString()} AND ${periodEnd.toISOString()}
       GROUP BY sc.asset_type, EXTRACT(DOW FROM b.created_at)
     `);
+
+    const dailyData = result as unknown as DailyPatternRow[];
 
     for (const row of dailyData) {
       const peakScore = this.calculatePeakActivityScore(
@@ -100,7 +125,7 @@ export class TemporalAnalyticsService {
    * Task 5.2.3: Implement seasonal pattern analysis
    */
   async calculateSeasonalPatterns(periodStart: Date, periodEnd: Date): Promise<void> {
-    const seasonalData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         sc.asset_type,
         EXTRACT(MONTH FROM b.created_at) AS month_of_year,
@@ -113,6 +138,8 @@ export class TemporalAnalyticsService {
       WHERE b.created_at BETWEEN ${periodStart.toISOString()} AND ${periodEnd.toISOString()}
       GROUP BY sc.asset_type, EXTRACT(MONTH FROM b.created_at)
     `);
+
+    const seasonalData = result as unknown as SeasonalPatternRow[];
 
     for (const row of seasonalData) {
       const peakScore = this.calculatePeakActivityScore(

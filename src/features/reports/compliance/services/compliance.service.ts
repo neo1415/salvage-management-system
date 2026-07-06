@@ -110,8 +110,6 @@ export class ComplianceService {
     // Calculate compliance metrics
     const generateActions = auditData.filter(a => a.action === 'generate').length;
     const exportActions = auditData.filter(a => a.action === 'export').length;
-    const totalReportActions = generateActions + exportActions;
-
     return {
       summary: {
         totalActions,
@@ -190,8 +188,6 @@ export class ComplianceService {
 
     // Document compliance (simplified)
     const casesWithAuctions = cases.filter(c => c.hasAuction).length;
-    const casesWithPayments = cases.filter(c => c.hasPayment).length;
-
     return {
       summary: {
         totalCases,

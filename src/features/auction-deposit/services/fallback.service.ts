@@ -13,19 +13,19 @@ import {
   systemConfig,
   depositEvents
 } from '@/lib/db/schema/auction-deposit';
-import { bids } from '@/lib/db/schema/bids';
 import { auctions } from '@/lib/db/schema/auctions';
 import { escrowWallets } from '@/lib/db/schema/escrow';
 import { releaseForms } from '@/lib/db/schema/release-forms';
 import { payments } from '@/lib/db/schema/payments';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { regenerateDocumentsForFallback } from './document-integration.service';
 import { emailService } from '@/features/notifications/services/email.service';
 import { getEmailBranding } from '@/features/notifications/templates/email-branding';
 import { appPath } from '@/features/notifications/templates/email-urls';
 import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
+import { calculateAuctionPaymentAllocation } from './payment-allocation';
 
 /**
  * Get configuration value from system_config table
@@ -92,7 +92,7 @@ export async function isEligibleForPromotion(
 
     // 2. Check if vendor has sufficient balance for remaining payment
     const availableBalance = parseFloat(wallet.availableBalance);
-    const remainingPayment = finalBid - depositAmount;
+    const remainingPayment = calculateAuctionPaymentAllocation(finalBid, depositAmount).remainingAmount;
 
     if (availableBalance < remainingPayment) {
       return {
@@ -300,7 +300,7 @@ export async function triggerFallback(
       await db
         .update(auctions)
         .set({
-          status: 'failed_all_fallbacks' as any,
+          status: 'failed_all_fallbacks',
           updatedAt: new Date()
         })
         .where(eq(auctions.id, auctionId));

@@ -7,11 +7,30 @@ import { db } from '@/lib/db';
 import { sql, desc } from 'drizzle-orm';
 import { schemaEvolutionLog } from '@/lib/db/schema/analytics';
 import { salvageCases } from '@/lib/db/schema/cases';
-import { auctions } from '@/lib/db/schema/auctions';
+
+type AssetType = typeof salvageCases.$inferSelect.assetType;
+type SchemaEvolutionRow = typeof schemaEvolutionLog.$inferSelect;
+
+interface NewAssetTypeRow {
+  asset_type: AssetType;
+  occurrence_count: string;
+  first_seen: string | Date;
+  sample_case_id: string;
+}
+
+interface NewAttributeRow {
+  asset_type: AssetType;
+  attribute_name: string;
+  occurrence_count: string;
+}
+
+interface SampleAuctionRow {
+  id: string;
+}
 
 export class SchemaEvolutionService {
   async detectNewAssetTypes(): Promise<void> {
-    const newAssetTypes: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT DISTINCT
         sc.asset_type,
         COUNT(*) AS occurrence_count,
@@ -23,6 +42,8 @@ export class SchemaEvolutionService {
       GROUP BY sc.asset_type
       HAVING COUNT(*) >= 3
     `);
+
+    const newAssetTypes = result as unknown as NewAssetTypeRow[];
 
     for (const row of newAssetTypes) {
       await db.insert(schemaEvolutionLog).values({
@@ -43,13 +64,14 @@ export class SchemaEvolutionService {
         const { emitSchemaNewAssetType } = await import('../events/schema-new-asset-type.event');
         
         // Get sample auction ID from case
-        const sampleAuction: any = await db.execute(sql`
+        const sampleResult = await db.execute(sql`
           SELECT a.id FROM ${salvageCases} sc
           JOIN auctions a ON a.case_id = sc.id
           WHERE sc.id = ${row.sample_case_id}
           LIMIT 1
         `);
         
+        const sampleAuction = sampleResult as unknown as SampleAuctionRow[];
         const sampleAuctionId = sampleAuction[0]?.id || row.sample_case_id;
         
         await emitSchemaNewAssetType(
@@ -65,7 +87,7 @@ export class SchemaEvolutionService {
   }
 
   async detectNewAttributes(): Promise<void> {
-    const newAttributes: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT DISTINCT
         sc.asset_type,
         jsonb_object_keys(sc.asset_details) AS attribute_name,
@@ -75,6 +97,8 @@ export class SchemaEvolutionService {
       GROUP BY sc.asset_type, jsonb_object_keys(sc.asset_details)
       HAVING COUNT(*) >= 5
     `);
+
+    const newAttributes = result as unknown as NewAttributeRow[];
 
     for (const row of newAttributes) {
       const existingAttributes = ['make', 'model', 'year', 'color', 'trim', 'storage'];
@@ -95,7 +119,7 @@ export class SchemaEvolutionService {
     }
   }
 
-  async getPendingChanges(): Promise<any[]> {
+  async getPendingChanges(): Promise<SchemaEvolutionRow[]> {
     return await db
       .select()
       .from(schemaEvolutionLog)

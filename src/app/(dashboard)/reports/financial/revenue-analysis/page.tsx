@@ -7,10 +7,9 @@
  * Displays comprehensive revenue analysis with filters and export
  */
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
-import { useSession } from 'next-auth/react';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,25 +19,21 @@ import { ExportButton } from '@/components/reports/common/export-button';
 import { RevenueAnalysisReport } from '@/components/reports/financial/revenue-analysis-report';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
+import type { RevenueAnalysisReport as RevenueAnalysisReportData } from '@/features/reports/financial/services/revenue-analysis.service';
 
 export default function RevenueAnalysisPage() {
-  const { data: session } = useSession();
   const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
   const [error, setError] = useState<string | null>(null);
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<RevenueAnalysisReportData | null>(null);
   
   const [filters, setFilters] = useState<ReportFilters>({
     ...defaultReportFilters(),
     groupBy: 'month',
   });
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async (force = false) => {
+  const fetchReport = useCallback(async (force = false) => {
     startFetch();
     setError(null);
 
@@ -56,7 +51,7 @@ export default function RevenueAnalysisPage() {
       );
 
       if (result.data) {
-        setReportData(result.data);
+        setReportData(result.data as RevenueAnalysisReportData);
         markHasData();
       } else {
         throw new Error('Failed to fetch report');
@@ -67,7 +62,9 @@ export default function RevenueAnalysisPage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endFetch, filters, markHasData, startFetch]);
+
+  useEffect(() => { void fetchReport(); }, [fetchReport]);
 
   const handleApplyFilters = () => {
     fetchReport();
@@ -266,7 +263,7 @@ export default function RevenueAnalysisPage() {
 
       {reportData && (
         <div data-report-content>
-          <RevenueAnalysisReport data={reportData} loading={isRefreshing} />
+          <RevenueAnalysisReport data={reportData} />
         </div>
       )}
 

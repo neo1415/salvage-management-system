@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -12,24 +12,21 @@ import { defaultReportFilters, loadReportFromApi } from '@/components/reports/co
 import { ExportButton } from '@/components/reports/common/export-button';
 import { formatReportCurrency } from '@/components/reports/common/report-currency';
 import { ReportSummaryGrid, ReportSummaryStat } from '@/components/reports/common/report-ui';
+import type { ManagerMetricsReport } from '@/features/reports/user-performance/services';
 
 export default function ManagerMetricsPage() {
   const router = useAppRouter();
-  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+  const { loading, isRefreshing, startFetch, endFetch, markHasData } =
     useReportFetchState();
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<ManagerMetricsReport | null>(null);
   const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async (force = false) => {
+  const fetchReport = useCallback(async (force = false) => {
     startFetch();
     try {
       const result = await loadReportFromApi('/api/reports/user-performance/managers', filters, { force });
       if (result.status === 'success') {
-        setReportData(result.data);
+        setReportData(result.data as ManagerMetricsReport);
         markHasData();
       }
     } catch (error) {
@@ -37,7 +34,9 @@ export default function ManagerMetricsPage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endFetch, filters, markHasData, startFetch]);
+
+  useEffect(() => { void fetchReport(); }, [fetchReport]);
 
   return (
     <>

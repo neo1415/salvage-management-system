@@ -56,9 +56,10 @@ export async function GET(request: NextRequest) {
       WHERE created_at >= NOW() - INTERVAL '7 days'
     `);
 
-    const vendorIds = Array.isArray(recentBidders)
-      ? recentBidders.map((row: any) => row.vendor_id)
-      : [];
+    const vendorRows = Array.from(
+      recentBidders as unknown as Iterable<{ vendor_id: string }>
+    );
+    const vendorIds = vendorRows.map((row) => row.vendor_id);
 
     console.log(`[Fraud Cron] Found ${vendorIds.length} vendors with recent bidding activity`);
 
@@ -154,7 +155,7 @@ async function createFraudAlert(data: {
   severity: 'low' | 'medium' | 'high' | 'critical';
   vendorId: string;
   description: string;
-  metadata: any;
+  metadata: unknown;
 }): Promise<void> {
   const riskScoreBySeverity = {
     low: 30,
@@ -163,6 +164,10 @@ async function createFraudAlert(data: {
     critical: 95,
   } satisfies Record<typeof data.severity, number>;
 
+  const metadata = data.metadata && typeof data.metadata === 'object'
+    ? data.metadata as Record<string, unknown>
+    : {};
+
   await db.insert(fraudAlerts).values({
     entityType: 'vendor',
     entityId: data.vendorId,
@@ -170,7 +175,7 @@ async function createFraudAlert(data: {
     flagReasons: [data.type, data.description],
     status: 'pending',
     metadata: {
-      ...data.metadata,
+      ...metadata,
       source: 'cron_detect_fraud',
       riskLevel: data.severity,
       reasonCodes: [data.type],

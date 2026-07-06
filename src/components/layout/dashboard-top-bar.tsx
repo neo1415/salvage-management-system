@@ -14,7 +14,6 @@ import NotificationBell from '@/components/notifications/notification-bell';
  */
 export function DashboardTopBar() {
   const { data: session } = useSession();
-  const userRole = session?.user?.role || 'vendor';
 
   return (
     <div className="fixed top-0 left-64 right-0 h-16 bg-white border-b border-gray-200 z-40 flex items-center justify-end px-6">

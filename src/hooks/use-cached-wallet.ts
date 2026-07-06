@@ -13,6 +13,10 @@ import { CacheService } from '@/features/cache/services/cache.service';
 
 export interface WalletData {
   balance: number;
+  availableBalance?: number;
+  frozenAmount?: number;
+  fundingMinimum?: number;
+  fundingMaximum?: number;
   transactions: Array<Record<string, unknown>>;
 }
 

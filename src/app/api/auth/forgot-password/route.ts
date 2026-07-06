@@ -67,7 +67,6 @@ export async function POST(request: NextRequest) {
     if (user && user.status !== 'deleted' && user.status !== 'suspended') {
       // Generate reset token
       const resetToken = crypto.randomBytes(32).toString('hex');
-      const resetTokenExpiry = Date.now() + 3600000; // 1 hour
 
       // Store reset token in Redis
       const resetKey = `password_reset:${resetToken}`;

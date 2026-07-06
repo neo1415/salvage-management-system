@@ -186,7 +186,6 @@ export function EscrowPaymentDetails({
         }}
         onConfirm={() => {
           // ConfirmationModal expects sync handler; we wrap with async.
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           void handleManualRelease();
         }}
         title="Manual Release Funds"

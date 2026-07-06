@@ -25,6 +25,7 @@ import {
   resolveAuctionPaymentMethodAccess,
 } from '@/features/business-policy';
 import { AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress } from '@/lib/utils/audit-logger';
+import { calculateAuctionPaymentAllocation } from '@/features/auction-deposit/services/payment-allocation';
 
 /**
  * POST /api/auctions/[id]/payment/hybrid
@@ -146,7 +147,14 @@ export async function POST(
     // Calculate payment breakdown directly (no HTTP call needed)
     const finalBid = parseFloat(winner.bidAmount);
     const depositAmount = parseFloat(winner.depositAmount);
-    const remainingAmount = finalBid - depositAmount;
+    const { remainingAmount } = calculateAuctionPaymentAllocation(finalBid, depositAmount);
+
+    if (remainingAmount <= 0) {
+      return NextResponse.json(
+        { success: false, error: 'The auction deposit covers the full winning bid. Complete payment from the deposit instead.' },
+        { status: 400 }
+      );
+    }
     const availableBalance = parseFloat(escrowWallet.availableBalance);
     const canPayWithWallet = availableBalance >= remainingAmount;
 

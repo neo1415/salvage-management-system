@@ -8,7 +8,6 @@ import {
   ClipboardList,
   Activity,
   Package,
-  Database,
   ShieldCheck,
 } from 'lucide-react';
 import { AppLink } from '@/components/navigation/app-link';
@@ -64,7 +63,7 @@ function AdminDashboardContentInner() {
       // User has correct role, fetch dashboard stats
       fetchDashboardStats();
     }
-  }, [session, status, router.push]);
+  }, [session, status, router]);
 
   const fetchDashboardStats = async () => {
     const showFullPageLoader = statsRef.current == null;

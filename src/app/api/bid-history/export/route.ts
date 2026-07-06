@@ -7,6 +7,17 @@ import { bidHistoryAuctionOrder, bidHistoryStatusFilter } from '@/lib/auctions/b
 import { ExportService } from '@/features/export/services/export.service';
 import { formatNgnAmount } from '@/lib/utils/format-ngn';
 
+interface BidHistoryExportEntry {
+  id: string;
+  amount: string;
+  createdAt: Date;
+  vendor: {
+    id?: string;
+    businessName?: string | null;
+    profilePictureUrl?: string | null;
+  };
+}
+
 /**
  * Export Bid History API
  * 
@@ -84,7 +95,7 @@ export async function GET(request: NextRequest) {
         },
       });
       return acc;
-    }, {} as Record<string, any[]>);
+    }, {} as Record<string, BidHistoryExportEntry[]>);
 
     // Format data for export
     // Only include auctions with actual bids (exclude "watching" auctions)
@@ -130,7 +141,7 @@ export async function GET(request: NextRequest) {
           { 
             key: 'bidDate', 
             header: 'Bid Date',
-            format: (value) => new Date(value).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })
+            format: (value) => new Date(String(value)).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })
           },
           { key: 'status', header: 'Status' },
           { key: 'finalPrice', header: 'Final Price' },
@@ -155,7 +166,7 @@ export async function GET(request: NextRequest) {
           { 
             key: 'bidDate', 
             header: 'Bid Date',
-            format: (value) => new Date(value).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos' })
+            format: (value) => new Date(String(value)).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos' })
           },
           { key: 'status', header: 'Status' },
           { key: 'finalPrice', header: 'Final Price' },
@@ -189,7 +200,7 @@ export async function GET(request: NextRequest) {
 /**
  * Get asset name from case details
  */
-function getAssetName(caseData: any): string {
+function getAssetName(caseData: typeof salvageCases.$inferSelect | null): string {
   if (!caseData) return 'Unknown Asset';
 
   const { assetType, assetDetails } = caseData;
@@ -212,7 +223,7 @@ function getAssetName(caseData: any): string {
 /**
  * Get auction status (Won/Lost/Active)
  */
-function getAuctionStatus(auction: any): string {
+function getAuctionStatus(auction: typeof auctions.$inferSelect): string {
   switch (auction.status) {
     case 'active':
     case 'extended':

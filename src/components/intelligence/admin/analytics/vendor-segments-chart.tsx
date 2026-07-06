@@ -11,9 +11,9 @@ import { MetricValue } from '@/components/ui/stat-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, type PieLabelRenderProps } from 'recharts';
 
-interface VendorSegment {
+export interface VendorSegment {
   segment: string;
   count: number | string;
   avgWinRate: number | string;
@@ -90,7 +90,7 @@ export function VendorSegmentsChart({ data, loading }: VendorSegmentsChartProps)
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={(props: any) => `${props.name}: ${props.percentage ?? props.percent ?? 0}%`}
+                  label={(props: PieLabelRenderProps) => `${String(props.name ?? '')}: ${props.percent ?? 0}%`}
                   outerRadius={100}
                   fill="#8884d8"
                   dataKey="value"

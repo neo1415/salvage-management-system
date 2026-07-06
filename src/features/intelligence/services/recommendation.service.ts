@@ -11,7 +11,7 @@
  */
 
 import { db } from '@/lib/db';
-import { eq, and, sql, desc, inArray, isNotNull, gte } from 'drizzle-orm';
+import { eq, and, sql, desc, gte } from 'drizzle-orm';
 import { 
   recommendations,
   algorithmConfig,
@@ -44,7 +44,7 @@ export interface RecommendationResult {
   reasonCodes: string[];
   auctionDetails: {
     assetType: string;
-    assetDetails: any;
+    assetDetails: RecommendationAssetDetails;
     marketValue: number;
     reservePrice: number;
     currentBid: number | null;
@@ -82,6 +82,47 @@ interface RecommendationConfig {
   minMatchScore: number;
   coldStartBidThreshold: number;
   similarityThreshold: number;
+}
+
+type AssetType = typeof salvageCases.$inferSelect.assetType;
+type VendorSegment = typeof vendorSegments.$inferSelect;
+type RecommendationLogInsert = typeof recommendationLogs.$inferInsert;
+
+interface RecommendationAssetDetails extends Record<string, unknown> {
+  make?: string;
+  brand?: string;
+  manufacturer?: string;
+  model?: string;
+  color?: string;
+  trim?: string;
+  region?: string;
+}
+
+interface ActiveAuctionRow {
+  auction_id: string;
+  case_id: string;
+  current_bid: string | null;
+  watching_count: number;
+  end_time: string | Date;
+  asset_type: AssetType;
+  asset_details: RecommendationAssetDetails;
+  damage_severity: string | null;
+  market_value: string;
+  reserve_price: string | null;
+}
+
+interface HistoricalBidRow {
+  asset_type: AssetType;
+  asset_details: RecommendationAssetDetails;
+  damage_severity: string | null;
+  market_value: string;
+  amount: string;
+  created_at: string | Date;
+  is_winner: boolean;
+}
+
+interface CountRow {
+  similar_count: string;
 }
 
 function rowsFromExecute<T>(result: unknown): T[] {
@@ -391,7 +432,7 @@ export class RecommendationService {
   /**
    * Get active auctions that vendor hasn't bid on yet
    */
-  private async getActiveAuctions(vendorId: string): Promise<any[]> {
+  private async getActiveAuctions(vendorId: string): Promise<ActiveAuctionRow[]> {
     const result = await db.execute(sql`
       SELECT 
         a.id AS auction_id,
@@ -416,7 +457,7 @@ export class RecommendationService {
       LIMIT 100
     `);
 
-    return rowsFromExecute(result);
+    return rowsFromExecute<ActiveAuctionRow>(result);
   }
 
   /**
@@ -426,7 +467,7 @@ export class RecommendationService {
   private async calculateCollaborativeScores(
     vendorId: string,
     vendorPattern: VendorBiddingPattern,
-    activeAuctions: any[]
+    activeAuctions: ActiveAuctionRow[]
   ): Promise<Map<string, number>> {
     const scores = new Map<string, number>();
 
@@ -448,12 +489,12 @@ export class RecommendationService {
       JOIN ${salvageCases} sc ON a.case_id = sc.id
       WHERE b.vendor_id = ${vendorId}
         AND a.status = 'closed'
-        AND b.created_at > ${sixMonthsAgo}
+        AND b.created_at > ${sixMonthsAgo.toISOString()}::timestamptz
       ORDER BY b.created_at DESC
       LIMIT 50
     `);
 
-    const historicalBids = rowsFromExecute<Record<string, unknown>>(historicalBidsRaw);
+    const historicalBids = rowsFromExecute<HistoricalBidRow>(historicalBidsRaw);
 
     if (historicalBids.length === 0) {
       return scores;
@@ -486,8 +527,8 @@ export class RecommendationService {
    * Scoring: Asset type (40), Make/Model (30), Damage (15), Price (15)
    */
   private calculateItemSimilarity(
-    targetAuction: any,
-    historicalBid: any,
+    targetAuction: ActiveAuctionRow,
+    historicalBid: HistoricalBidRow,
     bidDate: Date
   ): number {
     let score = 0;
@@ -517,7 +558,7 @@ export class RecommendationService {
     // Damage severity match: 15 points (±1 level: 8)
     if (targetAuction.damage_severity === historicalBid.damage_severity) {
       score += 15;
-    } else if (this.isDamageSeverityAdjacent(targetAuction.damage_severity, historicalBid.damage_severity)) {
+    } else if (this.isDamageSeverityAdjacent(targetAuction.damage_severity ?? 'none', historicalBid.damage_severity ?? 'none')) {
       score += 8;
     }
 
@@ -562,7 +603,7 @@ export class RecommendationService {
   private async calculateContentScores(
     vendorId: string,
     vendorPattern: VendorBiddingPattern,
-    activeAuctions: any[]
+    activeAuctions: ActiveAuctionRow[]
   ): Promise<Map<string, number>> {
     const scores = new Map<string, number>();
 
@@ -614,7 +655,7 @@ export class RecommendationService {
       const damageSeverity = auction.damage_severity;
       if (damageSeverity && vendorPattern.damagePreferences[damageSeverity]) {
         const preferenceCount = vendorPattern.damagePreferences[damageSeverity];
-        const totalPreferences = Object.values(vendorPattern.damagePreferences).reduce((a: any, b: any) => a + b, 0);
+        const totalPreferences = Object.values(vendorPattern.damagePreferences).reduce((sum, count) => sum + count, 0);
         const preferenceRatio = preferenceCount / totalPreferences;
         score += 15 * preferenceRatio;
       }
@@ -640,11 +681,11 @@ export class RecommendationService {
    * Tasks 3.2.1-3.2.6: Enhanced with analytics integrations
    */
   private async combineScores(
-    activeAuctions: any[],
+    activeAuctions: ActiveAuctionRow[],
     collaborativeScores: Map<string, number>,
     contentScores: Map<string, number>,
     vendorPattern: VendorBiddingPattern,
-    vendorSegment: any | null,
+    vendorSegment: VendorSegment | null,
     collabWeight: number,
     contentWeight: number,
     minMatchScore: number
@@ -674,9 +715,8 @@ export class RecommendationService {
       matchScore += temporalBoost.boost;
 
       // Task 3.2.4: Apply geographic boost for local prioritization
-      const vendorRegion = vendorSegment?.preferredPriceRange?.region;
       const auctionRegion = auction.asset_details?.region;
-      const geoBoost = await this.getGeographicBoost(assetType, vendorRegion, auctionRegion);
+      const geoBoost = await this.getGeographicBoost(assetType, undefined, auctionRegion);
       matchScore += geoBoost.boost;
 
       // Task 3.2.6: Apply attribute boost for trending attributes
@@ -691,7 +731,7 @@ export class RecommendationService {
       matchScore += sessionBoost.boost;
 
       // Task 3.2.5: Apply conversion funnel analytics boost
-      const conversionBoost = await this.getConversionFunnelBoost(assetType, vendorSegment);
+      const conversionBoost = await this.getConversionFunnelBoost(assetType);
       matchScore += conversionBoost.boost;
 
       // Filter by minimum threshold
@@ -895,7 +935,7 @@ export class RecommendationService {
       );
 
       // Insert into recommendation_logs
-      const logValues = recommendationResults.map(rec => {
+      const logValues = recommendationResults.map<RecommendationLogInsert | null>(rec => {
         const recommendationId = auctionToRecMap.get(rec.auctionId);
         if (!recommendationId) return null;
 
@@ -909,18 +949,22 @@ export class RecommendationService {
           reasonCodes: rec.reasonCodes,
           algorithmVersion: this.ALGORITHM_VERSION,
           calculationDetails: {
+            vendorBidCount: null,
             collaborativeWeight: 0.6,
             contentWeight: 0.4,
-            popularityBoost: rec.popularityBoost,
-            winRateBoost: rec.winRateBoost,
+            similarAuctions: null,
+            vendorPreferences: {
+              popularityBoost: rec.popularityBoost,
+              winRateBoost: rec.winRateBoost,
+            },
           },
           clicked: false,
           bidPlaced: false,
         };
-      }).filter(Boolean);
+      }).filter((value): value is RecommendationLogInsert => value !== null);
 
       if (logValues.length > 0) {
-        await db.insert(recommendationLogs).values(logValues as any[]);
+        await db.insert(recommendationLogs).values(logValues);
       }
     } catch (error) {
       console.error('Error logging recommendations:', error);
@@ -932,7 +976,7 @@ export class RecommendationService {
    * Get vendor segment for segment-specific strategies
    * Task 3.2.1: Integrate vendor_segments for segment-specific strategies
    */
-  private async getVendorSegment(vendorId: string): Promise<any | null> {
+  private async getVendorSegment(vendorId: string): Promise<VendorSegment | null> {
     try {
       const result = await db
         .select()
@@ -952,7 +996,7 @@ export class RecommendationService {
    * Task 3.2.3: Integrate temporal_patterns for optimal timing
    */
   private async getTemporalBoost(
-    assetType: string,
+    assetType: AssetType,
     auctionEndTime: Date
   ): Promise<{ boost: number; reasonCode?: string }> {
     try {
@@ -966,7 +1010,7 @@ export class RecommendationService {
         .from(temporalPatternsAnalytics)
         .where(
           and(
-            eq(temporalPatternsAnalytics.assetType, assetType as any),
+            eq(temporalPatternsAnalytics.assetType, assetType),
             eq(temporalPatternsAnalytics.hourOfDay, endHour),
             eq(temporalPatternsAnalytics.dayOfWeek, endDay)
           )
@@ -1045,9 +1089,6 @@ export class RecommendationService {
       }
 
       const targetAssetType = targetAuction[0].assetType;
-      const targetDetails = targetAuction[0].assetDetails || {};
-      const targetMake = (targetDetails as any).make || (targetDetails as any).brand;
-
       // Check if vendor viewed similar auctions in recent sessions
       // We'll use a simple heuristic: check if they viewed auctions of the same asset type
       const currentSession = recentSessions[0]; // Most recent session
@@ -1073,7 +1114,8 @@ export class RecommendationService {
           AND a.id != ${auctionId}
       `);
 
-      const similarCount = parseInt((similarViewedCount[0] as any)?.similar_count || '0');
+      const similarRows = rowsFromExecute<CountRow>(similarViewedCount);
+      const similarCount = parseInt(similarRows[0]?.similar_count || '0');
 
       // Boost logic based on session behavior
       if (similarCount > 5) {
@@ -1105,8 +1147,7 @@ export class RecommendationService {
    * Task 3.2.5: Implement conversion funnel analytics integration
    */
   private async getConversionFunnelBoost(
-    assetType: string,
-    vendorSegment: any
+    assetType: AssetType
   ): Promise<{ boost: number; reasonCode?: string }> {
     try {
       const result = await db
@@ -1115,7 +1156,7 @@ export class RecommendationService {
           overallConversionRate: conversionFunnelAnalytics.overallConversionRate,
         })
         .from(conversionFunnelAnalytics)
-        .where(eq(conversionFunnelAnalytics.assetType, assetType as any))
+        .where(eq(conversionFunnelAnalytics.assetType, assetType))
         .orderBy(desc(conversionFunnelAnalytics.updatedAt))
         .limit(1);
 
@@ -1156,7 +1197,7 @@ export class RecommendationService {
    * Task 3.2.4: Integrate geographic_patterns for local prioritization
    */
   private async getGeographicBoost(
-    assetType: string,
+    assetType: AssetType,
     vendorRegion?: string,
     auctionRegion?: string
   ): Promise<{ boost: number; reasonCode?: string }> {
@@ -1173,7 +1214,7 @@ export class RecommendationService {
         .where(
           and(
             eq(geographicPatternsAnalytics.region, vendorRegion),
-            eq(geographicPatternsAnalytics.assetType, assetType as any)
+            eq(geographicPatternsAnalytics.assetType, assetType)
           )
         )
         .orderBy(desc(geographicPatternsAnalytics.updatedAt))
@@ -1210,7 +1251,7 @@ export class RecommendationService {
    * Task 3.2.6: Integrate attribute_performance for trending attributes
    */
   private async getAttributeBoost(
-    assetType: string,
+    assetType: AssetType,
     attributes: { color?: string; trim?: string }
   ): Promise<{ boost: number; reasonCode?: string }> {
     try {
@@ -1226,7 +1267,7 @@ export class RecommendationService {
           .from(attributePerformanceAnalytics)
           .where(
             and(
-              eq(attributePerformanceAnalytics.assetType, assetType as any),
+              eq(attributePerformanceAnalytics.assetType, assetType),
               eq(attributePerformanceAnalytics.attributeType, 'color'),
               eq(attributePerformanceAnalytics.attributeValue, attributes.color)
             )
@@ -1252,7 +1293,7 @@ export class RecommendationService {
           .from(attributePerformanceAnalytics)
           .where(
             and(
-              eq(attributePerformanceAnalytics.assetType, assetType as any),
+              eq(attributePerformanceAnalytics.assetType, assetType),
               eq(attributePerformanceAnalytics.attributeType, 'trim'),
               eq(attributePerformanceAnalytics.attributeValue, attributes.trim)
             )
@@ -1299,7 +1340,7 @@ export class RecommendationService {
     const vendorCategories = vendor.categories || [];
 
     // Get popular auctions matching vendor categories
-    const result: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         a.id AS auction_id,
         a.case_id,
@@ -1328,7 +1369,7 @@ export class RecommendationService {
 
     const recommendations: RecommendationResult[] = [];
 
-    const coldStartRows = rowsFromExecute<Record<string, unknown>>(result);
+    const coldStartRows = rowsFromExecute<ActiveAuctionRow>(result);
 
     for (const auction of coldStartRows) {
       let matchScore = 50; // Base score for cold start

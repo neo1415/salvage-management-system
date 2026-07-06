@@ -5,7 +5,6 @@
  * and analyzes source files to identify active code.
  */
 
-import * as path from 'path';
 import type { FileInventory, ScanOptions } from '../types';
 import {
   scanDirectory,
@@ -20,7 +19,6 @@ import {
   buildActiveCodeMap,
   updateFileEntriesWithActiveStatus,
   getActiveCodeStats,
-  identifyEntryPoints,
 } from './active-code-detector';
 
 /**

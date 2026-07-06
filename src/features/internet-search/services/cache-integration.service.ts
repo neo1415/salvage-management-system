@@ -266,7 +266,7 @@ export class CacheIntegrationService {
   /**
    * Record cache miss for metrics
    */
-  private async recordCacheMiss(type: 'market' | 'part'): Promise<void> {
+  private async recordCacheMiss(_type: 'market' | 'part'): Promise<void> {
     try {
       const metrics = await this.getMetrics();
       metrics.totalMisses++;

@@ -12,7 +12,7 @@
  * - Requirement 26.1-26.5: Enforce wallet invariant at all times
  */
 
-import { db } from '@/lib/db/drizzle';
+import { db, type DbTransaction } from '@/lib/db/drizzle';
 import { escrowWallets } from '@/lib/db/schema/escrow';
 import { depositEvents } from '@/lib/db/schema/auction-deposit';
 import { eq } from 'drizzle-orm';
@@ -42,7 +42,7 @@ export class EscrowService {
     vendorId: string,
     amount: number,
     auctionId: string,
-    userId: string
+    _userId: string
   ): Promise<void> {
     // Use database transaction for atomicity
     await db.transaction(async (tx) => {
@@ -132,12 +132,12 @@ export class EscrowService {
     amount: number,
     auctionId: string,
     userId: string,
-    existingTx?: any // Optional transaction context to avoid nested transactions
+    existingTx?: DbTransaction // Optional transaction context to avoid nested transactions
   ): Promise<void> {
     // CRITICAL FIX: Accept optional transaction context to avoid nested transactions
     // When called from auction-closure.service.ts, use the existing transaction
     // to prevent transaction rollback issues that cause winner records to disappear
-    const executeInTransaction = async (tx: any) => {
+    const executeInTransaction = async (tx: DbTransaction) => {
       // Lock wallet row for update
       const [wallet] = await tx
         .select()
@@ -281,7 +281,7 @@ export class EscrowService {
    * @throws Error if invariant violation detected
    */
   private async verifyInvariantInTransaction(
-    tx: any,
+    tx: DbTransaction,
     vendorId: string
   ): Promise<void> {
     const [wallet] = await tx

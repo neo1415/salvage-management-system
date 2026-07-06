@@ -7,7 +7,7 @@
  * - Enterprise Standards Section 6.3: Security & Fraud Prevention
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
@@ -25,7 +25,7 @@ import { AuditActionType } from '@/lib/utils/audit-logger';
  * GET /api/admin/fraud-alerts
  * Retrieve all fraud alerts
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check authentication
     const session = await auth();

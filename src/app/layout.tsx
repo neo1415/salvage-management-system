@@ -10,7 +10,6 @@ import { ToastProvider } from '@/components/ui/toast';
 import { CookieConsentBanner } from '@/components/legal/cookie-consent-banner';
 import { PwaSplashScreen } from '@/components/pwa/pwa-splash-screen';
 import { AppShell } from '@/components/providers/app-shell';
-import { PwaRouteTracker } from '@/components/pwa/pwa-route-tracker';
 import { PublicBusinessPolicyProvider } from '@/hooks/public-business-policy-context';
 import { businessPolicyService } from '@/features/business-policy';
 import { getBrandCssVariables } from '@/features/branding/brand-colors';

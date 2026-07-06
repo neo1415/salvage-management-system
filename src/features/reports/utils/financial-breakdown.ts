@@ -113,7 +113,7 @@ export function buildFinancialBrokerBreakdown(rows: FinancialDetailRow[]): Finan
   }
 
   return Object.entries(grouped)
-    .map(([key, cases]) => ({
+    .map(([_key, cases]) => ({
       label: resolveCaseChannelLabel(cases[0].brokerName, cases[0].agencyName).label,
       ...summarizeFinancialRows(cases),
       cases: [...cases].sort((a, b) => b.date.localeCompare(a.date)),
@@ -140,7 +140,7 @@ export function buildFinancialBrokerSummary(rows: FinancialDetailRow[]): Array<
   }
 
   return Object.entries(grouped)
-    .map(([key, cases]) => {
+    .map(([_key, cases]) => {
       const channel = resolveCaseChannelLabel(cases[0].brokerName, cases[0].agencyName);
       return {
         label: channel.label,

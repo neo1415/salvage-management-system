@@ -10,6 +10,23 @@ import {
 } from '@/lib/auctions/bid-history-display';
 import { getWatchingCount } from '@/features/auctions/services/watching.service';
 
+interface BidHistoryEntry {
+  id: string;
+  amount: string;
+  createdAt: Date;
+  vendor: {
+    id?: string;
+    businessName?: string | null;
+    tier?: string;
+    profilePictureUrl?: string | null;
+  };
+  user: {
+    id?: string;
+    fullName?: string;
+    phone?: string | null;
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
@@ -108,7 +125,7 @@ export async function GET(request: NextRequest) {
         },
       });
       return acc;
-    }, {} as Record<string, any[]>);
+    }, {} as Record<string, BidHistoryEntry[]>);
 
     // Group watching data by auction
     const watchingByAuction = watchingEntries.reduce((acc, [auctionId, count]) => {

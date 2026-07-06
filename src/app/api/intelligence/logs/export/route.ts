@@ -16,7 +16,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { predictionLogs, recommendationLogs, fraudDetectionLogs } from '@/lib/db/schema/ml-training';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
-import { sql, desc, gte, lte } from 'drizzle-orm';
+import { sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { ExportService } from '@/features/export/services/export.service';
 
@@ -30,6 +30,11 @@ const logsExportQuerySchema = z.object({
   endDate: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(10000).optional().default(1000),
 });
+
+type ExportLog = Record<string, unknown> & {
+  type: 'prediction' | 'recommendation' | 'fraud';
+  createdAt: Date;
+};
 
 /**
  * GET /api/intelligence/logs/export
@@ -79,7 +84,7 @@ export async function GET(request: NextRequest) {
     const dateRangeStart = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const dateRangeEnd = endDate ? new Date(endDate) : new Date();
 
-    let logs: any[] = [];
+    let logs: ExportLog[] = [];
 
     // Query logs based on type
     if (!logType || logType === 'prediction') {
@@ -93,7 +98,7 @@ export async function GET(request: NextRequest) {
         .limit(limit);
 
       logs.push(...predLogs.map(log => ({
-        type: 'prediction',
+        type: 'prediction' as const,
         ...log,
       })));
     }
@@ -109,7 +114,7 @@ export async function GET(request: NextRequest) {
         .limit(limit);
 
       logs.push(...recLogs.map(log => ({
-        type: 'recommendation',
+        type: 'recommendation' as const,
         ...log,
       })));
     }
@@ -125,7 +130,7 @@ export async function GET(request: NextRequest) {
         .limit(limit);
 
       logs.push(...fraudLogs.map(log => ({
-        type: 'fraud',
+        type: 'fraud' as const,
         ...log,
       })));
     }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { History, Filter, Calendar, User, ArrowRight } from 'lucide-react';
 
 interface ConfigChange {
@@ -32,11 +32,7 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
   const [totalPages, setTotalPages] = useState(1);
   const limit = 20;
 
-  useEffect(() => {
-    fetchHistory();
-  }, [page, filters]);
-
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams({
@@ -59,7 +55,11 @@ export function ConfigHistory({ className = '' }: ConfigHistoryProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, page]);
+
+  useEffect(() => {
+    void fetchHistory();
+  }, [fetchHistory]);
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters({ ...filters, [key]: value });

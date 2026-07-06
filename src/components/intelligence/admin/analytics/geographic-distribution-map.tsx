@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { MapPin, TrendingUp, TrendingDown } from 'lucide-react';
 
-interface GeographicPattern {
+export interface GeographicPattern {
   region: string;
   avgPrice: number | string;
   priceVariance: number | string | null;

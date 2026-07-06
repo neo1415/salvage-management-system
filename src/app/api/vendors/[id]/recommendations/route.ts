@@ -158,8 +158,9 @@ export async function GET(
       },
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error generating recommendations:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
 
     // Audit log the error
     try {
@@ -180,7 +181,7 @@ export async function GET(
           deviceType: deviceType as 'mobile' | 'desktop' | 'tablet',
           userAgent,
           afterState: {
-            error: error.message,
+            error: errorMessage,
             endpoint: '/api/vendors/[id]/recommendations',
           },
         });
@@ -193,7 +194,7 @@ export async function GET(
     return NextResponse.json(
       { 
         error: 'Failed to generate recommendations',
-        message: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred'
+        message: process.env.NODE_ENV === 'development' ? errorMessage : 'An error occurred'
       },
       { status: 500 }
     );

@@ -10,7 +10,7 @@
 
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { createPortal } from 'react-dom';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -57,7 +57,7 @@ export default function AuditLogViewer() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageLimit, setPageLimit] = useState<number>(20);
+  const [pageLimit] = useState<number>(20);
   
   // Detail modal state
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
@@ -66,10 +66,6 @@ export default function AuditLogViewer() {
   // Export state
   const [exporting, setExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
-
-  useEffect(() => {
-    fetchLogs();
-  }, [userIdFilter, actionTypeFilter, entityTypeFilter, startDate, endDate, currentPage, pageLimit]);
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -88,7 +84,7 @@ export default function AuditLogViewer() {
     }
   }, [showExportMenu]);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     const showFullPageLoader = logsRef.current.length === 0;
     try {
       if (showFullPageLoader) {
@@ -129,7 +125,11 @@ export default function AuditLogViewer() {
       setLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [actionTypeFilter, currentPage, endDate, entityTypeFilter, pageLimit, startDate, userIdFilter]);
+
+  useEffect(() => {
+    void fetchLogs();
+  }, [fetchLogs]);
 
   const handleResetFilters = () => {
     setUserIdFilter('');
@@ -169,7 +169,15 @@ export default function AuditLogViewer() {
       }
 
       // Prepare data for export
-      const exportData = exportLogs.map((log: AuditLog) => ({
+      const exportData: Array<{
+        timestamp: string;
+        user: string;
+        action: string;
+        resourceType: string;
+        resourceId: string;
+        ipAddress: string;
+        status: string;
+      }> = exportLogs.map((log: AuditLog) => ({
         timestamp: new Date(log.createdAt).toLocaleString('en-NG', {
           year: 'numeric',
           month: 'short',
@@ -191,7 +199,7 @@ export default function AuditLogViewer() {
       const headers = ['Timestamp', 'User', 'Action', 'Resource Type', 'Resource ID', 'IP Address', 'Status'];
       const csvRows = [headers.join(',')];
       
-      exportData.forEach((row: any) => {
+      exportData.forEach((row) => {
         const values = [
           escapeCSVField(row.timestamp),
           escapeCSVField(row.user),
@@ -285,7 +293,6 @@ export default function AuditLogViewer() {
       
       // Add table data
       let y = 65; // Start below letterhead
-      const pageHeight = doc.internal.pageSize.getHeight();
       const maxY = PDFTemplateService.getMaxContentY(doc);
       
       // Add headers

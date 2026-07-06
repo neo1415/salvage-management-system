@@ -7,26 +7,26 @@
  * Tasks: 11.3.1-11.3.12
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Download, AlertCircle, RefreshCw } from 'lucide-react';
 import { subDays } from 'date-fns';
 import { AnalyticsFiltersComponent, AnalyticsFilters } from './analytics-filters';
-import { AssetPerformanceMatrix } from './asset-performance-matrix';
-import { AttributePerformanceTabs } from './attribute-performance-tabs';
-import { TemporalPatternsHeatmap } from './temporal-patterns-heatmap';
-import { GeographicDistributionMap } from './geographic-distribution-map';
-import { VendorSegmentsChart } from './vendor-segments-chart';
-import { ConversionFunnelDiagram } from './conversion-funnel-diagram';
-import { SessionAnalyticsMetrics } from './session-analytics-metrics';
-import { TopPerformersSection } from './top-performers-section';
+import { AssetPerformanceMatrix, type AssetPerformance } from './asset-performance-matrix';
+import { AttributePerformanceTabs, type AttributePerformance } from './attribute-performance-tabs';
+import { TemporalPatternsHeatmap, type TemporalPattern } from './temporal-patterns-heatmap';
+import { GeographicDistributionMap, type GeographicPattern } from './geographic-distribution-map';
+import { VendorSegmentsChart, type VendorSegment } from './vendor-segments-chart';
+import { ConversionFunnelDiagram, type ConversionFunnelData } from './conversion-funnel-diagram';
+import { SessionAnalyticsMetrics, type SessionMetrics, type SessionTrend } from './session-analytics-metrics';
+import { TopPerformersSection, type TopAsset, type TopMake, type TopVendor } from './top-performers-section';
 import { useToast } from '@/components/ui/toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export function AnalyticsDashboardContent() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const { error: showError, success: showSuccess } = useToast();
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -41,40 +41,30 @@ export function AnalyticsDashboardContent() {
   });
 
   // State for all analytics data
-  const [assetPerformance, setAssetPerformance] = useState<any[]>([]);
-  const [colorPerformance, setColorPerformance] = useState<any[]>([]);
-  const [trimPerformance, setTrimPerformance] = useState<any[]>([]);
-  const [storagePerformance, setStoragePerformance] = useState<any[]>([]);
-  const [temporalPatterns, setTemporalPatterns] = useState<any[]>([]);
-  const [geographicPatterns, setGeographicPatterns] = useState<any[]>([]);
-  const [vendorSegments, setVendorSegments] = useState<any[]>([]);
-  const [conversionFunnel, setConversionFunnel] = useState<any>(null);
-  const [sessionMetrics, setSessionMetrics] = useState<any>(null);
-  const [sessionTrends, setSessionTrends] = useState<any[]>([]);
-  const [topVendors, setTopVendors] = useState<any[]>([]);
-  const [topAssets, setTopAssets] = useState<any[]>([]);
-  const [topMakes, setTopMakes] = useState<any[]>([]);
+  const [assetPerformance, setAssetPerformance] = useState<AssetPerformance[]>([]);
+  const [colorPerformance, setColorPerformance] = useState<AttributePerformance[]>([]);
+  const [trimPerformance, setTrimPerformance] = useState<AttributePerformance[]>([]);
+  const [storagePerformance, setStoragePerformance] = useState<AttributePerformance[]>([]);
+  const [temporalPatterns, setTemporalPatterns] = useState<TemporalPattern[]>([]);
+  const [geographicPatterns, setGeographicPatterns] = useState<GeographicPattern[]>([]);
+  const [vendorSegments, setVendorSegments] = useState<VendorSegment[]>([]);
+  const [conversionFunnel, setConversionFunnel] = useState<ConversionFunnelData | null>(null);
+  const [sessionMetrics, setSessionMetrics] = useState<SessionMetrics | null>(null);
+  const [sessionTrends, setSessionTrends] = useState<SessionTrend[]>([]);
+  const [topVendors] = useState<TopVendor[]>([]);
+  const [topAssets] = useState<TopAsset[]>([]);
+  const [topMakes] = useState<TopMake[]>([]);
 
-  useEffect(() => {
-    // Wait for session to be loaded before fetching analytics
-    if (status === 'authenticated') {
-      fetchAllAnalytics();
-    } else if (status === 'unauthenticated') {
-      setError('You must be logged in to view analytics');
-      setLoading(false);
-    }
-  }, [status]);
-
-  const buildQueryParams = () => {
+  const buildQueryParams = useCallback(() => {
     const params = new URLSearchParams();
     params.append('startDate', filters.dateRange.from.toISOString());
     params.append('endDate', filters.dateRange.to.toISOString());
     if (filters.assetType) params.append('assetType', filters.assetType);
     if (filters.region) params.append('region', filters.region);
     return params.toString();
-  };
+  }, [filters]);
 
-  async function fetchAllAnalytics() {
+  const fetchAllAnalytics = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -169,9 +159,6 @@ export function AnalyticsDashboardContent() {
         console.warn('Session metrics API failed:', sessionRes.status);
       }
 
-      // Generate mock top performers data (in production, this would come from API)
-      generateTopPerformersData();
-
     } catch (error) {
       console.error('Error fetching analytics:', error);
       setError('Failed to load analytics data. Please try again.');
@@ -179,28 +166,16 @@ export function AnalyticsDashboardContent() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [buildQueryParams, showError]);
 
-  function generateTopPerformersData() {
-    // Mock data - in production, fetch from dedicated endpoints
-    setTopVendors([
-      { vendorId: '1', vendorName: 'Premium Auto Dealers', winRate: 78.5, totalBids: 145, totalWins: 114, totalRevenue: 45000000 },
-      { vendorId: '2', vendorName: 'Elite Motors', winRate: 72.3, totalBids: 132, totalWins: 95, totalRevenue: 38000000 },
-      { vendorId: '3', vendorName: 'Best Value Cars', winRate: 68.9, totalBids: 156, totalWins: 107, totalRevenue: 32000000 },
-    ]);
-
-    setTopAssets([
-      { assetId: '1', make: 'Toyota', model: 'Camry', year: 2020, sellThroughRate: 92.5, avgPrice: 8500000, totalAuctions: 45 },
-      { assetId: '2', make: 'Honda', model: 'Accord', year: 2019, sellThroughRate: 88.3, avgPrice: 7800000, totalAuctions: 38 },
-      { assetId: '3', make: 'Toyota', model: 'Corolla', year: 2021, sellThroughRate: 85.7, avgPrice: 6200000, totalAuctions: 52 },
-    ]);
-
-    setTopMakes([
-      { make: 'Toyota', totalAuctions: 234, avgPrice: 7500000, sellThroughRate: 82.5 },
-      { make: 'Honda', totalAuctions: 187, avgPrice: 6800000, sellThroughRate: 78.3 },
-      { make: 'Mercedes-Benz', totalAuctions: 145, avgPrice: 12500000, sellThroughRate: 75.2 },
-    ]);
-  }
+  useEffect(() => {
+    if (status === 'authenticated') {
+      void fetchAllAnalytics();
+    } else if (status === 'unauthenticated') {
+      setError('You must be logged in to view analytics');
+      setLoading(false);
+    }
+  }, [fetchAllAnalytics, status]);
 
   const handleApplyFilters = () => {
     fetchAllAnalytics();

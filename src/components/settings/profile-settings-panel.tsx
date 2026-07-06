@@ -112,7 +112,6 @@ export function ProfileSettingsPanel() {
 
   const isOnboardingPhoneStep =
     session?.user?.role === 'vendor' && user?.status === 'unverified_tier_0';
-  const displayPhone = user && isProvisionalVendorPhone(user.phone) ? '' : user?.phone ?? '';
   const phoneUnchanged =
     !!user &&
     phoneDraft.trim() === user.phone &&

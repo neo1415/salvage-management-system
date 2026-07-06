@@ -4,6 +4,17 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { vendors } from '@/lib/db/schema/vendors';
 import { eq, and, gte, desc, sql, inArray, isNotNull, ne } from 'drizzle-orm';
 
+type BidRow = typeof bids.$inferSelect;
+
+interface AuctionAdjusterRow {
+  id: string;
+  adjuster_id: string | null;
+}
+
+interface CountRow {
+  count: string | number;
+}
+
 interface ShillBiddingAnalysis {
   vendorId: string;
   totalScore: number;
@@ -139,7 +150,7 @@ export class ShillBiddingDetectionService {
    */
   private async analyzeRepeatedLosses(
     vendorId: string,
-    bidHistory: any[]
+    bidHistory: BidRow[]
   ): Promise<RepeatedLossPattern> {
     // Get auctions where vendor bid but didn't win
     const auctionIds = bidHistory.map(b => b.auctionId);
@@ -192,7 +203,7 @@ export class ShillBiddingDetectionService {
    */
   private async analyzeSellerAffinity(
     vendorId: string,
-    bidHistory: any[]
+    bidHistory: BidRow[]
   ): Promise<SellerAffinityPattern> {
     // Get auctions and their associated cases (to find sellers)
     const auctionIds = bidHistory.map(b => b.auctionId);
@@ -205,9 +216,9 @@ export class ShillBiddingDetectionService {
     `);
     
     const adjusterCounts = new Map<string, number>();
-    const results = Array.isArray(auctionsWithCases) ? auctionsWithCases : [];
+    const results = auctionsWithCases as unknown as AuctionAdjusterRow[];
     
-    results.forEach((row: any) => {
+    results.forEach((row) => {
       if (row.adjuster_id) {
         adjusterCounts.set(row.adjuster_id, (adjusterCounts.get(row.adjuster_id) || 0) + 1);
       }
@@ -235,7 +246,7 @@ export class ShillBiddingDetectionService {
    * Pattern 3: Last-minute bidding
    * Shill bidders often bid in the last few minutes to drive up price
    */
-  private async analyzeLastMinuteBidding(bidHistory: any[]): Promise<LastMinuteBiddingPattern> {
+  private async analyzeLastMinuteBidding(bidHistory: BidRow[]): Promise<LastMinuteBiddingPattern> {
     // Get auction end times
     const auctionIds = bidHistory.map(b => b.auctionId);
     
@@ -283,7 +294,7 @@ export class ShillBiddingDetectionService {
    * Pattern 4: Rapid bid escalation
    * Shill bidders often place bids very quickly to drive up price
    */
-  private analyzeBidEscalation(bidHistory: any[]): BidEscalationPattern {
+  private analyzeBidEscalation(bidHistory: BidRow[]): BidEscalationPattern {
     if (bidHistory.length < 2) {
       return {
         totalBids: bidHistory.length,
@@ -345,7 +356,8 @@ export class ShillBiddingDetectionService {
       WHERE vendor_id = ${vendorId}
     `);
     
-    const bidsPlaced = Array.isArray(bidCount) && bidCount[0] ? Number(bidCount[0].count) : 0;
+    const countRows = bidCount as unknown as CountRow[];
+    const bidsPlaced = countRows[0] ? Number(countRows[0].count) : 0;
     
     // Score: 0-10 points
     let score = 0;

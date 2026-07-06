@@ -113,7 +113,7 @@ export class APIRouteParser {
    */
   private extractHandlers(
     sourceFile: ts.SourceFile,
-    sourceCode: string
+    _sourceCode: string
   ): HandlerDefinition[] {
     const handlers: HandlerDefinition[] = [];
     const methods: HTTPMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];

@@ -21,6 +21,26 @@ export interface LeaderboardEntry {
   profilePictureUrl: string | null;
 }
 
+interface LeaderboardRow {
+  [key: string]: unknown;
+  id: string;
+  business_name: string | null;
+  vendor_name: string | null;
+  profile_picture_url: string | null;
+  tier: string | null;
+  rating: string | number | null;
+  total_bids: string | number | null;
+  wins: string | number | null;
+  total_spent: string | number | null;
+  on_time_pickups: string | number | null;
+  completed_pickups: string | number | null;
+  verified_payments: string | number | null;
+}
+
+function isLeaderboardRow(row: Record<string, unknown>): row is LeaderboardRow {
+  return typeof row.id === 'string';
+}
+
 export async function calculateLeaderboard(limit = 25): Promise<LeaderboardEntry[]> {
   const policy = await businessPolicyService.getEffectivePolicy();
   const requireFullVerificationForLeaderboard = policy.onboarding.requireTier2ForUnlimitedBidding;
@@ -129,7 +149,7 @@ export async function calculateLeaderboard(limit = 25): Promise<LeaderboardEntry
     LIMIT ${limit}
   `);
 
-  const records = Array.isArray(rows) ? (rows as any[]) : [];
+  const records: LeaderboardRow[] = Array.isArray(rows) ? rows.filter(isLeaderboardRow) : [];
   const leaderboard: LeaderboardEntry[] = [];
 
   for (const [index, vendor] of records.entries()) {

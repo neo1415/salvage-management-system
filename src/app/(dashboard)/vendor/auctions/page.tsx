@@ -38,14 +38,14 @@ import { useSearchParams } from 'next/navigation';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
-import { formatConditionForDisplay, type QualityTier } from '@/features/valuations/services/condition-mapping.service';
+import type { QualityTier } from '@/features/valuations/services/condition-mapping.service';
 import { VirtualizedList } from '@/components/ui/virtualized-list';
 import { FilterChip } from '@/components/ui/filters/filter-chip';
-import { AppSpinner, AppSpinnerWithLabel, DataLoadingState } from '@/components/ui/loading-states';
+import { AppSpinner, DataLoadingState } from '@/components/ui/loading-states';
 import { FacetedFilter, type FilterOption } from '@/components/ui/filters/faceted-filter';
 import { SearchInput } from '@/components/ui/filters/search-input';
 import { LocationAutocomplete } from '@/components/ui/filters/location-autocomplete';
-import { Filter as FilterIcon, X, Circle, Trophy, ClipboardList, Clock, Eye, WifiOff, Banknote } from 'lucide-react';
+import { Filter as FilterIcon, X, Circle, Trophy, Clock, Eye, WifiOff, Banknote } from 'lucide-react';
 import { formatCompactCurrency, formatRelativeDate } from '@/utils/format-utils';
 import { useCachedAuctions } from '@/hooks/use-cached-auctions';
 import { useScheduledAuctionChecker } from '@/hooks/use-scheduled-auction-checker';
@@ -67,6 +67,7 @@ interface Auction {
   status: 'scheduled' | 'active' | 'extended' | 'closed' | 'cancelled' | 'awaiting_payment';
   watchingCount: number;
   isWinner?: boolean;
+  hasVendorBid?: boolean;
   scheduledStartTime?: string;
   isScheduled?: boolean;
   case: {
@@ -141,7 +142,6 @@ function AuctionBrowsingContent() {
   // State
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [showDesktopSearch, setShowDesktopSearch] = useState(false); // NEW: Desktop search toggle
   
@@ -161,6 +161,9 @@ function AuctionBrowsingContent() {
   const [locationFilter, setLocationFilter] = useState(searchParams.get('location') || '');
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [showFilters, setShowFilters] = useState(false);
+  const previousSearchQueryRef = useRef(searchQuery);
+  const auctionsRef = useRef<Auction[]>([]);
+  const refreshAuctionsRef = useRef<() => Promise<void>>(async () => undefined);
 
   // Cached auctions hook with fetch function
   const fetchAuctionsFn = useCallback(async () => {
@@ -211,8 +214,6 @@ function AuctionBrowsingContent() {
       !getAssetNameForFiltering(auction).toLowerCase().includes('test')
     );
 
-    const userId = session?.user?.vendorId;
-    
     // TAB FILTERING - Client-side for instant switching
     switch (activeTab) {
       case 'active':
@@ -228,7 +229,7 @@ function AuctionBrowsingContent() {
       case 'my_bids':
         // Filter auctions where user has placed bids
         filteredAuctions = filteredAuctions.filter(
-          a => (a as any).hasVendorBid === true
+          a => a.hasVendorBid === true
         );
         break;
       case 'won':
@@ -315,7 +316,7 @@ function AuctionBrowsingContent() {
     }
 
     setAuctions(filteredAuctions);
-  }, [cachedAuctions, activeTab, assetTypeFilter, locationFilter, priceMin, priceMax, sortBy, session]);
+  }, [cachedAuctions, activeTab, assetTypeFilter, locationFilter, priceMin, priceMax, sortBy]);
 
   // Client-side polling for scheduled auctions
   // This replaces the need for cron jobs and works in both local dev and production
@@ -330,18 +331,15 @@ function AuctionBrowsingContent() {
   });
 
   // Manual refresh handler
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     if (isOffline) return;
-    
-    setIsRefreshing(true);
+
     try {
       await refreshCache();
     } catch (error) {
       console.error('Failed to refresh auctions:', error);
-    } finally {
-      setIsRefreshing(false);
     }
-  };
+  }, [isOffline, refreshCache]);
 
   // Sync URL with filter state
   useEffect(() => {
@@ -360,11 +358,16 @@ function AuctionBrowsingContent() {
 
   // Trigger refresh only when search changes (other filters are client-side)
   useEffect(() => {
-    if (!isOffline && !isLoading) {
-      handleRefresh();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery]); // Only refetch when search changes
+    if (previousSearchQueryRef.current === searchQuery) return;
+    previousSearchQueryRef.current = searchQuery;
+    if (isOffline) return;
+
+    const timeout = window.setTimeout(() => {
+      void handleRefresh();
+    }, 300);
+
+    return () => window.clearTimeout(timeout);
+  }, [searchQuery, isOffline, handleRefresh]);
 
   // Helper function to get asset name for filtering (avoid duplication)
   const getAssetNameForFiltering = (auction: Auction) => {
@@ -373,17 +376,6 @@ function AuctionBrowsingContent() {
       auction.case.assetDetails as Record<string, unknown>,
       auction.case.assetType.replace(/_/g, ' ')
     );
-  };
-
-  // Build filters object for API
-  const filters: Filters = {
-    assetType: assetTypeFilter.join(','),
-    priceMin,
-    priceMax,
-    sortBy,
-    location: locationFilter,
-    search: searchQuery,
-    tab: activeTab,
   };
 
   // Check if any filters are active (excluding tab and sortBy)
@@ -405,12 +397,20 @@ function AuctionBrowsingContent() {
   const pullDistance = useRef(0);
   const expiryCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  useEffect(() => {
+    auctionsRef.current = auctions;
+  }, [auctions]);
+
+  useEffect(() => {
+    refreshAuctionsRef.current = handleRefresh;
+  }, [handleRefresh]);
+
   // Check for expired auctions on mount and periodically
   useEffect(() => {
     const checkExpiredAuctions = async () => {
       try {
         // Only check if we have active auctions
-        const hasActiveAuctions = auctions.some(a => a.status === 'active');
+        const hasActiveAuctions = auctionsRef.current.some(a => a.status === 'active');
         if (!hasActiveAuctions) return;
 
         const response = await fetch('/api/auctions/check-expired', {
@@ -424,7 +424,7 @@ function AuctionBrowsingContent() {
           if (data.successful > 0) {
             console.log(`✅ Closed ${data.successful} expired auctions`);
             // Refresh the auction list
-            await handleRefresh();
+            await refreshAuctionsRef.current();
           }
         }
       } catch (error) {
@@ -443,7 +443,7 @@ function AuctionBrowsingContent() {
         clearInterval(expiryCheckIntervalRef.current);
       }
     };
-  }, [auctions]);
+  }, [isOffline]);
 
   // Pull-to-refresh handlers
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -471,12 +471,6 @@ function AuctionBrowsingContent() {
   };
 
   // Filter handlers - removed, now using direct state setters
-
-  // Search handler
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    // The useEffect will handle the fetch when search changes
-  };
 
   // Asset type filter options
   const assetTypeOptions: FilterOption[] = [

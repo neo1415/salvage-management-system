@@ -442,7 +442,7 @@ export default function FinancePaymentsPage() {
         throw new Error(errorData.error || 'Failed to verify payment');
       }
 
-      const result = await response.json();
+      await response.json();
 
       // Close verification modal first
       setShowModal(false);
@@ -481,11 +481,6 @@ export default function FinancePaymentsPage() {
     setComment('');
     setError(null);
     setShowModal(true);
-  };
-
-  const openDetailsModal = (payment: Payment) => {
-    setSelectedPayment(payment);
-    setShowDetailsModal(true);
   };
 
   const closeModal = () => {
@@ -565,7 +560,7 @@ export default function FinancePaymentsPage() {
         throw new Error(errorData.error || 'Failed to release funds');
       }
 
-      const result = await response.json();
+      await response.json();
 
       // Show success modal
       setSuccessMessage(`Funds released successfully! ${formatNgnAmount(selectedPayment.amount)} transferred to the configured settlement account.`);
@@ -1266,10 +1261,22 @@ export default function FinancePaymentsPage() {
                     
                     <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                       <div>
-                        <p className="text-gray-500">Amount</p>
-                        <p className="font-medium text-gray-900">
-                          {formatNgnAmount(payment.amount, { decimals: 0 })}
+                        <p className="text-gray-500">
+                          {payment.settlement?.hasPriceAdjustment ? 'Final settled sale' : 'Amount'}
                         </p>
+                        <p className="font-medium text-gray-900">
+                          {formatNgnAmount(
+                            payment.settlement?.hasPriceAdjustment && payment.effectiveSaleAmount
+                              ? payment.effectiveSaleAmount
+                              : payment.amount,
+                            { decimals: 0 }
+                          )}
+                        </p>
+                        {payment.settlement?.hasPriceAdjustment && (
+                          <p className="mt-0.5 text-xs text-gray-500">
+                            Collected {formatNgnAmount(payment.amount, { decimals: 0 })}
+                          </p>
+                        )}
                       </div>
                       <div>
                         <p className="text-gray-500">Payment Source</p>

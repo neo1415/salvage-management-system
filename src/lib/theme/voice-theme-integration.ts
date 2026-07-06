@@ -103,8 +103,6 @@ export class VoiceThemeIntegration {
    * Apply theme to voice components
    */
   applyVoiceTheme(element: HTMLElement) {
-    const styles = this.getVoiceStyles();
-    
     // Apply CSS variables to the element
     Object.entries(this.cssVariables).forEach(([property, value]) => {
       element.style.setProperty(property, value);

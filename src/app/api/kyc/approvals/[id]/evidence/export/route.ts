@@ -29,10 +29,6 @@ function maskIdentifier(value: unknown): string {
   return `${'*'.repeat(Math.max(4, clean.length - 4))}${clean.slice(-4)}`;
 }
 
-function safeJoin(values: unknown): string {
-  return Array.isArray(values) ? values.map(String).join('; ') : '';
-}
-
 function formatDate(value: unknown): string {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(String(value));

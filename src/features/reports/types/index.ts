@@ -101,7 +101,7 @@ export interface ReportConfig {
 /**
  * Report result
  */
-export interface ReportResult<T = any> {
+export interface ReportResult<T = unknown> {
   reportId: string;
   type: ReportType;
   data: T;
@@ -128,8 +128,8 @@ export interface ChartData {
   id: string;
   type: 'line' | 'bar' | 'pie' | 'heatmap' | 'scatter' | 'gauge' | 'funnel' | 'area';
   title: string;
-  data: any;
-  options?: any;
+  data: unknown;
+  options?: Record<string, unknown>;
 }
 
 /**
@@ -213,7 +213,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, ReportPermissions> = {
  */
 export interface ReportCacheEntry {
   key: string;
-  data: any;
+  data: unknown;
   expiresAt: Date;
 }
 

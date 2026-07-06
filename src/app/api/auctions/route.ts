@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
+import { assetTypeEnum } from '@/lib/db/schema/vendors';
 import { bids } from '@/lib/db/schema/bids';
 import { payments } from '@/lib/db/schema/payments';
 import { eq, and, gte, lte, or, like, desc, asc, sql, inArray } from 'drizzle-orm';
@@ -26,6 +27,12 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { cache } from '@/lib/redis/client';
 
 export const dynamic = 'force-dynamic';
+
+type AssetType = (typeof assetTypeEnum.enumValues)[number];
+
+function isAssetType(value: string): value is AssetType {
+  return assetTypeEnum.enumValues.includes(value as AssetType);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -126,11 +133,11 @@ export async function GET(request: NextRequest) {
     // Asset type filter - supports multiple values (comma-separated)
     // Requirement 8.1: Multi-Category Filter OR Logic
     if (assetType) {
-      const assetTypes = assetType.split(',').map(t => t.trim()).filter(Boolean);
+      const assetTypes = assetType.split(',').map(t => t.trim()).filter(isAssetType);
       if (assetTypes.length === 1) {
-        conditions.push(eq(salvageCases.assetType, assetTypes[0] as any));
+        conditions.push(eq(salvageCases.assetType, assetTypes[0]));
       } else if (assetTypes.length > 1) {
-        conditions.push(inArray(salvageCases.assetType, assetTypes as any[]));
+        conditions.push(inArray(salvageCases.assetType, assetTypes));
       }
     }
 

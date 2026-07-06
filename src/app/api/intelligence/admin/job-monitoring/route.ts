@@ -5,14 +5,14 @@
  * GET /api/intelligence/admin/job-monitoring
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 
 /**
  * GET /api/intelligence/admin/job-monitoring
  * Get job monitoring dashboard data
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Authentication check
     const session = await auth();

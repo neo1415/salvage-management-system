@@ -161,6 +161,10 @@ function isMissingMetadataWarning(warning: string): boolean {
   return warning.toLowerCase().includes('no exif/iptc/xmp metadata was found');
 }
 
+function isLowResolutionWarning(warning: string): boolean {
+  return warning.toLowerCase().includes('image resolution is low');
+}
+
 export function summarizeImageIntegrity(
   results: ImageIntegrityResult[],
   clientMetadata: ImageUploadClientMetadata[] = []
@@ -169,10 +173,16 @@ export function summarizeImageIntegrity(
   warnings: string[];
 } {
   const warnings = results.flatMap((result) => {
-    const metadata = clientMetadata[result.index];
+    const metadata = clientMetadata.find((item) => item.index === result.index) ?? clientMetadata[result.index];
     const shouldSuppressProcessedExifWarning = hasClientMetadata(metadata);
+    const originalResolutionIsSufficient =
+      typeof metadata?.width === 'number'
+      && typeof metadata?.height === 'number'
+      && metadata.width >= 480
+      && metadata.height >= 480;
     return result.warnings
       .filter((warning) => !(shouldSuppressProcessedExifWarning && isMissingMetadataWarning(warning)))
+      .filter((warning) => !(originalResolutionIsSufficient && isLowResolutionWarning(warning)))
       .map((warning) => `Photo ${result.index + 1}: ${warning}`);
   });
   const status: ImageIntegrityStatus = results.some((result) => result.status === 'failed')

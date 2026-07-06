@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -11,24 +11,21 @@ import { ReportFiltersComponent, ReportFilters } from '@/components/reports/comm
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { CaseProcessingReport } from '@/components/reports/operational/case-processing-report';
+import type { CaseProcessingReport as CaseProcessingReportData } from '@/features/reports/operational/services';
 
 export default function CaseProcessingPage() {
   const router = useAppRouter();
-  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+  const { loading, isRefreshing, startFetch, endFetch, markHasData } =
     useReportFetchState();
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<CaseProcessingReportData | null>(null);
   const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async (force = false) => {
+  const fetchReport = useCallback(async (force = false) => {
     startFetch();
     try {
       const result = await loadReportFromApi('/api/reports/operational/case-processing', filters, { force });
       if (result.status === 'success') {
-        setReportData(result.data);
+        setReportData(result.data as CaseProcessingReportData);
         markHasData();
       }
     } catch (error) {
@@ -36,7 +33,9 @@ export default function CaseProcessingPage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endFetch, filters, markHasData, startFetch]);
+
+  useEffect(() => { void fetchReport(); }, [fetchReport]);
 
   return (
     <>

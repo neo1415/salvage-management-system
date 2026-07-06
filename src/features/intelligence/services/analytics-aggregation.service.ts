@@ -11,6 +11,17 @@ import { TemporalAnalyticsService } from './temporal-analytics.service';
 import { GeographicAnalyticsService } from './geographic-analytics.service';
 import { BehavioralAnalyticsService } from './behavioral-analytics.service';
 
+type RollupPeriod = typeof analyticsRollups.$inferInsert.rollupPeriod;
+type RollupMetrics = NonNullable<typeof analyticsRollups.$inferInsert.metrics>;
+
+interface RollupRow {
+  total_auctions: string | null;
+  total_bids: string | null;
+  avg_bids_per_auction: string | null;
+  avg_final_price: string | null;
+  active_vendors: string | null;
+}
+
 export class AnalyticsAggregationService {
   private assetService = new AssetAnalyticsService();
   private temporalService = new TemporalAnalyticsService();
@@ -70,9 +81,9 @@ export class AnalyticsAggregationService {
     console.log(`[Analytics Aggregation] Monthly rollup completed successfully`);
   }
 
-  private async createRollup(period: string, periodStart: Date, periodEnd: Date): Promise<void> {
+  private async createRollup(period: RollupPeriod, periodStart: Date, periodEnd: Date): Promise<void> {
     try {
-      const metrics: any = await db.execute(sql`
+      const result = await db.execute(sql`
         SELECT 
           COUNT(DISTINCT a.id) AS total_auctions,
           COUNT(DISTINCT b.id) AS total_bids,
@@ -89,31 +100,40 @@ export class AnalyticsAggregationService {
         WHERE a.end_time BETWEEN ${periodStart} AND ${periodEnd}
       `);
 
-      const row = metrics[0];
+      const metrics = result as unknown as RollupRow[];
+      const row = metrics[0] ?? {
+        total_auctions: '0',
+        total_bids: '0',
+        avg_bids_per_auction: '0',
+        avg_final_price: '0',
+        active_vendors: '0',
+      };
+
+      const rollupMetrics: RollupMetrics = {
+        totalAuctions: parseInt(row.total_auctions || '0'),
+        totalBids: parseInt(row.total_bids || '0'),
+        avgBidsPerAuction: parseFloat(row.avg_bids_per_auction || '0'),
+        avgFinalPrice: parseFloat(row.avg_final_price || '0'),
+        avgSellThroughRate: null,
+        activeVendors: parseInt(row.active_vendors || '0'),
+        avgVendorActivity: null,
+        avgPredictionAccuracy: null,
+        avgConfidenceScore: null,
+        totalPredictions: null,
+        totalRecommendations: null,
+        avgMatchScore: null,
+        clickThroughRate: null,
+        bidConversionRate: null,
+        fraudAlertsCount: null,
+        avgRiskScore: null,
+      };
 
       await db.insert(analyticsRollups).values({
-        rollupPeriod: period as any,
+        rollupPeriod: period,
         assetType: null,
         periodStart,
         periodEnd,
-        metrics: {
-          totalAuctions: parseInt(row.total_auctions || '0'),
-          totalBids: parseInt(row.total_bids || '0'),
-          avgBidsPerAuction: parseFloat(row.avg_bids_per_auction || '0'),
-          avgFinalPrice: parseFloat(row.avg_final_price || '0'),
-          avgSellThroughRate: null,
-          activeVendors: parseInt(row.active_vendors || '0'),
-          avgVendorActivity: null,
-          avgPredictionAccuracy: null,
-          avgConfidenceScore: null,
-          totalPredictions: null,
-          totalRecommendations: null,
-          avgMatchScore: null,
-          clickThroughRate: null,
-          bidConversionRate: null,
-          fraudAlertsCount: null,
-          avgRiskScore: null,
-        } as any,
+        metrics: rollupMetrics,
       });
 
       console.log(`[Analytics Aggregation] Created ${period} rollup: ${row.total_auctions} auctions, ${row.total_bids} bids, ${row.active_vendors} vendors`);

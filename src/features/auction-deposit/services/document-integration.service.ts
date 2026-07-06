@@ -14,6 +14,7 @@ import { releaseForms, type ReleaseForm } from '@/lib/db/schema/release-forms';
 import { systemConfig } from '@/lib/db/schema/auction-deposit';
 import { eq, and } from 'drizzle-orm';
 import { generateDocument } from '@/features/documents/services/document.service';
+import { calculateAuctionPaymentAllocation } from './payment-allocation';
 
 /**
  * Get configuration value from system_config table with testing mode support
@@ -183,14 +184,7 @@ export function calculateRemainingPayment(
   finalBid: number,
   depositAmount: number
 ): number {
-  const remaining = finalBid - depositAmount;
-  
-  if (remaining < 0) {
-    console.warn(`⚠️ Negative remaining payment: finalBid=${finalBid}, deposit=${depositAmount}`);
-    return 0;
-  }
-
-  return remaining;
+  return calculateAuctionPaymentAllocation(finalBid, depositAmount).remainingAmount;
 }
 
 /**

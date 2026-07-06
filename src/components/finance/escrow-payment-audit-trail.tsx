@@ -39,7 +39,7 @@ interface EscrowPaymentAuditTrailProps {
 
 export function EscrowPaymentAuditTrail({
   auditLogs,
-  paymentId,
+  paymentId: _paymentId,
 }: EscrowPaymentAuditTrailProps) {
   // Sort logs by createdAt descending (most recent first)
   const sortedLogs = [...auditLogs].sort(

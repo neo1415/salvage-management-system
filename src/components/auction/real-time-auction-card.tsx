@@ -43,13 +43,14 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
   // Update current bid and minimum bid when new bid is received
   useEffect(() => {
     if (latestBid) {
-      setCurrentBid(latestBid.amount);
+      const bidAmount = Number(latestBid.amount);
+      setCurrentBid(bidAmount);
       // Use the minimum bid from the socket event if available
       if (latestBid.minimumBid) {
         setMinimumBid(latestBid.minimumBid);
       } else if (config) {
         // Fallback: calculate from config if socket doesn't provide it
-        setMinimumBid(latestBid.amount + config.minimumBidIncrement);
+        setMinimumBid(bidAmount + config.minimumBidIncrement);
       }
     }
   }, [latestBid, config]);
@@ -64,8 +65,8 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
   // Update auction data when received
   useEffect(() => {
     if (auction) {
-      setCurrentBid(auction.currentBid || 0);
-      setStatus(auction.status);
+      setCurrentBid(Number(auction.currentBid) || 0);
+      setStatus(auction.status || 'active');
     }
   }, [auction]);
 
@@ -165,7 +166,6 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
           console.log('Bid placed successfully!');
         }}
         vendorTier="tier1_bvn"
-        auctionValue={currentBid || 20000}
       />
     </div>
   );

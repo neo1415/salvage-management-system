@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import type { CSSProperties, FormEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -20,7 +20,6 @@ import {
   MapPin,
   Search,
   ShieldCheck,
-  Users,
   WalletCards,
 } from 'lucide-react';
 import type { BrandingPolicy } from '@/features/business-policy/types';
@@ -633,7 +632,7 @@ export function WhiteLabelHomeTemplates({ branding, showLegacyBelowFold }: HomeT
   return <SalvageBridgeEditorial branding={branding} theme={theme} />;
 }
 
-function ClassicTemplate({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
+export function ClassicTemplate({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
   const copy = classicCopy(branding.homepageCopy);
   const dark = theme === 'night';
   const reduceMotion = useReducedMotion();
@@ -647,14 +646,17 @@ function ClassicTemplate({ branding, theme }: { branding: BrandingPolicy; theme:
   const panel = dark ? 'border-white/10 bg-white/[0.06]' : 'border-slate-200 bg-white';
   const muted = dark ? 'text-white/64' : 'text-slate-600';
 
-  const nextSlide = () => setActiveSlide((current) => (current + 1) % slides.length);
-  const previousSlide = () => setActiveSlide((current) => (current - 1 + slides.length) % slides.length);
+  const nextSlide = useCallback(() => setActiveSlide((current) => (current + 1) % slides.length), [slides.length]);
+  const previousSlide = useCallback(
+    () => setActiveSlide((current) => (current - 1 + slides.length) % slides.length),
+    [slides.length]
+  );
 
   useEffect(() => {
     if (reduceMotion) return;
     const timer = window.setInterval(nextSlide, 7600);
     return () => window.clearInterval(timer);
-  }, [reduceMotion, slides.length]);
+  }, [nextSlide, reduceMotion]);
 
   return (
     <main className={`min-h-screen overflow-hidden ${shell}`} style={cssVars(branding, theme)}>
@@ -1420,21 +1422,23 @@ function RecoveryCommandFooter({ branding, dark }: { branding: BrandingPolicy; d
 function AuctionPulse({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
   const copy = auctionPulseCopy(branding.homepageCopy);
   const dark = theme === 'night';
-  const accentText = getReadableTextColor(branding.accentColor);
   const primaryText = getReadableTextColor(branding.primaryColor);
   const [activeSlide, setActiveSlide] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const reduceMotion = useReducedMotion();
   const slides = copy.slides;
 
-  const nextSlide = () => setActiveSlide((current) => (current + 1) % slides.length);
-  const previousSlide = () => setActiveSlide((current) => (current - 1 + slides.length) % slides.length);
+  const nextSlide = useCallback(() => setActiveSlide((current) => (current + 1) % slides.length), [slides.length]);
+  const previousSlide = useCallback(
+    () => setActiveSlide((current) => (current - 1 + slides.length) % slides.length),
+    [slides.length]
+  );
 
   useEffect(() => {
     if (reduceMotion) return;
     const timer = window.setInterval(nextSlide, 7600);
     return () => window.clearInterval(timer);
-  }, [reduceMotion, slides.length]);
+  }, [nextSlide, reduceMotion]);
 
   return (
     <main className={`min-h-screen overflow-hidden ${dark ? 'bg-[#081019] text-white' : 'bg-[#F7F8F5] text-slate-950'}`} style={cssVars(branding, theme)}>
@@ -1514,7 +1518,7 @@ function AuctionPulse({ branding, theme }: { branding: BrandingPolicy; theme: 'd
                 </div>
               </div>
 
-              <AuctionPulseHeroVisual branding={branding} dark={dark} activeSlide={activeSlide} />
+              <AuctionPulseHeroVisual dark={dark} activeSlide={activeSlide} />
             </div>
           </div>
         </div>
@@ -1556,7 +1560,7 @@ function AuctionPulseNav({ branding, dark }: { branding: BrandingPolicy; dark: b
   );
 }
 
-function AuctionPulseHeroVisual({ branding, dark, activeSlide }: { branding: BrandingPolicy; dark: boolean; activeSlide: number }) {
+function AuctionPulseHeroVisual({ dark, activeSlide }: { dark: boolean; activeSlide: number }) {
   const lot = auctionPulseLots[activeSlide % auctionPulseLots.length];
   const background = [
     auctionPulseAssets.mobileAuction,
@@ -1854,7 +1858,7 @@ function AuctionPulseFooter({ branding, dark }: { branding: BrandingPolicy; dark
   );
 }
 
-function ClaimsOrbit({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
+export function ClaimsOrbit({ branding, theme }: { branding: BrandingPolicy; theme: 'day' | 'night' }) {
   const copy = branding.homepageCopy;
   const dark = theme === 'night';
   const accentText = getReadableTextColor(branding.accentColor);
@@ -1994,7 +1998,7 @@ function EditorialRecoveryBrief({ branding }: { branding: BrandingPolicy }) {
   );
 }
 
-function CommandOperationsBand({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
+export function CommandOperationsBand({ branding, dark }: { branding: BrandingPolicy; dark: boolean }) {
   const copy = branding.homepageCopy;
   const shell = dark ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-950';
   const panel = dark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white';

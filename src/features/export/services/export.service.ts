@@ -12,13 +12,13 @@ import { jsPDF } from 'jspdf';
 export interface ExportColumn {
   key: string;
   header: string;
-  format?: (value: any) => string;
+  format?: (value: unknown) => string;
 }
 
 export interface ExportOptions {
   filename: string;
   columns: ExportColumn[];
-  data: any[];
+  data: Array<Record<string, unknown>>;
   title?: string; // For PDF
 }
 
@@ -85,7 +85,6 @@ export class ExportService {
     
     // Add table data
     let y = 60; // Start below letterhead
-    const pageHeight = doc.internal.pageSize.getHeight();
     const maxY = PDFTemplateService.getMaxContentY(doc);
     
     // Add headers

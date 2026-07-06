@@ -6,10 +6,13 @@
  */
 
 import { db } from '@/lib/db/drizzle';
-import { salvageCases, auctions, bids, users } from '@/lib/db/schema';
-import { eq, and, gte, lte, sql, inArray, desc, count } from 'drizzle-orm';
+import { bids } from '@/lib/db/schema';
+import { sql, inArray, count } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
 import { resolveReportIsoDateRange } from '../../utils/report-date-range';
+
+// Raw report aliases are selected as PostgreSQL text and normalized below.
+type RawReportRow = Record<string, string>;
 
 export interface CaseProcessingData {
   caseId: string;
@@ -82,16 +85,6 @@ export interface VendorPerformanceData {
 }
 
 export class OperationalDataRepository {
-  /**
-   * Build date range condition
-   */
-  private static buildDateCondition(dateColumn: any, startDate?: string, endDate?: string) {
-    const conditions = [];
-    if (startDate) conditions.push(gte(dateColumn, new Date(startDate)));
-    if (endDate) conditions.push(lte(dateColumn, new Date(endDate)));
-    return conditions.length > 0 ? and(...conditions) : undefined;
-  }
-
   private static buildBrokerFilter(filters: ReportFilters) {
     if (!filters.brokers || filters.brokers.length === 0) return sql``;
     return sql`AND sc.broker_name IN (${sql.join(filters.brokers.map((broker) => sql`${broker}`), sql`, `)})`;
@@ -151,9 +144,9 @@ export class OperationalDataRepository {
         ${assetTypeFilter}
         ${brokerFilter}
       ORDER BY sc.created_at DESC
-    `) as any[];
+    `) as unknown as RawReportRow[];
 
-    return results.map((row: any) => {
+    return results.map((row) => {
       // Determine correct display status based on auction and payment state
       let displayStatus = row.case_status;
       
@@ -283,10 +276,10 @@ export class OperationalDataRepository {
         ${assetTypeFilter}
         ${brokerFilter}
       ORDER BY a.id, p.created_at DESC NULLS LAST
-    `) as any[];
+    `) as unknown as RawReportRow[];
 
     // Get comprehensive bid data for each auction
-    const auctionIds = auctionResults.map((a: any) => a.auction_id);
+    const auctionIds = auctionResults.map((auction) => auction.auction_id);
     
     let bidData: Record<string, { 
       count: number; 
@@ -322,7 +315,7 @@ export class OperationalDataRepository {
         .orderBy(bids.auctionId, bids.createdAt);
 
       // Process bid data for each auction
-      const auctionBids: Record<string, any[]> = {};
+      const auctionBids: Record<string, typeof allBids> = {};
       allBids.forEach(bid => {
         if (!auctionBids[bid.auctionId]) auctionBids[bid.auctionId] = [];
         auctionBids[bid.auctionId].push(bid);
@@ -352,7 +345,7 @@ export class OperationalDataRepository {
         // Calculate time to first bid (in minutes)
         let timeToFirstBid: number | null = null;
         if (bidsForAuction.length > 0) {
-          const auction = auctionResults.find((a: any) => a.auction_id === auctionId);
+          const auction = auctionResults.find((candidate) => candidate.auction_id === auctionId);
           if (auction) {
             const firstBidTime = new Date(bidsForAuction[0].createdAt).getTime();
             const startTime = new Date(auction.start_time).getTime();
@@ -363,7 +356,7 @@ export class OperationalDataRepository {
         // Calculate last minute bids (bids in final hour)
         let lastMinuteBids = 0;
         if (bidsForAuction.length > 0) {
-          const auction = auctionResults.find((a: any) => a.auction_id === auctionId);
+          const auction = auctionResults.find((candidate) => candidate.auction_id === auctionId);
           if (auction) {
             const endTime = new Date(auction.end_time).getTime();
             const oneHourBefore = endTime - (60 * 60 * 1000);
@@ -384,7 +377,7 @@ export class OperationalDataRepository {
       });
     }
 
-    return auctionResults.map((row: any) => {
+    return auctionResults.map((row) => {
       const data = bidData[row.auction_id] || { 
         count: 0, 
         uniqueBidders: 0,
@@ -554,9 +547,9 @@ export class OperationalDataRepository {
       WHERE created_at >= ${startDate} AND created_at <= ${endDate}
     `);
 
-    const totalAuctionCount = parseInt((totalAuctionsResult[0] as any)?.count || '0');
+    const totalAuctionCount = Number((totalAuctionsResult[0] as unknown as RawReportRow)?.count || 0);
 
-    return (results as any[]).map(row => {
+    return (results as unknown as RawReportRow[]).map(row => {
       const completedPickups = parseInt(row.completed_pickups || '0');
       const onTimePickups = parseInt(row.on_time_pickups || '0');
 

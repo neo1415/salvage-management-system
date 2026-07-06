@@ -125,7 +125,6 @@ export function WalletPaymentConfirmation({
         }}
         onConfirm={() => {
           // ConfirmationModal expects sync handler; we wrap with async.
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           void handleConfirm();
         }}
         title="Confirm Wallet Payment"

@@ -9,14 +9,14 @@
  * - Requirement 23.1: Display balance breakdown
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors, escrowWallets } from '@/lib/db/schema';
 import { walletTransactions } from '@/lib/db/schema/escrow';
 import { eq, desc } from 'drizzle-orm';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Get authenticated session
     const session = await auth();

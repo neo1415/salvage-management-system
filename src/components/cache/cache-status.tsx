@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Database, Trash2, RefreshCw, HardDrive } from 'lucide-react';
 import { CacheService } from '@/features/cache/services/cache.service';
 import { useToast } from '@/components/ui/toast';
@@ -44,7 +44,7 @@ export function CacheStatus({
   const toast = useToast();
 
   // Load cache stats
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       setIsLoading(true);
       const cacheService = CacheService;
@@ -80,7 +80,7 @@ export function CacheStatus({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
 
   // Clear all cache
   const handleClearCache = async () => {
@@ -119,8 +119,8 @@ export function CacheStatus({
 
   // Load stats on mount
   useEffect(() => {
-    loadStats();
-  }, []);
+    void loadStats();
+  }, [loadStats]);
 
   // Format bytes to human-readable size
   const formatBytes = (bytes: number): string => {

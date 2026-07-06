@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { ArrowLeft, Clock, User, Banknote, FileText, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown, Lock } from 'lucide-react';
 import Link from 'next/link';
@@ -14,7 +14,14 @@ interface TimelineEvent {
     name: string;
     role: string;
   };
-  details: Record<string, any>;
+  details: {
+    amount?: number;
+    reason?: string;
+    documentType?: string;
+    paymentMethod?: string;
+    previousWinner?: string;
+    newWinner?: string;
+  };
 }
 
 interface AuctionDetails {
@@ -45,11 +52,7 @@ export function PaymentDetailsContent({ auctionId }: PaymentDetailsContentProps)
   const [auction, setAuction] = useState<AuctionDetails | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchAuctionDetails();
-  }, [auctionId]);
-
-  const fetchAuctionDetails = async () => {
+  const fetchAuctionDetails = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch(`/api/auctions/${auctionId}/timeline`);
@@ -62,7 +65,11 @@ export function PaymentDetailsContent({ auctionId }: PaymentDetailsContentProps)
     } finally {
       setLoading(false);
     }
-  };
+  }, [auctionId]);
+
+  useEffect(() => {
+    void fetchAuctionDetails();
+  }, [fetchAuctionDetails]);
 
   const getEventIcon = (type: string) => {
     const icons: Record<string, React.ReactNode> = {
@@ -221,7 +228,7 @@ export function PaymentDetailsContent({ auctionId }: PaymentDetailsContentProps)
 
           {/* Timeline Events */}
           <div className="space-y-6">
-            {auction.timeline.map((event, index) => (
+            {auction.timeline.map((event) => (
               <div key={event.id} className="relative flex gap-4">
                 {/* Icon */}
                 <div className="relative z-10 flex-shrink-0 w-12 h-12 bg-white border-2 border-gray-200 rounded-full flex items-center justify-center">

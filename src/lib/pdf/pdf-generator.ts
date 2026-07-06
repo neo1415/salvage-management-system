@@ -5,11 +5,97 @@
 
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import type { UserOptions } from 'jspdf-autotable';
+
+interface ReportMetrics {
+  totalRevenue?: number;
+  averageRecoveryRate?: number;
+  profitMargin?: number;
+  revenueGrowth?: number;
+  totalCases?: number;
+  caseProcessingTime?: number;
+  auctionSuccessRate?: number;
+  vendorParticipationRate?: number;
+  topAdjusterPerformance?: number;
+  averageAdjusterPerformance?: number;
+  paymentVerificationRate?: number;
+  documentCompletionRate?: number;
+  totalCosts?: number;
+  netProfit?: number;
+  totalPayments?: number;
+  totalAmount?: number;
+  averagePayment?: number;
+  successRate?: number;
+  totalSpending?: number;
+  activeVendors?: number;
+  averageSpend?: number;
+  paymentRate?: number;
+  totalAuctions?: number;
+  averageBidsPerAuction?: number;
+  avgProcessingTime?: number;
+  approvalRate?: number;
+  qualityScore?: number;
+  avgParticipation?: number;
+  avgWinRate?: number;
+  totalSpent?: number;
+  totalDocuments?: number;
+  completionRate?: number;
+  avgGenerationTime?: number;
+  complianceRate?: number;
+}
+
+interface AdjusterBreakdown {
+  name: string;
+  totalCases: number;
+  approved: number;
+  approvalRate: number;
+  avgProcessingTime: number;
+  revenue: number;
+  qualityScore: number;
+}
+
+interface VendorBreakdown {
+  businessName: string;
+  auctionsParticipated: number;
+  auctionsWon: number;
+  winRate: number;
+  totalSpent: number;
+  avgBid: number;
+  paymentRate: number;
+}
+
+interface RevenueByMonth {
+  month: string;
+  revenue: number;
+  cases?: number;
+  avgPerCase?: number;
+}
+
+interface AssetTypePerformance {
+  assetType: string;
+  count: number;
+  successRate: number;
+  averageBids: number;
+  totalRevenue: number;
+}
+
+interface PDFReportData extends ReportMetrics {
+  financial?: ReportMetrics;
+  operational?: ReportMetrics;
+  performance?: ReportMetrics;
+  summary?: ReportMetrics;
+  breakdowns?: {
+    adjusters?: AdjusterBreakdown[];
+    vendors?: VendorBreakdown[];
+  };
+  revenueByMonth?: RevenueByMonth[];
+  byAssetType?: AssetTypePerformance[];
+}
 
 // Extend jsPDF type to include autoTable
 declare module 'jspdf' {
   interface jsPDF {
-    autoTable: (options: any) => jsPDF;
+    autoTable: (options: UserOptions) => void;
     lastAutoTable: {
       finalY: number;
     };
@@ -19,7 +105,7 @@ declare module 'jspdf' {
 export interface PDFGeneratorOptions {
   reportType: string;
   reportTitle: string;
-  data: any;
+  data: PDFReportData;
   filters?: {
     startDate?: string;
     endDate?: string;
@@ -104,7 +190,7 @@ export class PDFGenerator {
     this.currentY += 10;
   }
 
-  private addContent(reportType: string, data: any) {
+  private addContent(reportType: string, data: PDFReportData) {
     switch (reportType) {
       case 'master-report':
       case 'kpi-dashboard':
@@ -146,7 +232,7 @@ export class PDFGenerator {
     }
   }
 
-  private addKPIDashboardContent(data: any) {
+  private addKPIDashboardContent(data: PDFReportData) {
     const financial = data.financial || {};
     const operational = data.operational || {};
     const performance = data.performance || {};
@@ -184,7 +270,7 @@ export class PDFGenerator {
       this.addSectionTitle('Adjuster Performance');
       this.addTable(
         ['Adjuster', 'Cases', 'Approved', 'Approval Rate', 'Avg Time', 'Revenue', 'Quality'],
-        data.breakdowns.adjusters.slice(0, 20).map((adj: any) => [
+        data.breakdowns.adjusters.slice(0, 20).map((adj) => [
           adj.name,
           adj.totalCases.toString(),
           adj.approved.toString(),
@@ -201,7 +287,7 @@ export class PDFGenerator {
       this.addSectionTitle('Vendor Performance');
       this.addTable(
         ['Vendor', 'Participated', 'Won', 'Win Rate', 'Total Spent', 'Avg Bid', 'Payment Rate'],
-        data.breakdowns.vendors.slice(0, 20).map((vendor: any) => [
+        data.breakdowns.vendors.slice(0, 20).map((vendor) => [
           vendor.businessName,
           vendor.auctionsParticipated.toString(),
           vendor.auctionsWon.toString(),
@@ -214,7 +300,7 @@ export class PDFGenerator {
     }
   }
 
-  private addRevenueAnalysisContent(data: any) {
+  private addRevenueAnalysisContent(data: PDFReportData) {
     this.addSectionTitle('Revenue Summary');
     this.addMetricsGrid([
       { label: 'Total Revenue', value: this.formatCurrency(data.totalRevenue || 0), highlight: true },
@@ -228,7 +314,7 @@ export class PDFGenerator {
       this.addSectionTitle('Revenue by Month');
       this.addTable(
         ['Month', 'Revenue', 'Cases', 'Avg per Case'],
-        data.revenueByMonth.map((item: any) => [
+        data.revenueByMonth.map((item) => [
           new Date(item.month).toLocaleDateString('en-NG', { year: 'numeric', month: 'long' }),
           this.formatCurrency(item.revenue),
           item.cases?.toString() || '0',
@@ -238,7 +324,7 @@ export class PDFGenerator {
     }
   }
 
-  private addProfitabilityContent(data: any) {
+  private addProfitabilityContent(data: PDFReportData) {
     this.addSectionTitle('Profitability Summary');
     this.addMetricsGrid([
       { label: 'Total Revenue', value: this.formatCurrency(data.totalRevenue || 0), highlight: true },
@@ -248,7 +334,7 @@ export class PDFGenerator {
     ]);
   }
 
-  private addPaymentAnalyticsContent(data: any) {
+  private addPaymentAnalyticsContent(data: PDFReportData) {
     this.addSectionTitle('Payment Analytics Summary');
     this.addMetricsGrid([
       { label: 'Total Payments', value: `${data.totalPayments || 0}` },
@@ -258,7 +344,7 @@ export class PDFGenerator {
     ]);
   }
 
-  private addVendorSpendingContent(data: any) {
+  private addVendorSpendingContent(data: PDFReportData) {
     this.addSectionTitle('Vendor Spending Summary');
     this.addMetricsGrid([
       { label: 'Total Spending', value: this.formatCurrency(data.totalSpending || 0), highlight: true },
@@ -268,7 +354,7 @@ export class PDFGenerator {
     ]);
   }
 
-  private addAuctionPerformanceContent(data: any) {
+  private addAuctionPerformanceContent(data: PDFReportData) {
     const summary = data.summary || {};
     
     this.addSectionTitle('Auction Performance Summary');
@@ -284,7 +370,7 @@ export class PDFGenerator {
       this.addSectionTitle('Performance by Asset Type');
       this.addTable(
         ['Asset Type', 'Count', 'Success Rate', 'Avg Bids', 'Total Revenue'],
-        data.byAssetType.map((item: any) => [
+        data.byAssetType.map((item) => [
           item.assetType,
           item.count.toString(),
           `${item.successRate}%`,
@@ -295,7 +381,7 @@ export class PDFGenerator {
     }
   }
 
-  private addCaseProcessingContent(data: any) {
+  private addCaseProcessingContent(data: PDFReportData) {
     this.addSectionTitle('Case Processing Summary');
     this.addMetricsGrid([
       { label: 'Total Cases', value: `${data.totalCases || 0}`, highlight: true },
@@ -305,7 +391,7 @@ export class PDFGenerator {
     ]);
   }
 
-  private addVendorPerformanceContent(data: any) {
+  private addVendorPerformanceContent(data: PDFReportData) {
     this.addSectionTitle('Vendor Performance Summary');
     this.addMetricsGrid([
       { label: 'Active Vendors', value: `${data.activeVendors || 0}`, highlight: true },
@@ -315,7 +401,7 @@ export class PDFGenerator {
     ]);
   }
 
-  private addDocumentManagementContent(data: any) {
+  private addDocumentManagementContent(data: PDFReportData) {
     this.addSectionTitle('Document Management Summary');
     this.addMetricsGrid([
       { label: 'Total Documents', value: `${data.totalDocuments || 0}`, highlight: true },
@@ -325,7 +411,7 @@ export class PDFGenerator {
     ]);
   }
 
-  private addUserPerformanceContent(data: any) {
+  private addUserPerformanceContent(data: PDFReportData) {
     this.addSectionTitle('Performance Summary');
     this.addMetricsGrid([
       { label: 'Total Cases', value: `${data.totalCases || 0}`, highlight: true },
@@ -335,7 +421,7 @@ export class PDFGenerator {
     ]);
   }
 
-  private addGenericContent(data: any) {
+  private addGenericContent(_data: PDFReportData) {
     this.addSectionTitle('Report Data');
     this.doc.setFontSize(10);
     this.doc.setTextColor(...this.textColor);
@@ -399,7 +485,7 @@ export class PDFGenerator {
   private addTable(headers: string[], rows: string[][]) {
     this.checkPageBreak(60);
 
-    (this.doc as any).autoTable({
+    this.doc.autoTable({
       startY: this.currentY,
       head: [headers],
       body: rows,
@@ -421,11 +507,11 @@ export class PDFGenerator {
       tableWidth: 'auto',
     });
 
-    this.currentY = (this.doc as any).lastAutoTable.finalY + 10;
+    this.currentY = this.doc.lastAutoTable.finalY + 10;
   }
 
   private addFooter() {
-    const pageCount = (this.doc as any).internal.getNumberOfPages();
+    const pageCount = this.doc.getNumberOfPages();
     
     for (let i = 1; i <= pageCount; i++) {
       this.doc.setPage(i);

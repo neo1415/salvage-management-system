@@ -37,6 +37,18 @@ const DEFAULT_CONFIG: AlgorithmConfig = {
   coldStartBidThreshold: 3,
 };
 
+interface AlgorithmConfigRecord {
+  configKey: string;
+  configValue: string | number;
+}
+
+function isAlgorithmConfigRecord(value: unknown): value is AlgorithmConfigRecord {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.configKey === 'string' &&
+    (typeof record.configValue === 'string' || typeof record.configValue === 'number');
+}
+
 export function AlgorithmConfigContent() {
   const [currentConfig, setCurrentConfig] = useState<AlgorithmConfig>(DEFAULT_CONFIG);
   const [proposedConfig, setProposedConfig] = useState<AlgorithmConfig>(DEFAULT_CONFIG);
@@ -63,17 +75,25 @@ export function AlgorithmConfigContent() {
         throw new Error('Failed to fetch configuration');
       }
 
-      const data = await response.json();
+      const payload: unknown = await response.json();
+      const payloadRecord = payload && typeof payload === 'object'
+        ? payload as Record<string, unknown>
+        : {};
+      const records = Array.isArray(payloadRecord.data)
+        ? payloadRecord.data.filter(isAlgorithmConfigRecord)
+        : [];
+      const valueFor = (key: string, fallback: string) =>
+        String(records.find((record) => record.configKey === key)?.configValue ?? fallback);
       
       // Map config keys to our structure
       const config: AlgorithmConfig = {
-        predictionSimilarityThreshold: parseFloat(data.data.find((c: any) => c.configKey === 'prediction.similarity_threshold')?.configValue || '60'),
-        timeDecayMonths: parseFloat(data.data.find((c: any) => c.configKey === 'prediction.time_decay_months')?.configValue || '6'),
-        confidenceBase: parseFloat(data.data.find((c: any) => c.configKey === 'prediction.confidence_base')?.configValue || '0.85'),
-        recommendationCollaborativeWeight: parseFloat(data.data.find((c: any) => c.configKey === 'recommendation.collaborative_weight')?.configValue || '60'),
-        recommendationContentWeight: parseFloat(data.data.find((c: any) => c.configKey === 'recommendation.content_weight')?.configValue || '40'),
-        minMatchScore: parseFloat(data.data.find((c: any) => c.configKey === 'recommendation.min_match_score')?.configValue || '30'),
-        coldStartBidThreshold: parseFloat(data.data.find((c: any) => c.configKey === 'recommendation.cold_start_bid_threshold')?.configValue || '3'),
+        predictionSimilarityThreshold: parseFloat(valueFor('prediction.similarity_threshold', '60')),
+        timeDecayMonths: parseFloat(valueFor('prediction.time_decay_months', '6')),
+        confidenceBase: parseFloat(valueFor('prediction.confidence_base', '0.85')),
+        recommendationCollaborativeWeight: parseFloat(valueFor('recommendation.collaborative_weight', '60')),
+        recommendationContentWeight: parseFloat(valueFor('recommendation.content_weight', '40')),
+        minMatchScore: parseFloat(valueFor('recommendation.min_match_score', '30')),
+        coldStartBidThreshold: parseFloat(valueFor('recommendation.cold_start_bid_threshold', '3')),
       };
 
       setCurrentConfig(config);

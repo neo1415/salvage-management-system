@@ -11,7 +11,6 @@
 import { db } from '@/lib/db/drizzle';
 import { graceExtensions, systemConfig } from '@/lib/db/schema/auction-deposit';
 import { releaseForms } from '@/lib/db/schema/release-forms';
-import { auctions } from '@/lib/db/schema/auctions';
 import { eq, and, desc } from 'drizzle-orm';
 import { extendDocumentDeadline } from './document-integration.service';
 import { depositNotificationService } from './deposit-notification.service';
@@ -148,7 +147,7 @@ export async function grantExtension(
     }
 
     // 6. Record extension in grace_extensions table (Requirement 7.5)
-    const [extension] = await db
+    await db
       .insert(graceExtensions)
       .values({
         auctionId,
@@ -159,8 +158,7 @@ export async function grantExtension(
         oldDeadline: firstDoc.validityDeadline || new Date(),
         newDeadline: extendResult.newDeadline!,
         createdAt: new Date()
-      })
-      .returning();
+      });
 
     console.log(`✅ Grace extension granted: ${extensionHours} hours for auction ${auctionId}`);
     console.log(`   - Extension count: ${currentExtensionCount} → ${currentExtensionCount + 1}`);

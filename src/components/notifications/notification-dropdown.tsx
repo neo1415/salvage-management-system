@@ -12,13 +12,14 @@
 import { useEffect, useRef } from 'react';
 import { useAppRouter } from '@/hooks/use-app-router';
 import NotificationItem from '@/components/notifications/notification-item';
+import type { NotificationData } from '@/lib/db/schema/notifications';
 
 interface Notification {
   id: string;
   type: string;
   title: string;
   message: string;
-  data: any;
+  data: NotificationData | null;
   read: boolean;
   createdAt: string;
 }
@@ -77,7 +78,7 @@ export default function NotificationDropdown({
 
     // FIXED: Handle auction_won notifications - route to auction details page
     if (notification.type === 'auction_won') {
-      if (notification.data?.url) {
+      if (typeof notification.data?.url === 'string' && notification.data.url.startsWith('/')) {
         // Use the URL from notification data (set by closure service)
         router.push(notification.data.url);
         onClose();

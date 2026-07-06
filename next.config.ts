@@ -2,8 +2,6 @@
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs';
 
-const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN || process.env.SENTRY_TOKEN;
-
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   

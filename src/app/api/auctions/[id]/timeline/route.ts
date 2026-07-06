@@ -31,7 +31,7 @@ interface TimelineEvent {
   timestamp: Date;
   description: string;
   actor?: string;
-  details: any;
+  details: Record<string, string | number | boolean | Date | null>;
 }
 
 /**

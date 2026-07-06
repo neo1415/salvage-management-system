@@ -7,7 +7,7 @@
  * Enforces scroll-to-sign and terms acceptance.
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useCallback, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import DOMPurify from 'isomorphic-dompurify';
 import { DigitalSignaturePad } from './digital-signature-pad';
@@ -48,18 +48,7 @@ export function ReleaseFormModal({
     message: '',
   });
 
-  // Fetch document content when modal opens
-  useEffect(() => {
-    if (auctionId && documentType) {
-      fetchDocumentContent();
-      
-      // Prevent body scroll
-      const unlock = lockScroll();
-      return unlock;
-    }
-  }, [auctionId, documentType]);
-
-  const fetchDocumentContent = async () => {
+  const fetchDocumentContent = useCallback(async () => {
     try {
       setIsLoading(true);
       const response = await fetch(`/api/auctions/${auctionId}/documents/preview?type=${documentType}`);
@@ -89,7 +78,18 @@ export function ReleaseFormModal({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [auctionId, documentType]);
+
+  // Fetch document content when modal opens
+  useEffect(() => {
+    if (auctionId && documentType) {
+      void fetchDocumentContent();
+
+      // Prevent body scroll
+      const unlock = lockScroll();
+      return unlock;
+    }
+  }, [auctionId, documentType, fetchDocumentContent]);
 
   // Reset state when modal opens/closes
   useEffect(() => {

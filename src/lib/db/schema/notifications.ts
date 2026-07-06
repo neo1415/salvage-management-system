@@ -84,5 +84,5 @@ export interface NotificationData {
   vendorId?: string;
   vendorName?: string;
   confirmedAt?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }

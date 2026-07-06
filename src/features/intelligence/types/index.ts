@@ -35,7 +35,7 @@ export interface RecommendationResult {
   reasonCodes: string[];
   auctionDetails: {
     assetType: string;
-    assetDetails: any;
+    assetDetails: Record<string, unknown>;
     marketValue: number;
     reservePrice: number;
     currentBid: number | null;

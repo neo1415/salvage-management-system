@@ -29,7 +29,7 @@ export interface ScheduledReport {
   userId: string;
   reportType: ReportType;
   frequency: string;
-  scheduleConfig: any;
+  scheduleConfig: ScheduleConfig['scheduleConfig'];
   recipients: string[];
   filters: ReportFilters;
   format: ExportFormat;
@@ -39,6 +39,32 @@ export interface ScheduledReport {
   errorMessage?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+type ScheduledReportRecord = typeof scheduledReports.$inferSelect;
+type ScheduledReportUpdate = Partial<typeof scheduledReports.$inferInsert>;
+
+function normalizeFrequency(value: string): ScheduleConfig['frequency'] {
+  if (value === 'daily' || value === 'weekly' || value === 'monthly' || value === 'quarterly') {
+    return value;
+  }
+  throw new Error(`Unsupported report frequency: ${value}`);
+}
+
+function normalizeScheduleConfig(value: unknown): ScheduleConfig['scheduleConfig'] {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('Scheduled report configuration is missing');
+  }
+  const config = value as Record<string, unknown>;
+  if (typeof config.time !== 'string' || typeof config.timezone !== 'string') {
+    throw new Error('Scheduled report time and timezone are required');
+  }
+  return {
+    time: config.time,
+    timezone: config.timezone,
+    dayOfWeek: typeof config.dayOfWeek === 'number' ? config.dayOfWeek : undefined,
+    dayOfMonth: typeof config.dayOfMonth === 'number' ? config.dayOfMonth : undefined,
+  };
 }
 
 export class ReportSchedulerService {
@@ -103,7 +129,7 @@ export class ReportSchedulerService {
     scheduleId: string,
     updates: Partial<ScheduleConfig>
   ): Promise<ScheduledReport> {
-    const updateData: any = {
+    const updateData: ScheduledReportUpdate = {
       updatedAt: new Date(),
     };
 
@@ -156,8 +182,8 @@ export class ReportSchedulerService {
     if (!report) throw new Error('Schedule not found');
 
     const nextRun = this.calculateNextRun(
-      report.frequency as any,
-      report.scheduleConfig as any
+      normalizeFrequency(report.frequency),
+      normalizeScheduleConfig(report.scheduleConfig)
     );
 
     await db
@@ -215,8 +241,8 @@ export class ReportSchedulerService {
     if (!report) return;
 
     const nextRun = this.calculateNextRun(
-      report.frequency as any,
-      report.scheduleConfig as any
+      normalizeFrequency(report.frequency),
+      normalizeScheduleConfig(report.scheduleConfig)
     );
 
     await db
@@ -284,22 +310,26 @@ export class ReportSchedulerService {
   /**
    * Map database record to ScheduledReport type
    */
-  private static mapToScheduledReport(record: any): ScheduledReport {
+  private static mapToScheduledReport(record: ScheduledReportRecord): ScheduledReport {
     return {
       id: record.id,
       userId: record.userId,
-      reportType: record.reportType,
+      reportType: record.reportType as ReportType,
       frequency: record.frequency,
-      scheduleConfig: record.scheduleConfig,
-      recipients: record.recipients,
-      filters: record.filters || {},
-      format: record.format,
-      lastRun: record.lastRun,
-      nextRun: record.nextRun,
-      status: record.status,
-      errorMessage: record.errorMessage,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt,
+      scheduleConfig: normalizeScheduleConfig(record.scheduleConfig),
+      recipients: Array.isArray(record.recipients)
+        ? record.recipients.filter((recipient): recipient is string => typeof recipient === 'string')
+        : [],
+      filters: typeof record.filters === 'object' && record.filters !== null
+        ? record.filters as ReportFilters
+        : {},
+      format: record.format as ExportFormat,
+      lastRun: record.lastRun ?? undefined,
+      nextRun: record.nextRun ?? undefined,
+      status: record.status ?? 'active',
+      errorMessage: record.errorMessage ?? undefined,
+      createdAt: record.createdAt ?? new Date(),
+      updatedAt: record.updatedAt ?? new Date(),
     };
   }
 }

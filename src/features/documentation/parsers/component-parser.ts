@@ -92,7 +92,7 @@ export class ComponentParser {
    */
   private extractComponentInfo(
     sourceFile: ts.SourceFile,
-    sourceCode: string
+    _sourceCode: string
   ): {
     name: string;
     isDefaultExport: boolean;
@@ -313,7 +313,7 @@ export class ComponentParser {
    * Extract state variables from useState hooks
    */
   private extractStateVariables(
-    sourceFile: ts.SourceFile,
+    _sourceFile: ts.SourceFile,
     sourceCode: string
   ): StateDefinition[] {
     const stateVariables: StateDefinition[] = [];
@@ -375,7 +375,7 @@ export class ComponentParser {
    */
   private extractChildComponents(
     sourceFile: ts.SourceFile,
-    sourceCode: string
+    _sourceCode: string
   ): string[] {
     const childComponents = new Set<string>();
 

@@ -13,14 +13,18 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import { Download } from 'lucide-react';
-import { formatNaira, formatAnalysisMethod } from '@/lib/utils/currency-formatter';
+import { formatNaira } from '@/lib/utils/currency-formatter';
 import { LocationMap } from '@/components/ui/location-map';
-import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
+import {
+  GeminiDamageDisplay,
+  type DamagedPart,
+  type ItemDetails,
+} from '@/components/ai-assessment/gemini-damage-display';
 import { CasePhotoGallery } from '@/components/ui/case-photo-gallery';
 
 interface Case {
@@ -37,7 +41,14 @@ interface Case {
   estimatedSalvageValue: number | null;
   reservePrice: number | null;
   damageSeverity: 'minor' | 'moderate' | 'severe' | null;
-  aiAssessment: Record<string, unknown> | null;
+  aiAssessment: {
+    recommendation?: string;
+    labels?: string[];
+    itemDetails?: ItemDetails;
+    damagedParts?: DamagedPart[];
+    isTotalLoss?: boolean;
+    isRepairable?: boolean;
+  } | null;
   gpsLocation: { x: number; y: number } | null;
   locationName: string;
   photos: string[];
@@ -69,6 +80,15 @@ function formatInsuranceClass(value?: string | null): string {
   return INSURANCE_CLASS_LABELS[value] ?? value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function getAssetDescriptor(assetDetails: Record<string, unknown>): string[] {
+  return ['name', 'brand', 'make', 'year']
+    .map((key) => assetDetails[key])
+    .filter((value): value is string | number =>
+      typeof value === 'string' || typeof value === 'number'
+    )
+    .map(String);
+}
+
 export default function CaseDetailsPage() {
   const router = useAppRouter();
   const params = useParams();
@@ -84,13 +104,7 @@ export default function CaseDetailsPage() {
     caseData?.createdBy === session.user.id;
   const canExportEvidencePacket = caseData?.evidencePacketAvailable === true;
 
-  useEffect(() => {
-    if (caseId) {
-      fetchCaseDetails();
-    }
-  }, [caseId]);
-
-  const fetchCaseDetails = async () => {
+  const fetchCaseDetails = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -117,7 +131,13 @@ export default function CaseDetailsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [caseId]);
+
+  useEffect(() => {
+    if (caseId) {
+      void fetchCaseDetails();
+    }
+  }, [caseId, fetchCaseDetails]);
 
   const getStatusBadge = (status: Case['status']) => {
     const badges = {
@@ -133,31 +153,6 @@ export default function CaseDetailsPage() {
     const badge = badges[status] || badges.draft;
     return (
       <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.color}`}>
-        {badge.label}
-      </span>
-    );
-  };
-
-  const getSeverityBadge = (severity: Case['damageSeverity']) => {
-    if (!severity) return null;
-
-    const badges: Record<string, { label: string; color: string }> = {
-      minor: { label: 'Minor', color: 'bg-green-100 text-green-800' },
-      moderate: { label: 'Moderate', color: 'bg-yellow-100 text-yellow-800' },
-      severe: { label: 'Severe', color: 'bg-red-100 text-red-800' },
-    };
-
-    const badge = badges[severity];
-    if (!badge) {
-      return (
-        <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
-          Unknown
-        </span>
-      );
-    }
-    
-    return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${badge.color}`}>
         {badge.label}
       </span>
     );
@@ -269,14 +264,9 @@ export default function CaseDetailsPage() {
             <p className="text-sm text-gray-600 mt-1">
                 {caseData.assetType.charAt(0).toUpperCase() + caseData.assetType.slice(1)}
                 {/* Show item name, brand, and year if available */}
-                {caseData.assetDetails && typeof caseData.assetDetails === 'object' && (
-                  <>
-                    {(caseData.assetDetails as any).name && ` • ${(caseData.assetDetails as any).name}`}
-                    {(caseData.assetDetails as any).brand && ` • ${(caseData.assetDetails as any).brand}`}
-                    {(caseData.assetDetails as any).make && ` • ${(caseData.assetDetails as any).make}`}
-                    {(caseData.assetDetails as any).year && ` • ${(caseData.assetDetails as any).year}`}
-                  </>
-                )}
+                {getAssetDescriptor(caseData.assetDetails).map((detail, index) => (
+                  <span key={`${detail}-${index}`}> • {detail}</span>
+                ))}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -303,26 +293,26 @@ export default function CaseDetailsPage() {
 
         {/* Gemini AI Damage Summary - PROSE FORMAT */}
         {caseData.aiAssessment && typeof caseData.aiAssessment === 'object' && (
-          (caseData.aiAssessment as any).recommendation || 
-          (caseData.aiAssessment as any).labels?.length > 0
+          caseData.aiAssessment.recommendation ||
+          (caseData.aiAssessment.labels?.length ?? 0) > 0
         ) && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <GeminiDamageDisplay
-              itemDetails={(caseData.aiAssessment as any).itemDetails}
-              damagedParts={(caseData.aiAssessment as any).damagedParts}
-              summary={(caseData.aiAssessment as any).recommendation}
+              itemDetails={caseData.aiAssessment.itemDetails}
+              damagedParts={caseData.aiAssessment.damagedParts}
+              summary={caseData.aiAssessment.recommendation}
               showTitle={true}
               assetType={caseData.assetType}
             />
             
             {/* Damage Labels - Fallback for Vision API or old data */}
-            {(caseData.aiAssessment as any).labels?.length > 0 && (
-              !(caseData.aiAssessment as any).damagedParts || (caseData.aiAssessment as any).damagedParts.length === 0
+            {(caseData.aiAssessment.labels?.length ?? 0) > 0 && (
+              !caseData.aiAssessment.damagedParts || caseData.aiAssessment.damagedParts.length === 0
             ) && (
               <div className="mt-4">
                 <p className="text-xs font-semibold text-gray-700 mb-2">Detected Issues:</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {(caseData.aiAssessment as any).labels.map((label: string, index: number) => (
+                  {caseData.aiAssessment.labels?.map((label, index) => (
                     <span 
                       key={index}
                       className="px-2 py-1 bg-gray-100 border border-gray-200 rounded-full text-xs text-gray-700"
@@ -335,14 +325,14 @@ export default function CaseDetailsPage() {
             )}
             
             {/* Repairability Status - Fixed to show Total Loss when isTotalLoss=true */}
-            {(caseData.aiAssessment as any).isTotalLoss !== undefined ? (
+            {caseData.aiAssessment.isTotalLoss !== undefined ? (
               <div className="flex items-center gap-2 text-xs mt-4">
                 <span className={`px-2 py-1 rounded-full font-medium ${
-                  (caseData.aiAssessment as any).isTotalLoss 
+                  caseData.aiAssessment.isTotalLoss
                     ? 'bg-red-100 text-red-800' 
                     : 'bg-green-100 text-green-800'
                 }`}>
-                  {(caseData.aiAssessment as any).isTotalLoss ? '✗ Total Loss' : '✓ Repairable'}
+                  {caseData.aiAssessment.isTotalLoss ? '✗ Total Loss' : '✓ Repairable'}
                 </span>
                 {/* COMMENTED OUT: Est. Repair Cost - per user request */}
                 {/* {(caseData.aiAssessment as any).estimatedRepairCost && (
@@ -351,14 +341,14 @@ export default function CaseDetailsPage() {
                   </span>
                 )} */}
               </div>
-            ) : (caseData.aiAssessment as any).isRepairable !== undefined ? (
+            ) : caseData.aiAssessment.isRepairable !== undefined ? (
               <div className="flex items-center gap-2 text-xs mt-4">
                 <span className={`px-2 py-1 rounded-full font-medium ${
-                  (caseData.aiAssessment as any).isRepairable 
+                  caseData.aiAssessment.isRepairable
                     ? 'bg-green-100 text-green-800' 
                     : 'bg-red-100 text-red-800'
                 }`}>
-                  {(caseData.aiAssessment as any).isRepairable ? '✓ Repairable' : '✗ Total Loss'}
+                  {caseData.aiAssessment.isRepairable ? '✓ Repairable' : '✗ Total Loss'}
                 </span>
                 {/* COMMENTED OUT: Est. Repair Cost - per user request */}
                 {/* {(caseData.aiAssessment as any).estimatedRepairCost && (

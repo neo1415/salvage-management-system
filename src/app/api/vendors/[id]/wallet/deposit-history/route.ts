@@ -104,7 +104,15 @@ export async function GET(
       .where(eq(escrowWallets.vendorId, vendorId))
       .limit(1);
 
-    let walletTransactionsData: any[] = [];
+    let walletTransactionsData: Array<{
+      id: string;
+      type: string;
+      amount: string;
+      balanceAfter: string;
+      reference: string;
+      description: string;
+      createdAt: Date;
+    }> = [];
     if (escrowWallet) {
       walletTransactionsData = await db
         .select({

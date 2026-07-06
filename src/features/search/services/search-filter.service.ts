@@ -44,7 +44,7 @@ export class SearchFilterService {
    * @returns SQL condition for multi-select filter, or undefined if no values selected
    */
   static buildMultiSelectFilter<T>(
-    column: any,
+    column: unknown,
     selectedValues: T[]
   ): SQL | undefined {
     if (!selectedValues || selectedValues.length === 0) {

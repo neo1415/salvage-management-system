@@ -7,14 +7,12 @@
  * Task: 11.3.10 - Implement advanced filters
  */
 
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CalendarIcon, Filter, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
 
 export interface AnalyticsFilters {
   dateRange: {
@@ -49,8 +47,6 @@ const REGIONS = [
 ];
 
 export function AnalyticsFiltersComponent({ filters, onFiltersChange, onApply, onReset }: AnalyticsFiltersProps) {
-  const [isOpen, setIsOpen] = useState(false);
-
   const handleDateRangeChange = (range: { from: Date; to: Date }) => {
     onFiltersChange({
       ...filters,
@@ -96,9 +92,9 @@ export function AnalyticsFiltersComponent({ filters, onFiltersChange, onApply, o
             selected={{
               from: filters.dateRange.from,
               to: filters.dateRange.to,
-            } as any}
-            onSelect={(range: any) => {
-              if (range?.from && range?.to) {
+            }}
+            onSelect={(range: Date | { from: Date; to: Date } | undefined) => {
+              if (range && !(range instanceof Date) && range.from && range.to) {
                 handleDateRangeChange({ from: range.from, to: range.to });
               }
             }}

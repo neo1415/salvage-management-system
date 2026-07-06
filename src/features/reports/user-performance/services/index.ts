@@ -6,8 +6,8 @@
  */
 
 import { db } from '@/lib/db/drizzle';
-import { salvageCases, auctions, payments, bids, users } from '@/lib/db/schema';
-import { eq, and, gte, lte, inArray, desc, count, sum, sql } from 'drizzle-orm';
+import { salvageCases, auctions, payments, users } from '@/lib/db/schema';
+import { eq, and, gte, lte, inArray, desc, sql, type AnyColumn } from 'drizzle-orm';
 import { ReportFilters } from '../../types';
 import { resolveReportDateRange } from '../../utils/report-date-range';
 
@@ -16,7 +16,7 @@ import { resolveReportDateRange } from '../../utils/report-date-range';
 // ============================================================================
 
 class UserPerformanceRepository {
-  private static buildDateCondition(dateColumn: any, startDate?: string, endDate?: string) {
+  private static buildDateCondition(dateColumn: AnyColumn, startDate?: string, endDate?: string) {
     const conditions = [];
     if (startDate) conditions.push(gte(dateColumn, new Date(startDate)));
     if (endDate) conditions.push(lte(dateColumn, new Date(endDate)));
@@ -76,7 +76,7 @@ class UserPerformanceRepository {
     const dateCondition = this.buildDateCondition(payments.createdAt, filters.startDate, filters.endDate);
     if (dateCondition) conditions.push(dateCondition);
 
-    let query = db
+    const query = db
       .select({
         paymentId: payments.id,
         amount: payments.amount,
@@ -88,11 +88,7 @@ class UserPerformanceRepository {
       .from(payments);
 
     // Apply where clause if conditions exist
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
-    }
-
-    return await query;
+    return conditions.length > 0 ? await query.where(and(...conditions)) : await query;
   }
 }
 
@@ -135,7 +131,8 @@ export class AdjusterMetricsService {
     const data = await UserPerformanceRepository.getAdjusterPerformanceData(filters);
 
     // Group by adjuster
-    const adjusterMap = new Map<string, any[]>();
+    type AdjusterRow = Awaited<ReturnType<typeof UserPerformanceRepository.getAdjusterPerformanceData>>[number];
+    const adjusterMap = new Map<string, AdjusterRow[]>();
     for (const row of data) {
       if (!adjusterMap.has(row.adjusterId)) {
         adjusterMap.set(row.adjusterId, []);
@@ -474,7 +471,7 @@ export class MyPerformanceService {
    * Salvage Manager Team Report
    * Shows ALL adjusters' performance and cases pending approval
    */
-  private static async generateManagerTeamReport(filters: ReportFilters, managerId: string): Promise<MyPerformanceReport> {
+  private static async generateManagerTeamReport(filters: ReportFilters, _managerId: string): Promise<MyPerformanceReport> {
     const { start: startDate, end: endDate } = resolveReportDateRange(filters.startDate, filters.endDate);
 
     // Get all cases in date range with adjuster info

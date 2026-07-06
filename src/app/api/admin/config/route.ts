@@ -24,7 +24,7 @@ import {
  * GET /api/admin/config
  * Get current system configuration
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
 

@@ -21,6 +21,16 @@ export interface VoicePerformanceOptions {
   enableFrameRateOptimization: boolean;
 }
 
+interface PerformanceWithMemory extends Performance {
+  memory?: {
+    usedJSHeapSize: number;
+  };
+}
+
+interface WindowWithWebkitAudioContext extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
 /**
  * Performance Monitor for Voice System
  */
@@ -174,8 +184,10 @@ class MemoryMonitor {
 
   private updateMemoryUsage(): void {
     if ('memory' in performance) {
-      const memory = (performance as any).memory;
-      this.currentUsage = memory.usedJSHeapSize / (1024 * 1024); // Convert to MB
+      const memory = (performance as PerformanceWithMemory).memory;
+      if (memory) {
+        this.currentUsage = memory.usedJSHeapSize / (1024 * 1024); // Convert to MB
+      }
     }
   }
 }
@@ -197,7 +209,12 @@ export class AudioProcessingOptimizer {
    */
   async initialize(): Promise<void> {
     try {
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioContextConstructor = window.AudioContext
+        || (window as WindowWithWebkitAudioContext).webkitAudioContext;
+      if (!AudioContextConstructor) {
+        throw new Error('Web Audio API is not supported in this browser');
+      }
+      this.audioContext = new AudioContextConstructor();
       
       // Use smaller buffer size for lower latency
       this.processor = this.audioContext.createScriptProcessor(
@@ -444,7 +461,7 @@ export class ResourcePool<T> {
 /**
  * Performance-optimized event throttler
  */
-export function createThrottledCallback<T extends (...args: any[]) => any>(
+export function createThrottledCallback<T extends (...args: never[]) => unknown>(
   callback: T,
   delay: number,
   options: { leading?: boolean; trailing?: boolean } = {}

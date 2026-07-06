@@ -60,6 +60,11 @@ export function useScheduledAuctionChecker(options: UseScheduledAuctionCheckerOp
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const isCheckingRef = useRef(false);
+  const activatedCallbackRef = useRef(onAuctionsActivated);
+
+  useEffect(() => {
+    activatedCallbackRef.current = onAuctionsActivated;
+  }, [onAuctionsActivated]);
 
   const checkScheduledAuctions = useCallback(async () => {
     // Prevent concurrent checks
@@ -92,9 +97,7 @@ export function useScheduledAuctionChecker(options: UseScheduledAuctionCheckerOp
         console.log(`✅ Activated ${data.count} scheduled auction(s)`);
         
         // Notify parent component to refresh
-        if (onAuctionsActivated) {
-          onAuctionsActivated(data.activated);
-        }
+        activatedCallbackRef.current?.(data.activated);
       }
     } catch (error) {
       // Silently fail - don't spam console or show errors to user
@@ -103,7 +106,7 @@ export function useScheduledAuctionChecker(options: UseScheduledAuctionCheckerOp
     } finally {
       isCheckingRef.current = false;
     }
-  }, [onAuctionsActivated]);
+  }, []);
 
   useEffect(() => {
     if (!enabled) {

@@ -4,19 +4,23 @@
  */
 
 import { db } from '@/lib/db';
-import { sql, desc } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { mlTrainingDatasets } from '@/lib/db/schema/ml-training';
 import { predictions } from '@/lib/db/schema/intelligence';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 
+type DatasetType = typeof mlTrainingDatasets.$inferInsert.datasetType;
+type ExportFormat = typeof mlTrainingDatasets.$inferInsert.format;
+type DatasetRow = Record<string, unknown>;
+
 export class MLDatasetService {
   async exportPricePredictionDataset(
     dateRangeStart: Date,
     dateRangeEnd: Date,
-    format: 'csv' | 'json' | 'parquet' = 'csv'
+    format: ExportFormat = 'csv'
   ): Promise<string> {
-    const data: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         a.id AS auction_id,
         sc.asset_type,
@@ -42,7 +46,9 @@ export class MLDatasetService {
       GROUP BY a.id, sc.id, p.id
     `);
 
-    const datasetId = await this.storeDatasetMetadata(
+    const data = result as unknown as DatasetRow[];
+
+    await this.storeDatasetMetadata(
       'price_prediction',
       format,
       data.length,
@@ -62,9 +68,9 @@ export class MLDatasetService {
   async exportRecommendationDataset(
     dateRangeStart: Date,
     dateRangeEnd: Date,
-    format: 'csv' | 'json' | 'parquet' = 'csv'
+    format: ExportFormat = 'csv'
   ): Promise<string> {
-    const data: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         r.vendor_id,
         r.auction_id,
@@ -80,6 +86,8 @@ export class MLDatasetService {
       JOIN salvage_cases sc ON a.case_id = sc.id
       WHERE r.created_at BETWEEN ${dateRangeStart} AND ${dateRangeEnd}
     `);
+
+    const data = result as unknown as DatasetRow[];
 
     await this.storeDatasetMetadata(
       'recommendation',
@@ -105,9 +113,9 @@ export class MLDatasetService {
   async exportFraudDetectionDataset(
     dateRangeStart: Date,
     dateRangeEnd: Date,
-    format: 'csv' | 'json' | 'parquet' = 'csv'
+    format: ExportFormat = 'csv'
   ): Promise<string> {
-    const data: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         fa.id AS alert_id,
         fa.entity_type,
@@ -128,6 +136,8 @@ export class MLDatasetService {
       WHERE fa.created_at BETWEEN ${dateRangeStart} AND ${dateRangeEnd}
         AND fa.status IN ('confirmed', 'dismissed')
     `);
+
+    const data = result as unknown as DatasetRow[];
 
     await this.storeDatasetMetadata(
       'fraud_detection',
@@ -150,13 +160,13 @@ export class MLDatasetService {
    * Split dataset into train/validation/test sets with stratified sampling
    * Task 6.2.4: Implement train/validation/test split with stratified sampling
    */
-  splitDataset(
-    data: any[],
+  splitDataset<T extends Record<string, unknown>>(
+    data: T[],
     trainRatio: number = 0.7,
     valRatio: number = 0.15,
     testRatio: number = 0.15,
     stratifyBy?: string
-  ): { train: any[]; validation: any[]; test: any[] } {
+  ): { train: T[]; validation: T[]; test: T[] } {
     if (Math.abs(trainRatio + valRatio + testRatio - 1.0) > 0.001) {
       throw new Error('Train, validation, and test ratios must sum to 1.0');
     }
@@ -177,18 +187,18 @@ export class MLDatasetService {
     }
 
     // Stratified split
-    const groups: Record<string, any[]> = {};
+    const groups: Record<string, T[]> = {};
     for (const item of shuffled) {
-      const key = item[stratifyBy];
+      const key = String(item[stratifyBy] ?? 'unknown');
       if (!groups[key]) {
         groups[key] = [];
       }
       groups[key].push(item);
     }
 
-    const train: any[] = [];
-    const validation: any[] = [];
-    const test: any[] = [];
+    const train: T[] = [];
+    const validation: T[] = [];
+    const test: T[] = [];
 
     for (const group of Object.values(groups)) {
       const groupTrainSize = Math.floor(group.length * trainRatio);
@@ -203,29 +213,18 @@ export class MLDatasetService {
   }
 
   private async storeDatasetMetadata(
-    datasetType: string,
-    format: string,
+    datasetType: DatasetType,
+    format: ExportFormat,
     recordCount: number,
     dateRangeStart: Date,
     dateRangeEnd: Date
   ): Promise<string> {
-    // Validate enum values
-    const validDatasetTypes = ['price_prediction', 'recommendation', 'fraud_detection'] as const;
-    const validFormats = ['csv', 'json', 'parquet'] as const;
-    
-    if (!validDatasetTypes.includes(datasetType as any)) {
-      throw new Error(`Invalid dataset type: ${datasetType}`);
-    }
-    if (!validFormats.includes(format as any)) {
-      throw new Error(`Invalid format: ${format}`);
-    }
-
     const [dataset] = await db
       .insert(mlTrainingDatasets)
       .values({
-        datasetType: datasetType as typeof validDatasetTypes[number],
+        datasetType,
         datasetName: `${datasetType}_${Date.now()}`,
-        format: format as typeof validFormats[number],
+        format,
         recordCount,
         featureCount: 0,
         dateRangeStart,
@@ -242,7 +241,7 @@ export class MLDatasetService {
     return dataset.id;
   }
 
-  private exportToCSV(data: any[]): string {
+  private exportToCSV(data: DatasetRow[]): string {
     if (data.length === 0) return '';
 
     const headers = Object.keys(data[0]).join(',');
@@ -251,9 +250,9 @@ export class MLDatasetService {
     return [headers, ...rows].join('\n');
   }
 
-  private exportToJSON(data: any[]): string {
+  private exportToJSON(data: DatasetRow[]): string {
     const anonymized = data.map(row => {
-      const newRow: any = {};
+      const newRow: DatasetRow = {};
       for (const [key, value] of Object.entries(row)) {
         newRow[key] = this.anonymizeValue(value);
       }
@@ -263,7 +262,7 @@ export class MLDatasetService {
     return JSON.stringify(anonymized, null, 2);
   }
 
-  private exportToParquet(data: any[]): string {
+  private exportToParquet(data: DatasetRow[]): string {
     // Task 6.2.7: Implement actual Parquet export
     // Note: Parquet export requires parquetjs library which is not installed
     // For production, install: npm install parquetjs
@@ -300,7 +299,7 @@ export class MLDatasetService {
     return this.exportToJSON(data);
   }
 
-  private anonymizeValue(value: any): any {
+  private anonymizeValue(value: unknown): unknown {
     if (typeof value === 'string' && value.includes('@')) {
       return 'REDACTED_EMAIL';
     }

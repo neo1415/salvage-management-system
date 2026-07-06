@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -17,6 +17,7 @@ import {
   FinancialDetailTable,
 } from '@/components/reports/common/financial-detail-table';
 import { PaginatedReportRows } from '@/components/reports/common/paginated-report-table';
+import type { ProfitabilityReport } from '@/features/reports/financial/services/profitability.service';
 
 type ProfitabilityBranchRow = {
   label: string;
@@ -40,19 +41,15 @@ export default function ProfitabilityPage() {
   const router = useAppRouter();
   const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
     useReportFetchState();
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<ProfitabilityReport | null>(null);
   const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async (force = false) => {
+  const fetchReport = useCallback(async (force = false) => {
     startFetch();
     try {
       const result = await loadReportFromApi('/api/reports/financial/profitability', filters, { force });
       if (result.status === 'success') {
-        setReportData(result.data);
+        setReportData(result.data as ProfitabilityReport);
         markHasData();
       }
     } catch (error) {
@@ -60,7 +57,9 @@ export default function ProfitabilityPage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endFetch, filters, markHasData, startFetch]);
+
+  useEffect(() => { void fetchReport(); }, [fetchReport]);
 
   return (
     <>
@@ -241,7 +240,7 @@ export default function ProfitabilityPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(reportData.byAssetType || []).map((data: any) => (
+                      {reportData.byAssetType.map((data) => (
                         <tr key={data.assetType} className="border-b">
                           <td className="p-2 capitalize">{data.assetType}</td>
                           <td className="text-right p-2">{data.count || 0}</td>

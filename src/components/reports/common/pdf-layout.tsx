@@ -6,6 +6,7 @@
  */
 
 import React from 'react';
+import Image from 'next/image';
 import { usePublicBranding } from '@/hooks/use-public-branding';
 
 interface PDFLayoutProps {
@@ -45,11 +46,12 @@ export function PDFLayout({
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <img
+            <Image
               src={logoSrc}
               alt={`${branding.brandName} logo`}
               width={80}
               height={80}
+              unoptimized
               className="object-contain"
             />
             <div>

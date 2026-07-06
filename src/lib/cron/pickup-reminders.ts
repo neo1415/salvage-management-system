@@ -98,7 +98,7 @@ export async function sendPickupReminders(): Promise<PickupReminderResults> {
         )
       );
 
-    for (const { payment, auction, vendor: _vendor, user, case: salvageCase, pickupAuthorizationData } of paymentsNeedingReminders) {
+    for (const { payment, auction, user, case: salvageCase, pickupAuthorizationData } of paymentsNeedingReminders) {
       try {
         // Calculate pickup deadline (documentValidityHours from verification)
         const pickupDeadline = new Date(

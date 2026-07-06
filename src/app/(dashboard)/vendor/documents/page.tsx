@@ -289,7 +289,7 @@ export default function VendorDocumentsPage() {
     } else {
       console.log('ℹ️  [DOCUMENTS PAGE] Normal navigation (no hash)');
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Scroll to auction after documents are loaded
   useEffect(() => {
@@ -529,7 +529,6 @@ export default function VendorDocumentsPage() {
                     onViewReceipt={handleViewReceipt}
                     onDownloadReceipt={handleDownloadReceipt}
                     downloadingDocumentId={downloadingDocumentId}
-                    isOffline={isOffline}
                   />
                 </div>
               )}
@@ -548,7 +547,6 @@ export default function VendorDocumentsPage() {
                 onViewReceipt={handleViewReceipt}
                 onDownloadReceipt={handleDownloadReceipt}
                 downloadingDocumentId={downloadingDocumentId}
-                isOffline={isOffline}
               />
             ))}
             {hasMoreAuctions && (
@@ -576,7 +574,6 @@ interface AuctionDocumentCardProps {
   onViewReceipt: (receiptUrl: string) => void;
   onDownloadReceipt: (receiptUrl: string) => void;
   downloadingDocumentId: string | null;
-  isOffline: boolean;
 }
 
 function AuctionDocumentCard({
@@ -586,13 +583,11 @@ function AuctionDocumentCard({
   onViewReceipt,
   onDownloadReceipt,
   downloadingDocumentId,
-  isOffline,
 }: AuctionDocumentCardProps) {
   const router = useAppRouter();
 
   const visibleDocuments = auction.documents.filter(isVisibleDocument);
   const signedCount = visibleDocuments.filter(d => d.status === 'signed').length;
-  const pendingCount = visibleDocuments.filter(d => d.status === 'pending').length;
   const totalCount = visibleDocuments.length;
 
   return (

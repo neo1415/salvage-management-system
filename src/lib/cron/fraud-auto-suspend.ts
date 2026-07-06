@@ -14,7 +14,7 @@ import { vendors } from '@/lib/db/schema/vendors';
 import { bids } from '@/lib/db/schema/bids';
 import { auctions } from '@/lib/db/schema/auctions';
 import { users } from '@/lib/db/schema/users';
-import { eq, and, gte, sql } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { smsService } from '@/features/notifications/services/sms.service';
 import { emailService } from '@/features/notifications/services/email.service';

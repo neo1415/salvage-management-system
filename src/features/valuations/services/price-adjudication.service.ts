@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, type GenerateContentRequest } from '@google/generative-ai';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 import type { ExtractedPrice, PriceExtractionResult } from '@/features/internet-search/services/price-extraction.service';
 import type { ValuationPolicyConfig } from './valuation-policy.service';
@@ -488,8 +488,8 @@ export class PriceAdjudicationService {
       const client = new GoogleGenerativeAI(apiKey);
       const model = client.getGenerativeModel({
         model: process.env.GEMINI_PRICE_ADJUDICATION_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-      } as any);
-      const result = await withTimeout(model.generateContent({
+      });
+      const request = {
         contents: [{ role: 'user', parts: [{ text: promptForAdjudication(input, filteredPrices, rejectedPrices) }] }],
         tools: [{ googleSearch: {} }],
         generationConfig: {
@@ -497,7 +497,8 @@ export class PriceAdjudicationService {
           temperature: 0.1,
           maxOutputTokens: 900,
         },
-      } as any), AI_ADJUDICATION_TIMEOUT_MS);
+      } as unknown as GenerateContentRequest;
+      const result = await withTimeout(model.generateContent(request), AI_ADJUDICATION_TIMEOUT_MS);
       console.info('[Price Adjudication] Gemini usage', {
         mode: input.mode,
         itemType: input.item.type,
@@ -523,7 +524,7 @@ export class PriceAdjudicationService {
 
     try {
       const client = new Anthropic({ apiKey });
-      const response = await withTimeout(client.messages.create({
+      const request = {
         model: process.env.CLAUDE_PRICE_ADJUDICATION_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
         max_tokens: 800,
         temperature: 0.1,
@@ -531,12 +532,13 @@ export class PriceAdjudicationService {
           type: 'web_search_20260318',
           name: 'web_search',
           response_inclusion: 'excluded',
-        } as any],
+        }],
         messages: [{
           role: 'user',
           content: promptForAdjudication(input, filteredPrices, rejectedPrices),
         }],
-      } as any), AI_ADJUDICATION_TIMEOUT_MS);
+      } as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming;
+      const response = await withTimeout(client.messages.create(request), AI_ADJUDICATION_TIMEOUT_MS);
       logClaudeAdjudicationUsage(response, input);
       const text = response.content
         .filter((block) => block.type === 'text')

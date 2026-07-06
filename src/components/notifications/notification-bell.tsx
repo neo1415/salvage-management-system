@@ -9,16 +9,17 @@
  * Requirements: Phase 3 - Global Notification System
  */
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import NotificationDropdown from './notification-dropdown';
+import type { NotificationData } from '@/lib/db/schema/notifications';
 
 interface Notification {
   id: string;
   type: string;
   title: string;
   message: string;
-  data: any;
+  data: NotificationData | null;
   read: boolean;
   createdAt: string;
 }
@@ -31,17 +32,8 @@ export default function NotificationBell() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
 
-  // Fetch unread count on mount
-  useEffect(() => {
-    fetchUnreadCount();
-  }, []);
-
-  useEffect(() => {
-    fetchNotifications();
-  }, []);
-
   // Fetch unread count from API
-  const fetchUnreadCount = async () => {
+  const fetchUnreadCount = useCallback(async () => {
     try {
       const response = await fetch('/api/notifications/unread-count', { cache: 'no-store' });
       if (response.ok) {
@@ -53,9 +45,9 @@ export default function NotificationBell() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const fetchNotifications = async (force = false) => {
+  const fetchNotifications = useCallback(async (force = false) => {
     const isFresh = lastFetchedAt && Date.now() - lastFetchedAt < 30000;
     if (!force && (notifications.length > 0 || isFresh)) {
       return;
@@ -74,7 +66,16 @@ export default function NotificationBell() {
     } finally {
       setNotificationsLoading(false);
     }
-  };
+  }, [lastFetchedAt, notifications.length]);
+
+  // Fetch notification state on mount and refresh only when its dependencies change.
+  useEffect(() => {
+    void fetchUnreadCount();
+  }, [fetchUnreadCount]);
+
+  useEffect(() => {
+    void fetchNotifications();
+  }, [fetchNotifications]);
 
   const handleBellClick = () => {
     const nextOpen = !isOpen;

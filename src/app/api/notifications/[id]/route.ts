@@ -42,12 +42,13 @@ export async function PATCH(
       status: 'success',
       data: { notification },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error marking notification as read:', error);
 
-    if (error.message === 'Notification not found or unauthorized') {
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'Notification not found or unauthorized') {
       return NextResponse.json(
-        { status: 'error', error: { code: 'NOT_FOUND', message: error.message } },
+        { status: 'error', error: { code: 'NOT_FOUND', message } },
         { status: 404 }
       );
     }
@@ -90,12 +91,13 @@ export async function DELETE(
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error deleting notification:', error);
 
-    if (error.message === 'Notification not found or unauthorized') {
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'Notification not found or unauthorized') {
       return NextResponse.json(
-        { status: 'error', error: { code: 'NOT_FOUND', message: error.message } },
+        { status: 'error', error: { code: 'NOT_FOUND', message } },
         { status: 404 }
       );
     }

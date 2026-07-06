@@ -3,9 +3,38 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin } from 'lucide-react';
 
+interface GoogleLatLng {
+  lat(): number;
+  lng(): number;
+}
+
+interface GoogleMapInstance {
+  addListener(eventName: 'click', handler: (event: { latLng?: GoogleLatLng }) => void): void;
+  panTo(position: { lat: number; lng: number }): void;
+  setZoom(zoom: number): void;
+}
+
+interface GoogleMarkerInstance {
+  addListener(eventName: 'dragend', handler: () => void): void;
+  getPosition(): GoogleLatLng | null;
+  setPosition(position: { lat: number; lng: number }): void;
+}
+
+interface GoogleGeocoderInstance {
+  geocode(request: { location: { lat: number; lng: number } }): Promise<{
+    results?: Array<{ formatted_address?: string }>;
+  }>;
+}
+
+interface GoogleMapsNamespace {
+  Map: new (element: HTMLElement, options: Record<string, unknown>) => GoogleMapInstance;
+  Marker: new (options: Record<string, unknown>) => GoogleMarkerInstance;
+  Geocoder: new () => GoogleGeocoderInstance;
+}
+
 declare global {
   interface Window {
-    google?: any;
+    google?: { maps: GoogleMapsNamespace };
     __googleMapsLoadingPromise?: Promise<void>;
   }
 }
@@ -59,9 +88,10 @@ export function LocationPinPicker({
 }: LocationPinPickerProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
-  const geocoderRef = useRef<any>(null);
+  const mapInstanceRef = useRef<GoogleMapInstance | null>(null);
+  const markerRef = useRef<GoogleMarkerInstance | null>(null);
+  const geocoderRef = useRef<GoogleGeocoderInstance | null>(null);
+  const onChangeRef = useRef(onChange);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -71,6 +101,13 @@ export function LocationPinPicker({
     lat: typeof latitude === 'number' ? latitude : DEFAULT_CENTER.lat,
     lng: typeof longitude === 'number' ? longitude : DEFAULT_CENTER.lng,
   };
+  const initialCenterRef = useRef(center);
+  const initialHasCoordinatesRef = useRef(hasCoordinates);
+  const initialLabelRef = useRef(label);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     if (!hasValidApiKey || !mapRef.current) return;
@@ -83,8 +120,8 @@ export function LocationPinPicker({
 
         geocoderRef.current = new window.google.maps.Geocoder();
         const map = new window.google.maps.Map(mapRef.current, {
-          center,
-          zoom: hasCoordinates ? 17 : 12,
+          center: initialCenterRef.current,
+          zoom: initialHasCoordinatesRef.current ? 17 : 12,
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
@@ -92,10 +129,10 @@ export function LocationPinPicker({
           gestureHandling: 'greedy',
         });
         const marker = new window.google.maps.Marker({
-          position: center,
+          position: initialCenterRef.current,
           map,
           draggable: true,
-          title: label || 'Selected location',
+          title: initialLabelRef.current || 'Selected location',
         });
 
         mapInstanceRef.current = map;
@@ -108,20 +145,20 @@ export function LocationPinPicker({
 
           let formattedAddress: string | undefined;
           try {
-            const response = await geocoderRef.current.geocode({ location: position });
+            const response = await geocoderRef.current?.geocode({ location: position });
             formattedAddress = response?.results?.[0]?.formatted_address;
           } catch {
             formattedAddress = undefined;
           }
 
-          onChange({
+          onChangeRef.current({
             latitude: position.lat,
             longitude: position.lng,
             formattedAddress,
           });
         };
 
-        map.addListener('click', (event: any) => {
+        map.addListener('click', (event) => {
           const clicked = event.latLng;
           if (!clicked) return;
           void commitPosition({ lat: clicked.lat(), lng: clicked.lng() });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
-import { payments } from '@/lib/db/schema/payments';
+import { paymentMethodEnum, payments, paymentStatusEnum } from '@/lib/db/schema/payments';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { auctions } from '@/lib/db/schema/auctions';
@@ -17,7 +17,7 @@ import {
 } from '@/lib/finance/payment-case-filters';
 import { fetchFinanceFilterOptions } from '@/lib/finance/finance-filter-options';
 import { buildPaymentSettlementFields } from '@/lib/finance/settlement-reconciliation';
-import { eq, and, gte, lte, sql, inArray, desc } from 'drizzle-orm';
+import { eq, and, gte, sql, inArray, desc } from 'drizzle-orm';
 
 // Force dynamic rendering - never cache this route
 export const dynamic = 'force-dynamic';
@@ -79,13 +79,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply status filter
-    if (statusFilter) {
-      conditions.push(eq(payments.status, statusFilter as any));
+    if (statusFilter && paymentStatusEnum.enumValues.includes(statusFilter as typeof paymentStatusEnum.enumValues[number])) {
+      conditions.push(eq(payments.status, statusFilter as typeof paymentStatusEnum.enumValues[number]));
     }
 
     // Apply payment method filter
-    if (paymentMethodFilter) {
-      conditions.push(eq(payments.paymentMethod, paymentMethodFilter as any));
+    if (paymentMethodFilter && paymentMethodEnum.enumValues.includes(paymentMethodFilter as typeof paymentMethodEnum.enumValues[number])) {
+      conditions.push(eq(payments.paymentMethod, paymentMethodFilter as typeof paymentMethodEnum.enumValues[number]));
     }
 
     // Apply payment type filter (NEW)

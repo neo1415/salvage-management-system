@@ -92,7 +92,7 @@ async function getLogoDataURL(logoPath: string): Promise<string> {
     // Validate URL before fetching
     try {
       new URL(logoUrl);
-    } catch (urlError) {
+    } catch {
       console.error('Invalid logo URL:', logoUrl);
       return ''; // Return empty string for invalid URL
     }

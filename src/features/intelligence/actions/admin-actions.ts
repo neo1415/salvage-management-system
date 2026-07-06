@@ -10,6 +10,10 @@ import { eq, desc, sql } from 'drizzle-orm';
 import { MLDatasetService } from '@/features/intelligence/services';
 import { auth } from '@/lib/auth';
 
+interface AccuracyAggregateRow {
+  avg_accuracy: string | number | null;
+}
+
 /**
  * Task 15.3.1: Export ML Dataset
  * 
@@ -123,7 +127,7 @@ export async function tuneAlgorithm(params?: {
 
     // Parse config values
     const configMap = new Map(
-      currentConfigs.map(c => [c.configKey, parseFloat(c.configValue as string)])
+      currentConfigs.map(c => [c.configKey, parseFloat(String(c.configValue))])
     );
 
     const similarityThreshold = configMap.get('prediction.similarity_threshold') || 70;
@@ -137,7 +141,8 @@ export async function tuneAlgorithm(params?: {
       WHERE created_at > NOW() - INTERVAL '7 days'
     `);
 
-    const avgAccuracy = Number((recentAccuracy as any).rows?.[0]?.avg_accuracy || 0);
+    const accuracyRows = recentAccuracy as unknown as AccuracyAggregateRow[];
+    const avgAccuracy = Number(accuracyRows[0]?.avg_accuracy || 0);
 
     // Determine if tuning is needed
     if (avgAccuracy >= targetAccuracy) {
@@ -203,22 +208,22 @@ export async function tuneAlgorithm(params?: {
       db.insert(algorithmConfigHistory).values({
         configId: currentConfigs.find(c => c.configKey === 'prediction.similarity_threshold')?.id || '',
         configKey: 'prediction.similarity_threshold',
-        oldValue: similarityThreshold as any,
-        newValue: newSimilarityThreshold as any,
+        oldValue: similarityThreshold,
+        newValue: newSimilarityThreshold,
         changeReason,
       }),
       db.insert(algorithmConfigHistory).values({
         configId: currentConfigs.find(c => c.configKey === 'prediction.time_decay_factor')?.id || '',
         configKey: 'prediction.time_decay_factor',
-        oldValue: timeDecayFactor as any,
-        newValue: newTimeDecayFactor as any,
+        oldValue: timeDecayFactor,
+        newValue: newTimeDecayFactor,
         changeReason,
       }),
       db.insert(algorithmConfigHistory).values({
         configId: currentConfigs.find(c => c.configKey === 'prediction.confidence_base')?.id || '',
         configKey: 'prediction.confidence_base',
-        oldValue: confidenceBase as any,
-        newValue: newConfidenceBase as any,
+        oldValue: confidenceBase,
+        newValue: newConfidenceBase,
         changeReason,
       }),
     ]);

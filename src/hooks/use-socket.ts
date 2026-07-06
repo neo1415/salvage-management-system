@@ -29,9 +29,42 @@
 import { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useSession } from 'next-auth/react';
-import type { ServerToClientEvents, ClientToServerEvents } from '@/lib/socket/server';
+import type {
+  ServerToClientEvents,
+  ClientToServerEvents,
+  RealtimeAuctionData,
+  RealtimeBidData,
+} from '@/lib/socket/server';
 
 type SocketClient = Socket<ServerToClientEvents, ClientToServerEvents>;
+type ClientRealtimeAuctionStatus =
+  | 'cancelled'
+  | 'scheduled'
+  | 'active'
+  | 'extended'
+  | 'closed'
+  | 'awaiting_payment';
+
+function normalizeAuctionStatus(status: unknown): ClientRealtimeAuctionStatus | undefined {
+  return status === 'cancelled'
+    || status === 'scheduled'
+    || status === 'active'
+    || status === 'extended'
+    || status === 'closed'
+    || status === 'awaiting_payment'
+    ? status
+    : undefined;
+}
+
+interface ClientRealtimeAuctionData {
+  currentBid?: string | null;
+  currentBidder?: string | null;
+  endTime?: string;
+  extensionCount?: number;
+  hasVerifiedPayment?: boolean;
+  status?: ClientRealtimeAuctionStatus;
+  [key: string]: unknown;
+}
 
 interface UseSocketReturn {
   socket: SocketClient | null;
@@ -216,9 +249,9 @@ export function useAuctionWatch(auctionId: string | null) {
  * Fallback: Uses polling API if WebSocket fails after 10 seconds
  */
 export function useAuctionUpdates(auctionId: string | null) {
-  const { socket, isConnected, connectionMethod } = useSocket();
-  const [auction, setAuction] = useState<any>(null);
-  const [latestBid, setLatestBid] = useState<any>(null);
+  const { socket, isConnected } = useSocket();
+  const [auction, setAuction] = useState<ClientRealtimeAuctionData | null>(null);
+  const [latestBid, setLatestBid] = useState<RealtimeBidData | null>(null);
   const [isExtended, setIsExtended] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [usingPolling, setUsingPolling] = useState(false);
@@ -238,7 +271,7 @@ export function useAuctionUpdates(auctionId: string | null) {
   // CRITICAL FIX: Use useRef to store stable handler functions
   // This prevents listener re-registration on every render
   const handlersRef = useRef({
-    handleAuctionUpdate: (data: { auctionId: string; auction: any }) => {
+    handleAuctionUpdate: (data: { auctionId: string; auction: RealtimeAuctionData }) => {
       if (data.auctionId === auctionId) {
         console.log(`📡 Received auction update for ${auctionId}`);
         console.log(`   - Status: ${data.auction.status}`);
@@ -253,13 +286,17 @@ export function useAuctionUpdates(auctionId: string | null) {
         // Only update if data actually changed
         if (lastAuctionUpdateRef.current !== updateHash) {
           lastAuctionUpdateRef.current = updateHash;
-          setAuction(data.auction);
+          setAuction({
+            ...data.auction,
+            currentBid: data.auction.currentBid == null ? data.auction.currentBid : String(data.auction.currentBid),
+            status: normalizeAuctionStatus(data.auction.status),
+          });
           console.log(`✅ Auction state updated`);
         }
       }
     },
     
-    handleNewBid: (data: { auctionId: string; bid: any }) => {
+    handleNewBid: (data: { auctionId: string; bid: RealtimeBidData }) => {
       console.log(`🔔 handleNewBid() CALLED!`);
       console.log(`   - Received auction ID: ${data.auctionId}`);
       console.log(`   - Expected auction ID: ${auctionId}`);
@@ -347,7 +384,7 @@ export function useAuctionUpdates(auctionId: string | null) {
 
   // Update handlers when auctionId changes
   useEffect(() => {
-    handlersRef.current.handleAuctionUpdate = (data: { auctionId: string; auction: any }) => {
+    handlersRef.current.handleAuctionUpdate = (data: { auctionId: string; auction: RealtimeAuctionData }) => {
       if (data.auctionId === auctionId) {
         console.log(`📡 Received auction update for ${auctionId}`);
         console.log(`   - Status: ${data.auction.status}`);
@@ -360,13 +397,17 @@ export function useAuctionUpdates(auctionId: string | null) {
         
         if (lastAuctionUpdateRef.current !== updateHash) {
           lastAuctionUpdateRef.current = updateHash;
-          setAuction(data.auction);
+          setAuction({
+            ...data.auction,
+            currentBid: data.auction.currentBid == null ? data.auction.currentBid : String(data.auction.currentBid),
+            status: normalizeAuctionStatus(data.auction.status),
+          });
           console.log(`✅ Auction state updated`);
         }
       }
     };
     
-    handlersRef.current.handleNewBid = (data: { auctionId: string; bid: any }) => {
+    handlersRef.current.handleNewBid = (data: { auctionId: string; bid: RealtimeBidData }) => {
       console.log(`🔔 handleNewBid() CALLED!`);
       console.log(`   - Received auction ID: ${data.auctionId}`);
       console.log(`   - Expected auction ID: ${auctionId}`);
@@ -407,7 +448,7 @@ export function useAuctionUpdates(auctionId: string | null) {
         
         // CRITICAL FIX: Update auction state with closed status
         // This ensures the UI reflects the closure immediately
-        setAuction((prev: any) => {
+        setAuction((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
@@ -459,8 +500,8 @@ export function useAuctionUpdates(auctionId: string | null) {
 
   // Store wrapper functions in ref to prevent re-creation
   const wrappersRef = useRef<{
-    auctionUpdate: ((data: { auctionId: string; auction: any }) => void) | null;
-    newBid: ((data: { auctionId: string; bid: any }) => void) | null;
+    auctionUpdate: ((data: { auctionId: string; auction: RealtimeAuctionData }) => void) | null;
+    newBid: ((data: { auctionId: string; bid: RealtimeBidData }) => void) | null;
     extension: ((data: { auctionId: string; newEndTime: Date }) => void) | null;
     closure: ((data: { auctionId: string; winnerId: string }) => void) | null;
     closing: ((data: { auctionId: string }) => void) | null;
@@ -490,10 +531,10 @@ export function useAuctionUpdates(auctionId: string | null) {
     // CRITICAL: Create wrapper functions ONCE and store in ref
     // This ensures the same function reference is used across HMR reloads
     if (!wrappersRef.current.auctionUpdate) {
-      wrappersRef.current.auctionUpdate = (data: { auctionId: string; auction: any }) => handlersRef.current.handleAuctionUpdate(data);
+      wrappersRef.current.auctionUpdate = (data: { auctionId: string; auction: RealtimeAuctionData }) => handlersRef.current.handleAuctionUpdate(data);
     }
     if (!wrappersRef.current.newBid) {
-      wrappersRef.current.newBid = (data: { auctionId: string; bid: any }) => handlersRef.current.handleNewBid(data);
+      wrappersRef.current.newBid = (data: { auctionId: string; bid: RealtimeBidData }) => handlersRef.current.handleNewBid(data);
     }
     if (!wrappersRef.current.extension) {
       wrappersRef.current.extension = (data: { auctionId: string; newEndTime: Date }) => handlersRef.current.handleExtension(data);
@@ -532,28 +573,29 @@ export function useAuctionUpdates(auctionId: string | null) {
     console.log(`✅ Event listeners registered for auction ${auctionId}`);
     console.log(`   - Listeners: auction:updated, auction:new-bid, auction:extended, auction:closed, auction:closing, auction:document-generated, auction:document-generation-complete`);
 
+    const registeredWrappers = wrappersRef.current;
     return () => {
       console.log(`🧹 Cleaning up event listeners for auction ${auctionId}`);
-      if (wrappersRef.current.auctionUpdate) {
-        socket.off('auction:updated', wrappersRef.current.auctionUpdate);
+      if (registeredWrappers.auctionUpdate) {
+        socket.off('auction:updated', registeredWrappers.auctionUpdate);
       }
-      if (wrappersRef.current.newBid) {
-        socket.off('auction:new-bid', wrappersRef.current.newBid);
+      if (registeredWrappers.newBid) {
+        socket.off('auction:new-bid', registeredWrappers.newBid);
       }
-      if (wrappersRef.current.extension) {
-        socket.off('auction:extended', wrappersRef.current.extension);
+      if (registeredWrappers.extension) {
+        socket.off('auction:extended', registeredWrappers.extension);
       }
-      if (wrappersRef.current.closure) {
-        socket.off('auction:closed', wrappersRef.current.closure);
+      if (registeredWrappers.closure) {
+        socket.off('auction:closed', registeredWrappers.closure);
       }
-      if (wrappersRef.current.closing) {
-        socket.off('auction:closing', wrappersRef.current.closing);
+      if (registeredWrappers.closing) {
+        socket.off('auction:closing', registeredWrappers.closing);
       }
-      if (wrappersRef.current.documentGenerated) {
-        socket.off('auction:document-generated', wrappersRef.current.documentGenerated);
+      if (registeredWrappers.documentGenerated) {
+        socket.off('auction:document-generated', registeredWrappers.documentGenerated);
       }
-      if (wrappersRef.current.generationComplete) {
-        socket.off('auction:document-generation-complete', wrappersRef.current.generationComplete);
+      if (registeredWrappers.generationComplete) {
+        socket.off('auction:document-generation-complete', registeredWrappers.generationComplete);
       }
     };
   }, [socket, isConnected, auctionId]);
@@ -635,7 +677,7 @@ export function useAuctionUpdates(auctionId: string | null) {
           setAuction({
             currentBid: data.currentBid?.toString(),
             currentBidder: data.currentBidder,
-            status: data.status,
+            status: normalizeAuctionStatus(data.status),
             endTime: data.endTime,
             hasVerifiedPayment: data.hasVerifiedPayment,
           });
@@ -733,7 +775,16 @@ export function useVendorNotifications() {
  */
 export function useRealtimeNotifications() {
   const { socket, isConnected } = useSocket();
-  const [newNotification, setNewNotification] = useState<any>(null);
+  const [newNotification, setNewNotification] = useState<{
+    type?: string;
+    data?: {
+      auctionId?: string;
+      paymentId?: string;
+      pickupAuthCode?: string;
+      pickupLocation?: string;
+      pickupDeadline?: string;
+    };
+  } | null>(null);
 
   useEffect(() => {
     if (!socket || !isConnected) {
@@ -742,9 +793,20 @@ export function useRealtimeNotifications() {
 
     console.log('📬 Setting up real-time notification listener');
 
-    const handleNewNotification = (notification: any) => {
+    const handleNewNotification = ({ notification }: { notification: unknown }) => {
       console.log('📬 New notification received:', notification);
-      setNewNotification(notification);
+      if (typeof notification === 'object' && notification !== null) {
+        setNewNotification(notification as {
+          type?: string;
+          data?: {
+            auctionId?: string;
+            paymentId?: string;
+            pickupAuthCode?: string;
+            pickupLocation?: string;
+            pickupDeadline?: string;
+          };
+        });
+      }
       
       // Clear after 5 seconds to allow next notification
       setTimeout(() => setNewNotification(null), 5000);

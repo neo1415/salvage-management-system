@@ -6,7 +6,7 @@
  */
 
 import { ReportFilters } from '../../types';
-import { FinancialDataRepository } from '../repositories/financial-data.repository';
+import { FinancialDataRepository, type PaymentData } from '../repositories/financial-data.repository';
 import { DataAggregationService } from '../../services/data-aggregation.service';
 
 export interface PaymentAnalyticsReport {
@@ -105,7 +105,7 @@ export class PaymentAnalyticsService {
   /**
    * Calculate summary statistics
    */
-  private static calculateSummary(data: any[]) {
+  private static calculateSummary(data: PaymentData[]) {
     const verifiedPaymentData = data.filter(p => p.status === 'verified');
     const totalAmount = verifiedPaymentData.reduce((sum, p) => sum + parseFloat(p.amount), 0);
     const completedPayments = verifiedPaymentData.length;
@@ -138,7 +138,7 @@ export class PaymentAnalyticsService {
   /**
    * Calculate registration fee summary statistics
    */
-  private static calculateRegistrationFeeSummary(data: any[]) {
+  private static calculateRegistrationFeeSummary(data: PaymentData[]) {
     const totalAmount = data.reduce((sum, p) => sum + parseFloat(p.amount), 0);
     const completedCount = data.filter(p => p.status === 'verified').length;
     const pendingCount = data.filter(p => p.status === 'pending').length;
@@ -154,7 +154,7 @@ export class PaymentAnalyticsService {
   /**
    * Calculate metrics by payment method
    */
-  private static calculateByMethod(data: any[]) {
+  private static calculateByMethod(data: PaymentData[]) {
     if (data.length === 0) return [];
     
     const grouped = DataAggregationService.groupBy(data, 'method');
@@ -182,7 +182,7 @@ export class PaymentAnalyticsService {
   /**
    * Calculate metrics by status
    */
-  private static calculateByStatus(data: any[]) {
+  private static calculateByStatus(data: PaymentData[]) {
     const grouped = DataAggregationService.groupBy(data, 'status');
     if (!grouped || Object.keys(grouped).length === 0) return [];
 
@@ -202,10 +202,10 @@ export class PaymentAnalyticsService {
   /**
    * Calculate processing time statistics
    */
-  private static calculateProcessingTimes(data: any[]) {
+  private static calculateProcessingTimes(data: PaymentData[]) {
     const times = data
-      .filter(p => p.processingTimeHours !== null)
       .map(p => p.processingTimeHours)
+      .filter((time): time is number => time !== null)
       .sort((a, b) => a - b);
 
     if (times.length === 0) {
@@ -233,7 +233,7 @@ export class PaymentAnalyticsService {
   /**
    * Calculate payment trend over time
    */
-  private static calculateTrend(data: any[]) {
+  private static calculateTrend(data: PaymentData[]) {
     if (data.length === 0) return [];
     
     const grouped: Record<string, {

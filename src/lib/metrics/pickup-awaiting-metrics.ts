@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { caseScopeConditions, pickupQueueScopeConditions, type ManagerDashboardFilters } from '@/lib/metrics/manager-dashboard-filters';
+import { pickupQueueScopeConditions, type ManagerDashboardFilters } from '@/lib/metrics/manager-dashboard-filters';
 
 /**
  * Count paid auctions ready for staff pickup confirmation.

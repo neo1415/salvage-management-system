@@ -49,11 +49,6 @@ export async function enforcePaymentDeadlines(): Promise<EnforcementResults> {
 }
 
 async function sendPaymentReminders(now: Date, results: EnforcementResults) {
-  // Get grace extension duration from config (default 24 hours)
-  const { configService } = await import('@/features/auction-deposit/services/config.service');
-  const config = await configService.getConfig();
-  const graceExtensionHours = config.graceExtensionDuration;
-  
   // Send reminders 12 hours before grace extension expires
   const twelveHoursFromNow = new Date(now.getTime() + 12 * 60 * 60 * 1000);
   const elevenHoursFromNow = new Date(now.getTime() + 11 * 60 * 60 * 1000);
@@ -80,7 +75,7 @@ async function sendPaymentReminders(now: Date, results: EnforcementResults) {
         )
       );
 
-    for (const { payment, vendor: _vendor, user } of pendingPayments) {
+    for (const { payment, user } of pendingPayments) {
       try {
         await smsService.sendSMS({
           to: user.phone,
@@ -139,7 +134,7 @@ async function markPaymentsOverdue(now: Date, results: EnforcementResults) {
         )
       );
 
-    for (const { payment, vendor: _vendor, user } of overduePayments) {
+    for (const { payment, user } of overduePayments) {
       try {
         await db
           .update(payments)

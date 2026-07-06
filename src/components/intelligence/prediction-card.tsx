@@ -35,7 +35,7 @@ interface PredictionCardProps {
  * Task 10.1.2: Implement color-coded confidence indicators
  */
 export function PredictionCard({
-  auctionId,
+  auctionId: _auctionId,
   predictedPrice,
   lowerBound,
   upperBound,

@@ -51,6 +51,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const status =
       message.includes('Only salvage managers') ? 403
         : message.includes('not found') ? 404
+          : message.includes('still processing') ? 409
           : message.includes('payment') || message.includes('authorization') ? 400
             : 500;
 

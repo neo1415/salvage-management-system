@@ -13,9 +13,53 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { predictions, recommendations, fraudAlerts } from '@/lib/db/schema/intelligence';
-import { sql, desc, gte } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
-export async function GET(request: NextRequest) {
+interface PredictionMetricsRow {
+  total_predictions: number;
+  completed_predictions: number;
+  mean_percentage_error: string | number | null;
+  avg_confidence_score: string | number | null;
+}
+
+interface RecommendationMetricsRow {
+  total_recommendations: number;
+  clicked_count: number;
+  bid_placed_count: number;
+  click_through_rate: string | number | null;
+  bid_conversion_rate: string | number | null;
+  avg_match_score: string | number | null;
+}
+
+interface FraudMetricsRow {
+  total_alerts: number;
+  pending_alerts: number;
+  confirmed_alerts: number;
+  avg_risk_score: string | number | null;
+}
+
+interface PreviousPredictionRow {
+  mean_percentage_error: string | number | null;
+}
+
+interface PreviousRecommendationRow {
+  bid_conversion_rate: string | number | null;
+}
+
+interface DismissedCountRow {
+  dismissed_count: number;
+}
+
+function rowsFromExecute<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (result && typeof result === 'object' && 'rows' in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows as T[];
+  }
+  return [];
+}
+
+export async function GET(_request: NextRequest) {
   try {
     const session = await auth();
     
@@ -43,9 +87,9 @@ export async function GET(request: NextRequest) {
     const sixtyDaysAgoISO = sixtyDaysAgo.toISOString();
 
     // Get prediction accuracy metrics with timeout protection
-    let predictionMetrics: any;
+    let predictionMetrics: PredictionMetricsRow[];
     try {
-      predictionMetrics = await Promise.race([
+      predictionMetrics = rowsFromExecute<PredictionMetricsRow>(await Promise.race([
         db.execute(sql`
           SELECT 
             COUNT(*)::int AS total_predictions,
@@ -58,7 +102,7 @@ export async function GET(request: NextRequest) {
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout')), 10000)
         )
-      ]);
+      ]));
     } catch (error) {
       console.error('[Admin Dashboard API] Prediction metrics query failed:', error);
       // Return default values if query fails
@@ -71,9 +115,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Get recommendation effectiveness metrics with timeout protection
-    let recommendationMetrics: any;
+    let recommendationMetrics: RecommendationMetricsRow[];
     try {
-      recommendationMetrics = await Promise.race([
+      recommendationMetrics = rowsFromExecute<RecommendationMetricsRow>(await Promise.race([
         db.execute(sql`
           SELECT 
             COUNT(*)::int AS total_recommendations,
@@ -88,7 +132,7 @@ export async function GET(request: NextRequest) {
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout')), 10000)
         )
-      ]);
+      ]));
     } catch (error) {
       console.error('[Admin Dashboard API] Recommendation metrics query failed:', error);
       recommendationMetrics = [{ 
@@ -102,9 +146,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Get fraud alert metrics with timeout protection
-    let fraudMetrics: any;
+    let fraudMetrics: FraudMetricsRow[];
     try {
-      fraudMetrics = await Promise.race([
+      fraudMetrics = rowsFromExecute<FraudMetricsRow>(await Promise.race([
         db.execute(sql`
           SELECT 
             COUNT(*)::int AS total_alerts,
@@ -117,7 +161,7 @@ export async function GET(request: NextRequest) {
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout')), 10000)
         )
-      ]);
+      ]));
     } catch (error) {
       console.error('[Admin Dashboard API] Fraud metrics query failed:', error);
       fraudMetrics = [{ 
@@ -128,29 +172,10 @@ export async function GET(request: NextRequest) {
       }];
     }
 
-    // Get recent fraud alerts with timeout protection
-    let recentAlerts: any[];
-    try {
-      recentAlerts = await Promise.race([
-        db
-          .select()
-          .from(fraudAlerts)
-          .where(gte(fraudAlerts.createdAt, new Date(thirtyDaysAgoISO)))
-          .orderBy(desc(fraudAlerts.riskScore), desc(fraudAlerts.createdAt))
-          .limit(10),
-        new Promise<any[]>((_, reject) => 
-          setTimeout(() => reject(new Error('Query timeout')), 10000)
-        )
-      ]);
-    } catch (error) {
-      console.error('[Admin Dashboard API] Recent alerts query failed:', error);
-      recentAlerts = [];
-    }
-
     // Calculate previous period metrics for change comparison with timeout protection
-    let previousPredictionMetrics: any;
+    let previousPredictionMetrics: PreviousPredictionRow[];
     try {
-      previousPredictionMetrics = await Promise.race([
+      previousPredictionMetrics = rowsFromExecute<PreviousPredictionRow>(await Promise.race([
         db.execute(sql`
           SELECT 
             AVG(ABS(predicted_price - actual_price) / NULLIF(actual_price, 0) * 100) AS mean_percentage_error
@@ -161,15 +186,15 @@ export async function GET(request: NextRequest) {
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout')), 10000)
         )
-      ]);
+      ]));
     } catch (error) {
       console.error('[Admin Dashboard API] Previous prediction metrics query failed:', error);
       previousPredictionMetrics = [{ mean_percentage_error: 0 }];
     }
 
-    let previousRecommendationMetrics: any;
+    let previousRecommendationMetrics: PreviousRecommendationRow[];
     try {
-      previousRecommendationMetrics = await Promise.race([
+      previousRecommendationMetrics = rowsFromExecute<PreviousRecommendationRow>(await Promise.race([
         db.execute(sql`
           SELECT 
             (COUNT(*) FILTER (WHERE bid_placed = true)::float / NULLIF(COUNT(*) FILTER (WHERE clicked = true), 0) * 100) AS bid_conversion_rate
@@ -179,24 +204,24 @@ export async function GET(request: NextRequest) {
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout')), 10000)
         )
-      ]);
+      ]));
     } catch (error) {
       console.error('[Admin Dashboard API] Previous recommendation metrics query failed:', error);
       previousRecommendationMetrics = [{ bid_conversion_rate: 0 }];
     }
 
-    const currentAccuracy = 100 - parseFloat(predictionMetrics[0]?.mean_percentage_error || '0');
-    const previousAccuracy = 100 - parseFloat(previousPredictionMetrics[0]?.mean_percentage_error || '0');
+    const currentAccuracy = 100 - Number(predictionMetrics[0]?.mean_percentage_error || 0);
+    const previousAccuracy = 100 - Number(previousPredictionMetrics[0]?.mean_percentage_error || 0);
     const accuracyChange = currentAccuracy - previousAccuracy;
 
-    const currentBidConversion = parseFloat(recommendationMetrics[0]?.bid_conversion_rate || '0');
-    const previousBidConversion = parseFloat(previousRecommendationMetrics[0]?.bid_conversion_rate || '0');
+    const currentBidConversion = Number(recommendationMetrics[0]?.bid_conversion_rate || 0);
+    const previousBidConversion = Number(previousRecommendationMetrics[0]?.bid_conversion_rate || 0);
     const conversionChange = currentBidConversion - previousBidConversion;
 
     // Get dismissed count with timeout protection
-    let dismissedCount: any;
+    let dismissedCount: DismissedCountRow[];
     try {
-      dismissedCount = await Promise.race([
+      dismissedCount = rowsFromExecute<DismissedCountRow>(await Promise.race([
         db.execute(sql`
           SELECT COUNT(*)::int AS dismissed_count
           FROM ${fraudAlerts}
@@ -206,7 +231,7 @@ export async function GET(request: NextRequest) {
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout')), 10000)
         )
-      ]);
+      ]));
     } catch (error) {
       console.error('[Admin Dashboard API] Dismissed count query failed:', error);
       dismissedCount = [{ dismissed_count: 0 }];
@@ -216,13 +241,13 @@ export async function GET(request: NextRequest) {
       predictionAccuracy: {
         current: currentAccuracy,
         change: accuracyChange,
-        avgError: parseFloat(predictionMetrics[0]?.mean_percentage_error || '0'),
+        avgError: Number(predictionMetrics[0]?.mean_percentage_error || 0),
         totalPredictions: predictionMetrics[0]?.total_predictions || 0,
       },
       recommendationEffectiveness: {
         bidConversionRate: currentBidConversion,
         change: conversionChange,
-        avgMatchScore: parseFloat(recommendationMetrics[0]?.avg_match_score || '0'),
+        avgMatchScore: Number(recommendationMetrics[0]?.avg_match_score || 0),
         totalRecommendations: recommendationMetrics[0]?.total_recommendations || 0,
       },
       fraudAlerts: {

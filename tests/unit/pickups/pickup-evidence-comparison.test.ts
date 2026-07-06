@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildRuleBasedPickupComparison,
+  buildPickupComparisonPrompt,
   derivePickupComparisonStatusFromScores,
 } from '@/features/pickups/services/pickup-evidence-comparison.service';
 
@@ -49,5 +50,21 @@ describe('pickup evidence comparison thresholds', () => {
     expect(comparison.status).toBe('review_needed');
     expect(comparison.overallMatchScore).toBeLessThan(70);
     expect(comparison.reviewBand).toBe('major_review');
+  });
+
+  it('requires detailed evidence findings across every comparison dimension', () => {
+    const prompt = buildPickupComparisonPrompt({
+      originalPhotoUrls: ['original-1', 'original-2'],
+      pickupPhotoUrls: ['pickup-1', 'pickup-2'],
+      assetType: 'furniture',
+      assetDetails: { type: 'sofa set', material: 'leather and wood' },
+      aiAssessment: { summary: 'Fire and water damaged furniture set' },
+    });
+
+    expect(prompt).toContain('identityFinding');
+    expect(prompt).toContain('quantityFinding');
+    expect(prompt).toContain('conditionFinding');
+    expect(prompt).toContain('coverageFinding');
+    expect(prompt).toContain('Do not collapse a high match into one generic sentence');
   });
 });

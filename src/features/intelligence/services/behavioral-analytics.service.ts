@@ -11,6 +11,35 @@ import { bids } from '@/lib/db/schema/bids';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 
+type AssetType = typeof salvageCases.$inferSelect.assetType;
+
+interface SessionSummaryRow {
+  total_sessions: string | number;
+  avg_session_duration: string | number | null;
+  avg_auctions_per_session: string | number | null;
+  avg_bids_per_session: string | number | null;
+  avg_bounce_rate: string | number | null;
+}
+
+interface VendorSegmentRow {
+  vendor_id: string;
+  avg_bid_to_value_ratio: string | null;
+  preferred_asset_types: AssetType[] | null;
+  price_p25: string | null;
+  price_p75: string | null;
+  bids_per_week: string | null;
+  overall_win_rate: string | null;
+  last_bid_at: string | Date | null;
+}
+
+interface ConversionFunnelRow {
+  asset_type: AssetType;
+  total_views: string;
+  total_watches: string;
+  total_bids: string;
+  total_wins: string;
+}
+
 export class BehavioralAnalyticsService {
   /**
    * Track vendor session
@@ -42,8 +71,8 @@ export class BehavioralAnalyticsService {
   /**
    * Get session analytics for a vendor
    */
-  async getVendorSessionAnalytics(vendorId: string, periodStart: Date, periodEnd: Date): Promise<any> {
-    const sessions: any = await db.execute(sql`
+  async getVendorSessionAnalytics(vendorId: string, periodStart: Date, periodEnd: Date): Promise<SessionSummaryRow> {
+    const result = await db.execute(sql`
       SELECT 
         COUNT(*) AS total_sessions,
         AVG(duration_seconds) AS avg_session_duration,
@@ -55,6 +84,7 @@ export class BehavioralAnalyticsService {
         AND start_time BETWEEN ${periodStart.toISOString()} AND ${periodEnd.toISOString()}
     `);
 
+    const sessions = result as unknown as SessionSummaryRow[];
     return sessions[0] || {
       total_sessions: 0,
       avg_session_duration: 0,
@@ -65,7 +95,7 @@ export class BehavioralAnalyticsService {
   }
 
   async segmentVendors(): Promise<void> {
-    const result: any = await db.execute(sql`
+    const result = await db.execute(sql`
       WITH vendor_stats AS (
         SELECT 
           v.id AS vendor_id,
@@ -86,12 +116,12 @@ export class BehavioralAnalyticsService {
       SELECT * FROM vendor_stats
     `);
 
-    const vendorData = result.rows || result;
+    const vendorData = result as unknown as VendorSegmentRow[];
 
     for (const row of vendorData) {
-      const priceSegment = this.determinePriceSegment(parseFloat(row.avg_bid_to_value_ratio) || 0);
-      const activitySegment = this.determineActivitySegment(parseFloat(row.bids_per_week) || 0);
-      const categorySegment = row.preferred_asset_types?.length > 3 ? 'generalist' : 'specialist';
+      const priceSegment = this.determinePriceSegment(parseFloat(row.avg_bid_to_value_ratio ?? '0') || 0);
+      const activitySegment = this.determineActivitySegment(parseFloat(row.bids_per_week ?? '0') || 0);
+      const categorySegment = (row.preferred_asset_types?.length ?? 0) > 3 ? 'generalist' : 'specialist';
 
       // Convert last_bid_at to Date object if it's a string
       const lastBidAt = row.last_bid_at ? new Date(row.last_bid_at) : null;
@@ -103,7 +133,7 @@ export class BehavioralAnalyticsService {
         activitySegment,
         avgBidToValueRatio: row.avg_bid_to_value_ratio?.toString() || '0',
         preferredAssetTypes: row.preferred_asset_types || [],
-        preferredPriceRange: { min: parseFloat(row.price_p25) || 0, max: parseFloat(row.price_p75) || 0 },
+        preferredPriceRange: { min: parseFloat(row.price_p25 ?? '0') || 0, max: parseFloat(row.price_p75 ?? '0') || 0 },
         bidsPerWeek: row.bids_per_week?.toString() || '0',
         overallWinRate: row.overall_win_rate?.toString() || '0',
         lastBidAt,
@@ -115,7 +145,7 @@ export class BehavioralAnalyticsService {
           activitySegment,
           avgBidToValueRatio: row.avg_bid_to_value_ratio?.toString() || '0',
           preferredAssetTypes: row.preferred_asset_types || [],
-          preferredPriceRange: { min: parseFloat(row.price_p25) || 0, max: parseFloat(row.price_p75) || 0 },
+          preferredPriceRange: { min: parseFloat(row.price_p25 ?? '0') || 0, max: parseFloat(row.price_p75 ?? '0') || 0 },
           bidsPerWeek: row.bids_per_week?.toString() || '0',
           overallWinRate: row.overall_win_rate?.toString() || '0',
           lastBidAt,
@@ -138,7 +168,7 @@ export class BehavioralAnalyticsService {
   }
 
   async calculateConversionFunnel(periodStart: Date, periodEnd: Date): Promise<void> {
-    const funnelData: any = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT 
         sc.asset_type,
         COUNT(DISTINCT a.id) AS total_views,
@@ -151,6 +181,8 @@ export class BehavioralAnalyticsService {
       WHERE a.end_time BETWEEN ${periodStart.toISOString()} AND ${periodEnd.toISOString()}
       GROUP BY sc.asset_type
     `);
+
+    const funnelData = result as unknown as ConversionFunnelRow[];
 
     for (const row of funnelData) {
       const totalViews = parseInt(row.total_views);
@@ -185,8 +217,6 @@ export class BehavioralAnalyticsService {
   }) {
     const { segment, startDate, endDate, limit = 50 } = filters;
 
-    let query = db.select().from(vendorSegments);
-
     // Build where conditions
     const conditions = [];
 
@@ -205,10 +235,14 @@ export class BehavioralAnalyticsService {
     }
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
+      return await db
+        .select()
+        .from(vendorSegments)
+        .where(and(...conditions))
+        .limit(limit);
     }
 
-    return await query.limit(limit);
+    return await db.select().from(vendorSegments).limit(limit);
   }
 
   /**

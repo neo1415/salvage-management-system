@@ -21,13 +21,14 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import type { NotificationData } from '@/lib/db/schema/notifications';
 
 interface Notification {
   id: string;
   type: string;
   title: string;
   message: string;
-  data: any;
+  data: NotificationData | null;
   read: boolean;
   createdAt: string;
 }

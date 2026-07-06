@@ -215,7 +215,7 @@ function generateRecoverySummaryHTML(
     <tbody>
       ${byAssetType
         .map(
-          (item: any) => `
+          (item) => `
         <tr>
           <td style="text-transform: capitalize;">${item.assetType}</td>
           <td>${item.count}</td>
@@ -246,7 +246,7 @@ function generateRecoverySummaryHTML(
     <tbody>
       ${trend
         .map(
-          (item: any) => `
+          (item) => `
         <tr>
           <td>${new Date(item.date).toLocaleDateString()}</td>
           <td>${item.count}</td>
@@ -357,7 +357,7 @@ function generateVendorRankingsHTML(
     <tbody>
       ${rankings
         .map(
-          (vendor: any) => {
+          (vendor) => {
             const winRate = vendor.totalBids > 0 ? ((vendor.totalWins / vendor.totalBids) * 100) : 0;
             const avgPaymentTime = vendor.avgPaymentTimeHours || 0;
             const rating = parseFloat(vendor.rating) || 0;
@@ -404,6 +404,9 @@ function generatePaymentAgingHTML(
       dueDate: Date;
       ageInDays: number;
       status: string;
+      hoursOverdue?: number;
+      agingBucket?: string;
+      paymentMethod?: string;
     }>;
   },
   title: string,
@@ -492,7 +495,7 @@ function generatePaymentAgingHTML(
       ${payments
         .slice(0, 50)
         .map(
-          (payment: any) => {
+          (payment) => {
             const hoursOverdue = payment.hoursOverdue || 0;
             const agingBucket = payment.agingBucket || 'Current';
             const paymentMethod = payment.paymentMethod || 'paystack';

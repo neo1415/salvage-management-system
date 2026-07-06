@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { CreditCard, CheckCircle, Clock, AlertCircle, Wallet, Banknote, Filter } from 'lucide-react';
 import { AppLink } from '@/components/navigation/app-link';
@@ -52,7 +52,7 @@ function FinanceDashboardContentInner() {
     insuranceClasses: string[];
   }>({ branches: [], brokers: [], insuranceClasses: [] });
 
-  const buildFilterParams = () => {
+  const buildFilterParams = useCallback(() => {
     const params = new URLSearchParams();
     if (dateFrom) params.set('dateFrom', dateFrom);
     if (dateTo) params.set('dateTo', dateTo);
@@ -60,7 +60,7 @@ function FinanceDashboardContentInner() {
     if (brokerFilter) params.set('broker', brokerFilter);
     if (insuranceClassFilter) params.set('insuranceClass', insuranceClassFilter);
     return params;
-  };
+  }, [branchFilter, brokerFilter, dateFrom, dateTo, insuranceClassFilter]);
 
   const hasActiveFilters =
     dateFrom || dateTo || branchFilter || brokerFilter || insuranceClassFilter;
@@ -73,37 +73,7 @@ function FinanceDashboardContentInner() {
     setInsuranceClassFilter('');
   };
 
-  useEffect(() => {
-    // Wait for session to be fully loaded
-    if (status === 'loading') {
-      return;
-    }
-
-    if (status === 'unauthenticated') {
-      router.push('/login');
-      return;
-    }
-
-    // Only check role after session is authenticated
-    if (status === 'authenticated') {
-      const userRole = session?.user?.role;
-      
-      if (userRole !== 'finance_officer') {
-        // Redirect to their correct dashboard
-        if (userRole === 'vendor') router.push('/vendor/dashboard');
-        else if (userRole === 'salvage_manager') router.push('/manager/dashboard');
-        else if (userRole === 'claims_adjuster') router.push('/adjuster/dashboard');
-        else if (userRole === 'system_admin' || userRole === 'admin') router.push('/admin/dashboard');
-        else router.push('/login');
-        return;
-      }
-
-      // User has correct role, fetch dashboard data
-      fetchDashboardStats();
-    }
-  }, [session, status, router.push, dateFrom, dateTo, branchFilter, brokerFilter, insuranceClassFilter]);
-
-  const fetchDashboardStats = async () => {
+  const fetchDashboardStats = useCallback(async () => {
     const showFullPageLoader = statsRef.current == null;
     try {
       if (showFullPageLoader) {
@@ -114,7 +84,7 @@ function FinanceDashboardContentInner() {
       const response = await fetch(
         query ? `/api/dashboard/finance?${query}` : '/api/dashboard/finance'
       );
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard stats');
       }
@@ -159,7 +129,37 @@ function FinanceDashboardContentInner() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [buildFilterParams]);
+
+  useEffect(() => {
+    // Wait for session to be fully loaded
+    if (status === 'loading') {
+      return;
+    }
+
+    if (status === 'unauthenticated') {
+      router.push('/login');
+      return;
+    }
+
+    // Only check role after session is authenticated
+    if (status === 'authenticated') {
+      const userRole = session?.user?.role;
+
+      if (userRole !== 'finance_officer') {
+        // Redirect to their correct dashboard
+        if (userRole === 'vendor') router.push('/vendor/dashboard');
+        else if (userRole === 'salvage_manager') router.push('/manager/dashboard');
+        else if (userRole === 'claims_adjuster') router.push('/adjuster/dashboard');
+        else if (userRole === 'system_admin' || userRole === 'admin') router.push('/admin/dashboard');
+        else router.push('/login');
+        return;
+      }
+
+      // User has correct role, fetch dashboard data
+      fetchDashboardStats();
+    }
+  }, [fetchDashboardStats, router, session, status]);
 
   const formatCurrency = (amount: number) =>
     formatNgnAmount(amount, { decimals: 0, empty: 'NGN 0' });
@@ -277,7 +277,7 @@ function FinanceDashboardContentInner() {
         </div>
       </div>
 
-      <StatGrid className="lg:grid-cols-5" minCol={180}>
+      <StatGrid className="lg:grid-cols-4" minCol={180}>
         <StatCard
           title="Total Payments"
           value={stats?.totalPayments || 0}
@@ -314,17 +314,18 @@ function FinanceDashboardContentInner() {
             </div>
           }
         />
-        <StatCard
-          title="Verified Receipts"
-          value={formatCurrency(stats?.totalAmount || 0)}
-          subtitle="Cash collected (verified payments)"
-          icon={
-            <div className="p-3 bg-purple-100 rounded-lg">
-              <Banknote className="w-8 h-8 text-purple-600" />
-            </div>
-          }
-        />
       </StatGrid>
+
+      <StatCard
+        title="Cash Collected"
+        value={formatCurrency(stats?.totalAmount || 0)}
+        subtitle="Verified payment receipts; settlement adjustments are tracked separately below"
+        icon={
+          <div className="p-3 bg-purple-100 rounded-lg">
+            <Banknote className="w-8 h-8 text-purple-600" />
+          </div>
+        }
+      />
 
       <StatCard
         title="Escrow Wallet Payments"

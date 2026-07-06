@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Allow GET for health check
-export async function GET(request: NextRequest) {
+export async function GET() {
   return NextResponse.json({
     status: 'ok',
     endpoint: 'check-overdue-payments',

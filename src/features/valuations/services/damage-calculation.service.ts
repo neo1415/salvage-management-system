@@ -123,7 +123,7 @@ export class DamageCalculationService {
   ): Promise<DamageDeduction> {
     try {
       const normalizedComponent = component.toLowerCase();
-      let result: any[] = [];
+      let result: Array<typeof damageDeductions.$inferSelect> = [];
 
       // Step 1: If make provided, query for make-specific deduction
       if (make) {
@@ -170,12 +170,12 @@ export class DamageCalculationService {
         return {
           component: deduction.component,
           damageLevel: deduction.damageLevel,
-          make: deduction.make,
+          make: deduction.make ?? undefined,
           repairCostLow,
           repairCostHigh,
           valuationDeductionLow,
           valuationDeductionHigh,
-          notes: deduction.notes,
+          notes: deduction.notes ?? undefined,
           // Computed fields for backward compatibility
           repairCost: repairCostMidpoint,
           deductionPercent: valuationDeductionMidpoint,

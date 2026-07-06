@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  BadgeCheck,
   Building2,
   CheckCircle2,
   ClipboardCheck,

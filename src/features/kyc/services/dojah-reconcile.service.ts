@@ -8,7 +8,6 @@ import { getProviderVerificationService } from './provider-verification.service'
 import { ingestDojahMediaForVendor } from './dojah-media-ingest.service';
 import { getKYCRepository } from '../repositories/kyc.repository';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
-import type { DojahVerificationResult } from '../schemas/dojah.schemas';
 import { assertProviderVerificationStorageReady } from './provider-verification-readiness';
 import {
   getTier2SubmissionReadiness,

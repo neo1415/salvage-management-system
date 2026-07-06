@@ -11,7 +11,7 @@
  * - Requirement 11.6: Configurable forfeiture_percentage (default 100%)
  */
 
-import { db } from '@/lib/db/drizzle';
+import { db, type DbTransaction } from '@/lib/db/drizzle';
 import { escrowWallets } from '@/lib/db/schema/escrow';
 import { depositForfeitures, depositEvents } from '@/lib/db/schema/auction-deposit';
 import { auctions } from '@/lib/db/schema/auctions';
@@ -187,7 +187,7 @@ export class ForfeitureService {
    * @throws Error if invariant violation detected
    */
   private async verifyInvariantInTransaction(
-    tx: any,
+    tx: DbTransaction,
     vendorId: string
   ): Promise<void> {
     const [wallet] = await tx

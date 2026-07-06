@@ -27,10 +27,6 @@ export default function Tier1KYCPage() {
   const [verificationError, setVerificationError] = useState<ResolvedVerificationError | null>(null);
   const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [verificationDetails, setVerificationDetails] = useState<{
-    matchScore?: number;
-    mismatches?: string[];
-  } | null>(null);
   const [userProfile, setUserProfile] = useState<{
     fullName: string;
     dateOfBirth: string;
@@ -158,7 +154,6 @@ export default function Tier1KYCPage() {
     setIsVerifying(true);
     setVerificationError(null);
     setErrorDialogOpen(false);
-    setVerificationDetails(null);
 
     try {
       const response = await fetch('/api/vendors/verify-bvn', {
@@ -170,12 +165,6 @@ export default function Tier1KYCPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        if (result.mismatches?.length > 0) {
-          setVerificationDetails({
-            matchScore: result.matchScore,
-            mismatches: result.mismatches,
-          });
-        }
         const resolved = resolveTier1VerificationError({
           error: result.error,
           message: result.message,

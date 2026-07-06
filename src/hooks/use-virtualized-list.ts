@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 
 interface VirtualizedListOptions<T> {
   queryKey: string[];
-  fetchFn: (page: number) => Promise<{ data: T[]; hasMore: boolean }>;
+  fetchFn: (page: number, pageSize: number) => Promise<{ data: T[]; hasMore: boolean }>;
   pageSize?: number;
 }
 
@@ -24,7 +24,7 @@ export function useVirtualizedList<T>({
   
   const { data, isLoading, isFetching } = useQuery({
     queryKey: [...queryKey, page],
-    queryFn: () => fetchFn(page),
+    queryFn: () => fetchFn(page, pageSize),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
   

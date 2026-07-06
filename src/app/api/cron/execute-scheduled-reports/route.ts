@@ -19,13 +19,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ReportSchedulerService } from '@/features/reports/scheduling/services/report-scheduler.service';
 import { ReportDistributionService } from '@/features/reports/scheduling/services/report-distribution.service';
-import { ReportService } from '@/features/reports/services/report.service';
 import { RevenueAnalysisService } from '@/features/reports/financial/services/revenue-analysis.service';
 import { PaymentAnalyticsService } from '@/features/reports/financial/services/payment-analytics.service';
 import { VendorSpendingService } from '@/features/reports/financial/services/vendor-spending.service';
 import { ProfitabilityService } from '@/features/reports/financial/services/profitability.service';
 import { AdjusterMetricsService, FinanceMetricsService, ManagerMetricsService } from '@/features/reports/user-performance/services';
-import { ReportType } from '@/features/reports/types';
+import { ReportFilters, ReportType } from '@/features/reports/types';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes max execution time
@@ -156,7 +155,7 @@ export async function GET(request: NextRequest) {
 /**
  * Generate report based on type
  */
-async function generateReport(reportType: ReportType, filters: any): Promise<any> {
+async function generateReport(reportType: ReportType, filters: ReportFilters): Promise<unknown> {
   switch (reportType) {
     case 'revenue-analysis':
       return await RevenueAnalysisService.generateReport(filters);

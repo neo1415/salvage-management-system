@@ -3,6 +3,15 @@ import { db } from '@/lib/db/drizzle';
 import { sql } from 'drizzle-orm';
 import { auth } from '@/lib/auth/next-auth.config';
 
+interface RecoverySummaryRow {
+  case_id: string;
+  claim_reference: string;
+  asset_type: string;
+  market_value: string | null;
+  created_at: Date;
+  payment_amount: string | null;
+}
+
 /**
  * GET /api/reports/recovery-summary
  * Generate recovery summary report with date range filtering
@@ -76,7 +85,7 @@ export async function GET(request: NextRequest) {
     const startISO = start.toISOString();
     const endISO = end.toISOString();
 
-    const casesWithAuctions = (await db.execute(sql`
+    const recoveryResult = await db.execute(sql`
       WITH latest_case_recovery AS (
         SELECT DISTINCT ON (sc.id)
           sc.id AS case_id,
@@ -98,7 +107,10 @@ export async function GET(request: NextRequest) {
       SELECT *
       FROM latest_case_recovery
       ORDER BY created_at DESC
-    `)) as any[];
+    `);
+    const casesWithAuctions = Array.from(
+      recoveryResult as unknown as Iterable<RecoverySummaryRow>
+    );
 
     // Calculate summary statistics
     let totalMarketValue = 0;

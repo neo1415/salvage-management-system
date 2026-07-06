@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useReportFetchState } from '@/hooks/use-report-fetch-state';
 import { DataLoadingState, DataRefreshingHint } from '@/components/ui/loading-states';
 import { useAppRouter } from '@/hooks/use-app-router';
@@ -12,28 +12,22 @@ import { ReportFiltersComponent, ReportFilters } from '@/components/reports/comm
 import { defaultReportFilters, loadReportFromApi } from '@/components/reports/common/report-fetch';
 import { ExportButton } from '@/components/reports/common/export-button';
 import { MyPerformanceReport } from '@/components/reports/user-performance/my-performance-report';
+import type { MyPerformanceReport as MyPerformanceReportData } from '@/features/reports/user-performance/services';
 
 export default function MyPerformancePage() {
   const { data: session } = useSession();
   const router = useAppRouter();
-  const { loading, isRefreshing, startFetch, endFetch, markHasData, isBusy } =
+  const { loading, isRefreshing, startFetch, endFetch, markHasData } =
     useReportFetchState();
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<MyPerformanceReportData | null>(null);
   const [filters, setFilters] = useState<ReportFilters>(defaultReportFilters());
 
-  useEffect(() => {
-    if (session?.user) {
-      fetchReport();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]); // Only fetch on mount, user clicks Apply button for filter changes
-
-  const fetchReport = async (force = false) => {
+  const fetchReport = useCallback(async (force = false) => {
     startFetch();
     try {
       const result = await loadReportFromApi('/api/reports/user-performance/my-performance', filters, { force });
       if (result.status === 'success') {
-        setReportData(result.data);
+        setReportData(result.data as MyPerformanceReportData);
         markHasData();
       }
     } catch (error) {
@@ -41,7 +35,11 @@ export default function MyPerformancePage() {
     } finally {
       endFetch();
     }
-  };
+  }, [endFetch, filters, markHasData, startFetch]);
+
+  useEffect(() => {
+    if (session?.user) void fetchReport();
+  }, [fetchReport, session?.user]);
 
   return (
     <>

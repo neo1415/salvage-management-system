@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   TrendingUp, TrendingDown, Banknote, FileText, 
   Clock, CheckCircle, Users, Award, Activity,
-  BarChart3, PieChart, LineChart
+  PieChart, LineChart
 } from 'lucide-react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import { ChartFrame, MetricGrid, MetricValue, REPORT_CHART_COLORS } from '@/components/reports/common/report-ui';

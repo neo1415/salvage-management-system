@@ -12,7 +12,6 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { scanCodebase } from '../scanner';
 import {
-  TypeScriptParser,
   SchemaParser,
   APIRouteParser,
   ComponentParser,
@@ -20,7 +19,6 @@ import {
 } from '../parsers';
 import type {
   FileInventory,
-  FileEntry,
   ScanOptions,
 } from '../types';
 import type {
@@ -447,7 +445,7 @@ function generateDatabaseSchema(schemas: Map<string, ParserSchemaDefinition>): s
   let schemaDetails = '';
   
   const schemaEntries = Array.from(schemas.entries());
-  for (const [filePath, schema] of schemaEntries) {
+  for (const [, schema] of schemaEntries) {
     schemaDetails += `\n### ${schema.tableName}\n\n`;
     schemaDetails += `**File**: \`${schema.filePath}\`\n\n`;
     
@@ -556,7 +554,7 @@ function generateAPIEndpoints(apiRoutes: Map<string, ParserAPIRouteDefinition>):
   const routesByFeature = new Map<string, ParserAPIRouteDefinition[]>();
 
   const apiRouteEntries = Array.from(apiRoutes.entries());
-  for (const [filePath, route] of apiRouteEntries) {
+  for (const [, route] of apiRouteEntries) {
     const feature = route.filePath.split('/')[3] || 'other'; // Extract feature from path
     if (!routesByFeature.has(feature)) {
       routesByFeature.set(feature, []);

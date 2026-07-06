@@ -20,7 +20,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useOffline } from '@/hooks/use-offline';
@@ -46,6 +46,7 @@ import { getEnabledCaseAssetTypeOptions } from '@/features/business-policy/case-
 import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
 import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
 import { getOfflineUnlockGrant, type OfflineUnlockGrant } from '@/lib/auth/offline-unlock';
+import type { UniversalItemInfo } from '@/features/cases/services/ai-assessment-enhanced.service';
 
 /**
  * Web Speech API types (not fully supported in TypeScript)
@@ -82,6 +83,7 @@ interface SpeechRecognition extends EventTarget {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
+  maxAlternatives?: number;
   onresult: ((event: SpeechRecognitionEvent) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
@@ -95,23 +97,6 @@ declare global {
     webkitSpeechRecognition: new () => SpeechRecognition;
   }
 }
-
-/**
- * Asset type options - Universal item types supported by internet search
- */
-const ASSET_TYPES = [
-  { value: 'vehicle', label: 'Vehicle', icon: '🚗' },
-  { value: 'electronics', label: 'Electronics', icon: '📱' },
-  { value: 'appliance', label: 'Appliance', icon: '🏠' },
-  { value: 'property', label: 'Property', icon: '🏢' },
-  { value: 'jewelry', label: 'Jewelry & Watches', icon: '💎' },
-  { value: 'furniture', label: 'Furniture', icon: '🪑' },
-  { value: 'machinery', label: 'Machinery & Equipment', icon: '⚙️' },
-] as const;
-
-const LAUNCH_ASSET_TYPES = ASSET_TYPES.filter((type) =>
-  ['vehicle', 'electronics', 'property', 'machinery'].includes(type.value)
-);
 
 const INSURANCE_CLASSES = [
   { value: 'motor', label: 'Motor' },
@@ -393,6 +378,20 @@ const caseFormSchema = z.object({
 
 type CaseFormData = z.infer<typeof caseFormSchema>;
 
+type AssessmentItemInfo = Partial<Omit<UniversalItemInfo, 'type' | 'condition'>> & {
+  assetType: CaseFormData['assetType'];
+  type?: string;
+  condition?: UniversalItemInfo['condition'] | CaseFormData['vehicleCondition'];
+  vin?: string;
+  storage?: string;
+  color?: string;
+  applianceType?: string;
+  weight?: string;
+  furnitureType?: string;
+  propertyUse?: string;
+  damageArea?: string;
+};
+
 /**
  * GPS coordinates
  */
@@ -477,7 +476,7 @@ function NewCasePageContent() {
     handleSubmit,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<CaseFormData>({
     resolver: zodResolver(caseFormSchema) as never,
     defaultValues: {
@@ -554,7 +553,6 @@ function NewCasePageContent() {
     progress: searchProgress,
     startMarketSearch,
     startAIProcessing,
-    startPartSearch,
     setComplete,
     setError,
     updateProgress,
@@ -595,7 +593,7 @@ function NewCasePageContent() {
       setValue('marketValue', undefined);
       setMarketValueSource(null);
     }
-  }, [assetType]);
+  }, [assetType, marketValueSource, setValue]);
 
   const getConfiguredRequiredFields = (currentAssetType: string | undefined): string[] | null => {
     if (!currentAssetType) return null;
@@ -628,7 +626,6 @@ function NewCasePageContent() {
     deleteDraft,
     canSubmit: canSubmitDraft,
     validationErrors: draftValidationErrors,
-    refreshDrafts,
   } = useDraftAutoSave(formData, hasAIAnalysis, marketValue, {
     enabled: true,
     interval: 30000, // 30 seconds
@@ -685,7 +682,7 @@ function NewCasePageContent() {
           Object.keys(draft.formData).forEach((key) => {
             const value = draft.formData[key];
             if (value !== undefined && value !== null) {
-              setValue(key as any, value);
+              setValue(key as keyof CaseFormData, value as never);
             }
           });
           
@@ -769,7 +766,7 @@ function NewCasePageContent() {
       // CRITICAL FIX: Use multiple language variants for better recognition
       recognition.lang = 'en-US';
       // CRITICAL FIX: Set max alternatives for better accuracy
-      (recognition as any).maxAlternatives = 3;
+      recognition.maxAlternatives = 3;
     }
   }, []);
 
@@ -1067,7 +1064,7 @@ function NewCasePageContent() {
     const metadataStartIndex = currentPhotos.length;
     const selectedMetadata = await collectImageFilesMetadata(
       selectedFiles,
-      files.length > 0 && selectedFiles.some((file) => !file.name) ? 'browser_camera_input' : 'browser_file_input'
+      'browser_camera_input'
     );
     
     for (let i = 0; i < selectedFiles.length; i++) {
@@ -1172,7 +1169,7 @@ function NewCasePageContent() {
     
     try {
       // Build item info object based on asset type
-      let itemInfo: any = {
+      let itemInfo: AssessmentItemInfo = {
         assetType: assetType,
       };
       const providedMarketValue = watch('marketValue');
@@ -1438,18 +1435,6 @@ function NewCasePageContent() {
   };
 
   /**
-   * Convert file to base64
-   */
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
-  /**
    * Remove photo
    */
   const removePhoto = (index: number) => {
@@ -1701,7 +1686,7 @@ function NewCasePageContent() {
       Object.keys(draft.formData).forEach((key) => {
         const value = draft.formData[key];
         if (value !== undefined && value !== null) {
-          setValue(key as keyof CaseFormData, value as any);
+          setValue(key as keyof CaseFormData, value as never);
         }
       });
       
@@ -1731,8 +1716,6 @@ function NewCasePageContent() {
     setIsSavingDraft(true);
     
     try {
-      const formData = watch(); // Get all current form values
-      
       // Save to IndexedDB via draft service
       await saveDraftManually();
       
@@ -1749,7 +1732,7 @@ function NewCasePageContent() {
    * Handle form validation errors
    * Called by React Hook Form when validation fails
    */
-  const onValidationError = (errors: any) => {
+  const onValidationError = (errors: FieldErrors<CaseFormData>) => {
     console.log('❌ Form validation failed:', errors);
     
     // Mark that user has attempted to submit
@@ -1760,10 +1743,12 @@ function NewCasePageContent() {
     
     // Find the first error and make it user-friendly
     const firstErrorKey = Object.keys(errors)[0];
-    const firstError = errors[firstErrorKey] as any;
+    const firstError = errors[firstErrorKey as keyof CaseFormData];
     
     // Create user-friendly error messages
-    let errorMessage = firstError?.message || 'Please fill in all required fields';
+    let errorMessage = typeof firstError?.message === 'string'
+      ? firstError.message
+      : 'Please fill in all required fields';
     
     // Replace technical messages with user-friendly ones
     if (errorMessage.includes('NaN') || errorMessage.includes('Invalid input')) {
@@ -2204,7 +2189,7 @@ function NewCasePageContent() {
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-orange-900">Please Fix These Errors</h3>
               <ul className="mt-1 text-sm text-orange-700 space-y-1">
-                {Object.entries(errors).map(([field, error]: [string, any]) => (
+                {Object.entries(errors).map(([field, error]) => (
                   <li key={field}>• {error?.message || `${field} is invalid`}</li>
                 ))}
               </ul>

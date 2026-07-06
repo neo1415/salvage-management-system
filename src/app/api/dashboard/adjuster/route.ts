@@ -4,14 +4,18 @@
  * GET /api/dashboard/adjuster - Get dashboard statistics for claims adjusters
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { auctions } from '@/lib/db/schema/auctions';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
-import { payments } from '@/lib/db/schema/payments';
 import { eq, and, sql, inArray, gt } from 'drizzle-orm';
+
+interface AdjusterControlRow {
+  verified_recovery: string | number | null;
+  avg_days_to_approval: string | number | null;
+}
 
 /**
  * GET /api/dashboard/adjuster
@@ -28,7 +32,7 @@ import { eq, and, sql, inArray, gt } from 'drizzle-orm';
  *   }
  * }
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check authentication
     const session = await auth();
@@ -166,7 +170,7 @@ export async function GET(request: NextRequest) {
 
     const drafts = draftsResult[0]?.count || 0;
 
-    const [controlRow] = (await db.execute(sql`
+    const controlResult = await db.execute(sql`
       WITH case_scope AS (
         SELECT id, created_at, approved_at
         FROM salvage_cases
@@ -193,7 +197,10 @@ export async function GET(request: NextRequest) {
           AND cs.approved_at >= cs.created_at
         )::numeric AS avg_days_to_approval
       FROM case_scope cs
-    `)) as any[];
+    `);
+    const [controlRow] = Array.from(
+      controlResult as unknown as Iterable<AdjusterControlRow>
+    );
 
     const verifiedRecovery = numberFrom(controlRow?.verified_recovery);
     const averageDaysToApproval = nullableNumberFrom(controlRow?.avg_days_to_approval);

@@ -101,7 +101,6 @@ export default function AdminAuctionsPage() {
     isOffline,
     lastUpdated,
     refresh: refreshCache,
-    error: cacheError,
   } = useCachedAuctions(fetchAuctionsFn);
 
   // Update local auctions state when cached auctions change
@@ -188,37 +187,6 @@ export default function AdminAuctionsPage() {
   if (isLoading) {
     return <DataLoadingState label="Auctions" variant="page" />;
   }
-
-  const getDocumentStatus = (auction: AuctionWithStatus) => {
-    const existingDocs = auction.documents.map((d) => d.documentType);
-    const missingDocs = requiredAuctionDocuments.filter((doc) => !existingDocs.includes(doc));
-
-    // Check if pickup_authorization exists (generated after payment)
-    const hasPickupAuth = existingDocs.includes('pickup_authorization');
-
-    if (missingDocs.length === 0) {
-      if (hasPickupAuth) {
-        return { status: 'complete', color: 'text-green-600', text: '✓ All documents generated (including pickup authorization)' };
-      }
-      return { status: 'complete', color: 'text-green-600', text: '✓ Initial documents generated' };
-    } else if (missingDocs.length === requiredAuctionDocuments.length) {
-      return { status: 'missing', color: 'text-red-600', text: '✗ No documents generated' };
-    } else {
-      return {
-        status: 'partial',
-        color: 'text-yellow-600',
-        text: `⚠ Missing: ${missingDocs.map(getDocumentLabel).join(', ')}`,
-      };
-    }
-  };
-
-  const formatAssetName = (auction: AuctionWithStatus) => {
-    const details = auction.case.assetDetails as Record<string, string>;
-    if (auction.case.assetType === 'vehicle') {
-      return `${details.year || ''} ${details.make || ''} ${details.model || ''}`.trim();
-    }
-    return auction.case.assetType;
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">

@@ -107,10 +107,9 @@ interface RevenueAnalysisData {
 
 interface RevenueAnalysisReportProps {
   data: RevenueAnalysisData;
-  loading?: boolean;
 }
 
-export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportProps) {
+export function RevenueAnalysisReport({ data }: RevenueAnalysisReportProps) {
   if (!data) {
     return <DataLoadingState label="Salvage recovery analysis" variant="report" />;
   }
@@ -502,28 +501,6 @@ export function RevenueAnalysisReport({ data, loading }: RevenueAnalysisReportPr
           </CardContent>
         </Card>
       )}
-    </div>
-  );
-}
-
-function RevenueAnalysisSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-3">
-        {[1, 2, 3].map((i) => (
-          <Card key={i}>
-            <CardContent className="pt-6">
-              <div className="h-4 bg-gray-200 rounded w-24 mb-2 animate-pulse" />
-              <div className="h-8 bg-gray-200 rounded w-32 animate-pulse" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <Card>
-        <CardContent className="pt-6">
-          <div className="h-64 bg-gray-200 rounded animate-pulse" />
-        </CardContent>
-      </Card>
     </div>
   );
 }

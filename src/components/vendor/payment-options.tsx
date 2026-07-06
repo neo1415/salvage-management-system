@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Wallet, CreditCard, Zap, CheckCircle2, AlertCircle, Info, X, Loader2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { formatNgnAmount } from '@/lib/utils/format-ngn';
@@ -8,6 +8,9 @@ import { formatNgnAmount } from '@/lib/utils/format-ngn';
 interface PaymentBreakdown {
   finalBid: number;
   depositAmount: number;
+  depositApplied: number;
+  depositSurplus: number;
+  depositCoversBid: boolean;
   remainingAmount: number;
   walletBalance: number;
   canPayWithWallet: boolean;
@@ -35,7 +38,7 @@ interface PaymentOptionsProps {
   asModal?: boolean;
 }
 
-type PaymentMethod = 'wallet' | 'paystack' | 'hybrid';
+type PaymentMethod = 'deposit' | 'wallet' | 'paystack' | 'hybrid';
 
 export function PaymentOptions({
   auctionId,
@@ -65,32 +68,7 @@ export function PaymentOptions({
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    fetchPaymentBreakdown();
-  }, [auctionId]);
-
-  // Check for Paystack callback success
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
-    const urlParams = new URLSearchParams(window.location.search);
-    const paymentStatus = urlParams.get('payment');
-    
-    if (paymentStatus === 'success' && breakdown) {
-      // Show success modal
-      setSuccessData({
-        totalPaid: breakdown.finalBid,
-        paystackAmount: breakdown.remainingAmount,
-        depositAmount: breakdown.depositAmount,
-      });
-      setShowSuccessModal(true);
-      
-      // Clean up URL
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, [breakdown]);
-
-  const fetchPaymentBreakdown = async () => {
+  const fetchPaymentBreakdown = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -109,7 +87,32 @@ export function PaymentOptions({
     } finally {
       setLoading(false);
     }
-  };
+  }, [auctionId]);
+
+  useEffect(() => {
+    void fetchPaymentBreakdown();
+  }, [fetchPaymentBreakdown]);
+
+  // Check for Paystack callback success
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentStatus = urlParams.get('payment');
+    
+    if (paymentStatus === 'success' && breakdown) {
+      // Show success modal
+      setSuccessData({
+        totalPaid: breakdown.finalBid,
+        paystackAmount: breakdown.remainingAmount,
+        depositAmount: breakdown.depositApplied,
+      });
+      setShowSuccessModal(true);
+      
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [breakdown]);
 
   const handleWalletPayment = async () => {
     try {
@@ -127,7 +130,7 @@ export function PaymentOptions({
         setSuccessData({
           totalPaid: breakdown?.finalBid || 0,
           paystackAmount: 0,
-          depositAmount: breakdown?.depositAmount || 0,
+          depositAmount: breakdown?.depositApplied || 0,
         });
         setShowSuccessModal(true);
       } else {
@@ -178,6 +181,36 @@ export function PaymentOptions({
     }
   };
 
+  const handleDepositPayment = async () => {
+    try {
+      setProcessing(true);
+      setError(null);
+
+      const response = await fetch(`/api/auctions/${auctionId}/payment/deposit`, {
+        method: 'POST',
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.success) {
+        setError(data.error || data.message || 'Failed to complete payment. Please try again.');
+        return;
+      }
+
+      setSuccessData({
+        totalPaid: breakdown?.finalBid || 0,
+        paystackAmount: 0,
+        depositAmount: breakdown?.depositApplied || 0,
+      });
+      setShowSuccessModal(true);
+      onPaymentSuccess?.();
+    } catch (error) {
+      console.error('Deposit payment failed:', error);
+      setError('Failed to complete payment. Please check your connection and try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleHybridPayment = async () => {
     try {
       setProcessing(true);
@@ -217,6 +250,9 @@ export function PaymentOptions({
     if (!selectedMethod) return;
 
     switch (selectedMethod) {
+      case 'deposit':
+        handleDepositPayment();
+        break;
       case 'wallet':
         handleWalletPayment();
         break;
@@ -247,7 +283,7 @@ export function PaymentOptions({
         setSuccessData({
           totalPaid: breakdown?.finalBid || 0,
           paystackAmount: breakdown?.paystackPortion || breakdown?.remainingAmount || 0,
-          depositAmount: breakdown?.depositAmount || 0,
+          depositAmount: breakdown?.depositApplied || 0,
         });
         setShowSuccessModal(true);
         onPaymentSuccess?.();
@@ -357,11 +393,19 @@ export function PaymentOptions({
                 </span>
               </div>
               <div className="flex justify-between items-center text-green-600">
-                <span className="text-sm">Deposit Paid</span>
+                <span className="text-sm">Deposit Applied</span>
                 <span className="text-base font-semibold">
-                  -{formatAmount(breakdown.depositAmount)}
+                  -{formatAmount(breakdown.depositApplied)}
                 </span>
               </div>
+              {breakdown.depositSurplus > 0 && (
+                <div className="flex justify-between items-center text-blue-700">
+                  <span className="text-sm">Returned to Wallet</span>
+                  <span className="text-base font-semibold">
+                    +{formatAmount(breakdown.depositSurplus)}
+                  </span>
+                </div>
+              )}
               <div className="border-t border-gray-300 pt-2 flex justify-between items-center">
                 <span className="text-base font-semibold text-gray-900">Remaining</span>
                 <span className="text-xl font-bold text-[var(--brand-primary)]">
@@ -379,7 +423,9 @@ export function PaymentOptions({
 
           {/* Payment Methods */}
           <div className="p-4">
-            <h3 className="text-base font-semibold text-gray-900 mb-3">Payment Method</h3>
+            <h3 className="text-base font-semibold text-gray-900 mb-3">
+              {breakdown.depositCoversBid ? 'Complete Purchase' : 'Payment Method'}
+            </h3>
             
             {/* Error Message */}
             {error && (
@@ -398,7 +444,34 @@ export function PaymentOptions({
             )}
             
             <div className="space-y-2">
-            {breakdown.methods?.wallet && (
+            {breakdown.depositCoversBid && (
+              <button
+                onClick={() => setSelectedMethod('deposit')}
+                className={`w-full p-3 border-2 rounded-lg text-left transition-all cursor-pointer ${
+                  selectedMethod === 'deposit'
+                    ? 'border-[var(--brand-primary)] bg-[var(--brand-primary-surface)]'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    selectedMethod === 'deposit' ? 'bg-[var(--brand-primary)]' : 'bg-gray-100'
+                  }`}>
+                    <Wallet className={`w-4 h-4 ${selectedMethod === 'deposit' ? 'text-white' : 'text-gray-600'}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-semibold text-gray-900">Use Auction Deposit</h4>
+                    <p className="text-xs text-gray-600">
+                      Apply {formatAmount(breakdown.depositApplied)} and return {formatAmount(breakdown.depositSurplus)} to your wallet
+                    </p>
+                  </div>
+                  {selectedMethod === 'deposit' && (
+                    <CheckCircle2 className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0" />
+                  )}
+                </div>
+              </button>
+            )}
+            {breakdown.methods?.wallet && !breakdown.depositCoversBid && (
             <button
               onClick={() => setSelectedMethod('wallet')}
               disabled={!breakdown.canPayWithWallet}
@@ -469,7 +542,7 @@ export function PaymentOptions({
             )}
 
             {/* Online checkout */}
-            {breakdown.methods?.paystack !== false && (
+            {breakdown.methods?.paystack !== false && breakdown.remainingAmount > 0 && (
             <button
               onClick={() => setSelectedMethod('paystack')}
               className={`w-full p-3 border-2 rounded-lg text-left transition-all cursor-pointer ${
@@ -552,7 +625,9 @@ export function PaymentOptions({
           <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
             <Info className="w-3 h-3 text-blue-600 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-blue-800">
-              Deposit unfrozen after payment. Amounts are fixed.
+              {breakdown.depositSurplus > 0
+                ? `${formatAmount(breakdown.depositSurplus)} will be returned to your available wallet balance.`
+                : 'Deposit is applied after payment. Amounts are fixed.'}
             </p>
           </div>
         </div>
@@ -573,6 +648,7 @@ export function PaymentOptions({
             ) : (
               <>
                 <CheckCircle2 className="w-4 h-4" />
+                {selectedMethod === 'deposit' && 'Complete with Deposit'}
                 {selectedMethod === 'wallet' && 'Pay with Wallet'}
                 {selectedMethod === 'paystack' && 'Pay Online'}
                 {selectedMethod === 'hybrid' && 'Pay with Wallet + Online'}
@@ -631,22 +707,31 @@ export function PaymentOptions({
 
               {/* Info Message */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-                <p className="text-sm text-blue-800 text-center">
-                  Your deposit has been unfrozen. Pickup authorization will appear shortly.
+                <p className="text-sm font-semibold text-blue-900 text-center">
+                  Pickup evidence is required at collection.
+                </p>
+                <p className="mt-1 text-xs text-blue-800 text-center">
+                  Take clear photos, note any difference in item, quantity, or condition, then submit them from Pickups for staff confirmation.
                 </p>
               </div>
 
-              {/* Close Button */}
-              <button
-                onClick={() => {
-                  setShowSuccessModal(false);
-                  // Refresh page to show pickup authorization modal
-                  window.location.reload();
-                }}
-                className="w-full px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
-              >
-                Continue
-              </button>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  onClick={() => window.location.assign('/vendor/pickups')}
+                  className="w-full px-6 py-3 bg-[var(--brand-primary)] text-white font-semibold rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
+                >
+                  Open Pickups
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSuccessModal(false);
+                    window.location.reload();
+                  }}
+                  className="w-full px-6 py-3 border border-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Continue
+                </button>
+              </div>
             </div>
           </div>
         </div>,

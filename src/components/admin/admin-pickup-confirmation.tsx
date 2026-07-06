@@ -34,21 +34,19 @@ export interface PickupConfirmationSubmitInput {
 }
 
 interface AdminPickupConfirmationProps {
-  auctionId: string;
-  adminId: string;
   vendorPickupStatus: {
     confirmed: boolean;
     confirmedAt: string | null;
   };
   evidenceNeedsReview?: boolean;
+  evidenceProcessing?: boolean;
   onConfirm: (input: PickupConfirmationSubmitInput) => Promise<void>;
 }
 
 export function AdminPickupConfirmation({
-  auctionId,
-  adminId,
   vendorPickupStatus,
   evidenceNeedsReview = false,
+  evidenceProcessing = false,
   onConfirm,
 }: AdminPickupConfirmationProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -142,16 +140,18 @@ export function AdminPickupConfirmation({
       {!success && (
         <div
           className={`rounded-lg border p-3 sm:p-4 mb-4 ${
-            evidenceNeedsReview ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'
+            evidenceNeedsReview || evidenceProcessing ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'
           }`}
           role="status"
           aria-live="polite"
         >
-          <p className={`font-semibold text-sm sm:text-base ${evidenceNeedsReview ? 'text-amber-800' : 'text-blue-800'}`}>
-            {evidenceNeedsReview ? 'Evidence Review Required' : 'Verify Pickup'}
+          <p className={`font-semibold text-sm sm:text-base ${evidenceNeedsReview || evidenceProcessing ? 'text-amber-800' : 'text-blue-800'}`}>
+            {evidenceProcessing ? 'Evidence Analysis in Progress' : evidenceNeedsReview ? 'Evidence Review Required' : 'Verify Pickup'}
           </p>
-          <p className={`text-xs sm:text-sm mt-1 ${evidenceNeedsReview ? 'text-amber-700' : 'text-blue-700'}`}>
-            {evidenceNeedsReview
+          <p className={`text-xs sm:text-sm mt-1 ${evidenceNeedsReview || evidenceProcessing ? 'text-amber-700' : 'text-blue-700'}`}>
+            {evidenceProcessing
+              ? 'Wait for the comparison to finish before confirming release.'
+              : evidenceNeedsReview
               ? 'Review the pickup evidence comparison and add notes before completing this transaction.'
               : "Confirm the vendor's pickup code and handoff details before completing the transaction."}
           </p>
@@ -206,7 +206,9 @@ export function AdminPickupConfirmation({
             </div>
             <div>
               <label htmlFor="adjustment-amount" className="block text-sm font-medium text-amber-900">
-                Adjustment Amount
+                {resolutionStatus === 'price_adjustment_recorded'
+                  ? 'Final Agreed Sale Amount'
+                  : 'Reimbursement Amount'}
               </label>
               <input
                 id="adjustment-amount"
@@ -219,6 +221,11 @@ export function AdminPickupConfirmation({
                 placeholder="0.00"
                 className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)] disabled:opacity-60"
               />
+              <p className="mt-1 text-xs text-amber-800">
+                {resolutionStatus === 'price_adjustment_recorded'
+                  ? 'Enter the complete amount finally agreed with the vendor, not the refund difference.'
+                  : 'Enter the amount reimbursed or due to the vendor.'}
+              </p>
             </div>
           </div>
           <label htmlFor="reimbursement-method" className="mt-3 block text-sm font-medium text-amber-900">
@@ -239,12 +246,12 @@ export function AdminPickupConfirmation({
       <button
         type="button"
         onClick={handleOpenModal}
-        disabled={isConfirming || success}
+        disabled={isConfirming || success || evidenceProcessing}
         className="w-full bg-[var(--brand-primary)] text-white py-3 sm:py-4 px-4 sm:px-6 rounded-lg font-semibold hover:bg-[var(--brand-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
         aria-label="Confirm pickup"
         data-testid="confirm-button"
       >
-        {isConfirming ? 'Confirming...' : success ? 'Pickup Confirmed' : 'Confirm Pickup'}
+        {isConfirming ? 'Confirming...' : success ? 'Pickup Confirmed' : evidenceProcessing ? 'Analysis in progress' : 'Confirm Pickup'}
       </button>
 
       {/* Confirmation Modal */}
@@ -255,7 +262,6 @@ export function AdminPickupConfirmation({
         }}
         onConfirm={() => {
           // ConfirmationModal expects sync handler; we wrap with async.
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           void handleConfirm();
         }}
         title="Confirm Pickup"

@@ -8,7 +8,7 @@
  * POST /api/admin/gemini-metrics/reset - Reset metrics (for testing)
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { getGeminiMetricsCollector } from '@/lib/monitoring/gemini-metrics';
 import { getGeminiRateLimiter } from '@/lib/integrations/gemini-rate-limiter';
@@ -23,7 +23,7 @@ import { getGeminiRateLimiter } from '@/lib/integrations/gemini-rate-limiter';
  * - Error rates and top errors
  * - Active alerts
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check authentication
     const session = await auth();
@@ -64,10 +64,10 @@ export async function GET(request: NextRequest) {
     };
     
     return NextResponse.json(response);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Gemini Metrics API] Error fetching metrics:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch metrics', details: error.message },
+      { error: 'Failed to fetch metrics', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
  * 
  * Resets metrics collector (for testing purposes)
  */
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     // Check authentication
     const session = await auth();
@@ -101,10 +101,10 @@ export async function POST(request: NextRequest) {
       message: 'Metrics reset successfully',
       timestamp: new Date().toISOString(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Gemini Metrics API] Error resetting metrics:', error);
     return NextResponse.json(
-      { error: 'Failed to reset metrics', details: error.message },
+      { error: 'Failed to reset metrics', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

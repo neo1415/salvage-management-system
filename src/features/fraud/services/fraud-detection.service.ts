@@ -11,7 +11,6 @@ import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { bids } from '@/lib/db/schema/bids';
-import { auctions } from '@/lib/db/schema/auctions';
 import { eq, and } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { emailService } from '@/features/notifications/services/email.service';
@@ -143,7 +142,7 @@ export class FraudDetectionService {
   private async detectSameIpBidding(
     auctionId: string,
     ipAddress: string,
-    currentVendorId: string
+    _currentVendorId: string
   ): Promise<{ detected: boolean; evidence: string }> {
     try {
       // Get all bids from this IP address in this auction

@@ -244,7 +244,7 @@ export interface ConfigDefinition {
   type: 'package' | 'next' | 'env' | 'middleware' | 'other';
   dependencies?: DependencyInfo[];
   environmentVariables?: EnvironmentVariable[];
-  configuration?: Record<string, any>;
+  configuration?: Record<string, unknown>;
 }
 
 // ============================================================================

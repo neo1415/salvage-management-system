@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import Image from 'next/image';
 import { usePublicBranding } from '@/hooks/use-public-branding';
 import { hasCookieConsent } from '@/lib/cookies/cookie-consent';
 
@@ -116,9 +117,12 @@ export function InstallPrompt() {
 
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0">
-            <img
+            <Image
               src={branding.logoPath || branding.faviconPath || '/icons/icon-192.png'}
               alt={`${branding.brandName} logo`}
+              width={32}
+              height={32}
+              unoptimized
               className="h-8 w-8 rounded object-contain"
             />
           </div>

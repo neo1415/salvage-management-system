@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 /** @deprecated Use /api/settings/profile */
 export async function GET() {

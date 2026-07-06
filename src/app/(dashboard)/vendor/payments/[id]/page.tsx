@@ -6,6 +6,7 @@ import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
 import { WalletPaymentConfirmation } from '@/components/payments/wallet-payment-confirmation';
 import Script from 'next/script';
+import Image from 'next/image';
 import { DataLoadingState } from '@/components/ui/loading-states';
 
 interface PaymentDetails {
@@ -57,6 +58,33 @@ interface PaymentDetails {
 interface WalletBalance {
   availableBalance: number;
   frozenAmount: number;
+}
+
+interface PaystackResponse {
+  reference: string;
+}
+
+interface PaystackHandler {
+  openIframe(): void;
+}
+
+interface PaystackSetupOptions {
+  key: string;
+  email: string;
+  amount: number;
+  ref: string;
+  currency: 'NGN';
+  metadata: Record<string, unknown>;
+  callback(response: PaystackResponse): void;
+  onClose(): void;
+}
+
+declare global {
+  interface Window {
+    PaystackPop?: {
+      setup(options: PaystackSetupOptions): PaystackHandler;
+    };
+  }
 }
 
 export default function PaymentPage() {
@@ -183,12 +211,12 @@ export default function PaymentPage() {
       const data = await response.json();
       
       // Check if PaystackPop is loaded
-      if (typeof (window as any).PaystackPop === 'undefined') {
+      if (!window.PaystackPop) {
         throw new Error('Paystack SDK not loaded. Please refresh the page and try again.');
       }
       
       // Use Paystack inline popup instead of redirect
-      const handler = (window as any).PaystackPop.setup({
+      const handler = window.PaystackPop.setup({
         key: data.publicKey,
         email: data.email,
         amount: data.amount, // Amount in kobo
@@ -210,7 +238,7 @@ export default function PaymentPage() {
             },
           ],
         },
-        callback: function(response: any) {
+        callback: function(response) {
           // Payment successful
           console.log('Payment successful:', response);
           // Redirect to verification page
@@ -236,7 +264,7 @@ export default function PaymentPage() {
     try {
       if (!payment) throw new Error('Payment details not loaded yet');
 
-      const vendorId = (session as any)?.user?.vendorId;
+      const vendorId = session?.user?.vendorId;
       if (!vendorId) throw new Error('Vendor ID not found in session');
 
       const response = await fetch(`/api/payments/${paymentId}/confirm-wallet`, {
@@ -522,10 +550,13 @@ export default function PaymentPage() {
             <div className="mb-4">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {payment.auction.case.photos.slice(0, 3).map((photo, index) => (
-                  <img
+                  <Image
                     key={index}
                     src={photo}
                     alt={`Item photo ${index + 1}`}
+                    width={400}
+                    height={128}
+                    unoptimized
                     className="w-full h-32 object-cover rounded-lg"
                   />
                 ))}

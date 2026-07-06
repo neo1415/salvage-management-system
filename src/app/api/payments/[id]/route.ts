@@ -11,6 +11,7 @@ import { formatAssetName } from '@/lib/utils/asset-name';
 import { brandLegalName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 import { generatePickupAuthorizationCode } from '@/features/pickups/services/pickup-confirmation.service';
 import { getEffectiveSaleAmount } from '@/lib/finance/effective-sale-amount';
+import { buildPaymentSettlementFields } from '@/lib/finance/settlement-reconciliation';
 
 function serializeDate(value: Date | string | null | undefined): string | null {
   if (!value) return null;
@@ -76,10 +77,13 @@ export async function GET(
     const branding = await getEmailBranding();
 
     // Format response
+    const settlementFields = buildPaymentSettlementFields(payment.payment.amount, payment.auction ?? null);
     const response = {
       id: payment.payment.id,
       auctionId: payment.payment.auctionId,
       amount: payment.payment.amount,
+      effectiveSaleAmount: settlementFields.effectiveSaleAmount,
+      settlement: settlementFields.settlement,
       status: payment.payment.status,
       escrowStatus: payment.payment.escrowStatus,
       paymentDeadline: serializeDate(payment.payment.paymentDeadline),
@@ -111,6 +115,7 @@ export async function GET(
           },
           { amount: payment.payment.amount }
         ).toFixed(2),
+        priceAdjustedAt: serializeDate(payment.auction.priceAdjustedAt),
         case: {
           claimReference: payment.case.claimReference,
           assetType: payment.case.assetType,

@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const result = await ReportService.generateReport(
       { type: 'my-performance', filters, includeCharts: true },
       session.user.id,
-      session.user.role as any,
+      session.user.role,
       async (filters) => await MyPerformanceService.generateReport(filters, session.user.id, session.user.role),
       { useCache: true, ipAddress: request.headers.get('x-forwarded-for') || undefined }
     );
