@@ -35,9 +35,14 @@ const configuredTermiiSenderId = process.env.TERMII_DEFAULT_SENDER_ID || process
 const TERMII_SENDER_ID = ['NEMSAR', 'NEMSAL'].includes(configuredTermiiSenderId.toUpperCase())
   ? 'NEM'
   : configuredTermiiSenderId;
-const TERMII_CHANNEL = process.env.TERMII_CHANNEL || 'dnd';
+function resolveTermiiChannel(channel?: string): string {
+  const normalized = (channel || 'dnd').trim().toLowerCase();
+  return normalized === 'generic' ? 'dnd' : normalized;
+}
+
+const TERMII_CHANNEL = resolveTermiiChannel(process.env.TERMII_CHANNEL);
 /** Termii requires dnd for OTP/transactional; generic is promotional-only. */
-const TERMII_TRANSACTIONAL_CHANNEL = process.env.TERMII_TRANSACTIONAL_CHANNEL || TERMII_CHANNEL || 'dnd';
+const TERMII_TRANSACTIONAL_CHANNEL = resolveTermiiChannel(process.env.TERMII_TRANSACTIONAL_CHANNEL || 'dnd');
 const TRANSACTIONAL_SMS_CATEGORIES = new Set([
   'otp',
   'auction_started',

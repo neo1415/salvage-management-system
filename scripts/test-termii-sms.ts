@@ -14,6 +14,7 @@ async function testTermiiSMS(phone: string) {
     ? 'NEM'
     : configuredSenderId;
   const normalizedPhone = normalizeNigerianPhone(phone);
+  const channel = resolveTermiiChannel(process.env.TERMII_CHANNEL);
   
   if (!apiKey) {
     console.error('❌ TERMII_API_KEY not found in .env');
@@ -23,6 +24,7 @@ async function testTermiiSMS(phone: string) {
   console.log('📱 Testing Termii SMS Integration...');
   console.log(`   Phone: ${normalizedPhone}`);
   console.log(`   Sender ID: ${senderId}`);
+  console.log(`   Channel: ${channel}`);
   console.log(`   API Key: ${apiKey.substring(0, 10)}...`);
   console.log('');
 
@@ -40,7 +42,7 @@ async function testTermiiSMS(phone: string) {
         from: senderId,
         sms: message,
         type: 'plain',
-        channel: process.env.TERMII_CHANNEL || 'dnd',
+        channel,
         api_key: apiKey,
       }),
     });
@@ -71,6 +73,11 @@ function normalizeNigerianPhone(phone: string): string {
   if (digits.startsWith('0')) return `234${digits.slice(1)}`;
   if (digits.length === 10) return `234${digits}`;
   return digits;
+}
+
+function resolveTermiiChannel(channel?: string): string {
+  const normalized = (channel || 'dnd').trim().toLowerCase();
+  return normalized === 'generic' ? 'dnd' : normalized;
 }
 
 // Get phone number from command line argument
