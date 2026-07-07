@@ -5,10 +5,20 @@ import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { emailService } from '@/features/notifications/services/email.service';
 
 const suspendSchema = z.object({
   reason: z.string().min(10, 'Reason must be at least 10 characters').max(500),
 });
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 /**
  * POST /api/admin/users/[id]/suspend
@@ -86,6 +96,25 @@ export async function POST(
         suspendedAt: new Date().toISOString(),
       },
     });
+
+    if (suspendedUser.email) {
+      await emailService.sendEmail({
+        to: suspendedUser.email,
+        subject: 'Your account has been suspended',
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+            <h2 style="margin:0 0 12px;color:#8a0030">Account suspended</h2>
+            <p>Your account has been suspended by a system administrator.</p>
+            <p><strong>Reason:</strong> ${escapeHtml(validationResult.data.reason)}</p>
+            <p>If you believe this was done in error, contact support for review.</p>
+          </div>
+        `,
+        category: 'system',
+      }).catch((emailError) => {
+        console.error('Failed to send suspension email:', emailError);
+        return { success: false };
+      });
+    }
 
     return NextResponse.json({
       success: true,

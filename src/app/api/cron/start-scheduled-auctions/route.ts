@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
             await smsService.sendSMS({
               to: vendor.phone,
               message: smsMessage,
-              category: 'routine',
+              category: 'auction_started',
             });
 
             // Send email

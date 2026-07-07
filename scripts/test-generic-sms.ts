@@ -54,7 +54,7 @@ async function testGenericSMS(phone: string) {
     console.log(`   OTP: ${testOTP}`);
     console.log('');
     console.log('💡 Generic sender ID has 99% delivery rate but shows as random number');
-    console.log('   For production, you can use your approved sender ID: NEMSAL');
+    console.log('   For production, use your approved sender ID: NEM with channel=dnd');
   } catch (error) {
     console.error('❌ Error sending SMS:', error);
     process.exit(1);

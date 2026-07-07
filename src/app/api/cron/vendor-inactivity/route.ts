@@ -3,7 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { businessPolicyService } from '@/features/business-policy';
-import { createRoleNotifications } from '@/features/notifications/services/notification.service';
+import { createNotification, createRoleNotifications } from '@/features/notifications/services/notification.service';
 import { emailService } from '@/features/notifications/services/email.service';
 
 export const runtime = 'nodejs';
@@ -71,6 +71,23 @@ function inactivityEmailHtml(row: InactiveVendorRow) {
   `;
 }
 
+function inactivityWarningEmailHtml(row: InactiveVendorRow, daysRemaining: number) {
+  const inactiveDays = Math.max(0, Math.floor(Number(row.inactive_days) || 0));
+  const vendorName = escapeHtml(row.vendor_name || row.email);
+  const lastActivity = formatDate(row.last_activity_at);
+
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+      <h2 style="margin:0 0 12px;color:#02006b">Account activity reminder</h2>
+      <p>Hello ${vendorName},</p>
+      <p>Your vendor account has been inactive for ${inactiveDays} days.</p>
+      <p>If there is still no activity in about ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}, your account may be sent to an administrator for review.</p>
+      <p>To keep your account active, sign in and continue with any pending verification, auction, payment, document, or pickup action.</p>
+      <p style="font-size:12px;color:#6b7280">Last recorded activity: ${lastActivity}</p>
+    </div>
+  `;
+}
+
 async function runVendorInactivityCheck() {
   const policy = await businessPolicyService.getEffectivePolicy();
   const inactivityPolicy = policy.fraud;
@@ -94,6 +111,95 @@ async function runVendorInactivityCheck() {
   const cooldownDate = new Date();
   cooldownDate.setDate(cooldownDate.getDate() - inactivityPolicy.vendorInactivityCooldownDays);
   const cooldownIso = cooldownDate.toISOString();
+  const warningLeadDays = Math.min(7, Math.max(1, inactivityPolicy.vendorInactivityDays - 1));
+  const warningStartDate = new Date();
+  warningStartDate.setDate(warningStartDate.getDate() - (inactivityPolicy.vendorInactivityDays - warningLeadDays));
+  const warningStartIso = warningStartDate.toISOString();
+
+  const warningVendors = (await db.execute(sql`
+    WITH vendor_activity AS (
+      SELECT
+        v.id AS vendor_id,
+        v.user_id,
+        COALESCE(NULLIF(v.business_name, ''), u.full_name, u.email) AS vendor_name,
+        u.email,
+        GREATEST(
+          COALESCE(u.last_login_at, TIMESTAMP 'epoch'),
+          COALESCE(u.created_at, TIMESTAMP 'epoch'),
+          COALESCE(v.created_at, TIMESTAMP 'epoch'),
+          COALESCE(v.updated_at, TIMESTAMP 'epoch'),
+          COALESCE(v.bvn_verified_at, TIMESTAMP 'epoch'),
+          COALESCE(v.registration_fee_paid_at, TIMESTAMP 'epoch'),
+          COALESCE(v.tier2_submitted_at, TIMESTAMP 'epoch'),
+          COALESCE(v.tier2_approved_at, TIMESTAMP 'epoch'),
+          COALESCE((SELECT MAX(b.created_at) FROM bids b WHERE b.vendor_id = v.id), TIMESTAMP 'epoch'),
+          COALESCE((SELECT MAX(p.created_at) FROM payments p WHERE p.vendor_id = v.id), TIMESTAMP 'epoch')
+        ) AS last_activity_at
+      FROM vendors v
+      INNER JOIN users u ON u.id = v.user_id
+      WHERE v.status = 'approved'
+      AND u.status NOT IN ('suspended', 'deleted')
+    )
+    SELECT
+      va.vendor_id,
+      va.user_id,
+      va.vendor_name,
+      va.email,
+      va.last_activity_at,
+      FLOOR(EXTRACT(EPOCH FROM (NOW() - va.last_activity_at)) / 86400)::int AS inactive_days
+    FROM vendor_activity va
+    WHERE va.last_activity_at < ${warningStartIso}::timestamp
+    AND va.last_activity_at >= ${thresholdIso}::timestamp
+    AND NOT EXISTS (
+      SELECT 1
+      FROM notifications n
+      WHERE n.type = 'system_alert'
+      AND n.created_at >= ${cooldownIso}::timestamp
+      AND n.data->>'vendorInactivityWarning' = 'true'
+      AND n.data->>'vendorId' = va.vendor_id::text
+    )
+    ORDER BY va.last_activity_at ASC
+    LIMIT 100
+  `)) as InactiveVendorRow[];
+
+  let warningNotificationsSent = 0;
+  let warningEmailsSent = 0;
+
+  for (const warningVendor of warningVendors) {
+    const inactiveDays = Math.max(0, Math.floor(Number(warningVendor.inactive_days) || 0));
+    const daysRemaining = Math.max(1, inactivityPolicy.vendorInactivityDays - inactiveDays);
+
+    const notification = await createNotification({
+      userId: warningVendor.user_id,
+      type: 'system_alert',
+      title: 'Account activity reminder',
+      message: `Your vendor account has been inactive for ${inactiveDays} days. Sign in to avoid admin inactivity review.`,
+      data: {
+        vendorInactivityWarning: true,
+        vendorId: warningVendor.vendor_id,
+        inactiveDays,
+        daysRemaining,
+        url: '/vendor/dashboard',
+      },
+    }).catch((error) => {
+      console.error('Vendor inactivity warning notification failed:', error);
+      return null;
+    });
+
+    if (notification) warningNotificationsSent += 1;
+
+    const emailResult = await emailService.sendEmail({
+      to: warningVendor.email,
+      subject: 'Action recommended: keep your vendor account active',
+      html: inactivityWarningEmailHtml(warningVendor, daysRemaining),
+      category: 'system',
+    }).catch((error) => {
+      console.error('Vendor inactivity warning email failed:', error);
+      return { success: false };
+    });
+
+    if (emailResult.success) warningEmailsSent += 1;
+  }
 
   const inactiveVendors = (await db.execute(sql`
     WITH vendor_activity AS (
@@ -145,6 +251,10 @@ async function runVendorInactivityCheck() {
       enabled: true,
       thresholdDays: inactivityPolicy.vendorInactivityDays,
       cooldownDays: inactivityPolicy.vendorInactivityCooldownDays,
+      warningLeadDays,
+      warningCandidates: warningVendors.length,
+      warningNotificationsSent,
+      warningEmailsSent,
       candidates: 0,
       notified: 0,
       notificationsSent: 0,
@@ -200,6 +310,10 @@ async function runVendorInactivityCheck() {
     enabled: true,
     thresholdDays: inactivityPolicy.vendorInactivityDays,
     cooldownDays: inactivityPolicy.vendorInactivityCooldownDays,
+    warningLeadDays,
+    warningCandidates: warningVendors.length,
+    warningNotificationsSent,
+    warningEmailsSent,
     candidates: inactiveVendors.length,
     notified: inactiveVendors.length,
     notificationsSent,

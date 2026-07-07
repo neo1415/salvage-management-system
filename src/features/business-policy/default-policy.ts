@@ -477,7 +477,7 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
     emailEnabled: true,
     smsEnabled: true,
     pushEnabled: true,
-    smsCategories: ['otp', 'auction_won', 'forfeiture', 'grace_period', 'pickup_code'],
+    smsCategories: ['otp', 'auction_started', 'auction_won', 'payment_reminder', 'document_reminder', 'forfeiture', 'grace_period', 'pickup_code'],
     roleFanoutShouldBeQueued: true,
   },
   documents: {

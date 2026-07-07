@@ -4,6 +4,7 @@ import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { eq } from 'drizzle-orm';
+import { emailService } from '@/features/notifications/services/email.service';
 
 /**
  * POST /api/admin/users/[id]/unsuspend
@@ -62,6 +63,24 @@ export async function POST(
         unsuspendedAt: new Date().toISOString(),
       },
     });
+
+    if (unsuspendedUser.email) {
+      await emailService.sendEmail({
+        to: unsuspendedUser.email,
+        subject: 'Your account has been reactivated',
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+            <h2 style="margin:0 0 12px;color:#02006b">Account reactivated</h2>
+            <p>Your account has been reactivated by a system administrator.</p>
+            <p>You can sign in again and continue with the available verification or bidding steps for your account.</p>
+          </div>
+        `,
+        category: 'system',
+      }).catch((emailError) => {
+        console.error('Failed to send reactivation email:', emailError);
+        return { success: false };
+      });
+    }
 
     return NextResponse.json({
       success: true,

@@ -2015,7 +2015,7 @@ function NewCasePageContent() {
         }
         
         toast.success('Case saved offline', 'It will be synced when connection is restored.');
-        router.push('/adjuster/dashboard');
+        router.push(session?.user?.id ? '/adjuster/dashboard' : '/offline-field?offline=1');
       } else {
         // Submit to API (AI assessment already completed during photo upload)
         const response = await fetch('/api/cases', {

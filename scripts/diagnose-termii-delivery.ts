@@ -1,11 +1,11 @@
 /**
- * Deep Termii delivery diagnosis: sender IDs, DND check, generic vs dnd send.
+ * Deep Termii delivery diagnosis: sender IDs, DND check, and dnd transactional send.
  * Usage: npx tsx scripts/diagnose-termii-delivery.ts [phone]
  */
 import 'dotenv/config';
 
 const API_KEY = process.env.TERMII_API_KEY || '';
-const SENDER_ID = process.env.TERMII_SENDER_ID || 'NEMSAL';
+const SENDER_ID = process.env.TERMII_SENDER_ID || process.env.TERMII_DEFAULT_SENDER_ID || 'NEM';
 const TEST_PHONE = process.argv[2]?.replace(/\D/g, '').replace(/^0/, '234') || '2348141252812';
 
 function normalize(phone: string): string {
@@ -79,16 +79,16 @@ async function main() {
     }
   }
 
-  // 4. Send test via generic (current app config)
-  console.log('\n4) Test send: channel=generic (current app default)');
-  const msgGeneric = `NEM test generic ${Date.now().toString().slice(-6)}. Reply OK if received.`;
+  // 4. Send test via dnd (current app config)
+  console.log('\n4) Test send: channel=dnd (current app default)');
+  const msgGeneric = `NEM test app ${Date.now().toString().slice(-6)}. Reply OK if received.`;
   const gen = await getJson('https://api.ng.termii.com/api/sms/send', 'POST', {
     api_key: API_KEY,
     to: phone,
     from: SENDER_ID,
     sms: msgGeneric,
     type: 'plain',
-    channel: 'generic',
+    channel: 'dnd',
   });
   console.log('   API:', gen.ok ? 'accepted' : 'rejected', JSON.stringify(gen.data));
 

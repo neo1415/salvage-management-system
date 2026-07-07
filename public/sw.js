@@ -1,6 +1,6 @@
 // Service Worker for Salvage Management System PWA
 // Implements offline-first caching strategies with Workbox
-// Version: 1.0.2 - Vendor dashboard: removed duplicate sticky Auctions/Wallet bar
+// Version: 1.0.3 - Cache offline field mode entry points
 
 // Import Workbox from CDN for runtime caching. Push notification handlers must
 // still load if the CDN is temporarily unreachable on a mobile device.
@@ -219,12 +219,13 @@ if (self.workbox) {
   // Offline fallback page
   const FALLBACK_HTML_URL = '/offline.html';
   const FALLBACK_IMAGE_URL = '/icons/icon-192.png';
+  const OFFLINE_ENTRY_URLS = ['/login', '/offline-field'];
 
   // Cache fallback resources on install
   self.addEventListener('install', (event) => {
     event.waitUntil(
       caches.open('offline-fallbacks').then((cache) => {
-        return cache.addAll([FALLBACK_HTML_URL, FALLBACK_IMAGE_URL]);
+        return cache.addAll([FALLBACK_HTML_URL, FALLBACK_IMAGE_URL, ...OFFLINE_ENTRY_URLS]);
       })
     );
   });
@@ -232,8 +233,13 @@ if (self.workbox) {
   // Serve fallback when offline
   self.addEventListener('fetch', (event) => {
     if (event.request.mode === 'navigate') {
+      const requestUrl = new URL(event.request.url);
       event.respondWith(
         fetch(event.request).catch(() => {
+          if (OFFLINE_ENTRY_URLS.includes(requestUrl.pathname)) {
+            return caches.match(requestUrl.pathname).then((cachedEntry) => cachedEntry || caches.match(FALLBACK_HTML_URL));
+          }
+
           return caches.match(FALLBACK_HTML_URL);
         })
       );

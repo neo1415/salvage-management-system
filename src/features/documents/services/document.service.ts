@@ -1195,7 +1195,7 @@ async function sendDocumentSigningProgressNotifications(
         to: user.phone,
         message: `All required documents signed! Payment is being processed. You will receive your pickup code shortly.`,
         userId: user.id,
-        category: 'routine',
+        category: 'document_reminder',
       });
 
       console.log(`✅ SMS sent: All documents signed for auction ${auctionId}`);

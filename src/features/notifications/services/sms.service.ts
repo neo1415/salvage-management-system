@@ -24,26 +24,32 @@ if (!process.env.TERMII_API_KEY) {
   console.warn('⚠️  TERMII_API_KEY is not set. SMS functionality will be disabled.');
 }
 
-if (!process.env.TERMII_SENDER_ID) {
+if (!process.env.TERMII_SENDER_ID && !process.env.TERMII_DEFAULT_SENDER_ID) {
   console.warn('⚠️  TERMII_SENDER_ID is not set. Using default sender ID.');
 }
 
 // Termii API configuration
 const TERMII_API_URL = 'https://api.ng.termii.com/api/sms/send';
 const TERMII_API_KEY = process.env.TERMII_API_KEY || '';
-const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || 'Salvage';
-const TERMII_CHANNEL = process.env.TERMII_CHANNEL || 'generic';
+const configuredTermiiSenderId = process.env.TERMII_DEFAULT_SENDER_ID || process.env.TERMII_SENDER_ID || 'NEM';
+const TERMII_SENDER_ID = ['NEMSAR', 'NEMSAL'].includes(configuredTermiiSenderId.toUpperCase())
+  ? 'NEM'
+  : configuredTermiiSenderId;
+const TERMII_CHANNEL = process.env.TERMII_CHANNEL || 'dnd';
 /** Termii requires dnd for OTP/transactional; generic is promotional-only. */
-const TERMII_TRANSACTIONAL_CHANNEL = process.env.TERMII_TRANSACTIONAL_CHANNEL || 'dnd';
+const TERMII_TRANSACTIONAL_CHANNEL = process.env.TERMII_TRANSACTIONAL_CHANNEL || TERMII_CHANNEL || 'dnd';
 const TRANSACTIONAL_SMS_CATEGORIES = new Set([
   'otp',
+  'auction_started',
   'auction_won',
+  'payment_reminder',
+  'document_reminder',
   'forfeiture',
   'grace_period',
   'pickup_code',
 ]);
 const SMS_TEST_MODE = process.env.SMS_TEST_MODE === 'true';
-const SMS_ENABLED_CATEGORIES = (process.env.SMS_ENABLED_CATEGORIES || 'otp,auction_won,forfeiture,grace_period,pickup_code')
+const SMS_ENABLED_CATEGORIES = (process.env.SMS_ENABLED_CATEGORIES || 'otp,auction_started,auction_won,payment_reminder,document_reminder,forfeiture,grace_period,pickup_code')
   .split(',')
   .map(category => category.trim())
   .filter(Boolean);
@@ -59,6 +65,15 @@ const VERIFIED_TEST_NUMBERS = [
   '2348141252812', // Your primary number
   '08141252812',
   '+2348141252812',
+  '2348141262812',
+  '08141262812',
+  '+2348141262812',
+  '2348139285450',
+  '08139285450',
+  '+2348139285450',
+  '2348103493005',
+  '08103493005',
+  '+2348103493005',
   '2347067275658', // Your secondary number
   '07067275658',
   '+2347067275658',
@@ -68,7 +83,17 @@ export interface SMSOptions {
   to: string;
   message: string;
   userId?: string;
-  category?: 'otp' | 'auction_won' | 'forfeiture' | 'grace_period' | 'pickup_code' | 'routine' | 'manual';
+  category?:
+    | 'otp'
+    | 'auction_started'
+    | 'auction_won'
+    | 'payment_reminder'
+    | 'document_reminder'
+    | 'forfeiture'
+    | 'grace_period'
+    | 'pickup_code'
+    | 'routine'
+    | 'manual';
 }
 
 export interface SMSResult {
@@ -498,7 +523,7 @@ export class SMSService {
     userId?: string
   ): Promise<SMSResult> {
     const message = `Auction ending soon! "${auctionTitle}" ends in ${timeRemaining}. Place your bid now at ${getAppUrl()}`;
-    return this.sendSMS({ to: phone, message, userId, category: 'routine' });
+    return this.sendSMS({ to: phone, message, userId, category: 'payment_reminder' });
   }
 
   /**

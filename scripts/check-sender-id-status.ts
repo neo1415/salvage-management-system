@@ -11,7 +11,7 @@ import * as path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const TERMII_API_KEY = process.env.TERMII_API_KEY || '';
-const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || 'NEMSAL';
+const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || process.env.TERMII_DEFAULT_SENDER_ID || 'NEM';
 
 async function checkSenderIDStatus() {
   console.log('🔍 Checking Termii Sender ID Status...\n');

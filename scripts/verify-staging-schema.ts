@@ -1,17 +1,18 @@
 /**
  * Quick staging schema checks for settings/MFA.
- * Usage: DATABASE_URL=... npx tsx scripts/verify-staging-schema.ts
+ * Usage: STAGING_DATABASE_URL=... npx tsx scripts/verify-staging-schema.ts
  */
 import { config } from 'dotenv';
 import postgres from 'postgres';
 
-config({ path: '.env.local' });
-config({ path: '.env' });
+config({ path: '.env.staging', override: false });
+config({ path: '.env.local', override: false });
+config({ path: '.env', override: false });
 
 async function main() {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.STAGING_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!url) {
-    console.error('DATABASE_URL required');
+    console.error('STAGING_DATABASE_URL or DATABASE_URL required');
     process.exit(1);
   }
 

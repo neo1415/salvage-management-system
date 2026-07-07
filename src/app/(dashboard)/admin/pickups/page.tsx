@@ -258,7 +258,18 @@ export default function AdminPickupsPage() {
     return pickup.assetType;
   };
 
-  const evidenceTone = (status?: string | null) => {
+  const evidenceTone = (evidence?: PickupConfirmation['pickupEvidence'] | string | null) => {
+    const status = typeof evidence === 'string' ? evidence : evidence?.status;
+    const matchScore = typeof evidence === 'string'
+      ? null
+      : evidence?.overallMatchScore ?? evidence?.confidenceScore ?? null;
+
+    if (typeof matchScore === 'number') {
+      if (matchScore < 50) return 'bg-red-50 border-red-200 text-red-800';
+      if (matchScore < 80) return 'bg-amber-50 border-amber-200 text-amber-800';
+      return 'bg-emerald-50 border-emerald-200 text-emerald-800';
+    }
+
     if (status === 'material_discrepancy') return 'bg-red-50 border-red-200 text-red-800';
     if (status === 'review_needed' || status === 'not_reviewed') return 'bg-amber-50 border-amber-200 text-amber-800';
     if (status === 'matches_expected') return 'bg-emerald-50 border-emerald-200 text-emerald-800';
@@ -275,10 +286,10 @@ export default function AdminPickupsPage() {
 
   const scoreTone = (score?: number | null) => {
     if (score == null) return 'text-gray-500';
-    if (score >= 85) return 'text-emerald-700';
-    if (score >= 70) return 'text-amber-700';
-    return 'text-red-700';
-  };
+      if (score >= 80) return 'text-emerald-700';
+      if (score >= 50) return 'text-amber-700';
+      return 'text-red-700';
+    };
 
   // Filter pickups by search query
   const filteredPickups = pickups.filter((pickup) => {
@@ -521,7 +532,7 @@ export default function AdminPickupsPage() {
                         </div>
                       )}
 
-                      <div className={`p-2 rounded-lg border ${evidenceTone(pickup.pickupEvidence?.status)}`}>
+                      <div className={`p-2 rounded-lg border ${evidenceTone(pickup.pickupEvidence)}`}>
                         <p className="text-xs font-medium">
                           Evidence: {pickup.pickupEvidence ? evidenceLabel(pickup.pickupEvidence.status) : 'Not submitted'}
                         </p>
@@ -538,7 +549,7 @@ export default function AdminPickupsPage() {
                 </div>
 
                 {pickup.pickupEvidence && (
-                  <div className={`rounded-lg border p-4 text-sm ${evidenceTone(pickup.pickupEvidence.status)}`}>
+                  <div className={`rounded-lg border p-4 text-sm ${evidenceTone(pickup.pickupEvidence)}`}>
                     <p className="font-semibold text-gray-900">Evidence review</p>
                     <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                       <p>Identity: <span className={scoreTone(pickup.pickupEvidence.assetIdentityScore)}>{pickup.pickupEvidence.assetIdentityScore ?? 'N/A'}%</span></p>
@@ -638,7 +649,7 @@ export default function AdminPickupsPage() {
                   </div>
 
                   {selectedPickup.pickupEvidence && (
-                    <div className={`mb-6 rounded-lg border p-4 ${evidenceTone(selectedPickup.pickupEvidence.status)}`}>
+                    <div className={`mb-6 rounded-lg border p-4 ${evidenceTone(selectedPickup.pickupEvidence)}`}>
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-sm font-semibold">
                           Pickup Evidence: {evidenceLabel(selectedPickup.pickupEvidence.status)}

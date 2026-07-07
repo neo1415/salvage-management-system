@@ -59,7 +59,7 @@ async function sendDirectSMS() {
         from: TERMII_SENDER_ID,
         sms: message,
         type: 'plain',
-        channel: 'generic', // Back to generic since sender ID is ACTIVE
+        channel: 'dnd',
         api_key: TERMII_API_KEY,
       },
       {

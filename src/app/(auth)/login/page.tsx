@@ -410,7 +410,7 @@ function LoginForm() {
             {isOffline && canUseOfflineFieldMode && (
               <button
                 type="button"
-                onClick={() => window.location.assign('/adjuster/cases/new?offline=1')}
+                onClick={() => window.location.assign('/offline-field?offline=1')}
                 className="w-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950 transition-colors hover:bg-amber-100"
               >
                 Open offline field mode
