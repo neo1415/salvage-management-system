@@ -144,17 +144,6 @@ function getDojahConnectConstructor() {
   return (window as unknown as { Connect?: new (options: DojahWidgetOptions) => DojahConnect }).Connect ?? null;
 }
 
-async function fetchClientPublicIp(): Promise<string | null> {
-  try {
-    const res = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => null) as { ip?: unknown } | null;
-    return typeof data?.ip === 'string' && data.ip.trim() ? data.ip.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function Tier2ManualKYCPage() {
   const router = useAppRouter();
   const { status: authStatus } = useSession();
@@ -168,6 +157,7 @@ export default function Tier2ManualKYCPage() {
   const [livenessConfig, setLivenessConfig] = useState<LivenessWidgetConfig | null>(null);
   const [livenessReady, setLivenessReady] = useState(false);
   const [livenessAvailable, setLivenessAvailable] = useState(false);
+  const [livenessConfigMessage, setLivenessConfigMessage] = useState<string | null>(null);
   const [connect, setConnect] = useState<DojahConnect | null>(null);
   const manualReferenceRef = useRef<string | null>(null);
   const pendingLivenessReferenceRef = useRef<string | null>(null);
@@ -278,15 +268,24 @@ export default function Tier2ManualKYCPage() {
           .then(async (res) => {
             if (!res.ok) {
               setLivenessAvailable(false);
+              const data = await res.json().catch(() => null) as { message?: unknown; error?: unknown } | null;
+              const message = typeof data?.message === 'string'
+                ? data.message
+                : typeof data?.error === 'string'
+                  ? data.error
+                  : 'Face check is not available right now. Please contact support if this continues.';
+              setLivenessConfigMessage(message);
               return null;
             }
             const config = (await res.json()) as LivenessWidgetConfig;
             setLivenessConfig(config);
             setLivenessAvailable(Boolean(config.widgetId && config.verificationReference));
+            setLivenessConfigMessage(null);
             return config;
           })
           .catch(() => {
             setLivenessAvailable(false);
+            setLivenessConfigMessage('Face check could not load. Check your connection and try again.');
           });
       } catch {
         setPageState('idle');
@@ -339,7 +338,7 @@ export default function Tier2ManualKYCPage() {
 
   const openLivenessWidget = useCallback(() => {
     if (!connect || !livenessReady) {
-      setErrorMessage('Face check is still loading. Please wait a moment and try again.');
+      setErrorMessage(livenessConfigMessage ?? 'Face check is still loading. Please wait a moment and try again.');
       return;
     }
     setPageState('liveness');
@@ -567,9 +566,6 @@ export default function Tier2ManualKYCPage() {
         const file = formData[key];
         if (file) submitData.append(key, file);
       }
-
-      const publicIp = await fetchClientPublicIp();
-      if (publicIp) submitData.append('clientIpAddress', publicIp);
 
       const res = await fetch('/api/kyc/manual/submit', { method: 'POST', body: submitData });
       const data = await res.json();
