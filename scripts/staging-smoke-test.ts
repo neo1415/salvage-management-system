@@ -54,6 +54,17 @@ async function main() {
       detail: `${mfa.length}/3`,
     });
 
+    const riskMfaTables = await db`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name IN ('user_trusted_login_contexts','login_risk_events')
+    `;
+    results.push({
+      name: 'Risk-based MFA tables',
+      ok: riskMfaTables.length === 2,
+      detail: `${riskMfaTables.length}/2`,
+    });
+
     const [admin] = await db`
       SELECT id, email, role, password_hash FROM users
       WHERE email = 'adedaniel502@gmail.com' LIMIT 1

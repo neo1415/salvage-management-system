@@ -30,6 +30,7 @@ const POST_PUSH_MIGRATIONS = [
   '0037_add_business_policy_versions.sql',
   '0025_add_intelligence_materialized_views.sql',
   '0035_add_user_mfa_settings.sql',
+  '0052_add_risk_based_login_contexts.sql',
 ];
 
 /** Mask password in logs */
@@ -39,11 +40,19 @@ function redactUrl(url: string): string {
 
 /** Known production project ref — block accidental bootstrap against prod. */
 const PROD_PROJECT_REF = 'htdehmkqfrwjewzjingm';
+const STAGING_PROJECT_REF = 'esdsufyxydzrertmgyie';
 
 function resolveStagingDatabaseUrl(): string {
   const urlArgIndex = process.argv.indexOf('--url');
   const fromFlag = urlArgIndex >= 0 ? process.argv[urlArgIndex + 1] : null;
-  const url = fromFlag ?? process.env.STAGING_DATABASE_URL;
+  const allowStagingEnvDatabaseUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.includes('staging.') ||
+    process.env.NEXTAUTH_URL?.includes('staging.') ||
+    process.env.DATABASE_URL?.includes(STAGING_PROJECT_REF);
+  const url =
+    fromFlag ??
+    process.env.STAGING_DATABASE_URL ??
+    (allowStagingEnvDatabaseUrl ? process.env.DATABASE_URL : undefined);
 
   if (!url) {
     console.error(

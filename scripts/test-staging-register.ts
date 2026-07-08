@@ -1,9 +1,8 @@
 import { config } from 'dotenv';
 config({ path: '.env.staging', override: true });
 
-import { authService } from '../src/features/auth/services/auth.service';
-
 async function main() {
+  const { authService } = await import('../src/features/auth/services/auth.service');
   const ts = Date.now();
   const result = await authService.register(
     {

@@ -37,11 +37,29 @@ async function main() {
     `;
     console.log('notification_preferences table:', prefs[0]?.ok ? 'yes' : 'no');
 
+    const riskTables = await db`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name IN ('user_trusted_login_contexts', 'login_risk_events')
+      ORDER BY table_name
+    `;
+    console.log(
+      'risk-based MFA tables:',
+      riskTables.map((r) => r.table_name).join(', ') || '(none)'
+    );
+
     const sample = await db`SELECT count(*)::int AS n FROM users`;
     console.log('users row count:', sample[0]?.n);
 
     if (mfaCols.length < 3) {
       console.error('MFA columns missing - run: npm run db:apply-mfa-columns');
+      process.exit(1);
+    }
+    if (riskTables.length < 2) {
+      console.error(
+        'Risk-based MFA tables missing - run migration 0052_add_risk_based_login_contexts.sql'
+      );
       process.exit(1);
     }
     console.log('Staging schema checks passed for settings');
