@@ -32,7 +32,7 @@ import { usePublicBranding } from '@/hooks/use-public-branding';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { kycVerificationPageTitle } from '@/lib/vendor/onboarding-policy-ui';
 
-type PageState = 'idle' | 'loading' | 'submitting' | 'liveness' | 'pending_review' | 'approved' | 'rejected';
+type PageState = 'idle' | 'loading' | 'submitting' | 'liveness' | 'liveness_pending' | 'pending_review' | 'approved' | 'rejected';
 type CheckState = 'idle' | 'checking' | 'verified' | 'review' | 'unavailable' | 'failed';
 type BusinessType =
   | 'individual'
@@ -270,6 +270,7 @@ export default function Tier2ManualKYCPage() {
           router.replace('/vendor/dashboard');
           return;
         }
+        else if (statusData?.status === 'liveness_pending') setPageState('liveness_pending');
         else if (isPendingTier2Review(statusData)) setPageState('pending_review');
         else setPageState('idle');
 
@@ -325,14 +326,28 @@ export default function Tier2ManualKYCPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setErrorMessage(data.error ?? 'Liveness could not be linked. Your documents are still under review.');
+        setErrorMessage(data.error ?? 'Face check could not be linked yet. Your documents are saved, and you can retry the face check.');
+        setPageState('liveness_pending');
+        return;
       }
       setPageState('pending_review');
     } catch {
-      setErrorMessage('Liveness could not be linked because the network dropped. Your documents are still under review.');
-      setPageState('pending_review');
+      setErrorMessage('Network dropped while linking the face check. Your documents are saved, and you can retry the face check.');
+      setPageState('liveness_pending');
     }
   }, []);
+
+  const openLivenessWidget = useCallback(() => {
+    if (!connect || !livenessReady) {
+      setErrorMessage('Face check is still loading. Please wait a moment and try again.');
+      return;
+    }
+    setPageState('liveness');
+    applyDojahIframePermissions();
+    connect.open();
+    window.setTimeout(applyDojahIframePermissions, 250);
+    window.setTimeout(applyDojahIframePermissions, 1000);
+  }, [applyDojahIframePermissions, connect, livenessReady]);
 
   const initLivenessWidget = useCallback(() => {
     const Connect = getDojahConnectConstructor();
@@ -342,7 +357,7 @@ export default function Tier2ManualKYCPage() {
       const referenceId = resolveDojahWidgetReference(response) ?? livenessConfig.verificationReference;
       if (!referenceId) {
         setErrorMessage(VERIFICATION_COPY.livenessReferenceMissing);
-        setPageState('pending_review');
+        setPageState('liveness_pending');
         return;
       }
       await completeLiveness(referenceId);
@@ -381,8 +396,8 @@ export default function Tier2ManualKYCPage() {
       },
       onError: (err) => {
         console.error('[Manual KYC Liveness] Widget error', err);
-        setErrorMessage('Liveness could not be completed. Your submitted evidence is still under review.');
-        setPageState('pending_review');
+        setErrorMessage('Face check could not be completed. Your documents are saved, and you can retry the face check.');
+        setPageState('liveness_pending');
       },
       onClose: () => {
         const pendingReference = pendingLivenessReferenceRef.current;
@@ -390,7 +405,7 @@ export default function Tier2ManualKYCPage() {
         if (pendingReference) {
           void completeLiveness(pendingReference);
         } else if (pageState === 'liveness') {
-          setPageState('pending_review');
+          setPageState('liveness_pending');
         }
       },
     });
@@ -566,16 +581,13 @@ export default function Tier2ManualKYCPage() {
       }
 
       manualReferenceRef.current = typeof data.providerReference === 'string' ? data.providerReference : null;
-      if (livenessAvailable && connect && livenessReady) {
-        setPageState('liveness');
-        applyDojahIframePermissions();
-        connect.open();
-        window.setTimeout(applyDojahIframePermissions, 250);
-        window.setTimeout(applyDojahIframePermissions, 1000);
+      if (data.livenessRequired !== false && livenessAvailable && connect && livenessReady) {
+        openLivenessWidget();
         return;
       }
 
-      setPageState('pending_review');
+      setErrorMessage('Your documents were saved, but the face check is not available right now. Please try again in a moment.');
+      setPageState('liveness_pending');
     } catch {
       setErrorMessage('Network error. Please check your connection and try again.');
       setPageState('idle');
@@ -625,6 +637,18 @@ export default function Tier2ManualKYCPage() {
               iconClass="bg-yellow-100"
               title="Under Review"
               text="Your application is being reviewed. You will receive an SMS and email notification once a decision is made."
+              onClick={() => router.push('/vendor/dashboard')}
+            />
+          )}
+
+          {pageState === 'liveness_pending' && (
+            <StatusPanel
+              icon={<User className="w-12 h-12 text-blue-600" />}
+              iconClass="bg-blue-100"
+              title="Face Check Pending"
+              text="Your documents are saved. Complete the face check so the review team can finish the application."
+              primaryAction="Continue Face Check"
+              onPrimaryClick={openLivenessWidget}
               onClick={() => router.push('/vendor/dashboard')}
             />
           )}
@@ -855,18 +879,30 @@ function StatusPanel({
   title,
   text,
   onClick,
+  primaryAction,
+  onPrimaryClick,
 }: {
   icon: ReactNode;
   iconClass: string;
   title: string;
   text: string;
   onClick: () => void;
+  primaryAction?: string;
+  onPrimaryClick?: () => void;
 }) {
   return (
     <div className="p-8 text-center">
       <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 ${iconClass}`}>{icon}</div>
       <h2 className="text-2xl font-bold text-gray-900 mb-2">{title}</h2>
       <p className="text-gray-600 mb-6">{text}</p>
+      {primaryAction && onPrimaryClick ? (
+        <button
+          onClick={onPrimaryClick}
+          className="mb-3 w-full bg-[var(--brand-primary)] text-white font-bold py-3 rounded-lg hover:bg-[var(--brand-primary-hover)] transition-colors"
+        >
+          {primaryAction}
+        </button>
+      ) : null}
       <button
         onClick={onClick}
         className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] font-bold py-3 rounded-lg hover:bg-[var(--brand-accent-hover)] transition-colors"

@@ -1,12 +1,10 @@
-import { after, NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { getEncryptionService } from '@/features/kyc/services/encryption.service';
-import { getKYCNotificationService } from '@/features/kyc/services/notification.service';
-import { createRoleNotifications } from '@/features/notifications/services/notification.service';
 import { getDocumentUploadService } from '@/features/kyc/services/document-upload.service';
 import { getDojahService } from '@/features/kyc/services/dojah.service';
 import { getProviderVerificationService } from '@/features/kyc/services/provider-verification.service';
@@ -353,40 +351,9 @@ export async function POST(request: NextRequest) {
       console.error('[Manual KYC Submit] Provider evidence persistence failed:', error);
     });
 
-    after(async () => {
-      const notify = getKYCNotificationService();
-      await Promise.allSettled([
-        notify.sendKYCUnderReviewNotification({
-          vendorId: vendor.id,
-          userId,
-          phone: session.user.phone ?? '',
-          email: session.user.email ?? '',
-          fullName: session.user.name ?? '',
-        }),
-        createRoleNotifications(['salvage_manager', 'system_admin'], {
-          type: 'tier2_pending_review',
-          title: 'Tier 2 KYC Pending Review',
-          message: `${session.user.name || 'A vendor'} submitted Tier 2 verification for approval.`,
-          data: {
-            vendorId: vendor.id,
-            url: '/manager/kyc-approvals',
-          },
-        }),
-      ]).then((results) => {
-        results.forEach((result, index) => {
-          if (result.status === 'rejected') {
-            console.error('[Manual KYC Submit] Deferred notification failed', {
-              index,
-              error: result.reason,
-            });
-          }
-        });
-      });
-    });
-
     return NextResponse.json({
       success: true,
-      message: 'KYC application submitted successfully',
+      message: 'Documents saved. Complete the face check to send the application for review.',
       documentsUploaded: Object.keys(results),
       providerReference,
       livenessRequired: true,

@@ -7,12 +7,12 @@ import {
 describe('KYC provider sanitization', () => {
   it('maps internal provider codes to generic labels', () => {
     expect(sanitizeVerificationProviderLabel('dojah')).toBe('Identity verification');
-    expect(sanitizeVerificationProviderLabel('nem_hybrid')).toBe('Platform verification');
-    expect(sanitizeVerificationProviderLabel('')).toBe('Verification service');
+    expect(sanitizeVerificationProviderLabel('nem_hybrid')).toBe('Document review');
+    expect(sanitizeVerificationProviderLabel('')).toBe('Identity verification');
   });
 
   it('sanitizes workflow references', () => {
-    expect(sanitizeWorkflowReference('nem-hybrid-tier2')).toBe('Tier 2 manual review workflow');
+    expect(sanitizeWorkflowReference('nem-hybrid-tier2')).toBe('Full verification review');
     expect(sanitizeWorkflowReference('custom-workflow')).toBe('custom-workflow');
   });
 });

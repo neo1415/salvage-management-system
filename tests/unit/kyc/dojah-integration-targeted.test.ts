@@ -90,6 +90,96 @@ describe('provider evidence display helpers', () => {
     expect(sections.liveness['Liveness score']).toBe('88%');
     expect(sections.providerSummary.Source).toBe('Identity verification');
   });
+
+  it('keeps manual hybrid review evidence manager-safe while preserving admin audit references', async () => {
+    const { buildDojahEvidenceSections } = await import(
+      '@/features/kyc/utils/provider-evidence-display'
+    );
+
+    const normalized = {
+      verificationMode: 'nem_hybrid_manual_review',
+      verificationStatus: 'submitted_for_review',
+      nemSubmittedProfile: {
+        fullName: 'Vendor Person',
+        businessName: 'Vendor Motors Ltd',
+        businessType: 'private_limited_company',
+        businessRegistrationNumber: '****4567',
+      },
+      maskedIdentityValue: '*******8901',
+      documentMetadata: {
+        governmentIdType: 'nin_slip',
+        businessDocumentType: 'cac_certificate',
+        photoId: true,
+        addressProof: true,
+        businessDocument: true,
+      },
+      addressData: {
+        address: '1 Test Street',
+        city: 'Lagos',
+        state: 'Lagos',
+      },
+      livenessStatus: 'completed',
+      livenessScore: 91,
+      biometricMatchScore: 88,
+      selfieUrl: 'https://storage.example/selfie.png',
+      dojahEvidenceSummary: {
+        cac: {
+          status: 'completed',
+          providerBusinessName: 'Vendor Motors Limited',
+          providerBusinessNumber: 'RC1234567',
+          businessNameMatched: true,
+        },
+        nin: {
+          status: 'completed',
+          providerName: 'Vendor Person',
+          lastFour: '8901',
+          nameMatched: true,
+        },
+        aml: {
+          status: 'completed',
+          screenedName: 'Vendor Person',
+          hasPepHits: false,
+          hasSanctionHits: false,
+          hasAdverseMediaHits: false,
+        },
+      },
+    };
+
+    const managerSections = buildDojahEvidenceSections(normalized, {
+      provider: 'dojah',
+      providerReference: 'nem-private-reference',
+      workflowReference: 'nem-hybrid-tier2',
+      status: 'review_required',
+      riskLevel: 'low',
+      checksCompleted: ['aml_screening', 'dojah_liveness'],
+      pendingChecks: [],
+      failedChecks: [],
+      reasonCodes: [],
+    }, { viewerRole: 'salvage_manager' });
+
+    expect(managerSections.providerSummary.Source).toBe('Platform verification');
+    expect(managerSections.providerSummary['Reference ID']).toBeUndefined();
+    expect(managerSections.providerSummary['Workflow reference']).toBeUndefined();
+    expect(managerSections.business['Business registry check']).toBe('Matched');
+    expect(managerSections.governmentData['Identity check']).toBe('completed');
+    expect(JSON.stringify(managerSections)).not.toContain('dojah');
+    expect(JSON.stringify(managerSections)).not.toContain('nem-private-reference');
+
+    const adminSections = buildDojahEvidenceSections(normalized, {
+      provider: 'dojah',
+      providerReference: 'nem-private-reference',
+      workflowReference: 'nem-hybrid-tier2',
+      status: 'review_required',
+      riskLevel: 'low',
+      checksCompleted: ['aml_screening', 'dojah_liveness'],
+      pendingChecks: [],
+      failedChecks: [],
+      reasonCodes: [],
+    }, { viewerRole: 'system_admin' });
+
+    expect(adminSections.providerSummary['Reference ID']).toBe('nem-private-reference');
+    expect(adminSections.providerSummary['Workflow reference']).toBe('Full verification review');
+  });
 });
 
 describe('Tier 2 review mode rules', () => {
@@ -806,7 +896,7 @@ describe('manual hybrid evidence display', () => {
       }
     );
 
-    expect(sections.business['Registry lookup']).toBe('Matched');
+    expect(sections.business['Business registry check']).toBe('Matched');
     expect(sections.business['Registration date']).toBe('1 April 1970');
     expect(sections.aml['AML screening']).toBe('No matches found');
     expect(sections.aml['PEP hits']).toBe('No');
@@ -860,7 +950,7 @@ describe('manual hybrid evidence display', () => {
       }
     );
 
-    expect(sections.business['Registry lookup']).toBe('Matched');
+    expect(sections.business['Business registry check']).toBe('Matched');
     expect(sections.business['Registration date']).toBe('1 April 1970');
     expect(sections.aml['AML screening']).toBe('No matches found');
     expect(sections.ipDevice['Capture status']).toBe('Captured locally');

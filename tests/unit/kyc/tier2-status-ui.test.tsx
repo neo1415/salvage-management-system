@@ -53,6 +53,15 @@ describe('Tier 2 pending review UI guard', () => {
     expect(isPendingTier2Review(overridden)).toBe(false);
   });
 
+  it('does not treat a saved-but-unlinked liveness check as manager review', () => {
+    expect(
+      isPendingTier2Review({
+        status: 'liveness_pending',
+        submittedAt: undefined,
+      })
+    ).toBe(false);
+  });
+
   it('does not hide an active pending review in KYC testing mode', () => {
     const overridden = applyKycTestingStatusOverride({
       status: 'pending_review',

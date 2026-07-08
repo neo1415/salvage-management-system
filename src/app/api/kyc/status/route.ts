@@ -95,6 +95,7 @@ export async function GET(request: NextRequest) {
       .limit(1);
 
     const isManualHybridEvidence = isManualHybridTier2Evidence(latestEvidence);
+    const manualHybridReadyForReview = manualHybridEvidenceReadyForReview(latestEvidence);
 
     let effectiveTier2SubmittedAt = vendorAfterCleanup?.tier2SubmittedAt ?? null;
     let effectiveTier2ApprovedAt = vendorAfterCleanup?.tier2ApprovedAt ?? null;
@@ -166,6 +167,7 @@ export async function GET(request: NextRequest) {
     // status was reliably backfilled. Existing applicants should not have to resubmit.
     if (
       isManualHybridEvidence &&
+      manualHybridReadyForReview &&
       !effectiveTier2SubmittedAt &&
       !effectiveTier2ApprovedAt &&
       !effectiveTier2RejectionReason
@@ -274,14 +276,20 @@ export async function GET(request: NextRequest) {
     const payload = isKycTestingMode()
       ? applyKycTestingStatusOverride(kycStatus)
       : kycStatus;
+    const hasManualHybridSavedEvidence =
+      isManualHybridEvidence &&
+      !manualHybridReadyForReview &&
+      !effectiveTier2ApprovedAt &&
+      !effectiveTier2RejectionReason;
     const hasRealPendingSubmission =
       Boolean(
         effectiveTier2SubmittedAt &&
           vendorAfterCleanup &&
-          vendorHasRealTier2SubmissionFootprint(vendorAfterCleanup)
+          vendorHasRealTier2SubmissionFootprint(vendorAfterCleanup) &&
+          (!isManualHybridEvidence || manualHybridReadyForReview)
       ) ||
-      isManualHybridEvidence ||
-      providerEvidenceCountsAsTier2Submission(latestEvidence, vendorAfterCleanup);
+      manualHybridReadyForReview ||
+      (!isManualHybridEvidence && providerEvidenceCountsAsTier2Submission(latestEvidence, vendorAfterCleanup));
 
     const responseSubmittedAt =
       hasRealPendingSubmission && payload.status !== 'not_started'
@@ -290,20 +298,23 @@ export async function GET(request: NextRequest) {
     const normalizedPayloadStatus =
       payload.status === 'pending_review' && !hasRealPendingSubmission ? 'not_started' : payload.status;
     const authoritativeStatus =
-      !isKycTestingMode() &&
-      hasRealPendingSubmission &&
-      !effectiveTier2ApprovedAt &&
-      !effectiveTier2RejectionReason &&
-      normalizedPayloadStatus !== 'approved' &&
-      normalizedPayloadStatus !== 'rejected'
-        ? 'pending_review'
-        : normalizedPayloadStatus;
+      hasManualHybridSavedEvidence
+        ? 'liveness_pending'
+        : !isKycTestingMode() &&
+            hasRealPendingSubmission &&
+            !effectiveTier2ApprovedAt &&
+            !effectiveTier2RejectionReason &&
+            normalizedPayloadStatus !== 'approved' &&
+            normalizedPayloadStatus !== 'rejected'
+          ? 'pending_review'
+          : normalizedPayloadStatus;
 
     console.info('[KYC Status] resolved', {
       vendorId: vendorRow.id,
       repositoryStatus: kycStatus.status,
       responseStatus: authoritativeStatus,
       hasSubmittedAt: Boolean(effectiveTier2SubmittedAt),
+      livenessPending: hasManualHybridSavedEvidence,
       hasApprovedAt: Boolean(effectiveTier2ApprovedAt),
       hasRejectionReason: Boolean(effectiveTier2RejectionReason),
       latestProviderStatus: latestEvidence?.status ?? null,
@@ -358,6 +369,25 @@ function firstString(...values: unknown[]): string | undefined {
     if (text) return text;
   }
   return undefined;
+}
+
+function manualHybridEvidenceReadyForReview(evidence: {
+  checksCompleted?: string[] | null;
+  normalizedResult?: unknown;
+} | null | undefined): boolean {
+  if (!evidence) return false;
+  if (evidence.checksCompleted?.includes('dojah_liveness')) return true;
+
+  const normalized = recordFrom(evidence.normalizedResult);
+  const dojahEvidenceSummary = recordFrom(normalized?.dojahEvidenceSummary);
+  const liveness = recordFrom(dojahEvidenceSummary?.liveness);
+  const livenessStatus = firstString(
+    normalized?.livenessStatus,
+    liveness?.livenessStatus,
+    liveness?.status
+  )?.toLowerCase();
+
+  return livenessStatus === 'completed' || livenessStatus === 'passed';
 }
 
 function resolveLatestProviderDecision(evidence: {

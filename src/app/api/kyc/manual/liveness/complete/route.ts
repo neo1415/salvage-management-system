@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { and, desc, eq } from 'drizzle-orm';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
@@ -10,6 +10,8 @@ import { getProviderVerificationService } from '@/features/kyc/services/provider
 import { normalizeDojahWorkflowResult } from '@/features/kyc/services/dojah-normalizer.service';
 import { ingestDojahMediaForVendor } from '@/features/kyc/services/dojah-media-ingest.service';
 import type { NormalizedVerificationResult } from '@/features/kyc/types/provider-verification.types';
+import { getKYCNotificationService } from '@/features/kyc/services/notification.service';
+import { createRoleNotifications } from '@/features/notifications/services/notification.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +34,9 @@ export async function POST(request: NextRequest) {
       id: vendors.id,
       userId: vendors.userId,
       fullName: users.fullName,
+      email: users.email,
+      phone: users.phone,
+      businessName: vendors.businessName,
     })
     .from(vendors)
     .innerJoin(users, eq(vendors.userId, users.id))
@@ -97,6 +102,7 @@ export async function POST(request: NextRequest) {
 
   const previous = (manualEvidence.normalizedResult as Record<string, unknown> | null) ?? {};
   const previousSummary = (previous.dojahEvidenceSummary as Record<string, unknown> | null) ?? {};
+  const livenessIpDevice = extractIpDeviceEvidence(verificationResult);
   const previousCompleted = new Set(manualEvidence.checksCompleted ?? []);
   const previousPending = new Set(manualEvidence.pendingChecks ?? []);
   previousCompleted.add('dojah_liveness');
@@ -129,6 +135,12 @@ export async function POST(request: NextRequest) {
       },
       dojahEvidenceSummary: {
         ...previousSummary,
+        ipDevice: livenessIpDevice
+          ? {
+              ...(asRecord(previousSummary.ipDevice) ?? {}),
+              ...livenessIpDevice,
+            }
+          : previousSummary.ipDevice,
         liveness: {
           status: normalizedLiveness.status,
           livenessScore: liveness.livenessScore,
@@ -175,6 +187,37 @@ export async function POST(request: NextRequest) {
     userAgent: request.headers.get('user-agent') ?? undefined,
   });
 
+  after(async () => {
+    const notify = getKYCNotificationService();
+    await Promise.allSettled([
+      notify.sendKYCUnderReviewNotification({
+        vendorId: vendor.id,
+        userId: vendor.userId,
+        phone: vendor.phone ?? '',
+        email: vendor.email ?? '',
+        fullName: vendor.fullName ?? vendor.businessName ?? 'Vendor',
+      }),
+      createRoleNotifications(['salvage_manager', 'system_admin'], {
+        type: 'tier2_pending_review',
+        title: 'Vendor verification ready for review',
+        message: `${vendor.businessName || vendor.fullName || 'A vendor'} completed verification evidence for manager review.`,
+        data: {
+          vendorId: vendor.id,
+          url: '/manager/kyc-approvals',
+        },
+      }),
+    ]).then((results) => {
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error('[Manual KYC Liveness] Deferred notification failed', {
+            index,
+            error: result.reason,
+          });
+        }
+      });
+    });
+  });
+
   return NextResponse.json({
     success: true,
     status: 'pending_review',
@@ -198,6 +241,89 @@ function numericScore(value: unknown): number | null {
   return null;
 }
 
+function walkRecords(value: unknown): Record<string, unknown>[] {
+  const records: Record<string, unknown>[] = [];
+  const seen = new Set<unknown>();
+
+  function walk(node: unknown) {
+    if (!node || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+
+    const record = node as Record<string, unknown>;
+    records.push(record);
+    Object.values(record).forEach(walk);
+  }
+
+  walk(value);
+  return records;
+}
+
+function firstScoreFrom(records: Record<string, unknown>[], keys: string[]): number | null {
+  for (const record of records) {
+    for (const key of keys) {
+      const score = numericScore(record[key]);
+      if (score !== null) return score;
+    }
+  }
+  return null;
+}
+
+function firstStringFrom(records: Record<string, unknown>[], keys: string[]): string | null {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+  }
+  return null;
+}
+
+function firstSignalFrom(records: Record<string, unknown>[], keys: string[]): string | number | boolean | null {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'boolean') return value;
+    }
+  }
+  return null;
+}
+
+function extractIpDeviceEvidence(raw: unknown): Record<string, unknown> | null {
+  const records = walkRecords(raw);
+  const evidence: Record<string, unknown> = {};
+  const map: Array<[string, string[]]> = [
+    ['screenedIpAddress', ['ip', 'ip_address', 'ipAddress']],
+    ['country', ['country', 'country_name', 'countryName']],
+    ['region', ['region', 'region_name', 'regionName']],
+    ['city', ['city', 'city_name', 'cityName']],
+    ['latitude', ['latitude', 'lat']],
+    ['longitude', ['longitude', 'lon', 'lng']],
+    ['isp', ['isp']],
+    ['browser', ['browser']],
+    ['browserVersion', ['browser_version', 'browserVersion']],
+    ['os', ['os', 'operating_system', 'operatingSystem']],
+    ['model', ['model', 'device_model', 'deviceModel']],
+    ['platform', ['platform']],
+    ['vpn', ['vpn', 'is_vpn', 'isVpn']],
+    ['proxy', ['proxy', 'is_proxy', 'isProxy']],
+    ['hosting', ['hosting', 'is_hosting', 'isHosting']],
+    ['tor', ['tor', 'is_tor', 'isTor']],
+  ];
+
+  for (const [target, keys] of map) {
+    const value = firstSignalFrom(records, keys);
+    if (value !== null) evidence[target] = value;
+  }
+
+  return Object.keys(evidence).length ? evidence : null;
+}
+
 function extractLivenessScores(
   normalized: Record<string, unknown> | null | undefined,
   raw: unknown
@@ -212,6 +338,10 @@ function extractLivenessScores(
   const selfie = asRecord(data.selfie) ?? asRecord(rawRecord.selfie) ?? {};
   const selfieData = asRecord(selfie.data) ?? selfie;
   const normalizedSelfie = asRecord(normalized?.selfie) ?? {};
+  const records = [
+    ...walkRecords(normalized),
+    ...walkRecords(raw),
+  ];
 
   const livenessScore = numericScore(
     normalized?.livenessScore ??
@@ -219,21 +349,47 @@ function extractLivenessScores(
       normalizedSelfie.livenessScore ??
       selfieData.liveness_score ??
       selfieData.livenessScore
-  );
+  ) ?? firstScoreFrom(records, [
+    'liveness_score',
+    'livenessScore',
+    'liveness_confidence',
+    'livenessConfidence',
+    'live_score',
+    'liveScore',
+    'selfie_liveness_score',
+    'selfieLivenessScore',
+  ]);
   const biometricMatchScore = numericScore(
     normalized?.biometricMatchScore ??
       normalizedSelfie.match_score ??
       normalizedSelfie.matchScore ??
       selfieData.match_score ??
       selfieData.matchScore
-  );
+  ) ?? firstScoreFrom(records, [
+    'match_score',
+    'matchScore',
+    'face_match_score',
+    'faceMatchScore',
+    'biometric_match_score',
+    'biometricMatchScore',
+    'similarity',
+  ]);
   const selfieUrl = typeof selfieData.selfie_url === 'string'
     ? selfieData.selfie_url
     : typeof selfieData.selfieUrl === 'string'
       ? selfieData.selfieUrl
       : typeof rawRecord.selfie_url === 'string'
         ? rawRecord.selfie_url
-        : null;
+        : firstStringFrom(records, [
+            'selfie_url',
+            'selfieUrl',
+            'image_url',
+            'imageUrl',
+            'photo_url',
+            'photoUrl',
+            'face_image_url',
+            'faceImageUrl',
+          ]);
 
   return {
     hasEvidence: livenessScore !== null || biometricMatchScore !== null || Boolean(selfieUrl),

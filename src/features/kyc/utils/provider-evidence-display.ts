@@ -231,18 +231,21 @@ export function buildDojahEvidenceSections(
     const amlScreening = amlScreeningLabel(aml, amlCompleted);
     const amlUnavailable = /unavailable|not completed|pending/i.test(amlScreening) || !amlCompleted;
 
-    return {
-      providerSummary: {
-        Source: 'Manual verification',
-        'Reference ID': displayOrFallback(providerEvidence?.providerReference),
-        'Workflow reference': displayOrFallback(
-          sanitizeWorkflowReference(providerEvidence?.workflowReference),
-          'Tier 2 manual review'
-        ),
+    const providerSummary = {
+      Source: 'Platform verification',
+      ...(isSystemAdmin
+        ? {
+            'Reference ID': displayOrFallback(providerEvidence?.providerReference),
+            'Workflow reference': displayOrFallback(
+              sanitizeWorkflowReference(providerEvidence?.workflowReference),
+              'Tier 2 manual review'
+            ),
+          }
+        : {}),
         Status: displayOrFallback(providerEvidence?.status?.replace(/_/g, ' ')),
         'Risk level': displayOrFallback(providerEvidence?.riskLevel),
         'Verification status': displayOrFallback(normalized?.verificationStatus),
-        Mode: 'Manual evidence with automated supporting checks',
+        Mode: 'Manual evidence with supporting checks',
         'Last updated': providerEvidence?.updatedAt
           ? new Date(providerEvidence.updatedAt).toLocaleString()
           : 'Pending review',
@@ -254,7 +257,10 @@ export function buildDojahEvidenceSections(
         'Submitted name': displayOrFallback(submittedProfile?.fullName, 'Not provided'),
         'Submitted business': displayOrFallback(submittedProfile?.businessName, 'Not provided'),
         'Submitted business number': displayOrFallback(submittedProfile?.businessRegistrationNumber, 'Not provided'),
-      },
+    };
+
+    return {
+      providerSummary,
       pendingReason: {
         Reason: 'The documents and profile were collected directly. Automated checks are supporting evidence; manager approval remains the final decision.',
         'Reason codes': formatReasonCodes(providerEvidence?.reasonCodes),
@@ -263,26 +269,26 @@ export function buildDojahEvidenceSections(
         'Submitted business name': displayOrFallback(submittedProfile?.businessName, 'Not provided'),
         'Submitted business type': displayOrFallback(submittedProfile?.businessType, 'Not provided'),
         'Submitted registration number': displayOrFallback(submittedProfile?.businessRegistrationNumber, 'Not provided'),
-        'Registry lookup': providerLookupLabel(cac),
-        'Registry business name': displayOrFallback(cac?.providerBusinessName, 'Not returned'),
-        'Registry business number': displayOrFallback(cac?.providerBusinessNumber, 'Not returned'),
-        'Registry business type': displayOrFallback(cac?.providerBusinessType, 'Not returned'),
+        'Business registry check': providerLookupLabel(cac),
+        'Registered business name': displayOrFallback(cac?.providerBusinessName, 'Not returned'),
+        'Registered business number': displayOrFallback(cac?.providerBusinessNumber, 'Not returned'),
+        'Registered business type': displayOrFallback(cac?.providerBusinessType, 'Not returned'),
         'Business type match': cac?.businessTypeMatched === true
           ? 'Matched'
           : cac?.businessTypeMatched === false
             ? `Needs review (${displayOrFallback(cac?.businessTypeMatchScore, '0')})`
             : 'Not checked',
-        'Registry country': displayOrFallback(cac?.providerCountry, 'Not returned'),
+        'Registration country': displayOrFallback(cac?.providerCountry, 'Not returned'),
         'Registration date': formatDateForReview(cac?.providerRegistrationDate),
         'Business name match': cac?.businessNameMatched === true ? 'Matched' : cac?.businessNameMatched === false ? 'Needs manager review' : 'Not checked',
-        'Registry message': displayOrFallback(cac?.message, 'No registry message returned'),
+        'Business check note': displayOrFallback(cac?.message, 'No note returned'),
       },
       governmentData: {
         'Identity number': displayOrFallback(normalized?.maskedIdentityValue, 'Stored securely'),
         'Government ID type': displayOrFallback(documentMetadata?.governmentIdType, 'Not provided'),
-        'NIN lookup': displayOrFallback(nin?.status, 'Not completed'),
+        'Identity check': displayOrFallback(nin?.status, 'Not completed'),
         'NIN last four': displayOrFallback(nin?.lastFour, 'Stored securely'),
-        'Verified name': displayOrFallback(nin?.providerName, 'Not returned'),
+        'Official name': displayOrFallback(nin?.providerName, 'Not returned'),
         'First name': displayOrFallback(nin?.providerFirstName, 'Not returned'),
         'Middle name': displayOrFallback(nin?.providerMiddleName, 'Not returned'),
         'Last name': displayOrFallback(nin?.providerLastName, 'Not returned'),
@@ -291,7 +297,7 @@ export function buildDojahEvidenceSections(
         'Phone ending': displayOrFallback(nin?.providerPhoneLastFour ? `****${nin.providerPhoneLastFour}` : undefined, 'Not returned'),
         'Name match': nin?.nameMatched === true ? 'Matched' : nin?.nameMatched === false ? 'Needs manager review' : 'Not checked',
         'Date of birth match': nin?.dobMatched === true ? 'Matched' : nin?.dobMatched === false ? 'Needs manager review' : 'Not checked',
-        'NIN message': displayOrFallback(nin?.message, 'No provider message returned'),
+        'Identity check note': displayOrFallback(nin?.message, 'No note returned'),
         'BVN source': displayOrFallback(addressData?.bvnSource, 'Not provided'),
         'BVN check': displayOrFallback(bvn?.status, 'Already verified or not required in this flow'),
       },

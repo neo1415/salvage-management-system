@@ -580,8 +580,8 @@ export default function KYCApprovalDetailPage() {
             'Business name': valueFrom(businessFields, 'Submitted business name', valueFrom(evidenceSections?.providerSummary, 'Submitted business', approval.vendorName)),
             'Business type': valueFrom(businessFields, 'Submitted business type', 'Not provided'),
             'Registration number': valueFrom(businessFields, 'Submitted registration number', valueFrom(evidenceSections?.providerSummary, 'Submitted business number', 'Not provided')),
-            'Registry name': valueFrom(businessFields, 'Registry business name', valueFrom(businessFields, 'Provider business name', 'Not returned')),
-            'Registry result': valueFrom(businessFields, 'Registry lookup', valueFrom(businessFields, 'Provider lookup', 'Not completed')),
+            'Registered name': valueFrom(businessFields, 'Registered business name', valueFrom(businessFields, 'Registry business name', 'Not returned')),
+            'Registry result': valueFrom(businessFields, 'Business registry check', valueFrom(businessFields, 'Registry lookup', 'Not completed')),
             'Registration date': valueFrom(businessFields, 'Registration date', 'Not returned'),
             'Name match': valueFrom(businessFields, 'Business name match', 'Needs manager review'),
           }}
