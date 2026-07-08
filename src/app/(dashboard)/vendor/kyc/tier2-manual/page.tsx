@@ -32,7 +32,16 @@ import { usePublicBranding } from '@/hooks/use-public-branding';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { kycVerificationPageTitle } from '@/lib/vendor/onboarding-policy-ui';
 
-type PageState = 'idle' | 'loading' | 'submitting' | 'liveness' | 'liveness_pending' | 'pending_review' | 'approved' | 'rejected';
+type PageState =
+  | 'idle'
+  | 'loading'
+  | 'submitting'
+  | 'liveness'
+  | 'liveness_pending'
+  | 'liveness_submitted'
+  | 'pending_review'
+  | 'approved'
+  | 'rejected';
 type CheckState = 'idle' | 'checking' | 'verified' | 'review' | 'unavailable' | 'failed';
 type BusinessType =
   | 'individual'
@@ -260,6 +269,11 @@ export default function Tier2ManualKYCPage() {
           router.replace('/vendor/dashboard');
           return;
         }
+        if (statusData?.livenessReferenceId) {
+          pendingLivenessReferenceRef.current = statusData.livenessReferenceId;
+        }
+
+        if (statusData?.status === 'liveness_submitted') setPageState('liveness_submitted');
         else if (statusData?.status === 'liveness_pending') setPageState('liveness_pending');
         else if (isPendingTier2Review(statusData)) setPageState('pending_review');
         else setPageState('idle');
@@ -325,8 +339,8 @@ export default function Tier2ManualKYCPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setErrorMessage(data.error ?? 'Face check could not be linked yet. Your documents are saved, and you can retry the face check.');
-        setPageState('liveness_pending');
+        setErrorMessage(data.error ?? 'Face check is finalizing. Your documents are saved, and you can retry in a moment if this does not update.');
+        setPageState('liveness_submitted');
         return;
       }
       setPageState('pending_review');
@@ -359,6 +373,8 @@ export default function Tier2ManualKYCPage() {
         setPageState('liveness_pending');
         return;
       }
+      if (pendingLivenessReferenceRef.current === `completed:${referenceId}`) return;
+      pendingLivenessReferenceRef.current = `completed:${referenceId}`;
       await completeLiveness(referenceId);
     };
 
@@ -381,7 +397,12 @@ export default function Tier2ManualKYCPage() {
         flow: 'nem_hybrid_liveness',
       },
       onSuccess: (response) => {
-        if (isDojahWidgetFinalSuccess(response)) {
+        const referenceId = resolveDojahWidgetReference(response);
+        if (referenceId) {
+          pendingLivenessReferenceRef.current = referenceId;
+        }
+
+        if (isDojahWidgetFinalSuccess(response) || referenceId) {
           void handleCompletion(response);
         } else if (isDojahWidgetIntermediateStep(response)) {
           setPageState('liveness');
@@ -401,7 +422,7 @@ export default function Tier2ManualKYCPage() {
       onClose: () => {
         const pendingReference = pendingLivenessReferenceRef.current;
         pendingLivenessReferenceRef.current = null;
-        if (pendingReference) {
+        if (pendingReference && !pendingReference.startsWith('completed:')) {
           void completeLiveness(pendingReference);
         } else if (pageState === 'liveness') {
           setPageState('liveness_pending');
@@ -645,6 +666,25 @@ export default function Tier2ManualKYCPage() {
               text="Your documents are saved. Complete the face check so the review team can finish the application."
               primaryAction="Continue Face Check"
               onPrimaryClick={openLivenessWidget}
+              onClick={() => router.push('/vendor/dashboard')}
+            />
+          )}
+
+          {pageState === 'liveness_submitted' && (
+            <StatusPanel
+              icon={<Clock className="w-12 h-12 text-yellow-600" />}
+              iconClass="bg-yellow-100"
+              title="Face Check Finalizing"
+              text="Your face check was submitted. We are waiting for the verification result so the review team can finish the application."
+              primaryAction="Retry Status Check"
+              onPrimaryClick={() => {
+                const reference = pendingLivenessReferenceRef.current?.replace(/^completed:/, '');
+                if (reference) {
+                  void completeLiveness(reference);
+                } else {
+                  openLivenessWidget();
+                }
+              }}
               onClick={() => router.push('/vendor/dashboard')}
             />
           )}

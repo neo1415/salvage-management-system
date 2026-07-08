@@ -75,14 +75,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const dojah = getDojahService();
-  const verificationResult = await dojah.getVerificationResult(livenessReference);
-  const normalizedLiveness = normalizeDojahWorkflowResult(verificationResult);
-  const liveness = extractLivenessScores(normalizedLiveness.normalizedResult, verificationResult);
+  const { verificationResult, normalizedLiveness, liveness } =
+    await fetchLivenessEvidenceWithRetry(livenessReference);
 
   if (!liveness.hasEvidence) {
+    await markLivenessAttemptPending({
+      manualEvidence,
+      livenessReference,
+      actorId: session.user.id,
+      request,
+    });
+
     return NextResponse.json(
-      { error: 'Liveness evidence is not available for this reference yet. Please wait a moment and retry.' },
+      { error: 'Face check is finalizing. Please wait a moment and retry if this does not update.' },
       { status: 409 }
     );
   }
@@ -239,6 +244,98 @@ function numericScore(value: unknown): number | null {
     if (Number.isFinite(parsed)) return Math.round(parsed);
   }
   return null;
+}
+
+async function fetchLivenessEvidenceWithRetry(referenceId: string): Promise<{
+  verificationResult: Awaited<ReturnType<ReturnType<typeof getDojahService>['getVerificationResult']>>;
+  normalizedLiveness: ReturnType<typeof normalizeDojahWorkflowResult>;
+  liveness: ReturnType<typeof extractLivenessScores>;
+}> {
+  const dojah = getDojahService();
+  let lastVerificationResult: Awaited<ReturnType<typeof dojah.getVerificationResult>> | null = null;
+  let lastNormalized: ReturnType<typeof normalizeDojahWorkflowResult> | null = null;
+  let lastLiveness: ReturnType<typeof extractLivenessScores> | null = null;
+
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const verificationResult = await dojah.getVerificationResult(referenceId);
+    const normalizedLiveness = normalizeDojahWorkflowResult(verificationResult);
+    const liveness = extractLivenessScores(normalizedLiveness.normalizedResult, verificationResult);
+
+    lastVerificationResult = verificationResult;
+    lastNormalized = normalizedLiveness;
+    lastLiveness = liveness;
+
+    if (liveness.hasEvidence) {
+      return { verificationResult, normalizedLiveness, liveness };
+    }
+
+    if (attempt < 5) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
+    }
+  }
+
+  return {
+    verificationResult: lastVerificationResult ?? {},
+    normalizedLiveness: lastNormalized ?? normalizeDojahWorkflowResult({}),
+    liveness: lastLiveness ?? {
+      hasEvidence: false,
+      livenessScore: null,
+      biometricMatchScore: null,
+      selfieUrl: null,
+    },
+  };
+}
+
+async function markLivenessAttemptPending(input: {
+  manualEvidence: typeof providerVerificationRecords.$inferSelect;
+  livenessReference: string;
+  actorId: string;
+  request: NextRequest;
+}) {
+  const previous = (input.manualEvidence.normalizedResult as Record<string, unknown> | null) ?? {};
+  const previousSummary = (previous.dojahEvidenceSummary as Record<string, unknown> | null) ?? {};
+
+  const pendingResult: NormalizedVerificationResult = {
+    provider: 'dojah',
+    providerReference: input.manualEvidence.providerReference ?? undefined,
+    workflowReference: 'nem-hybrid-tier2',
+    verificationType: 'tier2',
+    status: 'review_required',
+    riskLevel: input.manualEvidence.riskLevel as NormalizedVerificationResult['riskLevel'],
+    checksCompleted: input.manualEvidence.checksCompleted ?? [],
+    pendingChecks: [...new Set([...(input.manualEvidence.pendingChecks ?? []), 'dojah_liveness'])],
+    failedChecks: input.manualEvidence.failedChecks ?? [],
+    reasonCodes: input.manualEvidence.reasonCodes ?? [],
+    displayMessage: input.manualEvidence.displayMessage ?? 'Tier 2 evidence is ready for internal review.',
+    normalizedResult: {
+      ...previous,
+      livenessStatus: 'submitted',
+      livenessReferenceId: input.livenessReference,
+      dojahEvidenceSummary: {
+        ...previousSummary,
+        liveness: {
+          ...(asRecord(previousSummary.liveness) ?? {}),
+          status: 'submitted',
+          providerReference: input.livenessReference,
+          submittedAt: new Date().toISOString(),
+          hasSelfie: false,
+        },
+      },
+    },
+  };
+
+  await getProviderVerificationService().persistVerification({
+    userId: input.manualEvidence.userId ?? undefined,
+    vendorId: input.manualEvidence.vendorId ?? undefined,
+    actorId: input.actorId,
+    result: pendingResult,
+    rawPayload: {
+      source: 'nem_hybrid_liveness_pending',
+      livenessReference: input.livenessReference,
+    },
+    ipAddress: input.request.headers.get('x-forwarded-for') ?? undefined,
+    userAgent: input.request.headers.get('user-agent') ?? undefined,
+  });
 }
 
 function walkRecords(value: unknown): Record<string, unknown>[] {

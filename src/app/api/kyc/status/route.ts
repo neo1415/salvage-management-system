@@ -96,6 +96,7 @@ export async function GET(request: NextRequest) {
 
     const isManualHybridEvidence = isManualHybridTier2Evidence(latestEvidence);
     const manualHybridReadyForReview = manualHybridEvidenceReadyForReview(latestEvidence);
+    const manualHybridLivenessSubmitted = manualHybridEvidenceHasSubmittedLiveness(latestEvidence);
 
     let effectiveTier2SubmittedAt = vendorAfterCleanup?.tier2SubmittedAt ?? null;
     let effectiveTier2ApprovedAt = vendorAfterCleanup?.tier2ApprovedAt ?? null;
@@ -298,7 +299,9 @@ export async function GET(request: NextRequest) {
     const normalizedPayloadStatus =
       payload.status === 'pending_review' && !hasRealPendingSubmission ? 'not_started' : payload.status;
     const authoritativeStatus =
-      hasManualHybridSavedEvidence
+      hasManualHybridSavedEvidence && manualHybridLivenessSubmitted
+        ? 'liveness_submitted'
+        : hasManualHybridSavedEvidence
         ? 'liveness_pending'
         : !isKycTestingMode() &&
             hasRealPendingSubmission &&
@@ -308,6 +311,7 @@ export async function GET(request: NextRequest) {
             normalizedPayloadStatus !== 'rejected'
           ? 'pending_review'
           : normalizedPayloadStatus;
+    const livenessReferenceId = getManualHybridLivenessReference(latestEvidence);
 
     console.info('[KYC Status] resolved', {
       vendorId: vendorRow.id,
@@ -336,6 +340,7 @@ export async function GET(request: NextRequest) {
         rejectionReason: authoritativeStatus === 'rejected' ? kycStatus.rejectionReason : undefined,
         rejectedSections: authoritativeStatus === 'rejected' ? kycStatus.rejectedSections : undefined,
         dojahReferenceId: kycStatus.dojahReferenceId,
+        livenessReferenceId,
         steps: kycStatus.steps,
         ...(isKycTestingMode() ? { kycTestingMode: true as const } : {}),
       },
@@ -388,6 +393,28 @@ function manualHybridEvidenceReadyForReview(evidence: {
   )?.toLowerCase();
 
   return livenessStatus === 'completed' || livenessStatus === 'passed';
+}
+
+function manualHybridEvidenceHasSubmittedLiveness(evidence: {
+  normalizedResult?: unknown;
+} | null | undefined): boolean {
+  return Boolean(getManualHybridLivenessReference(evidence));
+}
+
+function getManualHybridLivenessReference(evidence: {
+  normalizedResult?: unknown;
+} | null | undefined): string | undefined {
+  const normalized = recordFrom(evidence?.normalizedResult);
+  const dojahEvidenceSummary = recordFrom(normalized?.dojahEvidenceSummary);
+  const liveness = recordFrom(dojahEvidenceSummary?.liveness);
+  const livenessStatus = firstString(
+    normalized?.livenessStatus,
+    liveness?.livenessStatus,
+    liveness?.status
+  )?.toLowerCase();
+  const livenessReference = firstString(normalized?.livenessReferenceId, liveness?.providerReference);
+
+  return livenessStatus === 'submitted' && livenessReference ? livenessReference : undefined;
 }
 
 function resolveLatestProviderDecision(evidence: {
