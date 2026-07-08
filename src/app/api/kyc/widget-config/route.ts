@@ -39,9 +39,7 @@ export async function GET(request: NextRequest) {
   const mode = requestUrl.searchParams.get('mode');
   const livenessWidgetId =
     process.env.DOJAH_LIVENESS_WIDGET_ID ||
-    process.env.DOJAH_LIVENESS_FLOW_ID ||
-    process.env.DOJAH_WIDGET_ID ||
-    process.env.DOJAH_EASYONBOARD_FLOW_ID;
+    process.env.DOJAH_LIVENESS_FLOW_ID;
 
   if (!appId || !publicKey) {
     console.error('[KYC] Dojah credentials not configured');
@@ -131,9 +129,6 @@ export async function GET(request: NextRequest) {
         },
         { status: 503 }
       );
-    }
-    if (!process.env.DOJAH_LIVENESS_WIDGET_ID && !process.env.DOJAH_LIVENESS_FLOW_ID) {
-      console.warn('[KYC] Using default Dojah widget for liveness mode. Set DOJAH_LIVENESS_WIDGET_ID for an explicit liveness-only workflow.');
     }
 
     const nameParts = parseName(result.fullName);
