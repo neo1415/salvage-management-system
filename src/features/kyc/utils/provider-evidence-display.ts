@@ -227,6 +227,7 @@ export function buildDojahEvidenceSections(
     const businessOcr = recordFrom(documentOcr?.businessDocument);
     const addressOcr = recordFrom(documentOcr?.addressProof);
     const livenessStatus = displayOrFallback(normalized?.livenessStatus, 'pending_liveness');
+    const livenessSubmitted = livenessStatus === 'submitted';
     const amlCompleted = Boolean(providerEvidence?.checksCompleted?.includes('aml_screening'));
     const amlScreening = amlScreeningLabel(aml, amlCompleted);
     const amlUnavailable = /unavailable|not completed|pending/i.test(amlScreening) || !amlCompleted;
@@ -302,16 +303,21 @@ export function buildDojahEvidenceSections(
         'BVN check': displayOrFallback(bvn?.status, 'Already verified or not required in this flow'),
       },
       liveness: {
-        'Liveness status': livenessStatus.replace(/_/g, ' '),
+        'Face check status': livenessSubmitted ? 'Submitted, result finalizing' : livenessStatus.replace(/_/g, ' '),
+        'Face check reference': displayOrFallback(normalized?.livenessReferenceId ?? liveness?.providerReference, 'Not returned'),
         'Liveness score': displayOrFallback(
           normalized?.livenessScore !== null && normalized?.livenessScore !== undefined ? `${normalized.livenessScore}%` : liveness?.livenessScore,
-          livenessStatus === 'completed' ? 'Completed, score not returned' : 'Pending liveness completion'
+          livenessStatus === 'completed' ? 'Completed, score not returned' : 'Awaiting provider result'
         ),
         'Face match score': displayOrFallback(
           normalized?.biometricMatchScore !== null && normalized?.biometricMatchScore !== undefined ? `${normalized.biometricMatchScore}%` : liveness?.biometricMatchScore,
-          livenessStatus === 'completed' ? 'Completed, score not returned' : 'Pending liveness completion'
+          livenessStatus === 'completed' ? 'Completed, score not returned' : 'Awaiting provider result'
         ),
-        'Selfie evidence': normalized?.selfieUrl || liveness?.hasSelfie ? 'Available' : 'Not linked yet',
+        'Selfie evidence': normalized?.selfieUrl || liveness?.hasSelfie
+          ? 'Available'
+          : livenessSubmitted
+            ? 'Submitted, photo not returned yet'
+            : 'Not linked yet',
       },
       address: {
         'Submitted address': displayOrFallback(addressData?.address, 'Not provided'),

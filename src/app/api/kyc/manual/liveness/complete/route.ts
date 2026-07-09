@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
       email: users.email,
       phone: users.phone,
       businessName: vendors.businessName,
+      tier2SubmittedAt: vendors.tier2SubmittedAt,
     })
     .from(vendors)
     .innerJoin(users, eq(vendors.userId, users.id))
@@ -81,6 +82,11 @@ export async function POST(request: NextRequest) {
     actorId: session.user.id,
     request,
   });
+  await markApplicationSubmittedForReview({
+    vendorId: vendor.id,
+    manualReference: manualEvidence.providerReference,
+    submittedAt: vendor.tier2SubmittedAt ?? new Date(),
+  });
 
   let evidence:
     | Awaited<ReturnType<typeof fetchLivenessEvidenceWithRetry>>
@@ -93,11 +99,17 @@ export async function POST(request: NextRequest) {
       reference: livenessReference,
       message: error instanceof Error ? error.message : 'Unknown liveness lookup error',
     });
+    notifyApplicationReadyForReview({
+      vendor,
+      manualEvidence,
+      livenessReference,
+    });
     return NextResponse.json(
       {
         success: true,
-        status: 'liveness_submitted',
-        message: 'Face check submitted. We are waiting for the verification result.',
+        status: 'pending_review',
+        livenessStatus: 'submitted',
+        message: 'Application submitted for review. Face check evidence is being finalized.',
       },
       { status: 202 }
     );
@@ -106,11 +118,17 @@ export async function POST(request: NextRequest) {
   const { verificationResult, normalizedLiveness, liveness } = evidence;
 
   if (!liveness.hasEvidence) {
+    notifyApplicationReadyForReview({
+      vendor,
+      manualEvidence,
+      livenessReference,
+    });
     return NextResponse.json(
       {
         success: true,
-        status: 'liveness_submitted',
-        message: 'Face check submitted. We are waiting for the verification result.',
+        status: 'pending_review',
+        livenessStatus: 'submitted',
+        message: 'Application submitted for review. Face check evidence is being finalized.',
       },
       { status: 202 }
     );
@@ -363,6 +381,81 @@ async function markLivenessAttemptPending(input: {
     ipAddress: input.request.headers.get('x-forwarded-for') ?? undefined,
     userAgent: input.request.headers.get('user-agent') ?? undefined,
   });
+}
+
+async function markApplicationSubmittedForReview(input: {
+  vendorId: string;
+  manualReference: string | null;
+  submittedAt: Date;
+}) {
+  await db
+    .update(vendors)
+    .set({
+      tier2SubmittedAt: input.submittedAt,
+      ...(input.manualReference ? { tier2DojahReferenceId: input.manualReference } : {}),
+      tier2RejectionReason: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(vendors.id, input.vendorId));
+}
+
+function notifyApplicationReadyForReview(input: {
+  vendor: {
+    id: string;
+    userId: string;
+    fullName: string | null;
+    email: string | null;
+    phone: string | null;
+    businessName: string | null;
+  };
+  manualEvidence: typeof providerVerificationRecords.$inferSelect;
+  livenessReference: string;
+}) {
+  if (hasRecordedLivenessReference(input.manualEvidence, input.livenessReference)) return;
+
+  after(async () => {
+    const notify = getKYCNotificationService();
+    await Promise.allSettled([
+      notify.sendKYCUnderReviewNotification({
+        vendorId: input.vendor.id,
+        userId: input.vendor.userId,
+        phone: input.vendor.phone ?? '',
+        email: input.vendor.email ?? '',
+        fullName: input.vendor.fullName ?? input.vendor.businessName ?? 'Vendor',
+      }),
+      createRoleNotifications(['salvage_manager', 'system_admin'], {
+        type: 'tier2_pending_review',
+        title: 'Vendor verification ready for review',
+        message: `${input.vendor.businessName || input.vendor.fullName || 'A vendor'} submitted verification evidence for manager review.`,
+        data: {
+          vendorId: input.vendor.id,
+          url: '/manager/kyc-approvals',
+        },
+      }),
+    ]).then((results) => {
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error('[Manual KYC Liveness] Deferred pending-review notification failed', {
+            index,
+            error: result.reason,
+          });
+        }
+      });
+    });
+  });
+}
+
+function hasRecordedLivenessReference(
+  manualEvidence: typeof providerVerificationRecords.$inferSelect,
+  livenessReference: string
+): boolean {
+  const normalized = asRecord(manualEvidence.normalizedResult);
+  const summary = asRecord(normalized?.dojahEvidenceSummary);
+  const liveness = asRecord(summary?.liveness);
+  return (
+    normalized?.livenessReferenceId === livenessReference ||
+    liveness?.providerReference === livenessReference
+  );
 }
 
 function walkRecords(value: unknown): Record<string, unknown>[] {

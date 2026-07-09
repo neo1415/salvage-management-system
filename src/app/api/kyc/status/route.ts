@@ -97,6 +97,7 @@ export async function GET(request: NextRequest) {
     const isManualHybridEvidence = isManualHybridTier2Evidence(latestEvidence);
     const manualHybridReadyForReview = manualHybridEvidenceReadyForReview(latestEvidence);
     const manualHybridLivenessSubmitted = manualHybridEvidenceHasSubmittedLiveness(latestEvidence);
+    const manualHybridSubmittedForReview = manualHybridReadyForReview || manualHybridLivenessSubmitted;
 
     let effectiveTier2SubmittedAt = vendorAfterCleanup?.tier2SubmittedAt ?? null;
     let effectiveTier2ApprovedAt = vendorAfterCleanup?.tier2ApprovedAt ?? null;
@@ -168,7 +169,7 @@ export async function GET(request: NextRequest) {
     // status was reliably backfilled. Existing applicants should not have to resubmit.
     if (
       isManualHybridEvidence &&
-      manualHybridReadyForReview &&
+      manualHybridSubmittedForReview &&
       !effectiveTier2SubmittedAt &&
       !effectiveTier2ApprovedAt &&
       !effectiveTier2RejectionReason
@@ -279,7 +280,7 @@ export async function GET(request: NextRequest) {
       : kycStatus;
     const hasManualHybridSavedEvidence =
       isManualHybridEvidence &&
-      !manualHybridReadyForReview &&
+      !manualHybridSubmittedForReview &&
       !effectiveTier2ApprovedAt &&
       !effectiveTier2RejectionReason;
     const hasRealPendingSubmission =
@@ -287,21 +288,19 @@ export async function GET(request: NextRequest) {
         effectiveTier2SubmittedAt &&
           vendorAfterCleanup &&
           vendorHasRealTier2SubmissionFootprint(vendorAfterCleanup) &&
-          (!isManualHybridEvidence || manualHybridReadyForReview)
+          (!isManualHybridEvidence || manualHybridSubmittedForReview)
       ) ||
-      manualHybridReadyForReview ||
+      manualHybridSubmittedForReview ||
       (!isManualHybridEvidence && providerEvidenceCountsAsTier2Submission(latestEvidence, vendorAfterCleanup));
 
     const responseSubmittedAt =
-      hasRealPendingSubmission && payload.status !== 'not_started'
-        ? kycStatus.submittedAt
+      hasRealPendingSubmission
+        ? kycStatus.submittedAt ?? effectiveTier2SubmittedAt ?? latestEvidence?.updatedAt ?? undefined
         : undefined;
     const normalizedPayloadStatus =
       payload.status === 'pending_review' && !hasRealPendingSubmission ? 'not_started' : payload.status;
     const authoritativeStatus =
-      hasManualHybridSavedEvidence && manualHybridLivenessSubmitted
-        ? 'liveness_submitted'
-        : hasManualHybridSavedEvidence
+      hasManualHybridSavedEvidence
         ? 'liveness_pending'
         : !isKycTestingMode() &&
             hasRealPendingSubmission &&

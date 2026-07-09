@@ -84,8 +84,7 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
 
   const tier2Approved = currentTier === 'tier2_full' || kycStatus?.status === 'approved';
   const tier2PendingReview = isPendingTier2Review(kycStatus);
-  const tier2LivenessFinalizing =
-    kycStatus?.status === 'liveness_submitted' || kycStatus?.status === 'liveness_pending';
+  const tier2LivenessFinalizing = kycStatus?.status === 'liveness_pending';
 
   // Tier 2 approved — show expiry info if within 30 days
   if (tier2Approved && kycStatus?.expiresAt) {

@@ -13,7 +13,7 @@ export function isPendingTier2Review(status: Tier2StatusLike | null | undefined)
     return false;
   }
 
-  if (normalizedStatus === 'pending_review') return true;
+  if (normalizedStatus === 'pending_review' || normalizedStatus === 'liveness_submitted') return true;
 
   return Boolean(
     status.submittedAt &&
