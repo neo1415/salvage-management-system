@@ -84,6 +84,8 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
 
   const tier2Approved = currentTier === 'tier2_full' || kycStatus?.status === 'approved';
   const tier2PendingReview = isPendingTier2Review(kycStatus);
+  const tier2LivenessFinalizing =
+    kycStatus?.status === 'liveness_submitted' || kycStatus?.status === 'liveness_pending';
 
   // Tier 2 approved — show expiry info if within 30 days
   if (tier2Approved && kycStatus?.expiresAt) {
@@ -190,6 +192,33 @@ export function KYCStatusCard({ currentTier, bidLimit, className = '' }: KYCStat
             className="flex-shrink-0 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors"
           >
             Resubmit
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (tier2LivenessFinalizing) {
+    const tier2Path = resolveVendorTier2Path();
+    return (
+      <div className={`bg-yellow-50 border border-yellow-200 rounded-lg p-4 ${className}`}>
+        <div className="flex items-start gap-3">
+          <Clock className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold text-yellow-900">
+              {kycStatus.status === 'liveness_submitted' ? 'Face check submitted' : 'Face check pending'}
+            </p>
+            <p className="text-sm text-yellow-700 mt-1">
+              {kycStatus.status === 'liveness_submitted'
+                ? 'Your documents are saved and your face check is being finalized.'
+                : 'Your documents are saved. Complete the face check so your application can move to review.'}
+            </p>
+          </div>
+          <button
+            onClick={() => router.push(tier2Path)}
+            className="flex-shrink-0 px-4 py-2 bg-yellow-600 text-white text-sm font-semibold rounded-lg hover:bg-yellow-700 transition-colors"
+          >
+            Open
           </button>
         </div>
       </div>

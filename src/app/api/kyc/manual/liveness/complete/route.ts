@@ -75,20 +75,44 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { verificationResult, normalizedLiveness, liveness } =
-    await fetchLivenessEvidenceWithRetry(livenessReference);
+  await markLivenessAttemptPending({
+    manualEvidence,
+    livenessReference,
+    actorId: session.user.id,
+    request,
+  });
+
+  let evidence:
+    | Awaited<ReturnType<typeof fetchLivenessEvidenceWithRetry>>
+    | null = null;
+
+  try {
+    evidence = await fetchLivenessEvidenceWithRetry(livenessReference);
+  } catch (error) {
+    console.warn('[Manual KYC Liveness] Dojah result not ready after widget callback', {
+      reference: livenessReference,
+      message: error instanceof Error ? error.message : 'Unknown liveness lookup error',
+    });
+    return NextResponse.json(
+      {
+        success: true,
+        status: 'liveness_submitted',
+        message: 'Face check submitted. We are waiting for the verification result.',
+      },
+      { status: 202 }
+    );
+  }
+
+  const { verificationResult, normalizedLiveness, liveness } = evidence;
 
   if (!liveness.hasEvidence) {
-    await markLivenessAttemptPending({
-      manualEvidence,
-      livenessReference,
-      actorId: session.user.id,
-      request,
-    });
-
     return NextResponse.json(
-      { error: 'Face check is finalizing. Please wait a moment and retry if this does not update.' },
-      { status: 409 }
+      {
+        success: true,
+        status: 'liveness_submitted',
+        message: 'Face check submitted. We are waiting for the verification result.',
+      },
+      { status: 202 }
     );
   }
 
@@ -174,6 +198,9 @@ export async function POST(request: NextRequest) {
       biometricMatchScore: liveness.biometricMatchScore !== null ? String(liveness.biometricMatchScore) : null,
       selfieUrl: media?.profilePictureUrl ?? liveness.selfieUrl ?? null,
       biometricVerifiedAt: new Date(),
+      tier2SubmittedAt: new Date(),
+      tier2DojahReferenceId: manualEvidence.providerReference,
+      tier2RejectionReason: null,
       updatedAt: new Date(),
     })
     .where(eq(vendors.id, vendor.id));

@@ -1,6 +1,8 @@
 export type KYCVerificationStatus =
   | 'not_started'
   | 'in_progress'
+  | 'liveness_pending'
+  | 'liveness_submitted'
   | 'pending_review'
   | 'approved'
   | 'rejected'

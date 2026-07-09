@@ -153,6 +153,11 @@ function getDojahConnectConstructor() {
   return (window as unknown as { Connect?: new (options: DojahWidgetOptions) => DojahConnect }).Connect ?? null;
 }
 
+function buildManualLivenessReference(manualReference: string): string {
+  const trimmed = manualReference.trim();
+  return trimmed.endsWith('-live') ? trimmed : `${trimmed}-live`;
+}
+
 export default function Tier2ManualKYCPage() {
   const router = useAppRouter();
   const { status: authStatus } = useSession();
@@ -343,6 +348,10 @@ export default function Tier2ManualKYCPage() {
         setPageState('liveness_submitted');
         return;
       }
+      if (data.status === 'liveness_submitted') {
+        setPageState('liveness_submitted');
+        return;
+      }
       setPageState('pending_review');
     } catch {
       setErrorMessage('Network dropped while linking the face check. Your documents are saved, and you can retry the face check.');
@@ -350,24 +359,17 @@ export default function Tier2ManualKYCPage() {
     }
   }, []);
 
-  const openLivenessWidget = useCallback(() => {
-    if (!connect || !livenessReady) {
-      setErrorMessage(livenessConfigMessage ?? 'Face check is still loading. Please wait a moment and try again.');
-      return;
-    }
-    setPageState('liveness');
-    applyDojahIframePermissions();
-    connect.open();
-    window.setTimeout(applyDojahIframePermissions, 250);
-    window.setTimeout(applyDojahIframePermissions, 1000);
-  }, [applyDojahIframePermissions, connect, livenessReady]);
-
-  const initLivenessWidget = useCallback(() => {
+  const createLivenessWidget = useCallback((referenceOverride?: string): DojahConnect | null => {
     const Connect = getDojahConnectConstructor();
-    if (!livenessConfig || !Connect || !livenessConfig.widgetId) return;
+    if (!livenessConfig || !Connect || !livenessConfig.widgetId) return null;
+
+    const referenceForWidget =
+      referenceOverride ??
+      pendingLivenessReferenceRef.current?.replace(/^completed:/, '') ??
+      livenessConfig.verificationReference;
 
     const handleCompletion = async (response: DojahWidgetCallbackResponse | undefined) => {
-      const referenceId = resolveDojahWidgetReference(response) ?? livenessConfig.verificationReference;
+      const referenceId = resolveDojahWidgetReference(response) ?? referenceForWidget;
       if (!referenceId) {
         setErrorMessage(VERIFICATION_COPY.livenessReferenceMissing);
         setPageState('liveness_pending');
@@ -378,11 +380,11 @@ export default function Tier2ManualKYCPage() {
       await completeLiveness(referenceId);
     };
 
-    const instance = new Connect({
+    return new Connect({
       app_id: livenessConfig.appId,
       p_key: livenessConfig.publicKey,
       type: 'custom',
-      reference_id: livenessConfig.verificationReference,
+      reference_id: referenceForWidget,
       config: { widget_id: livenessConfig.widgetId },
       user_data: {
         first_name: livenessConfig.profile?.firstName,
@@ -395,9 +397,10 @@ export default function Tier2ManualKYCPage() {
       },
       metadata: {
         flow: 'nem_hybrid_liveness',
+        manual_reference: manualReferenceRef.current ?? '',
       },
       onSuccess: (response) => {
-        const referenceId = resolveDojahWidgetReference(response);
+        const referenceId = resolveDojahWidgetReference(response) ?? referenceForWidget;
         if (referenceId) {
           pendingLivenessReferenceRef.current = referenceId;
         }
@@ -409,7 +412,7 @@ export default function Tier2ManualKYCPage() {
         }
       },
       onComplete: (response) => {
-        const referenceId = resolveDojahWidgetReference(response);
+        const referenceId = resolveDojahWidgetReference(response) ?? referenceForWidget;
         if (referenceId) {
           pendingLivenessReferenceRef.current = referenceId;
         }
@@ -429,10 +432,33 @@ export default function Tier2ManualKYCPage() {
         }
       },
     });
+  }, [completeLiveness, livenessConfig, pageState]);
+
+  const openLivenessWidget = useCallback((referenceOverride?: string) => {
+    const widget = referenceOverride ? createLivenessWidget(referenceOverride) : connect;
+    if (!widget || (!referenceOverride && !livenessReady)) {
+      setErrorMessage(livenessConfigMessage ?? 'Face check is still loading. Please wait a moment and try again.');
+      return;
+    }
+    if (referenceOverride) {
+      widget.setup();
+      setConnect(widget);
+      setLivenessReady(true);
+    }
+    setPageState('liveness');
+    applyDojahIframePermissions();
+    widget.open();
+    window.setTimeout(applyDojahIframePermissions, 250);
+    window.setTimeout(applyDojahIframePermissions, 1000);
+  }, [applyDojahIframePermissions, connect, createLivenessWidget, livenessConfigMessage, livenessReady]);
+
+  const initLivenessWidget = useCallback(() => {
+    const instance = createLivenessWidget();
+    if (!instance) return;
     instance.setup();
     setConnect(instance);
     setLivenessReady(true);
-  }, [completeLiveness, livenessConfig, pageState]);
+  }, [createLivenessWidget]);
 
   useEffect(() => {
     if (livenessConfig && getDojahConnectConstructor()) {
@@ -598,8 +624,14 @@ export default function Tier2ManualKYCPage() {
       }
 
       manualReferenceRef.current = typeof data.providerReference === 'string' ? data.providerReference : null;
-      if (data.livenessRequired !== false && livenessAvailable && connect && livenessReady) {
-        openLivenessWidget();
+      const livenessReference = manualReferenceRef.current
+        ? buildManualLivenessReference(manualReferenceRef.current)
+        : livenessConfig?.verificationReference;
+      if (livenessReference) {
+        pendingLivenessReferenceRef.current = livenessReference;
+      }
+      if (data.livenessRequired !== false && livenessAvailable && livenessReference) {
+        openLivenessWidget(livenessReference);
         return;
       }
 
