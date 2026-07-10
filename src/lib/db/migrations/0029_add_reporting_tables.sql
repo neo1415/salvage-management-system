@@ -118,7 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_cases_market_value ON salvage_cases(market_value)
 -- Auctions indexes for reporting
 CREATE INDEX IF NOT EXISTS idx_auctions_created_at ON auctions(created_at);
 CREATE INDEX IF NOT EXISTS idx_auctions_status ON auctions(status);
-CREATE INDEX IF NOT EXISTS idx_auctions_winner ON auctions.winner_id);
+CREATE INDEX IF NOT EXISTS idx_auctions_winner ON auctions(current_bidder);
 CREATE INDEX IF NOT EXISTS idx_auctions_current_bid ON auctions(current_bid);
 CREATE INDEX IF NOT EXISTS idx_auctions_case_id ON auctions(case_id);
 

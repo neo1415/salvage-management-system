@@ -1,6 +1,7 @@
 ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'appliance';
 ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'furniture';
 ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'jewelry';
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'machinery';
 ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'stock';
 ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'goods_in_transit';
 ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'building_materials';

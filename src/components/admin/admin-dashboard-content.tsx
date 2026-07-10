@@ -13,7 +13,7 @@ import {
 import { AppLink } from '@/components/navigation/app-link';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
 import { DataLoadingState } from '@/components/ui/loading-states';
-import { StatCard, StatGrid, StatTile } from '@/components/ui/stat-card';
+import { StatCard, StatGrid } from '@/components/ui/stat-card';
 import { useAppRouter } from '@/hooks/use-app-router';
 
 interface DashboardStats {
@@ -26,6 +26,13 @@ interface DashboardStats {
   pendingPickupConfirmations: number;
   overdueSignedUnpaid: number;
   healthReasons: string[];
+}
+
+function mobileAdminStatSpan(value: number, subtitle?: string): string {
+  const valueText = String(value);
+  if (valueText.length > 5) return 'col-span-3';
+  if (subtitle && subtitle.length > 22) return 'col-span-3';
+  return 'col-span-1';
 }
 
 function AdminDashboardContentInner() {
@@ -123,13 +130,68 @@ function AdminDashboardContentInner() {
         </p>
       </div>
 
-      {/* Stats Grid */}
-      <StatGrid minCol={200}>
+      <div className="space-y-3 md:hidden">
         <StatCard
           href="/admin/users"
           title="Total Users"
-          value={stats?.totalUsers || 0}
-          subtitle={`+${stats?.userGrowth || 0}% this month`}
+          value={stats.totalUsers || 0}
+          subtitle={`+${stats.userGrowth || 0}% this month`}
+          icon={
+            <div className="p-2.5 bg-blue-100 rounded-lg">
+              <Users className="w-6 h-6 text-blue-600" />
+            </div>
+          }
+        />
+        <div className="grid grid-cols-3 gap-2 min-w-0">
+          <StatCard
+            href="/admin/users"
+            title="Active Vendors"
+            value={stats.activeVendors || 0}
+            subtitle="Verified & active"
+            className={`!p-3 ${mobileAdminStatSpan(stats.activeVendors || 0, 'Verified & active')}`}
+            icon={
+              <div className="p-2 bg-green-100 rounded-lg">
+                <Activity className="w-5 h-5 text-green-600" />
+              </div>
+            }
+          />
+          <StatCard
+            href="/admin/fraud"
+            title="Fraud Alerts"
+            value={stats.pendingFraudAlerts || 0}
+            subtitle={stats.pendingFraudAlerts ? 'Requires attention' : 'All clear'}
+            valueClassName={stats.pendingFraudAlerts ? 'text-red-700' : undefined}
+            className={`!p-3 ${mobileAdminStatSpan(
+              stats.pendingFraudAlerts || 0,
+              stats.pendingFraudAlerts ? 'Requires attention' : 'All clear'
+            )}`}
+            icon={
+              <div className="p-2 bg-red-100 rounded-lg">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+            }
+          />
+          <StatCard
+            href="/admin/audit-logs"
+            title="Today's Logs"
+            value={stats.todayAuditLogs || 0}
+            subtitle="System activities"
+            className={`!p-3 ${mobileAdminStatSpan(stats.todayAuditLogs || 0, 'System activities')}`}
+            icon={
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <ClipboardList className="w-5 h-5 text-purple-600" />
+              </div>
+            }
+          />
+        </div>
+      </div>
+
+      <StatGrid minCol={200} className="hidden md:grid">
+        <StatCard
+          href="/admin/users"
+          title="Total Users"
+          value={stats.totalUsers || 0}
+          subtitle={`+${stats.userGrowth || 0}% this month`}
           icon={
             <div className="p-3 bg-blue-100 rounded-lg">
               <Users className="w-8 h-8 text-blue-600" />
@@ -139,7 +201,7 @@ function AdminDashboardContentInner() {
         <StatCard
           href="/admin/users"
           title="Active Vendors"
-          value={stats?.activeVendors || 0}
+          value={stats.activeVendors || 0}
           subtitle="Verified & active"
           icon={
             <div className="p-3 bg-green-100 rounded-lg">
@@ -150,9 +212,9 @@ function AdminDashboardContentInner() {
         <StatCard
           href="/admin/fraud"
           title="Fraud Alerts"
-          value={stats?.pendingFraudAlerts || 0}
-          subtitle={stats?.pendingFraudAlerts ? 'Requires attention' : 'All clear'}
-          valueClassName={stats?.pendingFraudAlerts ? 'text-red-700' : undefined}
+          value={stats.pendingFraudAlerts || 0}
+          subtitle={stats.pendingFraudAlerts ? 'Requires attention' : 'All clear'}
+          valueClassName={stats.pendingFraudAlerts ? 'text-red-700' : undefined}
           icon={
             <div className="p-3 bg-red-100 rounded-lg">
               <AlertTriangle className="w-8 h-8 text-red-600" />
@@ -162,7 +224,7 @@ function AdminDashboardContentInner() {
         <StatCard
           href="/admin/audit-logs"
           title="Today's Logs"
-          value={stats?.todayAuditLogs || 0}
+          value={stats.todayAuditLogs || 0}
           subtitle="System activities"
           icon={
             <div className="p-3 bg-purple-100 rounded-lg">
@@ -244,6 +306,7 @@ function AdminDashboardContentInner() {
         </p>
       </div>
 
+      {/*
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex flex-col gap-1 mb-5">
           <h2 className="text-xl font-bold text-gray-900">Operations Control</h2>
@@ -273,9 +336,9 @@ function AdminDashboardContentInner() {
           />
         </StatGrid>
       </div>
+      */}
 
-      {/* Quick Actions */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="hidden md:block bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <AppLink

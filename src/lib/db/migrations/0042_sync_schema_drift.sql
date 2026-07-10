@@ -25,6 +25,6 @@ ALTER TABLE vendors ADD COLUMN IF NOT EXISTS tier2_dojah_reference_id varchar(10
 ALTER TABLE vendors ADD COLUMN IF NOT EXISTS fraud_risk_score numeric(5, 2);
 ALTER TABLE vendors ADD COLUMN IF NOT EXISTS fraud_flags jsonb;
 
--- Profile picture (also lives in drizzle/migrations; duplicated here for bootstrap parity)
+-- Profile picture (also lives in drizzle/migrations, duplicated here for bootstrap parity)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture_url varchar(500);
 CREATE INDEX IF NOT EXISTS idx_users_profile_picture ON users(profile_picture_url) WHERE profile_picture_url IS NOT NULL;

@@ -136,8 +136,30 @@ function splitSqlStatements(content: string): string[] {
   let current = '';
   let i = 0;
   let dollarTag: string | null = null;
+  let inSingleQuote = false;
+  let inLineComment = false;
+  let inBlockComment = false;
 
   while (i < content.length) {
+    if (inLineComment) {
+      current += content[i];
+      if (content[i] === '\n') inLineComment = false;
+      i++;
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (content.startsWith('*/', i)) {
+        current += '*/';
+        i += 2;
+        inBlockComment = false;
+        continue;
+      }
+      current += content[i];
+      i++;
+      continue;
+    }
+
     if (dollarTag) {
       if (content.startsWith(dollarTag, i)) {
         current += dollarTag;
@@ -145,6 +167,39 @@ function splitSqlStatements(content: string): string[] {
         dollarTag = null;
         continue;
       }
+      current += content[i];
+      i++;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      current += content[i];
+      if (content[i] === "'" && content[i + 1] === "'") {
+        current += "'";
+        i += 2;
+        continue;
+      }
+      if (content[i] === "'") inSingleQuote = false;
+      i++;
+      continue;
+    }
+
+    if (content.startsWith('--', i)) {
+      inLineComment = true;
+      current += '--';
+      i += 2;
+      continue;
+    }
+
+    if (content.startsWith('/*', i)) {
+      inBlockComment = true;
+      current += '/*';
+      i += 2;
+      continue;
+    }
+
+    if (content[i] === "'") {
+      inSingleQuote = true;
       current += content[i];
       i++;
       continue;

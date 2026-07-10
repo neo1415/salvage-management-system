@@ -1,6 +1,8 @@
 -- Add insurer-facing workflow fields without changing the physical asset enum.
 -- asset_type remains the AI/vendor matching category.
 
+ALTER TYPE asset_type ADD VALUE IF NOT EXISTS 'machinery';
+
 ALTER TABLE salvage_cases
   ADD COLUMN IF NOT EXISTS insurance_class varchar(80),
   ADD COLUMN IF NOT EXISTS broker_name varchar(255),
@@ -8,7 +10,7 @@ ALTER TABLE salvage_cases
   ADD COLUMN IF NOT EXISTS branch_name varchar(150);
 
 UPDATE salvage_cases
-SET insurance_class = CASE asset_type
+SET insurance_class = CASE asset_type::text
   WHEN 'vehicle' THEN 'motor'
   WHEN 'property' THEN 'fire'
   WHEN 'electronics' THEN 'goods_in_transit'

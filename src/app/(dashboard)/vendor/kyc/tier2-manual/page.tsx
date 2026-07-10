@@ -158,6 +158,30 @@ function buildManualLivenessReference(manualReference: string): string {
   return trimmed.endsWith('-live') ? trimmed : `${trimmed}-live`;
 }
 
+function isLivenessCompletionResponse(response?: DojahWidgetCallbackResponse): boolean {
+  if (!response) return false;
+  if (isDojahWidgetFinalSuccess(response)) return true;
+
+  const statusText = String(
+    response.verification_status ??
+      response.verificationStatus ??
+      response.status ??
+      response.message ??
+      ''
+  )
+    .trim()
+    .toLowerCase();
+
+  return Boolean(
+    resolveDojahWidgetReference(response) &&
+      response.status !== false &&
+      (response.status === true ||
+        statusText.includes('complete') ||
+        statusText.includes('success') ||
+        statusText.includes('submitted'))
+  );
+}
+
 export default function Tier2ManualKYCPage() {
   const router = useAppRouter();
   const { status: authStatus } = useSession();
@@ -331,7 +355,10 @@ export default function Tier2ManualKYCPage() {
     });
   }, []);
 
-  const completeLiveness = useCallback(async (referenceId: string) => {
+  const completeLiveness = useCallback(async (
+    referenceId: string,
+    callbackPayload?: DojahWidgetCallbackResponse
+  ) => {
     setPageState('liveness');
     try {
       const res = await fetch('/api/kyc/manual/liveness/complete', {
@@ -340,6 +367,7 @@ export default function Tier2ManualKYCPage() {
         body: JSON.stringify({
           reference_id: referenceId,
           manual_reference: manualReferenceRef.current,
+          callback_payload: callbackPayload ?? null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -377,7 +405,7 @@ export default function Tier2ManualKYCPage() {
       }
       if (pendingLivenessReferenceRef.current === `completed:${referenceId}`) return;
       pendingLivenessReferenceRef.current = `completed:${referenceId}`;
-      await completeLiveness(referenceId);
+      await completeLiveness(referenceId, response);
     };
 
     return new Connect({
@@ -405,7 +433,7 @@ export default function Tier2ManualKYCPage() {
           pendingLivenessReferenceRef.current = referenceId;
         }
 
-        if (isDojahWidgetFinalSuccess(response) || referenceId) {
+        if (isLivenessCompletionResponse(response)) {
           void handleCompletion(response);
         } else if (isDojahWidgetIntermediateStep(response)) {
           setPageState('liveness');
@@ -416,6 +444,7 @@ export default function Tier2ManualKYCPage() {
         if (referenceId) {
           pendingLivenessReferenceRef.current = referenceId;
         }
+        void handleCompletion(response);
       },
       onError: (err) => {
         console.error('[Manual KYC Liveness] Widget error', err);
@@ -423,11 +452,7 @@ export default function Tier2ManualKYCPage() {
         setPageState('liveness_pending');
       },
       onClose: () => {
-        const pendingReference = pendingLivenessReferenceRef.current;
-        pendingLivenessReferenceRef.current = null;
-        if (pendingReference && !pendingReference.startsWith('completed:')) {
-          void completeLiveness(pendingReference);
-        } else if (pageState === 'liveness') {
+        if (pageState === 'liveness') {
           setPageState('liveness_pending');
         }
       },

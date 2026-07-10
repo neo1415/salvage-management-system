@@ -510,15 +510,55 @@ function VendorDashboardContentInner() {
           </div>
         )}
 
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
+        <div className="relative left-1/2 mb-8 w-screen max-w-[100vw] -translate-x-1/2 bg-[var(--brand-primary)] px-4 py-6 md:static md:left-auto md:w-auto md:max-w-none md:translate-x-0 md:rounded-lg md:bg-white md:shadow md:p-6">
           <div className="flex flex-col gap-1 mb-5">
-            <h2 className="text-xl font-bold text-gray-900">Buyer Operations</h2>
-            <p className="text-sm text-gray-600">
+            <h2 className="text-xl font-bold text-white md:text-gray-900">Buyer Operations</h2>
+            <p className="text-sm text-white/85 md:text-gray-600">
               Payment obligations, pickup readiness, and reliability signals.
             </p>
           </div>
 
-          <StatGrid minCol={140}>
+          <div className="space-y-3 md:hidden">
+            <div className="grid grid-cols-2 gap-3 min-w-0">
+              <StatTile
+                title="Won unpaid"
+                value={buyerControl.wonAwaitingPayment}
+                subtitle="Auctions needing payment"
+                valueClassName="text-amber-700"
+                className="bg-white/95 border-white/20"
+              />
+              <StatTile
+                title="Signed unpaid"
+                value={buyerControl.signedAwaitingPayment}
+                subtitle="Documents signed, payment pending"
+                valueClassName="text-red-700"
+                className="bg-white/95 border-white/20"
+              />
+            </div>
+            <StatTile
+              title="Pickup ready"
+              value={buyerControl.paidAwaitingPickup}
+              subtitle="Paid assets awaiting handoff"
+              valueClassName="text-emerald-700"
+              className="bg-white/95 border-white/20"
+            />
+            <div className="grid grid-cols-2 gap-3 min-w-0">
+              <StatTile
+                title="Payment cycle"
+                value={formatHours(buyerControl.averagePaymentTimeHours)}
+                subtitle="Auction close to verified payment"
+                className="bg-white/95 border-white/20"
+              />
+              <StatTile
+                title="Pickup cycle"
+                value={formatHours(buyerControl.averagePickupTimeHours)}
+                subtitle="Average payment to staff confirmation"
+                className="bg-white/95 border-white/20"
+              />
+            </div>
+          </div>
+
+          <StatGrid minCol={140} className="hidden md:grid">
             <StatTile title="Won unpaid" value={buyerControl.wonAwaitingPayment} subtitle="Auctions needing payment" valueClassName="text-amber-700" />
             <StatTile title="Signed unpaid" value={buyerControl.signedAwaitingPayment} subtitle="Documents signed, payment pending" valueClassName="text-red-700" />
             <StatTile title="Pickup ready" value={buyerControl.paidAwaitingPickup} subtitle="Paid assets awaiting handoff" valueClassName="text-emerald-700" />
@@ -527,7 +567,55 @@ function VendorDashboardContentInner() {
           </StatGrid>
         </div>
 
-        <StatGrid className="mb-8" minCol={200}>
+        <div className="md:hidden mb-4">
+          <StatCard
+            title="Win Rate"
+            value={`${performanceStats.winRate.toFixed(1)}%`}
+            subtitle={`${performanceStats.totalWins} wins / ${performanceStats.totalBids} bids`}
+            icon={
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z" />
+                </svg>
+              </div>
+            }
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-8 min-w-0 md:hidden">
+          <StatCard
+            title="On-Time Pickup"
+            value={`${performanceStats.onTimePickupRate.toFixed(1)}%`}
+            subtitle="Within 48h pickup SLA"
+            icon={
+              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            }
+          />
+          <StatCard
+            title="Rating"
+            value={performanceStats.ratingLabel || (performanceStats.rating > 0 ? performanceStats.rating.toFixed(1) : 'Not enough data')}
+            subtitle={
+              performanceStats.rating >= 4.5
+                ? 'Top rated!'
+                : performanceStats.rating > 0
+                  ? 'Out of 5 stars'
+                  : 'Builds after more bids and payments'
+            }
+            icon={
+              <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </div>
+            }
+          />
+        </div>
+
+        <StatGrid className="mb-8 hidden md:grid" minCol={200}>
           <StatCard
             title="Win Rate"
             value={`${performanceStats.winRate.toFixed(1)}%`}
@@ -600,7 +688,6 @@ function VendorDashboardContentInner() {
           />
         </StatGrid>
 
-        {/* Leaderboard Position */}
         <div className="bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-hover)] rounded-lg shadow-lg p-6 mb-8 text-white">
           <div className="flex items-center justify-between">
             <div>
@@ -685,7 +772,7 @@ function VendorDashboardContentInner() {
         </div>
 
         {/* Comparison to Last Month */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
+        <div className="hidden md:block bg-white rounded-lg shadow p-6 mb-8">
           <h2 className="text-lg font-bold text-gray-900 mb-4">
             Comparison to Last Month
           </h2>

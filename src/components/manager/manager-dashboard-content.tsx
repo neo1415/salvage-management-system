@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAppRouter } from '@/hooks/use-app-router';
-import { StatCard, StatGrid, StatTile } from '@/components/ui/stat-card';
+import { StatCard, StatTile } from '@/components/ui/stat-card';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth/use-auth';
 import { DashboardErrorBoundary } from '@/components/ui/error-boundary';
@@ -503,7 +503,7 @@ function ManagerDashboardContentInner() {
           </div>
         </div>
 
-        <StatGrid className="mb-8" minCol={200}>
+        <div className="grid grid-cols-2 gap-4 mb-8 min-w-0 md:[grid-template-columns:repeat(auto-fit,minmax(200px,1fr))]">
           <StatCard
             title="Active Auctions"
             value={kpis.activeAuctions}
@@ -552,7 +552,7 @@ function ManagerDashboardContentInner() {
               </div>
             }
           />
-        </StatGrid>
+        </div>
 
         {controlTower && (
           <div className="bg-white rounded-lg shadow p-6 mb-8">
@@ -571,7 +571,7 @@ function ManagerDashboardContentInner() {
               </button>
             </div>
 
-            <StatGrid minCol={140}>
+            <div className="grid grid-cols-2 gap-3 min-w-0 md:[grid-template-columns:repeat(auto-fit,minmax(140px,1fr))]">
               <StatTile
                 title="Claims value"
                 value={formatNaira(controlTower.claimsValue)}
@@ -598,10 +598,11 @@ function ManagerDashboardContentInner() {
                 title="Avg cycle"
                 value={`${formatDays(controlTower.averageDaysToPayment)} payment`}
                 subtitle={`${formatDays(controlTower.averageDaysToPickup)} pickup`}
+                className="col-span-2 md:col-span-1"
               />
-            </StatGrid>
+            </div>
 
-            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="mt-5 grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-3">
               {controlTower.exceptions.map((exception) => (
                 <div
                   key={exception.key}

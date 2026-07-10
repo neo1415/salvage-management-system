@@ -15,6 +15,10 @@ import { createRoleNotifications } from '@/features/notifications/services/notif
 
 export const dynamic = 'force-dynamic';
 
+type DojahVerificationLookupResult = Awaited<
+  ReturnType<ReturnType<typeof getDojahService>['getVerificationResult']>
+>;
+
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -24,6 +28,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const livenessReference = String(body?.reference_id ?? '').trim();
   const manualReference = String(body?.manual_reference ?? '').trim();
+  const callbackPayload = asRecord(body?.callback_payload);
 
   if (!livenessReference) {
     return NextResponse.json({ error: 'Missing liveness reference.' }, { status: 400 });
@@ -79,6 +84,7 @@ export async function POST(request: NextRequest) {
   await markLivenessAttemptPending({
     manualEvidence,
     livenessReference,
+    callbackPayload,
     actorId: session.user.id,
     request,
   });
@@ -93,7 +99,7 @@ export async function POST(request: NextRequest) {
     | null = null;
 
   try {
-    evidence = await fetchLivenessEvidenceWithRetry(livenessReference);
+    evidence = await fetchLivenessEvidenceWithRetry(livenessReference, callbackPayload);
   } catch (error) {
     console.warn('[Manual KYC Liveness] Dojah result not ready after widget callback', {
       reference: livenessReference,
@@ -291,13 +297,31 @@ function numericScore(value: unknown): number | null {
   return null;
 }
 
-async function fetchLivenessEvidenceWithRetry(referenceId: string): Promise<{
-  verificationResult: Awaited<ReturnType<ReturnType<typeof getDojahService>['getVerificationResult']>>;
+async function fetchLivenessEvidenceWithRetry(
+  referenceId: string,
+  callbackPayload: Record<string, unknown> | null
+): Promise<{
+  verificationResult: DojahVerificationLookupResult;
   normalizedLiveness: ReturnType<typeof normalizeDojahWorkflowResult>;
   liveness: ReturnType<typeof extractLivenessScores>;
 }> {
+  if (callbackPayload) {
+    const normalizedFromCallback = normalizeDojahWorkflowResult(callbackPayload);
+    const livenessFromCallback = extractLivenessScores(
+      normalizedFromCallback.normalizedResult,
+      callbackPayload
+    );
+    if (livenessFromCallback.hasEvidence) {
+      return {
+        verificationResult: callbackPayload as DojahVerificationLookupResult,
+        normalizedLiveness: normalizedFromCallback,
+        liveness: livenessFromCallback,
+      };
+    }
+  }
+
   const dojah = getDojahService();
-  let lastVerificationResult: Awaited<ReturnType<typeof dojah.getVerificationResult>> | null = null;
+  let lastVerificationResult: DojahVerificationLookupResult | null = null;
   let lastNormalized: ReturnType<typeof normalizeDojahWorkflowResult> | null = null;
   let lastLiveness: ReturnType<typeof extractLivenessScores> | null = null;
 
@@ -334,6 +358,7 @@ async function fetchLivenessEvidenceWithRetry(referenceId: string): Promise<{
 async function markLivenessAttemptPending(input: {
   manualEvidence: typeof providerVerificationRecords.$inferSelect;
   livenessReference: string;
+  callbackPayload: Record<string, unknown> | null;
   actorId: string;
   request: NextRequest;
 }) {
@@ -377,6 +402,7 @@ async function markLivenessAttemptPending(input: {
     rawPayload: {
       source: 'nem_hybrid_liveness_pending',
       livenessReference: input.livenessReference,
+      callbackPayload: input.callbackPayload,
     },
     ipAddress: input.request.headers.get('x-forwarded-for') ?? undefined,
     userAgent: input.request.headers.get('user-agent') ?? undefined,
