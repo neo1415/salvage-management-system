@@ -18,11 +18,7 @@ import {
   isProtectedPage,
   normalizeRole,
 } from '@/lib/auth/rbac';
-
-const BLOCKED_IP_ADDRESSES = new Set([
-  // Flagged by multiple threat-intelligence sources after probing the public landing page.
-  '83.140.108.177',
-]);
+import { getClientIpFromHeaders, isTemporarilyBlockedIp } from '@/lib/security/request-ip';
 
 function getManagerCaseDetailRedirect(pathname: string, role: string | undefined): string | null {
   const normalizedRole = normalizeRole(role);
@@ -40,22 +36,13 @@ function getManagerCaseDetailRedirect(pathname: string, role: string | undefined
  * Proxy: IP forwarding, vendor onboarding gates, and server-side RBAC (JWT from httpOnly cookie).
  */
 export async function proxy(request: NextRequest) {
-  const forwarded = request.headers.get('x-forwarded-for');
-  const realIp = request.headers.get('x-real-ip');
-  const cfConnectingIp = request.headers.get('cf-connecting-ip');
-
-  const ipAddress =
-    cfConnectingIp ||
-    (forwarded ? forwarded.split(',')[0].trim() : null) ||
-    realIp ||
-    'unknown';
-
+  const ipAddress = getClientIpFromHeaders(request.headers);
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-user-ip', ipAddress);
 
   const pathname = request.nextUrl.pathname;
 
-  if (BLOCKED_IP_ADDRESSES.has(ipAddress)) {
+  if (isTemporarilyBlockedIp(ipAddress)) {
     return new NextResponse('Forbidden', {
       status: 403,
       headers: {
