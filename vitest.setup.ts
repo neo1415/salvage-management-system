@@ -1,5 +1,52 @@
-import { beforeAll, afterAll, afterEach } from 'vitest';
+import { beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { client } from '@/lib/db/drizzle';
+
+vi.mock('@google/generative-ai', async () => {
+  if (process.env.RUN_REAL_AI_PROVIDER_TESTS === 'true') {
+    return vi.importActual('@google/generative-ai');
+  }
+
+  const mockGeminiResponse = {
+    itemDetails: {
+      detectedMake: 'Mock',
+      detectedModel: 'Gemini Unit Test Asset',
+      overallCondition: 'Good',
+    },
+    damagedParts: [],
+    severity: 'minor',
+    airbagDeployed: false,
+    totalLoss: false,
+    summary: 'Mock Gemini assessment for unit tests.',
+  };
+
+  class MockGoogleGenerativeAI {
+    getGenerativeModel() {
+      return {
+        generateContent: vi.fn().mockResolvedValue({
+          response: {
+            text: () => JSON.stringify(mockGeminiResponse),
+          },
+        }),
+      };
+    }
+  }
+
+  return {
+    HarmBlockThreshold: {
+      BLOCK_NONE: 'BLOCK_NONE',
+      BLOCK_LOW_AND_ABOVE: 'BLOCK_LOW_AND_ABOVE',
+      BLOCK_MEDIUM_AND_ABOVE: 'BLOCK_MEDIUM_AND_ABOVE',
+      BLOCK_ONLY_HIGH: 'BLOCK_ONLY_HIGH',
+    },
+    HarmCategory: {
+      HARM_CATEGORY_DANGEROUS_CONTENT: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+      HARM_CATEGORY_HARASSMENT: 'HARM_CATEGORY_HARASSMENT',
+      HARM_CATEGORY_HATE_SPEECH: 'HARM_CATEGORY_HATE_SPEECH',
+      HARM_CATEGORY_SEXUALLY_EXPLICIT: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+    },
+    GoogleGenerativeAI: MockGoogleGenerativeAI,
+  };
+});
 
 // Global test setup
 beforeAll(async () => {
