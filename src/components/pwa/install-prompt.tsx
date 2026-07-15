@@ -5,6 +5,11 @@ import { X } from 'lucide-react';
 import Image from 'next/image';
 import { usePublicBranding } from '@/hooks/use-public-branding';
 import { hasCookieConsent } from '@/lib/cookies/cookie-consent';
+import {
+  getSafeStorageItem,
+  removeSafeStorageItem,
+  setSafeStorageItem,
+} from '@/lib/utils/safe-browser-storage';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -14,30 +19,6 @@ interface BeforeInstallPromptEvent extends Event {
 const PWA_DISMISSED_KEY = 'pwa-install-dismissed-v1';
 const PWA_ACCEPTED_KEY = 'pwa-install-accepted-v1';
 
-function getSafeStorageItem(key: string): string | null {
-  try {
-    return window.localStorage?.getItem(key) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function setSafeStorageItem(key: string, value: string): void {
-  try {
-    window.localStorage?.setItem(key, value);
-  } catch {
-    // Ignore storage failures in privacy-restricted browsers.
-  }
-}
-
-function removeSafeStorageItem(key: string): void {
-  try {
-    window.localStorage?.removeItem(key);
-  } catch {
-    // Ignore storage failures in privacy-restricted browsers.
-  }
-}
-
 function isPwaPromptSuppressed(): boolean {
   if (typeof window === 'undefined') return true;
 
@@ -46,8 +27,8 @@ function isPwaPromptSuppressed(): boolean {
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
 
   if (isStandalone) return true;
-  if (getSafeStorageItem(PWA_ACCEPTED_KEY) === '1') return true;
-  if (getSafeStorageItem(PWA_DISMISSED_KEY) === '1') return true;
+  if (getSafeStorageItem('localStorage', PWA_ACCEPTED_KEY) === '1') return true;
+  if (getSafeStorageItem('localStorage', PWA_DISMISSED_KEY) === '1') return true;
 
   return false;
 }
@@ -109,10 +90,10 @@ export function InstallPrompt() {
     const { outcome } = await deferredPrompt.userChoice;
 
     if (outcome === 'accepted') {
-      setSafeStorageItem(PWA_ACCEPTED_KEY, '1');
-      removeSafeStorageItem(PWA_DISMISSED_KEY);
+      setSafeStorageItem('localStorage', PWA_ACCEPTED_KEY, '1');
+      removeSafeStorageItem('localStorage', PWA_DISMISSED_KEY);
     } else {
-      setSafeStorageItem(PWA_DISMISSED_KEY, '1');
+      setSafeStorageItem('localStorage', PWA_DISMISSED_KEY, '1');
     }
 
     setDeferredPrompt(null);
@@ -121,7 +102,7 @@ export function InstallPrompt() {
 
   const handleDismiss = () => {
     setShowPrompt(false);
-    setSafeStorageItem(PWA_DISMISSED_KEY, '1');
+    setSafeStorageItem('localStorage', PWA_DISMISSED_KEY, '1');
   };
 
   if (!showPrompt || !deferredPrompt || isPwaPromptSuppressed() || !cookieResolved) {
