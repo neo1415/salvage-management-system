@@ -14,6 +14,30 @@ interface BeforeInstallPromptEvent extends Event {
 const PWA_DISMISSED_KEY = 'pwa-install-dismissed-v1';
 const PWA_ACCEPTED_KEY = 'pwa-install-accepted-v1';
 
+function getSafeStorageItem(key: string): string | null {
+  try {
+    return window.localStorage?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setSafeStorageItem(key: string, value: string): void {
+  try {
+    window.localStorage?.setItem(key, value);
+  } catch {
+    // Ignore storage failures in privacy-restricted browsers.
+  }
+}
+
+function removeSafeStorageItem(key: string): void {
+  try {
+    window.localStorage?.removeItem(key);
+  } catch {
+    // Ignore storage failures in privacy-restricted browsers.
+  }
+}
+
 function isPwaPromptSuppressed(): boolean {
   if (typeof window === 'undefined') return true;
 
@@ -22,8 +46,8 @@ function isPwaPromptSuppressed(): boolean {
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
 
   if (isStandalone) return true;
-  if (localStorage.getItem(PWA_ACCEPTED_KEY) === '1') return true;
-  if (localStorage.getItem(PWA_DISMISSED_KEY) === '1') return true;
+  if (getSafeStorageItem(PWA_ACCEPTED_KEY) === '1') return true;
+  if (getSafeStorageItem(PWA_DISMISSED_KEY) === '1') return true;
 
   return false;
 }
@@ -85,10 +109,10 @@ export function InstallPrompt() {
     const { outcome } = await deferredPrompt.userChoice;
 
     if (outcome === 'accepted') {
-      localStorage.setItem(PWA_ACCEPTED_KEY, '1');
-      localStorage.removeItem(PWA_DISMISSED_KEY);
+      setSafeStorageItem(PWA_ACCEPTED_KEY, '1');
+      removeSafeStorageItem(PWA_DISMISSED_KEY);
     } else {
-      localStorage.setItem(PWA_DISMISSED_KEY, '1');
+      setSafeStorageItem(PWA_DISMISSED_KEY, '1');
     }
 
     setDeferredPrompt(null);
@@ -97,7 +121,7 @@ export function InstallPrompt() {
 
   const handleDismiss = () => {
     setShowPrompt(false);
-    localStorage.setItem(PWA_DISMISSED_KEY, '1');
+    setSafeStorageItem(PWA_DISMISSED_KEY, '1');
   };
 
   if (!showPrompt || !deferredPrompt || isPwaPromptSuppressed() || !cookieResolved) {

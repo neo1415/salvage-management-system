@@ -15,6 +15,22 @@ const DEFAULT_PREFERENCES: CookiePreferences = {
   analytics: true,
 };
 
+function safeStorageGet(storage: Storage | null | undefined, key: string): string | null {
+  try {
+    return storage?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function safeStorageSet(storage: Storage | null | undefined, key: string, value: string): void {
+  try {
+    storage?.setItem(key, value);
+  } catch {
+    // Storage can be unavailable in strict privacy modes. Consent should fail closed.
+  }
+}
+
 function parsePreferences(raw: string | null): CookiePreferences | null {
   if (!raw) return null;
 
@@ -37,21 +53,21 @@ export function readStoredCookiePreferences(): CookiePreferences | null {
   if (typeof window === 'undefined') return null;
 
   return (
-    parsePreferences(localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY))
-    ?? parsePreferences(localStorage.getItem(COOKIE_PREFERENCES_STORAGE_KEY))
-    ?? parsePreferences(sessionStorage.getItem(COOKIE_CONSENT_STORAGE_KEY))
+    parsePreferences(safeStorageGet(window.localStorage, COOKIE_CONSENT_STORAGE_KEY))
+    ?? parsePreferences(safeStorageGet(window.localStorage, COOKIE_PREFERENCES_STORAGE_KEY))
+    ?? parsePreferences(safeStorageGet(window.sessionStorage, COOKIE_CONSENT_STORAGE_KEY))
   );
 }
 
 export function hasCookieConsent(): boolean {
   if (typeof window === 'undefined') return false;
   if (readStoredCookiePreferences() !== null) return true;
-  return localStorage.getItem(COOKIE_BANNER_DISMISSED_KEY) === '1';
+  return safeStorageGet(window.localStorage, COOKIE_BANNER_DISMISSED_KEY) === '1';
 }
 
 export function dismissCookieBanner(): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(COOKIE_BANNER_DISMISSED_KEY, '1');
+  safeStorageSet(window.localStorage, COOKIE_BANNER_DISMISSED_KEY, '1');
   window.dispatchEvent(new CustomEvent('salvage:cookie-banner-dismissed'));
 }
 
@@ -66,10 +82,10 @@ export function persistCookiePreferences(preferences: CookiePreferences): void {
   };
 
   const serialized = JSON.stringify(payload);
-  localStorage.setItem(COOKIE_CONSENT_STORAGE_KEY, serialized);
-  localStorage.setItem(COOKIE_PREFERENCES_STORAGE_KEY, serialized);
-  localStorage.setItem(COOKIE_BANNER_DISMISSED_KEY, '1');
-  sessionStorage.setItem(COOKIE_CONSENT_STORAGE_KEY, serialized);
+  safeStorageSet(window.localStorage, COOKIE_CONSENT_STORAGE_KEY, serialized);
+  safeStorageSet(window.localStorage, COOKIE_PREFERENCES_STORAGE_KEY, serialized);
+  safeStorageSet(window.localStorage, COOKIE_BANNER_DISMISSED_KEY, '1');
+  safeStorageSet(window.sessionStorage, COOKIE_CONSENT_STORAGE_KEY, serialized);
 
   applyCookiePreferences(payload);
 }

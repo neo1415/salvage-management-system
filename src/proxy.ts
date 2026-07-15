@@ -19,6 +19,11 @@ import {
   normalizeRole,
 } from '@/lib/auth/rbac';
 
+const BLOCKED_IP_ADDRESSES = new Set([
+  // Flagged by multiple threat-intelligence sources after probing the public landing page.
+  '83.140.108.177',
+]);
+
 function getManagerCaseDetailRedirect(pathname: string, role: string | undefined): string | null {
   const normalizedRole = normalizeRole(role);
   if (normalizedRole !== 'salvage_manager' && normalizedRole !== 'system_admin') {
@@ -49,6 +54,16 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set('x-user-ip', ipAddress);
 
   const pathname = request.nextUrl.pathname;
+
+  if (BLOCKED_IP_ADDRESSES.has(ipAddress)) {
+    return new NextResponse('Forbidden', {
+      status: 403,
+      headers: {
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   const token = await getToken(getAuthJwtParams(request));
 
   const role = token?.role as string | undefined;
@@ -126,7 +141,11 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Auth routes must not pass through proxy (avoids edge JWT work during sign-in/session)
+    '/',
     '/api/((?!auth).*)',
+    '/login',
+    '/register',
+    '/launch',
     '/vendor/:path*',
     '/admin/:path*',
     '/manager/:path*',
