@@ -1,5 +1,7 @@
 'use client';
 
+import { warmOfflineFieldModeCache } from '@/lib/pwa/offline-field-cache';
+
 const OFFLINE_UNLOCK_KEY = 'salvage:offline-unlock:v1';
 const DEFAULT_TTL_MS = 72 * 60 * 60 * 1000;
 
@@ -73,6 +75,7 @@ export function saveOfflineUnlockGrant(input: OfflineUnlockInput): OfflineUnlock
   };
 
   window.localStorage.setItem(OFFLINE_UNLOCK_KEY, JSON.stringify(grant));
+  void warmOfflineFieldModeCache();
   return grant;
 }
 
@@ -113,4 +116,3 @@ export async function refreshOfflineUnlockGrantFromSession(): Promise<OfflineUnl
     return null;
   }
 }
-

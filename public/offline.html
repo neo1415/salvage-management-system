@@ -73,7 +73,15 @@
       }
     }
 
-    .retry-button {
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .retry-button,
+    .field-button {
       background: #D97706;
       color: #0C0C0B;
       border: none;
@@ -84,14 +92,23 @@
       cursor: pointer;
       transition: all 0.3s ease;
       box-shadow: 0 4px 15px rgba(217, 119, 6, 0.3);
+      text-decoration: none;
+      display: inline-block;
     }
 
-    .retry-button:hover {
+    .field-button {
+      background: white;
+      color: #7f001b;
+    }
+
+    .retry-button:hover,
+    .field-button:hover {
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(217, 119, 6, 0.4);
     }
 
-    .retry-button:active {
+    .retry-button:active,
+    .field-button:active {
       transform: translateY(0);
     }
 
@@ -127,9 +144,12 @@
       Don't worry, your work is saved locally and will sync automatically when you're back online.
     </p>
     
-    <button class="retry-button" onclick="window.location.reload()">
-      Try Again
-    </button>
+    <div class="actions">
+      <a class="field-button" href="/offline-field?offline=1">Open offline field mode</a>
+      <button class="retry-button" onclick="window.location.reload()">
+        Try Again
+      </button>
+    </div>
     
     <div class="status">
       Connection Status: <span id="status" class="offline">Offline</span>

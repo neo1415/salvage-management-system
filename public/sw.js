@@ -1,6 +1,51 @@
 // Service Worker for Salvage Management System PWA
 // Implements offline-first caching strategies with Workbox
-// Version: 1.0.3 - Cache offline field mode entry points
+// Version: 1.0.4 - Harden offline field mode navigation fallbacks
+
+const FALLBACK_HTML_URL = '/offline.html';
+const FALLBACK_IMAGE_URL = '/icons/icon-192.png';
+const OFFLINE_ENTRY_URLS = ['/login', '/offline-field'];
+const OFFLINE_FALLBACK_CACHE = 'offline-fallbacks-v2';
+
+function normalizeNavigationPath(requestUrl) {
+  const url = new URL(requestUrl);
+  return url.pathname.replace(/\/$/, '') || '/';
+}
+
+async function cacheOfflineFallbacks() {
+  const cache = await caches.open(OFFLINE_FALLBACK_CACHE);
+  await Promise.all(
+    [FALLBACK_HTML_URL, FALLBACK_IMAGE_URL, ...OFFLINE_ENTRY_URLS].map(async (url) => {
+      try {
+        const response = await fetch(url, { credentials: 'same-origin' });
+        if (response.ok || response.type === 'opaque') {
+          await cache.put(url, response);
+        }
+      } catch (error) {
+        console.warn(`Service Worker: Unable to pre-cache offline fallback ${url}`, error);
+      }
+    })
+  );
+}
+
+async function getOfflineNavigationFallback(requestUrl) {
+  const pathname = normalizeNavigationPath(requestUrl);
+  const cachedNavigation = await caches.match(requestUrl, { ignoreSearch: true });
+  if (cachedNavigation) return cachedNavigation;
+
+  const cache = await caches.open(OFFLINE_FALLBACK_CACHE);
+
+  if (OFFLINE_ENTRY_URLS.includes(pathname)) {
+    const entry = await cache.match(pathname);
+    if (entry) return entry;
+  }
+
+  return (await cache.match(FALLBACK_HTML_URL)) || Response.error();
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(cacheOfflineFallbacks());
+});
 
 // Import Workbox from CDN for runtime caching. Push notification handlers must
 // still load if the CDN is temporarily unreachable on a mobile device.
@@ -216,45 +261,33 @@ if (self.workbox) {
     }
   });
 
-  // Offline fallback page
-  const FALLBACK_HTML_URL = '/offline.html';
-  const FALLBACK_IMAGE_URL = '/icons/icon-192.png';
-  const OFFLINE_ENTRY_URLS = ['/login', '/offline-field'];
-
-  // Cache fallback resources on install
-  self.addEventListener('install', (event) => {
-    event.waitUntil(
-      caches.open('offline-fallbacks').then((cache) => {
-        return cache.addAll([FALLBACK_HTML_URL, FALLBACK_IMAGE_URL, ...OFFLINE_ENTRY_URLS]);
-      })
-    );
-  });
-
-  // Serve fallback when offline
-  self.addEventListener('fetch', (event) => {
-    if (event.request.mode === 'navigate') {
-      const requestUrl = new URL(event.request.url);
-      event.respondWith(
-        fetch(event.request).catch(() => {
-          if (OFFLINE_ENTRY_URLS.includes(requestUrl.pathname)) {
-            return caches.match(requestUrl.pathname).then((cachedEntry) => cachedEntry || caches.match(FALLBACK_HTML_URL));
-          }
-
-          return caches.match(FALLBACK_HTML_URL);
-        })
-      );
-    } else if (event.request.destination === 'image') {
-      event.respondWith(
-        fetch(event.request).catch(() => {
-          return caches.match(FALLBACK_IMAGE_URL);
-        })
-      );
+  workbox.routing.setCatchHandler(async ({ event, request }) => {
+    if (request.mode === 'navigate' || request.destination === 'document') {
+      return getOfflineNavigationFallback(event.request.url);
     }
+
+    if (request.destination === 'image') {
+      return (await caches.match(FALLBACK_IMAGE_URL)) || Response.error();
+    }
+
+    return Response.error();
   });
 
   console.log('Service Worker: All caching strategies registered');
 } else {
   console.error('Workbox failed to load');
+
+  self.addEventListener('fetch', (event) => {
+    if (event.request.mode === 'navigate') {
+      event.respondWith(
+        fetch(event.request).catch(() => getOfflineNavigationFallback(event.request.url))
+      );
+    } else if (event.request.destination === 'image') {
+      event.respondWith(
+        fetch(event.request).catch(() => caches.match(FALLBACK_IMAGE_URL))
+      );
+    }
+  });
 }
 
 // Push Notification Handler
