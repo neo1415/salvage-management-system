@@ -2,12 +2,10 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { useSearchParams } from 'next/navigation';
-import { useAppRouter } from '@/hooks/use-app-router';
-import { useSession } from 'next-auth/react';
 import { ArrowLeft, Home, ShieldAlert, FileQuestion, Ban } from 'lucide-react';
-import { getDashboardPathForRole } from '@/lib/auth/rbac';
-import { getBrandGradient, usePublicBranding } from '@/hooks/use-public-branding';
+import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
+import type { BrandingPolicy } from '@/features/business-policy/types';
+import { getBrandGradient } from '@/features/branding/brand-colors';
 
 type ErrorVariant = 'not-found' | 'forbidden' | 'unauthorized';
 
@@ -47,23 +45,53 @@ interface AppErrorPageProps {
   variant: ErrorVariant;
 }
 
+function getSafeBranding(): BrandingPolicy {
+  if (typeof window === 'undefined') {
+    return DEFAULT_BUSINESS_POLICY.branding;
+  }
+
+  try {
+    return window.__PUBLIC_BUSINESS_POLICY__?.branding ?? DEFAULT_BUSINESS_POLICY.branding;
+  } catch {
+    return DEFAULT_BUSINESS_POLICY.branding;
+  }
+}
+
+function getSafeRequestedPath(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const from = new URLSearchParams(window.location.search).get('from');
+    return from || null;
+  } catch {
+    return null;
+  }
+}
+
 export function AppErrorPage({ variant }: AppErrorPageProps) {
-  const router = useAppRouter();
-  const searchParams = useSearchParams();
-  const { data: session } = useSession();
-  const { branding } = usePublicBranding();
+  const branding = getSafeBranding();
   const config = VARIANT_CONFIG[variant];
   const Icon = config.icon;
 
-  const fromPath = searchParams.get('from');
-  const dashboardHref = getDashboardPathForRole(session?.user?.role);
+  const fromPath = getSafeRequestedPath();
+  const dashboardHref = '/dashboard';
 
   const handleGoBack = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      router.back();
+    if (typeof window === 'undefined') {
       return;
     }
-    router.push(dashboardHref);
+
+    try {
+      if (window.history.length > 1) {
+        window.history.back();
+        return;
+      }
+      window.location.assign(dashboardHref);
+    } catch {
+      window.location.href = dashboardHref;
+    }
   };
 
   return (

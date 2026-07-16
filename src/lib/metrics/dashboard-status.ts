@@ -22,7 +22,7 @@ export function formatRatingLabel(
     };
   }
 
-  if (activityCount >= 3 && autoRating > 0) {
+  if (activityCount > 0 && autoRating > 0) {
     return {
       value: Math.round(autoRating * 100) / 100,
       label: autoRating.toFixed(1),
@@ -32,7 +32,23 @@ export function formatRatingLabel(
 
   return {
     value: 0,
-    label: 'Not enough data',
+    label: '0.0',
     source: 'insufficient',
   };
+}
+
+export function formatDurationHours(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) {
+    return '0h';
+  }
+
+  if (value < 1) {
+    return '<1h';
+  }
+
+  if (value < 24) {
+    return `${Math.round(value)}h`;
+  }
+
+  return `${(value / 24).toFixed(1)}d`;
 }

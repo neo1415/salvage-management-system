@@ -15,6 +15,7 @@ import { PageLoadingSkeleton } from '@/components/ui/loading-states';
 import { formatAssetName as formatCaseAssetName } from '@/lib/utils/asset-name';
 import { collectImageFilesMetadata } from '@/features/media/client-image-metadata';
 import { uploadPickupEvidenceFiles } from '@/features/pickups/client/pickup-evidence-upload';
+import { formatDurationHours } from '@/lib/metrics/dashboard-status';
 
 const PaymentUnlockedModal = dynamic(
   () => import('@/components/modals/payment-unlocked-modal'),
@@ -41,14 +42,6 @@ type PickupEvidenceFormState = {
   error: string | null;
   submitted: boolean;
 };
-
-function formatHours(value: number | null | undefined): string {
-  if (value === null || value === undefined) return 'No clean data';
-  if (value === 0) return '0h';
-  if (value < 1) return '<1h';
-  if (value < 24) return `${Math.round(value)}h`;
-  return `${(value / 24).toFixed(1)}d`;
-}
 
 function VendorDashboardContentInner() {
   const router = useAppRouter();
@@ -292,6 +285,7 @@ function VendorDashboardContentInner() {
     averagePaymentTimeHours: performanceStats.avgPaymentTimeHours || null,
     averagePickupTimeHours: null,
   };
+  const ratingDisplayValue = performanceStats.ratingLabel || performanceStats.rating.toFixed(1);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -545,13 +539,13 @@ function VendorDashboardContentInner() {
             <div className="grid grid-cols-2 gap-3 min-w-0">
               <StatTile
                 title="Payment cycle"
-                value={formatHours(buyerControl.averagePaymentTimeHours)}
+                value={formatDurationHours(buyerControl.averagePaymentTimeHours)}
                 subtitle="Auction close to verified payment"
                 className="bg-white/95 border-white/20"
               />
               <StatTile
                 title="Pickup cycle"
-                value={formatHours(buyerControl.averagePickupTimeHours)}
+                value={formatDurationHours(buyerControl.averagePickupTimeHours)}
                 subtitle="Average payment to staff confirmation"
                 className="bg-white/95 border-white/20"
               />
@@ -562,8 +556,8 @@ function VendorDashboardContentInner() {
             <StatTile title="Won unpaid" value={buyerControl.wonAwaitingPayment} subtitle="Auctions needing payment" valueClassName="text-amber-700" />
             <StatTile title="Signed unpaid" value={buyerControl.signedAwaitingPayment} subtitle="Documents signed, payment pending" valueClassName="text-red-700" />
             <StatTile title="Pickup ready" value={buyerControl.paidAwaitingPickup} subtitle="Paid assets awaiting handoff" valueClassName="text-emerald-700" />
-            <StatTile title="Payment cycle" value={formatHours(buyerControl.averagePaymentTimeHours)} subtitle="Auction close to verified payment" />
-            <StatTile title="Pickup cycle" value={formatHours(buyerControl.averagePickupTimeHours)} subtitle="Average payment to staff confirmation" />
+            <StatTile title="Payment cycle" value={formatDurationHours(buyerControl.averagePaymentTimeHours)} subtitle="Auction close to verified payment" />
+            <StatTile title="Pickup cycle" value={formatDurationHours(buyerControl.averagePickupTimeHours)} subtitle="Average payment to staff confirmation" />
           </StatGrid>
         </div>
 
@@ -597,7 +591,7 @@ function VendorDashboardContentInner() {
           />
           <StatCard
             title="Rating"
-            value={performanceStats.ratingLabel || (performanceStats.rating > 0 ? performanceStats.rating.toFixed(1) : 'Not enough data')}
+            value={ratingDisplayValue}
             subtitle={
               performanceStats.rating >= 4.5
                 ? 'Top rated!'
@@ -670,7 +664,7 @@ function VendorDashboardContentInner() {
           />
           <StatCard
             title="Rating"
-            value={performanceStats.ratingLabel || (performanceStats.rating > 0 ? performanceStats.rating.toFixed(1) : 'Not enough data')}
+            value={ratingDisplayValue}
             subtitle={
               performanceStats.rating >= 4.5
                 ? 'Top rated!'
