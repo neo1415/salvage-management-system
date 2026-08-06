@@ -13,6 +13,7 @@ import type { NormalizedVerificationResult } from '@/features/kyc/types/provider
 import { getIpAddress } from '@/lib/utils/audit-logger';
 import { VERIFICATION_COPY } from '@/lib/kyc/verification-copy';
 import { extractTextFromDocument } from '@/lib/integrations/google-document-ai';
+import { normalizeIdentityDate } from '@/features/kyc/utils/validation';
 
 /**
  * POST /api/kyc/manual/submit
@@ -265,7 +266,9 @@ export async function POST(request: NextRequest) {
       businessType,
       cacNumber,
       fullName: vendor.fullName ?? session.user.name ?? businessName,
-      dateOfBirth: vendor.dateOfBirth ? new Date(vendor.dateOfBirth).toISOString().slice(0, 10) : undefined,
+      dateOfBirth: vendor.dateOfBirth
+        ? normalizeIdentityDate(String(vendor.dateOfBirth)) ?? undefined
+        : undefined,
       nin,
       address,
       city,
@@ -277,7 +280,9 @@ export async function POST(request: NextRequest) {
       userId,
       email: vendor.email ?? session.user.email ?? undefined,
       phone: vendor.phone ?? session.user.phone ?? undefined,
-      dateOfBirth: vendor.dateOfBirth ? new Date(vendor.dateOfBirth).toISOString().slice(0, 10) : undefined,
+      dateOfBirth: vendor.dateOfBirth
+        ? normalizeIdentityDate(String(vendor.dateOfBirth)) ?? undefined
+        : undefined,
       nin,
       bvn,
       cacNumber,

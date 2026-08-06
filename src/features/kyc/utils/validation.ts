@@ -13,6 +13,45 @@ export function isValidBVN(value: string): boolean {
   return /^\d{11}$/.test(value);
 }
 
+export function normalizeIdentityDate(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const isoMatch = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    return validDateParts(
+      Number(isoMatch[1]),
+      Number(isoMatch[2]),
+      Number(isoMatch[3])
+    );
+  }
+
+  const dayFirstMatch = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dayFirstMatch) {
+    return validDateParts(
+      Number(dayFirstMatch[3]),
+      Number(dayFirstMatch[2]),
+      Number(dayFirstMatch[1])
+    );
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return validDateParts(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+}
+
+function validDateParts(year: number, month: number, day: number): string | null {
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return parsed.toISOString().slice(0, 10);
+}
+
 /**
  * Returns true if the document expiry date is in the past (expired).
  * @param expiryDate ISO 8601 date string (YYYY-MM-DD)

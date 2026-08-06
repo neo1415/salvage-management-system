@@ -11,6 +11,7 @@ import { isKycTestingMode } from '@/lib/kyc/kyc-testing-mode';
 import { resetVendorTier2ForTesting } from '@/features/kyc/services/kyc-testing-reset.service';
 import { clearPrematureTier2Submission } from '@/features/kyc/services/clear-premature-tier2-submission';
 import { buildDojahReference } from '@/features/kyc/utils/dojah-reference';
+import { normalizeIdentityDate } from '@/features/kyc/utils/validation';
 import {
   businessPolicyService,
   getBusinessPolicyRuntimeMode,
@@ -72,8 +73,7 @@ export async function GET(request: NextRequest) {
   // Format DOB as YYYY-MM-DD for Dojah
   let dob: string | undefined;
   if (result?.dateOfBirth) {
-    const date = new Date(result.dateOfBirth);
-    dob = date.toISOString().slice(0, 10);
+    dob = normalizeIdentityDate(String(result.dateOfBirth)) ?? undefined;
   }
 
   if (!result?.vendorId) {

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { normalizeNigerianPhone } from '@/lib/utils/validation';
+import { normalizeIdentityDate } from '@/features/kyc/utils/validation';
 
 /**
  * BVN Verification Service
@@ -43,9 +44,7 @@ export interface BVNVerificationResponse {
 }
 
 function normalizeDob(value: string): string | null {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  return normalizeIdentityDate(value);
 }
 
 function phonesMatch(registered: string, bvnPhone: string): boolean {
@@ -84,17 +83,18 @@ export async function verifyBVN(request: BVNVerificationRequest): Promise<BVNVer
     const entity = dojahData.entity;
     let matchResult = matchDojahBVNDetails({
       bvnValid: entity?.bvn?.status === true,
-      firstNameValid: entity?.first_name?.status !== false,
-      lastNameValid: entity?.last_name?.status !== false,
-      middleNameValid: entity?.middle_name?.status !== false,
+      firstNameStatus: entity?.first_name?.status ?? undefined,
+      lastNameStatus: entity?.last_name?.status ?? undefined,
+      middleNameStatus: entity?.middle_name?.status ?? undefined,
       dobValid: entity?.dob?.status !== false,
       firstNameConfidence: entity?.first_name?.confidence_value,
       lastNameConfidence: entity?.last_name?.confidence_value,
       middleNameConfidence: entity?.middle_name?.confidence_value,
       hasMiddleNameInput: Boolean(request.middleName?.trim()),
+      hasMiddleNameResult: Boolean(entity?.middle_name),
     });
 
-    if (entity?.bvn?.status === true) {
+    if (matchResult.verified) {
       try {
         const lookup = await dojah.lookupBVN(request.bvn);
         const lookupEntity = lookup.entity;
@@ -149,16 +149,17 @@ export async function verifyBVN(request: BVNVerificationRequest): Promise<BVNVer
   }
 }
 
-function matchDojahBVNDetails(input: {
+export function matchDojahBVNDetails(input: {
   bvnValid: boolean;
   firstNameConfidence?: number | null;
   lastNameConfidence?: number | null;
   middleNameConfidence?: number | null;
-  firstNameValid: boolean;
-  lastNameValid: boolean;
-  middleNameValid: boolean;
+  firstNameStatus?: boolean;
+  lastNameStatus?: boolean;
+  middleNameStatus?: boolean;
   dobValid: boolean;
   hasMiddleNameInput: boolean;
+  hasMiddleNameResult: boolean;
 }): { verified: boolean; matchScore: number; mismatches: string[] } {
   const mismatches: string[] = [];
   let totalScore = 0;
@@ -167,24 +168,43 @@ function matchDojahBVNDetails(input: {
   if (input.bvnValid) totalScore += 35;
   else mismatches.push('BVN could not be validated');
 
-  const firstNameScore = input.firstNameValid ? input.firstNameConfidence ?? 100 : input.firstNameConfidence ?? 0;
-  const lastNameScore = input.lastNameValid ? input.lastNameConfidence ?? 100 : input.lastNameConfidence ?? 0;
+  const firstNameValid = providerNameFieldMatches(
+    input.firstNameStatus,
+    input.firstNameConfidence
+  );
+  const lastNameValid = providerNameFieldMatches(
+    input.lastNameStatus,
+    input.lastNameConfidence
+  );
+  const firstNameScore = providerNameFieldScore(
+    input.firstNameStatus,
+    input.firstNameConfidence
+  );
+  const lastNameScore = providerNameFieldScore(
+    input.lastNameStatus,
+    input.lastNameConfidence
+  );
   totalScore += Math.min(100, Math.max(0, firstNameScore)) * 0.2;
   totalScore += Math.min(100, Math.max(0, lastNameScore)) * 0.2;
 
-  if (!input.firstNameValid || firstNameScore < 70) {
+  if (!firstNameValid) {
     nameStructureMismatch = true;
   }
-  if (!input.lastNameValid || lastNameScore < 70) {
+  if (!lastNameValid) {
     nameStructureMismatch = true;
   }
 
-  if (input.hasMiddleNameInput) {
-    const middleScore = input.middleNameValid
-      ? input.middleNameConfidence ?? 100
-      : input.middleNameConfidence ?? 0;
+  if (input.hasMiddleNameInput && input.hasMiddleNameResult) {
+    const middleNameValid = providerNameFieldMatches(
+      input.middleNameStatus,
+      input.middleNameConfidence
+    );
+    const middleScore = providerNameFieldScore(
+      input.middleNameStatus,
+      input.middleNameConfidence
+    );
     totalScore += Math.min(100, Math.max(0, middleScore)) * 0.1;
-    if (!input.middleNameValid || middleScore < 70) {
+    if (!middleNameValid) {
       nameStructureMismatch = true;
     }
   } else {
@@ -203,6 +223,22 @@ function matchDojahBVNDetails(input: {
     matchScore: Math.round(Math.min(100, totalScore)),
     mismatches,
   };
+}
+
+function providerNameFieldMatches(
+  status: boolean | undefined,
+  confidence: number | null | undefined
+): boolean {
+  if (status !== undefined) return status;
+  return typeof confidence === 'number' && confidence >= 70;
+}
+
+function providerNameFieldScore(
+  status: boolean | undefined,
+  confidence: number | null | undefined
+): number {
+  if (status === true) return Math.max(confidence ?? 100, 70);
+  return confidence ?? 0;
 }
 
 export function encryptBVN(bvn: string): string {

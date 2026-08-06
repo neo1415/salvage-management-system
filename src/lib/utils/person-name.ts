@@ -38,13 +38,38 @@ export type UserLegalNameSource = {
 /** Derive first/middle/last from full_name (BVN order) for Dojah; retry swapped order for 2-word names. */
 export function resolveUserLegalNamesForBvn(user: UserLegalNameSource): {
   primary: BvnNameParts & { middleName?: string };
-  alternateAttempts: BvnNameParts[];
+  alternateAttempts: ParsedLegalName[];
 } {
   const primary = parseFullNameBvnOrder(user.fullName);
+  const words = user.fullName.trim().split(/\s+/).filter(Boolean);
   const { attempts } = splitFullNameForBvn(user.fullName);
-  const primaryKey = `${primary.firstName}|${primary.lastName}`.toLowerCase();
-  const alternateAttempts = attempts.filter(
-    (a) => `${a.firstName}|${a.lastName}`.toLowerCase() !== primaryKey
-  );
+  const candidates: ParsedLegalName[] = [...attempts];
+
+  if (words.length > 2) {
+    candidates.push({
+      firstName: words[1],
+      middleName: words.slice(2).join(' '),
+      lastName: words[0],
+    });
+    candidates.push({
+      firstName: words[words.length - 1],
+      middleName: words.slice(1, -1).join(' '),
+      lastName: words[0],
+    });
+  }
+
+  const primaryKey = legalNameKey(primary);
+  const seen = new Set([primaryKey]);
+  const alternateAttempts = candidates.filter((attempt) => {
+    const key = legalNameKey(attempt);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   return { primary, alternateAttempts };
+}
+
+function legalNameKey(name: ParsedLegalName): string {
+  return `${name.firstName}|${name.middleName ?? ''}|${name.lastName}`.toLowerCase();
 }

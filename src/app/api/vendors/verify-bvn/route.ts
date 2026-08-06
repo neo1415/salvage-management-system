@@ -18,6 +18,7 @@ import { sanitizeVerificationUserMessage } from '@/lib/kyc/kyc-user-messages';
 import { VERIFICATION_COPY } from '@/lib/kyc/verification-copy';
 import { businessPolicyService } from '@/features/business-policy/business-policy.service';
 import { resolveVendorTier2Path } from '@/lib/kyc/tier2-kyc-provider';
+import { normalizeIdentityDate } from '@/features/kyc/utils/validation';
 
 /**
  * POST /api/vendors/verify-bvn
@@ -168,7 +169,16 @@ export async function POST(request: NextRequest) {
     );
 
     // 6. BVN match: legal name parts + DOB (Dojah) + phone (BVN lookup)
-    const dateOfBirth = user.dateOfBirth.toISOString().split('T')[0];
+    const dateOfBirth = normalizeIdentityDate(String(user.dateOfBirth));
+    if (!dateOfBirth) {
+      return NextResponse.json(
+        {
+          error: 'Invalid date of birth',
+          message: 'Your account date of birth could not be validated. Please update your profile and try again.',
+        },
+        { status: 400 }
+      );
+    }
     const { primary, alternateAttempts } = resolveUserLegalNamesForBvn({
       fullName: user.fullName,
     });

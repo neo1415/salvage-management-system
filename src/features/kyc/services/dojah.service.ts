@@ -233,10 +233,25 @@ export class DojahService {
     const res = await this.fetchWithRetry(url, { method: 'GET', headers: this.headers });
     const json = await res.json();
 
+    if (!res.ok) {
+      console.error('[DojahService] verifyNINAdvanced request failed', {
+        status: res.status,
+        message: getDojahErrorMessage(json),
+      });
+      throw new Error(`Dojah advanced NIN request failed with status ${res.status}`);
+    }
+
     const parsed = DojahNINAdvancedResultSchema.safeParse(json);
     if (!parsed.success) {
       console.error('[DojahService] verifyNINAdvanced parse error', parsed.error.flatten());
       throw new Error('Dojah advanced NIN result failed schema validation');
+    }
+    if (parsed.data.status !== false && !parsed.data.entity) {
+      console.error('[DojahService] verifyNINAdvanced missing entity', {
+        status: res.status,
+        message: getDojahErrorMessage(json),
+      });
+      throw new Error('Dojah advanced NIN result did not include identity data');
     }
     return parsed.data;
   }
@@ -266,10 +281,25 @@ export class DojahService {
     const res = await this.fetchWithRetry(url, { method: 'GET', headers: this.headers });
     const json = await res.json();
 
+    if (!res.ok) {
+      console.error('[DojahService] validateBVN request failed', {
+        status: res.status,
+        message: getDojahErrorMessage(json),
+      });
+      throw new Error(`Dojah BVN request failed with status ${res.status}`);
+    }
+
     const parsed = DojahBVNValidationResultSchema.safeParse(json);
     if (!parsed.success) {
       console.error('[DojahService] validateBVN parse error', parsed.error.flatten());
       throw new Error('Dojah BVN result failed schema validation');
+    }
+    if (typeof parsed.data.entity?.bvn?.status !== 'boolean') {
+      console.error('[DojahService] validateBVN missing validation result', {
+        status: res.status,
+        message: getDojahErrorMessage(json),
+      });
+      throw new Error('Dojah BVN result did not include a validation decision');
     }
     return parsed.data;
   }
@@ -654,6 +684,12 @@ function normalizeDojahCompanyType(companyType?: string, companyName?: string): 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function getDojahErrorMessage(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const message = value.error ?? value.message;
+  return typeof message === 'string' ? message.slice(0, 200) : undefined;
 }
 
 function getVerificationCandidate(json: unknown): Record<string, unknown> {

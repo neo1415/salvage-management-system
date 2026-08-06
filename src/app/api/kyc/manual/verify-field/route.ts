@@ -5,7 +5,8 @@ import { users, vendors } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { getDojahService } from '@/features/kyc/services/dojah.service';
 import { VERIFICATION_COPY } from '@/lib/kyc/verification-copy';
-import { parseFullNameBvnOrder } from '@/lib/utils/person-name';
+import { resolveUserLegalNamesForBvn } from '@/lib/utils/person-name';
+import { normalizeIdentityDate } from '@/features/kyc/utils/validation';
 
 type CheckState = 'verified' | 'review' | 'unavailable' | 'failed';
 
@@ -214,6 +215,14 @@ function providerErrorMessage(value: unknown): string | null {
   return typeof error === 'string' && error.trim() ? error.trim() : null;
 }
 
+function providerFieldMatched(
+  status: boolean | null | undefined,
+  confidence: number | null | undefined
+): boolean {
+  if (status !== null && status !== undefined) return status;
+  return typeof confidence === 'number' && confidence >= 70;
+}
+
 function extractBirthDate(value: unknown): string | null {
   const seen = new Set<unknown>();
   const dateKeys = new Set(['birthdate', 'birth_date', 'date_of_birth', 'dob', 'dateOfBirth']);
@@ -232,8 +241,8 @@ function extractBirthDate(value: unknown): string | null {
     const record = node as Record<string, unknown>;
     for (const [key, child] of Object.entries(record)) {
       if (dateKeys.has(key) && (typeof child === 'string' || child instanceof Date)) {
-        const value = String(child).slice(0, 10);
-        if (value) return value;
+        const normalized = normalizeIdentityDate(String(child));
+        if (normalized) return normalized;
       }
     }
     for (const child of Object.values(record)) {
@@ -309,28 +318,46 @@ export async function POST(request: NextRequest) {
     if (!row) return NextResponse.json({ error: 'Vendor profile not found' }, { status: 404 });
 
     const dojah = getDojahService();
-    const dateOfBirth = row.dateOfBirth ? new Date(row.dateOfBirth).toISOString().slice(0, 10) : undefined;
+    const dateOfBirth = row.dateOfBirth
+      ? normalizeIdentityDate(String(row.dateOfBirth)) ?? undefined
+      : undefined;
 
     if (type === 'bvn') {
       if (row.bvnVerifiedAt) return response('verified', 'BVN already verified from Tier 1.');
       const bvn = String(body?.bvn ?? '').replace(/\D/g, '');
       if (!/^\d{11}$/.test(bvn)) return response('failed', 'BVN must be exactly 11 digits.');
-      const name = parseFullNameBvnOrder(row.fullName ?? session.user.name ?? '');
+      const { primary, alternateAttempts } = resolveUserLegalNamesForBvn({
+        fullName: row.fullName ?? session.user.name ?? '',
+      });
       try {
-        const result = await dojah.validateBVN({
-          bvn,
-          firstName: name.firstName,
-          middleName: name.middleName,
-          lastName: name.lastName,
-          dateOfBirth,
-          customerReference: `tier2-inline-bvn-${row.vendorId}`,
-        });
-        const bvnValid = result.entity?.bvn?.status !== false;
-        const dobValid = result.entity?.dob?.status !== false;
-        const firstName = result.entity?.first_name?.confidence_value ?? 0;
-        const lastName = result.entity?.last_name?.confidence_value ?? 0;
-        if (result.status !== false && bvnValid && dobValid && firstName >= 70 && lastName >= 70) {
-          return response('verified', 'BVN matches the name and date of birth on your profile.');
+        for (const name of [primary, ...alternateAttempts]) {
+          const result = await dojah.validateBVN({
+            bvn,
+            firstName: name.firstName,
+            middleName: name.middleName,
+            lastName: name.lastName,
+            dateOfBirth,
+            customerReference: `tier2-inline-bvn-${row.vendorId}`,
+          });
+          const firstNameMatched = providerFieldMatched(
+            result.entity?.first_name?.status,
+            result.entity?.first_name?.confidence_value
+          );
+          const lastNameMatched = providerFieldMatched(
+            result.entity?.last_name?.status,
+            result.entity?.last_name?.confidence_value
+          );
+          const bvnValid = result.entity?.bvn?.status === true;
+          const dobValid = result.entity?.dob?.status !== false;
+          if (
+            result.status !== false &&
+            bvnValid &&
+            dobValid &&
+            firstNameMatched &&
+            lastNameMatched
+          ) {
+            return response('verified', 'BVN matches the name and date of birth on your profile.');
+          }
         }
         return response(
           'review',

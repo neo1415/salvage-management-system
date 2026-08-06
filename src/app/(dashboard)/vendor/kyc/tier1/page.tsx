@@ -117,7 +117,7 @@ export default function Tier1KYCPage() {
     }
   };
 
-  const saveLegalName = async () => {
+  const saveLegalName = async (): Promise<boolean> => {
     setNameMessage(null);
     setSavingName(true);
     try {
@@ -132,8 +132,10 @@ export default function Tier1KYCPage() {
       setUserProfile((prev) => (prev ? { ...prev, fullName: data.user.fullName } : prev));
       setNameMessage('Legal name updated.');
       await update();
+      return true;
     } catch (e) {
       setNameMessage(e instanceof Error ? e.message : 'Failed to update name');
+      return false;
     } finally {
       setSavingName(false);
     }
@@ -149,6 +151,11 @@ export default function Tier1KYCPage() {
       setVerificationError(validationError);
       setErrorDialogOpen(true);
       return;
+    }
+
+    if (userProfile && nameDraft.trim() !== userProfile.fullName.trim()) {
+      const nameSaved = await saveLegalName();
+      if (!nameSaved) return;
     }
 
     setIsVerifying(true);
