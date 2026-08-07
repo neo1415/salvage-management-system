@@ -464,13 +464,7 @@ export default function Tier2ManualKYCPage() {
   }, [completeLiveness, livenessConfig]);
 
   const openLivenessWidget = useCallback((referenceOverride?: string) => {
-    const retryReference = !referenceOverride && manualReferenceRef.current
-      ? `${buildManualLivenessReference(manualReferenceRef.current)}-${Date.now().toString(36)}`
-      : referenceOverride;
-    if (retryReference) {
-      pendingLivenessReferenceRef.current = retryReference;
-    }
-    const widget = createLivenessWidget(retryReference);
+    const widget = createLivenessWidget(referenceOverride);
     if (!widget || !livenessReady) {
       setErrorMessage(livenessConfigMessage ?? 'Face check is still loading. Please wait a moment and try again.');
       return;
