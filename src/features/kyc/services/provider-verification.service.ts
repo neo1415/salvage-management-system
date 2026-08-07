@@ -381,6 +381,7 @@ export class ProviderVerificationService {
   private async createFraudAlertIfNeeded(input: PersistVerificationInput): Promise<void> {
     const livenessStatus = String(input.result.normalizedResult.livenessStatus ?? '').toLowerCase();
     if (
+      /-live(?:-|$)/i.test(String(input.result.providerReference ?? '')) ||
       input.result.workflowReference === 'nem-hybrid-tier2-draft' ||
       (
         input.result.normalizedResult.verificationMode === 'nem_hybrid_manual_review' &&

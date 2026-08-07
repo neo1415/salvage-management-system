@@ -1,9 +1,16 @@
 type Tier2EvidenceLike = {
+  providerReference?: string | null;
   workflowReference?: string | null;
   status?: string | null;
   checksCompleted?: string[] | null;
   normalizedResult?: unknown;
 };
+
+export function isLivenessOnlyTier2Evidence(
+  evidence: Tier2EvidenceLike | null | undefined
+): boolean {
+  return /-live(?:-|$)/i.test(String(evidence?.providerReference ?? ''));
+}
 
 type VendorTier2Footprint = {
   tier2SubmittedAt?: Date | null;
@@ -89,6 +96,7 @@ export function providerEvidenceCountsAsTier2Submission(
   vendor?: VendorTier2Footprint | null
 ): boolean {
   if (!evidence) return false;
+  if (isLivenessOnlyTier2Evidence(evidence)) return false;
   if (isBareOpenTier2Workflow(evidence)) return false;
   if (isManualHybridTier2Evidence(evidence)) {
     return manualHybridEvidenceReadyForReview(evidence);

@@ -5,6 +5,7 @@ import { KYCStatusCard } from '@/components/vendor/kyc-status-card';
 import { isPendingTier2Review } from '@/features/kyc/utils/tier2-status';
 import { applyKycTestingStatusOverride } from '@/lib/kyc/kyc-testing-mode';
 import {
+  isLivenessOnlyTier2Evidence,
   manualHybridEvidenceReadyForReview,
   providerEvidenceCountsAsTier2Submission,
 } from '@/features/kyc/utils/tier2-submission-footprint';
@@ -74,6 +75,20 @@ describe('Tier 2 pending review UI guard', () => {
 
     expect(manualHybridEvidenceReadyForReview(evidence)).toBe(true);
     expect(providerEvidenceCountsAsTier2Submission(evidence)).toBe(true);
+  });
+
+  it('does not treat a standalone liveness webhook record as a review submission', () => {
+    const evidence = {
+      providerReference: 'nem-vendor-reference-live-mex4n1',
+      status: 'review_required',
+      checksCompleted: ['liveness'],
+      normalizedResult: {
+        livenessScore: 30,
+      },
+    };
+
+    expect(isLivenessOnlyTier2Evidence(evidence)).toBe(true);
+    expect(providerEvidenceCountsAsTier2Submission(evidence)).toBe(false);
   });
 
   it('does not hide final manager rejection in KYC testing mode', () => {

@@ -113,6 +113,28 @@ function withProviderReference(
   };
 }
 
+function isManualHybridLivenessWebhook(
+  payload: z.infer<typeof DojahWebhookSchema>,
+  providerReference?: string
+): boolean {
+  const metadata =
+    payload.metadata ??
+    (payload.data?.metadata as Record<string, unknown> | undefined) ??
+    {};
+  const flow = stringFrom(metadata.flow);
+  const manualReference =
+    stringFrom(metadata.manual_reference) ||
+    stringFrom(metadata.manualReference);
+
+  return (
+    flow === 'nem_hybrid_liveness' ||
+    Boolean(
+      manualReference &&
+      providerReference?.startsWith(`${manualReference}-live`)
+    )
+  );
+}
+
 async function resolveVendor(payload: z.infer<typeof DojahWebhookSchema>, providerReference?: string) {
   const metadata = payload.metadata ?? (payload.data?.metadata as Record<string, unknown> | undefined) ?? {};
   const userId = stringFrom(metadata.user_id) || stringFrom(metadata.userId);
@@ -277,6 +299,11 @@ export async function POST(request: NextRequest) {
       userAgent,
       afterState: { provider: 'dojah', eventType, providerReference, vendorId: vendor.id },
     });
+
+    if (isManualHybridLivenessWebhook(payload, providerReference)) {
+      await providerService.markWebhookProcessed('dojah', eventId);
+      return NextResponse.json({ ok: true, deferred: 'manual_liveness_completion' });
+    }
 
     const user = await db.query.users.findFirst({
       where: eq(users.id, vendor.userId),

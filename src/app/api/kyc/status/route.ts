@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { users, vendors } from '@/lib/db/schema';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { fraudAlerts } from '@/lib/db/schema/intelligence';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, notLike, or } from 'drizzle-orm';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
 import { getIpAddress } from '@/lib/utils/audit-logger';
@@ -90,7 +90,14 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(providerVerificationRecords.vendorId, vendorRow.id),
-          eq(providerVerificationRecords.verificationType, 'tier2')
+          eq(providerVerificationRecords.verificationType, 'tier2'),
+          or(
+            isNull(providerVerificationRecords.providerReference),
+            and(
+              notLike(providerVerificationRecords.providerReference, '%-live'),
+              notLike(providerVerificationRecords.providerReference, '%-live-%')
+            )
+          )
         )
       )
       .orderBy(desc(providerVerificationRecords.updatedAt))
@@ -512,10 +519,14 @@ async function restoreManualEvidenceDraft(input: {
   const linkedAlertIds = pendingAlerts
     .filter((alert) => {
       const metadata = recordFrom(alert.metadata);
+      const alertReference = String(metadata?.providerReference ?? '');
+      const manualReference = String(input.evidence.providerReference ?? '');
       return (
         metadata?.source === 'dojah' &&
-        metadata?.providerReference === input.evidence.providerReference &&
-        String(metadata?.workflowReference ?? '').startsWith('nem-hybrid-tier2')
+        (
+          alertReference === manualReference ||
+          Boolean(manualReference && alertReference.startsWith(`${manualReference}-live`))
+        )
       );
     })
     .map((alert) => alert.id);

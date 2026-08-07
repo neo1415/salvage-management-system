@@ -8,6 +8,7 @@ import { cache } from '@/lib/redis/client';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { hasProviderVerificationStorage, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
 import {
+  isLivenessOnlyTier2Evidence,
   isManualHybridTier2Evidence,
   providerEvidenceCountsAsTier2Submission,
 } from '@/features/kyc/utils/tier2-submission-footprint';
@@ -325,7 +326,11 @@ export async function GET(request: NextRequest) {
 
     // For Tier 2 pending applications, return verification statuses from database
     const vendorsWithVerification = data.map((vendor) => {
-      const latestProviderEvidence = providerRows.find((record) => record.vendorId === vendor.id);
+      const latestProviderEvidence = providerRows.find(
+        (record) =>
+          record.vendorId === vendor.id &&
+          !isLivenessOnlyTier2Evidence(record)
+      );
       const providerDecision = resolveProviderDecision(latestProviderEvidence);
       const providerSubmittedForReview = providerEvidenceCountsAsTier2Submission(
         latestProviderEvidence,

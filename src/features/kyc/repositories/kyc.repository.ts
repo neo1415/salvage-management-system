@@ -1,4 +1,4 @@
-import { eq, lte, and, isNotNull, isNull, sql, inArray, desc } from 'drizzle-orm';
+import { eq, lte, and, isNotNull, isNull, sql, inArray, desc, notLike, or } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
@@ -6,6 +6,7 @@ import { verificationCosts } from '@/lib/db/schema/verification-costs';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { hasProviderVerificationStorage, ProviderVerificationStorageError } from '../services/provider-verification-readiness';
 import {
+  isLivenessOnlyTier2Evidence,
   isManualHybridTier2Evidence,
   providerEvidenceCountsAsTier2Submission,
 } from '../utils/tier2-submission-footprint';
@@ -136,7 +137,14 @@ export class KYCRepository {
             and(
               eq(providerVerificationRecords.vendorId, vendorId),
               eq(providerVerificationRecords.provider, 'dojah'),
-              eq(providerVerificationRecords.verificationType, 'tier2')
+              eq(providerVerificationRecords.verificationType, 'tier2'),
+              or(
+                isNull(providerVerificationRecords.providerReference),
+                and(
+                  notLike(providerVerificationRecords.providerReference, '%-live'),
+                  notLike(providerVerificationRecords.providerReference, '%-live-%')
+                )
+              )
             )
           )
           .orderBy(desc(providerVerificationRecords.updatedAt))
@@ -268,7 +276,11 @@ export class KYCRepository {
       : [];
 
     return uniqueRows.filter((r) => {
-      const providerEvidence = evidenceRows.find((record) => record.vendorId === r.id);
+      const providerEvidence = evidenceRows.find(
+        (record) =>
+          record.vendorId === r.id &&
+          !isLivenessOnlyTier2Evidence(record)
+      );
       return (
         !isManualHybridTier2Evidence(providerEvidence) ||
         providerEvidenceCountsAsTier2Submission(providerEvidence, r)
@@ -278,7 +290,11 @@ export class KYCRepository {
       const flaggedReasons = flags.map((f) => f.description);
       if (r.amlRiskLevel === 'High') flaggedReasons.unshift('High AML risk');
       if (r.amlRiskLevel === 'Medium') flaggedReasons.unshift('Medium AML risk');
-      const providerEvidence = evidenceRows.find((record) => record.vendorId === r.id);
+      const providerEvidence = evidenceRows.find(
+        (record) =>
+          record.vendorId === r.id &&
+          !isLivenessOnlyTier2Evidence(record)
+      );
 
       const submittedAt = r.tier2SubmittedAt ?? providerEvidence?.updatedAt ?? new Date();
 
@@ -422,7 +438,14 @@ export class KYCRepository {
         and(
           eq(providerVerificationRecords.vendorId, vendorId),
           eq(providerVerificationRecords.provider, 'dojah'),
-          eq(providerVerificationRecords.verificationType, 'tier2')
+          eq(providerVerificationRecords.verificationType, 'tier2'),
+          or(
+            isNull(providerVerificationRecords.providerReference),
+            and(
+              notLike(providerVerificationRecords.providerReference, '%-live'),
+              notLike(providerVerificationRecords.providerReference, '%-live-%')
+            )
+          )
         )
       )
       .orderBy(desc(providerVerificationRecords.updatedAt))
