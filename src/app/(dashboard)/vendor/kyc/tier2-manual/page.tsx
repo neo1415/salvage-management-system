@@ -196,7 +196,6 @@ export default function Tier2ManualKYCPage() {
   const [livenessReady, setLivenessReady] = useState(false);
   const [livenessAvailable, setLivenessAvailable] = useState(false);
   const [livenessConfigMessage, setLivenessConfigMessage] = useState<string | null>(null);
-  const [connect, setConnect] = useState<DojahConnect | null>(null);
   const manualReferenceRef = useRef<string | null>(null);
   const pendingLivenessReferenceRef = useRef<string | null>(null);
   const lastAutoCheckKeyRef = useRef<Record<'bvn' | 'nin' | 'cac', string>>({
@@ -301,6 +300,9 @@ export default function Tier2ManualKYCPage() {
         if (statusData?.livenessReferenceId) {
           pendingLivenessReferenceRef.current = statusData.livenessReferenceId;
         }
+        if (statusData?.dojahReferenceId) {
+          manualReferenceRef.current = statusData.dojahReferenceId;
+        }
 
         if (statusData?.status === 'liveness_submitted') setPageState('liveness_submitted');
         else if (statusData?.status === 'liveness_pending') setPageState('liveness_pending');
@@ -372,16 +374,20 @@ export default function Tier2ManualKYCPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setErrorMessage(data.error ?? 'Face check is finalizing. Your documents are saved, and you can retry in a moment if this does not update.');
-        setPageState('liveness_submitted');
+        pendingLivenessReferenceRef.current = referenceId;
+        setErrorMessage(data.error ?? 'Face check could not be completed. Your documents are saved, and you can retry.');
+        setPageState('liveness_pending');
         return;
       }
-      if (data.status === 'liveness_submitted') {
-        setPageState('liveness_submitted');
+      if (data.status === 'liveness_pending') {
+        pendingLivenessReferenceRef.current = referenceId;
+        setErrorMessage(data.message ?? 'Face check could not be completed. Your documents are saved, and you can retry.');
+        setPageState('liveness_pending');
         return;
       }
       setPageState('pending_review');
     } catch {
+      pendingLivenessReferenceRef.current = referenceId;
       setErrorMessage('Network dropped while linking the face check. Your documents are saved, and you can retry the face check.');
       setPageState('liveness_pending');
     }
@@ -452,38 +458,37 @@ export default function Tier2ManualKYCPage() {
         setPageState('liveness_pending');
       },
       onClose: () => {
-        if (pageState === 'liveness') {
-          setPageState('liveness_pending');
-        }
+        setPageState((current) => current === 'liveness' ? 'liveness_pending' : current);
       },
     });
-  }, [completeLiveness, livenessConfig, pageState]);
+  }, [completeLiveness, livenessConfig]);
 
   const openLivenessWidget = useCallback((referenceOverride?: string) => {
-    const widget = referenceOverride ? createLivenessWidget(referenceOverride) : connect;
-    if (!widget || (!referenceOverride && !livenessReady)) {
+    const retryReference = !referenceOverride && manualReferenceRef.current
+      ? `${buildManualLivenessReference(manualReferenceRef.current)}-${Date.now().toString(36)}`
+      : referenceOverride;
+    if (retryReference) {
+      pendingLivenessReferenceRef.current = retryReference;
+    }
+    const widget = createLivenessWidget(retryReference);
+    if (!widget || !livenessReady) {
       setErrorMessage(livenessConfigMessage ?? 'Face check is still loading. Please wait a moment and try again.');
       return;
     }
-    if (referenceOverride) {
-      widget.setup();
-      setConnect(widget);
-      setLivenessReady(true);
-    }
+    widget.setup();
     setPageState('liveness');
     applyDojahIframePermissions();
     widget.open();
     window.setTimeout(applyDojahIframePermissions, 250);
     window.setTimeout(applyDojahIframePermissions, 1000);
-  }, [applyDojahIframePermissions, connect, createLivenessWidget, livenessConfigMessage, livenessReady]);
+  }, [applyDojahIframePermissions, createLivenessWidget, livenessConfigMessage, livenessReady]);
 
   const initLivenessWidget = useCallback(() => {
-    const instance = createLivenessWidget();
-    if (!instance) return;
-    instance.setup();
-    setConnect(instance);
-    setLivenessReady(true);
-  }, [createLivenessWidget]);
+    setLivenessReady(Boolean(
+      livenessConfig?.widgetId &&
+      getDojahConnectConstructor()
+    ));
+  }, [livenessConfig]);
 
   useEffect(() => {
     if (livenessConfig && getDojahConnectConstructor()) {
@@ -720,7 +725,7 @@ export default function Tier2ManualKYCPage() {
               icon={<User className="w-12 h-12 text-blue-600" />}
               iconClass="bg-blue-100"
               title="Face Check Pending"
-              text="Your documents are saved. Complete the face check so the review team can finish the application."
+              text="Your documents are saved. Complete the face check to submit your application for review."
               primaryAction="Continue Face Check"
               onPrimaryClick={openLivenessWidget}
               onClick={() => router.push('/vendor/dashboard')}
@@ -805,7 +810,7 @@ export default function Tier2ManualKYCPage() {
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Liveness Check</h2>
               <p className="text-gray-600 mb-4">{VERIFICATION_COPY.finishFaceCheck}</p>
-              <p className="text-xs text-gray-500 mt-4">If the window closes, your application will remain under review.</p>
+              <p className="text-xs text-gray-500 mt-4">If the window closes, your documents remain saved and you can retry.</p>
             </div>
           )}
 

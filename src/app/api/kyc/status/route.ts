@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { users, vendors } from '@/lib/db/schema';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
+import { fraudAlerts } from '@/lib/db/schema/intelligence';
 import { and, desc, eq } from 'drizzle-orm';
 import { getKYCRepository } from '@/features/kyc/repositories/kyc.repository';
 import { reconcileTier2FromDojah } from '@/features/kyc/services/dojah-reconcile.service';
@@ -73,6 +74,7 @@ export async function GET(request: NextRequest) {
     // Only sync provider results after a real submission — never on first widget load.
     const [latestEvidence] = await db
       .select({
+        id: providerVerificationRecords.id,
         workflowReference: providerVerificationRecords.workflowReference,
         providerReference: providerVerificationRecords.providerReference,
         status: providerVerificationRecords.status,
@@ -96,8 +98,26 @@ export async function GET(request: NextRequest) {
 
     const isManualHybridEvidence = isManualHybridTier2Evidence(latestEvidence);
     const manualHybridReadyForReview = manualHybridEvidenceReadyForReview(latestEvidence);
-    const manualHybridLivenessSubmitted = manualHybridEvidenceHasSubmittedLiveness(latestEvidence);
-    const manualHybridSubmittedForReview = manualHybridReadyForReview || manualHybridLivenessSubmitted;
+    const manualHybridSubmittedForReview = manualHybridReadyForReview;
+    const latestNormalized = recordFrom(latestEvidence?.normalizedResult);
+    const savedDraftAlreadyNormalized =
+      latestEvidence?.workflowReference === 'nem-hybrid-tier2-draft' &&
+      latestEvidence?.status === 'pending' &&
+      firstString(latestNormalized?.livenessStatus)?.toLowerCase() === 'pending_liveness' &&
+      !vendorAfterCleanup?.tier2SubmittedAt;
+
+    if (
+      !isKycTestingMode() &&
+      isManualHybridEvidence &&
+      !manualHybridReadyForReview &&
+      latestEvidence &&
+      !savedDraftAlreadyNormalized
+    ) {
+      await restoreManualEvidenceDraft({
+        vendorId: vendorRow.id,
+        evidence: latestEvidence,
+      });
+    }
 
     let effectiveTier2SubmittedAt = vendorAfterCleanup?.tier2SubmittedAt ?? null;
     let effectiveTier2ApprovedAt = vendorAfterCleanup?.tier2ApprovedAt ?? null;
@@ -394,12 +414,6 @@ function manualHybridEvidenceReadyForReview(evidence: {
   return livenessStatus === 'completed' || livenessStatus === 'passed';
 }
 
-function manualHybridEvidenceHasSubmittedLiveness(evidence: {
-  normalizedResult?: unknown;
-} | null | undefined): boolean {
-  return Boolean(getManualHybridLivenessReference(evidence));
-}
-
 function getManualHybridLivenessReference(evidence: {
   normalizedResult?: unknown;
 } | null | undefined): string | undefined {
@@ -413,7 +427,9 @@ function getManualHybridLivenessReference(evidence: {
   )?.toLowerCase();
   const livenessReference = firstString(normalized?.livenessReferenceId, liveness?.providerReference);
 
-  return livenessStatus === 'submitted' && livenessReference ? livenessReference : undefined;
+  return livenessReference && ['submitted', 'pending_liveness', 'pending', 'failed'].includes(livenessStatus ?? '')
+    ? livenessReference
+    : undefined;
 }
 
 function resolveLatestProviderDecision(evidence: {
@@ -434,4 +450,79 @@ function resolveLatestProviderDecision(evidence: {
   }
 
   return null;
+}
+
+async function restoreManualEvidenceDraft(input: {
+  vendorId: string;
+  evidence: {
+    id: string;
+    providerReference?: string | null;
+    normalizedResult?: unknown;
+  };
+}): Promise<void> {
+  const normalized = recordFrom(input.evidence.normalizedResult) ?? {};
+  const summary = recordFrom(normalized.dojahEvidenceSummary) ?? {};
+  const liveness = recordFrom(summary.liveness) ?? {};
+
+  await Promise.all([
+    db
+      .update(vendors)
+      .set({
+        tier2SubmittedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(vendors.id, input.vendorId)),
+    db
+      .update(providerVerificationRecords)
+      .set({
+        workflowReference: 'nem-hybrid-tier2-draft',
+        status: 'pending',
+        displayMessage: 'Tier 2 evidence is saved. Complete the face check to submit it for review.',
+        normalizedResult: {
+          ...normalized,
+          verificationStatus: 'liveness_pending',
+          livenessStatus: 'pending_liveness',
+          dojahEvidenceSummary: {
+            ...summary,
+            liveness: {
+              ...liveness,
+              status: 'pending_liveness',
+            },
+          },
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(providerVerificationRecords.id, input.evidence.id)),
+  ]);
+
+  const pendingAlerts = await db
+    .select({
+      id: fraudAlerts.id,
+      metadata: fraudAlerts.metadata,
+    })
+    .from(fraudAlerts)
+    .where(
+      and(
+        eq(fraudAlerts.entityType, 'vendor'),
+        eq(fraudAlerts.entityId, input.vendorId),
+        eq(fraudAlerts.status, 'pending')
+      )
+    );
+
+  const linkedAlertIds = pendingAlerts
+    .filter((alert) => {
+      const metadata = recordFrom(alert.metadata);
+      return (
+        metadata?.source === 'dojah' &&
+        metadata?.providerReference === input.evidence.providerReference &&
+        String(metadata?.workflowReference ?? '').startsWith('nem-hybrid-tier2')
+      );
+    })
+    .map((alert) => alert.id);
+
+  await Promise.all(
+    linkedAlertIds.map((id) =>
+      db.update(fraudAlerts).set({ status: 'dismissed' }).where(eq(fraudAlerts.id, id))
+    )
+  );
 }

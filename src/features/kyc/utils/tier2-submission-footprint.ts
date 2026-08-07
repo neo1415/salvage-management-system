@@ -40,6 +40,25 @@ export function isManualHybridTier2Evidence(evidence: Tier2EvidenceLike | null |
   );
 }
 
+export function manualHybridEvidenceReadyForReview(
+  evidence: Tier2EvidenceLike | null | undefined
+): boolean {
+  if (!isManualHybridTier2Evidence(evidence)) return false;
+  if (evidence?.checksCompleted?.includes('dojah_liveness')) return true;
+
+  const normalized = evidence?.normalizedResult as Record<string, unknown> | null;
+  const summary = normalized?.dojahEvidenceSummary as Record<string, unknown> | null;
+  const liveness = summary?.liveness as Record<string, unknown> | null;
+  const status = String(
+    normalized?.livenessStatus ??
+      liveness?.livenessStatus ??
+      liveness?.status ??
+      ''
+  ).toLowerCase();
+
+  return status === 'completed' || status === 'passed';
+}
+
 /** Open widget workflow with no uploaded documents or hybrid submission markers. */
 export function isBareOpenTier2Workflow(evidence: Tier2EvidenceLike | null | undefined): boolean {
   if (!evidence) return false;
@@ -71,7 +90,9 @@ export function providerEvidenceCountsAsTier2Submission(
 ): boolean {
   if (!evidence) return false;
   if (isBareOpenTier2Workflow(evidence)) return false;
-  if (isManualHybridTier2Evidence(evidence)) return true;
+  if (isManualHybridTier2Evidence(evidence)) {
+    return manualHybridEvidenceReadyForReview(evidence);
+  }
 
   const status = String(evidence.status ?? '').toLowerCase();
   if (SUBMITTED_PROVIDER_STATUSES.has(status)) return true;

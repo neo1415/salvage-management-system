@@ -321,7 +321,7 @@ export async function POST(request: NextRequest) {
           addressProofUrl: results.utility_bill?.path || null,
           photoIdUrl: results.photo_id?.path || null,
           photoIdType: governmentIdType,
-          tier2SubmittedAt: new Date(),
+          tier2SubmittedAt: null,
           tier2DojahReferenceId: providerReference,
           amlScreeningData: providerEvidence.normalizedResult.dojahEvidenceSummary ?? null,
           amlRiskLevel: providerEvidence.riskLevel,
@@ -1051,7 +1051,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
         const hasAdverseMediaHits = (amlResult.entity?.adverse_media?.length ?? 0) > 0;
         const hasAmlHits = hasPepHits || hasSanctionHits || hasAdverseMediaHits;
         dojahEvidenceSummary.aml = {
-          status: hasAmlHits || amlResult.status === false ? 'flagged' : 'completed',
+          status: hasAmlHits ? 'flagged' : 'completed',
           providerStatus: amlResult.status ?? null,
           screenedName: resolvedAmlName,
           screenedDateOfBirth: resolvedAmlDateOfBirth,
@@ -1059,7 +1059,7 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
           hasSanctionHits,
           hasAdverseMediaHits,
         };
-        if (hasAmlHits || amlResult.status === false) {
+        if (hasAmlHits) {
           failedChecks.add('aml_screening');
           reasonCodes.add('dojah_aml_flagged');
         }
@@ -1090,18 +1090,18 @@ async function collectHybridProviderEvidence(input: HybridEvidenceInput): Promis
   return {
     provider: 'dojah',
     providerReference: input.providerReference,
-    workflowReference: 'nem-hybrid-tier2',
+    workflowReference: 'nem-hybrid-tier2-draft',
     verificationType: 'tier2',
-    status: 'review_required',
+    status: 'pending',
     riskLevel,
     checksCompleted: [...checksCompleted],
     pendingChecks: [...pendingChecks],
     failedChecks: failed,
     reasonCodes: [...reasonCodes],
-    displayMessage: 'Tier 2 evidence was submitted and is ready for internal review.',
+    displayMessage: 'Tier 2 evidence is saved. Complete the face check to submit it for review.',
     normalizedResult: {
       verificationMode: 'nem_hybrid_manual_review',
-      verificationStatus: 'submitted_for_review',
+      verificationStatus: 'liveness_pending',
       providerMessage: 'Business, address, and government ID evidence were collected directly. Automated checks are used as supporting evidence when available.',
       nemSubmittedProfile: {
         fullName: input.fullName,

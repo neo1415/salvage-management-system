@@ -379,6 +379,17 @@ export class ProviderVerificationService {
   }
 
   private async createFraudAlertIfNeeded(input: PersistVerificationInput): Promise<void> {
+    const livenessStatus = String(input.result.normalizedResult.livenessStatus ?? '').toLowerCase();
+    if (
+      input.result.workflowReference === 'nem-hybrid-tier2-draft' ||
+      (
+        input.result.normalizedResult.verificationMode === 'nem_hybrid_manual_review' &&
+        !['completed', 'passed'].includes(livenessStatus)
+      )
+    ) {
+      return;
+    }
+
     const riskyReasonCodes = new Set([
       'dojah_aml_flagged',
       'dojah_watchlist_flagged',

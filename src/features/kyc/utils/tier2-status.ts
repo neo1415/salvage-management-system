@@ -3,6 +3,7 @@ export type Tier2StatusLike = {
   submittedAt?: string | Date | null;
   approvedAt?: string | Date | null;
   livenessReferenceId?: string | null;
+  dojahReferenceId?: string | null;
 };
 
 export function isPendingTier2Review(status: Tier2StatusLike | null | undefined): boolean {

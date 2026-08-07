@@ -7,6 +7,10 @@ import { eq, and, or, sql, inArray, isNotNull, isNull, desc, ne, type SQL } from
 import { cache } from '@/lib/redis/client';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { hasProviderVerificationStorage, PROVIDER_VERIFICATION_MIGRATION_MISSING } from '@/features/kyc/services/provider-verification-readiness';
+import {
+  isManualHybridTier2Evidence,
+  providerEvidenceCountsAsTier2Submission,
+} from '@/features/kyc/utils/tier2-submission-footprint';
 
 const DOJAH_TIER2_REVIEW_STATUSES = [
   'pending',
@@ -323,6 +327,13 @@ export async function GET(request: NextRequest) {
     const vendorsWithVerification = data.map((vendor) => {
       const latestProviderEvidence = providerRows.find((record) => record.vendorId === vendor.id);
       const providerDecision = resolveProviderDecision(latestProviderEvidence);
+      const providerSubmittedForReview = providerEvidenceCountsAsTier2Submission(
+        latestProviderEvidence,
+        vendor
+      );
+      const hasSavedManualDraft =
+        isManualHybridTier2Evidence(latestProviderEvidence) &&
+        !providerSubmittedForReview;
       const evidenceCompleted = latestProviderEvidence?.checksCompleted ?? [];
       const evidenceFailed = latestProviderEvidence?.failedChecks ?? [];
       const evidencePending = latestProviderEvidence?.pendingChecks ?? [];
@@ -364,8 +375,13 @@ export async function GET(request: NextRequest) {
       } else if (vendor.tier2RejectionReason || providerDecision?.decision === 'reject') {
         kycStatus = 'rejected';
       } else if (
-        vendor.tier2SubmittedAt ||
-        (dojahPendingVendorIdSet.has(vendor.id) && !vendor.tier2ApprovedAt && !vendor.tier2RejectionReason)
+        (!hasSavedManualDraft && vendor.tier2SubmittedAt) ||
+        (
+          providerSubmittedForReview &&
+          dojahPendingVendorIdSet.has(vendor.id) &&
+          !vendor.tier2ApprovedAt &&
+          !vendor.tier2RejectionReason
+        )
       ) {
         kycStatus = 'pending';
       } else if (vendor.status === 'suspended') {
@@ -417,12 +433,20 @@ export async function GET(request: NextRequest) {
               updatedAt: latestProviderEvidence.updatedAt,
             }
           : undefined,
+        reviewQueueEligible:
+          Boolean(vendor.tier2ApprovedAt || vendor.tier2RejectionReason || providerDecision) ||
+          providerSubmittedForReview ||
+          Boolean(!hasSavedManualDraft && vendor.tier2SubmittedAt),
       };
     });
 
     // CRITICAL: Apply status filter AFTER calculating kycStatus
-    const filteredVendors = statusFilter 
-      ? vendorsWithVerification.filter(v => v.kycStatus === statusFilter)
+    const filteredVendors = statusFilter
+      ? vendorsWithVerification.filter(
+          (vendor) =>
+            vendor.kycStatus === statusFilter &&
+            (statusFilter !== 'pending' || vendor.reviewQueueEligible)
+        )
       : vendorsWithVerification;
 
     const response = {

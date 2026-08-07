@@ -5,7 +5,10 @@ import { users } from '@/lib/db/schema/users';
 import { verificationCosts } from '@/lib/db/schema/verification-costs';
 import { providerVerificationRecords } from '@/lib/db/schema/provider-verifications';
 import { hasProviderVerificationStorage, ProviderVerificationStorageError } from '../services/provider-verification-readiness';
-import { providerEvidenceCountsAsTier2Submission } from '../utils/tier2-submission-footprint';
+import {
+  isManualHybridTier2Evidence,
+  providerEvidenceCountsAsTier2Submission,
+} from '../utils/tier2-submission-footprint';
 import type {
   KYCStatus,
   KYCVerificationData,
@@ -264,7 +267,13 @@ export class KYCRepository {
           .orderBy(desc(providerVerificationRecords.updatedAt))
       : [];
 
-    return uniqueRows.map((r) => {
+    return uniqueRows.filter((r) => {
+      const providerEvidence = evidenceRows.find((record) => record.vendorId === r.id);
+      return (
+        !isManualHybridTier2Evidence(providerEvidence) ||
+        providerEvidenceCountsAsTier2Submission(providerEvidence, r)
+      );
+    }).map((r) => {
       const flags = (r.fraudFlags as Array<{ description: string }> | null) ?? [];
       const flaggedReasons = flags.map((f) => f.description);
       if (r.amlRiskLevel === 'High') flaggedReasons.unshift('High AML risk');
@@ -418,6 +427,15 @@ export class KYCRepository {
       )
       .orderBy(desc(providerVerificationRecords.updatedAt))
       .limit(1);
+
+    if (
+      !row.tier2ApprovedAt &&
+      !row.tier2RejectionReason &&
+      isManualHybridTier2Evidence(providerEvidence) &&
+      !providerEvidenceCountsAsTier2Submission(providerEvidence, row)
+    ) {
+      return null;
+    }
 
     const approval = this.mapVendorRowToPendingApproval(row, providerEvidence ?? null);
     const reviewStatus = row.tier2ApprovedAt

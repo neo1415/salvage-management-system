@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { KYCStatusCard } from '@/components/vendor/kyc-status-card';
 import { isPendingTier2Review } from '@/features/kyc/utils/tier2-status';
 import { applyKycTestingStatusOverride } from '@/lib/kyc/kyc-testing-mode';
+import {
+  manualHybridEvidenceReadyForReview,
+  providerEvidenceCountsAsTier2Submission,
+} from '@/features/kyc/utils/tier2-submission-footprint';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -40,6 +44,36 @@ describe('Tier 2 pending review UI guard', () => {
         submittedAt: '2026-06-08T08:11:58.000Z',
       })
     ).toBe(false);
+  });
+
+  it('keeps saved manual evidence out of manager review until liveness passes', () => {
+    const evidence = {
+      workflowReference: 'nem-hybrid-tier2-draft',
+      status: 'pending',
+      checksCompleted: ['nin_lookup', 'business_registration_lookup'],
+      normalizedResult: {
+        verificationMode: 'nem_hybrid_manual_review',
+        livenessStatus: 'pending_liveness',
+      },
+    };
+
+    expect(manualHybridEvidenceReadyForReview(evidence)).toBe(false);
+    expect(providerEvidenceCountsAsTier2Submission(evidence)).toBe(false);
+  });
+
+  it('moves manual evidence to manager review only after liveness completes', () => {
+    const evidence = {
+      workflowReference: 'nem-hybrid-tier2',
+      status: 'review_required',
+      checksCompleted: ['nin_lookup', 'business_registration_lookup', 'dojah_liveness'],
+      normalizedResult: {
+        verificationMode: 'nem_hybrid_manual_review',
+        livenessStatus: 'completed',
+      },
+    };
+
+    expect(manualHybridEvidenceReadyForReview(evidence)).toBe(true);
+    expect(providerEvidenceCountsAsTier2Submission(evidence)).toBe(true);
   });
 
   it('does not hide final manager rejection in KYC testing mode', () => {
