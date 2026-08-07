@@ -676,6 +676,11 @@ export default function Tier2ManualKYCPage() {
       }
 
       manualReferenceRef.current = typeof data.providerReference === 'string' ? data.providerReference : null;
+      if (data.livenessRequired === false || data.status === 'pending_review') {
+        setPageState('pending_review');
+        return;
+      }
+
       const livenessReference = manualReferenceRef.current
         ? buildManualLivenessReference(manualReferenceRef.current)
         : livenessConfig?.verificationReference;

@@ -63,7 +63,7 @@ export function manualHybridEvidenceReadyForReview(
       ''
   ).toLowerCase();
 
-  return status === 'completed' || status === 'passed';
+  return status === 'completed' || status === 'passed' || status === 'not_required';
 }
 
 /** Open widget workflow with no uploaded documents or hybrid submission markers. */

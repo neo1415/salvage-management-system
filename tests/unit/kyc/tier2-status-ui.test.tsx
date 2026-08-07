@@ -77,6 +77,21 @@ describe('Tier 2 pending review UI guard', () => {
     expect(providerEvidenceCountsAsTier2Submission(evidence)).toBe(true);
   });
 
+  it('moves manual evidence to review when liveness is not required', () => {
+    const evidence = {
+      workflowReference: 'nem-hybrid-tier2',
+      status: 'review_required',
+      checksCompleted: ['nin_lookup', 'business_registration_lookup', 'manual_liveness_not_required'],
+      normalizedResult: {
+        verificationMode: 'nem_hybrid_manual_review',
+        livenessStatus: 'not_required',
+      },
+    };
+
+    expect(manualHybridEvidenceReadyForReview(evidence)).toBe(true);
+    expect(providerEvidenceCountsAsTier2Submission(evidence)).toBe(true);
+  });
+
   it('does not treat a standalone liveness webhook record as a review submission', () => {
     const evidence = {
       providerReference: 'nem-vendor-reference-live-mex4n1',

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
@@ -14,6 +14,10 @@ import { getIpAddress } from '@/lib/utils/audit-logger';
 import { VERIFICATION_COPY } from '@/lib/kyc/verification-copy';
 import { extractTextFromDocument } from '@/lib/integrations/google-document-ai';
 import { normalizeIdentityDate } from '@/features/kyc/utils/validation';
+import { manualTier2RequiresLiveness } from '@/features/kyc/config/manual-tier2';
+import { getKYCNotificationService } from '@/features/kyc/services/notification.service';
+import { createRoleNotifications } from '@/features/notifications/services/notification.service';
+import { appPath } from '@/features/notifications/templates';
 
 /**
  * POST /api/kyc/manual/submit
@@ -64,6 +68,7 @@ export async function POST(request: NextRequest) {
         businessName: vendors.businessName,
         bvnVerifiedAt: vendors.bvnVerifiedAt,
         registrationFeePaid: vendors.registrationFeePaid,
+        tier2SubmittedAt: vendors.tier2SubmittedAt,
         fullName: users.fullName,
         email: users.email,
         phone: users.phone,
@@ -105,6 +110,7 @@ export async function POST(request: NextRequest) {
     const governmentIdType = (formData.get('governmentIdType') as string | null) || 'nin_slip';
     const clientIpAddress = (formData.get('clientIpAddress') as string | null)?.trim() || '';
     const needsBvn = !vendor.bvnVerifiedAt;
+    const livenessRequired = manualTier2RequiresLiveness();
 
     // Validate required fields
     if (!businessName || !businessType || !nin || (needsBvn && !bvn)) {
@@ -222,10 +228,26 @@ export async function POST(request: NextRequest) {
       documentsToUpload.push({ file: businessDocument, type: 'cac_certificate' as const });
     }
 
-    const { results, errors } = await uploadService.uploadMultipleDocuments(
-      documentsToUpload,
-      vendor.id
-    );
+    const documentOcrPromise = collectDocumentOcrEvidence({
+      businessDocument,
+      governmentIdDocument,
+      addressProof,
+      businessName,
+      businessType,
+      cacNumber,
+      fullName: vendor.fullName ?? session.user.name ?? businessName,
+      dateOfBirth: vendor.dateOfBirth
+        ? normalizeIdentityDate(String(vendor.dateOfBirth)) ?? undefined
+        : undefined,
+      nin,
+      address,
+      city,
+      state,
+    });
+    const [{ results, errors }, documentOcr] = await Promise.all([
+      uploadService.uploadMultipleDocuments(documentsToUpload, vendor.id),
+      documentOcrPromise,
+    ]);
 
     // Check for upload errors
     if (Object.keys(errors).length > 0) {
@@ -258,23 +280,7 @@ export async function POST(request: NextRequest) {
       bvnSource: vendor.bvnVerifiedAt ? 'tier1_verified' : 'tier2_submitted',
     };
     const providerReference = buildDojahReference(vendor.id);
-    const documentOcr = await collectDocumentOcrEvidence({
-      businessDocument,
-      governmentIdDocument,
-      addressProof,
-      businessName,
-      businessType,
-      cacNumber,
-      fullName: vendor.fullName ?? session.user.name ?? businessName,
-      dateOfBirth: vendor.dateOfBirth
-        ? normalizeIdentityDate(String(vendor.dateOfBirth)) ?? undefined
-        : undefined,
-      nin,
-      address,
-      city,
-      state,
-    });
-    const providerEvidence = await collectHybridProviderEvidence({
+    const providerEvidence = prepareManualTier2Evidence(await collectHybridProviderEvidence({
       providerReference,
       fullName: vendor.fullName ?? session.user.name ?? businessName,
       userId,
@@ -301,7 +307,8 @@ export async function POST(request: NextRequest) {
       ipAddress: clientIpAddress || getIpAddress(request.headers),
       serverIpAddress: getIpAddress(request.headers),
       userAgent: request.headers.get('user-agent') ?? undefined,
-    });
+    }), livenessRequired);
+    const submittedAt = livenessRequired ? null : new Date();
 
     // Update vendor record in a transaction
     await db.transaction(async (tx) => {
@@ -321,7 +328,7 @@ export async function POST(request: NextRequest) {
           addressProofUrl: results.utility_bill?.path || null,
           photoIdUrl: results.photo_id?.path || null,
           photoIdType: governmentIdType,
-          tier2SubmittedAt: null,
+          tier2SubmittedAt: submittedAt,
           tier2DojahReferenceId: providerReference,
           amlScreeningData: providerEvidence.normalizedResult.dojahEvidenceSummary ?? null,
           amlRiskLevel: providerEvidence.riskLevel,
@@ -356,12 +363,46 @@ export async function POST(request: NextRequest) {
       console.error('[Manual KYC Submit] Provider evidence persistence failed:', error);
     });
 
+    if (!livenessRequired && !vendor.tier2SubmittedAt) {
+      after(async () => {
+        const notify = getKYCNotificationService();
+        await Promise.allSettled([
+          notify.sendKYCUnderReviewNotification({
+            vendorId: vendor.id,
+            userId,
+            phone: vendor.phone ?? '',
+            email: vendor.email ?? '',
+            fullName: vendor.fullName ?? businessName,
+          }),
+          createRoleNotifications(['salvage_manager', 'system_admin'], {
+            type: 'tier2_pending_review',
+            title: 'Vendor verification ready for review',
+            message: `${businessName || vendor.fullName || 'A vendor'} submitted verification evidence for manager review.`,
+            data: {
+              vendorId: vendor.id,
+              url: '/manager/kyc-approvals',
+            },
+          }),
+          notify.sendTier2SubmissionManagerEmails({
+            vendorName: vendor.fullName ?? 'Vendor',
+            businessName,
+            riskLevel: providerEvidence.riskLevel,
+            reviewUrl: appPath(`/manager/kyc-approvals/${vendor.id}`),
+            outcome: 'pending_review',
+          }),
+        ]);
+      });
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Documents saved. Complete the face check to send the application for review.',
+      status: livenessRequired ? 'liveness_pending' : 'pending_review',
+      message: livenessRequired
+        ? 'Documents saved. Complete the face check to send the application for review.'
+        : 'Application submitted for review.',
       documentsUploaded: Object.keys(results),
       providerReference,
-      livenessRequired: true,
+      livenessRequired,
     });
   } catch (error) {
     console.error('[Manual KYC Submit] Error:', error);
@@ -407,6 +448,46 @@ type DocumentOcrEvidence = {
   businessDocument: DocumentOcrCheck;
   addressProof: DocumentOcrCheck;
 };
+
+function prepareManualTier2Evidence(
+  evidence: NormalizedVerificationResult,
+  livenessRequired: boolean
+): NormalizedVerificationResult {
+  if (livenessRequired) return evidence;
+
+  const summary = (
+    evidence.normalizedResult.dojahEvidenceSummary as Record<string, unknown> | undefined
+  ) ?? {};
+  const liveness = (
+    summary.liveness as Record<string, unknown> | undefined
+  ) ?? {};
+  const riskFailures = evidence.failedChecks.filter((check) => check !== 'document_ocr');
+
+  return {
+    ...evidence,
+    workflowReference: 'nem-hybrid-tier2',
+    status: 'review_required',
+    riskLevel: riskLevelFromFailures(riskFailures),
+    reasonCodes: evidence.reasonCodes.filter((code) => code !== 'document_mismatch'),
+    checksCompleted: [
+      ...new Set([...evidence.checksCompleted, 'manual_liveness_not_required']),
+    ],
+    pendingChecks: evidence.pendingChecks.filter((check) => check !== 'dojah_liveness'),
+    displayMessage: 'Tier 2 evidence was submitted and is ready for internal review.',
+    normalizedResult: {
+      ...evidence.normalizedResult,
+      verificationStatus: 'submitted_for_review',
+      livenessStatus: 'not_required',
+      dojahEvidenceSummary: {
+        ...summary,
+        liveness: {
+          ...liveness,
+          status: 'not_required',
+        },
+      },
+    },
+  };
+}
 
 function riskLevelFromFailures(failedChecks: string[]): NormalizedVerificationResult['riskLevel'] {
   if (failedChecks.some((check) => ['aml_screening', 'nin_lookup'].includes(check))) return 'high';

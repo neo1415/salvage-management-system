@@ -385,7 +385,7 @@ export class ProviderVerificationService {
       input.result.workflowReference === 'nem-hybrid-tier2-draft' ||
       (
         input.result.normalizedResult.verificationMode === 'nem_hybrid_manual_review' &&
-        !['completed', 'passed'].includes(livenessStatus)
+        !['completed', 'passed', 'not_required'].includes(livenessStatus)
       )
     ) {
       return;

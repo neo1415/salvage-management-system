@@ -19,6 +19,7 @@ import {
   providerEvidenceCountsAsTier2Submission,
   vendorHasRealTier2SubmissionFootprint,
 } from '@/features/kyc/utils/tier2-submission-footprint';
+import { manualTier2RequiresLiveness } from '@/features/kyc/config/manual-tier2';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,6 +84,7 @@ export async function GET(request: NextRequest) {
         reviewedAt: providerVerificationRecords.reviewedAt,
         reviewedBy: providerVerificationRecords.reviewedBy,
         checksCompleted: providerVerificationRecords.checksCompleted,
+        pendingChecks: providerVerificationRecords.pendingChecks,
         normalizedResult: providerVerificationRecords.normalizedResult,
         updatedAt: providerVerificationRecords.updatedAt,
       })
@@ -104,8 +106,8 @@ export async function GET(request: NextRequest) {
       .limit(1);
 
     const isManualHybridEvidence = isManualHybridTier2Evidence(latestEvidence);
-    const manualHybridReadyForReview = manualHybridEvidenceReadyForReview(latestEvidence);
-    const manualHybridSubmittedForReview = manualHybridReadyForReview;
+    const livenessRequired = manualTier2RequiresLiveness();
+    let manualHybridReadyForReview = manualHybridEvidenceReadyForReview(latestEvidence);
     const latestNormalized = recordFrom(latestEvidence?.normalizedResult);
     const savedDraftAlreadyNormalized =
       latestEvidence?.workflowReference === 'nem-hybrid-tier2-draft' &&
@@ -115,6 +117,30 @@ export async function GET(request: NextRequest) {
 
     if (
       !isKycTestingMode() &&
+      !livenessRequired &&
+      isManualHybridEvidence &&
+      !manualHybridReadyForReview &&
+      latestEvidence
+    ) {
+      await restoreManualEvidenceDraft({
+        vendorId: vendorRow.id,
+        evidence: latestEvidence,
+      });
+      const submittedAt = await promoteManualEvidenceWithoutLiveness({
+        vendorId: vendorRow.id,
+        evidence: latestEvidence,
+      });
+      if (vendorAfterCleanup) {
+        vendorAfterCleanup.tier2SubmittedAt = submittedAt;
+      }
+      manualHybridReadyForReview = true;
+    }
+
+    const manualHybridSubmittedForReview = manualHybridReadyForReview;
+
+    if (
+      !isKycTestingMode() &&
+      livenessRequired &&
       isManualHybridEvidence &&
       !manualHybridReadyForReview &&
       latestEvidence &&
@@ -418,7 +444,11 @@ function manualHybridEvidenceReadyForReview(evidence: {
     liveness?.status
   )?.toLowerCase();
 
-  return livenessStatus === 'completed' || livenessStatus === 'passed';
+  return (
+    livenessStatus === 'completed' ||
+    livenessStatus === 'passed' ||
+    livenessStatus === 'not_required'
+  );
 }
 
 function getManualHybridLivenessReference(evidence: {
@@ -536,4 +566,62 @@ async function restoreManualEvidenceDraft(input: {
       db.update(fraudAlerts).set({ status: 'dismissed' }).where(eq(fraudAlerts.id, id))
     )
   );
+}
+
+async function promoteManualEvidenceWithoutLiveness(input: {
+  vendorId: string;
+  evidence: {
+    id: string;
+    checksCompleted?: string[] | null;
+    pendingChecks?: string[] | null;
+    normalizedResult?: unknown;
+  };
+}): Promise<Date> {
+  const submittedAt = new Date();
+  const normalized = recordFrom(input.evidence.normalizedResult) ?? {};
+  const summary = recordFrom(normalized.dojahEvidenceSummary) ?? {};
+  const liveness = recordFrom(summary.liveness) ?? {};
+
+  await Promise.all([
+    db
+      .update(vendors)
+      .set({
+        tier2SubmittedAt: submittedAt,
+        tier2RejectionReason: null,
+        updatedAt: submittedAt,
+      })
+      .where(eq(vendors.id, input.vendorId)),
+    db
+      .update(providerVerificationRecords)
+      .set({
+        workflowReference: 'nem-hybrid-tier2',
+        status: 'review_required',
+        checksCompleted: [
+          ...new Set([
+            ...(input.evidence.checksCompleted ?? []),
+            'manual_liveness_not_required',
+          ]),
+        ],
+        pendingChecks: (input.evidence.pendingChecks ?? []).filter(
+          (check) => check !== 'dojah_liveness'
+        ),
+        displayMessage: 'Tier 2 evidence was submitted and is ready for internal review.',
+        normalizedResult: {
+          ...normalized,
+          verificationStatus: 'submitted_for_review',
+          livenessStatus: 'not_required',
+          dojahEvidenceSummary: {
+            ...summary,
+            liveness: {
+              ...liveness,
+              status: 'not_required',
+            },
+          },
+        },
+        updatedAt: submittedAt,
+      })
+      .where(eq(providerVerificationRecords.id, input.evidence.id)),
+  ]);
+
+  return submittedAt;
 }
