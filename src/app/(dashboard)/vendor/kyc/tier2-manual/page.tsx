@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useAppRouter } from '@/hooks/use-app-router';
 import { useSession } from 'next-auth/react';
-import Script from 'next/script';
 import imageCompression from 'browser-image-compression';
 import {
   AlertCircle,
@@ -121,6 +120,8 @@ type LivenessWidgetConfig = {
 
 const initialCheck: VerificationCheck = { state: 'idle', message: 'Not checked yet' };
 const DOJAH_IFRAME_ALLOW = 'camera; microphone; geolocation; fullscreen; autoplay';
+const DOJAH_WIDGET_SRC = 'https://widget.dojah.io/widget.js';
+let dojahWidgetLoadPromise: Promise<void> | null = null;
 
 const businessDocumentOptions: Array<{ value: BusinessDocumentType; label: string }> = [
   { value: 'cac_certificate', label: 'CAC certificate' },
@@ -151,6 +152,34 @@ function normalizeDigits(value: string, maxLength = 11): string {
 function getDojahConnectConstructor() {
   if (typeof window === 'undefined') return null;
   return (window as unknown as { Connect?: new (options: DojahWidgetOptions) => DojahConnect }).Connect ?? null;
+}
+
+function loadDojahConnect(): Promise<void> {
+  if (getDojahConnectConstructor()) return Promise.resolve();
+  if (dojahWidgetLoadPromise) return dojahWidgetLoadPromise;
+
+  dojahWidgetLoadPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${DOJAH_WIDGET_SRC}"]`);
+    if (existing) existing.remove();
+
+    const script = document.createElement('script');
+    script.src = DOJAH_WIDGET_SRC;
+    script.async = false;
+    script.onload = () => {
+      if (getDojahConnectConstructor()) {
+        resolve();
+      } else {
+        reject(new Error('Dojah SDK loaded without the Connect constructor.'));
+      }
+    };
+    script.onerror = () => reject(new Error('Dojah SDK could not be loaded.'));
+    document.body.appendChild(script);
+  }).catch((error) => {
+    dojahWidgetLoadPromise = null;
+    throw error;
+  });
+
+  return dojahWidgetLoadPromise;
 }
 
 function buildManualLivenessReference(manualReference: string): string {
@@ -193,7 +222,6 @@ export default function Tier2ManualKYCPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [bvnAlreadyVerified, setBvnAlreadyVerified] = useState(false);
   const [livenessConfig, setLivenessConfig] = useState<LivenessWidgetConfig | null>(null);
-  const [livenessReady, setLivenessReady] = useState(false);
   const [livenessAvailable, setLivenessAvailable] = useState(false);
   const [livenessConfigMessage, setLivenessConfigMessage] = useState<string | null>(null);
   const manualReferenceRef = useRef<string | null>(null);
@@ -463,32 +491,32 @@ export default function Tier2ManualKYCPage() {
     });
   }, [completeLiveness, livenessConfig]);
 
-  const openLivenessWidget = useCallback((referenceOverride?: string) => {
-    const widget = createLivenessWidget(referenceOverride);
-    if (!widget || !livenessReady) {
-      setErrorMessage(livenessConfigMessage ?? 'Face check is still loading. Please wait a moment and try again.');
-      return;
-    }
-    widget.setup();
-    setPageState('liveness');
-    applyDojahIframePermissions();
-    widget.open();
-    window.setTimeout(applyDojahIframePermissions, 250);
-    window.setTimeout(applyDojahIframePermissions, 1000);
-  }, [applyDojahIframePermissions, createLivenessWidget, livenessConfigMessage, livenessReady]);
+  const openLivenessWidget = useCallback(async (referenceOverride?: string) => {
+    const reference = typeof referenceOverride === 'string' ? referenceOverride : undefined;
+    setErrorMessage(null);
 
-  const initLivenessWidget = useCallback(() => {
-    setLivenessReady(Boolean(
-      livenessConfig?.widgetId &&
-      getDojahConnectConstructor()
-    ));
-  }, [livenessConfig]);
+    try {
+      await loadDojahConnect();
+      const widget = createLivenessWidget(reference);
+      if (!widget) {
+        throw new Error(livenessConfigMessage ?? 'Face check configuration is unavailable.');
+      }
 
-  useEffect(() => {
-    if (livenessConfig && getDojahConnectConstructor()) {
-      initLivenessWidget();
+      widget.setup();
+      setPageState('liveness');
+      applyDojahIframePermissions();
+      widget.open();
+      window.setTimeout(applyDojahIframePermissions, 250);
+      window.setTimeout(applyDojahIframePermissions, 1000);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Face check could not open. Please check your connection and try again.'
+      );
+      setPageState('liveness_pending');
     }
-  }, [initLivenessWidget, livenessConfig]);
+  }, [applyDojahIframePermissions, createLivenessWidget, livenessConfigMessage]);
 
   useEffect(() => {
     applyDojahIframePermissions();
@@ -655,7 +683,7 @@ export default function Tier2ManualKYCPage() {
         pendingLivenessReferenceRef.current = livenessReference;
       }
       if (data.livenessRequired !== false && livenessAvailable && livenessReference) {
-        openLivenessWidget(livenessReference);
+        void openLivenessWidget(livenessReference);
         return;
       }
 
@@ -680,11 +708,6 @@ export default function Tier2ManualKYCPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-hover)] py-8 px-4">
-      <Script
-        src="https://widget.dojah.io/widget.js"
-        strategy="lazyOnload"
-        onLoad={initLivenessWidget}
-      />
       <div className="w-full max-w-4xl mx-auto">
         <button onClick={() => router.back()} className="mb-6 flex items-center gap-2 text-white hover:text-gray-200 transition-colors">
           <ArrowLeft className="w-5 h-5" />
@@ -721,7 +744,10 @@ export default function Tier2ManualKYCPage() {
               title="Face Check Pending"
               text="Your documents are saved. Complete the face check to submit your application for review."
               primaryAction="Continue Face Check"
-              onPrimaryClick={openLivenessWidget}
+              error={errorMessage}
+              onPrimaryClick={() => {
+                void openLivenessWidget();
+              }}
               onClick={() => router.push('/vendor/dashboard')}
             />
           )}
@@ -738,7 +764,7 @@ export default function Tier2ManualKYCPage() {
                 if (reference) {
                   void completeLiveness(reference);
                 } else {
-                  openLivenessWidget();
+                  void openLivenessWidget();
                 }
               }}
               onClick={() => router.push('/vendor/dashboard')}
@@ -973,6 +999,7 @@ function StatusPanel({
   onClick,
   primaryAction,
   onPrimaryClick,
+  error,
 }: {
   icon: ReactNode;
   iconClass: string;
@@ -981,12 +1008,18 @@ function StatusPanel({
   onClick: () => void;
   primaryAction?: string;
   onPrimaryClick?: () => void;
+  error?: string | null;
 }) {
   return (
     <div className="p-8 text-center">
       <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 ${iconClass}`}>{icon}</div>
       <h2 className="text-2xl font-bold text-gray-900 mb-2">{title}</h2>
       <p className="text-gray-600 mb-6">{text}</p>
+      {error ? (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
       {primaryAction && onPrimaryClick ? (
         <button
           onClick={onPrimaryClick}
