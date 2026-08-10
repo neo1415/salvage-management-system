@@ -143,25 +143,17 @@ export class BidService {
         const depositRate = isLegacyAuction ? 1.0 : (config.depositRate / 100);
         const minimumDepositFloor = isLegacyAuction ? 0 : config.minimumDepositFloor;
         const tier1Limit = config.tier1Limit;
-        const minimumBidIncrement = config.minimumBidIncrement;
-
-        // Get reserve price from auction (using currentBid as fallback)
-        const reservePrice = auction.currentBid 
-          ? parseFloat(auction.currentBid) 
-          : parseFloat(auction.minimumIncrement);
 
         // Requirement 27.4: Re-validate bid eligibility with locked data
         const validationParams: ValidateBidParams = {
           vendorId: params.vendorId,
           auctionId: params.auctionId,
           bidAmount: params.bidAmount,
-          reservePrice,
           currentHighestBid: auction.currentBid ? parseFloat(auction.currentBid) : null,
           vendorTier: vendor.tier as 'tier1_bvn' | 'tier2_full',
           availableBalance: walletBalance.availableBalance,
           depositRate,
           minimumDepositFloor,
-          minimumBidIncrement,
           tier1Limit,
         };
 

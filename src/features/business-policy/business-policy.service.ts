@@ -8,6 +8,7 @@ import { toPublicBusinessPolicy } from './public-policy';
 import { validateBusinessPolicy } from './policy-validation';
 import { sanitizeBusinessPolicy } from './policy-sanitization';
 import { syncPolicyToLegacySystemConfig } from './legacy-auction-config-bridge';
+import { applyRuntimePolicyOverrides } from './runtime-policy-overrides';
 import type { BusinessPolicy, PolicyValidationResult, PublicBusinessPolicy } from './types';
 
 export type BusinessPolicyVersionRecord = typeof businessPolicyVersions.$inferSelect;
@@ -42,8 +43,7 @@ export class BusinessPolicyService {
   async getEffectivePolicy(): Promise<BusinessPolicy> {
     const runtimePolicy = await this.getRuntimeDefaultPolicy();
     const publishedPolicy = await this.getPublishedPolicy();
-
-    return publishedPolicy?.policy ?? runtimePolicy;
+    return applyRuntimePolicyOverrides(publishedPolicy?.policy ?? runtimePolicy);
   }
 
   async getRuntimeDefaultPolicy(): Promise<BusinessPolicy> {

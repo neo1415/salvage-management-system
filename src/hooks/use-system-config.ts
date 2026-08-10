@@ -11,7 +11,7 @@
  * if (loading) return <div>Loading...</div>;
  * if (error) return <div>Error loading config</div>;
  * 
- * const minimumBid = currentBid + config.minimumBidIncrement;
+ * The increment field is retained for compatibility and resolves to zero.
  * ```
  */
 
@@ -94,7 +94,7 @@ export function useSystemConfig() {
         
         // Use default fallback values if fetch fails
         const fallbackConfig: SystemConfig = {
-          minimumBidIncrement: 20000,
+          minimumBidIncrement: 0,
           depositRate: 10,
           documentValidityPeriod: 48,
           paymentDeadlineAfterSigning: 72,

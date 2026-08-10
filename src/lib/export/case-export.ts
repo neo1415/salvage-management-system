@@ -37,7 +37,6 @@ type CaseAiEstimates = {
   marketValue?: number;
   repairCost?: number;
   salvageValue?: number;
-  reservePrice?: number;
   confidence?: number;
 };
 
@@ -45,7 +44,6 @@ type CaseManagerOverrides = {
   marketValue?: number;
   repairCost?: number;
   salvageValue?: number;
-  reservePrice?: number;
   reason?: string;
   overriddenBy?: string;
   overriddenAt?: string;
@@ -63,7 +61,6 @@ export type CaseExportSource = {
   assetDetails: CaseAssetDetails | null;
   marketValue: string | number;
   estimatedSalvageValue: string | number | null;
-  reservePrice: string | number | null;
   damageSeverity: string | null;
   gpsLocation: { x: number; y: number } | [number, number] | null;
   locationName: string;
@@ -170,7 +167,6 @@ export function mapCaseToExportRow(row: CaseExportSource): CaseExportRow {
     condition: details.condition ?? '',
     marketValue: formatNgnAmount(row.marketValue),
     estimatedSalvageValue: formatNgnAmount(row.estimatedSalvageValue, { empty: 'N/A' }),
-    reservePrice: formatNgnAmount(row.reservePrice, { empty: 'N/A' }),
     damageSeverity: formatDamageSeverity(row.damageSeverity),
     locationName: row.locationName,
     gpsLongitude: gpsLng != null ? String(gpsLng) : '',
@@ -202,12 +198,10 @@ export function mapCaseToExportRow(row: CaseExportSource): CaseExportRow {
     aiEstMarketValue: formatNgnAmount(estimates?.marketValue, { empty: 'N/A' }),
     aiEstRepairCost: formatNgnAmount(estimates?.repairCost, { empty: 'N/A' }),
     aiEstSalvageValue: formatNgnAmount(estimates?.salvageValue, { empty: 'N/A' }),
-    aiEstReservePrice: formatNgnAmount(estimates?.reservePrice, { empty: 'N/A' }),
     aiEstConfidence: estimates?.confidence != null ? String(estimates.confidence) : '',
     overrideMarketValue: formatNgnAmount(overrides?.marketValue, { empty: 'N/A' }),
     overrideRepairCost: formatNgnAmount(overrides?.repairCost, { empty: 'N/A' }),
     overrideSalvageValue: formatNgnAmount(overrides?.salvageValue, { empty: 'N/A' }),
-    overrideReservePrice: formatNgnAmount(overrides?.reservePrice, { empty: 'N/A' }),
     overrideReason: overrides?.reason ?? '',
     overriddenBy: overrides?.overriddenBy ?? '',
     overriddenAt: overrides?.overriddenAt ?? '',
@@ -246,7 +240,6 @@ export const CASE_EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'condition', header: 'Condition' },
   { key: 'marketValue', header: 'Market Value' },
   { key: 'estimatedSalvageValue', header: 'Estimated Salvage Value' },
-  { key: 'reservePrice', header: 'Reserve Price' },
   { key: 'damageSeverity', header: 'Damage Severity' },
   { key: 'locationName', header: 'Location Name' },
   { key: 'gpsLongitude', header: 'GPS Longitude' },
@@ -278,12 +271,10 @@ export const CASE_EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'aiEstMarketValue', header: 'AI Est. Market Value' },
   { key: 'aiEstRepairCost', header: 'AI Est. Repair Cost' },
   { key: 'aiEstSalvageValue', header: 'AI Est. Salvage Value' },
-  { key: 'aiEstReservePrice', header: 'AI Est. Reserve Price' },
   { key: 'aiEstConfidence', header: 'AI Est. Confidence' },
   { key: 'overrideMarketValue', header: 'Override Market Value' },
   { key: 'overrideRepairCost', header: 'Override Repair Cost' },
   { key: 'overrideSalvageValue', header: 'Override Salvage Value' },
-  { key: 'overrideReservePrice', header: 'Override Reserve Price' },
   { key: 'overrideReason', header: 'Override Reason' },
   { key: 'overriddenBy', header: 'Overridden By' },
   { key: 'overriddenAt', header: 'Overridden At' },

@@ -6,7 +6,7 @@
  * Property 7: Case Creation Field Validation
  * For any salvage case creation, the system should validate that claim reference is unique,
  * asset type is one of (vehicle, property, electronics), market value is positive,
- * 3-10 photos are provided (max 5MB each), GPS coordinates are captured,
+ * 5-50 photos are provided (max 5MB each), GPS coordinates are captured,
  * and all required asset details for the selected type are present.
  */
 
@@ -87,6 +87,9 @@ function validateCaseCreation(data: CaseCreationData, existingClaimReferences: s
     if (!vehicleDetails.year || vehicleDetails.year < 1900 || vehicleDetails.year > new Date().getFullYear() + 1) {
       errors.push('Vehicle year must be valid');
     }
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/i.test(vehicleDetails.vin ?? '')) {
+      errors.push('Vehicle VIN must be exactly 17 characters and cannot contain I, O, or Q');
+    }
   } else if (data.assetType === 'property') {
     const propertyDetails = data.assetDetails as PropertyDetails;
     if (!propertyDetails.propertyType || propertyDetails.propertyType.trim() === '') {
@@ -107,11 +110,11 @@ function validateCaseCreation(data: CaseCreationData, existingClaimReferences: s
     errors.push('Market value must be positive');
   }
 
-  // Requirement 12.7: Validate 3-10 photos are provided
-  if (!data.photos || data.photos.length < 3) {
-    errors.push('At least 3 photos are required');
-  } else if (data.photos.length > 10) {
-    errors.push('Maximum 10 photos allowed');
+  // Requirement 12.7: Validate 5-50 photos are provided
+  if (!data.photos || data.photos.length < 5) {
+    errors.push('At least 5 photos are required');
+  } else if (data.photos.length > 50) {
+    errors.push('Maximum 50 photos allowed');
   }
 
   // Requirement 12.8: Validate photo sizes (max 5MB each)
@@ -251,10 +254,10 @@ describe('Property Test: Case Creation Field Validation', () => {
       );
     });
 
-    it('should validate 3-10 photos are provided', () => {
+    it('should validate 5-50 photos are provided', () => {
       fc.assert(
         fc.property(
-          fc.integer({ min: 0, max: 15 }),
+          fc.integer({ min: 0, max: 60 }),
           (photoCount) => {
             const photos = Array.from({ length: photoCount }, (_, i) => ({
               size: 1024 * 1024,
@@ -273,12 +276,12 @@ describe('Property Test: Case Creation Field Validation', () => {
 
             const result = validateCaseCreation(data, []);
 
-            if (photoCount < 3) {
+            if (photoCount < 5) {
               expect(result.valid).toBe(false);
-              expect(result.errors).toContain('At least 3 photos are required');
-            } else if (photoCount > 10) {
+              expect(result.errors).toContain('At least 5 photos are required');
+            } else if (photoCount > 50) {
               expect(result.valid).toBe(false);
-              expect(result.errors).toContain('Maximum 10 photos allowed');
+              expect(result.errors).toContain('Maximum 50 photos allowed');
             }
           }
         ),
@@ -391,6 +394,9 @@ describe('Property Test: Case Creation Field Validation', () => {
             if (year < 1900 || year > currentYear + 1) {
               expect(result.errors).toContain('Vehicle year must be valid');
             }
+            expect(result.errors).toContain(
+              'Vehicle VIN must be exactly 17 characters and cannot contain I, O, or Q'
+            );
           }
         ),
         { numRuns: 100 }
@@ -468,7 +474,7 @@ describe('Property Test: Case Creation Field Validation', () => {
             claimReference: fc.string({ minLength: 5, maxLength: 50 }),
             assetType: fc.constantFrom('vehicle' as const, 'property' as const, 'electronics' as const),
             marketValue: fc.double({ min: 1000, max: 100000000, noNaN: true }),
-            photoCount: fc.integer({ min: 3, max: 10 }),
+            photoCount: fc.integer({ min: 5, max: 50 }),
             latitude: fc.double({ min: -90, max: 90, noNaN: true }),
             longitude: fc.double({ min: -180, max: 180, noNaN: true }),
             locationName: fc.string({ minLength: 5, maxLength: 100 }),
@@ -481,7 +487,7 @@ describe('Property Test: Case Creation Field Validation', () => {
                 make: 'Toyota',
                 model: 'Camry',
                 year: 2020,
-                vin: 'VIN123456',
+                vin: '1HGCM82633A004352',
               };
             } else if (input.assetType === 'property') {
               assetDetails = {

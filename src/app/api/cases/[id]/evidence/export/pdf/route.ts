@@ -329,7 +329,6 @@ export async function GET(
       assetDetails: salvageCases.assetDetails,
       marketValue: salvageCases.marketValue,
       estimatedSalvageValue: salvageCases.estimatedSalvageValue,
-      reservePrice: salvageCases.reservePrice,
       damageSeverity: salvageCases.damageSeverity,
       aiAssessment: salvageCases.aiAssessment,
       gpsLocation: salvageCases.gpsLocation,
@@ -552,7 +551,6 @@ export async function GET(
   y = addKeyValues(doc, [
     ['Market value / claim value', formatMoney(caseRecord.marketValue)],
     ['Estimated salvage value', formatMoney(caseRecord.estimatedSalvageValue)],
-    ['Reserve price', formatMoney(caseRecord.reservePrice)],
     ['Damage severity', caseRecord.damageSeverity],
     ['AI assessment captured', caseRecord.aiAssessment ? 'Yes' : 'No'],
     ['Photo evidence count', countJsonItems(caseRecord.photos)],

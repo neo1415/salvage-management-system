@@ -113,7 +113,11 @@ export async function POST(request: NextRequest) {
     if (reference.startsWith('PAY-') || reference.startsWith('PAY_')) {
       // Auction payment
       console.log('🎯 Routing to auction payment handler');
-      await paymentService.handlePaystackWebhook(reference, true);
+      await paymentService.handlePaystackWebhook(
+        reference,
+        true,
+        Number(payload.data.amount || 0) / 100
+      );
       console.log('✅ Auction payment processed successfully');
     } else if (reference.startsWith('REG-')) {
       // Registration fee payment

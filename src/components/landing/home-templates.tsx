@@ -240,7 +240,7 @@ function recoveryCommandCopy(copy: BrandingPolicy['homepageCopy']) {
       ],
       [
         copy.proofCardThreeTitle !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardThreeTitle) ? copy.proofCardThreeTitle : 'Bid',
-        copy.proofCardThreeBody !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardThreeBody) ? copy.proofCardThreeBody : 'Place verified bids with reserve gates and clear minimum increments.',
+        copy.proofCardThreeBody !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardThreeBody) ? copy.proofCardThreeBody : 'Place verified bids with clear payment and pickup requirements.',
       ],
       [
         copy.proofCardFourTitle !== undefined && !isGenericRecoveryCommandCopy(copy.proofCardFourTitle) ? copy.proofCardFourTitle : 'Deposit',

@@ -42,7 +42,6 @@ interface PaymentDetails {
       assetName?: string;
       assetDetails: Record<string, unknown>;
       marketValue: string;
-      estimatedSalvageValue: string;
       locationName: string;
       photos: string[];
     };

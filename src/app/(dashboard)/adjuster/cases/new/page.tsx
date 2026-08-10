@@ -4,7 +4,7 @@
  * Mobile-optimized form for Claims Adjusters to create salvage cases from accident sites.
  * Features:
  * - React Hook Form + Zod validation
- * - Mobile camera upload (3-10 photos)
+ * - Mobile camera upload (5-50 photos)
  * - GPS auto-capture
  * - Web Speech API for voice-to-text notes
  * - Offline support with IndexedDB
@@ -248,7 +248,7 @@ const caseFormSchema = z.object({
     },
     z.number().optional()
   ),
-  vehicleVin: z.string().optional(),
+  vehicleVin: z.string().trim().regex(/^[A-HJ-NPR-Z0-9]{17}$/i, 'Enter a valid 17-character VIN').optional(),
   vehicleMileage: z.preprocess(
     (val) => {
       if (val === null || val === undefined || val === '' || (typeof val === 'number' && isNaN(val))) {
@@ -321,7 +321,7 @@ const caseFormSchema = z.object({
   itemCondition: z.enum(['Brand New', 'Foreign Used (Tokunbo)', 'Nigerian Used', 'Heavily Used']).optional(),
   
   // Common fields
-  photos: z.array(z.string()).min(5, 'At least 5 photos required').max(10, 'Maximum 10 photos allowed'),
+  photos: z.array(z.string()).min(5, 'At least 5 photos required').max(50, 'Maximum 50 photos allowed'),
   locationName: z.string().min(1, 'Location name is required'),
   unifiedVoiceContent: z.string().optional(),
 }).refine((data) => {
@@ -335,7 +335,7 @@ const caseFormSchema = z.object({
 }).refine((data) => {
   // Validate vehicle-specific fields
   if (data.assetType === 'vehicle') {
-    return data.vehicleMake && data.vehicleModel && data.vehicleYear;
+    return data.vehicleMake && data.vehicleModel && data.vehicleYear && data.vehicleVin;
   }
   // Validate property-specific fields
   if (data.assetType === 'property') {
@@ -408,7 +408,6 @@ interface AIAssessmentResult {
   confidenceScore: number;
   labels: string[];
   estimatedSalvageValue: number;
-  reservePrice: number;
   marketValue?: number;
   estimatedRepairCost?: number;
   damagePercentage?: number;
@@ -694,7 +693,6 @@ function NewCasePageContent() {
               confidenceScore: 0.85,
               labels: [],
               estimatedSalvageValue: draft.marketValue * 0.7,
-              reservePrice: draft.marketValue * 0.7 * 0.7,
               marketValue: draft.marketValue,
             } as AIAssessmentResult);
           }
@@ -1092,7 +1090,7 @@ function NewCasePageContent() {
       }
     }
 
-    const updatedPhotos = [...currentPhotos, ...newPhotos].slice(0, 10);
+    const updatedPhotos = [...currentPhotos, ...newPhotos].slice(0, 50);
     setValue('photos', updatedPhotos);
     setPhotoMetadata((current) => [
       ...current,
@@ -1100,7 +1098,7 @@ function NewCasePageContent() {
         ...metadata,
         index: metadataStartIndex + index,
       })),
-    ].slice(0, 10).map((metadata, index) => ({ ...metadata, index })));
+    ].slice(0, 50).map((metadata, index) => ({ ...metadata, index })));
 
     console.log('📸 Total photos now:', updatedPhotos.length);
     
@@ -1372,7 +1370,6 @@ function NewCasePageContent() {
           confidenceScore: result.data.confidenceScore,
           labels: result.data.labels,
           estimatedSalvageValue: result.data.estimatedSalvageValue,
-          reservePrice: result.data.reservePrice,
           // CRITICAL: Store ALL fields from API response
           marketValue: result.data.marketValue,
           estimatedRepairCost: result.data.estimatedRepairCost,
@@ -1962,7 +1959,6 @@ function NewCasePageContent() {
           confidenceScore: aiAssessment.confidenceScore,
           labels: aiAssessment.labels,
           estimatedSalvageValue: aiAssessment.estimatedSalvageValue,
-          reservePrice: aiAssessment.reservePrice,
           // Include ALL additional fields
           marketValue: aiAssessment.marketValue,
           estimatedRepairCost: aiAssessment.estimatedRepairCost,
@@ -2439,11 +2435,12 @@ function NewCasePageContent() {
               </FormField>
 
               <FormField 
-                label="VIN (Optional)" 
+                label="VIN"
                 description="Vehicle Identification Number for precise identification"
               >
                 <ModernInput
                   {...register('vehicleVin')}
+                  required
                   variant="filled"
                   placeholder="17-character VIN"
                   className="font-mono tracking-wider uppercase"
@@ -3060,7 +3057,7 @@ function NewCasePageContent() {
         {/* Photos */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Photos (5-10 required) <span className="text-red-500">*</span>
+            Photos (5-50 required) <span className="text-red-500">*</span>
           </label>
           <input
             ref={fileInputRef}
@@ -3079,7 +3076,7 @@ function NewCasePageContent() {
           >
             {isProcessingAI || searchProgress.stage !== 'idle' 
               ? '🔄 Processing...' 
-              : `📷 Take Photo or Upload (${photos?.length || 0}/10)`}
+              : `📷 Take Photo or Upload (${photos?.length || 0}/50)`}
           </button>
           <p className="mt-1 text-xs text-gray-500">
             {isOffline 
@@ -3120,7 +3117,7 @@ function NewCasePageContent() {
           )}
           
           {/* Manual AI Assessment Button */}
-          {!isOffline && adjusterRunsAiAnalysis && photos && photos.length >= 5 && photos.length <= 10 && shouldRunAIAssessment() && searchProgress.stage === 'idle' && (
+          {!isOffline && adjusterRunsAiAnalysis && photos && photos.length >= 5 && photos.length <= 50 && shouldRunAIAssessment() && searchProgress.stage === 'idle' && (
             <div className="mt-4 space-y-3">
               {/* AI Analysis Status Badge */}
               <AIAnalysisStatusBadge
@@ -3318,10 +3315,6 @@ function NewCasePageContent() {
                   AI classified this asset as a commercial total loss. Recovery value is set to zero unless a manager confirms recoverable resale value.
                 </div>
               )}
-              <div className="flex justify-between items-center gap-2 p-3 bg-white rounded-lg overflow-hidden">
-                <span className="text-sm md:text-base text-gray-700 font-medium truncate">Reserve Price:</span>
-                <span className="text-base md:text-lg font-bold text-[var(--brand-primary)] whitespace-nowrap flex-shrink-0">₦{aiAssessment.reservePrice.toLocaleString()}</span>
-              </div>
               {aiAssessment.manualReviewRequired && (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
                   <div className="font-semibold mb-1">Manual review required before approval</div>

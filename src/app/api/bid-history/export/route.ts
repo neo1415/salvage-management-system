@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user has manager, adjuster, or admin role
-    const allowedRoles = ['salvage_manager', 'claims_adjuster', 'system_admin'];
+    const allowedRoles = ['salvage_manager', 'system_admin'];
     if (!allowedRoles.includes(session.user.role)) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }

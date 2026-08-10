@@ -99,7 +99,7 @@ type StatusFilter =
   | 'active_auction'
   | 'sold';
 
-export function CasePortfolioPage() {
+export function CasePortfolioPage({ departmentPortfolio = false }: { departmentPortfolio?: boolean }) {
   const { data: session, status } = useSession();
   const router = useAppRouter();
   const isOffline = useOffline();
@@ -119,7 +119,7 @@ export function CasePortfolioPage() {
   const userRole = session?.user?.role;
   const isClaimsAdjuster = userRole === 'claims_adjuster';
   const isSalvageManager = userRole === 'salvage_manager';
-  const isManagerPortfolio = isSalvageManager;
+  const isManagerPortfolio = isSalvageManager || departmentPortfolio;
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -143,7 +143,7 @@ export function CasePortfolioPage() {
       setLoading(true);
       setLoadError(null);
       
-      if (isClaimsAdjuster) {
+      if (isClaimsAdjuster && !departmentPortfolio) {
         try {
           const localDrafts = await getAllDrafts();
           setDrafts(localDrafts);
@@ -166,7 +166,9 @@ export function CasePortfolioPage() {
         const timestamp = Date.now();
         const casesPath = isSalvageManager
           ? `/api/cases?limit=500&_t=${timestamp}`
-          : `/api/cases?createdByMe=true&limit=500&_t=${timestamp}`;
+          : departmentPortfolio
+            ? `/api/cases?departmentPortfolio=true&limit=500&_t=${timestamp}`
+            : `/api/cases?createdByMe=true&limit=500&_t=${timestamp}`;
         const response = await fetch(
           casesPath
         );
@@ -221,7 +223,7 @@ export function CasePortfolioPage() {
     } finally {
       setLoading(false);
     }
-  }, [isClaimsAdjuster, isOffline, isSalvageManager]);
+  }, [departmentPortfolio, isClaimsAdjuster, isOffline, isSalvageManager]);
 
   const filterCases = useCallback(() => {
     // Combine online cases and offline cases
@@ -311,19 +313,19 @@ export function CasePortfolioPage() {
     }
 
     if (status === 'authenticated') {
-      if (isClaimsAdjuster) {
+      if (isClaimsAdjuster && !departmentPortfolio) {
         router.push('/adjuster/cases/new');
         return;
       }
 
-      if (!isSalvageManager) {
+      if (!isSalvageManager && !(isClaimsAdjuster && departmentPortfolio)) {
         router.push('/login');
         return;
       }
 
       void fetchMyCases();
     }
-  }, [fetchMyCases, isClaimsAdjuster, isSalvageManager, router, status]);
+  }, [departmentPortfolio, fetchMyCases, isClaimsAdjuster, isSalvageManager, router, status]);
 
   useEffect(() => {
     filterCases();
@@ -725,7 +727,7 @@ export function CasePortfolioPage() {
                     showRejectionReason={statusFilter === 'rejected' || Boolean(caseItem.rejectionReason)}
                     getStatusBadge={getStatusBadge}
                     isOfflineCase={isOfflineCase}
-                    detailsBasePath={isManagerPortfolio ? '/manager/cases' : '/adjuster/cases'}
+                    detailsBasePath={isSalvageManager ? '/manager/cases' : '/adjuster/cases'}
                     showSubmittedBy={isManagerPortfolio}
                   />
                 );

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
+import { departments } from '@/lib/db/schema/departments';
 import { auditLogs } from '@/lib/db/schema/audit-logs';
 import { hash } from 'bcryptjs';
 import { emailService } from '@/features/notifications/services/email.service';
@@ -13,6 +14,7 @@ import { resolveVendorUserStatus } from '@/lib/utils/vendor-user-status';
 import { appPath } from '@/features/notifications/templates/email-urls';
 import { brandLegalName, brandTeamName, getEmailBranding, getSupportEmail, getSupportPhone } from '@/features/notifications/templates/email-branding';
 import { wrapProfessionalEmail } from '@/features/notifications/templates/wrap-professional-email';
+import { canHoldDepartmentDesignation } from '@/features/departments/department-access';
 
 // Validation schema for admin-provisioned accounts
 const phoneSchema = z.string().regex(/^\+?[0-9]{10,15}$/, 'Invalid phone number format');
@@ -22,6 +24,8 @@ const createUserSchema = z.object({
   email: z.string().email('Invalid email format'),
   phone: z.string().trim().optional(),
   branchName: z.string().trim().max(150, 'Branch name must be 150 characters or less').optional(),
+  departmentId: z.string().uuid().nullable().optional(),
+  isDepartmentHead: z.boolean().default(false),
   role: z.enum(['vendor', 'claims_adjuster', 'salvage_manager', 'finance_officer', 'system_admin'], {
     message: 'Invalid role',
   }),
@@ -225,6 +229,11 @@ export async function GET(request: NextRequest) {
         phone: users.phone,
         fullName: users.fullName,
         branchName: users.branchName,
+        departmentId: users.departmentId,
+        departmentName: departments.name,
+        departmentCode: departments.code,
+        departmentKind: departments.kind,
+        isDepartmentHead: users.isDepartmentHead,
         role: users.role,
         status: users.status,
         profilePictureUrl: users.profilePictureUrl,
@@ -238,6 +247,7 @@ export async function GET(request: NextRequest) {
       })
       .from(users)
       .leftJoin(vendors, eq(vendors.userId, users.id))
+      .leftJoin(departments, eq(departments.id, users.departmentId))
       .where(whereClause)
       .orderBy(sql`${users.createdAt} DESC`)
       .limit(pageSize + 1)
@@ -264,6 +274,11 @@ export async function GET(request: NextRequest) {
         phone: row.phone,
         fullName: row.fullName,
         branchName: row.branchName,
+        departmentId: row.departmentId,
+        departmentName: row.departmentName,
+        departmentCode: row.departmentCode,
+        departmentKind: row.departmentKind,
+        isDepartmentHead: row.isDepartmentHead,
         role: row.role,
         status: row.status,
         displayStatus,
@@ -345,8 +360,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { fullName, email, phone, role, branchName } = validationResult.data;
+    const { fullName, email, phone, role, branchName, departmentId, isDepartmentHead } = validationResult.data;
     const normalizedPhone = phone?.trim() || '';
+
+    let selectedDepartment: typeof departments.$inferSelect | null = null;
+    if (departmentId) {
+      [selectedDepartment] = await db.select().from(departments)
+        .where(and(eq(departments.id, departmentId), eq(departments.isActive, true))).limit(1);
+      if (!selectedDepartment) return NextResponse.json({ error: 'Selected department is unavailable' }, { status: 400 });
+      if (role === 'vendor') return NextResponse.json({ error: 'Vendors cannot be assigned to staff departments' }, { status: 400 });
+      if (!canHoldDepartmentDesignation(role, selectedDepartment.code)) {
+        return NextResponse.json({ error: 'The selected role cannot hold this executive designation' }, { status: 400 });
+      }
+      if (selectedDepartment.kind === 'executive' && isDepartmentHead) {
+        return NextResponse.json({ error: 'Executive designations do not use the department-head setting' }, { status: 400 });
+      }
+      if (isDepartmentHead && role !== 'claims_adjuster') {
+        return NextResponse.json({ error: 'Only claims adjusters can be designated as claims department heads' }, { status: 400 });
+      }
+      if (isDepartmentHead && selectedDepartment.kind !== 'claims') {
+        return NextResponse.json({ error: 'Department heads must belong to a claims department' }, { status: 400 });
+      }
+    } else if (isDepartmentHead) {
+      return NextResponse.json({ error: 'A department is required for a department head' }, { status: 400 });
+    }
 
     // Check if email already exists
     const existingUserByEmail = await db.query.users.findFirst({
@@ -392,6 +429,8 @@ export async function POST(request: NextRequest) {
         passwordHash,
         fullName,
         branchName: branchName?.trim() || null,
+        departmentId: departmentId || null,
+        isDepartmentHead: Boolean(departmentId && isDepartmentHead),
         dateOfBirth: new Date('1990-01-01'),
         role,
         status: userStatus,
@@ -437,6 +476,9 @@ export async function POST(request: NextRequest) {
         createdEmail: email,
         createdRole: role,
         createdBranchName: branchName?.trim() || null,
+        departmentId: departmentId || null,
+        departmentName: selectedDepartment?.name || null,
+        isDepartmentHead: Boolean(departmentId && isDepartmentHead),
         phoneProvided: Boolean(normalizedPhone),
         createdBy: session.user.id,
         createdByEmail: session.user.email,
@@ -473,6 +515,15 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error('Staff account creation error:', error);
+    const databaseError = error as { code?: string; constraint?: string; cause?: { code?: string; constraint?: string } };
+    const code = databaseError.code ?? databaseError.cause?.code;
+    const constraint = databaseError.constraint ?? databaseError.cause?.constraint;
+    if (code === '23505' && constraint === 'users_one_department_head_idx') {
+      return NextResponse.json(
+        { error: 'This department already has an active department head' },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
       {
         error: 'Failed to create staff account',

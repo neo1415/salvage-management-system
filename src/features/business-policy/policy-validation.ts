@@ -213,10 +213,6 @@ export function validateBusinessPolicy(policy: BusinessPolicy): PolicyValidation
     issues.push(issue('auctions.documentValidityHours', 'Document validity period must be positive.'));
   }
 
-  if (policy.auctions.minimumBidIncrement <= 0) {
-    issues.push(issue('auctions.minimumBidIncrement', 'Minimum bid increment must be positive.'));
-  }
-
   if (policy.auctions.maxGraceExtensions < 0) {
     issues.push(issue('auctions.maxGraceExtensions', 'Maximum grace extensions cannot be negative.'));
   }

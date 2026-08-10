@@ -24,7 +24,7 @@ import { auctionWinners } from '@/lib/db/schema/auction-deposit';
 import { eq, desc, and } from 'drizzle-orm';
 import { escrowService } from './escrow.service';
 import { depositCalculatorService } from './deposit-calculator.service';
-import { configService } from '@/features/auction-deposit/services/config.service';
+import { businessPolicyService } from '@/features/business-policy';
 
 /**
  * Top bidder information
@@ -145,7 +145,8 @@ export class AuctionClosureService {
           };
         }
 
-        // Requirement 21.3: Check if this is a legacy auction
+        const effectivePolicy = await businessPolicyService.getEffectivePolicy();
+        const depositsEnabled = effectivePolicy.escrow.depositSystemEnabled;
         const isLegacyAuction = allBids[0]?.isLegacy === true;
 
         // Group bids by vendor (get highest bid per vendor)
@@ -161,14 +162,12 @@ export class AuctionClosureService {
           (a, b) => parseFloat(b.amount) - parseFloat(a.amount)
         );
 
-        // Get system configuration
-        const config = await configService.getConfig();
-        const depositRate = isLegacyAuction ? 1.0 : (config.depositRate / 100);
-        const minimumDepositFloor = isLegacyAuction ? 0 : config.minimumDepositFloor;
+        const depositRate = effectivePolicy.escrow.depositRatePercent / 100;
+        const minimumDepositFloor = effectivePolicy.escrow.minimumDepositFloor;
 
         // Requirement 5.1: Identify top N bidders
         // Requirement 21.3: For legacy auctions, keep only winner (no fallback chain)
-        const actualTopBiddersCount = isLegacyAuction 
+        const actualTopBiddersCount = isLegacyAuction || !depositsEnabled
           ? 1 
           : Math.min(topBiddersToKeepFrozen, uniqueBidders.length);
         const topBidders = uniqueBidders.slice(0, actualTopBiddersCount);
@@ -185,11 +184,9 @@ export class AuctionClosureService {
           const bidder = topBidders[i];
           const rank = i + 1;
           const bidAmount = parseFloat(bidder.amount);
-          const depositAmount = depositCalculatorService.calculateDeposit(
-            bidAmount,
-            depositRate,
-            minimumDepositFloor
-          );
+          const depositAmount = depositsEnabled && !isLegacyAuction
+            ? depositCalculatorService.calculateDeposit(bidAmount, depositRate, minimumDepositFloor)
+            : 0;
 
           // Record in auction_winners table
           await tx.insert(auctionWinners).values({
@@ -210,11 +207,11 @@ export class AuctionClosureService {
         let unfrozenCount = 0;
         for (const bidder of lowerBidders) {
           const bidAmount = parseFloat(bidder.amount);
-          const depositAmount = depositCalculatorService.calculateDeposit(
-            bidAmount,
-            depositRate,
-            minimumDepositFloor
-          );
+          const depositAmount = depositsEnabled && !isLegacyAuction
+            ? depositCalculatorService.calculateDeposit(bidAmount, depositRate, minimumDepositFloor)
+            : 0;
+
+          if (depositAmount === 0) continue;
 
           try {
             // CRITICAL FIX: Pass transaction context to avoid nested transactions

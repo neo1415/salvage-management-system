@@ -48,6 +48,36 @@ vi.mock('@google/generative-ai', async () => {
   };
 });
 
+vi.mock('@/lib/integrations/serper-api', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/integrations/serper-api')>();
+
+  if (process.env.RUN_REAL_AI_PROVIDER_TESTS === 'true') {
+    return actual;
+  }
+
+  const externalCallDisabled = () =>
+    Promise.reject(
+      new Error(
+        'External Serper calls are disabled in unit tests. Set RUN_REAL_AI_PROVIDER_TESTS=true for provider integration tests.'
+      )
+    );
+
+  return {
+    ...actual,
+    serperApi: {
+      searchGoogle: vi.fn(externalCallDisabled),
+      search: vi.fn(externalCallDisabled),
+      validateApiKey: vi.fn(externalCallDisabled),
+      getRateLimitStatus: vi.fn(() => ({
+        requestsPerMinute: 0,
+        requestsToday: 0,
+        dailyLimit: 0,
+        resetTime: new Date(0),
+      })),
+    },
+  };
+});
+
 // Global test setup
 beforeAll(async () => {
   console.log('[Test Setup] Initializing test environment...');

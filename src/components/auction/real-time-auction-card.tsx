@@ -12,7 +12,6 @@
 import { useAuctionWatch, useAuctionUpdates } from '@/hooks/use-socket';
 import { useState, useEffect } from 'react';
 import { BidForm } from './bid-form';
-import { useSystemConfig } from '@/hooks/use-system-config';
 
 interface RealTimeAuctionCardProps {
   auctionId: string;
@@ -24,7 +23,6 @@ interface RealTimeAuctionCardProps {
 }
 
 export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionCardProps) {
-  const { config } = useSystemConfig();
   const { watchingCount } = useAuctionWatch(auctionId);
   const { auction, latestBid, isExtended, isClosed } = useAuctionUpdates(auctionId);
   
@@ -33,27 +31,23 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
   const [showBidForm, setShowBidForm] = useState(false);
   const [minimumBid, setMinimumBid] = useState<number>(0);
 
-  // Update minimum bid when config loads or current bid changes
+  // Any whole-naira amount above the current bid is valid.
   useEffect(() => {
-    if (config && currentBid) {
-      setMinimumBid(currentBid + config.minimumBidIncrement);
-    }
-  }, [config, currentBid]);
+    setMinimumBid(currentBid > 0 ? currentBid + 1 : 1);
+  }, [currentBid]);
 
   // Update current bid and minimum bid when new bid is received
   useEffect(() => {
     if (latestBid) {
       const bidAmount = Number(latestBid.amount);
       setCurrentBid(bidAmount);
-      // Use the minimum bid from the socket event if available
       if (latestBid.minimumBid) {
         setMinimumBid(latestBid.minimumBid);
-      } else if (config) {
-        // Fallback: calculate from config if socket doesn't provide it
-        setMinimumBid(bidAmount + config.minimumBidIncrement);
+      } else {
+        setMinimumBid(bidAmount + 1);
       }
     }
-  }, [latestBid, config]);
+  }, [latestBid]);
 
   // Update status when auction is closed
   useEffect(() => {
@@ -157,7 +151,7 @@ export function RealTimeAuctionCard({ auctionId, initialData }: RealTimeAuctionC
       <BidForm
         auctionId={auctionId}
         currentBid={currentBid}
-        minimumBid={minimumBid} // Use calculated minimum bid from config
+        minimumBid={minimumBid}
         assetName="Asset Name"
         isOpen={showBidForm}
         onClose={() => setShowBidForm(false)}

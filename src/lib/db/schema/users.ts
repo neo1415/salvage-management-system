@@ -1,4 +1,5 @@
 import { pgTable, uuid, varchar, timestamp, pgEnum, jsonb, boolean } from 'drizzle-orm/pg-core';
+import { departments } from './departments';
 
 export const userRoleEnum = pgEnum('user_role', [
   'vendor',
@@ -40,6 +41,8 @@ export const users = pgTable('users', {
   status: userStatusEnum('status').notNull().default('unverified_tier_0'),
   fullName: varchar('full_name', { length: 255 }).notNull(),
   branchName: varchar('branch_name', { length: 150 }),
+  departmentId: uuid('department_id').references(() => departments.id, { onDelete: 'set null' }),
+  isDepartmentHead: boolean('is_department_head').notNull().default(false),
   dateOfBirth: timestamp('date_of_birth').notNull(),
   profilePictureUrl: varchar('profile_picture_url', { length: 500 }),
   requirePasswordChange: varchar('require_password_change', { length: 10 }).default('false'),

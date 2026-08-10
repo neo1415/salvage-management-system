@@ -31,7 +31,6 @@ export function AuctionBreakdownTable({
                 <th className="text-right py-2 px-3">Bids</th>
                 <th className="text-right py-2 px-3">Bidders</th>
                 <th className="text-right py-2 px-3">Winning Bid</th>
-                <th className="text-right py-2 px-3">Reserve</th>
                 <th className="text-right py-2 px-3">Duration (h)</th>
                 <th className="text-left py-2 px-3">Pickup</th>
                 <th className="text-left py-2 px-3">Vendor</th>
@@ -70,7 +69,6 @@ export function AuctionBreakdownTable({
                   <td className="py-2 px-3 text-right font-medium">
                     {auction.winningBid != null ? formatReportCurrency(auction.winningBid) : '—'}
                   </td>
-                  <td className="py-2 px-3 text-right">{formatReportCurrency(auction.reservePrice)}</td>
                   <td className="py-2 px-3 text-right">{auction.durationHours}</td>
                   <td className="py-2 px-3 capitalize">
                     {auction.pickupStatus.replace(/_/g, ' ')}

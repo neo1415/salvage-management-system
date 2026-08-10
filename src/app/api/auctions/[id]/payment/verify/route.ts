@@ -31,13 +31,6 @@ import { walletTransactions } from '@/lib/db/schema/escrow';
 import { eq, and } from 'drizzle-orm';
 import { paymentService } from '@/features/auction-deposit/services/payment.service';
 
-const MANUAL_RETRY_DELAY_MS = 10 * 60 * 1000;
-
-type VerifyBody = {
-  source?: 'manual_retry' | 'paystack_return';
-  reference?: string | null;
-};
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -46,7 +39,7 @@ export async function POST(
   
   try {
     const { id: auctionId } = await params;
-    const body = (await request.json().catch(() => ({}))) as VerifyBody;
+    await request.json().catch(() => ({}));
     
     console.log('🔍 Manual payment verification requested');
     console.log(`   - Auction ID: ${auctionId}`);
@@ -172,30 +165,6 @@ export async function POST(
     }
     const paymentReference = payment.paymentReference;
 
-    const isTrustedPaystackReturn =
-      body.source === 'paystack_return' &&
-      typeof body.reference === 'string' &&
-      body.reference === paymentReference;
-
-    if (!isTrustedPaystackReturn) {
-      const retryAvailableAt = new Date(payment.createdAt.getTime() + MANUAL_RETRY_DELAY_MS);
-      const waitMs = retryAvailableAt.getTime() - Date.now();
-
-      if (waitMs > 0) {
-        const waitMinutes = Math.ceil(waitMs / 60000);
-        return NextResponse.json(
-          {
-            success: false,
-            code: 'PAYMENT_STILL_PROCESSING',
-            message: `Payment is still being confirmed. Please wait ${waitMinutes} minute(s), then retry if it has not updated.`,
-            retryAvailableAt: retryAvailableAt.toISOString(),
-            waitMinutes,
-          },
-          { status: 409 }
-        );
-      }
-    }
-
     // Verify payment with Paystack API
     console.log('🔍 Verifying payment with Paystack API...');
     const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
@@ -289,7 +258,10 @@ export async function POST(
     const finalBid = parseFloat(winner.bidAmount);
     const depositAmount = parseFloat(winner.depositAmount);
     const hybridWalletAmount = hybridFreeze ? parseFloat(hybridFreeze.amount) : 0;
-    const expectedPaystackAmount = Math.max(0, finalBid - depositAmount - hybridWalletAmount);
+    const metadataRemainingAmount = Number(metadata.remainingAmount);
+    const expectedPaystackAmount = Number.isFinite(metadataRemainingAmount) && metadataRemainingAmount > 0
+      ? metadataRemainingAmount
+      : Math.max(0, finalBid - depositAmount - hybridWalletAmount);
     const receivedPaystackAmount = Number(paystackData.data.amount || 0) / 100;
 
     if (Math.abs(receivedPaystackAmount - expectedPaystackAmount) > 1) {
@@ -317,10 +289,25 @@ export async function POST(
     console.log('✅ Payment verified with Paystack - processing manually...');
     const processingStartTime = Date.now();
     
-    await withRetry(() => paymentService.handlePaystackWebhook(paymentReference, true), 2, 750);
+    const settlement = await withRetry(
+      () => paymentService.handlePaystackWebhook(paymentReference, true, receivedPaystackAmount),
+      2,
+      750
+    );
     
     const processingDuration = Date.now() - processingStartTime;
     const totalDuration = Date.now() - verificationStartTime;
+
+    if (!settlement.paymentComplete) {
+      return NextResponse.json({
+        success: false,
+        code: 'PARTIAL_PAYMENT_RECORDED',
+        message: `Your payment was confirmed. ${settlement.outstandingAmount.toLocaleString('en-NG', { style: 'currency', currency: 'NGN' })} remains to complete this purchase.`,
+        paymentId: payment.id,
+        confirmedAmount: settlement.confirmedAmount,
+        outstandingAmount: settlement.outstandingAmount,
+      }, { status: 202 });
+    }
     
     console.log('✅ Payment processed successfully');
     console.log(`   - Processing time: ${processingDuration}ms`);

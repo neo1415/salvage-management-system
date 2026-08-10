@@ -39,7 +39,6 @@ interface Case {
   assetDetails: Record<string, unknown>;
   marketValue: number;
   estimatedSalvageValue: number | null;
-  reservePrice: number | null;
   damageSeverity: 'minor' | 'moderate' | 'severe' | null;
   aiAssessment: {
     recommendation?: string;
@@ -400,14 +399,6 @@ export default function CaseDetailsPage() {
                   <span className="text-sm text-gray-600">Estimated Salvage Value</span>
                   <span className="font-bold text-green-600">
                     {formatNaira(caseData.estimatedSalvageValue)}
-                  </span>
-                </div>
-              )}
-              {caseData.reservePrice && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Reserve Price</span>
-                  <span className="font-bold text-gray-900">
-                    {formatNaira(caseData.reservePrice)}
                   </span>
                 </div>
               )}

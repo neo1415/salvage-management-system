@@ -276,7 +276,7 @@ export class InternetSearchService {
     // Increase maxResults for machinery to get more Nigerian marketplace results
     const defaultMaxResults = options.item.type === 'machinery' ? 15 : 10;
     const { item, maxResults = defaultMaxResults, timeout = 3000, forceRefresh = false } = options;
-    
+
     try {
       // Check cache first
       const cachedResult = forceRefresh ? null : await cacheIntegrationService.getCachedMarketPrice(item);
@@ -569,7 +569,7 @@ export class InternetSearchService {
   async searchPartPrice(options: SearchPartPriceOptions): Promise<PartPriceResult> {
     const startTime = Date.now();
     const { item, partName, damageType, action = 'specialist_review', maxResults = 10, timeout = 3000, forceRefresh = false } = options;
-    
+
     try {
       // Check cache first
       const cachedResult = forceRefresh ? null : await cacheIntegrationService.getCachedPartPrice(item, partName, damageType, action);

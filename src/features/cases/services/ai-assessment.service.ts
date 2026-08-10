@@ -68,7 +68,6 @@ export interface AIAssessment {
 export interface DamageAssessmentResult extends AIAssessment {
   damageSeverity: 'minor' | 'moderate' | 'severe';
   estimatedSalvageValue: number;
-  reservePrice: number;
   
   // New optional fields (backward compatible)
   method?: 'gemini' | 'vision' | 'neutral';
@@ -113,7 +112,7 @@ export interface OCRResult {
  * @param imageUrls - Array of Cloudinary URLs or base64 data URLs for uploaded photos
  * @param marketValue - Market value of the asset
  * @param vehicleContext - Optional vehicle context (make, model, year) for improved Gemini accuracy
- * @returns Damage assessment with severity, estimated value, reserve price, and method used
+ * @returns Damage assessment with severity, estimated salvage value, and method used
  */
 export async function assessDamage(
   imageUrls: string[],

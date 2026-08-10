@@ -115,6 +115,7 @@ export type AuthPolicy = {
   allowedEmailDomains: string[];
   staffMfaRequired: boolean;
   vendorMfaRequired: boolean;
+  riskBasedMfaEnabled: boolean;
   userManagedMfaAllowed: boolean;
 };
 

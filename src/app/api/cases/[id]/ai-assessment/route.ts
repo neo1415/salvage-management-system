@@ -132,7 +132,7 @@ export async function POST(
       .update(salvageCases)
       .set({
         estimatedSalvageValue: String(assessment.estimatedSalvageValue),
-        reservePrice: String(assessment.reservePrice),
+        reservePrice: null,
         damageSeverity: assessment.damageSeverity,
         aiAssessment: aiAssessmentPayload,
         marketValue: String(assessment.marketValue || caseRow.marketValue),
@@ -170,7 +170,6 @@ export async function POST(
         confidenceScore: assessment.confidenceScore,
         labels: assessment.labels,
         estimatedSalvageValue: assessment.estimatedSalvageValue,
-        reservePrice: assessment.reservePrice,
         marketValue: assessment.marketValue,
         aiAssessment: aiAssessmentPayload,
         estimatedRepairCost: assessment.estimatedRepairCost,

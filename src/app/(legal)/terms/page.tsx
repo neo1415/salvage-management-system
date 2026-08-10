@@ -86,7 +86,7 @@ export default async function TermsOfServicePage() {
                 </div>
                 <div>
                   <dt className="font-semibold text-gray-900">"Winning Bid"</dt>
-                  <dd className="text-gray-700 ml-4">means the highest valid bid placed before an auction closes, subject to reserve price requirements.</dd>
+                  <dd className="text-gray-700 ml-4">means the highest valid bid placed before an auction closes.</dd>
                 </div>
                 <div>
                   <dt className="font-semibold text-gray-900">"AI Assessment"</dt>
@@ -169,8 +169,7 @@ export default async function TermsOfServicePage() {
               <h3 className="text-xl font-semibold text-[var(--brand-primary)] mb-3 mt-6">5.3 Auction Process</h3>
               <ul className="list-disc pl-6 space-y-2 text-gray-700">
                 <li><strong>Auction Duration:</strong> Each auction has a specified start and end time</li>
-                <li><strong>Bid Increments:</strong> Minimum bid increments are set by the Platform</li>
-                <li><strong>Reserve Price:</strong> Auctions may have undisclosed reserve prices</li>
+                <li><strong>Bids:</strong> Each new bid must be higher than the current bid</li>
                 <li><strong>Early Closure:</strong> {legal.brandName} reserves the right to close auctions early</li>
                 <li><strong>Cancellation:</strong> {legal.brandName} may cancel auctions at any time without liability</li>
               </ul>

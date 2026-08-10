@@ -175,12 +175,10 @@ export async function POST(
       });
 
       const previousBid = previousBids[0];
-      const fallbackBid = auction.case?.reservePrice || '0';
-
       await db
         .update(auctions)
         .set({
-          currentBid: previousBid?.amount || fallbackBid,
+          currentBid: previousBid?.amount || null,
           currentBidder: previousBid?.vendorId || null,
           updatedAt: new Date(),
         })

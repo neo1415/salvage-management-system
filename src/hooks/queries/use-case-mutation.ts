@@ -126,7 +126,6 @@ export function useCreateCase() {
           assetDetails: newCase.assetDetails,
           marketValue: newCase.marketValue,
           estimatedSalvageValue: newCase.aiAssessmentResult?.estimatedSalvageValue || null,
-          reservePrice: null,
           damageSeverity: newCase.aiAssessmentResult?.damageSeverity || null,
           aiAssessment: newCase.aiAssessmentResult || null,
           gpsLocation: newCase.gpsLocation,

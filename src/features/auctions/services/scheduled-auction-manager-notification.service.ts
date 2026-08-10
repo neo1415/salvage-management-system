@@ -23,7 +23,6 @@ export async function notifyApprovingManagerScheduledAuctionLive(
     .select({
       approvedBy: salvageCases.approvedBy,
       locationName: salvageCases.locationName,
-      reservePrice: salvageCases.reservePrice,
     })
     .from(salvageCases)
     .where(eq(salvageCases.id, input.caseId))
@@ -52,7 +51,6 @@ export async function notifyApprovingManagerScheduledAuctionLive(
     claimReference: input.claimReference,
     assetType: input.assetType,
     auctionId: input.auctionId,
-    reservePrice: parseFloat(caseRow.reservePrice ?? '0'),
     location: caseRow.locationName ?? '—',
     endTime: input.endTime.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
     managerAuctionUrl: `${appUrl}/bid-history/${input.auctionId}`,

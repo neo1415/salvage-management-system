@@ -406,11 +406,9 @@ export interface AuctionPerformanceReport {
     successRate: number;
     averageBidsPerAuction: number;
     averageUniqueBidders: number;
-    reserveMetRate: number;
     averageDurationHours: number;
     totalRevenue: number;
     averageWinningBid: number;
-    priceRealizationRate: number;
     uniqueVendorsParticipating: number;
     vendorEngagementRate: number;
   };
@@ -419,7 +417,6 @@ export interface AuctionPerformanceReport {
     count: number;
     successRate: number;
     averageBids: number;
-    reserveMetRate: number;
     totalRevenue: number;
     averageWinningBid: number;
     competitiveAuctions: number;
@@ -482,8 +479,6 @@ export interface AuctionPerformanceReport {
   financialMetrics: {
     totalRevenue: number;
     averageWinningBid: number;
-    averageReservePrice: number;
-    priceRealizationRate: number;
     revenueByAssetType: Array<{
       assetType: string;
       revenue: number;
@@ -511,7 +506,6 @@ export interface AuctionPerformanceReport {
     bidCount: number;
     uniqueBidders: number;
     winningBid: number | null;
-    reservePrice: number;
     status: string;
     isSuccessful: boolean;
     pickupStatus: string;
@@ -585,9 +579,6 @@ export class AuctionPerformanceService {
     const totalUniqueBidders = data.reduce((sum, a) => sum + a.uniqueBidders, 0);
     const avgUniqueBidders = data.length > 0 ? totalUniqueBidders / data.length : 0;
     
-    const reserveMet = data.filter(a => a.reserveMet).length;
-    const reserveMetRate = data.length > 0 ? (reserveMet / data.length) * 100 : 0;
-    
     const avgDuration = data.length > 0
       ? data.reduce((sum, a) => sum + a.durationHours, 0) / data.length
       : 0;
@@ -598,11 +589,6 @@ export class AuctionPerformanceService {
     const totalRevenue = soldAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
     const avgWinningBid = soldAuctions.length > 0 ? totalRevenue / soldAuctions.length : 0;
     
-    const auctionsWithReserve = data.filter(a => a.reservePrice && a.currentBid);
-    const priceRealization = auctionsWithReserve.length > 0
-      ? auctionsWithReserve.reduce((sum, a) => sum + (parseFloat(a.currentBid) / parseFloat(a.reservePrice) * 100), 0) / auctionsWithReserve.length
-      : 0;
-
     // Vendor metrics
     const uniqueVendors = new Set(data.flatMap(a => a.bidderIds || [])).size;
     const vendorEngagement = data.length > 0 ? (uniqueVendors / data.length) * 100 : 0;
@@ -612,11 +598,9 @@ export class AuctionPerformanceService {
       successRate: Math.round(successRate * 100) / 100,
       averageBidsPerAuction: Math.round(avgBids * 100) / 100,
       averageUniqueBidders: Math.round(avgUniqueBidders * 100) / 100,
-      reserveMetRate: Math.round(reserveMetRate * 100) / 100,
       averageDurationHours: Math.round(avgDuration * 100) / 100,
       totalRevenue: Math.round(totalRevenue),
       averageWinningBid: Math.round(avgWinningBid),
-      priceRealizationRate: Math.round(priceRealization * 100) / 100,
       uniqueVendorsParticipating: uniqueVendors,
       vendorEngagementRate: Math.round(vendorEngagement * 100) / 100,
     };
@@ -635,8 +619,6 @@ export class AuctionPerformanceService {
       const totalBids = items.reduce((sum, a) => sum + a.bidCount, 0);
       const avgBids = items.length > 0 ? totalBids / items.length : 0;
       
-      const reserveMet = items.filter(a => a.reserveMet).length;
-      const reserveMetRate = items.length > 0 ? (reserveMet / items.length) * 100 : 0;
       
       const soldAuctions = items.filter(a => this.isSoldAuction(a));
       const totalRevenue = soldAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
@@ -649,7 +631,6 @@ export class AuctionPerformanceService {
         count: items.length,
         successRate: Math.round(successRate * 100) / 100,
         averageBids: Math.round(avgBids * 100) / 100,
-        reserveMetRate: Math.round(reserveMetRate * 100) / 100,
         totalRevenue: Math.round(totalRevenue),
         averageWinningBid: Math.round(avgWinningBid),
         competitiveAuctions: competitive,
@@ -824,16 +805,6 @@ export class AuctionPerformanceService {
     const totalRevenue = soldAuctions.reduce((sum, a) => sum + parseFloat(a.winningBid || '0'), 0);
     const avgWinningBid = soldAuctions.length > 0 ? totalRevenue / soldAuctions.length : 0;
     
-    const auctionsWithReserve = data.filter(a => a.reservePrice);
-    const avgReservePrice = auctionsWithReserve.length > 0
-      ? auctionsWithReserve.reduce((sum, a) => sum + parseFloat(a.reservePrice), 0) / auctionsWithReserve.length
-      : 0;
-    
-    const priceRealizationAuctions = data.filter(a => a.reservePrice && a.currentBid);
-    const priceRealization = priceRealizationAuctions.length > 0
-      ? priceRealizationAuctions.reduce((sum, a) => sum + (parseFloat(a.currentBid) / parseFloat(a.reservePrice) * 100), 0) / priceRealizationAuctions.length
-      : 0;
-    
     // Revenue by asset type
     const grouped = DataAggregationService.groupBy(soldAuctions, 'assetType');
     const revenueByAssetType = grouped && Object.keys(grouped).length > 0
@@ -850,8 +821,6 @@ export class AuctionPerformanceService {
     return {
       totalRevenue: Math.round(totalRevenue),
       averageWinningBid: Math.round(avgWinningBid),
-      averageReservePrice: Math.round(avgReservePrice),
-      priceRealizationRate: Math.round(priceRealization * 100) / 100,
       revenueByAssetType,
     };
   }
@@ -911,7 +880,6 @@ export class AuctionPerformanceService {
         bidCount: a.bidCount,
         uniqueBidders: a.uniqueBidders,
         winningBid: a.winningBid ? Math.round(parseFloat(a.winningBid)) : null,
-        reservePrice: Math.round(parseFloat(a.reservePrice || '0')),
         status: a.status,
         isSuccessful: this.isSoldAuction(a),
         pickupStatus: a.pickupStatus,
@@ -957,7 +925,7 @@ export class AuctionPerformanceService {
           value: `${worstAsset.assetType} (${Math.round(worstAsset.successRate)}% success)`,
           description: `${worstAsset.assetType} auctions need attention`,
         });
-        recommendations.push(`Consider reviewing reserve prices or marketing strategy for ${worstAsset.assetType} auctions`);
+        recommendations.push(`Consider reviewing listing quality or marketing strategy for ${worstAsset.assetType} auctions`);
       }
     }
 
@@ -971,7 +939,7 @@ export class AuctionPerformanceService {
         description: 'Auctions that received no bids',
       });
       if (noBidRate > 20) {
-        recommendations.push('High no-bid rate detected. Consider reviewing reserve prices and vendor outreach');
+        recommendations.push('High no-bid rate detected. Consider reviewing listing quality and vendor outreach');
       }
     }
 

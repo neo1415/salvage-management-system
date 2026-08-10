@@ -63,7 +63,6 @@ interface Auction {
   startTime: string;
   endTime: string;
   currentBid: string | null;
-  minimumIncrement: string;
   status: 'scheduled' | 'active' | 'extended' | 'closed' | 'cancelled' | 'awaiting_payment';
   watchingCount: number;
   isWinner?: boolean;
@@ -76,8 +75,6 @@ interface Auction {
     assetType: string;
     assetDetails: Record<string, unknown>;
     marketValue: string;
-    estimatedSalvageValue: string;
-    reservePrice: string;
     damageSeverity: 'minor' | 'moderate' | 'severe';
     locationName: string;
     photos: string[];
@@ -261,9 +258,7 @@ function AuctionBrowsingContent() {
     // PRICE FILTER - Client-side
     if (priceMin || priceMax) {
       filteredAuctions = filteredAuctions.filter(auction => {
-        const price = auction.currentBid 
-          ? Number(auction.currentBid)
-          : Number(auction.case.reservePrice);
+        const price = auction.currentBid ? Number(auction.currentBid) : 0;
         
         if (priceMin && price < Number(priceMin)) return false;
         if (priceMax && price > Number(priceMax)) return false;
@@ -287,15 +282,15 @@ function AuctionBrowsingContent() {
         break;
       case 'price_low':
         filteredAuctions.sort((a, b) => {
-          const priceA = a.currentBid ? Number(a.currentBid) : Number(a.case.reservePrice);
-          const priceB = b.currentBid ? Number(b.currentBid) : Number(b.case.reservePrice);
+          const priceA = a.currentBid ? Number(a.currentBid) : 0;
+          const priceB = b.currentBid ? Number(b.currentBid) : 0;
           return priceA - priceB;
         });
         break;
       case 'price_high':
         filteredAuctions.sort((a, b) => {
-          const priceA = a.currentBid ? Number(a.currentBid) : Number(a.case.reservePrice);
-          const priceB = b.currentBid ? Number(b.currentBid) : Number(b.case.reservePrice);
+          const priceA = a.currentBid ? Number(a.currentBid) : 0;
+          const priceB = b.currentBid ? Number(b.currentBid) : 0;
           return priceB - priceA;
         });
         break;
@@ -1136,12 +1131,8 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
 
   const carouselPhotos = photos;
 
-  // Get current bid or reserve price
-  const displayPrice = auction.currentBid 
-    ? Number(auction.currentBid)
-    : Number(auction.case.reservePrice);
-
-  const priceLabel = auction.currentBid ? 'Current Bid' : 'Reserve';
+  const displayPrice = auction.currentBid ? Number(auction.currentBid) : null;
+  const priceLabel = auction.currentBid ? 'Current Bid' : 'Bidding Status';
 
   // Handle image carousel on hover/touch
   const handleImageInteraction = (e: React.MouseEvent | React.TouchEvent) => {
@@ -1232,7 +1223,7 @@ function AuctionCard({ auction, onClick }: AuctionCardProps) {
         {/* Price - Moved to bottom */}
         <div className="mb-2">
           <span className="text-lg font-bold text-[var(--brand-primary)]">
-            {formatCompactCurrency(displayPrice)}
+            {displayPrice === null ? 'No bids yet' : formatCompactCurrency(displayPrice)}
           </span>
           <span className="text-xs text-gray-500 ml-1">
             {priceLabel}

@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       ipAddress,
       userAgent,
-    });
+    }, effectivePolicy.auth.riskBasedMfaEnabled);
     await recordLoginRiskDecision(
       { userId: user.id, ipAddress, userAgent },
       riskDecision

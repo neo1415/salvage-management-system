@@ -138,6 +138,7 @@ export const config = {
     '/manager/:path*',
     '/adjuster/:path*',
     '/finance/:path*',
+    '/auction-closure-requests/:path*',
     '/bid-history/:path*',
     '/reports/:path*',
     '/notifications/:path*',

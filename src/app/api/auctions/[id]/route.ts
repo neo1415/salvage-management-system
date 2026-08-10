@@ -15,8 +15,12 @@ import { db } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { bids } from '@/lib/db/schema/bids';
 import { payments } from '@/lib/db/schema/payments';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, inArray } from 'drizzle-orm';
 import { cache } from '@/lib/redis/client';
+import { auth } from '@/lib/auth/next-auth.config';
+import { sanitizeAuctionCaseForViewer } from '@/features/auctions/services/public-auction-case';
+import { getAuctionDetailsCacheKey } from '@/features/auctions/services/auction-details-cache';
+import { calculateAuctionPaymentProgress } from '@/features/auction-deposit/services/payment-progress';
 
 export async function GET(
   request: NextRequest,
@@ -24,6 +28,14 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
+    const session = await auth();
+    const staffRoles = new Set([
+      'system_admin',
+      'salvage_manager',
+      'claims_adjuster',
+      'finance_officer',
+    ]);
+    const canViewInternalCaseData = staffRoles.has(session?.user?.role ?? '');
 
     // Validate auction ID
     if (!id) {
@@ -40,7 +52,10 @@ export async function GET(
 
     // SCALABILITY: Cache auction details for 5 minutes
     // Auction details change less frequently than list
-    const cacheKey = `auction:details:${id}`;
+    const cacheKey = getAuctionDetailsCacheKey(
+      id,
+      canViewInternalCaseData ? 'staff' : 'public'
+    );
     const cached = await cache.get(cacheKey);
     
     if (cached) {
@@ -79,24 +94,30 @@ export async function GET(
     // Check if payment is verified (for awaiting_payment status)
     let hasVerifiedPayment = false;
     if (auction.status === 'awaiting_payment') {
-      const [payment] = await db
-        .select()
+      const confirmedPayments = await db
+        .select({ amount: payments.amount })
         .from(payments)
         .where(
           and(
             eq(payments.auctionId, id),
-            eq(payments.status, 'verified')
+            auction.currentBidder ? eq(payments.vendorId, auction.currentBidder) : undefined,
+            inArray(payments.status, ['partially_verified', 'verified'])
           )
-        )
-        .limit(1);
-      hasVerifiedPayment = !!payment;
+        );
+      hasVerifiedPayment = calculateAuctionPaymentProgress(
+        Number(auction.currentBid || 0),
+        confirmedPayments.map((payment) => Number(payment.amount))
+      ).isComplete;
     }
 
     // Format response
+    const caseRecord = auction.case;
+    const safeCase = sanitizeAuctionCaseForViewer(caseRecord, canViewInternalCaseData);
     const response = {
       success: true,
       auction: {
         ...auction,
+        case: safeCase,
         bids: bidHistory,
         hasVerifiedPayment,
       },

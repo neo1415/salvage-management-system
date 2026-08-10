@@ -35,7 +35,6 @@ export interface DamageAssessmentResult {
   processedAt: Date;
   damageSeverity: 'minor' | 'moderate' | 'severe';
   estimatedSalvageValue: number;
-  reservePrice: number;
   
   // New optional fields (added by Gemini migration)
   method?: 'gemini' | 'vision' | 'neutral';
@@ -234,7 +233,7 @@ function generateLabelsFromGemini(assessment: GeminiDamageAssessment): string[] 
  * 1. Calculate overall damage percentage from individual scores (weighted average)
  * 2. Generate descriptive labels from scores and flags
  * 3. Use Gemini's confidence score
- * 4. Calculate estimated salvage value and reserve price
+ * 4. Calculate estimated salvage value
  * 5. Determine quality tier based on damage and vehicle context
  * 6. Add new optional fields (detailedScores, airbagDeployed, totalLoss, summary)
  * 
@@ -261,7 +260,6 @@ export function adaptGeminiResponse(
   const estimatedSalvageValue = marketValue * ((100 - damagePercentage) / 100);
 
   // Calculate reserve price: estimatedValue × 0.7
-  const reservePrice = estimatedSalvageValue * 0.7;
   
   // Determine quality tier based on damage and vehicle context
   const qualityTier = determineQualityTier(
@@ -278,7 +276,6 @@ export function adaptGeminiResponse(
     processedAt: new Date(),
     damageSeverity: geminiAssessment.severity,
     estimatedSalvageValue: Math.round(estimatedSalvageValue * 100) / 100,
-    reservePrice: Math.round(reservePrice * 100) / 100,
     
     // Quality tier (Requirement 4.1)
     qualityTier,
@@ -307,7 +304,7 @@ export function adaptGeminiResponse(
  * Process:
  * 1. Use Vision's existing labels, confidence, and damage percentage
  * 2. Determine severity based on damage percentage (existing logic)
- * 3. Calculate estimated salvage value and reserve price (existing logic)
+ * 3. Calculate estimated salvage value
  * 4. Determine quality tier based on damage and vehicle context
  * 5. Mark method as 'vision'
  * 6. Do not add detailedScores, airbagDeployed, totalLoss, or summary
@@ -341,7 +338,6 @@ export function adaptVisionResponse(
   const estimatedSalvageValue = marketValue * ((100 - visionAssessment.damagePercentage) / 100);
 
   // Calculate reserve price: estimatedValue × 0.7
-  const reservePrice = estimatedSalvageValue * 0.7;
   
   // Determine quality tier based on damage and vehicle context
   const qualityTier = determineQualityTier(
@@ -358,7 +354,6 @@ export function adaptVisionResponse(
     processedAt: new Date(),
     damageSeverity,
     estimatedSalvageValue: Math.round(estimatedSalvageValue * 100) / 100,
-    reservePrice: Math.round(reservePrice * 100) / 100,
     
     // Quality tier (Requirement 4.1)
     qualityTier,
@@ -399,7 +394,6 @@ export function generateNeutralResponse(
   const estimatedSalvageValue = marketValue * ((100 - damagePercentage) / 100);
 
   // Calculate reserve price: estimatedValue × 0.7
-  const reservePrice = estimatedSalvageValue * 0.7;
   
   // Determine quality tier (will default to 'fair' for neutral case)
   const qualityTier = determineQualityTier(
@@ -416,7 +410,6 @@ export function generateNeutralResponse(
     processedAt: new Date(),
     damageSeverity,
     estimatedSalvageValue: Math.round(estimatedSalvageValue * 100) / 100,
-    reservePrice: Math.round(reservePrice * 100) / 100,
     
     // Quality tier (Requirement 4.1)
     qualityTier,

@@ -162,9 +162,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (photos.length > 10) {
+    if (photos.length > 50) {
       return NextResponse.json(
-        { error: 'Maximum 10 photos allowed' },
+        { error: 'Maximum 50 photos allowed' },
         { status: 400 }
       );
     }
@@ -381,7 +381,6 @@ export async function POST(request: NextRequest) {
         confidenceScore: assessment.confidenceScore,
         labels: assessment.labels,
         estimatedSalvageValue: assessment.estimatedSalvageValue,
-        reservePrice: assessment.reservePrice,
         marketValue: assessment.marketValue,
         estimatedRepairCost: assessment.estimatedRepairCost,
         damagePercentage: assessment.damagePercentage,

@@ -14,6 +14,7 @@ export const escrowStatusEnum = pgEnum('escrow_status', ['none', 'frozen', 'rele
 
 export const paymentStatusEnum = pgEnum('payment_status', [
   'pending',
+  'partially_verified',
   'verified',
   'rejected',
   'overdue',

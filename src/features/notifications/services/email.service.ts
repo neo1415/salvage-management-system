@@ -429,7 +429,7 @@ export class EmailService {
 
       const result = await this.sendEmailWithRetry({
         to: email,
-        subject: `New Auction: ${data.assetName} - Starting at ₦${data.reservePrice.toLocaleString()}`,
+        subject: `New Auction: ${data.assetName}`,
         html: await getAuctionStartEmailTemplate(safeData),
       });
 
@@ -457,7 +457,6 @@ export class EmailService {
       claimReference: string;
       assetType: string;
       auctionId: string;
-      reservePrice: number;
       location: string;
       endTime: string;
       managerAuctionUrl: string;
@@ -477,7 +476,6 @@ export class EmailService {
         <p>Your scheduled auction for <strong>${this.escapeHtml(data.claimReference)}</strong> is now <strong>active</strong>.</p>
         <ul>
           <li><strong>Asset:</strong> ${this.escapeHtml(data.assetType)}</li>
-          <li><strong>Reserve:</strong> ₦${data.reservePrice.toLocaleString()}</li>
           <li><strong>Location:</strong> ${this.escapeHtml(data.location)}</li>
           <li><strong>Ends:</strong> ${this.escapeHtml(data.endTime)} (WAT)</li>
         </ul>

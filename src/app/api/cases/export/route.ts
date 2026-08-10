@@ -54,7 +54,6 @@ export async function GET(request: NextRequest) {
         assetDetails: salvageCases.assetDetails,
         marketValue: salvageCases.marketValue,
         estimatedSalvageValue: salvageCases.estimatedSalvageValue,
-        reservePrice: salvageCases.reservePrice,
         damageSeverity: salvageCases.damageSeverity,
         gpsLocation: salvageCases.gpsLocation,
         locationName: salvageCases.locationName,

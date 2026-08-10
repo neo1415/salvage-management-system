@@ -135,14 +135,14 @@ export const salvageCases = pgTable('salvage_cases', {
     marketValue: number;
     repairCost: number;
     salvageValue: number;
-    reservePrice: number;
+    /** @deprecated Retained only so historical JSON records remain readable. */
+    reservePrice?: number;
     confidence: number;
   }>(),
   managerOverrides: jsonb('manager_overrides').$type<{
     marketValue?: number;
     repairCost?: number;
     salvageValue?: number;
-    reservePrice?: number;
     reason: string;
     overriddenBy: string;
     overriddenAt: string;

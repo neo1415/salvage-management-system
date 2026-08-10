@@ -53,6 +53,7 @@ const ROLE_PAGE_PREFIXES: Record<AppRole, string[]> = {
   system_admin: [
     '/admin',
     '/manager',
+    '/auction-closure-requests',
     '/bid-history',
     '/reports',
     ...AUTHENTICATED_COMMON_PREFIXES,
@@ -66,6 +67,7 @@ export const PROTECTED_PAGE_PREFIXES = [
   '/manager',
   '/adjuster',
   '/finance',
+  '/auction-closure-requests',
   '/bid-history',
   '/reports',
   '/notifications',

@@ -11,7 +11,6 @@ export * from './wallet-funding-decisions';
 export * from './auth-decisions';
 export * from './auction-payment-decisions';
 export * from './auction-timing-decisions';
-export * from './auction-reserve-decisions';
 export * from './case-decisions';
 export * from './payment-provider-capabilities';
 export * from './public-policy';

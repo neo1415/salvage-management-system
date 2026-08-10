@@ -306,7 +306,7 @@ export default function VendorPickupsPage() {
                             const files = [
                               ...form.files,
                               ...Array.from(event.target.files || []),
-                            ].slice(0, 12);
+                            ].slice(0, 50);
                             updateForm(pickup.auctionId, { files, error: null, message: null });
                             event.currentTarget.value = '';
                           }}

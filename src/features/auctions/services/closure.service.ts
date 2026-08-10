@@ -484,8 +484,8 @@ export class AuctionClosureService {
 
       // CRITICAL: Invalidate auction cache after status change
       try {
-        const { cache } = await import('@/lib/redis/client');
-        await cache.del(`auction:details:${auctionId}`);
+        const { invalidateAuctionDetailsCache } = await import('./auction-details-cache');
+        await invalidateAuctionDetailsCache(auctionId);
         console.log(`✅ Invalidated auction cache after closure`);
       } catch (cacheError) {
         console.error(`❌ Failed to invalidate auction cache:`, cacheError);

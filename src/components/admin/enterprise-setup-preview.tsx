@@ -307,6 +307,7 @@ export function EnterpriseSetupPreview({
               ['Business email only', boolLabel(policy.auth.businessEmailOnly)],
               ['Staff MFA required', boolLabel(policy.auth.staffMfaRequired)],
               ['Vendor MFA required', boolLabel(policy.auth.vendorMfaRequired)],
+              ['Risk-based login verification', boolLabel(policy.auth.riskBasedMfaEnabled)],
               ['User-managed MFA', boolLabel(policy.auth.userManagedMfaAllowed)],
             ]}
           />
@@ -327,30 +328,23 @@ export function EnterpriseSetupPreview({
           />
         </PolicyCard>
 
-        <PolicyCard title="Payments And Deposits" description="Wallet, deposit, deadline, and payment rules." icon={<Wallet className="h-5 w-5" />}>
+        <PolicyCard title="Payments" description="Wallet and payment deadline rules." icon={<Wallet className="h-5 w-5" />}>
           <DefinitionList
             rows={[
               ['Wallet', boolLabel(policy.payments.walletEnabled)],
               ['Hybrid payment', boolLabel(policy.payments.hybridPaymentEnabled)],
               ['Payment deadline', `${policy.payments.paymentDeadlineAfterSigningHours} hours after signing`],
-              ['Deposit system', boolLabel(policy.escrow.depositSystemEnabled)],
-              ['Deposit rate', `${policy.escrow.depositRatePercent}%`],
-              ['Deposit floor', money(policy.escrow.minimumDepositFloor)],
-              ['Forfeiture', `${policy.escrow.forfeiturePercentage}%`],
             ]}
           />
         </PolicyCard>
 
-        <PolicyCard title="Auction Rules" description="Bid increments, document deadlines, fallback, and reserve rules." icon={<Gavel className="h-5 w-5" />}>
+        <PolicyCard title="Auction Rules" description="Bid verification, document deadlines, and fallback rules." icon={<Gavel className="h-5 w-5" />}>
           <DefinitionList
             rows={[
-              ['Minimum increment', money(policy.auctions.minimumBidIncrement)],
               ['Document validity', `${policy.auctions.documentValidityHours} hours`],
               ['Grace extensions', policy.auctions.maxGraceExtensions],
               ['Grace duration', `${policy.auctions.graceExtensionDurationHours} hours`],
               ['Fallback buffer', `${policy.auctions.fallbackBufferHours} hours`],
-              ['Reserve strategy', policy.auctions.reserveValueStrategy],
-              ['Reserve percentage', `${policy.auctions.reserveValuePercentage}%`],
               ['Live updates', policy.auctions.socketMode],
             ]}
           />

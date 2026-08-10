@@ -530,7 +530,6 @@ function generateAuctionPerformanceCSV(csv: string, data: AuctionPerformanceRepo
     csv += csvRow(['Success Rate', `${data.summary.successRate || 0}%`]);
     csv += csvRow(['Average Bids per Auction', data.summary.averageBidsPerAuction || 0]);
     csv += csvRow(['Average Unique Bidders', data.summary.averageUniqueBidders || 0]);
-    csv += csvRow(['Reserve Met Rate', `${data.summary.reserveMetRate || 0}%`]);
     csv += csvRow(['Verified Auction Revenue', data.summary.totalRevenue || 0]);
     csv += csvRow(['Average Winning Bid', data.summary.averageWinningBid || 0]);
   }
@@ -582,7 +581,7 @@ function generateAuctionPerformanceCSV(csv: string, data: AuctionPerformanceRepo
 
   if (data.auctionList && data.auctionList.length > 0) {
     csv += 'AUCTION DETAILS\n';
-    csv += 'Auction ID,Claim Reference,Policy Number,Branch,Broker Agency,Asset Type,Start Time,End Time,Duration Hours,Reserve Price,Winning Bid,Unique Bidders,Total Bids,Status,Successful,Pickup Status,Possessing Vendor,Picked Up\n';
+    csv += 'Auction ID,Claim Reference,Policy Number,Branch,Broker Agency,Asset Type,Start Time,End Time,Duration Hours,Winning Bid,Unique Bidders,Total Bids,Status,Successful,Pickup Status,Possessing Vendor,Picked Up\n';
     data.auctionList.forEach((a) => {
       csv += csvRow([
         a.auctionId || '',
@@ -594,7 +593,6 @@ function generateAuctionPerformanceCSV(csv: string, data: AuctionPerformanceRepo
         a.startTime || '',
         a.endTime || '',
         a.durationHours || 0,
-        a.reservePrice || 0,
         a.winningBid || 0,
         a.uniqueBidders || 0,
         a.bidCount || 0,

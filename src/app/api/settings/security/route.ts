@@ -62,7 +62,7 @@ export async function GET() {
       loginMfaEnforced: MFA_LOGIN_ENFORCED,
       staffMfaRequired: effectivePolicy.auth.staffMfaRequired,
       vendorMfaEnforced: effectivePolicy.auth.vendorMfaRequired,
-      riskBasedMfaEnabled: RISK_BASED_MFA_ENABLED,
+      riskBasedMfaEnabled: RISK_BASED_MFA_ENABLED && effectivePolicy.auth.riskBasedMfaEnabled,
       availableChannels: MFA_CHANNELS,
       phase2Note:
         'Staff and vendor MFA requirements are configured in Enterprise Setup (Access policy).',

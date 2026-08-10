@@ -4,7 +4,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { AppLink } from '@/components/navigation/app-link';
 import { DashboardNavLinks } from '@/components/layout/dashboard-nav-links';
 import { usePathname } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
   LayoutDashboard,
@@ -26,6 +26,7 @@ import {
   Database,
   Building2,
   PackageCheck,
+  ShieldCheck,
 } from 'lucide-react';
 import NotificationBell from '@/components/notifications/notification-bell';
 import { DEFAULT_BUSINESS_POLICY } from '@/features/business-policy/default-policy';
@@ -154,6 +155,12 @@ const navigationItems: NavItem[] = [
     roles: ['claims_adjuster'],
   },
   {
+    label: 'Cases',
+    href: '/adjuster/cases',
+    icon: ClipboardList,
+    roles: ['claims_adjuster'],
+  },
+  {
     label: 'Bid History',
     href: '/bid-history',
     icon: History,
@@ -186,6 +193,12 @@ const navigationItems: NavItem[] = [
     href: '/admin/dashboard',
     icon: LayoutDashboard,
     roles: ['system_admin'],
+  },
+  {
+    label: 'Closure Requests',
+    href: '/auction-closure-requests',
+    icon: ShieldCheck,
+    roles: ['system_admin', 'salvage_manager', 'claims_adjuster', 'finance_officer'],
   },
   // {
   //   label: 'Intelligence',
@@ -258,6 +271,30 @@ const navigationItems: NavItem[] = [
 export default function DashboardSidebar() {
   const { data: session } = useSession();
   const pathname = usePathname();
+  const [canAccessCasePortfolio, setCanAccessCasePortfolio] = useState(false);
+  const [isManagingDirector, setIsManagingDirector] = useState(false);
+
+  useEffect(() => {
+    if (!session?.user?.id || session.user.role === 'vendor') {
+      setCanAccessCasePortfolio(false);
+      setIsManagingDirector(false);
+      return;
+    }
+    let active = true;
+    void fetch('/api/staff/department-access', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => {
+        if (active) {
+          setCanAccessCasePortfolio(result?.canAccessCasePortfolio === true);
+          setIsManagingDirector(result?.isManagingDirector === true);
+        }
+      })
+      .catch(() => {
+        if (active) setCanAccessCasePortfolio(false);
+        if (active) setIsManagingDirector(false);
+      });
+    return () => { active = false; };
+  }, [session?.user?.id, session?.user?.role]);
   const { policy: publicPolicy } = usePublicBusinessPolicy();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
@@ -288,11 +325,16 @@ export default function DashboardSidebar() {
 
   // Filter navigation items based on user role
   const filteredNavItems = useMemo(() => {
-    const roleNavItems = navigationItems.filter((item) => item.roles.includes(userRole));
+    const roleNavItems = navigationItems.filter((item) => {
+      if (!item.roles.includes(userRole)) return false;
+      if (item.href === '/adjuster/cases') return canAccessCasePortfolio;
+      if (item.href === '/auction-closure-requests') return isManagingDirector;
+      return true;
+    });
     return settingsNavItem.roles.includes(userRole)
       ? [...roleNavItems, settingsNavItem]
       : roleNavItems;
-  }, [userRole]);
+  }, [canAccessCasePortfolio, isManagingDirector, userRole]);
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 

@@ -48,7 +48,7 @@ export interface VehicleDetails {
   make: string;
   model: string;
   year: number;
-  vin?: string;
+  vin: string;
   mileage?: number;
   condition?: 'excellent' | 'good' | 'fair' | 'poor' | 'Brand New' | 'Nigerian Used' | 'Foreign Used (Tokunbo)';
 }
@@ -130,7 +130,6 @@ export interface CreateCaseInput {
     confidenceScore: number;
     labels: string[];
     estimatedSalvageValue: number;
-    reservePrice: number;
     damageScore?: {
       structural: number;
       mechanical: number;
@@ -196,7 +195,6 @@ export interface CreateCaseResult {
   assetDetails: ExtendedAssetDetails;
   marketValue: number;
   estimatedSalvageValue: number;
-  reservePrice: number;
   damageSeverity: 'minor' | 'moderate' | 'severe' | 'none';
   aiAssessment: {
     labels: string[];
@@ -287,6 +285,9 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
     if (!vehicleDetails.year || vehicleDetails.year < 1900 || vehicleDetails.year > new Date().getFullYear() + 1) {
       errors.push('Vehicle year must be valid');
     }
+    if (!vehicleDetails.vin || !/^[A-HJ-NPR-Z0-9]{17}$/i.test(vehicleDetails.vin.trim())) {
+      errors.push('A valid 17-character VIN is required for vehicles');
+    }
   } else if (input.assetType === 'property') {
     const propertyDetails = input.assetDetails as unknown as PropertyDetails;
     if (!propertyDetails.propertyType || propertyDetails.propertyType.trim() === '') {
@@ -339,8 +340,8 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
       photoCount: input.photos?.length,
       photosType: typeof input.photos
     });
-  } else if (input.photos.length > 10) {
-    errors.push('Maximum 10 photos allowed');
+  } else if (input.photos.length > 50) {
+    errors.push('Maximum 50 photos allowed');
   }
 
   // Validate photo sizes (max 5MB each)
@@ -500,7 +501,6 @@ export async function createCase(
         },
         estimatedSalvageValue: input.aiAssessmentResult.estimatedSalvageValue,
         estimatedRepairCost: input.aiAssessmentResult.estimatedRepairCost || resolvedMarketValue * 0.7,
-        reservePrice: input.aiAssessmentResult.reservePrice,
         isRepairable: input.aiAssessmentResult.isRepairable ?? true,
         isTotalLoss: input.aiAssessmentResult.isTotalLoss, // NEW: Store isTotalLoss field
         priceSource: input.aiAssessmentResult.priceSource, // NEW: Store price source
@@ -563,7 +563,6 @@ export async function createCase(
         },
         estimatedSalvageValue: resolvedMarketValue * 0.3,
         estimatedRepairCost: resolvedMarketValue * 0.7,
-        reservePrice: resolvedMarketValue * 0.25,
         isRepairable: true,
         recommendation: 'Assess for salvage auction',
         warnings: [],
@@ -589,8 +588,8 @@ export async function createCase(
         aiAssessment?.estimatedSalvageValue != null
           ? String(aiAssessment.estimatedSalvageValue)
           : null,
-      reservePrice:
-        aiAssessment?.reservePrice != null ? String(aiAssessment.reservePrice) : null,
+      // Kept nullable in the database for historical compatibility only.
+      reservePrice: null,
       damageSeverity: aiAssessment?.damageSeverity || null,
       aiAssessment: aiAssessment ? {
         labels: aiAssessment.labels,
@@ -634,7 +633,6 @@ export async function createCase(
         insuranceClass: caseValues.insuranceClass,
         damageSeverity: caseValues.damageSeverity,
       estimatedSalvageValue: caseValues.estimatedSalvageValue,
-      reservePrice: caseValues.reservePrice,
       aiAssessmentConfidence: caseValues.aiAssessment?.confidenceScore,
     });
     
@@ -689,7 +687,6 @@ export async function createCase(
       claimReference: createdCase.claimReference,
       damageSeverity: createdCase.damageSeverity,
       estimatedSalvageValue: createdCase.estimatedSalvageValue,
-      reservePrice: createdCase.reservePrice,
       aiConfidence: createdCase.aiAssessment
         && typeof createdCase.aiAssessment === 'object'
         && 'confidenceScore' in createdCase.aiAssessment
@@ -760,7 +757,6 @@ export async function createCase(
       marketValue: parseFloat(createdCase.marketValue),
       // Handle nullable AI assessment fields for draft cases
       estimatedSalvageValue: createdCase.estimatedSalvageValue ? parseFloat(createdCase.estimatedSalvageValue) : 0,
-      reservePrice: createdCase.reservePrice ? parseFloat(createdCase.reservePrice) : 0,
       damageSeverity: (createdCase.damageSeverity || 'none') as 'none' | 'minor' | 'moderate' | 'severe',
       aiAssessment: createdCase.aiAssessment as {
         labels: string[];

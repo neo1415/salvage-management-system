@@ -7,7 +7,7 @@
  *
  * Features:
  * - Display full asset details and photos (swipeable gallery)
- * - Display AI assessment results
+ * - Display public-safe condition and damage information
  * - Display GPS location on map
  * - Display current bid and time remaining
  * - Display bid history chart (Recharts line chart)
@@ -34,13 +34,18 @@ import { ReleaseFormModal } from '@/components/documents/release-form-modal';
 import { useAuctionWatch, useAuctionUpdates, useRealtimeNotifications } from '@/hooks/use-socket';
 import { formatConditionForDisplay, type QualityTier } from '@/features/valuations/services/condition-mapping.service';
 import { useToast } from '@/components/ui/toast';
-import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 import { PredictionCard } from '@/components/intelligence/prediction-card';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { useVendorOnboardingStatus } from '@/hooks/use-vendor-onboarding-status';
 import { formatAssetName } from '@/lib/utils/asset-name';
 import type { DocumentType } from '@/lib/db/schema/release-forms';
 import { PaymentOptions } from '@/components/vendor/payment-options';
+import {
+  GeminiDamageDisplay,
+  type DamagedPart,
+  type ItemDetails,
+} from '@/components/ai-assessment/gemini-damage-display';
+import { getVendorCurrentBid } from '@/features/auctions/services/vendor-bid-state';
 
 const DEFAULT_AUCTION_DOCUMENTS: DocumentType[] = ['bill_of_sale', 'liability_waiver'];
 
@@ -66,45 +71,15 @@ interface AuctionDetails {
   extensionCount: number;
   currentBid: string | null;
   currentBidder: string | null;
-  minimumIncrement: string;
   status: 'scheduled' | 'active' | 'extended' | 'closed' | 'awaiting_payment' | 'cancelled';
   scheduledStartTime?: string | null;
   watchingCount: number;
   hasVerifiedPayment?: boolean;
   case: {
     id: string;
-    claimReference: string;
     assetType: string;
     assetDetails: Record<string, unknown>;
-    marketValue: string;
-    estimatedSalvageValue: string;
-    reservePrice: string;
     damageSeverity: 'minor' | 'moderate' | 'severe';
-    aiAssessment: {
-      labels: string[];
-      confidenceScore: number;
-      damagePercentage: number;
-      processedAt: string;
-      itemDetails?: {
-        detectedMake?: string;
-        detectedModel?: string;
-        detectedYear?: string;
-        color?: string;
-        trim?: string;
-        bodyStyle?: string;
-        storage?: string;
-        overallCondition?: string;
-        notes?: string;
-      };
-      damagedParts?: Array<{
-        part: string;
-        damageType?: string;
-        description?: string;
-        severity: 'minor' | 'moderate' | 'severe';
-        confidence: number;
-      }>;
-      recommendation?: string;
-    };
     gpsLocation: {
       x: number; // longitude
       y: number; // latitude
@@ -114,6 +89,15 @@ interface AuctionDetails {
     photos: string[];
     voiceNotes: string[];
     vehicleCondition?: QualityTier;
+    aiAssessment?: {
+      labels?: string[];
+      confidenceScore?: number;
+      damagePercentage?: number;
+      itemDetails?: ItemDetails;
+      damagedParts?: DamagedPart[];
+      recommendation?: string;
+      summary?: string;
+    };
   };
   bids: Array<{
     id: string;
@@ -1061,15 +1045,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
   }
 
   const currentBid = auction.currentBid ? Number(auction.currentBid) : null;
-  const reservePrice = Number(auction.case.reservePrice);
-  // Fallback increment (only used if polling data not available yet)
-  // The actual increment comes from the polling endpoint which uses the configured value
-  const minimumIncrement = 50000; // Default ₦50,000 minimum increment (fallback only)
-
-  // Calculate minimum bid: use realtime data if available, otherwise calculate from current bid
   const minimumBid = latestBid?.minimumBid
     ? latestBid.minimumBid
-    : (currentBid ? currentBid + minimumIncrement : reservePrice);
+    : (currentBid !== null ? currentBid + 1 : 1);
 
 
   // DEBUG: Log render-time state values
@@ -1569,15 +1547,9 @@ export default function AuctionDetailsPage({ params }: PageProps) {
                   </div>
                 )}
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Market Value</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    ₦{Number(auction.case.marketValue).toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Estimated Salvage Value</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    ₦{Number(auction.case.estimatedSalvageValue).toLocaleString()}
+                  <p className="text-sm text-gray-600 mb-1">Damage Severity</p>
+                  <p className="text-lg font-semibold text-gray-900 capitalize">
+                    {auction.case.damageSeverity}
                   </p>
                 </div>
               </div>
@@ -1600,32 +1572,50 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               )}
             </div>
 
-            {/* Detected Damage */}
+            {/* Public damage assessment (valuation remains staff-only) */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <GeminiDamageDisplay
-                itemDetails={auction.case.aiAssessment.itemDetails}
-                damagedParts={auction.case.aiAssessment.damagedParts}
-                summary={auction.case.aiAssessment.recommendation}
-                showTitle={true}
-                assetType={auction.case.assetType}
-              />
-
-              {/* Fallback: Damage Labels (for Vision API or old data) */}
-              {(!auction.case.aiAssessment.damagedParts || auction.case.aiAssessment.damagedParts.length === 0) && (
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-4">Detected Damage</h3>
-                  <p className="text-sm text-gray-600 mb-2">Damage Components</p>
-                  <div className="flex flex-wrap gap-2">
-                    {auction.case.aiAssessment.labels.map((label, index) => (
-                      <span
-                        key={index}
-                        className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium break-words"
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+              {auction.case.aiAssessment?.itemDetails ||
+              auction.case.aiAssessment?.damagedParts?.length ||
+              auction.case.aiAssessment?.recommendation ||
+              auction.case.aiAssessment?.summary ||
+              auction.case.aiAssessment?.labels?.length ? (
+                <>
+                <GeminiDamageDisplay
+                  itemDetails={auction.case.aiAssessment.itemDetails}
+                  damagedParts={auction.case.aiAssessment.damagedParts}
+                  summary={
+                    auction.case.aiAssessment.summary ??
+                    auction.case.aiAssessment.recommendation
+                  }
+                  showTitle
+                  assetType={auction.case.assetType}
+                />
+                {!auction.case.aiAssessment.damagedParts?.length &&
+                  auction.case.aiAssessment.labels?.length ? (
+                    <div className="mt-4">
+                      <h4 className="font-semibold text-gray-900 mb-2">Damage Evidence</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {auction.case.aiAssessment.labels.map((label) => (
+                          <span
+                            key={label}
+                            className="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700"
+                          >
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <h3 className="text-xl font-bold text-gray-900 mb-3">Condition Overview</h3>
+                  <p className="text-gray-700">
+                    Visible damage is classified as{' '}
+                    <span className="font-semibold capitalize">{auction.case.damageSeverity}</span>.
+                    Review all lot photos and specifications before bidding.
+                  </p>
+                </>
               )}
             </div>
 
@@ -1855,22 +1845,23 @@ export default function AuctionDetailsPage({ params }: PageProps) {
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="text-center">
                   <p className="text-sm text-gray-600 mb-2">
-                    {currentBid ? 'Current Bid' : 'Starting Bid (Reserve Price)'}
+                    {currentBid ? 'Current Bid' : 'Bidding Status'}
                   </p>
                   <div className={`transition-all duration-500 ${showNewBidAnimation ? 'scale-110 bg-yellow-100 rounded-lg p-2' : ''}`}>
                     <p className="text-3xl font-bold text-[var(--brand-primary)] mb-4">
-                      ₦{(currentBid || reservePrice).toLocaleString()}
+                      {currentBid ? `₦${currentBid.toLocaleString()}` : 'No bids yet'}
                     </p>
                   </div>
                   <p className="text-sm text-[var(--brand-primary)] font-semibold">
-                    Minimum Bid: ₦{minimumBid.toLocaleString()}
+                    {currentBid
+                      ? `Enter any amount above ₦${currentBid.toLocaleString()}`
+                      : 'Enter any positive opening bid'}
                   </p>
 
                   {/* Show vendor's own current bid if they have one */}
                   {session?.user?.vendorId && auction.bids.length > 0 && (() => {
-                    const vendorBids = auction.bids.filter(b => b.vendorId === session.user.vendorId);
-                    if (vendorBids.length > 0) {
-                      const highestVendorBid = Math.max(...vendorBids.map(b => Number(b.amount)));
+                    const highestVendorBid = getVendorCurrentBid(auction, session.user.vendorId);
+                    if (highestVendorBid !== null) {
                       const isWinning = auction.currentBidder === session.user.vendorId;
                       return (
                         <div className={`mt-3 p-3 rounded-lg ${isWinning ? 'bg-green-50 border border-green-200' : 'bg-blue-50 border border-blue-200'}`}>
@@ -2059,7 +2050,7 @@ export default function AuctionDetailsPage({ params }: PageProps) {
       <BidForm
         auctionId={auction.id}
         currentBid={currentBid}
-        minimumBid={minimumBid} // Pass the calculated minimum bid (reserve price or current bid + ₦20,000)
+        minimumBid={minimumBid}
         assetName={assetName}
         isOpen={showBidForm}
         onClose={() => setShowBidForm(false)}

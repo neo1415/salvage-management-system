@@ -67,8 +67,8 @@ const pickupEvidenceSchema = z.object({
   photoUrls: z
     .array(z.string().url())
     .min(3, 'At least 3 pickup evidence photos are required.')
-    .max(12, 'Upload no more than 12 pickup evidence photos.'),
-  photoMetadata: z.array(pickupPhotoMetadataSchema).max(12).optional(),
+    .max(50, 'Upload no more than 50 pickup evidence photos.'),
+  photoMetadata: z.array(pickupPhotoMetadataSchema).max(50).optional(),
   notes: z.string().trim().max(1000).optional(),
 });
 

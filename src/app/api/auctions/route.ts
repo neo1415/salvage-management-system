@@ -141,29 +141,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Price range filter (using reserve price or current bid)
+    // Price filters use the current live bid. Auctions without bids have a value of zero.
     if (priceMin) {
-      conditions.push(
-        or(
-          gte(auctions.currentBid, priceMin),
-          and(
-            sql`${auctions.currentBid} IS NULL`,
-            gte(salvageCases.reservePrice, priceMin)
-          )
-        )
-      );
+      conditions.push(gte(sql`COALESCE(${auctions.currentBid}, 0)`, priceMin));
     }
 
     if (priceMax) {
-      conditions.push(
-        or(
-          lte(auctions.currentBid, priceMax),
-          and(
-            sql`${auctions.currentBid} IS NULL`,
-            lte(salvageCases.reservePrice, priceMax)
-          )
-        )
-      );
+      conditions.push(lte(sql`COALESCE(${auctions.currentBid}, 0)`, priceMax));
     }
 
     // Location filter
@@ -202,12 +186,12 @@ export async function GET(request: NextRequest) {
         break;
       case 'price_low':
         orderBy = asc(
-          sql`COALESCE(${auctions.currentBid}, ${salvageCases.reservePrice})`
+          sql`COALESCE(${auctions.currentBid}, 0)`
         );
         break;
       case 'price_high':
         orderBy = desc(
-          sql`COALESCE(${auctions.currentBid}, ${salvageCases.reservePrice})`
+          sql`COALESCE(${auctions.currentBid}, 0)`
         );
         break;
       case 'ending_soon':
@@ -231,7 +215,6 @@ export async function GET(request: NextRequest) {
         endTime: auctions.endTime,
         scheduledStartTime: auctions.scheduledStartTime,
         currentBid: auctions.currentBid,
-        minimumIncrement: auctions.minimumIncrement,
         status: auctions.status,
         watchingCount: auctions.watchingCount,
         currentBidder: auctions.currentBidder,
@@ -241,8 +224,6 @@ export async function GET(request: NextRequest) {
           assetType: salvageCases.assetType,
           assetDetails: salvageCases.assetDetails,
           marketValue: salvageCases.marketValue,
-          estimatedSalvageValue: salvageCases.estimatedSalvageValue,
-          reservePrice: salvageCases.reservePrice,
           damageSeverity: salvageCases.damageSeverity,
           locationName: salvageCases.locationName,
           photos: salvageCases.photos,

@@ -35,6 +35,7 @@ import {
   calculateAuctionPaymentAllocation,
   calculateWalletSettlementBalances,
 } from './payment-allocation';
+import { invalidateAuctionDetailsCache } from '@/features/auctions/services/auction-details-cache';
 
 export interface PaymentBreakdown {
   finalBid: number;
@@ -83,6 +84,12 @@ export interface PaymentResult {
   accessCode?: string;
   walletAmount?: number;
   paystackAmount?: number;
+}
+
+export interface PaystackSettlementResult {
+  paymentComplete: boolean;
+  confirmedAmount: number;
+  outstandingAmount: number;
 }
 
 function formatPaymentMethod(method: string | null | undefined): string {
@@ -742,8 +749,7 @@ export class PaymentService {
     // CRITICAL: Invalidate auction cache IMMEDIATELY after wallet payment
     // This ensures UI shows updated payment status without delay
     console.log(`🗑️ Invalidating auction cache after wallet payment...`);
-    const { cache } = await import('@/lib/redis/client');
-    await cache.del(`auction:details:${auctionId}`);
+    await invalidateAuctionDetailsCache(auctionId);
     console.log(`✅ Auction cache invalidated`);
 
     return result;
@@ -856,8 +862,7 @@ export class PaymentService {
     await depositNotificationService.sendPaymentConfirmationNotification({ vendorId, auctionId, amount: finalBid });
     await this.generatePickupAuthorization({ vendorId, auctionId, amount: finalBid });
 
-    const { cache } = await import('@/lib/redis/client');
-    await cache.del(`auction:details:${auctionId}`);
+    await invalidateAuctionDetailsCache(auctionId);
 
     return {
       paymentId: payment.id,
@@ -1084,8 +1089,9 @@ export class PaymentService {
    */
   async handlePaystackWebhook(
     paystackReference: string,
-    success: boolean
-  ): Promise<void> {
+    success: boolean,
+    providerAmount?: number
+  ): Promise<PaystackSettlementResult> {
     // Find payment first (outside transaction for initial check)
     const [payment] = await db
       .select()
@@ -1100,7 +1106,12 @@ export class PaymentService {
     // Check if already processed (idempotency)
     if (payment.status === 'verified' || payment.status === 'rejected') {
       console.log(`✅ Payment ${payment.id} already processed with status: ${payment.status}`);
-      return;
+      const confirmedAmount = payment.status === 'rejected' ? 0 : parseFloat(payment.amount);
+      return {
+        paymentComplete: payment.status === 'verified',
+        confirmedAmount,
+        outstandingAmount: 0,
+      };
     }
 
     if (!success) {
@@ -1121,13 +1132,12 @@ export class PaymentService {
         })
         .where(eq(payments.id, payment.id));
       console.log(`❌ Payment ${payment.id} rejected by Paystack`);
-      return;
+      return { paymentComplete: false, confirmedAmount: 0, outstandingAmount: 0 };
     }
 
-    // Payment succeeded - now we need to do ATOMIC operation:
-    // 1. Mark payment as verified
-    // 2. Release funds (unfreeze + debit + transfer to finance)
-    // If ANY step fails, the ENTIRE operation should fail
+    // Paystack is external to our database, so this is an idempotent settlement
+    // workflow rather than one cross-system transaction. Do not expose the
+    // payment as verified until the local wallet settlement succeeds.
 
     const vendorId = payment.vendorId;
     const auctionId = payment.auctionId;
@@ -1155,23 +1165,81 @@ export class PaymentService {
       throw new Error(`Winner record not found for auction ${auctionId}, vendor ${vendorId}`);
     }
 
-    const depositAmount = parseFloat(winner.depositAmount);
+    const recordedDepositAmount = parseFloat(winner.depositAmount);
+    const effectivePolicy = await businessPolicyService.getEffectivePolicy();
+    const depositsEnabled = effectivePolicy.escrow.depositSystemEnabled;
+    const depositAmount = depositsEnabled ? recordedDepositAmount : 0;
+    const staleAvailableWalletAmount = depositsEnabled ? 0 : recordedDepositAmount;
+    const winningBidAmount = parseFloat(winner.bidAmount);
+    const confirmedProviderAmount = Number.isFinite(providerAmount)
+      ? Math.max(0, providerAmount as number)
+      : paymentAmount;
+    const priorPartialPayments = await db.select({ amount: payments.amount })
+      .from(payments)
+      .where(and(
+        eq(payments.auctionId, auctionId),
+        eq(payments.vendorId, vendorId),
+        eq(payments.status, 'partially_verified')
+      ));
+    const priorConfirmedAmount = priorPartialPayments.reduce(
+      (total, item) => total + parseFloat(item.amount),
+      0
+    );
+
+    // Recovery for auctions closed while deposits were disabled but a legacy
+    // deposit amount was still written to the winner record. Paystack has
+    // genuinely collected this amount, but the auction is not fully paid.
+    if (
+      !depositsEnabled &&
+      priorConfirmedAmount + confirmedProviderAmount + 0.01 < winningBidAmount
+    ) {
+      const totalConfirmedAmount = priorConfirmedAmount + confirmedProviderAmount;
+      const outstandingAmount = Math.max(0, winningBidAmount - totalConfirmedAmount);
+      await db.transaction(async (tx) => {
+        await tx.update(payments).set({
+          amount: confirmedProviderAmount.toFixed(2),
+          status: 'partially_verified',
+          autoVerified: true,
+          verifiedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(payments.id, payment.id));
+        await tx.update(auctionWinners).set({
+          depositAmount: '0.00',
+          updatedAt: new Date(),
+        }).where(eq(auctionWinners.id, winner.id));
+      });
+      await invalidateAuctionDetailsCache(auctionId);
+      return {
+        paymentComplete: false,
+        confirmedAmount: totalConfirmedAmount,
+        outstandingAmount,
+      };
+    }
+
+    if (payment.status === 'partially_verified') {
+      const auction = payment.auctionId
+        ? await db.query.auctions.findFirst({ where: eq(auctions.id, payment.auctionId) })
+        : null;
+      const confirmedAmount = parseFloat(payment.amount);
+      const requiredAmount = Number(auction?.currentBid ?? 0);
+      return {
+        paymentComplete: false,
+        confirmedAmount,
+        outstandingAmount: Math.max(0, requiredAmount - confirmedAmount),
+      };
+    }
 
     console.log(`💳 Processing Paystack payment for auction ${auctionId}`);
     console.log(`   - Payment Amount: ₦${paymentAmount.toLocaleString()}`);
     console.log(`   - Deposit to Release: ₦${depositAmount.toLocaleString()}`);
 
-    // ATOMIC OPERATION: Mark payment verified AND release funds
-    // If releaseFunds fails, we rollback payment verification
     try {
-      // Step 1: Mark payment as verified (in transaction)
+      // Touch the current attempt and retire older duplicate checkouts. The
+      // current payment itself remains pending until wallet settlement succeeds.
       await db.transaction(async (tx) => {
         await tx
           .update(payments)
           .set({
-            status: 'verified',
-            autoVerified: true,
-            verifiedAt: new Date(),
             updatedAt: new Date(),
           })
           .where(eq(payments.id, payment.id));
@@ -1208,19 +1276,20 @@ export class PaymentService {
         }
       });
 
-      // Step 2: Settle auction-specific frozen wallet funds.
+      // Settle auction-specific wallet funds first. This operation is
+      // idempotent by payment reference, so webhook and manual retry may race.
       // Paystack-only settles the winner deposit. Hybrid settles the winner
       // deposit plus the wallet portion reserved for this payment.
       const allocation = calculateAuctionPaymentAllocation(parseFloat(winner.bidAmount), depositAmount);
       const hybridWalletPortion = await this.getHybridFrozenWalletPortion(payment.id);
       const frozenSettlementAmount = depositAmount + hybridWalletPortion;
-      const walletSettlementAmount = allocation.depositApplied + hybridWalletPortion;
+      const walletSettlementAmount = allocation.depositApplied + hybridWalletPortion + staleAvailableWalletAmount;
 
       await this.settleAuctionWalletFunds({
         paymentId: payment.id,
         vendorId,
         auctionId,
-        availableAmount: 0,
+        availableAmount: staleAvailableWalletAmount,
         frozenAmount: frozenSettlementAmount,
         frozenSurplusAmount: allocation.depositSurplus,
         totalAmount: walletSettlementAmount,
@@ -1228,6 +1297,35 @@ export class PaymentService {
           ? `Hybrid auction wallet settlement for auction ${auctionId}`
           : `Paystack auction deposit settlement for auction ${auctionId}`,
       });
+
+      await db
+        .update(payments)
+        .set({
+          status: 'verified',
+          autoVerified: true,
+          verifiedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(payments.id, payment.id));
+
+      // A successful supplemental checkout completes the earlier confirmed
+      // partial charge. Promote those records so finance totals the complete
+      // recovery while preserving each provider transaction separately.
+      await db.update(payments).set({
+        status: 'verified',
+        updatedAt: new Date(),
+      }).where(and(
+        eq(payments.auctionId, auctionId),
+        eq(payments.vendorId, vendorId),
+        eq(payments.status, 'partially_verified')
+      ));
+
+      if (!depositsEnabled && recordedDepositAmount > 0) {
+        await db.update(auctionWinners).set({
+          depositAmount: '0.00',
+          updatedAt: new Date(),
+        }).where(eq(auctionWinners.id, winner.id));
+      }
 
       console.log(`Auction wallet funds settled successfully for payment ${payment.id}`);
       console.log(`   - Deposit: ?${depositAmount.toLocaleString()}`);
@@ -1248,7 +1346,7 @@ export class PaymentService {
       const paymentInfo = {
         vendorId,
         auctionId,
-        amount: paymentAmount,
+        amount: winningBidAmount,
         depositAmount,
       };
 
@@ -1257,8 +1355,7 @@ export class PaymentService {
       
       // CRITICAL: Invalidate auction cache so UI shows updated status
       console.log(`🗑️ Invalidating auction cache...`);
-      const { cache } = await import('@/lib/redis/client');
-      await cache.del(`auction:details:${auctionId}`);
+      await invalidateAuctionDetailsCache(auctionId);
       console.log(`✅ Auction cache invalidated`);
       
       console.log(`✅ Payment processing complete for auction ${auctionId}`);
@@ -1299,6 +1396,11 @@ export class PaymentService {
       } catch (staffNotifError) {
         console.error('Staff payment notification error (non-blocking):', staffNotifError);
       }
+      return {
+        paymentComplete: true,
+        confirmedAmount: winningBidAmount,
+        outstandingAmount: 0,
+      };
     } catch (error) {
       // CRITICAL: Fund release failed - rollback payment verification
       console.error(`❌ CRITICAL: Fund release failed, rolling back payment verification`);

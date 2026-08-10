@@ -187,7 +187,7 @@ export function PredictionCard({
                 ? 'Based on estimated salvage value'
                 : method === 'market_value_calc'
                 ? 'Calculated from market value and damage assessment'
-                : 'Estimated from reserve price'}
+                : 'Estimated from available case data'}
             </p>
           </div>
 

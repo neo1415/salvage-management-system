@@ -280,7 +280,7 @@ export const authConfig: NextAuthConfig = {
           userId: user.id,
           ipAddress,
           userAgent,
-        });
+        }, effectivePolicy.auth.riskBasedMfaEnabled);
         await recordLoginRiskDecision(
           { userId: user.id, ipAddress, userAgent },
           riskMfaDecision
@@ -336,7 +336,7 @@ export const authConfig: NextAuthConfig = {
           userId: user.id,
           ipAddress,
           userAgent,
-        });
+        }, effectivePolicy.auth.riskBasedMfaEnabled);
 
         // Reset failed login attempts on successful login
         await resetFailedLogins(emailOrPhone);

@@ -7,6 +7,8 @@ import { formatNgnAmount } from '@/lib/utils/format-ngn';
 
 interface PaymentBreakdown {
   finalBid: number;
+  confirmedAmount?: number;
+  outstandingAmount?: number;
   depositAmount: number;
   depositApplied: number;
   depositSurplus: number;
@@ -392,6 +394,14 @@ export function PaymentOptions({
                   {formatAmount(breakdown.finalBid)}
                 </span>
               </div>
+              {(breakdown.confirmedAmount ?? 0) > 0 && (
+                <div className="flex justify-between items-center text-green-700">
+                  <span className="text-sm">Already Confirmed</span>
+                  <span className="text-base font-semibold">
+                    -{formatAmount(breakdown.confirmedAmount)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between items-center text-green-600">
                 <span className="text-sm">Deposit Applied</span>
                 <span className="text-base font-semibold">

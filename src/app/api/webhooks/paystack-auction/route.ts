@@ -110,7 +110,11 @@ export async function POST(request: NextRequest) {
     console.log('✅ Processing successful payment...');
     const processingStartTime = Date.now();
     
-    await paymentService.handlePaystackWebhook(payload.data.reference, true);
+    await paymentService.handlePaystackWebhook(
+      payload.data.reference,
+      true,
+      Number(payload.data.amount || 0) / 100
+    );
     
     const processingDuration = Date.now() - processingStartTime;
     const totalDuration = Date.now() - webhookStartTime;

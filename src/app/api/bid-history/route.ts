@@ -35,8 +35,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user has manager, adjuster, or admin role
-    const allowedRoles = ['salvage_manager', 'claims_adjuster', 'system_admin'];
+    const allowedRoles = ['salvage_manager', 'system_admin'];
     if (!allowedRoles.includes(session.user.role)) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
@@ -151,7 +150,6 @@ export async function GET(request: NextRequest) {
         originalEndTime: item.auction.originalEndTime,
         extensionCount: item.auction.extensionCount,
         currentBid: item.auction.currentBid,
-        minimumIncrement: item.auction.minimumIncrement,
         status: item.auction.status,
         createdAt: item.auction.createdAt,
         updatedAt: item.auction.updatedAt,
@@ -163,7 +161,6 @@ export async function GET(request: NextRequest) {
         assetDetails: item.case?.assetDetails,
         marketValue: item.case?.marketValue,
         estimatedSalvageValue: item.case?.estimatedSalvageValue,
-        reservePrice: item.case?.reservePrice,
         damageSeverity: item.case?.damageSeverity,
         photos: item.case?.photos,
         status: item.case?.status,

@@ -24,7 +24,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { formatNaira } from '@/lib/utils/currency-formatter';
-import { ConfirmationModal } from '@/components/ui/confirmation-modal';
+import { EarlyCloseRequestModal } from '@/components/auctions/early-close-request-modal';
 import { useToast } from '@/components/ui/toast';
 import { useCachedBidHistory } from '@/hooks/use-cached-bid-history';
 import {
@@ -46,7 +46,6 @@ interface BidHistoryItem {
     originalEndTime: string;
     extensionCount: number;
     currentBid: string | null;
-    minimumIncrement: string;
     status: string;
     createdAt: string;
     updatedAt?: string;
@@ -64,7 +63,6 @@ interface BidHistoryItem {
     };
     marketValue: string;
     estimatedSalvageValue: string | null;
-    reservePrice: string | null;
     damageSeverity: string | null;
     photos: string[];
     status: string;
@@ -177,11 +175,6 @@ export default function BidHistoryPage() {
     };
   }, [showExportDropdown]);
 
-  // Fetch bid history (now handled by the hook, but keep for manual refresh)
-  const fetchBidHistory = async () => {
-    await refresh();
-  };
-
   // Early auction closure (salvage managers only)
   const handleEndAuctionEarly = async (auctionId: string) => {
     if (user?.role !== 'salvage_manager') {
@@ -193,7 +186,7 @@ export default function BidHistoryPage() {
     setShowEndAuctionModal(true);
   };
 
-  const confirmEndAuction = async () => {
+  const confirmEndAuction = async (reason: string) => {
     if (!selectedAuctionId) return;
 
     try {
@@ -204,6 +197,7 @@ export default function BidHistoryPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ reason }),
       });
 
       if (!response.ok) {
@@ -211,16 +205,13 @@ export default function BidHistoryPage() {
         throw new Error(errorBody?.error || errorBody?.message || 'Failed to end auction early');
       }
 
-      // Refresh data
-      await fetchBidHistory();
-      
       setShowEndAuctionModal(false);
       setSelectedAuctionId(null);
-      toast.success('Auction Ended Successfully', 'The highest bidder has been declared the winner.');
+      toast.success('Request Sent', 'The auction will remain active until the Managing Director decides the request.');
     } catch (error) {
       console.error('Error ending auction:', error);
       toast.error(
-        'Failed to End Auction',
+        'Request Failed',
         error instanceof Error ? error.message : 'Please try again or contact support.'
       );
     } finally {
@@ -367,19 +358,14 @@ export default function BidHistoryPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       {/* Confirmation Modal */}
-      <ConfirmationModal
+      <EarlyCloseRequestModal
         isOpen={showEndAuctionModal}
+        isLoading={endingAuction === selectedAuctionId}
         onClose={() => {
           setShowEndAuctionModal(false);
           setSelectedAuctionId(null);
         }}
-        onConfirm={confirmEndAuction}
-        title="End Auction Early?"
-        message="Are you sure you want to end this auction early? This action cannot be undone. The highest bidder will be declared the winner."
-        confirmText="End Auction"
-        cancelText="Cancel"
-        type="danger"
-        isLoading={endingAuction === selectedAuctionId}
+        onSubmit={confirmEndAuction}
       />
 
       <div className="max-w-7xl mx-auto">
@@ -653,17 +639,11 @@ export default function BidHistoryPage() {
                   </div>
 
                   {/* Bidding Info - Stack on mobile, row on desktop */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                  <div className="mb-4">
                     <div>
                       <div className="text-xs text-gray-500 mb-1">Current Bid</div>
                       <div className="text-lg font-bold text-[var(--brand-primary)]">
                         {formatNaira(item.auction.currentBid)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Reserve</div>
-                      <div className="text-lg font-bold text-gray-900">
-                        {formatNaira(item.case.reservePrice)}
                       </div>
                     </div>
                   </div>

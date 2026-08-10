@@ -37,7 +37,6 @@ export interface RecommendationResult {
     assetType: string;
     assetDetails: Record<string, unknown>;
     marketValue: number;
-    reservePrice: number;
     currentBid: number | null;
     watchingCount: number;
     endTime: Date;

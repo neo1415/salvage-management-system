@@ -29,7 +29,12 @@ import { escrowWallets } from '@/lib/db/schema/escrow';
 import { eq } from 'drizzle-orm';
 import { auctionClosureService } from '@/features/auctions/services/auction-closure.service';
 
-describe('AuctionClosureService', () => {
+const describeDatabaseIntegration =
+  process.env.RUN_DATABASE_INTEGRATION_TESTS === 'true' ? describe : describe.skip;
+
+// This suite mutates a dedicated test database and must never run as part of
+// the default unit-test command or against a developer/production database.
+describeDatabaseIntegration('AuctionClosureService database integration', () => {
   let testAuctionId: string;
   let testCaseId: string;
   let testUserIds: string[] = [];

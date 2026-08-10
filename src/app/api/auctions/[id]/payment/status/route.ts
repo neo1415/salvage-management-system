@@ -10,7 +10,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { payments } from '@/lib/db/schema/payments';
-import { eq, and } from 'drizzle-orm';
+import { auctions } from '@/lib/db/schema/auctions';
+import { vendors } from '@/lib/db/schema/vendors';
+import { eq, and, inArray } from 'drizzle-orm';
+import { calculateAuctionPaymentProgress } from '@/features/auction-deposit/services/payment-progress';
 
 export async function GET(
   _request: NextRequest,
@@ -28,21 +31,36 @@ export async function GET(
       );
     }
 
-    // Check if a verified payment exists for this auction
-    const [payment] = await db
-      .select()
+    const vendor = await db.query.vendors.findFirst({
+      where: eq(vendors.userId, session.user.id),
+    });
+    const auction = await db.query.auctions.findFirst({
+      where: eq(auctions.id, auctionId),
+    });
+    if (!vendor || !auction || auction.currentBidder !== vendor.id) {
+      return NextResponse.json({ hasVerifiedPayment: false }, { status: 403 });
+    }
+
+    const confirmedPayments = await db
+      .select({ id: payments.id, amount: payments.amount })
       .from(payments)
       .where(
         and(
           eq(payments.auctionId, auctionId),
-          eq(payments.status, 'verified')
+          eq(payments.vendorId, vendor.id),
+          inArray(payments.status, ['partially_verified', 'verified'])
         )
-      )
-      .limit(1);
+      );
+    const progress = calculateAuctionPaymentProgress(
+      Number(auction.currentBid || 0),
+      confirmedPayments.map((payment) => Number(payment.amount))
+    );
 
     return NextResponse.json({
-      hasVerifiedPayment: !!payment,
-      paymentId: payment?.id,
+      hasVerifiedPayment: progress.isComplete,
+      paymentId: confirmedPayments.at(-1)?.id,
+      verifiedAmount: progress.confirmedAmount,
+      outstandingAmount: progress.outstandingAmount,
     });
   } catch (error) {
     console.error('Error checking payment status:', error);

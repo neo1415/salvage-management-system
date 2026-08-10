@@ -1,162 +1,93 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/next-auth.config';
-import { db } from '@/lib/db/drizzle';
-import { auctions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { auctionClosureService } from '@/features/auctions/services/closure.service';
-import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
+import { z } from 'zod';
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db/drizzle';
+import { auctions } from '@/lib/db/schema/auctions';
+import { salvageCases } from '@/lib/db/schema/cases';
+import { auctionEarlyCloseRequests } from '@/lib/db/schema/auction-early-close';
+import {
+  getActiveManagingDirectors,
+  notifyManagingDirectorsOfEarlyClose,
+} from '@/features/auctions/services/early-close-approval.service';
+import { AuditActionType, AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress, logAction } from '@/lib/utils/audit-logger';
 
-/**
- * Manual Auction End API
- * POST /api/auctions/[id]/end-early
- * 
- * Allows Salvage Manager to manually end an active auction early.
- * Uses the same closure logic as automatic cron job to ensure consistency.
- * 
- * FIXED: Now calls auctionClosureService.closeAuction() to ensure:
- * - Documents are generated automatically (bill of sale, liability waiver, pickup authorization)
- * - Payment record is created
- * - Winner notifications are sent (SMS, email, push)
- * - Audit logs are created
- */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+const requestSchema = z.object({
+  reason: z.string().trim().min(20, 'Give a clear reason of at least 20 characters').max(2000),
+});
+
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (session.user.role !== 'salvage_manager') {
+    return NextResponse.json({ error: 'Only salvage managers can request early closure' }, { status: 403 });
+  }
+
+  const parsed = requestSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message || 'A reason is required' }, { status: 400 });
+  }
+
+  const { id: auctionId } = await params;
+  const [auction] = await db.select({
+    id: auctions.id,
+    status: auctions.status,
+    currentBid: auctions.currentBid,
+    currentBidder: auctions.currentBidder,
+    endTime: auctions.endTime,
+    claimReference: salvageCases.claimReference,
+  }).from(auctions).innerJoin(salvageCases, eq(auctions.caseId, salvageCases.id))
+    .where(eq(auctions.id, auctionId)).limit(1);
+
+  if (!auction) return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
+  if (!['active', 'extended'].includes(auction.status)) {
+    return NextResponse.json({ error: 'Only an active auction can be submitted for early closure' }, { status: 409 });
+  }
+  if (!auction.currentBid || !auction.currentBidder) {
+    return NextResponse.json({ error: 'An auction without bids cannot be closed early' }, { status: 409 });
+  }
+
+  const managingDirectors = await getActiveManagingDirectors();
+  if (managingDirectors.length === 0) {
+    return NextResponse.json({ error: 'No active Managing Director is available to review this request' }, { status: 409 });
+  }
+
   try {
-    const session = await auth();
-    
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const [created] = await db.insert(auctionEarlyCloseRequests).values({
+      auctionId,
+      requestedBy: session.user.id,
+      reason: parsed.data.reason,
+    }).returning();
 
-    // Only salvage managers can end auctions early
-    if (session.user.role !== 'salvage_manager') {
-      return NextResponse.json(
-        { error: 'Only salvage managers can end auctions early' },
-        { status: 403 }
-      );
-    }
-
-    const { id: auctionId } = await params;
-
-    // Get auction details
-    const [auction] = await db
-      .select()
-      .from(auctions)
-      .where(eq(auctions.id, auctionId))
-      .limit(1);
-
-    if (!auction) {
-      return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
-    }
-
-    if (auction.status === 'closed' || auction.status === 'awaiting_payment') {
-      return NextResponse.json({
-        success: true,
-        message: 'Auction has already been ended. Documents and payment flow are already in progress.',
-        auction: {
-          id: auctionId,
-          status: auction.status,
-          endTime: auction.endTime,
-          winner: {
-            vendorId: auction.currentBidder,
-            finalBid: auction.currentBid ? parseFloat(auction.currentBid) : undefined,
-          },
-        },
-      });
-    }
-
-    // Check if auction can be ended early
-    if (auction.status !== 'active' && auction.status !== 'extended') {
-      return NextResponse.json(
-        { error: 'Only active or extended auctions can be ended early' },
-        { status: 400 }
-      );
-    }
-
-    // Check if there are any bids
-    if (!auction.currentBid || !auction.currentBidder) {
-      return NextResponse.json(
-        { error: 'Cannot end auction early without any bids' },
-        { status: 400 }
-      );
-    }
-
-    console.log(`🔴 Manual auction end requested by ${session.user.name} (${session.user.role})`);
-    console.log(`   - Auction ID: ${auctionId}`);
-    console.log(`   - Current Status: ${auction.status}`);
-    console.log(`   - Current Bid: ₦${parseFloat(auction.currentBid).toLocaleString()}`);
-    console.log(`   - Winner: ${auction.currentBidder}`);
-
-    // Log the manual end request
+    const userAgent = request.headers.get('user-agent') || 'unknown';
     await logAction({
       userId: session.user.id,
-      actionType: AuditActionType.AUCTION_CLOSED,
+      actionType: AuditActionType.AUCTION_EARLY_CLOSE_REQUESTED,
       entityType: AuditEntityType.AUCTION,
       entityId: auctionId,
-      ipAddress: request.headers.get('x-forwarded-for') || 
-                 request.headers.get('x-real-ip') || 
-                 'unknown',
-      deviceType: DeviceType.DESKTOP,
-      userAgent: request.headers.get('user-agent') || 'unknown',
-      beforeState: {
-        status: auction.status,
-        endTime: auction.endTime,
-      },
-      afterState: {
-        status: 'closed',
-        endTime: new Date(),
-        endedBy: session.user.name,
-        endedByRole: session.user.role,
-        manualEnd: true,
-      },
+      ipAddress: getIpAddress(request.headers),
+      userAgent,
+      deviceType: getDeviceTypeFromUserAgent(userAgent),
+      beforeState: { status: auction.status, endTime: auction.endTime },
+      afterState: { requestId: created.id, status: created.status, reason: parsed.data.reason },
     });
 
-    // FIXED: Use auctionClosureService to ensure consistent behavior
-    // This will:
-    // 1. Update auction status to 'closed'
-    // 2. Create payment record
-    // 3. Generate 3 documents (bill of sale, liability waiver, pickup authorization)
-    // 4. Send winner notifications (SMS, email, push)
-    // 5. Create audit logs
-    const result = await auctionClosureService.closeAuction(auctionId);
+    void notifyManagingDirectorsOfEarlyClose({
+      recipients: managingDirectors,
+      requestId: created.id,
+      auctionId,
+      claimReference: auction.claimReference,
+      requesterName: session.user.name || 'A salvage manager',
+      reason: parsed.data.reason,
+    }).catch((error) => console.error('[Early Close] Failed to deliver approval notifications', error));
 
-    if (!result.success) {
-      console.error(`❌ Failed to close auction ${auctionId}:`, result.error);
-      return NextResponse.json(
-        { error: result.error || 'Failed to end auction' },
-        { status: 500 }
-      );
-    }
-
-    console.log(`✅ Auction ${auctionId} ended successfully by ${session.user.name}`);
-    console.log(`   - Winner: ${result.winnerId}`);
-    console.log(`   - Winning Bid: ₦${result.winningBid?.toLocaleString()}`);
-    console.log(`   - Payment ID: ${result.paymentId}`);
-    console.log(`   - Documents: Generated automatically`);
-    console.log(`   - Notifications: Sent to winner`);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Auction ended successfully. Documents generated and winner notified.',
-      auction: {
-        id: auctionId,
-        status: 'closed',
-        endTime: new Date(),
-        winner: {
-          vendorId: result.winnerId,
-          finalBid: result.winningBid,
-        },
-        paymentId: result.paymentId,
-      },
-    });
-
+    return NextResponse.json({ success: true, request: created, message: 'Approval request sent to the Managing Director.' }, { status: 202 });
   } catch (error) {
-    console.error('Error ending auction early:', error);
-    return NextResponse.json(
-      { error: 'Failed to end auction early' },
-      { status: 500 }
-    );
+    const databaseError = error as { code?: string; cause?: { code?: string } };
+    if ((databaseError.code ?? databaseError.cause?.code) === '23505') {
+      return NextResponse.json({ error: 'An early closure request is already awaiting a decision' }, { status: 409 });
+    }
+    console.error('[Early Close] Failed to create request', error);
+    return NextResponse.json({ error: 'Unable to submit the early closure request' }, { status: 500 });
   }
 }

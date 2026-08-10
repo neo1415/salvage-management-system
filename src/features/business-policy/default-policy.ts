@@ -79,6 +79,7 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
     allowedEmailDomains: [],
     staffMfaRequired: false,
     vendorMfaRequired: false,
+    riskBasedMfaEnabled: false,
     userManagedMfaAllowed: true,
   },
   onboarding: {
@@ -117,14 +118,15 @@ export const DEFAULT_BUSINESS_POLICY: BusinessPolicy = {
     walletFundingMaximum: 5_000_000,
   },
   escrow: {
-    depositSystemEnabled: true,
+    depositSystemEnabled: false,
     depositRatePercent: 10,
     minimumDepositFloor: 100_000,
     topBiddersToKeepFrozen: 3,
     forfeiturePercentage: 100,
   },
   auctions: {
-    minimumBidIncrement: 20_000,
+    // Compatibility field only. Vendors may bid any amount above the current bid.
+    minimumBidIncrement: 0,
     documentValidityHours: 48,
     maxGraceExtensions: 2,
     graceExtensionDurationHours: 24,

@@ -3,7 +3,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db, withRetry } from '@/lib/db/drizzle';
 import { loginRiskEvents, userTrustedLoginContexts } from '@/lib/db/schema/trusted-login';
 
-export const RISK_BASED_MFA_ENABLED = process.env.RISK_BASED_MFA_ENABLED !== 'false';
+export const RISK_BASED_MFA_ENABLED = process.env.RISK_BASED_MFA_ENABLED === 'true';
 const TRUSTED_LOGIN_THRESHOLD = Number(process.env.TRUSTED_LOGIN_THRESHOLD || 5);
 
 export type RiskMfaDecision = {
@@ -113,10 +113,10 @@ export function decideRiskMfaFromContext(
   };
 }
 
-export async function evaluateRiskBasedMfa(input: RiskMfaInput): Promise<RiskMfaDecision> {
+export async function evaluateRiskBasedMfa(input: RiskMfaInput, policyEnabled = false): Promise<RiskMfaDecision> {
   const hashes = getLoginContextHashes(input);
 
-  if (!RISK_BASED_MFA_ENABLED) {
+  if (!RISK_BASED_MFA_ENABLED || !policyEnabled) {
     return {
       required: false,
       reason: 'disabled',
@@ -184,8 +184,8 @@ export async function recordLoginRiskDecision(input: RiskMfaInput, decision: Ris
   });
 }
 
-export async function recordSuccessfulRiskLogin(input: RiskMfaInput): Promise<void> {
-  if (!RISK_BASED_MFA_ENABLED) return;
+export async function recordSuccessfulRiskLogin(input: RiskMfaInput, policyEnabled = false): Promise<void> {
+  if (!RISK_BASED_MFA_ENABLED || !policyEnabled) return;
 
   const hashes = getLoginContextHashes(input);
   const now = new Date();

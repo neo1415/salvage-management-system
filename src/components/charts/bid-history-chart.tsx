@@ -14,11 +14,10 @@ interface BidData {
 
 interface BidHistoryChartProps {
   bidHistory: BidData[];
-  reservePrice?: string | null;
   className?: string;
 }
 
-export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: BidHistoryChartProps) {
+export function BidHistoryChart({ bidHistory, className = '' }: BidHistoryChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -53,12 +52,9 @@ export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: Bi
     const amounts = sortedBids.map(bid => parseFloat(bid.amount));
     const minAmount = Math.min(...amounts);
     const maxAmount = Math.max(...amounts);
-    const reserve = reservePrice ? parseFloat(reservePrice) : null;
-
-    // Adjust range to include reserve price
-    const dataMin = reserve ? Math.min(minAmount, reserve) : minAmount;
-    const dataMax = reserve ? Math.max(maxAmount, reserve) : maxAmount;
-    const range = dataMax - dataMin;
+    const dataMin = minAmount;
+    const dataMax = maxAmount;
+    const range = Math.max(dataMax - dataMin, dataMax * 0.1, 1);
     const yMin = dataMin - range * 0.1;
     const yMax = dataMax + range * 0.1;
 
@@ -86,24 +82,6 @@ export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: Bi
       ctx.moveTo(x, padding);
       ctx.lineTo(x, height - padding);
       ctx.stroke();
-    }
-
-    // Draw reserve price line if available
-    if (reserve) {
-      const reserveY = getY(reserve);
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.moveTo(padding, reserveY);
-      ctx.lineTo(width - padding, reserveY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Reserve price label
-      ctx.fillStyle = '#f59e0b';
-      ctx.font = '12px sans-serif';
-      ctx.fillText(`Reserve: ₦${reserve.toLocaleString()}`, padding + 5, reserveY - 5);
     }
 
     // Draw bid line
@@ -163,7 +141,7 @@ export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: Bi
       ctx.fillText(`Bid ${bidIndex + 1}`, x, height - 10);
     }
 
-  }, [bidHistory, reservePrice]);
+  }, [bidHistory]);
 
   if (bidHistory.length === 0) {
     return (
@@ -183,12 +161,6 @@ export function BidHistoryChart({ bidHistory, reservePrice, className = '' }: Bi
             <div className="w-3 h-3 bg-[var(--brand-primary)] rounded-full"></div>
             <span className="text-gray-600">Bids</span>
           </div>
-          {reservePrice && (
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-1 bg-yellow-500"></div>
-              <span className="text-gray-600">Reserve</span>
-            </div>
-          )}
         </div>
       </div>
       <div className="relative">

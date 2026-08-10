@@ -27,7 +27,7 @@ interface FallbackAuction {
     assetType?: string;
     assetDetails?: Record<string, unknown>;
     marketValue?: string | number | null;
-    reservePrice?: string | number | null;
+    estimatedSalvageValue?: string | number | null;
   };
 }
 
@@ -70,7 +70,6 @@ export function RecommendationsFeed({
         assetType: auction.case?.assetType || 'asset',
         assetDetails: auction.case?.assetDetails || {},
         marketValue: Number(auction.case?.marketValue || 0),
-        reservePrice: Number(auction.case?.reservePrice || 0),
         currentBid: auction.currentBid ? Number(auction.currentBid) : null,
         watchingCount: Number(auction.watchingCount || 0),
         endTime: auction.endTime,

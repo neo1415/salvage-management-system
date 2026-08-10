@@ -13,8 +13,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { paymentService } from '@/features/auction-deposit/services/payment.service';
 import { db } from '@/lib/db/drizzle';
-import { vendors, releaseForms } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { vendors, releaseForms, payments } from '@/lib/db/schema';
+import { eq, and, inArray } from 'drizzle-orm';
 import { rateLimit, createRateLimitHeaders } from '@/lib/utils/rate-limit';
 import { ensurePaymentReadinessContext, PaymentReadinessError } from '@/features/auction-deposit/services/payment-readiness.service';
 import {
@@ -142,7 +142,20 @@ export async function POST(
     // Get finalBid and depositAmount from winner record
     const finalBid = parseFloat(winner.bidAmount);
     const depositAmount = parseFloat(winner.depositAmount);
-    const allocation = calculateAuctionPaymentAllocation(finalBid, depositAmount);
+    const confirmedPayments = await db.select({ amount: payments.amount })
+      .from(payments)
+      .where(and(
+        eq(payments.auctionId, auctionId),
+        eq(payments.vendorId, vendor.id),
+        inArray(payments.status, ['partially_verified', 'verified'])
+      ));
+    const confirmedAmount = confirmedPayments.reduce(
+      (total, payment) => total + parseFloat(payment.amount),
+      0
+    );
+    const paymentTargetAmount = Math.max(0, finalBid - confirmedAmount);
+    const applicableDeposit = confirmedAmount > 0 ? 0 : depositAmount;
+    const allocation = calculateAuctionPaymentAllocation(paymentTargetAmount, applicableDeposit);
 
     if (allocation.remainingAmount <= 0) {
       return NextResponse.json(
@@ -155,8 +168,8 @@ export async function POST(
     const result = await paymentService.initializePaystackPayment({
       auctionId,
       vendorId: vendor.id,
-      finalBid,
-      depositAmount,
+      finalBid: paymentTargetAmount,
+      depositAmount: applicableDeposit,
       idempotencyKey: paymentReference,
     });
 

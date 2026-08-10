@@ -14,7 +14,7 @@ import { salvageCases } from '@/lib/db/schema/cases';
 import { auctions } from '@/lib/db/schema/auctions';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
-import { logAction, AuditActionType, AuditEntityType, DeviceType, createAuditLogData } from '@/lib/utils/audit-logger';
+import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
 import { validatePriceOverrides } from '@/lib/validation/price-validation';
 import {
   notifyAdjusterOfCaseApproval,
@@ -22,11 +22,7 @@ import {
   notifyMatchingVendorsOfNewAuction,
   notifyStaffOfCaseApproval,
 } from '@/features/notifications/services/case-approval-notifications.service';
-import {
-  businessPolicyService,
-  logPolicyDecision,
-  resolveReservePrice,
-} from '@/features/business-policy';
+import { businessPolicyService } from '@/features/business-policy';
 import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 /**
@@ -37,7 +33,6 @@ interface PriceOverrides {
   marketValue?: number;
   repairCost?: number;
   salvageValue?: number;
-  reservePrice?: number;
 }
 
 /**
@@ -187,7 +182,6 @@ export async function POST(
       const aiEstimates = {
         marketValue: parseFloat(caseRecord.marketValue),
         salvageValue: parseFloat(caseRecord.estimatedSalvageValue ?? '0'),
-        reservePrice: parseFloat(caseRecord.reservePrice ?? '0'),
       };
 
       const validationResult = validatePriceOverrides(body.priceOverrides, aiEstimates);
@@ -224,7 +218,6 @@ export async function POST(
         marketValue: parseFloat(caseRecord.marketValue),
         repairCost: caseRecord.aiAssessment?.estimatedRepairCost || 0,
         salvageValue: parseFloat(caseRecord.estimatedSalvageValue ?? '0'),
-        reservePrice: parseFloat(caseRecord.reservePrice ?? '0'),
         confidence: caseRecord.aiAssessment?.confidence?.overall || caseRecord.aiAssessment?.confidenceScore || 0,
       };
 
@@ -232,30 +225,7 @@ export async function POST(
       const finalMarketValue = body.priceOverrides?.marketValue ?? aiEstimates.marketValue;
       const finalRepairCost = body.priceOverrides?.repairCost ?? aiEstimates.repairCost;
       const finalSalvageValue = body.priceOverrides?.salvageValue ?? aiEstimates.salvageValue;
-      const finalReservePrice = body.priceOverrides?.reservePrice ?? aiEstimates.reservePrice;
       const policy = await businessPolicyService.getEffectivePolicy();
-      const reserveDecision = resolveReservePrice(policy, finalSalvageValue);
-
-      await logPolicyDecision({
-        userId: session.user.id,
-        entityType: AuditEntityType.CASE,
-        entityId: caseId,
-        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown',
-        deviceType: DeviceType.DESKTOP,
-        decision: {
-          ...reserveDecision.decision,
-          entityId: caseId,
-        },
-        context: {
-          mode: 'shadow',
-          surface: 'case_approval_route',
-          caseId,
-          legacyFinalReservePrice: finalReservePrice,
-          policyReservePrice: reserveDecision.value,
-          hadManagerReserveOverride: body.priceOverrides?.reservePrice !== undefined,
-        },
-      });
 
       // Update case status to 'approved' and store both AI estimates and overrides
       const [updatedCase] = await db
@@ -264,7 +234,7 @@ export async function POST(
           // Update with final values
           marketValue: finalMarketValue.toString(),
           estimatedSalvageValue: finalSalvageValue.toString(),
-          reservePrice: finalReservePrice.toString(),
+          reservePrice: null,
           brokerName: brokerName || null,
           agencyName: agencyName || null,
           branchName: branchName || null,
@@ -318,7 +288,6 @@ export async function POST(
                 marketValue: finalMarketValue,
                 repairCost: finalRepairCost,
                 salvageValue: finalSalvageValue,
-                reservePrice: finalReservePrice,
               },
             }
           )
@@ -362,7 +331,7 @@ export async function POST(
           extensionCount: 0,
           currentBid: null,
           currentBidder: null,
-          minimumIncrement: '10000.00', // ₦10,000
+          minimumIncrement: '0.00', // Legacy column; bid increments are not enforced.
           status: auctionStatus,
           watchingCount: 0,
           scheduledStartTime: scheduledStartTime,
@@ -429,12 +398,6 @@ export async function POST(
                 adjusted: body.priceOverrides!.salvageValue,
               },
             }),
-            ...(body.priceOverrides!.reservePrice !== undefined && {
-              reservePrice: {
-                original: aiEstimates.reservePrice,
-                adjusted: body.priceOverrides!.reservePrice,
-              },
-            }),
           }
         : undefined;
 
@@ -459,7 +422,6 @@ export async function POST(
             startTime: auction.startTime,
             endTime: auction.endTime,
             status: auction.status,
-            reservePrice: finalReservePrice,
             isScheduled: auction.isScheduled,
             scheduledStartTime: auction.scheduledStartTime,
           },
@@ -478,7 +440,6 @@ export async function POST(
             assetType: caseRecord.assetType,
             assetDetails: caseRecord.assetDetails as Record<string, unknown>,
             claimReference: caseRecord.claimReference,
-            reservePrice: finalReservePrice.toString(),
             locationName: caseRecord.locationName,
             endTime,
             appUrl,

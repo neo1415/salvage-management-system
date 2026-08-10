@@ -234,7 +234,7 @@ export class FraudAutoSuspendService {
 
             console.log(`✅ Reset auction ${auction.id} to previous bidder ${previousBid.vendorId}`);
           } else {
-            // No other bids, reset to reserve price
+            // No other valid bids remain, so restore the auction's no-bid state.
             await db
               .update(auctions)
               .set({
@@ -244,7 +244,7 @@ export class FraudAutoSuspendService {
               })
               .where(eq(auctions.id, auction.id));
 
-            console.log(`✅ Reset auction ${auction.id} to reserve price (no other bids)`);
+            console.log(`Reset auction ${auction.id} to no-bid state`);
           }
 
           bidsCancelled++;

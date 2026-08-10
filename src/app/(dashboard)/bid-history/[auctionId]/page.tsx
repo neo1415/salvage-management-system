@@ -30,7 +30,7 @@ import { formatNaira } from '@/lib/utils/currency-formatter';
 import { AuctionTimerExtension } from '@/components/manager/auction-timer-extension';
 import type { AuctionScheduleValue } from '@/components/ui/auction-schedule-selector';
 import { BidHistoryChart } from '@/components/charts/bid-history-chart';
-import { ConfirmationModal } from '@/components/ui/confirmation-modal';
+import { EarlyCloseRequestModal } from '@/components/auctions/early-close-request-modal';
 import { SuccessModal } from '@/components/modals/success-modal';
 import { ErrorModal } from '@/components/modals/error-modal';
 import { RestartAuctionModal } from '@/components/modals/restart-auction-modal';
@@ -51,7 +51,6 @@ interface DetailedAuctionData {
     originalEndTime: string;
     extensionCount: number;
     currentBid: string | null;
-    minimumIncrement: string;
     status: string;
     createdAt: string;
   };
@@ -70,7 +69,6 @@ interface DetailedAuctionData {
     };
     marketValue: string;
     estimatedSalvageValue: string | null;
-    reservePrice: string | null;
     damageSeverity: string | null;
     photos: string[];
     voiceNotes?: string[];
@@ -197,7 +195,7 @@ export default function AuctionDetailPage() {
     setShowEndAuctionModal(true);
   };
 
-  const confirmEndAuction = async () => {
+  const confirmEndAuction = async (reason: string) => {
     try {
       setEndingAuction(true);
       
@@ -206,6 +204,7 @@ export default function AuctionDetailPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ reason }),
       });
 
       if (!response.ok) {
@@ -213,15 +212,12 @@ export default function AuctionDetailPage() {
         throw new Error(errorBody?.error || errorBody?.message || 'Failed to end auction early');
       }
 
-      // Refresh data
-      await fetchAuctionDetails();
-      
       setShowEndAuctionModal(false);
-      toast.success('Auction Ended Successfully', 'The highest bidder has been declared the winner.');
+      toast.success('Request Sent', 'The auction will remain active until the Managing Director decides the request.');
     } catch (error) {
       console.error('Error ending auction:', error);
       toast.error(
-        'Failed to End Auction',
+        'Request Failed',
         error instanceof Error ? error.message : 'Please try again or contact support.'
       );
     } finally {
@@ -437,16 +433,11 @@ export default function AuctionDetailPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       {/* Confirmation Modal */}
-      <ConfirmationModal
+      <EarlyCloseRequestModal
         isOpen={showEndAuctionModal}
         onClose={() => setShowEndAuctionModal(false)}
-        onConfirm={confirmEndAuction}
-        title="End Auction Early?"
-        message="Are you sure you want to end this auction early? This action cannot be undone. The highest bidder will be declared the winner."
-        confirmText="End Auction"
-        cancelText="Cancel"
-        type="danger"
         isLoading={endingAuction}
+        onSubmit={confirmEndAuction}
       />
 
       <div className="max-w-7xl mx-auto">
@@ -505,7 +496,7 @@ export default function AuctionDetailPage() {
                 ) : (
                   <>
                     <StopCircle className="w-4 h-4" />
-                    End Auction Early
+                    Request Early Closure
                   </>
                 )}
               </button>
@@ -698,17 +689,11 @@ export default function AuctionDetailPage() {
               <h3 className="text-xl font-bold text-gray-900 mb-4">Auction Summary</h3>
               
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div>
                   <div className="bg-gray-50 rounded-lg p-3">
                     <div className="text-xs text-gray-500 mb-1">Current Bid</div>
                     <div className="text-xl font-bold text-[var(--brand-primary)]">
                       {formatNaira(data.auction.currentBid)}
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-xs text-gray-500 mb-1">Reserve Price</div>
-                    <div className="text-xl font-bold text-gray-900">
-                      {formatNaira(data.case.reservePrice)}
                     </div>
                   </div>
                 </div>
@@ -907,7 +892,6 @@ export default function AuctionDetailPage() {
           <div className="mt-8">
             <BidHistoryChart 
               bidHistory={data.bidHistory}
-              reservePrice={data.case.reservePrice}
               className="bg-white rounded-xl shadow-lg"
             />
           </div>

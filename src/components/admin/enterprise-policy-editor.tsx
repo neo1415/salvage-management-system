@@ -344,7 +344,7 @@ const RECOVERY_COMMAND_DEFAULT_COPY: Partial<Record<HomepageCopyKey, string>> = 
   proofCardTwoTitle: 'Inspect',
   proofCardTwoBody: 'Review auction details, photos, condition notes, and document requirements.',
   proofCardThreeTitle: 'Bid',
-  proofCardThreeBody: 'Place verified bids with reserve gates and clear minimum increments.',
+  proofCardThreeBody: 'Place verified bids with clear payment and pickup requirements.',
   proofCardFourTitle: 'Deposit',
   proofCardFourBody: 'Use auction-specific deposits that are tracked to the auction.',
   operationsCardThreeTitle: 'Documents',
@@ -2225,6 +2225,7 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             <Toggle checked={policy.auth.googleOAuthEnabled} onChange={(checked) => updatePolicy((draft) => { draft.auth.googleOAuthEnabled = checked; })} label="Google login enabled" />
             <Toggle checked={policy.auth.staffMfaRequired} onChange={(checked) => updatePolicy((draft) => { draft.auth.staffMfaRequired = checked; })} label="Staff MFA required" />
             <Toggle checked={policy.auth.vendorMfaRequired} onChange={(checked) => updatePolicy((draft) => { draft.auth.vendorMfaRequired = checked; })} label="Vendor MFA required" />
+            <Toggle checked={policy.auth.riskBasedMfaEnabled} onChange={(checked) => updatePolicy((draft) => { draft.auth.riskBasedMfaEnabled = checked; })} label="Risk-based login verification" />
             <Toggle checked={policy.auth.userManagedMfaAllowed} onChange={(checked) => updatePolicy((draft) => { draft.auth.userManagedMfaAllowed = checked; })} label="Users can manage MFA" />
           </div>
           <Field label="Allowed email domains" description="Comma-separated domains allowed even when business-email-only is enabled. Leave empty to allow any non-personal business domain.">
@@ -2306,20 +2307,8 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
         </div>
 
         <div className={`space-y-4 rounded-lg border border-gray-200 p-4 ${visibleStepClass('operations')}`}>
-          <h3 className="font-bold text-gray-900">Deposits And Auction Rules</h3>
+          <h3 className="font-bold text-gray-900">Auction Rules</h3>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Deposit rate (%)">
-              <TextInput type="number" value={policy.escrow.depositRatePercent} onChange={(event) => updatePolicy((draft) => { draft.escrow.depositRatePercent = numberValue(event.target.value, draft.escrow.depositRatePercent); })} />
-            </Field>
-            <Field label="Deposit floor">
-              <TextInput type="number" value={policy.escrow.minimumDepositFloor} onChange={(event) => updatePolicy((draft) => { draft.escrow.minimumDepositFloor = numberValue(event.target.value, draft.escrow.minimumDepositFloor); })} />
-            </Field>
-            <Field label="Minimum bid increment">
-              <TextInput type="number" value={policy.auctions.minimumBidIncrement} onChange={(event) => updatePolicy((draft) => { draft.auctions.minimumBidIncrement = numberValue(event.target.value, draft.auctions.minimumBidIncrement); })} />
-            </Field>
-            <Field label="Reserve percentage">
-              <TextInput type="number" value={policy.auctions.reserveValuePercentage} onChange={(event) => updatePolicy((draft) => { draft.auctions.reserveValuePercentage = numberValue(event.target.value, draft.auctions.reserveValuePercentage); })} />
-            </Field>
             <Field label="Document validity hours">
               <TextInput type="number" value={policy.auctions.documentValidityHours} onChange={(event) => updatePolicy((draft) => { draft.auctions.documentValidityHours = numberValue(event.target.value, draft.auctions.documentValidityHours); })} />
             </Field>

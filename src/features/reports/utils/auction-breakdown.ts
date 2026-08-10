@@ -10,7 +10,6 @@ export type AuctionBreakdownRow = {
   bidCount: number;
   uniqueBidders: number;
   winningBid: number | null;
-  reservePrice: number;
   durationHours: number;
   isSuccessful: boolean;
   pickupStatus: string;
@@ -30,7 +29,6 @@ type RawAuctionRow = {
   bidCount: number;
   uniqueBidders: number;
   winningBid: string | number | null;
-  reservePrice: string | number;
   durationHours: number;
   pickupStatus: string;
   pickupVendorName?: string | null;
@@ -56,7 +54,6 @@ export function mapAuctionToBreakdownRow(row: RawAuctionRow): AuctionBreakdownRo
     bidCount: row.bidCount,
     uniqueBidders: row.uniqueBidders,
     winningBid,
-    reservePrice: Math.round(parseFloat(String(row.reservePrice || '0'))),
     durationHours: Math.round(row.durationHours * 100) / 100,
     isSuccessful: isSoldAuction(row),
     pickupStatus: row.pickupStatus,
@@ -131,7 +128,6 @@ export function mapAuctionListToBreakdownRow(item: {
   bidCount: number;
   uniqueBidders: number;
   winningBid: number | null;
-  reservePrice: number;
   durationHours: number;
   isSuccessful: boolean;
   pickupStatus: string;
@@ -149,7 +145,6 @@ export function mapAuctionListToBreakdownRow(item: {
     bidCount: item.bidCount,
     uniqueBidders: item.uniqueBidders,
     winningBid: item.winningBid,
-    reservePrice: item.reservePrice,
     durationHours: item.durationHours,
     isSuccessful: item.isSuccessful,
     pickupStatus: item.pickupStatus,

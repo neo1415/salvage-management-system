@@ -236,12 +236,10 @@ export async function POST(
       console.log(`Notifying ${realVendors.length} vendors for restarted auction ${auctionId}`);
 
       const appUrl = getAppUrl();
-      const reservePrice = parseFloat(caseRecord.reservePrice ?? '0');
-
       for (const vendor of realVendors) {
         try {
           // Send SMS
-          const smsMessage = `Auction restarted! ${assetType.toUpperCase()} - Reserve: ₦${caseRecord.reservePrice}. Ends in 5 days. Bid now: ${appUrl}/vendor/auctions/${auctionId}`;
+          const smsMessage = `Auction restarted: ${assetType.toUpperCase()}. Review the lot and bid: ${appUrl}/vendor/auctions/${auctionId}`;
           await smsService.sendSMS({
             to: vendor.phone,
             message: smsMessage,
@@ -253,7 +251,6 @@ export async function POST(
             auctionId: auctionId,
             assetType: assetType,
             assetName: `${assetType.toUpperCase()} - ${caseRecord.claimReference}`,
-            reservePrice,
             startTime: now.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
             endTime: endTime.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
             location: caseRecord.locationName,

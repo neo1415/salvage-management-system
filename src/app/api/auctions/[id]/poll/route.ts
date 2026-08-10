@@ -17,10 +17,10 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { db, withRetry } from '@/lib/db/drizzle';
 import { auctions } from '@/lib/db/schema/auctions';
 import { payments } from '@/lib/db/schema/payments';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { redis } from '@/lib/redis/client';
-import { configService } from '@/features/auction-deposit/services/config.service';
 import { getWatchingCount } from '@/features/auctions/services/watching.service';
+import { calculateAuctionPaymentProgress } from '@/features/auction-deposit/services/payment-progress';
 
 // Rate limiting: 1 request per 2 seconds per user
 const RATE_LIMIT_WINDOW = 2000; // 2 seconds in milliseconds
@@ -99,17 +99,20 @@ export async function GET(
     // Check if payment is verified (for awaiting_payment status)
     let hasVerifiedPayment = false;
     if (auction.status === 'awaiting_payment') {
-      const [payment] = await withRetry(() => db
-        .select()
+      const confirmedPayments = await withRetry(() => db
+        .select({ amount: payments.amount })
         .from(payments)
         .where(
           and(
             eq(payments.auctionId, auctionId),
-            eq(payments.status, 'verified')
+            auction.currentBidder ? eq(payments.vendorId, auction.currentBidder) : undefined,
+            inArray(payments.status, ['partially_verified', 'verified'])
           )
-        )
-        .limit(1), 2, 500);
-      hasVerifiedPayment = !!payment;
+        ), 2, 500);
+      hasVerifiedPayment = calculateAuctionPaymentProgress(
+        Number(auction.currentBid || 0),
+        confirmedPayments.map((payment) => Number(payment.amount))
+      ).isComplete;
     }
 
     // Get watching count from the same service/key used by watch/unwatch.
@@ -121,12 +124,8 @@ export async function GET(
       // Continue without watching count
     }
 
-    // Get system configuration for minimum bid increment
-    const config = await configService.getConfig();
-
-    // Calculate minimum bid using configured increment
     const currentBid = auction.currentBid ? parseFloat(auction.currentBid) : null;
-    const minimumBid = currentBid ? currentBid + config.minimumBidIncrement : null;
+    const minimumBid = currentBid !== null ? currentBid + 1 : 1;
 
     // Create response data
     const responseData = {

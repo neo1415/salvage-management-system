@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
         for (const vendor of realVendors) {
           try {
             // Send SMS
-            const smsMessage = `New auction started! ${assetType.toUpperCase()} - Reserve: ₦${caseRecord.reservePrice}. Ends in 5 days. Bid now: ${appUrl}/vendor/auctions/${auction.id}`;
+            const smsMessage = `New ${assetType.toUpperCase()} auction started. Review the lot and bid: ${appUrl}/vendor/auctions/${auction.id}`;
             await smsService.sendSMS({
               to: vendor.phone,
               message: smsMessage,
@@ -195,7 +195,6 @@ export async function POST(request: NextRequest) {
               auctionId: auction.id,
               assetType: assetType,
               assetName: `${assetType.toUpperCase()} - ${caseRecord.claimReference}`,
-              reservePrice: parseFloat(caseRecord.reservePrice ?? '0'),
               startTime: now.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
               endTime: auction.endTime.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }),
               location: caseRecord.locationName,

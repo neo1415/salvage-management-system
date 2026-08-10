@@ -5,7 +5,7 @@
  * Validates: Requirements 18.2, 18.3, 5.6
  * 
  * For any bid submission, the system should validate that:
- * - Bid amount is greater than current highest bid plus minimum increment (₦10,000)
+ * - Bid amount is positive and greater than the current highest bid
  * - Auction is in active status
  * - Vendor is Tier 1 (for bids ≤₦500k) or Tier 2 (for bids >₦500k)
  * - OTP is verified before accepting the bid
@@ -17,7 +17,6 @@ import * as fc from 'fast-check';
 // Test data generators
 const generateBidAmount = () => fc.integer({ min: 10000, max: 10000000 }); // ₦10k to ₦10M
 const generateCurrentBid = () => fc.option(fc.integer({ min: 0, max: 9990000 }), { nil: null });
-const generateMinimumIncrement = () => fc.constant(10000); // ₦10,000
 const generateAuctionStatus = () => fc.constantFrom('scheduled', 'active', 'extended', 'closed', 'cancelled');
 const generateVendorTier = () => fc.constantFrom('tier1_bvn', 'tier2_full');
 const generateOtpVerified = () => fc.boolean();
@@ -26,9 +25,8 @@ const generateAvailableBalance = () => fc.integer({ min: 0, max: 10000000 }); //
 /**
  * Validation logic (to be implemented in bidding service)
  */
-async function validateBidAmount(bidAmount: number, currentBid: number | null, minimumIncrement: number): Promise<boolean> {
-  const minimumBid = (currentBid || 0) + minimumIncrement;
-  return bidAmount >= minimumBid;
+async function validateBidAmount(bidAmount: number, currentBid: number | null): Promise<boolean> {
+  return Number.isFinite(bidAmount) && bidAmount > 0 && (currentBid === null || bidAmount > currentBid);
 }
 
 function validateAuctionStatus(status: string): boolean {
@@ -56,7 +54,6 @@ async function validateWalletBalance(bidAmount: number, availableBalance: number
 async function validateBid(
   bidAmount: number,
   currentBid: number | null,
-  minimumIncrement: number,
   auctionStatus: string,
   vendorTier: string,
   otpVerified: boolean,
@@ -64,9 +61,8 @@ async function validateBid(
 ): Promise<{ valid: boolean; errors: string[] }> {
   const errors: string[] = [];
 
-  if (!(await validateBidAmount(bidAmount, currentBid, minimumIncrement))) {
-    const minimumBid = (currentBid || 0) + minimumIncrement;
-    errors.push(`Bid amount must be at least ₦${minimumBid.toLocaleString()}`);
+  if (!(await validateBidAmount(bidAmount, currentBid))) {
+    errors.push('Bid amount must be positive and greater than the current highest bid');
   }
 
   if (!validateAuctionStatus(auctionStatus)) {
@@ -97,17 +93,15 @@ async function validateBid(
 
 describe('Property Test: Bid Validation', () => {
   describe('Property 11.1: Bid amount validation', () => {
-    it('should accept bids >= current bid + minimum increment', async () => {
+    it('should accept any positive increase above the current bid', async () => {
       await fc.assert(
         fc.asyncProperty(
           generateCurrentBid(),
-          generateMinimumIncrement(),
-          fc.integer({ min: 0, max: 1000000 }), // extra amount
-          async (currentBid, minimumIncrement, extraAmount) => {
-            const minimumBid = (currentBid || 0) + minimumIncrement;
-            const bidAmount = minimumBid + extraAmount;
+          fc.integer({ min: 1, max: 1000000 }),
+          async (currentBid, increase) => {
+            const bidAmount = (currentBid || 0) + increase;
 
-            const result = await validateBidAmount(bidAmount, currentBid, minimumIncrement);
+            const result = await validateBidAmount(bidAmount, currentBid);
 
             expect(result).toBe(true);
           }
@@ -116,17 +110,15 @@ describe('Property Test: Bid Validation', () => {
       );
     });
 
-    it('should reject bids < current bid + minimum increment', async () => {
+    it('should reject bids equal to or below the current bid', async () => {
       await fc.assert(
         fc.asyncProperty(
           fc.integer({ min: 10000, max: 1000000 }), // current bid
-          generateMinimumIncrement(),
-          fc.integer({ min: 1, max: 9999 }), // shortfall amount
-          async (currentBid, minimumIncrement, shortfall) => {
-            const minimumBid = currentBid + minimumIncrement;
-            const bidAmount = minimumBid - shortfall;
+          fc.integer({ min: 0, max: 9999 }),
+          async (currentBid, shortfall) => {
+            const bidAmount = currentBid - shortfall;
 
-            const result = await validateBidAmount(bidAmount, currentBid, minimumIncrement);
+            const result = await validateBidAmount(bidAmount, currentBid);
 
             expect(result).toBe(false);
           }
@@ -138,12 +130,10 @@ describe('Property Test: Bid Validation', () => {
     it('should handle null current bid (first bid)', async () => {
       await fc.assert(
         fc.asyncProperty(
-          generateMinimumIncrement(),
-          fc.integer({ min: 0, max: 1000000 }),
-          async (minimumIncrement, extraAmount) => {
-            const bidAmount = minimumIncrement + extraAmount;
+          fc.integer({ min: 1, max: 1000000 }),
+          async (bidAmount) => {
 
-            const result = await validateBidAmount(bidAmount, null, minimumIncrement);
+            const result = await validateBidAmount(bidAmount, null);
 
             expect(result).toBe(true);
           }
@@ -285,16 +275,14 @@ describe('Property Test: Bid Validation', () => {
         fc.asyncProperty(
           generateBidAmount(),
           generateCurrentBid(),
-          generateMinimumIncrement(),
           generateAuctionStatus(),
           generateVendorTier(),
           generateOtpVerified(),
           generateAvailableBalance(),
-          async (bidAmount, currentBid, minimumIncrement, auctionStatus, vendorTier, otpVerified, availableBalance) => {
+          async (bidAmount, currentBid, auctionStatus, vendorTier, otpVerified, availableBalance) => {
             const result = await validateBid(
               bidAmount,
               currentBid,
-              minimumIncrement,
               auctionStatus,
               vendorTier,
               otpVerified,
@@ -314,7 +302,7 @@ describe('Property Test: Bid Validation', () => {
             }
 
             // Verify individual validations
-            const amountValid = await validateBidAmount(bidAmount, currentBid, minimumIncrement);
+            const amountValid = await validateBidAmount(bidAmount, currentBid);
             const statusValid = validateAuctionStatus(auctionStatus);
             const tierValid = validateVendorTier(bidAmount, vendorTier);
             const balanceValid = await validateWalletBalance(bidAmount, availableBalance);
@@ -334,7 +322,6 @@ describe('Property Test: Bid Validation', () => {
       const result = await validateBid(
         600000, // bid amount > 500k
         100000, // current bid
-        10000, // minimum increment
         'active', // valid status
         'tier1_bvn', // Tier 1 vendor
         false, // OTP not verified
@@ -353,14 +340,12 @@ describe('Property Test: Bid Validation', () => {
           fc.integer({ min: 10000, max: 10000000 }),
           fc.option(fc.integer({ min: 0, max: 9990000 }), { nil: null }),
           async (bidAmount, currentBid) => {
-            const minimumIncrement = 10000;
-            const validBidAmount = (currentBid || 0) + minimumIncrement;
+            const validBidAmount = (currentBid || 0) + 1;
             const availableBalance = validBidAmount + 100000; // Sufficient balance
 
             const result = await validateBid(
               validBidAmount,
               currentBid,
-              minimumIncrement,
               'active',
               'tier2_full',
               true,
@@ -377,16 +362,14 @@ describe('Property Test: Bid Validation', () => {
   });
 
   describe('Property 11.7: Edge cases', () => {
-    it('should handle exact minimum bid amount', async () => {
+    it('should accept a one-naira increase', async () => {
       const currentBid = 100000;
-      const minimumIncrement = 10000;
-      const bidAmount = currentBid + minimumIncrement; // Exactly minimum
+      const bidAmount = currentBid + 1;
       const availableBalance = bidAmount + 10000; // Sufficient balance
 
       const result = await validateBid(
         bidAmount,
         currentBid,
-        minimumIncrement,
         'active',
         'tier2_full',
         true,
@@ -401,7 +384,6 @@ describe('Property Test: Bid Validation', () => {
       const result1 = await validateBid(
         500000,
         490000,
-        10000,
         'active',
         'tier1_bvn',
         true,
@@ -413,7 +395,6 @@ describe('Property Test: Bid Validation', () => {
       const result2 = await validateBid(
         500001,
         490000,
-        10000,
         'active',
         'tier1_bvn',
         true,
@@ -427,7 +408,6 @@ describe('Property Test: Bid Validation', () => {
       const result = await validateBid(
         110000,
         100000,
-        10000,
         'extended', // Extended status should be valid
         'tier2_full',
         true,
@@ -444,7 +424,6 @@ describe('Property Test: Bid Validation', () => {
       const result = await validateBid(
         bidAmount,
         90000,
-        10000,
         'active',
         'tier2_full',
         true,

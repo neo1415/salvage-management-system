@@ -58,6 +58,14 @@ async function resolveDepositAmount(params: {
   latestBid: typeof bids.$inferSelect | null;
   bidAmount: number;
 }): Promise<string> {
+  try {
+    const { businessPolicyService } = await import('@/features/business-policy');
+    const policy = await businessPolicyService.getEffectivePolicy();
+    if (!policy.escrow.depositSystemEnabled) return '0.00';
+  } catch {
+    // Continue with persisted bid/config data when policy resolution is unavailable.
+  }
+
   if (params.latestBid?.depositAmount) {
     return numericString(params.latestBid.depositAmount);
   }

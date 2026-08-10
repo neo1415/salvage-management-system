@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/next-auth.config';
 import { db } from '@/lib/db/drizzle';
 import { releaseForms, payments, vendors } from '@/lib/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { businessPolicyService, resolveAuctionPaymentMethodAccess } from '@/features/business-policy';
 import {
   ensurePaymentReadinessContext,
@@ -94,7 +94,20 @@ export async function GET(
     // Calculate payment breakdown
     const finalBid = parseFloat(winner.bidAmount);
     const depositAmount = parseFloat(winner.depositAmount);
-    const allocation = calculateAuctionPaymentAllocation(finalBid, depositAmount);
+    const confirmedPayments = await db.select({ amount: payments.amount })
+      .from(payments)
+      .where(and(
+        eq(payments.auctionId, auctionId),
+        eq(payments.vendorId, vendor.id),
+        inArray(payments.status, ['partially_verified', 'verified'])
+      ));
+    const confirmedAmount = confirmedPayments.reduce(
+      (total, payment) => total + parseFloat(payment.amount),
+      0
+    );
+    const unpaidBidAmount = Math.max(0, finalBid - confirmedAmount);
+    const applicableDeposit = confirmedAmount > 0 ? 0 : depositAmount;
+    const allocation = calculateAuctionPaymentAllocation(unpaidBidAmount, applicableDeposit);
     const remainingAmount = allocation.remainingAmount;
     const availableBalance = escrowWallet ? parseFloat(escrowWallet.availableBalance) : 0;
 
@@ -141,7 +154,9 @@ export async function GET(
       success: true,
       breakdown: {
         finalBid,
-        depositAmount,
+        confirmedAmount,
+        outstandingAmount: remainingAmount,
+        depositAmount: applicableDeposit,
         depositApplied: allocation.depositApplied,
         depositSurplus: allocation.depositSurplus,
         depositCoversBid: remainingAmount === 0 && allocation.depositApplied > 0,

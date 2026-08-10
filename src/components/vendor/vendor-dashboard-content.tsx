@@ -448,7 +448,7 @@ function VendorDashboardContentInner() {
                               files: [
                                 ...evidenceForm.files,
                                 ...Array.from(event.target.files || []),
-                              ].slice(0, 12),
+                              ].slice(0, 50),
                               error: null,
                               message: null,
                             });
@@ -459,7 +459,7 @@ function VendorDashboardContentInner() {
                         <span className="mt-1 block text-[11px] text-gray-500">
                           {evidenceForm.files.length > 0
                             ? `${evidenceForm.files.length} selected`
-                            : '3 to 12 photos'}
+                            : '3 to 50 photos'}
                         </span>
                       </label>
                     </div>

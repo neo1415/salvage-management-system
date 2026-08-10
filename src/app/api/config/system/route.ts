@@ -20,7 +20,9 @@ export async function GET() {
       {
         success: true,
         config: {
-          minimumBidIncrement: config.minimumBidIncrement,
+          // Compatibility response for older clients; bidding now only requires
+          // an amount strictly above the current bid.
+          minimumBidIncrement: 0,
           tier1Limit: config.tier1Limit,
           depositRate: config.depositRate,
           documentValidityPeriod: config.documentValidityPeriod,

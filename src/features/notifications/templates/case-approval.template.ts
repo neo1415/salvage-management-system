@@ -20,7 +20,6 @@ export interface CaseApprovalTemplateData {
     marketValue?: { original: number; adjusted: number };
     repairCost?: { original: number; adjusted: number };
     salvageValue?: { original: number; adjusted: number };
-    reservePrice?: { original: number; adjusted: number };
   };
 }
 
@@ -108,15 +107,6 @@ export async function getCaseApprovalEmailTemplate(data: CaseApprovalTemplateDat
           <td style="padding: 10px 0; text-align: right;">
             <span style="text-decoration: line-through; color: #999;">${formatCurrency(priceAdjustments!.salvageValue.original)}</span>
             <span style="margin-left: 10px; color: #28a745; font-weight: 700;">${formatCurrency(priceAdjustments!.salvageValue.adjusted)}</span>
-          </td>
-        </tr>
-        ` : ''}
-        ${priceAdjustments!.reservePrice ? `
-        <tr>
-          <td style="padding: 10px 0; font-weight: 600; color: #856404;">Reserve Price:</td>
-          <td style="padding: 10px 0; text-align: right;">
-            <span style="text-decoration: line-through; color: #999;">${formatCurrency(priceAdjustments!.reservePrice.original)}</span>
-            <span style="margin-left: 10px; color: #28a745; font-weight: 700;">${formatCurrency(priceAdjustments!.reservePrice.adjusted)}</span>
           </td>
         </tr>
         ` : ''}

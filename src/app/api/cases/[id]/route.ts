@@ -19,6 +19,7 @@ import { bids } from '@/lib/db/schema/bids';
 import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, DeviceType } from '@/lib/utils/audit-logger';
 import { sanitizeAiAssessmentWarnings } from '@/features/cases/services/ai-warning-sanitization';
+import { canViewDepartmentCase, getStaffDepartmentAccess } from '@/features/departments/department-access';
 
 export async function GET(
   _request: NextRequest,
@@ -50,7 +51,6 @@ export async function GET(
         assetDetails: salvageCases.assetDetails,
         marketValue: salvageCases.marketValue,
         estimatedSalvageValue: salvageCases.estimatedSalvageValue,
-        reservePrice: salvageCases.reservePrice,
         damageSeverity: salvageCases.damageSeverity,
         aiAssessment: salvageCases.aiAssessment,
         gpsLocation: salvageCases.gpsLocation,
@@ -90,9 +90,21 @@ export async function GET(
     // Managers and admins can view all cases
     const userRole = session.user.role;
     const isAdjuster = userRole === 'claims_adjuster';
-    const isOwner = caseData.createdBy === session.user.id;
+    const canViewAllCases = userRole === 'salvage_manager' ||
+      userRole === 'system_admin' ||
+      userRole === 'finance_officer';
+    const departmentAccess = isAdjuster
+      ? await getStaffDepartmentAccess(session.user.id)
+      : null;
+    const canView = canViewAllCases || Boolean(isAdjuster && departmentAccess && canViewDepartmentCase(
+      userRole,
+      session.user.id,
+      caseData.createdBy,
+      caseData.insuranceClass,
+      departmentAccess
+    ));
 
-    if (isAdjuster && !isOwner) {
+    if (!canView) {
       return NextResponse.json(
         { success: false, error: 'You do not have permission to view this case' },
         { status: 403 }

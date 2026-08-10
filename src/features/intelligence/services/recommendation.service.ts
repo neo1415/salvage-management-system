@@ -46,7 +46,6 @@ export interface RecommendationResult {
     assetType: string;
     assetDetails: RecommendationAssetDetails;
     marketValue: number;
-    reservePrice: number;
     currentBid: number | null;
     watchingCount: number;
     endTime: Date;
@@ -108,7 +107,6 @@ interface ActiveAuctionRow {
   asset_details: RecommendationAssetDetails;
   damage_severity: string | null;
   market_value: string;
-  reserve_price: string | null;
 }
 
 interface HistoricalBidRow {
@@ -444,7 +442,7 @@ export class RecommendationService {
         sc.asset_details,
         sc.damage_severity,
         sc.market_value,
-        sc.reserve_price
+        sc.estimated_salvage_value
       FROM ${auctions} a
       JOIN ${salvageCases} sc ON a.case_id = sc.id
       WHERE a.status IN ('active', 'scheduled')
@@ -764,7 +762,6 @@ export class RecommendationService {
           assetType: auction.asset_type,
           assetDetails: auction.asset_details,
           marketValue: parseFloat(auction.market_value || '0'),
-          reservePrice: parseFloat(auction.reserve_price || '0'),
           currentBid: auction.current_bid ? parseFloat(auction.current_bid) : null,
           watchingCount: auction.watching_count || 0,
           endTime: new Date(auction.end_time),
@@ -1351,7 +1348,7 @@ export class RecommendationService {
         sc.asset_details,
         sc.damage_severity,
         sc.market_value,
-        sc.reserve_price
+        sc.estimated_salvage_value
       FROM ${auctions} a
       JOIN ${salvageCases} sc ON a.case_id = sc.id
       WHERE a.status IN ('active', 'scheduled')
@@ -1397,7 +1394,6 @@ export class RecommendationService {
           assetType,
           assetDetails: auction.asset_details,
           marketValue: parseFloat(String(auction.market_value || '0')),
-          reservePrice: parseFloat(String(auction.reserve_price || '0')),
           currentBid: auction.current_bid ? parseFloat(String(auction.current_bid)) : null,
           watchingCount,
           endTime: new Date(String(auction.end_time)),

@@ -20,6 +20,7 @@ import { User } from '@/hooks/queries/use-users';
 import { DataLoadingState } from '@/components/ui/loading-states';
 
 type ActionModalType = 'suspend' | 'unsuspend' | 'delete' | 'resetPassword' | 'changeRole' | 'view' | null;
+type DepartmentOption = { id: string; code: string; name: string; kind: 'executive' | 'claims' | 'support' };
 
 export default function AdminUserManagement() {
   
@@ -36,6 +37,7 @@ export default function AdminUserManagement() {
   const [totalUsers, setTotalUsers] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   
   // Virtualization states for infinite scroll
   const [isFetching, setIsFetching] = useState(false);
@@ -76,6 +78,8 @@ export default function AdminUserManagement() {
     email: '',
     phone: '',
     branchName: '',
+    departmentId: '',
+    isDepartmentHead: false,
     role: 'claims_adjuster' as 'vendor' | 'claims_adjuster' | 'salvage_manager' | 'finance_officer' | 'system_admin',
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -83,6 +87,13 @@ export default function AdminUserManagement() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetch('/api/admin/departments', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Department list unavailable')))
+      .then((result) => setDepartments(result.departments ?? []))
+      .catch(() => setDepartments([]));
+  }, []);
 
   // Action modal states
   const [actionModal, setActionModal] = useState<ActionModalType>(null);
@@ -210,6 +221,8 @@ export default function AdminUserManagement() {
         email: '',
         phone: '',
         branchName: '',
+        departmentId: '',
+        isDepartmentHead: false,
         role: 'claims_adjuster',
       });
 
@@ -860,6 +873,8 @@ export default function AdminUserManagement() {
                       onChange={(e) => setFormData({
                         ...formData,
                         role: e.target.value as typeof formData.role,
+                        departmentId: '',
+                        isDepartmentHead: false,
                       })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-focus-ring)] focus:border-transparent"
                     >
@@ -870,6 +885,33 @@ export default function AdminUserManagement() {
                       <option value="finance_officer">Finance Officer</option>
                     </select>
                   </div>
+
+                  {formData.role !== 'vendor' && (
+                    <div className="mb-4">
+                      <label htmlFor="departmentId" className="mb-2 block text-sm font-medium text-gray-700">Department or executive designation (Optional)</label>
+                      <select id="departmentId" value={formData.departmentId} onChange={(event) => setFormData({ ...formData, departmentId: event.target.value, isDepartmentHead: false })} className="w-full rounded-lg border border-gray-300 px-4 py-2">
+                        <option value="">Unassigned</option>
+                        {departments
+                          .filter((department) => {
+                            if (department.code === 'managing_director' || department.code === 'executive_director') {
+                              return formData.role === 'system_admin';
+                            }
+                            if (department.code === 'head_of_claims') {
+                              return formData.role === 'claims_adjuster';
+                            }
+                            return true;
+                          })
+                          .map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {formData.role === 'claims_adjuster' && formData.departmentId && departments.find((item) => item.id === formData.departmentId)?.kind === 'claims' && (
+                    <label className="mb-6 flex items-center justify-between gap-4 border border-gray-200 p-3">
+                      <span><span className="block text-sm font-medium text-gray-900">Head of this department</span><span className="block text-xs text-gray-500">Allows a view-only portfolio of cases in the mapped insurance classes.</span></span>
+                      <input type="checkbox" checked={formData.isDepartmentHead} onChange={(event) => setFormData({ ...formData, isDepartmentHead: event.target.checked })} className="h-5 w-5" />
+                    </label>
+                  )}
 
                   {/* Info Box */}
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">

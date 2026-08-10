@@ -14,7 +14,6 @@ export interface PriceOverrides {
   marketValue?: number;
   repairCost?: number;
   salvageValue?: number;
-  reservePrice?: number;
 }
 
 /**
@@ -47,7 +46,7 @@ export interface PriceValidationResult {
  * ```typescript
  * const result = validatePriceOverrides(
  *   { marketValue: 5000000, salvageValue: 3000000 },
- *   { marketValue: 4500000, salvageValue: 2800000, reservePrice: 1960000 }
+ *   { marketValue: 4500000, salvageValue: 2800000 }
  * );
  * 
  * if (!result.isValid) {
@@ -60,7 +59,6 @@ export function validatePriceOverrides(
   aiEstimates: {
     marketValue: number;
     salvageValue: number;
-    reservePrice: number;
   }
 ): PriceValidationResult {
   const errors: string[] = [];
@@ -69,7 +67,6 @@ export function validatePriceOverrides(
   // Determine final values (use override if provided, else AI estimate)
   const marketValue = overrides.marketValue ?? aiEstimates.marketValue;
   const salvageValue = overrides.salvageValue ?? aiEstimates.salvageValue;
-  const reservePrice = overrides.reservePrice ?? aiEstimates.reservePrice;
   
   // Validation Rule 1: Market value must be positive
   if (marketValue <= 0) {
@@ -83,34 +80,15 @@ export function validatePriceOverrides(
     );
   }
   
-  // Validation Rule 3: Reserve price cannot exceed salvage value
-  if (reservePrice > salvageValue) {
-    errors.push(
-      `Reserve price (₦${reservePrice.toLocaleString()}) cannot exceed salvage value (₦${salvageValue.toLocaleString()})`
-    );
-  }
-  
   // Validation Rule 4: Salvage value should be non-negative
   if (salvageValue < 0) {
     errors.push('Salvage value cannot be negative');
-  }
-  
-  // Validation Rule 5: Reserve price should be non-negative
-  if (reservePrice < 0) {
-    errors.push('Reserve price cannot be negative');
   }
   
   // Warning 1: Unusually high salvage value (> 90% of market value)
   if (marketValue > 0 && salvageValue > marketValue * 0.9) {
     warnings.push(
       `⚠️ Salvage value is ${Math.round((salvageValue / marketValue) * 100)}% of market value - please verify this is correct`
-    );
-  }
-  
-  // Warning 2: Unusually low reserve price (< 50% of salvage value)
-  if (salvageValue > 0 && reservePrice < salvageValue * 0.5) {
-    warnings.push(
-      `⚠️ Reserve price is only ${Math.round((reservePrice / salvageValue) * 100)}% of salvage value - this may result in undervaluation`
     );
   }
   

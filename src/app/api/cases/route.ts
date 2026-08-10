@@ -87,6 +87,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (body.assetType === 'vehicle' && !/^[A-HJ-NPR-Z0-9]{17}$/i.test(String(body.assetDetails.vin || '').trim())) {
+      return NextResponse.json(
+        { success: false, error: 'A valid 17-character VIN is required for vehicles' },
+        { status: 400 }
+      );
+    }
+
     const policy = await businessPolicyService.getEffectivePolicy();
     const managerRunsAiAssessment = policy.cases.aiDamageAssessmentRunner === 'salvage_manager';
 
@@ -100,6 +107,12 @@ export async function POST(request: NextRequest) {
     if (!body.photos || !Array.isArray(body.photos)) {
       return NextResponse.json(
         { success: false, error: 'Photos are required' },
+        { status: 400 }
+      );
+    }
+    if (body.photos.length < 5 || body.photos.length > 50) {
+      return NextResponse.json(
+        { success: false, error: 'Upload between 5 and 50 case photos' },
         { status: 400 }
       );
     }
@@ -426,6 +439,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const permittedRoles = new Set([
+      'claims_adjuster',
+      'salvage_manager',
+      'system_admin',
+      'finance_officer',
+    ]);
+    if (!permittedRoles.has(session.user.role)) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
     // Import database dependencies
     const { db, withRetry } = await import('@/lib/db/drizzle');
     const { salvageCases } = await import('@/lib/db/schema/cases');
@@ -433,6 +459,7 @@ export async function GET(request: NextRequest) {
     const { auctions } = await import('@/lib/db/schema/auctions');
     const { payments } = await import('@/lib/db/schema/payments');
     const { eq, desc, and, or, sql } = await import('drizzle-orm');
+    const { getStaffDepartmentAccess, canAccessDepartmentPortfolio } = await import('@/features/departments/department-access');
     const { alias } = await import('drizzle-orm/pg-core');
     const { cache } = await import('@/lib/redis/client');
 
@@ -440,6 +467,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get('status');
     const createdByMe = searchParams.get('createdByMe') === 'true';
+    const departmentPortfolio = searchParams.get('departmentPortfolio') === 'true';
     const search = searchParams.get('search') || '';
     const limit = parseInt(
       searchParams.get('limit') ||
@@ -485,7 +513,6 @@ export async function GET(request: NextRequest) {
         marketValue: salvageCases.marketValue,
         estimatedSalvageValue: salvageCases.estimatedSalvageValue,
         estimatedValue: salvageCases.estimatedSalvageValue,
-        reservePrice: salvageCases.reservePrice,
         damageSeverity: salvageCases.damageSeverity,
         aiAssessment: salvageCases.aiAssessment,
         gpsLocation: salvageCases.gpsLocation,
@@ -521,8 +548,27 @@ export async function GET(request: NextRequest) {
       whereConditions.push(eq(salvageCases.status, status as 'draft' | 'pending_approval' | 'approved' | 'active_auction' | 'sold' | 'cancelled'));
     }
     
-    // Filter by creator if requested
-    if (createdByMe) {
+    // Claims adjusters are always scoped on the server. A mapped department head
+    // may explicitly request the department portfolio; ordinary adjusters cannot.
+    if (session.user.role === 'claims_adjuster') {
+      const departmentAccess = await getStaffDepartmentAccess(session.user.id);
+      const canUsePortfolio = departmentPortfolio && canAccessDepartmentPortfolio(session.user.role, departmentAccess);
+      if (canUsePortfolio && departmentAccess.departmentCode !== 'head_of_claims') {
+        const normalizedClasses = departmentAccess.insuranceClasses
+          .map((insuranceClass) => insuranceClass.trim().toLowerCase())
+          .filter(Boolean);
+
+        whereConditions.push(
+          or(
+            ...normalizedClasses.map(
+              (insuranceClass) => sql`LOWER(COALESCE(${salvageCases.insuranceClass}, '')) = ${insuranceClass}`
+            )
+          )
+        );
+      } else if (!canUsePortfolio) {
+        whereConditions.push(eq(salvageCases.createdBy, session.user.id));
+      }
+    } else if (createdByMe) {
       whereConditions.push(eq(salvageCases.createdBy, session.user.id));
     }
     
@@ -605,7 +651,6 @@ export async function GET(request: NextRequest) {
           marketValue: salvageCases.marketValue,
           estimatedSalvageValue: salvageCases.estimatedSalvageValue,
           estimatedValue: salvageCases.estimatedSalvageValue,
-          reservePrice: salvageCases.reservePrice,
           damageSeverity: salvageCases.damageSeverity,
           aiAssessment: salvageCases.aiAssessment,
           gpsLocation: salvageCases.gpsLocation,

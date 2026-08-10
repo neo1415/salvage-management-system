@@ -19,7 +19,6 @@ import { verify } from 'jsonwebtoken';
 import { db } from '@/lib/db/drizzle';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
-import { configService } from '@/features/auction-deposit/services/config.service';
 import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 // Socket.io event types
@@ -471,12 +470,8 @@ export async function broadcastNewBid<T extends RealtimeBidData>(auctionId: stri
   }
 
   try {
-    // Get system configuration for minimum bid increment
-    const config = await configService.getConfig();
-    
-    // Calculate new minimum bid using configured increment
     const currentBid = Number(bid.amount);
-    const minimumBid = currentBid + config.minimumBidIncrement;
+    const minimumBid = currentBid + 1;
 
     // Get room info for debugging
     const room = socketServer.sockets.adapter.rooms.get(`auction:${auctionId}`);
@@ -485,7 +480,7 @@ export async function broadcastNewBid<T extends RealtimeBidData>(auctionId: stri
     console.log(`📢 Broadcasting to room: auction:${auctionId}`);
     console.log(`   - Clients in room: ${clientCount}`);
     console.log(`   - Bid amount: ₦${currentBid.toLocaleString()}`);
-    console.log(`   - New minimum bid: ₦${minimumBid.toLocaleString()}`);
+    console.log(`   - Next valid bid: ₦${minimumBid.toLocaleString()}`);
     console.log(`   - EVENT NAME: 'auction:new-bid'`);
     console.log(`   - Payload:`, JSON.stringify({
       auctionId,
@@ -499,7 +494,7 @@ export async function broadcastNewBid<T extends RealtimeBidData>(auctionId: stri
       auctionId,
       bid: {
         ...bid,
-        minimumBid, // Include the new minimum bid for realtime updates
+        minimumBid,
       },
     });
 

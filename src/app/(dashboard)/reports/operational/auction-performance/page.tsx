@@ -205,11 +205,9 @@ export default function AuctionPerformancePage() {
                 <ReportSummaryStat label="Success Rate" value={`${reportData.summary?.successRate || 0}%`} />
                 <ReportSummaryStat label="Avg Bids/Auction" value={reportData.summary?.averageBidsPerAuction || 0} />
                 <ReportSummaryStat label="Avg Bidders" value={reportData.summary?.averageUniqueBidders || 0} />
-                <ReportSummaryStat label="Reserve Met Rate" value={`${reportData.summary?.reserveMetRate || 0}%`} />
                 <ReportSummaryStat label="Avg Duration" value={`${reportData.summary?.averageDurationHours || 0}h`} />
                 <ReportSummaryStat label="Total Revenue" value={formatReportCurrency(reportData.summary?.totalRevenue || 0)} />
                 <ReportSummaryStat label="Avg Winning Bid" value={formatReportCurrency(reportData.summary?.averageWinningBid || 0)} />
-                <ReportSummaryStat label="Price Realization" value={`${reportData.summary?.priceRealizationRate || 0}%`} />
                 <ReportSummaryStat label="Unique Vendors" value={reportData.summary?.uniqueVendorsParticipating || 0} />
                 <ReportSummaryStat label="Vendor Engagement" value={`${reportData.summary?.vendorEngagementRate || 0}%`} />
               </ReportSummaryGrid>
@@ -229,7 +227,6 @@ export default function AuctionPerformancePage() {
                         <th className="text-right p-2">Count</th>
                         <th className="text-right p-2">Success Rate</th>
                         <th className="text-right p-2">Avg Bids</th>
-                        <th className="text-right p-2">Reserve Met</th>
                         <th className="text-right p-2">Total Revenue</th>
                         <th className="text-right p-2">Avg Winning Bid</th>
                         <th className="text-right p-2">Competitive</th>
@@ -242,7 +239,6 @@ export default function AuctionPerformancePage() {
                           <td className="text-right p-2">{item.count}</td>
                           <td className="text-right p-2">{item.successRate}%</td>
                           <td className="text-right p-2">{item.averageBids}</td>
-                          <td className="text-right p-2">{item.reserveMetRate}%</td>
                           <td className="text-right p-2">{formatReportCurrency(item.totalRevenue)}</td>
                           <td className="text-right p-2">{formatReportCurrency(item.averageWinningBid)}</td>
                           <td className="text-right p-2">{item.competitiveAuctions}</td>
@@ -359,8 +355,6 @@ export default function AuctionPerformancePage() {
               <ReportSummaryGrid className="mb-6">
                 <ReportSummaryStat label="Total Revenue" value={formatReportCurrency(reportData.financialMetrics?.totalRevenue || 0)} />
                 <ReportSummaryStat label="Avg Winning Bid" value={formatReportCurrency(reportData.financialMetrics?.averageWinningBid || 0)} />
-                <ReportSummaryStat label="Avg Reserve Price" value={formatReportCurrency(reportData.financialMetrics?.averageReservePrice || 0)} />
-                <ReportSummaryStat label="Price Realization" value={`${reportData.financialMetrics?.priceRealizationRate || 0}%`} />
               </ReportSummaryGrid>
               {reportData.financialMetrics?.revenueByAssetType && reportData.financialMetrics.revenueByAssetType.length > 0 && (
                 <div>

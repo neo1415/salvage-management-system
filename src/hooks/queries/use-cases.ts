@@ -36,7 +36,6 @@ export interface Case {
   assetDetails: Record<string, unknown>;
   marketValue: number;
   estimatedSalvageValue: number | null;
-  reservePrice: number | null;
   damageSeverity: 'none' | 'minor' | 'moderate' | 'severe' | null;
   aiAssessment: Record<string, unknown> | null;
   gpsLocation: { latitude: number; longitude: number };

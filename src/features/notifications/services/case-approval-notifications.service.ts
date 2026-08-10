@@ -21,7 +21,6 @@ export interface VendorOutreachContext {
   assetType: string;
   assetDetails?: Record<string, unknown> | null;
   claimReference: string;
-  reservePrice: string;
   locationName: string | null;
   endTime: Date;
   appUrl: string;
@@ -98,7 +97,7 @@ export async function notifyMatchingVendorsOfNewAuction(
 
   await Promise.allSettled(
     realVendors.map(async (vendor) => {
-      const smsMessage = `New auction: ${assetName}. Reserve: ₦${context.reservePrice}. Ends in 5 days. Bid: ${context.appUrl}/vendor/auctions/${context.auctionId}`;
+      const smsMessage = `New auction: ${assetName}. Review the lot and bid before it closes: ${context.appUrl}/vendor/auctions/${context.auctionId}`;
 
       try {
         await smsService.sendSMS({ to: vendor.phone, message: smsMessage });
@@ -112,7 +111,6 @@ export async function notifyMatchingVendorsOfNewAuction(
           auctionId: context.auctionId,
           assetType: context.assetType,
           assetName,
-          reservePrice: parseFloat(context.reservePrice),
           startTime: startLabel,
           endTime: endLabel,
           location: context.locationName ?? 'Configured pickup location',

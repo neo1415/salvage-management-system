@@ -373,6 +373,7 @@ export function sanitizeBusinessPolicy(input: unknown): BusinessPolicy {
       allowedEmailDomains: stringArrayValue(auth.allowedEmailDomains, fallback.auth.allowedEmailDomains),
       staffMfaRequired: booleanValue(auth.staffMfaRequired, fallback.auth.staffMfaRequired),
       vendorMfaRequired: booleanValue(auth.vendorMfaRequired, fallback.auth.vendorMfaRequired),
+      riskBasedMfaEnabled: booleanValue(auth.riskBasedMfaEnabled, fallback.auth.riskBasedMfaEnabled),
       userManagedMfaAllowed: booleanValue(auth.userManagedMfaAllowed, fallback.auth.userManagedMfaAllowed),
     },
     onboarding: {

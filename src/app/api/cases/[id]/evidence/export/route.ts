@@ -66,7 +66,6 @@ export async function GET(
       assetDetails: salvageCases.assetDetails,
       marketValue: salvageCases.marketValue,
       estimatedSalvageValue: salvageCases.estimatedSalvageValue,
-      reservePrice: salvageCases.reservePrice,
       damageSeverity: salvageCases.damageSeverity,
       aiAssessment: salvageCases.aiAssessment,
       gpsLocation: salvageCases.gpsLocation,

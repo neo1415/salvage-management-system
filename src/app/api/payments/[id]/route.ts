@@ -122,7 +122,6 @@ export async function GET(
           assetName,
           assetDetails: payment.case.assetDetails,
           marketValue: payment.case.marketValue,
-          estimatedSalvageValue: payment.case.estimatedSalvageValue,
           locationName: payment.case.locationName,
           photos: payment.case.photos,
         },

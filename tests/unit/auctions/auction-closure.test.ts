@@ -23,7 +23,9 @@ import * as emailService from '@/features/notifications/services/email.service';
 
 // Mock dependencies
 vi.mock('@/lib/db/drizzle', () => ({
+  withRetry: async <T>(operation: () => Promise<T>) => operation(),
   db: {
+    execute: vi.fn().mockResolvedValue([{ acquired: true }]),
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
@@ -33,6 +35,50 @@ vi.mock('@/lib/db/drizzle', () => ({
       },
     },
   },
+}));
+
+vi.mock('@/features/auction-deposit/services/config.service', () => ({
+  configService: {
+    getConfig: vi.fn().mockResolvedValue({
+      documentValidityPeriod: 24,
+      paymentDeadlineAfterSigning: 72,
+    }),
+  },
+}));
+
+vi.mock('@/features/business-policy', () => ({
+  businessPolicyService: {
+    createCurrentPolicySnapshot: vi.fn().mockResolvedValue(undefined),
+  },
+  isBusinessPolicyEnforcementEnabled: vi.fn().mockReturnValue(false),
+  resolveDocumentDeadlineHours: vi.fn().mockReturnValue({ value: 24 }),
+}));
+
+vi.mock('@/features/auctions/services/auction-closure.service', () => ({
+  auctionClosureService: {
+    closeAuction: vi.fn().mockResolvedValue({
+      success: true,
+      winnerId: 'vendor-123',
+      topBiddersCount: 1,
+      unfrozenBiddersCount: 0,
+    }),
+  },
+}));
+
+vi.mock('@/lib/redis/client', () => ({
+  cache: { del: vi.fn().mockResolvedValue(undefined) },
+}));
+
+vi.mock('@/lib/socket/server', () => ({
+  broadcastAuctionClosure: vi.fn().mockResolvedValue(undefined),
+  broadcastAuctionUpdate: vi.fn().mockResolvedValue(undefined),
+  broadcastAuctionClosing: vi.fn().mockResolvedValue(undefined),
+  broadcastDocumentGenerated: vi.fn().mockResolvedValue(undefined),
+  broadcastDocumentGenerationComplete: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@/features/notifications/services/notification.service', () => ({
+  createAuctionWonNotification: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/utils/audit-logger', () => ({
@@ -70,6 +116,15 @@ describe('AuctionClosureService', () => {
   beforeEach(() => {
     service = new AuctionClosureService();
     vi.clearAllMocks();
+    vi.mocked(db.execute).mockResolvedValue([{ acquired: true }] as never);
+    const serviceInternals = service as unknown as {
+      generateWinnerDocuments: (
+        auctionId: string,
+        vendorId: string,
+        userId: string
+      ) => Promise<void>;
+    };
+    vi.spyOn(serviceInternals, 'generateWinnerDocuments').mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -171,6 +226,12 @@ describe('AuctionClosureService', () => {
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             limit: vi.fn().mockResolvedValue([mockCase]),
+          }),
+        }),
+      }).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
           }),
         }),
       });
@@ -381,6 +442,12 @@ describe('AuctionClosureService', () => {
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             limit: vi.fn().mockResolvedValue([mockCase]),
+          }),
+        }),
+      }).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
           }),
         }),
       });

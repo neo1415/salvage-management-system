@@ -851,7 +851,6 @@ export interface EnhancedDamageAssessment {
   marketValue: number;
   estimatedRepairCost: number;
   estimatedSalvageValue: number;
-  reservePrice: number;
   
   // NEW: Damage breakdown and total loss indicator (Requirement 6.3)
   damageBreakdown?: Array<{
@@ -1320,8 +1319,6 @@ async function assessDamageEnhancedCore(params: {
     }
   }
   
-  const reservePrice = salvageValue * valuationPolicy.reservePriceRatio;
-  
   // Step 5: Determine severity
   let damageSeverity = determineSeverity(damagePercentage);
   
@@ -1348,11 +1345,9 @@ async function assessDamageEnhancedCore(params: {
   const warnings = validateAssessment({
     marketValue,
     salvageValue,
-    reservePrice,
     damagePercentage,
     damageSeverity,
     confidence: confidence.overall,
-    reservePriceRatio: valuationPolicy.reservePriceRatio,
     suppressSeverityPercentageMismatch:
       isLuxuryJewelryValuation(itemInfo) || isMultiItemJewelryValuation(itemInfo),
   });
@@ -1427,7 +1422,6 @@ async function assessDamageEnhancedCore(params: {
       minimumMarketSourceCount: valuationPolicy.minimumMarketSourceCount,
       sourceDiversityRequired: valuationPolicy.sourceDiversityRequired,
       maxAllowedPriceSpreadPercent: valuationPolicy.maxAllowedPriceSpreadPercent,
-      reservePriceRatio: valuationPolicy.reservePriceRatio,
       totalLossSalvageCapRatio: valuationPolicy.totalLossSalvageCapRatio,
       repairCostMultipliers: valuationPolicy.repairCostMultipliers,
     },
@@ -1445,7 +1439,6 @@ async function assessDamageEnhancedCore(params: {
     marketValue: Math.round(marketValue),
     estimatedRepairCost: Math.round(repairCost),
     estimatedSalvageValue: Math.round(salvageValue),
-    reservePrice: Math.round(reservePrice),
     damageBreakdown, // NEW: Detailed breakdown (Requirement 6.3)
     isTotalLoss, // NEW: Total loss indicator (Requirement 6.3)
     priceSource, // NEW: Indicates source (Requirement 6.3)
@@ -3340,10 +3333,12 @@ function calculateUniversalConfidence(
 function validateAssessment(params: {
   marketValue: number;
   salvageValue: number;
-  reservePrice: number;
+  /** @deprecated Compatibility-only input; active assessments do not supply it. */
+  reservePrice?: number;
   damagePercentage: number;
   damageSeverity: string;
   confidence: number;
+  /** @deprecated Compatibility-only input; active assessments do not supply it. */
   reservePriceRatio?: number;
   suppressSeverityPercentageMismatch?: boolean;
 }): string[] {
@@ -3361,7 +3356,7 @@ function validateAssessment(params: {
   
   // Reserve price validation
   const expectedReserve = params.salvageValue * (params.reservePriceRatio ?? 0.7);
-  if (Math.abs(params.reservePrice - expectedReserve) > expectedReserve * 0.2) {
+  if (typeof params.reservePrice === 'number' && Math.abs(params.reservePrice - expectedReserve) > expectedReserve * 0.2) {
     warnings.push('⚠️ Reserve price calculation may need review');
   }
   

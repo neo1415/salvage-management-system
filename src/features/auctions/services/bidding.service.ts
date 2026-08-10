@@ -24,7 +24,7 @@ import { getAppUrl } from '@/features/notifications/templates/email-urls';
 import { autoExtendService } from './auto-extend.service';
 import { escrowService } from '@/features/payments/services/escrow.service';
 import { createOutbidNotification } from '@/features/notifications/services/notification.service';
-import { cache } from '@/lib/redis/client';
+import { invalidateAuctionDetailsCache } from './auction-details-cache';
 import { depositCalculatorService } from './deposit-calculator.service';
 import { configService, SystemConfiguration } from '@/features/auction-deposit/services/config.service';
 import {
@@ -86,7 +86,7 @@ export class BiddingService {
    * Place a bid on an auction
    * 
    * Requirements:
-   * - Validate bid amount > current bid + minimum increment
+   * - Validate an opening bid is positive, or a later bid is above the current bid
    * - Validate vendor tier vs auction value (Tier 1 ≤₦500k, Tier 2 unlimited)
    * - Validate auction is in 'active' or 'extended' status
    * - Verify OTP
@@ -199,7 +199,6 @@ export class BiddingService {
       const validation = await this.validateBid(
         data.amount,
         auction.currentBid ? Number(auction.currentBid) : null,
-        Number(auction.minimumIncrement),
         auction.status,
         vendor.tier,
         data.otp ?? '',
@@ -209,7 +208,8 @@ export class BiddingService {
         config,
         Boolean(vendor.bvnVerifiedAt),
         Boolean(vendor.registrationFeePaid),
-        otpRequired
+        otpRequired,
+        policy.escrow.depositSystemEnabled
       );
 
       await this.logBidPolicyDecisionShadow({
@@ -276,13 +276,12 @@ export class BiddingService {
           // Re-validate bid amount against locked auction state
           // This prevents race condition where two bids arrive simultaneously
           const currentBidAmount = lockedAuction.currentBid ? Number(lockedAuction.currentBid) : null;
-          // ✅ FIX: Use config.minimumBidIncrement instead of hardcoded 20000
-          const minimumBid = currentBidAmount 
-            ? currentBidAmount + config.minimumBidIncrement 
-            : Number(lockedAuction.minimumIncrement);
-          
-          if (data.amount < minimumBid) {
-            throw new Error(`Bid too low. Minimum bid: ₦${minimumBid.toLocaleString()}`);
+          if (currentBidAmount !== null && data.amount <= currentBidAmount) {
+            throw new Error('A new bid must be higher than the current bid');
+          }
+
+          if (currentBidAmount === null && data.amount <= 0) {
+            throw new Error('The opening bid must be greater than zero');
           }
 
           // Validate auction status again (could have changed)
@@ -324,9 +323,10 @@ export class BiddingService {
       }
 
       // Calculate deposit amount (Requirement 1.1: max(bid × rate, floor))
-      let depositAmount: number;
-      let incrementalDeposit: number;
-      try {
+      let depositAmount = 0;
+      let incrementalDeposit = 0;
+      if (policy.escrow.depositSystemEnabled) {
+        try {
         const config = await configService.getConfig();
         // Convert percentage to decimal (10% → 0.10)
         const depositRateDecimal = config.depositRate / 100;
@@ -364,6 +364,7 @@ export class BiddingService {
           depositAmount = Math.max(Math.ceil(data.amount * 0.10), 100000);
           incrementalDeposit = depositAmount;
           console.log(`⚠️ Using hardcoded fallback deposit calculation: ₦${depositAmount.toLocaleString()}`);
+        }
         }
       }
 
@@ -403,7 +404,13 @@ export class BiddingService {
           console.log(`   New Bid: ₦${data.amount.toLocaleString()}`);
           console.log(`   Previous Bid: ₦${existingBid ? parseFloat(existingBid.amount).toLocaleString() : 'N/A'}`);
           console.log(`   Total Deposit Required: ₦${depositAmount.toLocaleString()}`);
-          console.log(`   Reason: Bid increase within minimum floor (₦100k already frozen)\n`);
+          console.log(
+            `   Reason: ${
+              policy.escrow.depositSystemEnabled
+                ? 'No additional deposit is required for this bid'
+                : 'Auction deposits are disabled by business policy'
+            }\n`
+          );
         }
       } catch (error) {
         console.error('❌ FAILED to freeze deposit:', error);
@@ -428,7 +435,7 @@ export class BiddingService {
             );
         });
 
-        await cache.del(`auction:details:${data.auctionId}`);
+        await invalidateAuctionDetailsCache(data.auctionId);
 
         return {
           success: false,
@@ -501,9 +508,8 @@ export class BiddingService {
 
       // SCALABILITY: Invalidate cache for this auction
       // This ensures users see the latest bid immediately
-      const detailsCacheKey = `auction:details:${data.auctionId}`;
-      await cache.del(detailsCacheKey);
-      console.log(`✅ Cache invalidated: ${detailsCacheKey}`);
+      await invalidateAuctionDetailsCache(data.auctionId);
+      console.log(`✅ Auction details caches invalidated: ${data.auctionId}`);
 
       // Create audit log entry
       await logAction({
@@ -669,7 +675,6 @@ export class BiddingService {
    * 
    * @param bidAmount - Bid amount
    * @param currentBid - Current highest bid (null if first bid)
-   * @param minimumIncrement - Minimum bid increment (₦20,000)
    * @param auctionStatus - Auction status
    * @param vendorTier - Vendor tier
    * @param otp - OTP code
@@ -682,7 +687,6 @@ export class BiddingService {
   async validateBid(
     bidAmount: number,
     currentBid: number | null,
-    minimumIncrement: number,
     auctionStatus: string,
     vendorTier: string,
     otp: string,
@@ -692,14 +696,15 @@ export class BiddingService {
     config: SystemConfiguration,
     bvnVerified = true,
     registrationFeePaid = false,
-    otpRequired = true
+    otpRequired = true,
+    depositSystemEnabled = true
   ): Promise<ValidationResult> {
     const errors: string[] = [];
 
-    // ✅ FIX: Use config.minimumBidIncrement instead of hardcoded 20000
-    const minimumBid = currentBid ? currentBid + config.minimumBidIncrement : minimumIncrement;
-    if (bidAmount < minimumBid) {
-      errors.push(`Minimum bid: ₦${minimumBid.toLocaleString()}`);
+    if (currentBid !== null && bidAmount <= currentBid) {
+      errors.push('A new bid must be higher than the current bid');
+    } else if (currentBid === null && bidAmount <= 0) {
+      errors.push('The opening bid must be greater than zero');
     }
 
     // Validate auction status
@@ -731,8 +736,9 @@ export class BiddingService {
     }
 
     // Check for existing bid from this vendor (for incremental deposit calculation)
-    let requiredDeposit: number;
-    try {
+    let requiredDeposit = 0;
+    if (depositSystemEnabled) {
+      try {
       const config = await configService.getConfig();
       const depositRateDecimal = config.depositRate / 100;
       
@@ -786,10 +792,10 @@ export class BiddingService {
         // Ultimate fallback if even config fetch fails
         requiredDeposit = Math.max(Math.ceil(bidAmount * 0.10), 100000);
       }
-    }
+      }
 
-    // Check wallet balance - vendor must have sufficient funds for INCREMENTAL DEPOSIT
-    try {
+      // Check wallet balance - vendor must have sufficient funds for INCREMENTAL DEPOSIT
+      try {
       const walletBalance = await escrowService.getBalance(vendorId);
       console.log(`   Available Balance: ₦${walletBalance.availableBalance.toLocaleString()}`);
       console.log(`   Balance Check: ${walletBalance.availableBalance >= requiredDeposit ? '✅ PASS' : '❌ FAIL'}\n`);
@@ -802,6 +808,7 @@ export class BiddingService {
     } catch (error) {
       console.error('Error checking wallet balance:', error);
       errors.push('Unable to verify wallet balance. Please try again.');
+      }
     }
 
     // Verify OTP when required by auction policy

@@ -66,7 +66,6 @@ interface SimilarAuction {
   damageSeverity: string;
   marketValue: number;
   estimatedSalvageValue: number;
-  reservePrice: number;
   endTime: Date;
 }
 
@@ -104,7 +103,6 @@ interface AuctionData {
   auctionId: string;
   caseId: string;
   currentBid: string | null;
-  reservePrice: string | null;
   watchingCount: number;
   extensionCount: number;
   status: typeof auctions.$inferSelect.status;
@@ -126,7 +124,6 @@ interface SimilarAuctionRow {
   damage_severity: string | null;
   market_value: string;
   estimated_salvage_value: string | null;
-  reserve_price: string | null;
   end_time: string | Date;
 }
 
@@ -237,7 +234,6 @@ export class PredictionService {
         auctionId: auctions.id,
         caseId: auctions.caseId,
         currentBid: auctions.currentBid,
-        reservePrice: salvageCases.reservePrice,
         watchingCount: auctions.watchingCount,
         extensionCount: auctions.extensionCount,
         status: auctions.status,
@@ -338,7 +334,6 @@ export class PredictionService {
     const { lowerBound, upperBound } = this.calculateConfidenceIntervals(
       adjustedPrice,
       confidenceScore,
-      Number(auctionData.reservePrice || 0),
       geoAdjustment.priceVariance
     );
 
@@ -418,7 +413,6 @@ export class PredictionService {
           sc.damage_severity,
           sc.market_value,
           sc.estimated_salvage_value,
-          sc.reserve_price,
           a.end_time,
           COUNT(b.id) AS bid_count,
           ${this.buildSimilarityScoreSQL(assetType, targetMake, targetModel, targetYear, targetDamage, targetMarketValue, targetColor, targetTrim)} AS similarity_score,
@@ -454,7 +448,6 @@ export class PredictionService {
         damageSeverity: row.damage_severity ?? 'none',
         marketValue: parseFloat(row.market_value),
         estimatedSalvageValue: parseFloat(row.estimated_salvage_value || '0'),
-        reservePrice: parseFloat(row.reserve_price || '0'),
         endTime: new Date(row.end_time),
       }));
   }
@@ -658,20 +651,11 @@ export class PredictionService {
 
   private calculateCaseValueAnchor(auctionData: AuctionData): number {
     const salvageValue = Number(auctionData.estimatedSalvageValue || 0);
-    const reservePrice = Number(auctionData.reservePrice || 0);
     const marketValue = Number(auctionData.marketValue || 0);
     const damageSeverity = auctionData.damageSeverity;
 
-    if (salvageValue > 0 && reservePrice > 0) {
-      return (salvageValue * 0.65) + (reservePrice * 0.35);
-    }
-
     if (salvageValue > 0) {
       return salvageValue;
-    }
-
-    if (reservePrice > 0) {
-      return reservePrice * 1.12;
     }
 
     if (marketValue > 0) {
@@ -914,7 +898,6 @@ export class PredictionService {
   private calculateConfidenceIntervals(
     predictedPrice: number,
     confidenceScore: number,
-    reservePrice: number | null,
     geographicVariance: number = 0
   ): { lowerBound: number; upperBound: number } {
     // Calculate interval width based on confidence
@@ -928,12 +911,6 @@ export class PredictionService {
 
     let lowerBound = predictedPrice * (1 - intervalFactor);
     let upperBound = predictedPrice * (1 + intervalFactor);
-
-    // Reserve is a seller threshold, not proof of likely bidder demand.
-    // Keep it as upper-side context so low-demand auctions do not get inflated.
-    if (reservePrice && upperBound < reservePrice) {
-      upperBound = reservePrice;
-    }
 
     return { lowerBound, upperBound };
   }
@@ -956,7 +933,6 @@ export class PredictionService {
   ): Promise<PredictionResult> {
     const estimatedSalvageValue = Number(auctionData.estimatedSalvageValue || 0);
     const marketValue = Number(auctionData.marketValue || 0);
-    const reservePrice = Number(auctionData.reservePrice || 0);
     const damageSeverity = auctionData.damageSeverity ?? 'none';
 
     let predictedPrice: number;
@@ -975,12 +951,6 @@ export class PredictionService {
       predictedPrice = marketValue * (1 - damageMultiplier);
       method = 'market_value_calc';
       confidenceScore = 0.20;
-    }
-    // Last resort: use reserve price
-    else if (reservePrice && reservePrice > 0) {
-      predictedPrice = reservePrice * 1.15;
-      method = 'no_prediction';
-      confidenceScore = 0.15;
     }
     else {
       throw new Error('Insufficient data for price prediction');
@@ -1003,13 +973,6 @@ export class PredictionService {
       }
     }
     
-    // Handle high reserve price without inflating the expected bidder outcome.
-    if (reservePrice && reservePrice > predictedPrice) {
-      upperBound = Math.max(upperBound, reservePrice);
-      confidenceScore *= 0.6;
-      warnings.push('Reserve price exceeds model estimate - auction may need stronger demand to clear');
-    }
-
     // Handle no bids scenario
     if (!auctionData.currentBid || Number(auctionData.currentBid) === 0) {
       warnings.push('No bids placed yet - prediction may change significantly');

@@ -9,6 +9,7 @@ import { DashboardTopBar } from '@/components/layout/dashboard-top-bar';
 import { OfflineIndicator } from '@/components/pwa/offline-indicator';
 import { SyncProgressIndicator } from '@/components/ui/sync-progress-indicator';
 import { Loader2 } from 'lucide-react';
+import { MdEarlyCloseBanner } from '@/components/auctions/md-early-close-banner';
 import { RoleMobileNav } from '@/components/layout/role-mobile-nav';
 import { DashboardRouteGuard } from '@/components/layout/dashboard-route-guard';
 import { isResolvedOnboardingTarget } from '@/lib/auth/vendor-onboarding-paths';
@@ -99,7 +100,10 @@ export function VendorBvnShell({ children }: { children: ReactNode }) {
       </div>
       <OfflineIndicator />
       <main className="fixed inset-0 lg:left-64 top-16 lg:top-16 overflow-y-auto pb-16 lg:pb-0">
-        <div className="p-4 lg:p-8 pb-6">{children}</div>
+        <div className="p-4 lg:p-8 pb-6">
+          <MdEarlyCloseBanner />
+          {children}
+        </div>
       </main>
       <RoleMobileNav />
       <SyncProgressIndicator />

@@ -136,7 +136,7 @@ export class RecommendationGenerationService {
       .filter(Boolean);
     
     const prices = interactedAuctions
-      .map(a => parseFloat(a.auction.currentBid || a.caseData.reservePrice || '0'))
+      .map(a => parseFloat(a.auction.currentBid || a.caseData.estimatedSalvageValue || '0'))
       .filter(p => p > 0);
     
     const conditions = interactedAuctions
@@ -165,7 +165,7 @@ export class RecommendationGenerationService {
     }
     
     // Price range match (30 points)
-    const price = parseFloat(auction.currentBid || caseData.reservePrice || '0');
+    const price = parseFloat(auction.currentBid || caseData.estimatedSalvageValue || '0');
     if (price >= preferences.minPrice && price <= preferences.maxPrice) {
       score += 30;
     } else if (price < preferences.minPrice) {
@@ -202,7 +202,7 @@ export class RecommendationGenerationService {
       reasons.push(`Matches your interest in ${caseData.assetType}s`);
     }
     
-    const price = parseFloat(auction.currentBid || caseData.reservePrice || '0');
+    const price = parseFloat(auction.currentBid || caseData.estimatedSalvageValue || '0');
     if (price < preferences.minPrice) {
       reasons.push('Below your usual price range - great deal!');
     } else if (price >= preferences.minPrice && price <= preferences.maxPrice) {

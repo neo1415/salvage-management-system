@@ -69,7 +69,7 @@ export class AuctionService {
    * Requirements:
    * - Set start time = now
    * - Set end time = now + 5 days
-   * - Set minimum increment = ₦10,000
+   * - Leave the legacy minimum-increment column at zero
    * - Set status = 'active'
    * - Notify matching vendors via SMS + Email + Push
    * - Create audit log entry
@@ -133,7 +133,7 @@ export class AuctionService {
           endTime,
           originalEndTime: endTime,
           extensionCount: 0,
-          minimumIncrement: '10000.00', // ₦10,000
+          minimumIncrement: '0.00', // Legacy column; bid increments are not enforced.
           status: 'active',
           watchingCount: 0,
         })
@@ -269,7 +269,7 @@ export class AuctionService {
       const assetName = this.formatAssetName(salvageCase);
 
       // Send SMS notification
-      const smsMessage = `New auction alert! ${assetName} available for bidding. Reserve price: ₦${Number(salvageCase.reservePrice).toLocaleString()}. Auction ends in 5 days. View now: ${auctionUrl}`;
+      const smsMessage = `New auction alert: ${assetName} is available for bidding. Review the lot: ${auctionUrl}`;
       
       await smsService.sendSMS({
         to: vendor.phone,
@@ -329,9 +329,6 @@ export class AuctionService {
     auctionUrl: string,
     branding: EmailBranding
   ): string {
-    const reservePrice = Number(salvageCase.reservePrice).toLocaleString();
-    const estimatedValue = Number(salvageCase.estimatedSalvageValue).toLocaleString();
-    
     return `
       <!DOCTYPE html>
       <html lang="en">
@@ -435,16 +432,6 @@ export class AuctionService {
                 <div class="detail-row">
                   <span class="detail-label">Asset Type:</span>
                   <span class="detail-value">${this.escapeHtml(salvageCase.assetType.toUpperCase())}</span>
-                </div>
-                
-                <div class="detail-row">
-                  <span class="detail-label">Reserve Price:</span>
-                  <span class="detail-value">₦${reservePrice}</span>
-                </div>
-                
-                <div class="detail-row">
-                  <span class="detail-label">Estimated Value:</span>
-                  <span class="detail-value">₦${estimatedValue}</span>
                 </div>
                 
                 <div class="detail-row">

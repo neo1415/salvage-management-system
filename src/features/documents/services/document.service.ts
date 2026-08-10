@@ -654,9 +654,9 @@ export async function signDocument(
     // CRITICAL FIX: Invalidate auction cache IMMEDIATELY after document signing
     // This ensures UI gets fresh data even if not all documents are signed yet
     try {
-      const { cache } = await import('@/lib/redis/client');
-      const cacheKey = `auction:details:${signedDoc.auctionId}`;
-      await cache.del(cacheKey);
+      const { invalidateAuctionDetailsCache } = await import('@/features/auctions/services/auction-details-cache');
+      const cacheKey = signedDoc.auctionId;
+      await invalidateAuctionDetailsCache(cacheKey);
       console.log(`✅ Invalidated auction details cache after document signing: ${cacheKey}`);
     } catch (cacheError) {
       console.error(`❌ Failed to invalidate auction details cache:`, cacheError);
@@ -764,9 +764,9 @@ export async function signDocument(
 
           // CRITICAL FIX: Invalidate auction details cache to prevent stale data
           try {
-            const { cache } = await import('@/lib/redis/client');
-            const cacheKey = `auction:details:${signedDoc.auctionId}`;
-            await cache.del(cacheKey);
+            const { invalidateAuctionDetailsCache } = await import('@/features/auctions/services/auction-details-cache');
+            const cacheKey = signedDoc.auctionId;
+            await invalidateAuctionDetailsCache(cacheKey);
             console.log(`✅ Invalidated auction details cache: ${cacheKey}`);
           } catch (cacheError) {
             console.error(`❌ Failed to invalidate auction details cache:`, cacheError);

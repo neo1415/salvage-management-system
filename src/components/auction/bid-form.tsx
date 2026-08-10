@@ -30,7 +30,7 @@ import { useVendorOnboardingStatus } from '@/hooks/use-vendor-onboarding-status'
 interface BidFormProps {
   auctionId: string;
   currentBid: number | null;
-  minimumBid: number; // This is the actual minimum bid amount (reserve price or current bid + ₦20,000)
+  minimumBid: number;
   assetName: string;
   isOpen: boolean;
   onClose: () => void;
@@ -41,7 +41,7 @@ interface BidFormProps {
 export function BidForm({
   auctionId,
   currentBid,
-  minimumBid, // This is the actual minimum bid amount (reserve price or current bid + ₦20,000)
+  minimumBid,
   assetName,
   isOpen,
   onClose,
@@ -74,7 +74,6 @@ export function BidForm({
     },
   });
 
-  // Calculate minimum bid (minimumBid is the actual minimum bid amount)
   const minimumBidAmount = minimumBid;
 
   // Reset form when modal opens
@@ -124,7 +123,9 @@ export function BidForm({
     }
 
     if (numAmount < minimumBidAmount) {
-      return `Minimum bid: ₦${minimumBidAmount.toLocaleString()}`;
+      return currentBid !== null && currentBid > 0
+        ? `Enter an amount above ₦${currentBid.toLocaleString()}`
+        : 'Enter a positive bid amount';
     }
 
     // Check tier limits
@@ -134,7 +135,7 @@ export function BidForm({
     }
 
     return null;
-  }, [minimumBidAmount, getTierLimit]);
+  }, [currentBid, minimumBidAmount, getTierLimit]);
 
   // Handle bid amount change with real-time validation
   const handleBidAmountChange = (value: string) => {
@@ -397,7 +398,7 @@ export function BidForm({
                 </span>
               </div>
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-600">Minimum Bid:</span>
+                <span className="text-sm text-gray-600">Next Valid Bid:</span>
                 <span className="text-lg font-bold text-[var(--brand-primary)]">
                   ₦{minimumBidAmount.toLocaleString()}
                 </span>

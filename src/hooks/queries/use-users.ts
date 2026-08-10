@@ -19,6 +19,11 @@ export interface User {
   phone: string;
   fullName: string;
   branchName: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  departmentCode: string | null;
+  departmentKind: 'executive' | 'claims' | 'support' | null;
+  isDepartmentHead: boolean;
   role: string;
   status: string;
   /** KYC-derived status for vendors when users.status is stale */

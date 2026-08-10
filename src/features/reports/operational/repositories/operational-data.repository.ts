@@ -30,7 +30,6 @@ export interface CaseProcessingData {
   adjusterName: string;
   marketValue: string;
   estimatedSalvageValue: string | null;
-  reservePrice: string | null;
   possessingVendorId: string | null;
   possessingVendorName: string | null;
   pickedUpAt: Date | null;
@@ -47,7 +46,6 @@ export interface AuctionPerformanceData {
   branchName: string;
   status: string;
   currentBid: string;
-  reservePrice: string;
   bidCount: number;
   uniqueBidders: number;
   startTime: Date;
@@ -55,7 +53,6 @@ export interface AuctionPerformanceData {
   closedAt: Date | null;
   winnerId: string | null;
   durationHours: number;
-  reserveMet: boolean;
   winningBid: string | null;
   bidderIds: string[];
   averageBidIncrement: number;
@@ -120,7 +117,6 @@ export class OperationalDataRepository {
         u.full_name as adjuster_name,
         sc.market_value,
         sc.estimated_salvage_value,
-        sc.reserve_price,
         a.id as auction_id,
         a.status as auction_status,
         a.end_time as auction_end_time,
@@ -201,7 +197,6 @@ export class OperationalDataRepository {
         adjusterName: row.adjuster_name || 'Unknown',
         marketValue: row.market_value || '0',
         estimatedSalvageValue: row.estimated_salvage_value,
-        reservePrice: row.reserve_price,
         possessingVendorId: row.pickup_confirmed_admin ? row.possessing_vendor_id : null,
         possessingVendorName: row.pickup_confirmed_admin ? row.possessing_vendor_name : null,
         pickedUpAt: row.pickup_confirmed_admin_at ? new Date(row.pickup_confirmed_admin_at) : null,
@@ -242,7 +237,6 @@ export class OperationalDataRepository {
         COALESCE(sc.branch_name, 'Unassigned') as branch_name,
         a.status as auction_status,
         a.current_bid,
-        sc.reserve_price,
         a.start_time,
         a.end_time,
         a.updated_at as closed_at,
@@ -396,10 +390,6 @@ export class OperationalDataRepository {
         : endTime.getTime() - startTime.getTime();
       const durationHours = Math.round((durationMs / (1000 * 60 * 60)) * 100) / 100;
 
-      const currentBid = parseFloat(row.current_bid || '0');
-      const reservePrice = parseFloat(row.reserve_price || '0');
-      const reserveMet = currentBid >= reservePrice;
-
       // FIX: Winning bid comes from verified payment, not currentBid
       const winningBid = row.winning_bid || null;
 
@@ -442,7 +432,6 @@ export class OperationalDataRepository {
         branchName: row.branch_name || 'Unassigned',
         status: displayStatus,
         currentBid: row.current_bid || '0',
-        reservePrice: row.reserve_price || '0',
         bidCount: data.count,
         uniqueBidders: data.uniqueBidders,
         startTime,
@@ -450,7 +439,6 @@ export class OperationalDataRepository {
         closedAt,
         winnerId: row.current_bidder,
         durationHours,
-        reserveMet,
         winningBid,
         bidderIds: data.bidderIds,
         averageBidIncrement: Math.round(data.avgIncrement),

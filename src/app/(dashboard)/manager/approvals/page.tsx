@@ -78,7 +78,6 @@ interface CaseData {
   assetDetails: Record<string, string | number | undefined>;
   marketValue: string;
   estimatedSalvageValue: string;
-  reservePrice: string;
   damageSeverity: 'minor' | 'moderate' | 'severe';
   aiAssessment: {
     labels: string[];
@@ -199,7 +198,6 @@ const CURRENCY_DETAIL_KEYS = new Set([
   'claimsPaid',
   'assetValue',
   'insuredValue',
-  'reservePrice',
   'estimatedSalvageValue',
 ]);
 
@@ -503,7 +501,6 @@ export default function ApprovalsPage() {
           damageSeverity: payload.data?.damageSeverity || (casePayload.data as CaseData).damageSeverity,
           marketValue: String(payload.data?.marketValue ?? (casePayload.data as CaseData).marketValue),
           estimatedSalvageValue: String(payload.data?.estimatedSalvageValue ?? (casePayload.data as CaseData).estimatedSalvageValue),
-          reservePrice: String(payload.data?.reservePrice ?? (casePayload.data as CaseData).reservePrice),
           aiAssessment: freshAiAssessment || (casePayload.data as CaseData).aiAssessment || selectedCase.aiAssessment,
         });
       } else if (payload.data?.aiAssessment) {
@@ -512,7 +509,6 @@ export default function ApprovalsPage() {
           damageSeverity: payload.data.damageSeverity || selectedCase.damageSeverity,
           marketValue: String(payload.data.marketValue ?? selectedCase.marketValue),
           estimatedSalvageValue: String(payload.data.estimatedSalvageValue ?? selectedCase.estimatedSalvageValue),
-          reservePrice: String(payload.data.reservePrice ?? selectedCase.reservePrice),
           aiAssessment: payload.data.aiAssessment,
         });
       }
@@ -651,7 +647,6 @@ export default function ApprovalsPage() {
     const result = validatePrices(priceOverrides, {
       marketValue: parseFloat(selectedCase.marketValue),
       salvageValue: parseFloat(selectedCase.estimatedSalvageValue),
-      reservePrice: parseFloat(selectedCase.reservePrice),
     });
     setValidationErrors(result.errors);
     setValidationWarnings(result.warnings);
@@ -701,7 +696,6 @@ export default function ApprovalsPage() {
       {
         marketValue: parseFloat(selectedCase.marketValue),
         salvageValue: parseFloat(selectedCase.estimatedSalvageValue),
-        reservePrice: parseFloat(selectedCase.reservePrice),
       }
     );
     
@@ -780,7 +774,6 @@ export default function ApprovalsPage() {
         {
           marketValue: parseFloat(selectedCase.marketValue),
           salvageValue: parseFloat(selectedCase.estimatedSalvageValue),
-          reservePrice: parseFloat(selectedCase.reservePrice),
         }
       );
       
@@ -986,7 +979,6 @@ export default function ApprovalsPage() {
     const vehicleCondition = getVehicleCondition(selectedCase);
     const marketValue = parseFiniteNumber(selectedCase.marketValue);
     const salvageValue = parseFiniteNumber(selectedCase.estimatedSalvageValue);
-    const reservePrice = parseFiniteNumber(selectedCase.reservePrice);
     const canRunManagerAnalysis = managerRunsAiAssessment && selectedCase.status === 'pending_approval';
     const displayDamageLabels = getDisplayableDamageLabels(selectedCase.aiAssessment?.labels);
     const displayDamagedParts = normalizeDamagedParts(selectedCase.aiAssessment);
@@ -1053,12 +1045,6 @@ export default function ApprovalsPage() {
                 <p className="text-gray-600">Estimated Salvage Value</p>
                 <p className="font-medium">
                   {formatPendingCurrency(salvageValue)}
-                </p>
-              </div>
-              <div>
-                <p className="text-gray-600">Reserve Price</p>
-                <p className="font-medium">
-                  {formatPendingCurrency(reservePrice)}
                 </p>
               </div>
             </div>
@@ -1364,15 +1350,6 @@ export default function ApprovalsPage() {
                 isAnalyzing={isRunningManagerAi}
               />
               
-              <PriceField
-                label="Reserve Price"
-                aiValue={reservePrice}
-                overrideValue={priceOverrides.reservePrice}
-                isEditMode={isEditMode}
-                onChange={(value) => handlePriceChange('reservePrice', value)}
-                pendingLabel="Pending Analysis"
-                isAnalyzing={isRunningManagerAi}
-              />
             </div>
             
             {/* Comment Field (shown in edit mode with overrides) */}

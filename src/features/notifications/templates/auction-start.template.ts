@@ -1,6 +1,5 @@
 /**
- * Auction Start Email Template
- * Used for notifying vendors when a new auction matching their interests starts
+ * Vendor notification for a newly opened auction.
  */
 
 import { getEmailBranding, brandTeamName } from './email-branding';
@@ -11,7 +10,6 @@ export interface AuctionStartTemplateData {
   auctionId: string;
   assetType: string;
   assetName: string;
-  reservePrice: number;
   startTime: string;
   endTime: string;
   location: string;
@@ -19,72 +17,32 @@ export interface AuctionStartTemplateData {
 }
 
 export async function getAuctionStartEmailTemplate(data: AuctionStartTemplateData): Promise<string> {
-  const { vendorName, auctionId, assetType, assetName, reservePrice, startTime, endTime, location, appUrl } = data;
+  const { vendorName, auctionId, assetType, assetName, startTime, endTime, location, appUrl } = data;
   const branding = await getEmailBranding();
-  
   const content = `
     <p><strong>Dear ${vendorName},</strong></p>
-    
-    <p>Great news! A new auction matching your interests has just started. Don't miss this opportunity to bid on a quality salvage item.</p>
-    
-    <div style="background: ${branding.accentColor}; color: ${branding.primaryColor}; padding: 25px; text-align: center; border-radius: 8px; margin: 25px 0; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-      <h2 style="margin: 0 0 10px 0; font-size: 28px; font-weight: 700;">${assetName}</h2>
-      <p style="margin: 5px 0; font-size: 18px; font-weight: 600;">Starting Price: ₦${reservePrice.toLocaleString()}</p>
+    <p>A new auction matching your interests is now available. Review the lot evidence before placing a bid.</p>
+    <div style="background: ${branding.accentColor}; color: ${branding.primaryColor}; padding: 25px; text-align: center; border-radius: 8px; margin: 25px 0;">
+      <h2 style="margin: 0; font-size: 28px; font-weight: 700;">${assetName}</h2>
     </div>
-    
     <div style="background-color: #f9f9f9; padding: 25px; border-radius: 8px; margin: 25px 0;">
-      <h3 style="margin: 0 0 15px 0; color: ${branding.primaryColor}; font-size: 18px;">Auction Details</h3>
+      <h3 style="margin: 0 0 15px; color: ${branding.primaryColor}; font-size: 18px;">Auction Details</h3>
       <table style="width: 100%; border-collapse: collapse;">
-        <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: ${branding.primaryColor}; width: 40%;">Asset Type:</td>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${assetType}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: ${branding.primaryColor};">Start Time:</td>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${startTime}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: ${branding.primaryColor};">End Time:</td>
-          <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${endTime}</td>
-        </tr>
-        <tr>
-          <td style="padding: 12px 0; font-weight: 600; color: ${branding.primaryColor};">Location:</td>
-          <td style="padding: 12px 0;">${location}</td>
-        </tr>
+        <tr><td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600; width: 40%;">Asset Type:</td><td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${assetType}</td></tr>
+        <tr><td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600;">Start Time:</td><td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${startTime}</td></tr>
+        <tr><td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; font-weight: 600;">End Time:</td><td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">${endTime}</td></tr>
+        <tr><td style="padding: 12px 0; font-weight: 600;">Location:</td><td style="padding: 12px 0;">${location}</td></tr>
       </table>
     </div>
-    
-    <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px 20px; margin: 25px 0; border-radius: 4px;">
-      <p style="margin: 0; color: #856404;"><strong>Act Fast!</strong> Auctions are competitive. Place your bid early to stay ahead of other vendors.</p>
-    </div>
-    
     <div style="text-align: center; margin: 30px 0;">
-      <a href="${appUrl}/vendor/auctions/${auctionId}" class="button" style="display: inline-block; padding: 16px 32px; background: ${branding.primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 18px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">View Auction & Place Bid</a>
+      <a href="${appUrl}/vendor/auctions/${auctionId}" style="display: inline-block; padding: 16px 32px; background: ${branding.primaryColor}; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 700;">View Auction</a>
     </div>
-    
-    <div style="background-color: #e7f3ff; border-left: 4px solid #0066cc; padding: 20px; margin: 25px 0; border-radius: 4px;">
-      <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #0066cc;">Bidding Tips:</h3>
-      <ul style="margin: 10px 0; padding-left: 20px; color: #333;">
-        <li style="margin: 8px 0;">Review all photos and damage assessment details carefully</li>
-        <li style="margin: 8px 0;">Ensure you have sufficient funds in your escrow wallet</li>
-        <li style="margin: 8px 0;">Bids are final and require OTP verification</li>
-        <li style="margin: 8px 0;">Watch the countdown timer - auctions may auto-extend if bids come in late</li>
-      </ul>
-    </div>
-    
-    <div style="height: 1px; background: linear-gradient(to right, transparent, #e0e0e0, transparent); margin: 30px 0;"></div>
-    
-    <p style="margin-top: 25px;">Good luck with your bidding!</p>
-    <p><strong style="color: ${branding.primaryColor};">${brandTeamName(branding)}</strong></p>
-    
-    <p style="font-size: 13px; color: #666; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
-      <em>To stop receiving auction notifications, update your preferences in your account settings.</em>
-    </p>
+    <p>Regards,<br><strong style="color: ${branding.primaryColor};">${brandTeamName(branding)}</strong></p>
   `;
-  
+
   return getPolicyAwareBaseEmailTemplate({
     title: 'New Auction Available',
-    preheader: `New auction for ${assetName} - Starting at ₦${reservePrice.toLocaleString()}`,
-    content
+    preheader: `A new auction for ${assetName} is now available`,
+    content,
   });
 }

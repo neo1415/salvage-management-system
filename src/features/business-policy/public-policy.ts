@@ -29,7 +29,8 @@ export function toPublicBusinessPolicy(policy: BusinessPolicy): PublicBusinessPo
       walletFundingMaximum: policy.payments.walletFundingMaximum,
     },
     auctions: {
-      minimumBidIncrement: policy.auctions.minimumBidIncrement,
+      // Retained in the public contract for older clients, but no increment is enforced.
+      minimumBidIncrement: 0,
     },
     cases: {
       enabledAssetTypes: policy.cases.enabledAssetTypes,

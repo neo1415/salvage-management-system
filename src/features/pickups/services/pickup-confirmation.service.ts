@@ -163,9 +163,10 @@ function toIso(value: Date | string | null | undefined): string | null {
 }
 
 async function invalidatePickupCaches(vendorId: string, auctionId: string) {
+  const { invalidateAuctionDetailsCache } = await import('@/features/auctions/services/auction-details-cache');
   await Promise.allSettled([
     cache.del(`dashboard:vendor:${vendorId}`),
-    cache.del(`auction:details:${auctionId}`),
+    invalidateAuctionDetailsCache(auctionId),
     cache.del('dashboard:admin'),
     cache.del('dashboard:finance:v4:||||'),
   ]);
