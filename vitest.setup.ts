@@ -80,6 +80,11 @@ vi.mock('@/lib/integrations/serper-api', async importOriginal => {
 
 // Global test setup
 beforeAll(async () => {
+  // The legacy setup below mutates schema. Never opt into it via DATABASE_URL fallback.
+  if (process.env.ALLOW_TEST_SCHEMA_SETUP !== 'true' || !process.env.TEST_DATABASE_URL
+    || process.env.TEST_DATABASE_URL === process.env.DATABASE_URL) {
+    throw new Error('Database test setup is disabled. Use isolated unit tests, or explicitly set ALLOW_TEST_SCHEMA_SETUP=true with a separate disposable TEST_DATABASE_URL.');
+  }
   console.log('[Test Setup] Initializing test environment...');
   
   // Verify database connection

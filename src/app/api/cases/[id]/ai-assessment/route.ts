@@ -8,6 +8,7 @@ import { assessDamageEnhanced } from '@/features/cases/services/ai-assessment-en
 import type { VehicleInfo } from '@/features/cases/services/ai-assessment-enhanced.service';
 import { buildUniversalItemInfoFromCase } from '@/features/cases/services/case-item-info';
 import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
+import { ValuationUnavailableError } from '@/features/valuations/services/valuation-unavailable';
 
 const MANAGER_ROLES = new Set(['salvage_manager', 'system_admin']);
 
@@ -198,6 +199,9 @@ export async function POST(
       },
     });
   } catch (error) {
+    if (error instanceof ValuationUnavailableError) {
+      return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: 422 });
+    }
     console.error('Manager case AI assessment failed:', error);
     const message = error instanceof Error ? error.message : 'AI assessment failed';
     const detailedAnalysisUnavailable = message.startsWith('Detailed AI damage analysis is temporarily unavailable.');

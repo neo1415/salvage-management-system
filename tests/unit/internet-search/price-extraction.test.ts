@@ -2,12 +2,22 @@
  * Unit tests for Price Extraction Service
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { 
   PriceExtractionService, 
   priceExtractor 
 } from '@/features/internet-search/services/price-extraction.service';
 import type { SerperSearchResult } from '@/lib/integrations/serper-api';
+import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
+
+// Default valuation policy is pure; its live policy dependency must never load a DB.
+vi.mock('@/features/business-policy/business-policy.service', () => ({
+  businessPolicyService: { getEffectivePolicy: vi.fn(() => { throw new Error('Live policy access forbidden in price extraction tests'); }) },
+}));
+
+const listing = (snippet: string, extra: Partial<SerperSearchResult> = {}): SerperSearchResult => ({
+  title: 'Asset for sale', link: 'https://jiji.ng/listing', snippet, position: 1, ...extra,
+});
 
 describe('PriceExtractionService', () => {
   const service = new PriceExtractionService();
@@ -31,7 +41,7 @@ describe('PriceExtractionService', () => {
       expect(result.prices[0].confidence).toBeGreaterThan(90);
     });
 
-    it('should handle million/thousand abbreviations', () => {
+    it('rejects multiple listing amounts instead of treating them as comparable assets', () => {
       const mockResults: SerperSearchResult[] = [
         {
           title: 'Car Prices',
@@ -43,12 +53,12 @@ describe('PriceExtractionService', () => {
 
       const result = service.extractPrices(mockResults, 'vehicle');
       
-      expect(result.prices).toHaveLength(2);
-      expect(result.prices[0].price).toBe(2500000); // 2.5m
-      expect(result.prices[1].price).toBe(500000);  // 500k
+      expect(result.prices).toHaveLength(0);
+      expect(result.rejectedPrices?.map(p => p.price)).toEqual([2500000, 500000]);
+      expect(result.rejectedPrices?.every(p => /ambiguous/i.test(p.rejectionReason))).toBe(true);
     });
 
-    it('should extract multiple price formats', () => {
+    it('does not choose between conflicting price formats in one listing', () => {
       const mockResults: SerperSearchResult[] = [
         {
           title: 'Various Price Formats',
@@ -60,10 +70,8 @@ describe('PriceExtractionService', () => {
 
       const result = service.extractPrices(mockResults, 'vehicle');
       
-      expect(result.prices.length).toBeGreaterThanOrEqual(3);
-      expect(result.prices.some(p => p.price === 1500000)).toBe(true);
-      expect(result.prices.some(p => p.price === 2000000)).toBe(true);
-      expect(result.prices.some(p => p.price === 3000000)).toBe(true);
+      expect(result.prices).toHaveLength(0);
+      expect(result.rejectedPrices?.map(p => p.price)).toEqual([1500000, 2000000, 3000000]);
     });
 
     it('should convert foreign currencies to Naira', () => {
@@ -78,7 +86,7 @@ describe('PriceExtractionService', () => {
 
       const result = service.extractPrices(mockResults, 'vehicle');
       
-      expect(result.prices.length).toBeGreaterThanOrEqual(2);
+      expect(result.prices).toHaveLength(1);
       // USD conversion: 15,000 * 1600 = 24,000,000 (valid vehicle price)
       expect(result.prices.some(p => p.price === 24000000)).toBe(true);
       // GBP conversion: 12,000 * 2000 = 24,000,000 (valid vehicle price)
@@ -120,17 +128,9 @@ describe('PriceExtractionService', () => {
     });
 
     it('should calculate price statistics correctly', () => {
-      const mockResults: SerperSearchResult[] = [
-        {
-          title: 'Multiple Prices',
-          link: 'https://jiji.ng/test',
-          snippet: '₦10,000,000 ₦20,000,000 ₦30,000,000',
-          position: 1
-        }
-      ];
+      const result = service.extractPrices([10000000, 20000000, 30000000].map((price, index) =>
+        listing(`NGN ${price}`, { link: `https://jiji.ng/asset-${index}` })), 'vehicle');
 
-      const result = service.extractPrices(mockResults, 'vehicle');
-      
       expect(result.averagePrice).toBe(20000000);
       expect(result.medianPrice).toBe(20000000);
       expect(result.priceRange?.min).toBe(10000000);
@@ -193,6 +193,106 @@ describe('PriceExtractionService', () => {
   });
 
   describe('Price Validation', () => {
+    it.each([
+      ['vehicle', 'N8.4m', 8400000],
+      ['electronics', 'NGN 420 thousand', 420000],
+      ['appliance', '450k naira', 450000],
+      ['machinery', 'N42 million', 42000000],
+      ['property', '1.25 billion naira', 1250000000],
+      ['scrap', 'NGN 8,400.125', 8400.125],
+      ['building_materials', 'N1,250k', 1250000],
+      ['agriculture', 'N8.4m', 8400000],
+      ['equipment', 'US$8.4m', 84000000],
+      ['machinery', 'GBP 42 thousand', 840000],
+      ['electronics', '1.25k EUR', 37500],
+      ['property', 'EUR 1.2 million', 36000000],
+      ['vehicle', 'N8-9m', 8500000],
+      ['electronics', '350-450 thousand naira', 400000],
+      ['machinery', '$80k - $100k', 900000],
+      ['vehicle', 'N800,000 - N1m', 900000],
+    ] as const)('parses one complete %s amount: %s', (type, text, expected) => {
+      const result = service.extractPrices([listing(text)], type, undefined, {
+        exchangeRates: { USD: 10, GBP: 20, EUR: 30 },
+      });
+      expect(result.prices.map(p => p.price)).toEqual([expected]);
+      expect(result.rejectedPrices).toEqual([]);
+    });
+
+    it.each(['N8.4m', 'N8400000', '8.4 million naira'])('does not produce hidden partial matches for %s', text => {
+      const result = service.extractPrices([listing(text)], 'agriculture');
+      expect([...result.prices, ...(result.rejectedPrices || [])].map(p => p.price)).toEqual([8400000]);
+    });
+
+    it.each(['C$8.4m', 'CA$8.4m', 'A$8.4m', 'CAD $8.4m', '$8.4m CAD', 'CAD 8400000', '8400000 CAD', 'JPY 8400000', 'INR 8400000', 'GHS 8400000', 'VIN8400000', 'N8,40,000', 'N8.4millionaire', '-N8400000', 'N8m - $9m'])('does not invent NGN or a partial supported amount from %s', text => {
+      const result = service.extractPrices([listing(text)]);
+      expect(result.prices).toEqual([]);
+      expect(result.rejectedPrices).toEqual([]);
+    });
+
+    it.each(['CAD', 'AUD', 'JPY', 'GHS', 'KES', 'unknown'])('ignores unsupported structured currency %s', currency => {
+      expect(service.extractPrices([listing('Price on request', { price: 8400000, currency })]).prices).toEqual([]);
+    });
+
+    it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('does not replace invalid explicit exchange rate %s with a default', rate => {
+      const result = service.extractPrices([listing('$8.4m', { price: 8400000, currency: 'USD' })], undefined, undefined, {
+        exchangeRates: { USD: rate },
+      });
+      expect(result.prices).toEqual([]);
+    });
+
+    it('normalizes structured currencies and deduplicates equivalent title, snippet and structured prices', () => {
+      const result = service.extractPrices([listing('N8.4m', {
+        title: 'Asset NGN 8,400,000', price: 8400000, currency: ' ngn ',
+      })]);
+      expect(result.prices.map(p => p.price)).toEqual([8400000]);
+      expect(result.rejectedPrices).toEqual([]);
+    });
+
+    it.each(['vehicle', 'electronics', 'appliance', 'machinery', 'property', 'scrap', 'agriculture', 'building_materials'] as const)(
+      'rejects ambiguous %s amounts before bounds can hide one candidate', type => {
+        const result = service.extractPrices([listing('N8.4m and N8.4')], type);
+        expect(result.prices).toEqual([]);
+        expect(result.rejectedPrices?.map(p => p.price)).toEqual([8400000, 8.4]);
+        expect(result.rejectedPrices?.every(p => /ambiguous/i.test(p.rejectionReason))).toBe(true);
+      }
+    );
+
+    it('rejects conflicting title and structured amounts without using either as authority', () => {
+      const result = service.extractPrices([listing('N8.4m', {
+        title: 'Other model N9m', price: 10000000, currency: 'NGN',
+      })]);
+      expect(result.prices).toEqual([]);
+      expect(result.rejectedPrices).toHaveLength(3);
+    });
+
+    it.each(['Deposit N840000', 'N840000 refundable deposit', 'Downpayment N840000', 'N840000 monthly', 'N840000/month'])('rejects partial payments without an item identity: %s', text => {
+      const result = service.extractPrices([listing(text)]);
+      expect(result.prices).toEqual([]);
+      expect(result.rejectedPrices?.[0].rejectionReason).toMatch(/deposit|installment/);
+    });
+
+    it.each(['stock', 'goods_in_transit', 'building_materials', 'scrap', 'agriculture'] as const)(
+      'uses explicit price denominators, not packaging mentions, for %s', type => {
+        const item = { type, description: 'yellow maize grain', quantity: '50', unitOfMeasure: 'bags' } as ItemIdentifier;
+        const result = service.extractPrices([
+          listing('Yellow maize grain 50 kg bags N85000 per bag'),
+          listing('Yellow maize grain packed in bags N900000/tonne', { link: 'https://jiji.ng/tonne' }),
+        ], type, undefined, { item });
+        expect(result.prices.map(p => p.price)).toEqual([85000]);
+        expect(result.rejectedPrices?.[0].rejectionReason).toMatch(/unit/);
+      }
+    );
+
+    it.each(['per 20 bags', 'per truck', '/kg', 'per tonne or per bag'])(
+      'rejects ambiguous or incompatible bulk price denominator %s', denominator => {
+        const result = service.extractPrices([listing(`Yellow maize grain in bags N85000 ${denominator}`)], 'agriculture', undefined, {
+          item: { type: 'agriculture', description: 'yellow maize grain', quantity: '50', unitOfMeasure: 'bags' },
+        });
+        expect(result.prices).toEqual([]);
+        expect(result.rejectedPrices?.[0].rejectionReason).toMatch(/unit/);
+      }
+    );
+
     it('uses one midpoint for a formatted price range without double-counting endpoints', () => {
       const result = service.extractPrices([{
         title: 'Fairly used Apple iPhone 12 128GB',

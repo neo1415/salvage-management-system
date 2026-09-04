@@ -84,6 +84,17 @@ function convertToItemIdentifier(property: PropertyIdentifier): ItemIdentifier |
   }
 }
 
+function sourceDomain(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:'].includes(parsed.protocol) && parsed.hostname.includes('.')
+      ? parsed.hostname.toLowerCase().replace(/^www\./, '')
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Get market price for a property
  * Implements database-first strategy with fallback chain
@@ -102,7 +113,11 @@ function convertToItemIdentifier(property: PropertyIdentifier): ItemIdentifier |
  */
 export async function getMarketPrice(
   property: PropertyIdentifier,
-  options: { forceRefresh?: boolean } = {}
+  options: {
+    forceRefresh?: boolean;
+    /** Require adjudicated internet listing evidence; never use legacy fallbacks. */
+    requireVerifiedEvidence?: boolean;
+  } = {}
 ): Promise<MarketPrice> {
   // Validate property type - now supports universal types
   if (!['vehicle', 'electronics', 'building'].includes(property.type)) {
@@ -138,6 +153,30 @@ export async function getMarketPrice(
         });
 
         if (searchResult.success && searchResult.priceData.prices.length > 0) {
+          const adjudication = searchResult.adjudication;
+          const verifiedSelection = adjudication?.selectedSource === 'serper' || adjudication?.aiOpinions.some(opinion =>
+            opinion.provider === adjudication.selectedSource &&
+            !opinion.manualReviewRequired &&
+            opinion.recommendedPrice === adjudication.selectedPrice &&
+            searchResult.priceData.prices.some(price =>
+              price.price === adjudication.selectedPrice &&
+              opinion.acceptedSources?.includes(price.url) &&
+              !opinion.rejectedSources?.includes(price.url)
+            )
+          );
+          // AI opinions are not listing evidence. Strict callers must not silently
+          // substitute an estimate or any legacy fallback for adjudicated listings.
+          if (options.requireVerifiedEvidence && (
+            !verifiedSelection ||
+            !Number.isFinite(adjudication?.selectedPrice) ||
+            (adjudication?.selectedPrice ?? 0) <= 0 ||
+            adjudication?.selectedPrice !== (searchResult.priceData.medianPrice || searchResult.priceData.averagePrice) ||
+            searchResult.priceData.prices.some(price =>
+              !Number.isFinite(price.price) || price.price <= 0 || !sourceDomain(price.url)
+            )
+          )) {
+            throw new Error('Verified market evidence is required: internet result lacks adjudicated listing evidence');
+          }
           console.log('✅ Internet search successful (PRIMARY):', {
             pricesFound: searchResult.priceData.prices.length,
             confidence: searchResult.priceData.confidence,
@@ -161,14 +200,18 @@ export async function getMarketPrice(
           const max = Math.max(...sortedPrices);
 
           // Convert to SourcePrice format for compatibility
-          const sources: SourcePrice[] = prices.map(price => ({
-            source: 'internet_search',
-            price: price.price,
-            url: price.url || 'internet',
-            title: price.title || `${itemIdentifier.type} listing`,
-            extractedYear: null, // Internet search doesn't extract years for non-vehicles
-            yearMatched: false,
-          }));
+          const sources: SourcePrice[] = prices.map(price => ({ ...price }));
+          const domains = new Set(prices.map(price => sourceDomain(price.url)).filter((domain): domain is string => domain !== null));
+          const evidenceSummary = {
+            ...searchResult.priceData.evidenceSummary,
+            uniqueSourceCount: domains.size,
+            priceSpreadPercent: searchResult.priceData.evidenceSummary?.priceSpreadPercent
+              ?? (median > 0 ? Math.round(((max - min) / median) * 100) : 0),
+            highQualitySourceCount: searchResult.priceData.evidenceSummary?.highQualitySourceCount
+              ?? prices.filter(price => price.sourceQuality === 'high').length,
+            noYearPriceCount: searchResult.priceData.evidenceSummary?.noYearPriceCount
+              ?? prices.filter(price => price.extractedYear == null).length,
+          };
 
           // Internet search results don't require minimum count validation
           // The search service already handles quality filtering
@@ -178,6 +221,7 @@ export async function getMarketPrice(
             max,
             count: prices.length,
             sources,
+            evidenceSummary,
             confidence: searchResult.priceData.confidence / 100, // Convert to 0-1 scale
             isFresh: true,
             cacheAge: 0,
@@ -195,6 +239,10 @@ export async function getMarketPrice(
         console.error('❌ Internet search failed, trying fallbacks:', error);
         // Continue to fallback options
       }
+    }
+
+    if (options.requireVerifiedEvidence) {
+      throw new Error('Verified market evidence is required: no adjudicated internet listing evidence available');
     }
 
     // Step 2: FALLBACK - Check valuation database (for vehicles only)
@@ -393,6 +441,10 @@ export async function getMarketPrice(
     // Step 5: All methods failed - return error
     throw new Error('Unable to retrieve market price: all sources failed and no cached data available');
   } catch (error) {
+    // This must precede emergency cache access as well as the normal fallbacks.
+    if (options.requireVerifiedEvidence) {
+      throw error;
+    }
     // If error is from unsupported property type, rethrow
     if (error instanceof Error && error.message.includes('Unsupported property type')) {
       throw error;

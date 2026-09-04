@@ -80,6 +80,11 @@ export interface SourcePrice {
   
   // Condition normalization field (Task 6.1)
   condition?: string; // Quality tier: "excellent", "good", "fair", or "poor"
+  originalText?: string;
+  snippet?: string;
+  confidence?: number;
+  sourceQuality?: 'high' | 'medium' | 'low';
+  matchEvidence?: string[];
 }
 
 /**
@@ -102,6 +107,12 @@ export interface MarketPrice {
   // Data source indicator (Requirement 5.5)
   dataSource?: 'database' | 'cache' | 'scraping' | 'internet_search';
   adjudication?: unknown;
+  evidenceSummary?: {
+    uniqueSourceCount: number;
+    priceSpreadPercent: number;
+    highQualitySourceCount: number;
+    noYearPriceCount: number;
+  };
 }
 
 /**

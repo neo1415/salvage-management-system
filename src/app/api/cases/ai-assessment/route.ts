@@ -15,6 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { ValuationUnavailableError } from '@/features/valuations/services/valuation-unavailable';
 import { assessDamageEnhanced } from '@/features/cases/services/ai-assessment-enhanced.service';
 import type { VehicleInfo, UniversalItemInfo } from '@/features/cases/services/ai-assessment-enhanced.service';
 import { auth } from '@/lib/auth/next-auth.config';
@@ -407,6 +408,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof ValuationUnavailableError) {
+      return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: 422 });
+    }
     console.error('AI assessment API error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     const detailedAnalysisUnavailable = message.startsWith('Detailed AI damage analysis is temporarily unavailable.');

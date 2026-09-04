@@ -46,25 +46,21 @@ interface PriceExtractionOptions {
   pricePlausibility?: ValuationPolicyConfig['pricePlausibility'];
 }
 
-const NAIRA_PATTERNS = [
-  /₦\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi,
-  /₦\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)/gi,
-  /₦\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)\s*(?:-|to|and)\s*₦?\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)?/gi,
-  /(?:₦|N)\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi,
-  /NGN\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi,
-  /([0-9,]+(?:\.[0-9]{1,2})?)\s*naira/gi,
-  /(?:₦|N)\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)/gi,
-  /([0-9]+(?:\.[0-9]+)?)\s*(million|thousand)\s*naira/gi,
-  /(?:₦|N)\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)\s*(?:-|to|and)\s*(?:₦|N)?\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)?/gi,
-];
-
-const NAIRA_RANGE_PATTERN = /(?:₦|NGN|N)\s*([0-9,]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)?\s*(?:-|–|to)\s*(?:₦|NGN|N)?\s*([0-9,]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)?/gi;
-
-const CURRENCY_PATTERNS = {
-  USD: [/\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi, /USD\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi],
-  GBP: [/£\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi, /GBP\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi],
-  EUR: [/€\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi, /EUR\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi],
-};
+// Consume the entire amount once, including its multiplier and optional range.
+// Unsupported markers are consumed too, so C$ cannot be reinterpreted as USD.
+const CURRENCY_CODES = 'NGN|USD|GBP|EUR|CAD|AUD|NZD|SGD|HKD|JPY|CNY|INR|ZAR|GHS|KES|AED|CHF|SEK|NOK|DKK|BRL|MXN|RUB|SAR|KWD|PKR|BDT';
+const CURRENCY_TOKEN = `(?:naira\\b|(?:${CURRENCY_CODES})\\s*[$£€¥₹₦]|[a-z]{1,3}\\$|[a-z]{3}(?![a-z])|[₦$£€¥₹]|N(?![a-z]))`;
+const SUFFIX_CURRENCY = `(?:naira|${CURRENCY_CODES})\\b`;
+const AMOUNT_TOKEN = '[0-9]+(?:,[0-9]+)*(?:\\.[0-9]+)?';
+const MULTIPLIER_TOKEN = '(?:million|thousand|billion|[mkb])(?![a-z])';
+const MONEY_PATTERN = new RegExp(
+  `(?<![a-z0-9.,$+-])(?:(?<prefix>${CURRENCY_TOKEN})\\s*)?`
+  + `(?<first>${AMOUNT_TOKEN})(?:\\s*(?<scale>${MULTIPLIER_TOKEN}))?`
+  + `(?:\\s*(?:-|–|to\\b)\\s*(?:(?<secondCurrency>${CURRENCY_TOKEN})\\s*)?`
+  + `(?<second>${AMOUNT_TOKEN})(?:\\s*(?<secondScale>${MULTIPLIER_TOKEN}))?)?`
+  + `(?:\\s*(?<suffix>${SUFFIX_CURRENCY}))?(?![a-z0-9]|[.,][0-9])`,
+  'gi'
+);
 
 const SOURCE_QUALITY: Record<'high' | 'medium' | 'low', string[]> = {
   high: ['jiji.ng', 'cars45', 'autochek', 'cars.ng', 'carlots.ng', 'betacar.ng', 'cheki', 'buildingsandmoreng.com'],
@@ -73,6 +69,8 @@ const SOURCE_QUALITY: Record<'high' | 'medium' | 'low', string[]> = {
 };
 
 export class PriceExtractionService {
+  private readonly extractionFailures = new WeakMap<ExtractedPrice, string>();
+
   extractPrices(
     results: SerperSearchResult[],
     itemType?: ItemIdentifier['type'],
@@ -82,13 +80,21 @@ export class PriceExtractionService {
     const extractedPrices: ExtractedPrice[] = [];
 
     for (const result of results) {
-      extractedPrices.push(
+      const listingPrices = [
         ...this.extractFromText(result.snippet || '', result.link, result.title || '', result.snippet || '', options),
         ...this.extractFromText(result.title || '', result.link, result.title || '', result.snippet || '', options)
-      );
+      ];
 
       const structuredPrice = this.createStructuredPrice(result, options);
-      if (structuredPrice) extractedPrices.push(structuredPrice);
+      if (structuredPrice) listingPrices.push(structuredPrice);
+      // Do this before plausibility filtering: a small deposit or another model's
+      // amount must not silently disappear and make a multi-price result look exact.
+      if (new Set(listingPrices.map((price) => price.price)).size > 1) {
+        for (const price of listingPrices) {
+          this.extractionFailures.set(price, 'Ambiguous listing contains multiple distinct amounts');
+        }
+      }
+      extractedPrices.push(...listingPrices);
     }
 
     this.extractYearsFromPrices(extractedPrices);
@@ -121,121 +127,64 @@ export class PriceExtractionService {
     options: PriceExtractionOptions
   ): ExtractedPrice[] {
     const prices: ExtractedPrice[] = [];
-    let searchableText = text;
+    for (const match of text.matchAll(MONEY_PATTERN)) {
+      const { prefix, first, scale, secondCurrency, second, secondScale, suffix } = match.groups!;
+      const currency = this.normalizeCurrency(prefix || suffix || '');
+      if (!currency || (suffix && this.normalizeCurrency(suffix) !== currency)
+        || (secondCurrency && this.normalizeCurrency(secondCurrency) !== currency)) continue;
+      const validNumber = (value: string) => /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(value);
+      if (!validNumber(first) || (second && !validNumber(second))) continue;
 
-    NAIRA_RANGE_PATTERN.lastIndex = 0;
-    let rangeMatch: RegExpExecArray | null;
-    while ((rangeMatch = NAIRA_RANGE_PATTERN.exec(text)) !== null) {
-      const rangePrice = this.parseNairaRange(rangeMatch, url, title, snippet);
-      if (rangePrice) prices.push(rangePrice);
-    }
-    searchableText = searchableText.replace(NAIRA_RANGE_PATTERN, ' ');
-
-    for (const pattern of NAIRA_PATTERNS) {
-      pattern.lastIndex = 0;
-      let match: RegExpExecArray | null;
-      while ((match = pattern.exec(searchableText)) !== null) {
-        const price = this.parseNairaPrice(match, url, title, snippet);
-        if (price) prices.push(price);
+      // A trailing multiplier can qualify both bare endpoints (N8-9m), but
+      // an independently currency-labelled endpoint carries its own units.
+      const firstScale = scale || (!secondCurrency && secondScale ? secondScale : undefined);
+      let amount = this.applyAmountMultiplier(Number(first.replace(/,/g, '')), firstScale);
+      if (second) {
+        const endpoint = this.applyAmountMultiplier(Number(second.replace(/,/g, '')), secondScale);
+        amount = (amount + endpoint) / 2;
       }
+      const rate = this.getConversionRate(currency, options);
+      if (rate === null || !Number.isFinite(amount) || amount <= 0) continue;
+      const confidence = currency === 'NGN'
+        ? Math.min(100, 70 + (match[0].includes(',') ? 10 : 0) + this.getSourceConfidenceBonus(url))
+        : Math.min(80, 40 + this.getSourceConfidenceBonus(url));
+      const originalText = match[0] + (second ? ' (range midpoint)' : '')
+        + (currency !== 'NGN' ? ` (converted from ${currency})` : '');
+      prices.push(this.buildPrice(amount * rate, 'NGN', originalText, confidence, url, title, snippet));
     }
-
-    for (const [currency, patterns] of Object.entries(CURRENCY_PATTERNS)) {
-      for (const pattern of patterns) {
-        pattern.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = pattern.exec(text)) !== null) {
-          const price = this.parseOtherCurrency(
-            match,
-            currency as keyof typeof CURRENCY_PATTERNS,
-            url,
-            title,
-            snippet,
-            options
-          );
-          if (price) prices.push(price);
-        }
-      }
-    }
-
     return prices;
-  }
-
-  private parseNairaRange(match: RegExpExecArray, url: string, title: string, snippet: string): ExtractedPrice | null {
-    const firstMultiplier = match[2] || match[4];
-    const secondMultiplier = match[4] || match[2];
-    const first = this.applyAmountMultiplier(Number(match[1].replace(/,/g, '')), firstMultiplier);
-    const second = this.applyAmountMultiplier(Number(match[3].replace(/,/g, '')), secondMultiplier);
-    if (!Number.isFinite(first) || !Number.isFinite(second) || first <= 0 || second <= 0) return null;
-    const midpoint = Math.round((Math.min(first, second) + Math.max(first, second)) / 2);
-    const confidence = Math.min(95, 75 + this.getSourceConfidenceBonus(url));
-    return this.buildPrice(midpoint, 'NGN', `${match[0]} (range midpoint)`, confidence, url, title, snippet);
   }
 
   private applyAmountMultiplier(value: number, multiplier?: string): number {
     const normalized = multiplier?.toLowerCase();
+    if (normalized?.startsWith('b')) return value * 1_000_000_000;
     if (normalized?.startsWith('m')) return value * 1_000_000;
     if (normalized?.startsWith('k') || normalized?.startsWith('t')) return value * 1_000;
     return value;
   }
 
-  private parseNairaPrice(match: RegExpExecArray, url: string, title: string, snippet: string): ExtractedPrice | null {
-    const amount = this.parseAmount(match);
-    if (!amount) return null;
-
-    const confidence = Math.min(100, 70 + (match[0].includes(',') ? 10 : 0) + this.getSourceConfidenceBonus(url));
-    return this.buildPrice(amount, 'NGN', match[0], confidence, url, title, snippet);
+  private normalizeCurrency(value: string): ExtractedPrice['currency'] | null {
+    const aliases: Record<string, ExtractedPrice['currency']> = {
+      NGN: 'NGN', N: 'NGN', NAIRA: 'NGN', '₦': 'NGN',
+      USD: 'USD', 'US$': 'USD', 'USD$': 'USD', '$': 'USD', GBP: 'GBP', 'GBP£': 'GBP', '£': 'GBP', EUR: 'EUR', 'EUR€': 'EUR', '€': 'EUR', 'NGN₦': 'NGN',
+    };
+    return aliases[value.replace(/\s/g, '').toUpperCase()] || null;
   }
 
-  private parseOtherCurrency(
-    match: RegExpExecArray,
-    currency: keyof typeof CURRENCY_PATTERNS,
-    url: string,
-    title: string,
-    snippet: string,
-    options: PriceExtractionOptions
-  ): ExtractedPrice | null {
-    const foreignPrice = parseFloat(match[1].replace(/,/g, ''));
-    if (!Number.isFinite(foreignPrice)) return null;
-
-    const defaultRates = getDefaultValuationPolicyConfig().exchangeRates;
-    const conversionRate = options.exchangeRates?.[currency] || defaultRates[currency];
-    const confidence = Math.min(80, 40 + this.getSourceConfidenceBonus(url));
-
-    return this.buildPrice(
-      foreignPrice * conversionRate,
-      'NGN',
-      `${match[0]} (converted from ${currency})`,
-      confidence,
-      url,
-      title,
-      snippet
-    );
-  }
-
-  private parseAmount(match: RegExpExecArray): number | null {
-    const number = parseFloat(match[1].replace(/,/g, ''));
-    if (!Number.isFinite(number)) return null;
-
-    const multiplier = match[2]?.toLowerCase();
-    if (!multiplier) return number;
-    if (multiplier.startsWith('m')) return number * 1_000_000;
-    if (multiplier.startsWith('k') || multiplier.startsWith('t')) return number * 1_000;
-    return number;
+  private getConversionRate(currency: ExtractedPrice['currency'], options: PriceExtractionOptions): number | null {
+    if (currency === 'NGN') return 1;
+    const rate = options.exchangeRates?.[currency] ?? getDefaultValuationPolicyConfig().exchangeRates[currency];
+    return Number.isFinite(rate) && rate > 0 ? rate : null;
   }
 
   private createStructuredPrice(result: SerperSearchResult, options: PriceExtractionOptions): ExtractedPrice | null {
-    if (!result.price || !result.currency) return null;
-
-    let price = result.price;
-    let confidence = 90;
-    const currency = result.currency as 'NGN' | 'USD' | 'GBP' | 'EUR';
-
-    if (currency !== 'NGN' && ['USD', 'GBP', 'EUR'].includes(currency)) {
-      const defaultRates = getDefaultValuationPolicyConfig().exchangeRates;
-      price = result.price * (options.exchangeRates?.[currency] || defaultRates[currency]);
-      confidence = 70;
-    }
+    if (!result.price || !Number.isFinite(result.price) || result.price <= 0 || !result.currency) return null;
+    const currency = this.normalizeCurrency(result.currency);
+    if (!currency) return null;
+    const rate = this.getConversionRate(currency, options);
+    if (rate === null) return null;
+    const price = result.price * rate;
+    const confidence = currency === 'NGN' ? 90 : 70;
 
     return this.buildPrice(price, 'NGN', `${result.currency} ${result.price} (structured data)`, confidence, result.link, result.title, result.snippet);
   }
@@ -347,7 +296,7 @@ export class PriceExtractionService {
 
     const seen = new Set<string>();
     let deduplicated = validPrices.filter((price) => {
-      const key = `${Math.round(price.price)}-${price.source}-${price.originalText}`;
+      const key = `${price.price}-${price.source}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -369,7 +318,13 @@ export class PriceExtractionService {
     options: PriceExtractionOptions = {}
   ): string | null {
     if (!price.price || price.price <= 0 || !Number.isFinite(price.price)) return 'Invalid numeric price';
+    const extractionFailure = this.extractionFailures.get(price);
+    if (extractionFailure) return extractionFailure;
     if (price.confidence < 30) return 'Extraction confidence below 30%';
+
+    if (/\b(deposits?|down[ -]?payment|per month|monthly|installments?|instalments?|pay small small)\b|\/\s*(month|mo)\b/i.test(`${price.title} ${price.snippet}`)) {
+      return 'Listing price appears to be a deposit, installment, or recurring payment rather than the full asset price';
+    }
 
     if (options.mode !== 'part' && options.item) {
       const relevanceFailure = this.getMarketListingRelevanceFailure(price, options.item);
@@ -513,7 +468,7 @@ export class PriceExtractionService {
           return 'Listing does not match the requested asset description';
         }
         if (this.isBulkAsset(item.type)) {
-          const unitFailure = this.getBulkUnitMismatch(text, 'unitOfMeasure' in item ? item.unitOfMeasure : undefined);
+          const unitFailure = this.getBulkUnitMismatch(`${price.title} ${price.snippet}`, 'unitOfMeasure' in item ? item.unitOfMeasure : undefined);
           if (unitFailure) return unitFailure;
         }
       }
@@ -595,7 +550,16 @@ export class PriceExtractionService {
     const requested = this.normalizeIdentityText(requestedUnit);
     const requestedGroup = unitGroups.find((group) => group.pattern.test(requested));
     if (!requestedGroup) return null;
-    const listingGroups = unitGroups.filter((group) => group.pattern.test(text));
+    // Packaging quantities (e.g. a 50 kg bag) do not establish the price unit.
+    const unitMatches = Array.from(text.toLowerCase().matchAll(/(?:\bper\s+|\/\s*)(?:(\d+(?:\.\d+)?)\s*)?([a-z]+(?:\s+ton)?)/g));
+    if (unitMatches.some((match) => match[1] && Number(match[1]) !== 1)) {
+      return `Listing unit price covers a different quantity than one ${requestedUnit}`;
+    }
+    const denominators = unitMatches.map((match) => match[2]).join(' ');
+    const listingGroups = unitGroups.filter((group) => group.pattern.test(denominators || this.normalizeIdentityText(text)));
+    if (denominators && (listingGroups.length === 0 || listingGroups.some((group) => group.name !== requestedGroup.name))) {
+      return `Listing unit is incompatible or ambiguous for requested ${requestedUnit} pricing`;
+    }
     if (listingGroups.length > 0 && !listingGroups.some((group) => group.name === requestedGroup.name)) {
       return `Listing unit does not match requested ${requestedUnit} pricing`;
     }

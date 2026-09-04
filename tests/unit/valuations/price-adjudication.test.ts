@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PriceAdjudicationService,
   shouldEscalatePriceAdjudication,
   shouldUseClaudeWebFallback,
+  type AiPriceOpinion,
 } from '@/features/valuations/services/price-adjudication.service';
 import { getDefaultValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
 import type { ExtractedPrice, PriceExtractionResult } from '@/features/internet-search/services/price-extraction.service';
@@ -37,10 +38,14 @@ describe('PriceAdjudicationService', () => {
   const policy = getDefaultValuationPolicyConfig();
 
   beforeEach(() => {
-    process.env.PRICE_ADJUDICATION_AI_ENABLED = 'false';
+    vi.stubEnv('PRICE_ADJUDICATION_AI_ENABLED', 'false');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
-  it('rejects cheap low-trust marketplace evidence for Rolex and Cartier jewelry', async () => {
+  it('requires specialist review without inventing luxury price floors', async () => {
     const item: ItemIdentifier = {
       type: 'jewelry',
       jewelryType: 'Watch, Bracelet',
@@ -59,8 +64,8 @@ describe('PriceAdjudicationService', () => {
       ]),
     });
 
-    expect(result.selectedPrice).toBe(15_000_000);
-    expect(result.rejectedPrices.some((entry) => entry.source.includes('jumia'))).toBe(true);
+    expect(result.priceData.prices).toHaveLength(2);
+    expect(result.rejectedPrices).toHaveLength(0);
     expect(result.manualReviewRequired).toBe(true);
   });
 
@@ -271,5 +276,155 @@ describe('PriceAdjudicationService', () => {
       manualReviewRequired: false,
       reasons: [],
     })).toBe(false);
+  });
+
+  it.each([
+    ['Toyota Corolla SE 2018', {}, 'make/model'],
+    ['Toyota Camry XSE 2018', {}, 'make/model'],
+    ['Toyota Camry SE 2017', {}, 'year'],
+    ['Toyota Camry SE', {}, 'year'],
+    ['Toyota Camry SE 2018', { extractedYear: 2017, yearMatched: true }, 'year'],
+    ['Toyota Camry SE 2018-2020', {}, 'year'],
+  ] as Array<[string, Partial<ExtractedPrice>, string]>)('rejects vehicle identity mismatch: %s', async (title, metadata, reason) => {
+    const result = await service.adjudicate({
+      item: { type: 'vehicle', make: 'Toyota', model: 'Camry SE', year: 2018 }, mode: 'market', policy,
+      priceData: priceData([price({ title, snippet: 'Compare Toyota Camry SE 2018', ...metadata })]),
+    });
+    expect(result.selectedPrice).toBeUndefined();
+    expect(result.rejectedPrices[0].rejectionReason).toContain(reason);
+  });
+
+  it('keeps exact vehicle evidence and recomputes statistics without mismatches', async () => {
+    const result = await service.adjudicate({
+      item: { type: 'vehicle', make: 'Toyota', model: 'Camry SE', year: 2018 }, mode: 'market', policy,
+      priceData: priceData([
+        price({ title: '2018 Toyota Camry SE', price: 12_000_000 }),
+        price({ title: '2017 Toyota Camry SE', price: 6_000_000 }),
+      ]),
+    });
+    expect(result.selectedPrice).toBe(12_000_000);
+    expect(result.priceData.priceRange).toEqual({ min: 12_000_000, max: 12_000_000 });
+    expect(result.priceData.rejectedPrices).toHaveLength(1);
+  });
+
+  it.each(['iPhone 15 Pro Max 256GB', 'iPhone 15 256GB', 'iPhone 14 Pro 256GB', 'iPhone 15 Pro 128GB', 'iPhone 15 Pro'])('rejects electronics mismatch: %s', async (title) => {
+    const result = await service.adjudicate({
+      item: { type: 'electronics', brand: 'Apple', model: 'iPhone 15 Pro', storageCapacity: '256GB' },
+      mode: 'market', policy, priceData: priceData([price({ title })]),
+    });
+    expect(result.selectedPrice).toBeUndefined();
+    expect(result.rejectedPrices).toHaveLength(1);
+  });
+
+  it('honors current storageCapacity over legacy storage and accepts included chargers', async () => {
+    const result = await service.adjudicate({
+      item: { type: 'electronics', brand: 'Apple', model: 'iPhone 15 Pro', storageCapacity: '256 GB', storage: '128GB' },
+      mode: 'market', policy,
+      priceData: priceData([price({ title: 'Apple iPhone15 Pro 256GB', snippet: 'Complete phone with charger' })]),
+    });
+    expect(result.priceData.prices).toHaveLength(1);
+  });
+
+  it.each(['Samsung Galaxy S24 Ultra', 'Samsung Galaxy S24+'])('rejects a larger variant for a base model: %s', async (title) => {
+    const result = await service.adjudicate({
+      item: { type: 'electronics', brand: 'Samsung', model: 'Galaxy S24' }, mode: 'market', policy,
+      priceData: priceData([price({ title })]),
+    });
+    expect(result.rejectedPrices[0].rejectionReason).toContain('variant');
+  });
+
+  it('rejects a partial furniture set even when two item groups match', async () => {
+    const result = await service.adjudicate({
+      item: { type: 'furniture', furnitureType: 'sofa armchair coffee table cabinet' }, mode: 'market', policy,
+      priceData: priceData([price({ title: 'Complete sofa and coffee table set' })]),
+    });
+    expect(result.rejectedPrices[0].rejectionReason).toContain('multi-item');
+  });
+
+  it('does not treat an unconverted foreign amount as NGN', async () => {
+    const result = await service.adjudicate({
+      item: { type: 'equipment', description: 'Pump' }, mode: 'market', policy,
+      priceData: priceData([price({ currency: 'USD' })]),
+    });
+    expect(result.selectedPrice).toBeUndefined();
+    expect(result.rejectedPrices[0].rejectionReason).toContain('currency');
+  });
+
+  it.each([
+    [{ type: 'appliance', brand: 'LG', model: 'Washer', condition: 'Brand New' }, 'LG Washer refurbished', 'condition'],
+    [{ type: 'equipment', description: 'Compressor', condition: 'Nigerian Used' }, 'Brand new compressor', 'condition'],
+    [{ type: 'vehicle', make: 'Toyota', model: 'Camry', year: 2018, condition: 'Foreign Used (Tokunbo)' }, '2018 Toyota Camry Nigerian used', 'condition'],
+    [{ type: 'scrap', description: 'Steel', quantity: '1', unitOfMeasure: 'tonnes' }, 'Steel NGN 1000 per kg', 'unit of measure'],
+    [{ type: 'goods_in_transit', description: 'Pumps', quantity: '5', unitOfMeasure: 'units' }, 'Lot of 3 pumps', 'lot total'],
+    [{ type: 'goods_in_transit', description: 'Pumps', quantity: '5', unitOfMeasure: 'units' }, 'Pump for sale', 'Ambiguous pricing unit'],
+    [{ type: 'stock', description: 'Rice', quantity: '100', unitOfMeasure: 'bags' }, 'Complete lot of 100 bags', 'lot total'],
+    [{ type: 'scrap', description: 'Steel', quantity: '1', unitOfMeasure: 'kg' }, 'Steel per tonne', 'unit of measure'],
+    [{ type: 'property', propertyType: 'House', location: 'Lagos' }, 'House for rent Lagos', 'rental'],
+    [{ type: 'machinery', brand: 'CAT', machineryType: 'Generator' }, 'Generator deposit only', 'deposit'],
+  ] as Array<[ItemIdentifier, string, string]>)('rejects incompatible basis for %j', async (item, title, reason) => {
+    const result = await service.adjudicate({ item, mode: 'market', policy, priceData: priceData([price({ title })]) });
+    expect(result.selectedPrice).toBeUndefined();
+    expect(result.rejectedPrices[0].rejectionReason).toContain(reason);
+  });
+
+  it.each(['Rice price per bag', 'Rice price each bag', 'Rice 50kg bag'])('keeps only the per-unit amount for the caller to scale: %s', async (title) => {
+    const result = await service.adjudicate({
+      item: { type: 'stock', description: 'Rice', quantity: '100', unitOfMeasure: 'bags' }, mode: 'market', policy,
+      priceData: priceData([price({ title })]),
+    });
+    expect(result.selectedPrice).toBe(1_000_000);
+  });
+
+  it('flags ambiguous bulk units even when other accepted evidence is sufficient', async () => {
+    const result = await service.adjudicate({
+      item: { type: 'agriculture', description: 'Rice', quantity: '100', unitOfMeasure: 'bags' }, mode: 'market',
+      policy: { ...policy, minimumMarketSourceCount: 1, sourceDiversityRequired: false },
+      priceData: priceData([price({ title: 'Rice per bag' }), price({ title: 'Rice price' })]),
+    });
+    expect(result.priceData.prices).toHaveLength(1);
+    expect(result.manualReviewRequired).toBe(true);
+    expect(result.reviewReasons.join(' ')).toContain('Ambiguous pricing unit');
+  });
+
+  it('does not apply whole-asset identity or condition rules to replacement parts', async () => {
+    const result = await service.adjudicate({
+      item: { type: 'vehicle', make: 'Toyota', model: 'Camry', year: 2018, condition: 'Nigerian Used' },
+      mode: 'part', partName: 'headlight', policy,
+      priceData: priceData([price({ title: 'Brand new aftermarket Toyota Camry 2017-2020 headlight' })]),
+    });
+    expect(result.priceData.prices).toHaveLength(1);
+  });
+
+  it.each([NaN, Infinity, 0, -100])('rejects invalid numeric evidence: %s', async (amount) => {
+    const result = await service.adjudicate({
+      item: { type: 'other', description: 'Asset' }, mode: 'market', policy,
+      priceData: priceData([price({ price: amount })]),
+    });
+    expect(result.selectedPrice).toBeUndefined();
+    expect(result.confidence).toBe(0);
+  });
+
+  it.each([
+    [[], 9_000_000, ['https://unverified.example/item'], undefined, 'none'],
+    [[price({ title: 'Pump' })], 9_000_000, ['https://example.com/listing'], 1_000_000, 'serper'],
+    [[price({ title: 'Pump' })], 1_000_000, [], 1_000_000, 'serper'],
+    [[price({ title: 'Pump' })], 1_000_000, ['https://example.com/listing'], 1_000_000, 'gemini_grounded'],
+  ] as Array<[ExtractedPrice[], number, string[], number | undefined, string]>)('selects AI amounts only with matching accepted listing evidence (%j)', async (prices, recommendedPrice, acceptedSources, expected, selectedSource) => {
+    vi.stubEnv('PRICE_ADJUDICATION_AI_ENABLED', 'true');
+    const providers = service as unknown as {
+      getGeminiGroundedOpinion: () => Promise<AiPriceOpinion | null>;
+      getClaudeWebOpinion: () => Promise<AiPriceOpinion | null>;
+    };
+    vi.spyOn(providers, 'getGeminiGroundedOpinion').mockResolvedValue({
+      provider: 'gemini_grounded', confidence: 95, manualReviewRequired: false,
+      recommendedPrice, acceptedSources, reasons: [],
+    });
+    vi.spyOn(providers, 'getClaudeWebOpinion').mockResolvedValue(null);
+    const result = await service.adjudicate({
+      item: { type: 'equipment', description: 'Pump' }, mode: 'market', policy, priceData: priceData(prices),
+    });
+    expect(result.selectedPrice).toBe(expected);
+    expect(result.selectedSource).toBe(selectedSource);
+    expect(result.priceData.medianPrice).toBe(expected);
   });
 });

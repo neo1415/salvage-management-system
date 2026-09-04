@@ -45,6 +45,7 @@ import { getValuationPolicyConfig, shouldRequireManualReview } from '@/features/
 import type { DamageEvidence } from '@/lib/ai/damage-evidence';
 import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
 import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
+import { ValuationUnavailableError } from '@/features/valuations/services/valuation-unavailable';
 
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
 const AI_ASSESSMENT_CONCURRENCY = Math.max(
@@ -487,6 +488,30 @@ function estimateLuxuryJewelryManualReviewValue(itemInfo: UniversalItemInfo): nu
   return Math.max(matchedFloor, materialFloor, 1_000_000);
 }
 
+export function getAssetIdentityReviewReasons(
+  item: UniversalItemInfo | undefined,
+  detected?: { detectedMake?: string; detectedModel?: string; detectedYear?: string | number }
+): string[] {
+  if (!item || !detected) return [];
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const reasons: string[] = [];
+  for (const [field, declared, observed] of [
+    ['make or brand', item.make || item.brand, detected.detectedMake],
+    ['model', item.model, detected.detectedModel],
+  ]) {
+    if (!declared || !observed) continue;
+    const a = normalize(declared);
+    const b = normalize(observed);
+    if (a && b && a !== b && !(` ${a} `.includes(` ${b} `) || ` ${b} `.includes(` ${a} `))) {
+      reasons.push(`The entered ${field} (${declared}) differs from the photo identification (${observed}). Research used the entered identity; verify it before approval.`);
+    }
+  }
+  if (item.year && detected.detectedYear && Number(detected.detectedYear) !== item.year) {
+    reasons.push('The entered year differs from the photo identification. Verify the nameplate, serial number or registration before approval.');
+  }
+  return reasons;
+}
+
 export function enrichItemInfoWithAiIdentification(
   itemInfo: UniversalItemInfo | undefined,
   damageAnalysis: {
@@ -506,7 +531,7 @@ export function enrichItemInfoWithAiIdentification(
     enriched.brand = details.detectedMake;
   }
 
-  if (enriched.type === 'vehicle' && details.detectedMake) {
+  if (enriched.type === 'vehicle' && !enriched.make && details.detectedMake) {
     enriched.make = details.detectedMake;
     enriched.brand = enriched.brand || details.detectedMake;
   }
@@ -521,7 +546,7 @@ export function enrichItemInfoWithAiIdentification(
       )).join(' ');
       enriched.model = enriched.model || details.detectedModel;
     } else {
-      enriched.model = details.detectedModel;
+      enriched.model = enriched.model || details.detectedModel;
     }
     if (enriched.type === 'vehicle') {
       enriched.description = details.detectedModel;
@@ -583,9 +608,10 @@ export function enrichItemInfoWithAiIdentification(
 
 export function parseQuantityValue(value?: string): number | undefined {
   if (!value) return undefined;
-  const match = value.match(/(\d+(?:\.\d+)?)/);
+  // A range or approximate count is not an established lot quantity.
+  const match = value.trim().match(/^(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?:\s+(?:bags?|sacks?|cartons?|units?|pieces?|kg|kilograms?|tonnes?|tons?|litres?|liters?|m2|m3))?$/i);
   if (!match) return undefined;
-  const parsed = Number(match[1]);
+  const parsed = Number(match[1].replace(/,/g, '') + (match[2] || ''));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
@@ -978,6 +1004,7 @@ async function assessDamageEnhancedCore(params: {
   // Step 3: Determine market value (with universal item support)
   const userQuantityBeforeAi = itemInfo?.quantity;
   const enrichedItemInfo = enrichItemInfoWithAiIdentification(itemInfo, damageAnalysis);
+  valuationReviewReasons.push(...getAssetIdentityReviewReasons(itemInfo, damageAnalysis.itemDetails));
   valuationReviewReasons.push(
     ...getBulkQuantityReviewReasons(
       enrichedItemInfo,
@@ -986,6 +1013,9 @@ async function assessDamageEnhancedCore(params: {
     )
   );
   const marketLookupItemInfo = enrichedItemInfo;
+  if (isBulkRecoveryAsset(enrichedItemInfo) && !parseQuantityValue(userQuantityBeforeAi)) {
+    throw new ValuationUnavailableError('Confirm the exact lot quantity and unit before valuation. A visual estimate or quantity range cannot be used as the lot total. No new valuation was saved.');
+  }
   const marketValueResult = await getUniversalMarketValue(marketLookupItemInfo, { forceRefresh });
   const marketValue = marketValueResult.value;
   const marketDataConfidence = marketValueResult.confidence;
@@ -1039,9 +1069,9 @@ async function assessDamageEnhancedCore(params: {
     let pristineValue = marketValue;
     
     // Apply universal adjustments for pristine items (works for all item types)
-    if (itemInfo) {
+    if (itemInfo && priceSource !== 'internet_search' && priceSource !== 'user_provided') {
       // Skip condition adjustment only for internet search (already condition-specific)
-      const skipConditionAdjustment = priceSource === 'internet_search' || priceSource === 'user_provided';
+      const skipConditionAdjustment = false;
       const universalAdjustment = getUniversalAdjustment(itemInfo, skipConditionAdjustment);
       pristineValue = marketValue * universalAdjustment;
       
@@ -2352,7 +2382,7 @@ function resolveSearchConditionForItem(
   }).searchCondition as UniversalCondition;
 }
 
-async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { forceRefresh?: boolean } = {}): Promise<{
+export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { forceRefresh?: boolean } = {}): Promise<{
   value: number;
   confidence: number;
   source: 'database' | 'user_provided' | 'internet_search' | 'scraping' | 'estimated';
@@ -2362,64 +2392,34 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
 }> {
   // If no item info, use generic estimation
   if (!itemInfo) {
-    console.warn('No item information was provided; market value requires manual review');
-    return {
-      value: 0,
-      confidence: 0,
-      source: 'estimated',
-      evidence: {
-        reason: 'missing_item_info',
-        reviewReasons: ['Asset identity is missing; no market or salvage value was inferred.'],
-      },
-    };
+    throw new ValuationUnavailableError('Asset identity is missing. No new valuation was saved. Complete the asset details before retrying.');
   }
 
-  if (itemInfo.marketValueSource === 'manual' && itemInfo.marketValue && itemInfo.marketValue > 0) {
+  if (itemInfo.marketValueSource === 'manual' && Number.isFinite(itemInfo.marketValue) && itemInfo.marketValue && itemInfo.marketValue > 0) {
     console.log('Using user-provided claims paid / asset value:', itemInfo.marketValue);
     return {
       value: Math.round(itemInfo.marketValue),
-      confidence: 95,
+      confidence: 0,
       source: 'user_provided',
-      uniqueSourceCount: 1,
+      uniqueSourceCount: 0,
       priceSpreadPercent: 0,
       evidence: {
         provider: 'adjuster_input',
         source: 'user_provided',
         value: Math.round(itemInfo.marketValue),
-        confidence: 95,
+        confidence: 0,
+        reviewReasons: ['The supplied value is a manual appraisal input, not independently verified market evidence. Confirm its basis before approval.'],
         skippedMarketSearch: true,
       },
     };
   }
 
-  if (isLuxuryJewelryValuation(itemInfo) || isMultiItemJewelryValuation(itemInfo)) {
-    const provisionalValue = estimateLuxuryJewelryManualReviewValue(itemInfo);
-    const brandMatches = luxuryJewelryBrandMatches(itemInfo);
-    const reviewReasons = [
-      'Luxury or multi-item jewelry/watch valuation requires declared insured value, purchase receipt, hallmark/serial verification, and specialist appraisal.',
-      'Generic marketplace prices are not accepted for Rolex, Cartier, diamond, gold, or mixed jewelry lots.',
-    ];
-    console.warn('Luxury jewelry valuation requires specialist appraisal; skipping generic internet market price.', {
-      itemType: itemInfo.type,
-      brand: itemInfo.brand || itemInfo.make,
-      model: itemInfo.model,
-      provisionalValue,
-      brandMatches,
-    });
-    return {
-      value: provisionalValue,
-      confidence: 15,
-      source: 'estimated',
-      uniqueSourceCount: 0,
-      priceSpreadPercent: 0,
-      evidence: {
-        reason: 'luxury_jewelry_specialist_appraisal_required',
-        provisionalValue,
-        brandMatches,
-        reviewReasons,
-        skippedMarketSearch: true,
-      },
-    };
+  if (isLuxuryJewelryValuation(itemInfo) || isMultiItemJewelryValuation(itemInfo) || itemInfo.type === 'artwork') {
+    throw new ValuationUnavailableError('This asset requires a documented specialist appraisal and authenticity checks. No new valuation was saved; generic category or brand prices are not an appraisal.');
+  }
+
+  if (isBulkRecoveryAsset(itemInfo) && (!parseQuantityValue(itemInfo.quantity) || !itemInfo.unitOfMeasure?.trim())) {
+    throw new ValuationUnavailableError('Confirm the exact lot quantity and unit before researching its value. No new valuation was saved.');
   }
 
   // For vehicles, use existing vehicle market data service
@@ -2436,7 +2436,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
         condition: itemInfo.condition,
       };
       
-      const marketPrice = await getMarketPrice(property, { forceRefresh: options.forceRefresh });
+      const marketPrice = await getMarketPrice(property, { forceRefresh: options.forceRefresh, requireVerifiedEvidence: true });
       
       console.log('✅ Vehicle market data result:', {
         median: marketPrice.median,
@@ -2454,7 +2454,8 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
         value: Math.round(marketPrice.median),
         confidence: confidencePercent,
         source,
-        uniqueSourceCount: marketPrice.count,
+        uniqueSourceCount: marketPrice.evidenceSummary?.uniqueSourceCount ?? 0,
+        priceSpreadPercent: marketPrice.evidenceSummary?.priceSpreadPercent,
         evidence: {
           provider: 'market-data-service',
           source,
@@ -2462,6 +2463,8 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
           count: marketPrice.count,
           confidence: confidencePercent,
           adjudication,
+          sources: marketPrice.sources,
+          priceRange: { min: marketPrice.min, max: marketPrice.max },
           reviewReasons: adjudication?.reviewReasons || [],
         },
       };
@@ -2566,25 +2569,6 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
     }
   }
 
-  if (isBulkRecoveryAsset(itemInfo)) {
-    const knownUnitMarketValue = estimateKnownBulkUnitMarketValue(itemInfo);
-    if (knownUnitMarketValue !== null) {
-      return {
-        value: knownUnitMarketValue,
-        confidence: 55,
-        source: 'estimated',
-        evidence: {
-          reason: 'known_bulk_unit_price_estimation',
-          itemType: itemInfo.type,
-          brand: itemInfo.brand,
-          model: itemInfo.model,
-          quantity: itemInfo.quantity,
-          unitOfMeasure: itemInfo.unitOfMeasure,
-        },
-      };
-    }
-  }
-
   if (!searchIdentifier && itemInfo.brand && itemInfo.model) {
     try {
       console.log(`🌐 Searching for ${itemInfo.type} market price: ${itemInfo.brand} ${itemInfo.model}...`);
@@ -2667,21 +2651,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
     }
   }
 
-  // Fall back to type-based estimation
-  const estimatedValue = estimateUniversalMarketValue(itemInfo);
-  return {
-    value: estimatedValue,
-    confidence: 40,
-    source: 'estimated',
-    evidence: {
-      reason: 'fallback_type_estimation',
-      itemType: itemInfo.type,
-      brand: itemInfo.brand || itemInfo.make,
-      model: itemInfo.model,
-      condition: itemInfo.condition,
-      reviewReasons: ['Live matching market evidence was unavailable; the category fallback must be reviewed before approval.'],
-    },
-  };
+  throw new ValuationUnavailableError();
 }
 
 export function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdentifier | null {

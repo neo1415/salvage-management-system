@@ -102,7 +102,7 @@ function textForItem(item: ItemIdentifier, partName?: string): string {
       values.push(item.make, item.model, String(item.year || ''), item.condition);
       break;
     case 'electronics':
-      values.push(item.brand, item.model, item.storage, item.condition);
+      values.push(item.brand, item.model, item.storageCapacity || item.storage, item.storageType, item.condition);
       break;
     case 'appliance':
       values.push(item.brand, item.model, item.size, item.condition);
@@ -141,22 +141,122 @@ function extractSpecialistBrands(item: ItemIdentifier, partName?: string): strin
   return SPECIALIST_ASSET_SIGNALS.filter((brand) => text.includes(brand));
 }
 
-function specialistReviewThreshold(item: ItemIdentifier, policy: ValuationPolicyConfig, partName?: string): number | null {
-  const brands = extractSpecialistBrands(item, partName);
-  if (!brands.length) return null;
-  const text = textForItem(item, partName);
-  const baseMinimum = policy.pricePlausibility.marketMinimums[item.type] || policy.pricePlausibility.marketMinimums.general_asset || 1_000;
-  const preciousMaterialMultiplier = /\b(18k|18ct|750|gold|diamond|platinum|sapphire)\b/.test(text) ? 100 : 40;
-  const multiAssetMultiplier = /[,;&+]|\band\b/.test(text) ? 2 : 1;
-  return Math.round(baseMinimum * preciousMaterialMultiplier * multiAssetMultiplier);
-}
-
 function sourceDomain(price: ExtractedPrice): string {
   return (price.source || price.url || '').toLowerCase();
 }
 
 function listingText(price: ExtractedPrice): string {
   return `${price.title || ''} ${price.snippet || ''} ${price.originalText || ''}`.toLowerCase();
+}
+
+function normalizedIdentity(text: string): string {
+  return text.toLowerCase().replace(/([a-z])(\d)|(\d)([a-z])/g, '$1$3 $2$4')
+    .replace(/\+/g, ' plus ').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function containsIdentity(text: string, identity: string): boolean {
+  return ` ${normalizedIdentity(text)} `.includes(` ${normalizedIdentity(identity)} `);
+}
+
+function listingMismatch(input: PriceAdjudicationInput, price: ExtractedPrice): string | undefined {
+  const { item, mode } = input;
+  const text = listingText(price);
+  if (!Number.isFinite(price.price) || price.price <= 0) return 'Price must be a finite positive amount.';
+  if (price.currency !== 'NGN') return 'Price has not been converted to the NGN valuation currency.';
+
+  // A search snippet can mention the requested model while advertising a different item.
+  const identityText = price.title?.trim() || text;
+  if (mode === 'market' && (item.type === 'vehicle' || item.type === 'electronics')) {
+    const brand = item.type === 'vehicle' ? item.make : item.brand;
+    if (!containsIdentity(identityText, item.model) || (item.type === 'vehicle' && !containsIdentity(identityText, brand))) {
+      return 'Listing does not establish the exact requested make/model.';
+    }
+    const variants = item.type === 'vehicle'
+      ? ['le', 'se', 'xle', 'xse', 'lx', 'ex', 'sport', 'hybrid', 'limited', 'platinum', 'prado', 'cross', 'jk', 'jl', 'tj', 'rubicon', 'sahara', 'unlimited']
+      : ['pro', 'max', 'plus', 'ultra', 'mini', 'lite', 'fe', 'air'];
+    if (variants.some((variant) => containsIdentity(identityText, variant) !== containsIdentity(item.model, variant))) {
+      return 'Listing model/variant differs from the requested asset.';
+    }
+    if (item.type === 'vehicle' && item.year) {
+      const years = [...identityText.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
+      if (price.yearMatched === false || (price.extractedYear != null && price.extractedYear !== item.year)
+        || years.some((year) => year !== item.year) || (!years.includes(item.year) && price.extractedYear !== item.year)) {
+        return 'Listing does not establish the exact requested vehicle year.';
+      }
+    }
+    if (item.type === 'electronics') {
+      const capacity = item.storageCapacity || item.storage;
+      const capacities = (value: string) => [...value.toLowerCase().matchAll(/\b(\d+(?:\.\d+)?)\s*(tb|gb)\b/g)]
+        .map((match) => Number(match[1]) * (match[2] === 'tb' ? 1024 : 1));
+      const expected = capacity ? capacities(capacity) : [];
+      // Ignore explicitly labelled RAM; it is not the storage capacity.
+      const storageText = text.replace(/\b\d+\s*gb\s*(?:of\s+)?ram\b/g, '');
+      const observed = capacities(storageText);
+      if (expected.length && (!observed.includes(expected[0]) || observed.some((value) => value !== expected[0]))) {
+        return 'Listing does not establish the requested electronics storage capacity.';
+      }
+      const storageTypes: string[] = text.match(/\b(ssd|hdd|nvme|eufs)\b/g) || [];
+      if (item.storageType && storageTypes.length && !storageTypes.includes(item.storageType.toLowerCase())) {
+        return 'Listing storage type differs from the requested electronics variant.';
+      }
+    }
+  }
+
+  if (mode !== 'market') return undefined;
+  if (/\b(down payment|deposit only|monthly payment|per month|per annum|annual rent|for rent)\b/.test(text)) {
+    return 'Listing is a deposit, instalment, or rental rather than an outright asset price.';
+  }
+  const condition = 'condition' in item ? item.condition : undefined;
+  const isNew = /\b(brand new|unused|factory sealed)\b/.test(text);
+  const isUsed = /\b(used|pre-owned|refurbished|tokunbo|damaged|non-working|for parts)\b/.test(text);
+  if (condition && ((condition === 'Brand New' && isUsed) || (condition !== 'Brand New' && isNew))) {
+    return 'Listing condition differs from the requested market condition.';
+  }
+  if (condition === 'Foreign Used (Tokunbo)' && /\b(nigerian used|locally used|naija used)\b/.test(text)
+    || condition === 'Nigerian Used' && /\b(foreign used|tokunbo|uk used|us used)\b/.test(text)) {
+    return 'Listing used-condition tier differs from the requested market condition.';
+  }
+  if (condition && condition !== 'Heavily Used' && /\b(non-working|for parts|scrap only|not working)\b/.test(text)) {
+    return 'Listing is non-working or scrap rather than the requested market condition.';
+  }
+
+  const unitAliases: Record<string, string> = {
+    kg: 'kg', kilogram: 'kg', kilograms: 'kg', tonne: 'tonne', tonnes: 'tonne', ton: 'tonne', tons: 'tonne',
+    bag: 'bag', bags: 'bag', piece: 'unit', pieces: 'unit', unit: 'unit', units: 'unit', each: 'unit',
+    litre: 'litre', litres: 'litre', liter: 'litre', liters: 'litre', carton: 'carton', cartons: 'carton',
+  };
+  const unit = 'unitOfMeasure' in item ? item.unitOfMeasure?.toLowerCase().trim() : undefined;
+  const declaredUnit = unit ? unitAliases[unit] || unit : undefined;
+  const bulk = ['stock', 'goods_in_transit', 'building_materials', 'scrap', 'agriculture'].includes(item.type);
+  if (!bulk && !declaredUnit) return undefined;
+  if (/\b(?:lot|consignment)\b|\b(?:pack|bundle|set)\s+of\s+\d+\b|\b(?:grand total|total price|shipment total)\b/.test(text)) {
+    return 'Listing is a lot total rather than the per-unit price required for quantity scaling.';
+  }
+  const rates = [...text.matchAll(/(?:\b(?:per|each)\s+|\/\s*)(kg|kilograms?|tonnes?|tons?|bags?|pieces?|units?|litres?|liters?|cartons?)\b/g)];
+  if (rates.some((match) => declaredUnit && unitAliases[match[1]] !== declaredUnit)) {
+    return 'Listing unit of measure differs from the declared valuation unit.';
+  }
+  const sizedBag = /\b\d+(?:\.\d+)?\s*kg\s*bags?\b/.test(text);
+  if (sizedBag && declaredUnit !== 'bag') return 'Listing unit of measure is a bag, not the declared valuation unit.';
+  const unitEach = declaredUnit === 'unit' && /\b(each|per item|single unit|one unit only)\b/.test(text);
+  if (!declaredUnit || (!rates.length && !unitEach && !(declaredUnit === 'bag' && sizedBag))) {
+    return 'Ambiguous pricing unit: listing does not establish a per-unit basis for quantity scaling.';
+  }
+  return undefined;
+}
+
+function isCounterfeitOrAccessory(input: PriceAdjudicationInput, price: ExtractedPrice): boolean {
+  const text = listingText(price);
+  const requested = textForItem(input.item, input.partName);
+  return COUNTERFEIT_OR_ACCESSORY_TERMS.some((term) => {
+    if (!containsIdentity(text, term)) return false;
+    if (['replica', 'fake', 'copy', 'inspired', 'look alike'].includes(term)) return true;
+    if (input.mode === 'part' || containsIdentity(requested, term)) return false;
+    if (term === 'aftermarket') return /\b(aftermarket only|aftermarket replacement)\b/.test(text);
+    if (term === 'charger') return /\bcharger\s+(only|for)\b|\bonly\s+charger\b/.test(text)
+      || /^charger\b/.test(price.title.toLowerCase());
+    return true;
+  });
 }
 
 const FURNITURE_ITEM_GROUPS = [
@@ -178,11 +278,7 @@ function isIncompleteFurnitureLotListing(item: ItemIdentifier, price: ExtractedP
   if (declaredGroups < 2) return false;
 
   const resultText = listingText(price);
-  const resultGroups = furnitureGroupCount(resultText);
-  const namesSet = /\b(set|suite|complete|living\s+room)\b/.test(resultText);
-  return declaredGroups >= 3
-    ? resultGroups < 2
-    : resultGroups < 1 || !namesSet;
+  return FURNITURE_ITEM_GROUPS.some((pattern) => pattern.test(declaredText) && !pattern.test(resultText));
 }
 
 function median(values: number[]): number | undefined {
@@ -305,7 +401,8 @@ function promptForAdjudication(input: PriceAdjudicationInput, filteredPrices: Ex
         : 'Compare the supplied Serper evidence with current web evidence.',
       'Reject counterfeit, replica, accessory-only, irrelevant, stale, low-trust, or implausible prices.',
       'For specialist/luxury assets, prefer appraisal/authorized dealer/auction-house evidence and require manual review when evidence is not definitive.',
-      'When estimating without listings, provide a conservative market price grounded in current web evidence.',
+      'Do not estimate without accepted listings. Leave recommendedPrice null when exact comparable evidence is unavailable.',
+      'Recommend only a supplied accepted listing price and cite its exact URL in acceptedSources; do not invent or interpolate amounts.',
       'Return JSON only with keys: recommendedPrice, confidence, manualReviewRequired, reasons, acceptedSources, rejectedSources.',
     ],
     mode: input.mode,
@@ -411,7 +508,7 @@ export class PriceAdjudicationService {
       ...(input.priceData.rejectedPrices || []),
     ];
     const reviewReasons: string[] = [];
-    const specialist = specialistReviewThreshold(input.item, input.policy, input.partName);
+    const specialist = extractSpecialistBrands(input.item, input.partName).length > 0;
     const itemType = input.item.type;
     const minPrice = input.mode === 'part'
       ? input.policy.pricePlausibility.partMinimums[itemType] || input.policy.pricePlausibility.partMinimums.general_asset || 3_000
@@ -421,15 +518,21 @@ export class PriceAdjudicationService {
       : null;
 
     const filteredPrices = input.priceData.prices.filter((price) => {
-      const text = listingText(price);
       const lowTrust = isLowTrustSource(price);
       const highQuality = isHighQualitySource(price);
+
+      const mismatch = listingMismatch(input, price);
+      if (mismatch) {
+        rejectedPrices.push({ ...price, rejectionReason: mismatch });
+        if (mismatch.startsWith('Ambiguous pricing unit')) reviewReasons.push(mismatch);
+        return false;
+      }
 
       if (price.price < minPrice && lowTrust) {
         rejectedPrices.push({ ...price, rejectionReason: `Price below policy minimum of NGN ${minPrice.toLocaleString()}` });
         return false;
       }
-      if (COUNTERFEIT_OR_ACCESSORY_TERMS.some((term) => text.includes(term))) {
+      if (isCounterfeitOrAccessory(input, price)) {
         rejectedPrices.push({ ...price, rejectionReason: 'Listing appears to be counterfeit, accessory-only, replica, or otherwise not the insured asset.' });
         return false;
       }
@@ -440,18 +543,11 @@ export class PriceAdjudicationService {
         });
         return false;
       }
-      if (specialist && input.mode === 'market' && lowTrust && price.price < specialist) {
-        rejectedPrices.push({ ...price, rejectionReason: `Low-trust specialist listing below dynamic review threshold of NGN ${specialist.toLocaleString()}` });
-        return false;
-      }
       if (price.price < minPrice && highQuality) {
         reviewReasons.push(`Accepted high-quality source ${price.source} is below policy minimum; verify item match, condition, quantity, and currency before relying on it.`);
       }
       if (maxPartPrice && price.price > maxPartPrice) {
         reviewReasons.push(`Accepted ${input.mode} evidence from ${price.source} is above the configured part attention threshold of NGN ${maxPartPrice.toLocaleString()}; verify OEM, specialist, aviation, medical, or imported-part context.`);
-      }
-      if (specialist && input.mode === 'market' && price.price < specialist) {
-        reviewReasons.push(`Specialist asset evidence from ${price.source} is below the dynamic review threshold of NGN ${specialist.toLocaleString()}; require proof of authenticity, exact model, serial/hallmark, quantity, and condition.`);
       }
       return true;
     });
@@ -556,15 +652,14 @@ export class PriceAdjudicationService {
   }
 
   private selectAiOpinion(aiOpinions: AiPriceOpinion[], filteredPrices: ExtractedPrice[]): AiPriceOpinion | null {
-    const values = filteredPrices.map((price) => price.price);
-    const center = median(values) || average(values);
     const credible = aiOpinions
-      .filter((opinion) => opinion.recommendedPrice && opinion.confidence >= MIN_AI_CONFIDENCE_TO_SELECT)
-      .filter((opinion) => {
-        if (!center) return true;
-        const deviation = Math.abs((opinion.recommendedPrice! - center) / center) * 100;
-        return deviation <= 120;
-      })
+      .filter((opinion) => !opinion.manualReviewRequired && opinion.confidence >= MIN_AI_CONFIDENCE_TO_SELECT)
+      // Self-reported grounding URLs alone do not prove an AI-generated amount.
+      .filter((opinion) => filteredPrices.some((price) =>
+        Number.isFinite(opinion.recommendedPrice) && opinion.recommendedPrice === price.price
+        && /^https?:\/\//i.test(price.url)
+        && opinion.acceptedSources?.includes(price.url)
+        && !opinion.rejectedSources?.includes(price.url)))
       .sort((a, b) => b.confidence - a.confidence);
     return credible[0] || null;
   }
@@ -578,7 +673,7 @@ export class PriceAdjudicationService {
     const spread = center
       ? spreadPercent(deterministic.filteredPrices.map((price) => price.price), center)
       : 0;
-    const specialistReviewRequired = specialistReviewThreshold(input.item, input.policy, input.partName) !== null;
+    const specialistReviewRequired = extractSpecialistBrands(input.item, input.partName).length > 0;
     const shouldAskAi = isPriceAdjudicationAiEnabled() && shouldEscalatePriceAdjudication({
       mode: input.mode,
       acceptedPriceCount: deterministic.filteredPrices.length,
@@ -639,6 +734,8 @@ export class PriceAdjudicationService {
     const reviewReasons = Array.from(new Set([
       ...deterministic.reviewReasons,
       ...aiReviewReasons,
+      ...(aiOpinions.some((opinion) => opinion.recommendedPrice) && !selectedAiOpinion
+        ? ['AI recommended price was not supported by an accepted comparable listing; retained listing evidence only.'] : []),
       ...(selectedAiOpinion?.manualReviewRequired ? selectedAiOpinion.reasons : []),
     ].filter(Boolean)));
 

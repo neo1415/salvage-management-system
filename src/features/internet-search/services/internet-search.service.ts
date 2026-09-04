@@ -18,20 +18,10 @@ import {
 } from '@/features/valuations/services/price-adjudication.service';
 import type { DamageAction } from '@/lib/ai/damage-evidence';
 
-const LUXURY_JEWELRY_PRICE_FLOORS_NGN: Record<string, number> = {
-  rolex: 8_000_000,
-  cartier: 3_500_000,
-  'patek philippe': 20_000_000,
-  audemars: 14_000_000,
-  'audemars piguet': 14_000_000,
-  omega: 2_500_000,
-  'vacheron constantin': 18_000_000,
-  'van cleef': 2_500_000,
-  tiffany: 1_500_000,
-  bvlgari: 2_000_000,
-  bulgari: 2_000_000,
-  chopard: 2_500_000,
-};
+const SPECIALIST_JEWELRY_BRANDS = [
+  'rolex', 'cartier', 'patek philippe', 'audemars', 'omega',
+  'vacheron constantin', 'van cleef', 'tiffany', 'bvlgari', 'bulgari', 'chopard',
+];
 
 const LOW_TRUST_LUXURY_MARKETPLACE_DOMAINS = [
   'jumia',
@@ -128,20 +118,15 @@ export class InternetSearchService {
     });
   }
 
-  private luxuryJewelryFloor(item: ItemIdentifier): number | null {
-    if (item.type !== 'jewelry') return null;
+  private isSpecialistJewelry(item: ItemIdentifier): boolean {
+    if (item.type !== 'jewelry') return false;
     const text = [
       item.brand,
       item.jewelryType,
       item.material,
       item.weight,
     ].filter(Boolean).join(' ').toLowerCase();
-    const matches = Object.keys(LUXURY_JEWELRY_PRICE_FLOORS_NGN).filter((brand) => text.includes(brand));
-    if (matches.length === 0) return null;
-    return Math.max(
-      matches.reduce((sum, brand) => sum + LUXURY_JEWELRY_PRICE_FLOORS_NGN[brand], 0),
-      /\b(18k|18ct|750|gold|diamond|platinum)\b/.test(text) ? 1_500_000 : 0
-    );
+    return SPECIALIST_JEWELRY_BRANDS.some(brand => text.includes(brand));
   }
 
   private recalculatePriceData(prices: ExtractedPrice[], source: PriceExtractionResult): PriceExtractionResult {
@@ -190,18 +175,13 @@ export class InternetSearchService {
   }
 
   private applyItemSpecificPriceGuards(priceData: PriceExtractionResult, item: ItemIdentifier): PriceExtractionResult {
-    const luxuryFloor = this.luxuryJewelryFloor(item);
-    if (!luxuryFloor) return priceData;
+    if (!this.isSpecialistJewelry(item)) return priceData;
 
     const rejectedForLuxury: Array<ExtractedPrice & { rejectionReason: string }> = [];
     const guardedPrices = priceData.prices.filter((price) => {
       const source = price.source.toLowerCase();
       if (LOW_TRUST_LUXURY_MARKETPLACE_DOMAINS.some((domain) => source.includes(domain))) {
         rejectedForLuxury.push({ ...price, rejectionReason: 'Low-trust marketplace source is not accepted for luxury jewelry valuation' });
-        return false;
-      }
-      if (price.price < luxuryFloor) {
-        rejectedForLuxury.push({ ...price, rejectionReason: `Luxury jewelry price below specialist appraisal floor of NGN ${luxuryFloor.toLocaleString()}` });
         return false;
       }
       return true;
@@ -273,295 +253,174 @@ export class InternetSearchService {
    */
   async searchMarketPrice(options: SearchMarketPriceOptions): Promise<MarketPriceResult> {
     const timer = createSearchTimer();
-    // Increase maxResults for machinery to get more Nigerian marketplace results
-    const defaultMaxResults = options.item.type === 'machinery' ? 15 : 10;
-    const { item, maxResults = defaultMaxResults, timeout = 3000, forceRefresh = false } = options;
+    const { item, maxResults = item.type === 'machinery' ? 15 : 10, timeout = 3000, forceRefresh = false } = options;
+    let query = queryBuilder.buildMarketQuery(item);
+    let priceData = this.buildEmptyPriceData();
+    let resultsProcessed = 0;
+    let fromCache = false;
 
     try {
-      // Check cache first
-      const cachedResult = forceRefresh ? null : await cacheIntegrationService.getCachedMarketPrice(item);
-      if (cachedResult) {
-        const executionTime = timer.end();
-        cachedResult.priceData = this.applyItemSpecificPriceGuards(cachedResult.priceData, item);
-        const adjudication = await this.adjudicatePriceData({
-          item,
-          mode: 'market',
-          priceData: cachedResult.priceData,
-        });
-        cachedResult.priceData = adjudication.priceData;
-        
-        console.log('💾 Using CACHED market price data');
-        console.log(`📊 Cached prices: ${cachedResult.priceData.prices.length} prices`);
-        cachedResult.priceData.prices.forEach((price, index) => {
-          console.log(
-            `  ${index + 1}. ₦${price.price.toLocaleString()} from ${price.source} ` +
-            `(confidence: ${price.confidence}%)`
-          );
-        });
-        console.log(`📊 Cached statistics: avg=₦${cachedResult.priceData.averagePrice?.toLocaleString()}, median=₦${cachedResult.priceData.medianPrice?.toLocaleString()}`);
-        
-        // CRITICAL FIX: Revalidate cached prices with current validation rules
-        // This ensures old cached data with invalid prices (like ₦80 parts) gets filtered out
-        const revalidatedPrices = cachedResult.priceData.prices.filter(price => {
-          // Apply minimum price threshold
-          const minPriceThresholds: Record<string, number> = {
-            'vehicle': 500000,
-            'electronics': 10000,
-            'appliance': 20000,
-            'machinery': 100000,
-            'property': 1000000,
-            'jewelry': 5000,
-            'furniture': 10000,
-          };
-          const minPrice = item.type ? minPriceThresholds[item.type] || 1000 : 1000;
-          
-          if (price.price < minPrice) {
-            console.log(`🚫 Filtering out cached price ₦${price.price.toLocaleString()} - below minimum threshold of ₦${minPrice.toLocaleString()}`);
-            return false;
-          }
-          return true;
-        });
-        
-        // Recalculate statistics if prices were filtered
-        if (revalidatedPrices.length !== cachedResult.priceData.prices.length) {
-          console.log(`📊 Revalidation: ${cachedResult.priceData.prices.length - revalidatedPrices.length} invalid prices removed from cache`);
-          
-          if (revalidatedPrices.length === 0) {
-            console.log('⚠️ All cached prices were invalid, fetching fresh data...');
-            // Don't use cache, fall through to fresh search
-          } else {
-            // Recalculate statistics with valid prices only
-            const priceValues = revalidatedPrices.map(p => p.price);
-            const sortedPrices = [...priceValues].sort((a, b) => a - b);
-            const averagePrice = priceValues.reduce((sum, price) => sum + price, 0) / priceValues.length;
-            const medianPrice = sortedPrices.length % 2 === 0
-              ? (sortedPrices[sortedPrices.length / 2 - 1] + sortedPrices[sortedPrices.length / 2]) / 2
-              : sortedPrices[Math.floor(sortedPrices.length / 2)];
-            
-            console.log(`📊 Recalculated statistics: avg=₦${Math.round(averagePrice).toLocaleString()}, median=₦${Math.round(medianPrice).toLocaleString()}`);
-            
-            // Update cached result with revalidated data
-            cachedResult.priceData.prices = revalidatedPrices;
-            cachedResult.priceData.averagePrice = Math.round(averagePrice);
-            cachedResult.priceData.medianPrice = Math.round(medianPrice);
-            cachedResult.priceData.priceRange = {
-              min: Math.min(...priceValues),
-              max: Math.max(...priceValues)
-            };
-            
-            // Record cache hit in performance metrics
-            performanceMonitor.recordSearch({
-              query: cachedResult.query,
-              itemType: item.type,
-              startTime: timer.getStartTime(),
-              endTime: Date.now(),
-              success: true,
-              resultsCount: cachedResult.resultsProcessed,
-              pricesExtracted: revalidatedPrices.length,
-              confidence: cachedResult.priceData.confidence,
-              fromCache: true
-            });
-            
-            return {
-              priceData: cachedResult.priceData,
-              query: cachedResult.query,
-              resultsProcessed: cachedResult.resultsProcessed,
-              executionTime,
-              dataSource: 'internet_search',
-              success: true,
-              adjudication,
-            };
-          }
-        } else {
-          // No filtering needed, use cache as-is
-          // Record cache hit in performance metrics
-          performanceMonitor.recordSearch({
-            query: cachedResult.query,
-            itemType: item.type,
-            startTime: timer.getStartTime(),
-            endTime: Date.now(),
-            success: true,
-            resultsCount: cachedResult.resultsProcessed,
-            pricesExtracted: cachedResult.priceData.prices.length,
-            confidence: cachedResult.priceData.confidence,
-            fromCache: true
-          });
-          
-          return {
-            priceData: cachedResult.priceData,
-            query: cachedResult.query,
-            resultsProcessed: cachedResult.resultsProcessed,
-            executionTime,
-            dataSource: 'internet_search',
-            success: true,
-            adjudication,
-          };
+      const policy = await getValuationPolicyConfig();
+      const extractionOptions = {
+        mode: 'market' as const,
+        item,
+        exchangeRates: policy.exchangeRates,
+        pricePlausibility: policy.pricePlausibility,
+      };
+      const targetYear = item.type === 'vehicle' ? item.year : undefined;
+      const cached = forceRefresh ? null : await cacheIntegrationService.getCachedMarketPrice(item);
+      // Cache keys are not evidence of identity. Re-extract original listing text
+      // under today's matching rules and policy, never trust cached aggregates.
+      const identity = (value: ItemIdentifier) => JSON.stringify(
+        Object.entries(value).filter(([, entry]) => entry != null && entry !== '')
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, entry]) => [key, typeof entry === 'string' ? entry.trim().toLowerCase().replace(/\s+/g, ' ') : entry])
+      );
+      if (cached && cached.item && identity(cached.item) === identity(item)
+        && new Date(cached.expiresAt).getTime() > Date.now()) {
+        const cachedEvidence = this.filterMarketEvidence(cached.priceData);
+        const revalidated = priceExtractor.extractPrices(
+          cachedEvidence.prices.map((price, index) => ({
+            link: price.url, title: price.title, snippet: price.snippet, position: index + 1,
+          })),
+          item.type, targetYear, extractionOptions
+        );
+        const noLongerAccepted = cachedEvidence.prices
+          .filter(price => !revalidated.prices.some(current => current.url === price.url && current.price === price.price))
+          .map(price => ({ ...price, rejectionReason: 'Cached listing no longer passes current extraction and identity checks.' }));
+        priceData = {
+          ...revalidated,
+          rejectedPrices: [
+            ...(cachedEvidence.rejectedPrices || []),
+            ...(revalidated.rejectedPrices || []),
+            ...noLongerAccepted,
+          ],
+        };
+        if (priceData.prices.length > 0) {
+          query = cached.query;
+          resultsProcessed = cached.resultsProcessed;
+          fromCache = true;
         }
       }
-      
-      // Build search query
-      const valuationPolicy = await getValuationPolicyConfig();
-      const queries = queryBuilder.generateQueryVariations(
-        item,
-        Math.max(3, Math.min(5, valuationPolicy.minimumMarketSourceCount + 1))
-      );
-      const query = queries.join(' | ');
-      
-      // Log the actual query being sent to Serper
-      console.log(`🔍 Serper Search Query: "${query}"`);
-      console.log(`📊 Search Parameters: maxResults=${maxResults}, timeout=${timeout}ms, itemType=${item.type}`);
-      
-      // Execute search with timeout
-      const perQueryLimit = Math.max(5, Math.ceil(maxResults / Math.max(1, queries.length)));
-      const searchPromise = Promise.all(
-        queries.map(async (singleQuery) => {
+
+      if (!fromCache) {
+        const queries = queryBuilder.generateQueryVariations(item, Math.max(3, Math.min(5, policy.minimumMarketSourceCount + 1)));
+        query = queries.join(' | ');
+        const perQueryLimit = Math.max(5, Math.ceil(maxResults / Math.max(1, queries.length)));
+        const searchPromise = Promise.all(queries.map(async singleQuery => {
           try {
             return await serperApi.search(singleQuery, { num: perQueryLimit });
           } catch (error) {
             console.warn(`Serper query failed: "${singleQuery}"`, error);
             return { organic: [] };
           }
-        })
-      );
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Search timeout')), timeout)
-      );
-      
-      const searchBatches = await Promise.race([searchPromise, timeoutPromise]) as Awaited<typeof searchPromise>;
-      const organicResults = this.dedupeOrganicResults(searchBatches.flatMap(batch => batch.organic || [])).slice(0, maxResults);
-      
-      if (organicResults.length === 0) {
-        console.warn('No Serper market results; falling back to Claude/Gemini web price search');
-        const aiAdjudication = await this.tryAiPriceEstimate({ item, mode: 'market', query });
-        if (aiAdjudication) {
-          const executionTime = timer.end();
-          return {
-            priceData: aiAdjudication.priceData,
-            query,
-            resultsProcessed: 0,
-            executionTime,
-            dataSource: 'internet_search',
-            success: true,
-            adjudication: aiAdjudication,
-          };
-        }
-        throw new Error('No search results returned');
+        }));
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const batches = await Promise.race([
+          searchPromise,
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('Search timeout')), timeout);
+          }),
+        ]).finally(() => clearTimeout(timeoutId));
+        const organic = this.dedupeOrganicResults(batches.flatMap(batch => batch.organic || [])).slice(0, maxResults);
+        resultsProcessed = organic.length;
+        const extracted = priceExtractor.extractPrices(organic, item.type, targetYear, extractionOptions);
+        priceData = {
+          ...extracted,
+          rejectedPrices: [...(priceData.rejectedPrices || []), ...(extracted.rejectedPrices || [])],
+        };
       }
-      
-      // Log search results summary
-      console.log(`Search Results: ${organicResults.length} unique results found`);
-      console.log(`Result Sources: ${organicResults.map(r => {
-        try {
-          return new URL(r.link || '').hostname;
-        } catch {
-          return 'unknown';
-        }
-      }).join(', ')}`);
-      
-      // Extract prices from results with year filtering
-      const priceData = this.applyItemSpecificPriceGuards(priceExtractor.extractPrices(
-        organicResults, 
-        item.type,
-        item.type === 'vehicle' ? item.year : undefined,
-        {
-          item,
-          exchangeRates: valuationPolicy.exchangeRates,
-          pricePlausibility: valuationPolicy.pricePlausibility,
-        }
-      ), item);
-      if (priceData.prices.length === 0) {
-        console.warn('Serper returned listings but no usable prices; falling back to Claude/Gemini');
-        const aiAdjudication = await this.tryAiPriceEstimate({ item, mode: 'market', query });
-        if (aiAdjudication) {
-          const executionTime = timer.end();
-          return {
-            priceData: aiAdjudication.priceData,
-            query,
-            resultsProcessed: organicResults.length,
-            executionTime,
-            dataSource: 'internet_search',
-            success: true,
-            adjudication: aiAdjudication,
-          };
-        }
-      }
-      const adjudication = await this.adjudicatePriceData({
-        item,
-        mode: 'market',
-        priceData,
-      });
-      
-      // Log extracted prices with sources
-      console.log(`💰 Prices Extracted: ${priceData.prices.length} prices found`);
-      priceData.prices.forEach((price, index) => {
-        console.log(
-          `  ${index + 1}. ₦${price.price.toLocaleString()} from ${price.source} ` +
-          `(confidence: ${price.confidence}%) - "${price.originalText}"`
-        );
-      });
-      
-      const executionTime = timer.end();
-      
-      const result: MarketPriceResult = {
-        priceData: adjudication.priceData,
-        query,
-        resultsProcessed: organicResults.length,
-        executionTime,
-        dataSource: 'internet_search',
-        success: true,
-        adjudication,
+
+      priceData = this.filterMarketEvidence(this.applyItemSpecificPriceGuards(priceData, item));
+      const decision = await priceAdjudicationService.adjudicate({ item, mode: 'market', priceData, policy });
+      // Opinions remain opinions: only accepted, extracted listings can back the
+      // public market statistics. Never manufacture a listing from an AI quote.
+      const unsupported = decision.priceData.prices.filter(price =>
+        !priceData.prices.some(evidence => evidence.url === price.url && evidence.price === price.price)
+      );
+      const rejectedPrices = Array.from(new Map([
+        ...(priceData.rejectedPrices || []),
+        ...(decision.priceData.rejectedPrices || []),
+        ...decision.rejectedPrices,
+        ...unsupported.map(price => ({ ...price, rejectionReason: 'Adjudication supplied a price without extracted listing evidence.' })),
+      ].map(price => [JSON.stringify([price.url, price.price, price.rejectionReason]), price])).values());
+      const accepted = priceData.prices.filter(evidence =>
+        decision.priceData.prices.some(price => price.url === evidence.url && price.price === evidence.price)
+      );
+      const finalPriceData = this.recalculatePriceData(accepted, { ...decision.priceData, rejectedPrices });
+      const manualReviewRequired = decision.manualReviewRequired || accepted.length === 0 || unsupported.length > 0;
+      const adjudication: PriceAdjudicationResult = {
+        ...decision,
+        priceData: finalPriceData,
+        selectedPrice: finalPriceData.medianPrice,
+        selectedSource: accepted.length ? 'serper' : 'none',
+        confidence: finalPriceData.confidence,
+        manualReviewRequired,
+        reviewReasons: [...new Set([
+          ...decision.reviewReasons,
+          ...(accepted.length === 0 ? ['No accepted comparable listing evidence.'] : []),
+          ...(unsupported.length ? ['Unsubstantiated adjudication prices require manual review.'] : []),
+        ])],
+        rejectedPrices,
       };
-      
-      // Cache the result for future use
-      await cacheIntegrationService.setCachedMarketPrice(item, result);
-      
-      // Record performance metrics
-      performanceMonitor.recordSearch({
-        query,
-        itemType: item.type,
-        startTime: timer.getStartTime(),
-        endTime: Date.now(),
-        success: true,
-        resultsCount: organicResults.length,
-        pricesExtracted: priceData.prices.length,
-        confidence: priceData.confidence,
-        fromCache: false
-      });
-      
-      return result;
-      
-    } catch (error) {
-      const executionTime = timer.end();
-      
-      // Record failed search metrics
-      performanceMonitor.recordSearch({
-        query: queryBuilder.buildMarketQuery(item),
-        itemType: item.type,
-        startTime: timer.getStartTime(),
-        endTime: Date.now(),
-        success: false,
-        resultsCount: 0,
-        pricesExtracted: 0,
-        confidence: 0,
-        error: error instanceof Error ? error.message : 'Unknown search error',
-        fromCache: false
-      });
-      
-      return {
-        priceData: {
-          prices: [],
-          confidence: 0,
-          currency: 'NGN',
-          extractedAt: new Date()
-        },
-        query: queryBuilder.buildMarketQuery(item),
-        resultsProcessed: 0,
-        executionTime,
+      const result: MarketPriceResult = {
+        priceData: finalPriceData, query, resultsProcessed, executionTime: timer.end(),
         dataSource: 'internet_search',
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown search error'
+        success: accepted.length > 0 && !manualReviewRequired,
+        adjudication,
+        ...(manualReviewRequired ? { error: adjudication.reviewReasons.join(' ') || 'Market evidence requires manual review.' } : {}),
+      };
+      if (result.success && !fromCache) {
+        try {
+          await cacheIntegrationService.setCachedMarketPrice(item, result);
+        } catch (error) {
+          console.warn('Unable to cache accepted market evidence:', error);
+        }
+      }
+      performanceMonitor.recordSearch({
+        query, itemType: item.type, startTime: timer.getStartTime(), endTime: Date.now(),
+        success: result.success, resultsCount: resultsProcessed, pricesExtracted: accepted.length,
+        confidence: finalPriceData.confidence, fromCache,
+      });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown search error';
+      const rejectedPrices = [
+        ...(priceData.rejectedPrices || []),
+        ...priceData.prices.map(price => ({ ...price, rejectionReason: 'Market evidence could not complete safety adjudication.' })),
+      ];
+      const failedData = this.recalculatePriceData([], { ...priceData, rejectedPrices });
+      performanceMonitor.recordSearch({
+        query, itemType: item.type, startTime: timer.getStartTime(), endTime: Date.now(),
+        success: false, resultsCount: resultsProcessed, pricesExtracted: 0, confidence: 0, error: message, fromCache,
+      });
+      return {
+        priceData: failedData, query, resultsProcessed, executionTime: timer.end(),
+        dataSource: 'internet_search', success: false, error: message,
+        adjudication: {
+          priceData: failedData, selectedSource: 'none', confidence: 0, manualReviewRequired: true,
+          reviewReasons: [message], rejectedPrices, aiOpinions: [],
+        },
       };
     }
+  }
+
+  private filterMarketEvidence(priceData: PriceExtractionResult): PriceExtractionResult {
+    const rejectedPrices = [...(priceData.rejectedPrices || [])];
+    const prices = priceData.prices.filter(price => {
+      let validUrl = false;
+      try {
+        const url = new URL(price.url);
+        validUrl = ['http:', 'https:'].includes(url.protocol) && !!url.hostname;
+      } catch { /* A missing listing URL cannot establish market evidence. */ }
+      const valid = Number.isFinite(price.price) && price.price > 0 && validUrl
+        && !!price.source?.trim() && !!price.originalText?.trim()
+        && !!(price.title?.trim() || price.snippet?.trim())
+        && !/^(?:ai[_ -]|gemini[_ -]|claude[_ -]|policy[_ -])/i.test(price.source);
+      if (!valid) rejectedPrices.push({ ...price, rejectionReason: 'Price lacks valid, attributable listing evidence.' });
+      return valid;
+    });
+    return this.recalculatePriceData(prices, { ...priceData, rejectedPrices });
   }
 
   /**
