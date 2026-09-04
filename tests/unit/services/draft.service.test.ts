@@ -146,6 +146,8 @@ describe('DraftService', () => {
         id: 'draft-123',
         formData: {
           claimReference: 'TEST-001',
+          policyNumber: 'POL-001',
+          branchName: 'Lagos Branch',
           assetType: 'vehicle',
           locationName: 'Lagos',
         },
@@ -168,6 +170,8 @@ describe('DraftService', () => {
         id: 'draft-123',
         formData: {
           claimReference: 'TEST-001',
+          policyNumber: 'POL-001',
+          branchName: 'Lagos Branch',
           assetType: 'vehicle',
           locationName: 'Lagos',
         },

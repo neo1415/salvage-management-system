@@ -18,6 +18,7 @@ import {
 import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
 import { businessPolicyService } from '@/features/business-policy/business-policy.service';
 import { formatStaffReviewNotes } from './ai-warning-sanitization';
+import { validateCaseIdentifiers } from '../validation/case-identifiers';
 
 /**
  * Asset types (must match database assetTypeEnum)
@@ -245,6 +246,8 @@ async function validateCaseInput(input: CreateCaseInput): Promise<string[]> {
       errors.push('Claim reference must be unique');
     }
   }
+
+  errors.push(...validateCaseIdentifiers(input).errors);
 
   if (input.brokerName?.trim() && input.agencyName?.trim()) {
     errors.push('Provide either broker or agency, not both');

@@ -72,16 +72,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       afterState: { requestId: created.id, status: created.status, reason: parsed.data.reason },
     });
 
-    void notifyManagingDirectorsOfEarlyClose({
-      recipients: managingDirectors,
-      requestId: created.id,
-      auctionId,
-      claimReference: auction.claimReference,
-      requesterName: session.user.name || 'A salvage manager',
-      reason: parsed.data.reason,
-    }).catch((error) => console.error('[Early Close] Failed to deliver approval notifications', error));
+    let notificationDelivery = { delivered: 0, failed: managingDirectors.length };
+    try {
+      notificationDelivery = await notifyManagingDirectorsOfEarlyClose({
+        recipients: managingDirectors,
+        requestId: created.id,
+        auctionId,
+        claimReference: auction.claimReference,
+        requesterName: session.user.name || 'A salvage manager',
+        reason: parsed.data.reason,
+      });
+    } catch (deliveryError) {
+      console.error('[Early Close] Failed to prepare approval notifications', deliveryError);
+    }
 
-    return NextResponse.json({ success: true, request: created, message: 'Approval request sent to the Managing Director.' }, { status: 202 });
+    return NextResponse.json({
+      success: true,
+      request: created,
+      notificationDelivery,
+      message: notificationDelivery.failed === 0
+        ? 'Approval request sent to the Managing Director.'
+        : 'Approval request created, but one or more notification channels need attention.',
+    }, { status: 202 });
   } catch (error) {
     const databaseError = error as { code?: string; cause?: { code?: string } };
     if ((databaseError.code ?? databaseError.cause?.code) === '23505') {

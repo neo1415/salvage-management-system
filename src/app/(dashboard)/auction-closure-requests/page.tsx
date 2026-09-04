@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock, Loader2 } from 'lucide-react';
 import { AppLink } from '@/components/navigation/app-link';
 
@@ -15,17 +15,39 @@ export default function AuctionClosureRequestsPage() {
   const [requests, setRequests] = useState<ClosureRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const loadSequence = useRef(0);
 
-  useEffect(() => {
-    void fetch('/api/auction-closure-requests', { cache: 'no-store' })
+  const loadRequests = useCallback(async () => {
+    const sequence = ++loadSequence.current;
+    setError('');
+    try {
+      await fetch('/api/auction-closure-requests', { cache: 'no-store' })
       .then(async (response) => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Unable to load closure requests');
-        setRequests(result.requests || []);
-      })
-      .catch((cause) => setError(cause instanceof Error ? cause.message : 'Unable to load closure requests'))
-      .finally(() => setLoading(false));
+        if (sequence === loadSequence.current) setRequests(result.requests || []);
+      });
+    } catch (cause) {
+      if (sequence === loadSequence.current) {
+        setError(cause instanceof Error ? cause.message : 'Unable to load closure requests');
+      }
+    } finally {
+      if (sequence === loadSequence.current) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadRequests();
+    const handleRequestsChanged = () => void loadRequests();
+    const pollingFallback = window.setInterval(handleRequestsChanged, 15_000);
+    window.addEventListener('auction-closure-requests-changed', handleRequestsChanged);
+    window.addEventListener('focus', handleRequestsChanged);
+    return () => {
+      window.removeEventListener('auction-closure-requests-changed', handleRequestsChanged);
+      window.removeEventListener('focus', handleRequestsChanged);
+      window.clearInterval(pollingFallback);
+    };
+  }, [loadRequests]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">

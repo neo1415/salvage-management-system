@@ -217,11 +217,12 @@ type PublicInsuranceClassPolicy = Record<string, {
  */
 const caseFormSchema = z.object({
   claimReference: z.string().min(1, 'Claim reference is required'),
-  policyNumber: z.string().max(120, 'Policy number must be 120 characters or less').optional(),
+  policyNumber: z.string().trim().min(1, 'Policy number is required').max(120, 'Policy number must be 120 characters or less'),
   insuranceClass: z.string().min(1, 'Insurance class is required'),
+  otherInsuranceClass: z.string().trim().max(120, 'Insurance class must be 120 characters or less').optional(),
   brokerName: z.string().optional(),
   agencyName: z.string().optional(),
-  branchName: z.string().optional(),
+  branchName: z.string().trim().min(1, 'Branch is required').max(150, 'Branch must be 150 characters or less'),
   assetType: z.enum(['vehicle', 'property', 'electronics', 'appliance', 'jewelry', 'furniture', 'machinery', 'stock', 'goods_in_transit', 'building_materials', 'scrap', 'agriculture', 'medical_equipment', 'energy_equipment', 'aviation_equipment', 'other']).refine((val) => val !== undefined, {
     message: 'Asset type is required',
   }),
@@ -374,6 +375,14 @@ const caseFormSchema = z.object({
 }, {
   message: 'Please fill in all required fields for the selected asset type',
   path: ['assetType'],
+}).superRefine((data, context) => {
+  if (data.insuranceClass === 'other' && !data.otherInsuranceClass?.trim()) {
+    context.addIssue({
+      code: 'custom',
+      path: ['otherInsuranceClass'],
+      message: 'Tell us which insurance class this is',
+    });
+  }
 });
 
 type CaseFormData = z.infer<typeof caseFormSchema>;
@@ -565,6 +574,7 @@ function NewCasePageContent() {
   // The hook will handle its own memoization internally
   const formData = watch();
   const marketValue = watch('marketValue');
+  const insuranceClass = watch('insuranceClass');
   const hasAIAnalysis = adjusterRunsAiAnalysis ? !!aiAssessment : true;
   const enabledAssetTypes = useMemo(
     () => getEnabledCaseAssetTypeOptions(enabledAssetTypesPolicy),
@@ -572,10 +582,12 @@ function NewCasePageContent() {
   );
 
   const enabledInsuranceClasses = useMemo(() => {
-    return INSURANCE_CLASSES.map((insuranceClass) => ({
-      ...insuranceClass,
-      label: insuranceClassesPolicy?.[insuranceClass.value]?.label || insuranceClass.label,
-    }));
+    if (!insuranceClassesPolicy) return [...INSURANCE_CLASSES];
+
+    return Object.entries(insuranceClassesPolicy)
+      .filter(([, config]) => config.enabled && config.label?.trim())
+      .map(([value, config]) => ({ value, label: config.label!.trim() }))
+      .sort((left, right) => left.value === 'other' ? 1 : right.value === 'other' ? -1 : left.label.localeCompare(right.label));
   }, [insuranceClassesPolicy]);
 
   useEffect(() => {
@@ -585,6 +597,13 @@ function NewCasePageContent() {
       setValue('assetType', undefined as never);
     }
   }, [assetType, enabledAssetTypes, setValue]);
+
+  useEffect(() => {
+    if (enabledInsuranceClasses.length === 0) return;
+    if (!enabledInsuranceClasses.some((item) => item.value === insuranceClass)) {
+      setValue('insuranceClass', enabledInsuranceClasses[0].value, { shouldValidate: true });
+    }
+  }, [enabledInsuranceClasses, insuranceClass, setValue]);
 
   useEffect(() => {
     setAiAssessment(null);
@@ -1935,7 +1954,9 @@ function NewCasePageContent() {
       const caseData = {
         claimReference: data.claimReference,
         policyNumber: data.policyNumber?.trim() || undefined,
-        insuranceClass: data.insuranceClass,
+        insuranceClass: data.insuranceClass === 'other'
+          ? data.otherInsuranceClass?.trim()
+          : data.insuranceClass,
         brokerName: data.brokerName,
         agencyName: data.agencyName,
         branchName: data.branchName,
@@ -2267,6 +2288,7 @@ function NewCasePageContent() {
 
           <FormField
             label="Policy Number"
+            required={true}
             error={errors.policyNumber?.message}
             description="Staff-only policy identifier for insurer reconciliation"
           >
@@ -2283,7 +2305,7 @@ function NewCasePageContent() {
             <FormField
               label="Class of Insurance"
               required={true}
-              error={errors.insuranceClass?.message}
+              error={errors.insuranceClass?.message || errors.otherInsuranceClass?.message}
               description="Used for insurer reporting and recovery analysis"
             >
               <select
@@ -2296,12 +2318,23 @@ function NewCasePageContent() {
                   </option>
                 ))}
               </select>
+              {insuranceClass === 'other' ? (
+                <ModernInput
+                  {...register('otherInsuranceClass')}
+                  variant="filled"
+                  size="lg"
+                  maxLength={120}
+                  placeholder="Type the insurance class"
+                  className="mt-2"
+                />
+              ) : null}
             </FormField>
 
             <FormField
               label="Branch"
+              required={true}
               error={errors.branchName?.message}
-              description="Optional insurer branch or office responsible for the claim"
+              description="Insurer branch or office responsible for the claim"
             >
               <ModernInput
                 {...register('branchName')}

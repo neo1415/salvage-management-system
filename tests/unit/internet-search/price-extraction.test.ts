@@ -193,6 +193,157 @@ describe('PriceExtractionService', () => {
   });
 
   describe('Price Validation', () => {
+    it('uses one midpoint for a formatted price range without double-counting endpoints', () => {
+      const result = service.extractPrices([{
+        title: 'Fairly used Apple iPhone 12 128GB',
+        link: 'https://example.ng/iphone-12-range',
+        snippet: 'Fairly used iPhone 12 128GB: ₦350k - ₦450k depending on condition',
+        position: 1,
+      }], 'electronics', undefined, {
+        item: { type: 'electronics', brand: 'Apple', model: 'iPhone 12', storageCapacity: '128GB', condition: 'Heavily Used' },
+      });
+
+      expect(result.prices).toHaveLength(1);
+      expect(result.prices[0].price).toBe(400000);
+      expect(result.prices[0].originalText).toContain('range midpoint');
+    });
+
+    it('rejects installment amounts and ambiguous new-or-used inventory', () => {
+      const item = { type: 'electronics' as const, brand: 'Apple', model: 'iPhone 12', condition: 'Heavily Used' as const };
+      const result = service.extractPrices([
+        {
+          title: 'Apple iPhone 12 on installment',
+          link: 'https://example.ng/installment',
+          snippet: 'Pay ₦75,000 per month for iPhone 12',
+          position: 1,
+        },
+        {
+          title: 'Apple iPhone 12 new and used available',
+          link: 'https://example.ng/mixed-condition',
+          snippet: 'Brand new and fairly used iPhone 12 from ₦500,000',
+          position: 2,
+        },
+      ], 'electronics', undefined, { item });
+
+      expect(result.prices).toHaveLength(0);
+      expect(result.rejectedPrices?.some((entry) => entry.rejectionReason.includes('installment'))).toBe(true);
+      expect(result.rejectedPrices?.some((entry) => entry.rejectionReason.includes('ambiguous'))).toBe(true);
+    });
+
+    it('rejects rent as property sale value', () => {
+      const result = service.extractPrices([{
+        title: '3 bedroom detached house for rent in Lekki',
+        link: 'https://property.example.ng/lekki-rent',
+        snippet: 'Annual rent ₦8,000,000 per year',
+        position: 1,
+      }], 'property', undefined, {
+        item: { type: 'property', propertyType: 'detached house', location: 'Lekki Lagos', bedrooms: 3, condition: 'Nigerian Used' },
+      });
+
+      expect(result.prices).toHaveLength(0);
+      expect(result.rejectedPrices?.some((entry) => entry.rejectionReason.includes('Rental'))).toBe(true);
+    });
+
+    it('matches description-only bulk assets and rejects incompatible unit prices', () => {
+      const item = {
+        type: 'agriculture' as const,
+        description: 'yellow maize grain',
+        quantity: '50',
+        unitOfMeasure: 'bags',
+      };
+      const result = service.extractPrices([
+        {
+          title: 'Yellow maize grain price per bag',
+          link: 'https://commodities.example.ng/maize-bag',
+          snippet: 'Yellow maize grain ₦85,000 per bag',
+          position: 1,
+        },
+        {
+          title: 'Yellow maize grain wholesale per tonne',
+          link: 'https://commodities.example.ng/maize-tonne',
+          snippet: 'Yellow maize grain ₦900,000 per tonne',
+          position: 2,
+        },
+        {
+          title: 'White rice price per bag',
+          link: 'https://commodities.example.ng/rice',
+          snippet: 'White rice ₦95,000 per bag',
+          position: 3,
+        },
+      ], 'agriculture', undefined, { item });
+
+      expect(result.prices.map((entry) => entry.price)).toEqual([85000]);
+      expect(result.rejectedPrices?.some((entry) => entry.price === 900000 && entry.rejectionReason.includes('unit'))).toBe(true);
+      expect(result.rejectedPrices?.some((entry) => entry.price === 95000 && entry.rejectionReason.includes('description'))).toBe(true);
+    });
+
+    it('keeps an exact fairly-used iPhone 12 listing and rejects newer variants, new stock, and accessories', () => {
+      const mockResults: SerperSearchResult[] = [
+        {
+          title: 'Fairly used Apple iPhone 12 128GB',
+          link: 'https://jiji.ng/mobile-phones/iphone-12',
+          snippet: 'Clean fairly used iPhone 12 128GB for ₦420,000',
+          position: 1,
+        },
+        {
+          title: 'Apple iPhone 15 Pro Max 256GB',
+          link: 'https://store.example.ng/iphone-15-pro-max',
+          snippet: 'Used iPhone 15 Pro Max for ₦3,000,000',
+          position: 2,
+        },
+        {
+          title: 'Brand new Apple iPhone 12 128GB sealed pack',
+          link: 'https://store.example.ng/new-iphone-12',
+          snippet: 'Brand new iPhone 12 128GB for ₦950,000',
+          position: 3,
+        },
+        {
+          title: 'iPhone 12 replacement screen',
+          link: 'https://parts.example.ng/iphone-12-screen',
+          snippet: 'Replacement screen only ₦180,000',
+          position: 4,
+        },
+      ];
+
+      const result = service.extractPrices(mockResults, 'electronics', undefined, {
+        item: {
+          type: 'electronics',
+          brand: 'Apple',
+          model: 'iPhone 12',
+          storageCapacity: '128GB',
+          condition: 'Heavily Used',
+        },
+      });
+
+      expect(result.prices.map((entry) => entry.price)).toEqual([420000]);
+      expect(result.rejectedPrices?.some((entry) => entry.price === 3000000 && entry.rejectionReason.includes('generation'))).toBe(true);
+      expect(result.rejectedPrices?.some((entry) => entry.price === 950000 && entry.rejectionReason.toLowerCase().includes('brand-new'))).toBe(true);
+      expect(result.rejectedPrices?.some((entry) => entry.price === 180000 && entry.rejectionReason.includes('accessory'))).toBe(true);
+    });
+
+    it('rejects mismatched appliance and machinery models before calculating a market median', () => {
+      const appliance = service.extractPrices([{
+        title: 'Samsung RT38 refrigerator used',
+        link: 'https://example.ng/rt38',
+        snippet: 'Samsung RT38 used fridge ₦480,000',
+        position: 1,
+      }], 'appliance', undefined, {
+        item: { type: 'appliance', brand: 'LG', model: 'GC-B459', condition: 'Nigerian Used' },
+      });
+
+      const machinery = service.extractPrices([{
+        title: 'CAT 320 excavator used',
+        link: 'https://example.ng/cat-320',
+        snippet: 'CAT 320 excavator ₦42,000,000',
+        position: 1,
+      }], 'machinery', undefined, {
+        item: { type: 'machinery', brand: 'Komatsu', machineryType: 'Excavator', model: 'PC200', condition: 'Nigerian Used' },
+      });
+
+      expect(appliance.prices).toHaveLength(0);
+      expect(machinery.prices).toHaveLength(0);
+    });
+
     it('should validate electronics prices correctly', () => {
       const mockResults: SerperSearchResult[] = [
         {

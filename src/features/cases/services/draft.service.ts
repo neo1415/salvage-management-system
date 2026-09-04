@@ -13,6 +13,7 @@ import {
   deleteDraft,
   type DraftCase,
 } from '@/lib/db/indexeddb';
+import { validateCaseIdentifiers } from '@/features/cases/validation/case-identifiers';
 
 export interface DraftValidation {
   valid: boolean;
@@ -122,6 +123,10 @@ class DraftServiceClass {
   ): DraftValidation {
     const errors: string[] = [];
     const requireMarketValue = options?.requireMarketValue ?? true;
+    errors.push(...validateCaseIdentifiers({
+      policyNumber: draft.formData.policyNumber,
+      branchName: draft.formData.branchName,
+    }).errors);
 
     if (requireMarketValue && (!draft.marketValue || draft.marketValue <= 0)) {
       errors.push('Claims paid / asset value is required. Enter it manually or run AI analysis to estimate it.');

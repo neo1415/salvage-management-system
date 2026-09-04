@@ -84,37 +84,44 @@ export async function proxy(request: NextRequest) {
   }
 
   if (role === 'vendor' && token?.id) {
-    const snapshot = await loadVendorNavigationSnapshot(token.id as string);
-    if (snapshot) {
-      const policy = await businessPolicyService.getEffectivePolicy();
-      const onboardingPath = resolveVendorOnboardingPath(policy, snapshot);
+    try {
+      const snapshot = await loadVendorNavigationSnapshot(token.id as string);
+      if (snapshot) {
+        const policy = await businessPolicyService.getEffectivePolicy();
+        const onboardingPath = resolveVendorOnboardingPath(policy, snapshot);
 
-      if (onboardingPath) {
-        const targetBase = onboardingPath.split('?')[0];
-        const onWrongOnboardingPage =
-          isVendorOnboardingPage(pathname) &&
-          pathname !== targetBase &&
-          !pathname.startsWith(`${targetBase}/`);
+        if (onboardingPath) {
+          const targetBase = onboardingPath.split('?')[0];
+          const onWrongOnboardingPage =
+            isVendorOnboardingPage(pathname) &&
+            pathname !== targetBase &&
+            !pathname.startsWith(`${targetBase}/`);
 
-        if (pathname.startsWith('/vendor/') && (!isVendorOnboardingPage(pathname) || onWrongOnboardingPage)) {
-          return NextResponse.redirect(new URL(onboardingPath, request.url));
-        }
+          if (pathname.startsWith('/vendor/') && (!isVendorOnboardingPage(pathname) || onWrongOnboardingPage)) {
+            return NextResponse.redirect(new URL(onboardingPath, request.url));
+          }
 
-        if (
-          pathname === CHANGE_PASSWORD_PATH &&
-          onboardingPath !== CHANGE_PASSWORD_PATH &&
-          !pathname.startsWith('/api/auth')
-        ) {
-          return NextResponse.redirect(new URL(onboardingPath, request.url));
-        }
+          if (
+            pathname === CHANGE_PASSWORD_PATH &&
+            onboardingPath !== CHANGE_PASSWORD_PATH &&
+            !pathname.startsWith('/api/auth')
+          ) {
+            return NextResponse.redirect(new URL(onboardingPath, request.url));
+          }
 
-        if (pathname.startsWith('/api/') && !isVendorOnboardingApi(pathname)) {
-          return NextResponse.json(
-            { error: 'Complete account setup before using this feature.' },
-            { status: 403 }
-          );
+          if (pathname.startsWith('/api/') && !isVendorOnboardingApi(pathname)) {
+            return NextResponse.json(
+              { error: 'Complete account setup before using this feature.' },
+              { status: 403 }
+            );
+          }
         }
       }
+    } catch (error) {
+      console.warn('[Proxy] Vendor onboarding lookup temporarily unavailable; allowing authenticated request', {
+        userId: token.id,
+        error: error instanceof Error ? error.message : 'Unknown database error',
+      });
     }
   }
 

@@ -13,7 +13,30 @@
  */
 
 import { v2 as cloudinary } from 'cloudinary';
+import { randomUUID } from 'node:crypto';
 import { compressImage, isCompressionAvailable, COMPRESSION_PRESETS } from '../integrations/tinypng';
+
+function cloudinaryErrorDetails(error: unknown): { message: string; status?: number } {
+  if (error instanceof Error) return { message: error.message };
+  if (typeof error !== 'object' || error === null) return { message: String(error || 'Unknown error') };
+
+  const value = error as Record<string, unknown>;
+  const nested = typeof value.error === 'object' && value.error !== null
+    ? value.error as Record<string, unknown>
+    : undefined;
+  const message = [value.message, nested?.message].find((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const rawStatus = value.http_code ?? value.status ?? nested?.http_code ?? nested?.status;
+  const status = typeof rawStatus === 'number' ? rawStatus : Number(rawStatus);
+  return { message: message || 'Unknown provider error', status: Number.isFinite(status) ? status : undefined };
+}
+
+export function isRetryableCloudinaryError(error: unknown): boolean {
+  const { message, status } = cloudinaryErrorDetails(error);
+  if (status && [400, 401, 403, 404, 409, 413, 415, 422].includes(status)) return false;
+  return !/invalid (?:api|signature)|authentication|unauthorized|forbidden|file size|unsupported|bad request/i.test(message);
+}
+
+const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 // Configure Cloudinary
 cloudinary.config({
@@ -250,14 +273,10 @@ export async function uploadFile(
       folder: options.folder,
       resource_type: (options.resourceType || 'auto') as 'image' | 'raw' | 'video' | 'auto',
       use_filename: true,
-      unique_filename: true,
-      overwrite: false,
+      unique_filename: false,
+      overwrite: true,
+      public_id: options.publicId || randomUUID(),
     };
-
-    // Add public ID if provided
-    if (options.publicId) {
-      uploadOptions.public_id = options.publicId;
-    }
 
     // Add transformation if provided
     if (options.transformation) {
@@ -269,11 +288,25 @@ export async function uploadFile(
       uploadOptions.tags = options.tags;
     }
 
-    // Upload to Cloudinary
-    const result = await cloudinary.uploader.upload(
-      typeof fileToUpload === 'string' ? fileToUpload : `data:image/jpeg;base64,${fileToUpload.toString('base64')}`,
-      uploadOptions
-    );
+    const uploadPayload = typeof fileToUpload === 'string'
+      ? fileToUpload
+      : `data:application/octet-stream;base64,${fileToUpload.toString('base64')}`;
+    let result: Awaited<ReturnType<typeof cloudinary.uploader.upload>> | undefined;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        result = await cloudinary.uploader.upload(uploadPayload, uploadOptions);
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt === 3 || !isRetryableCloudinaryError(error)) throw error;
+        console.warn(`[Cloudinary] Upload attempt ${attempt}/3 failed; retrying`, cloudinaryErrorDetails(error).message);
+        await wait(500 * 2 ** (attempt - 1));
+      }
+    }
+
+    if (!result) throw lastError || new Error('Upload did not return a result');
 
     return {
       publicId: result.public_id,
@@ -287,7 +320,7 @@ export async function uploadFile(
     };
   } catch (error) {
     console.error('Cloudinary upload error:', error);
-    throw new Error(`Failed to upload file to Cloudinary: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Failed to upload file to Cloudinary: ${cloudinaryErrorDetails(error).message}`);
   }
 }
 

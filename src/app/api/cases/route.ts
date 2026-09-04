@@ -27,6 +27,7 @@ import {
   summarizeImageIntegrity,
 } from '@/features/media/services/image-integrity.service';
 import type { ImageUploadClientMetadata } from '@/lib/db/schema/image-metadata';
+import { validateCaseIdentifiers } from '@/features/cases/validation/case-identifiers';
 
 /**
  * POST /api/cases
@@ -83,6 +84,14 @@ export async function POST(request: NextRequest) {
     if (!body.assetDetails) {
       return NextResponse.json(
         { success: false, error: 'Asset details are required' },
+        { status: 400 }
+      );
+    }
+
+    const identifiers = validateCaseIdentifiers(body);
+    if (identifiers.errors.length > 0) {
+      return NextResponse.json(
+        { success: false, error: identifiers.errors[0], errors: identifiers.errors },
         { status: 400 }
       );
     }
@@ -288,24 +297,6 @@ export async function POST(request: NextRequest) {
       console.log('✅ No duplicate detected - proceeding with case creation');
     }
 
-    const branchNameFromRequest = typeof body.branchName === 'string' ? body.branchName.trim() : '';
-    let staffBranchName = '';
-    if (!branchNameFromRequest) {
-      try {
-        const { db } = await import('@/lib/db/drizzle');
-        const { users } = await import('@/lib/db/schema/users');
-        const { eq } = await import('drizzle-orm');
-        const [staffUser] = await db
-          .select({ branchName: users.branchName })
-          .from(users)
-          .where(eq(users.id, session.user.id))
-          .limit(1);
-        staffBranchName = staffUser?.branchName?.trim() || '';
-      } catch (branchError) {
-        console.warn('Unable to resolve staff branch for case creation:', branchError);
-      }
-    }
-
     const photoMetadata: ImageUploadClientMetadata[] | undefined = Array.isArray(body.photoMetadata)
       ? body.photoMetadata.slice(0, body.photos.length).map((metadata: unknown, index: number) => {
           const value = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
@@ -324,11 +315,11 @@ export async function POST(request: NextRequest) {
     // Create case input
     const input: CreateCaseInput = {
       claimReference: body.claimReference,
-      policyNumber: typeof body.policyNumber === 'string' ? body.policyNumber.trim() || undefined : undefined,
+      policyNumber: identifiers.policyNumber,
       insuranceClass: body.insuranceClass,
       brokerName: body.brokerName,
       agencyName: body.agencyName,
-      branchName: branchNameFromRequest || staffBranchName || undefined,
+      branchName: identifiers.branchName,
       assetType: body.assetType,
       assetDetails: body.assetDetails,
       marketValue: body.marketValue,

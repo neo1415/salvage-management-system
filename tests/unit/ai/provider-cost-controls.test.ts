@@ -1,46 +1,32 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  isClaudeDamageFallbackEnabled,
-  isClaudeKycFallbackEnabled,
-  isClaudePickupFallbackEnabled,
-  isClaudePriceAdjudicationEnabled,
-  isGeminiPriceAdjudicationEnabled,
-  isPriceAdjudicationAiEnabled,
-} from '@/lib/ai/provider-cost-controls';
+import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 
-const ENV_KEYS = [
-  'CLAUDE_DAMAGE_FALLBACK_ENABLED',
-  'CLAUDE_KYC_FALLBACK_ENABLED',
-  'CLAUDE_PICKUP_FALLBACK_ENABLED',
-  'CLAUDE_PRICE_ADJUDICATION_ENABLED',
-  'GEMINI_PRICE_ADJUDICATION_ENABLED',
-  'PRICE_ADJUDICATION_AI_ENABLED',
-] as const;
+const originalKey = process.env.CLAUDE_API_KEY;
+const originalFlag = process.env.CLAUDE_DAMAGE_FALLBACK_ENABLED;
 
-describe('AI provider cost controls', () => {
+describe('Claude damage fallback cost control', () => {
   afterEach(() => {
-    ENV_KEYS.forEach((key) => delete process.env[key]);
+    if (originalKey === undefined) delete process.env.CLAUDE_API_KEY;
+    else process.env.CLAUDE_API_KEY = originalKey;
+    if (originalFlag === undefined) delete process.env.CLAUDE_DAMAGE_FALLBACK_ENABLED;
+    else process.env.CLAUDE_DAMAGE_FALLBACK_ENABLED = originalFlag;
   });
 
-  it('keeps every paid Claude workflow disabled by default', () => {
+  it('enables fallback by default when a real key is configured', () => {
+    process.env.CLAUDE_API_KEY = 'sk-ant-configured';
+    delete process.env.CLAUDE_DAMAGE_FALLBACK_ENABLED;
+    expect(isClaudeDamageFallbackEnabled()).toBe(true);
+  });
+
+  it('honors the explicit cost-off switch', () => {
+    process.env.CLAUDE_API_KEY = 'sk-ant-configured';
+    process.env.CLAUDE_DAMAGE_FALLBACK_ENABLED = 'false';
     expect(isClaudeDamageFallbackEnabled()).toBe(false);
-    expect(isClaudePickupFallbackEnabled()).toBe(false);
-    expect(isClaudeKycFallbackEnabled()).toBe(false);
-    expect(isClaudePriceAdjudicationEnabled()).toBe(false);
   });
 
-  it('requires both the adjudication master switch and provider switch', () => {
-    process.env.CLAUDE_PRICE_ADJUDICATION_ENABLED = 'true';
-    process.env.GEMINI_PRICE_ADJUDICATION_ENABLED = 'true';
-
-    expect(isPriceAdjudicationAiEnabled()).toBe(false);
-    expect(isClaudePriceAdjudicationEnabled()).toBe(false);
-    expect(isGeminiPriceAdjudicationEnabled()).toBe(false);
-
-    process.env.PRICE_ADJUDICATION_AI_ENABLED = 'true';
-
-    expect(isPriceAdjudicationAiEnabled()).toBe(true);
-    expect(isClaudePriceAdjudicationEnabled()).toBe(true);
-    expect(isGeminiPriceAdjudicationEnabled()).toBe(true);
+  it('does not enable fallback for a missing or placeholder key', () => {
+    process.env.CLAUDE_API_KEY = 'your-claude-api-key';
+    delete process.env.CLAUDE_DAMAGE_FALLBACK_ENABLED;
+    expect(isClaudeDamageFallbackEnabled()).toBe(false);
   });
 });

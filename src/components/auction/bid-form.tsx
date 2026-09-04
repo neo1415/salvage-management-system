@@ -397,12 +397,6 @@ export function BidForm({
                   ₦{(currentBid || 0).toLocaleString()}
                 </span>
               </div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-600">Next Valid Bid:</span>
-                <span className="text-lg font-bold text-[var(--brand-primary)]">
-                  ₦{minimumBidAmount.toLocaleString()}
-                </span>
-              </div>
               {/* Tier Limit Display */}
               {getTierLimit() && (
                 <div className="flex justify-between items-center">
@@ -434,7 +428,7 @@ export function BidForm({
                       inputMode="numeric"
                       value={bidAmount}
                       onChange={(e) => handleBidAmountChange(e.target.value)}
-                      placeholder={minimumBidAmount.toLocaleString()}
+                      placeholder="Enter your bid amount"
                       className={`w-full pl-8 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
                         error
                           ? 'border-red-500 focus:ring-red-500'

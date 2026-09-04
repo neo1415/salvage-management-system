@@ -3,34 +3,51 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowRight, X } from 'lucide-react';
 import { AppLink } from '@/components/navigation/app-link';
+import { useRealtimeNotifications } from '@/hooks/use-socket';
 
 export function MdEarlyCloseBanner() {
   const [pendingCount, setPendingCount] = useState(0);
   const [dismissed, setDismissed] = useState(false);
+  const { newNotification } = useRealtimeNotifications();
+
+  useEffect(() => {
+    const data = newNotification?.data;
+    if (data?.requestId || data?.url?.startsWith('/auction-closure-requests/')) {
+      window.dispatchEvent(new Event('auction-closure-requests-changed'));
+    }
+  }, [newNotification]);
 
   useEffect(() => {
     let active = true;
+    let loadSequence = 0;
     const loadPending = async () => {
+      const sequence = ++loadSequence;
       try {
         const accessResponse = await fetch('/api/staff/department-access', { cache: 'no-store' });
         const access = accessResponse.ok ? await accessResponse.json() : null;
-        if (!active || access?.isManagingDirector !== true) return;
+        if (!active || sequence !== loadSequence) return;
+        if (access?.isManagingDirector !== true) {
+          setPendingCount(0);
+          return;
+        }
         const response = await fetch('/api/auction-closure-requests?status=pending', { cache: 'no-store' });
         const result = response.ok ? await response.json() : null;
-        if (active) {
+        if (active && sequence === loadSequence) {
           setPendingCount(Array.isArray(result?.requests) ? result.requests.length : 0);
           setDismissed(false);
         }
       } catch {
-        if (active) setPendingCount(0);
+        // Keep the last known count during a transient network or socket outage.
       }
     };
     const handleRequestsChanged = () => void loadPending();
     void loadPending();
+    const pollingFallback = window.setInterval(loadPending, 15_000);
     window.addEventListener('auction-closure-requests-changed', handleRequestsChanged);
     window.addEventListener('focus', handleRequestsChanged);
     return () => {
       active = false;
+      window.clearInterval(pollingFallback);
       window.removeEventListener('auction-closure-requests-changed', handleRequestsChanged);
       window.removeEventListener('focus', handleRequestsChanged);
     };

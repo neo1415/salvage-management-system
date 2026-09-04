@@ -592,7 +592,7 @@ export function parseQuantityValue(value?: string): number | undefined {
 function stripBulkNarrative(value?: string): string {
   if (!value) return '';
   const trimmed = value.trim();
-  const cut = trimmed.search(/\s+(approximately|stored in|across photos|all bags|surrounding|consistent with|no intact)/i);
+  const cut = trimmed.search(/\s+(approximately|stored in|across photos|all bags|surrounding|consistent with|no intact|(?:fire|water|flood|smoke|heat)\s+damaged|damaged|burnt|burned|wet|contaminated)/i);
   const short = cut > 0 ? trimmed.slice(0, cut) : trimmed;
   return short.replace(/\s+/g, ' ').trim().slice(0, 80);
 }
@@ -2362,12 +2362,15 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
 }> {
   // If no item info, use generic estimation
   if (!itemInfo) {
-    console.log('⚠️ No item info provided, using generic estimation');
+    console.warn('No item information was provided; market value requires manual review');
     return {
-      value: 3000000, // Default 3M Naira for unknown items
-      confidence: 30,
+      value: 0,
+      confidence: 0,
       source: 'estimated',
-      evidence: { reason: 'missing_item_info' },
+      evidence: {
+        reason: 'missing_item_info',
+        reviewReasons: ['Asset identity is missing; no market or salvage value was inferred.'],
+      },
     };
   }
 
@@ -2676,6 +2679,7 @@ async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { 
       brand: itemInfo.brand || itemInfo.make,
       model: itemInfo.model,
       condition: itemInfo.condition,
+      reviewReasons: ['Live matching market evidence was unavailable; the category fallback must be reviewed before approval.'],
     },
   };
 }
@@ -2860,8 +2864,11 @@ function estimateUniversalMarketValue(itemInfo: UniversalItemInfo): number {
     }
   }
 
-  // Apply age depreciation
-  if (itemInfo.age) {
+  // Apply age depreciation. Electronics often arrive without an explicit age,
+  // so infer it from well-known generation names instead of pricing an older
+  // model as though it were a current flagship.
+  const effectiveAge = itemInfo.age ?? inferElectronicsGenerationAge(itemInfo);
+  if (effectiveAge !== undefined) {
     const depreciationRates: Record<string, number> = {
       'electronics': 0.25,    // 25% per year
       'appliance': 0.15,      // 15% per year
@@ -2874,7 +2881,7 @@ function estimateUniversalMarketValue(itemInfo: UniversalItemInfo): number {
 
     const rate = depreciationRates[itemInfo.type] || 0.10;
     const maxDepreciation = itemInfo.type === 'electronics' ? 0.80 : 0.60; // Electronics depreciate more
-    const depreciation = Math.min(itemInfo.age * rate, maxDepreciation);
+    const depreciation = Math.min(effectiveAge * rate, maxDepreciation);
     
     if (rate > 0) {
       baseValue *= (1.0 - depreciation);
@@ -2889,6 +2896,35 @@ function estimateUniversalMarketValue(itemInfo: UniversalItemInfo): number {
   }
 
   return Math.round(Math.max(50000, baseValue)); // Minimum 50K Naira
+}
+
+function inferElectronicsGenerationAge(itemInfo: UniversalItemInfo): number | undefined {
+  if (itemInfo.type !== 'electronics') return undefined;
+  const model = `${itemInfo.brand || ''} ${itemInfo.model || ''}`.toLowerCase();
+  const currentYear = new Date().getFullYear();
+
+  const iphone = model.match(/\biphone\s*(\d{1,2})\b/);
+  if (iphone) {
+    const generation = Number(iphone[1]);
+    const releaseYear = generation >= 12 && generation <= 30 ? 2008 + generation : undefined;
+    if (releaseYear) return Math.max(0, currentYear - releaseYear);
+  }
+
+  const galaxy = model.match(/\bgalaxy\s*s\s*(\d{2})\b/);
+  if (galaxy) {
+    const generation = Number(galaxy[1]);
+    const releaseYear = generation >= 20 ? 2000 + generation : undefined;
+    if (releaseYear) return Math.max(0, currentYear - releaseYear);
+  }
+
+  const pixel = model.match(/\bpixel\s*(\d{1,2})\b/);
+  if (pixel) {
+    const generation = Number(pixel[1]);
+    const releaseYear = generation >= 1 ? 2015 + generation : undefined;
+    if (releaseYear) return Math.max(0, currentYear - releaseYear);
+  }
+
+  return undefined;
 }
 
 /**

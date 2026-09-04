@@ -42,6 +42,11 @@ interface Comparison {
 
 interface PendingPickupConfirmation {
   auctionId: string;
+  pickupContact: {
+    name: string;
+    phone: string | null;
+    email: string;
+  };
   pickupConfirmedVendor: boolean;
   pickupConfirmedAdmin: boolean;
   pickupEvidence: {

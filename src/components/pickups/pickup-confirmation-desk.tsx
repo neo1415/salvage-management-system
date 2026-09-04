@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle2, ClipboardCheck, Loader2, Search, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, ClipboardCheck, Loader2, Phone, Search, ShieldCheck } from 'lucide-react';
+import { getTelephoneHref } from '@/lib/utils/phone-link';
 
 interface PickupContext {
   auctionId: string;
@@ -168,7 +169,14 @@ export function PickupConfirmationDesk({ onConfirmed }: { onConfirmed?: () => vo
             <div className="rounded-lg bg-white p-3">
               <p className="text-xs text-gray-500">Vendor</p>
               <p className="font-semibold text-gray-900">{pickup.vendorBusinessName || pickup.vendorName}</p>
-              <p className="text-sm text-gray-600">{pickup.vendorPhone || pickup.vendorEmail}</p>
+              {getTelephoneHref(pickup.vendorPhone) ? (
+                <a href={getTelephoneHref(pickup.vendorPhone) || undefined} className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--brand-primary)] hover:underline">
+                  <Phone className="h-3.5 w-3.5" aria-hidden="true" />
+                  {pickup.vendorPhone}
+                </a>
+              ) : (
+                <p className="text-sm text-gray-600">{pickup.vendorEmail}</p>
+              )}
             </div>
             <div className="rounded-lg bg-white p-3">
               <p className="text-xs text-gray-500">Payment</p>

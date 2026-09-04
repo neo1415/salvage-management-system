@@ -19,7 +19,8 @@
  * 
  * Claude is an optional fallback after Gemini, never an automatic paid default.
  * 
- * Paid use is disabled unless CLAUDE_DAMAGE_FALLBACK_ENABLED=true.
+ * A configured key enables the owner-approved paid fallback unless
+ * CLAUDE_DAMAGE_FALLBACK_ENABLED=false is set as a cost-off switch.
  */
 
 import Anthropic from '@anthropic-ai/sdk';

@@ -2,8 +2,16 @@ function enabled(name: string): boolean {
   return process.env[name]?.trim().toLowerCase() === 'true';
 }
 
+function configured(name: string, placeholder: string): boolean {
+  const value = process.env[name]?.trim();
+  return Boolean(value && value !== placeholder);
+}
+
 export function isClaudeDamageFallbackEnabled(): boolean {
-  return enabled('CLAUDE_DAMAGE_FALLBACK_ENABLED');
+  const override = process.env.CLAUDE_DAMAGE_FALLBACK_ENABLED?.trim().toLowerCase();
+  if (override === 'false') return false;
+  if (override === 'true') return true;
+  return configured('CLAUDE_API_KEY', 'your-claude-api-key');
 }
 
 export function isPriceAdjudicationAiEnabled(): boolean {

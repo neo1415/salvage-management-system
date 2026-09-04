@@ -563,7 +563,7 @@ export class PriceAdjudicationService {
       .filter((opinion) => {
         if (!center) return true;
         const deviation = Math.abs((opinion.recommendedPrice! - center) / center) * 100;
-        return deviation <= 120 || opinion.manualReviewRequired;
+        return deviation <= 120;
       })
       .sort((a, b) => b.confidence - a.confidence);
     return credible[0] || null;

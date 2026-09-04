@@ -4,7 +4,7 @@ import {
   resolveVendorBidEligibility,
 } from '@/features/business-policy/onboarding-decisions';
 import { businessPolicyService } from '@/features/business-policy/business-policy.service';
-import { db } from '@/lib/db/drizzle';
+import { db, withRetry } from '@/lib/db/drizzle';
 import { vendors } from '@/lib/db/schema/vendors';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
@@ -181,7 +181,7 @@ export function resolveKycBannerCopy(
 }
 
 export async function loadVendorNavigationSnapshot(userId: string): Promise<VendorNavigationSnapshot | null> {
-  const [user] = await db
+  const [user] = await withRetry(() => db
     .select({
       role: users.role,
       requirePasswordChange: users.requirePasswordChange,
@@ -190,13 +190,13 @@ export async function loadVendorNavigationSnapshot(userId: string): Promise<Vend
     })
     .from(users)
     .where(eq(users.id, userId))
-    .limit(1);
+    .limit(1));
 
   if (!user || user.role !== 'vendor') {
     return null;
   }
 
-  const [vendor] = await db
+  const [vendor] = await withRetry(() => db
     .select({
       tier: vendors.tier,
       registrationFeePaid: vendors.registrationFeePaid,
@@ -204,7 +204,7 @@ export async function loadVendorNavigationSnapshot(userId: string): Promise<Vend
     })
     .from(vendors)
     .where(eq(vendors.userId, userId))
-    .limit(1);
+    .limit(1));
 
   const tier = vendor?.tier === 'tier2_full' ? 'tier2_full' : vendor?.tier === 'tier1_bvn' ? 'tier1_bvn' : 'tier0';
   const needsPhoneNumber = !hasRealVendorPhone(user.phone);

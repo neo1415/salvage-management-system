@@ -36,7 +36,7 @@ export async function notifyManagingDirectorsOfEarlyClose(input: {
   claimReference: string;
   requesterName: string;
   reason: string;
-}): Promise<void> {
+}): Promise<{ delivered: number; failed: number }> {
   const branding = await getEmailBranding();
   const reviewUrl = appPath(`/auction-closure-requests/${input.requestId}`);
   const html = await wrapProfessionalEmail(
@@ -49,22 +49,40 @@ export async function notifyManagingDirectorsOfEarlyClose(input: {
     `Early closure approval requested for ${input.claimReference}`
   );
 
-  await Promise.allSettled(input.recipients.flatMap((recipient) => [
-    createNotification({
-      userId: recipient.id,
-      type: 'system_alert',
-      title: 'Auction closure approval required',
-      message: `${input.requesterName} requested early closure for ${input.claimReference}.`,
-      data: { auctionId: input.auctionId, requestId: input.requestId, url: `/auction-closure-requests/${input.requestId}` },
-    }),
-    emailService.sendEmail({
-      to: recipient.email,
-      userId: recipient.id,
-      category: 'system',
-      subject: `Approval required: early auction closure for ${input.claimReference}`,
-      html,
-    }),
-  ]));
+  const deliveries = await Promise.all(input.recipients.map(async (recipient) => {
+    const [notification, email] = await Promise.allSettled([
+      createNotification({
+        userId: recipient.id,
+        type: 'system_alert',
+        title: 'Auction closure approval required',
+        message: `${input.requesterName} requested early closure for ${input.claimReference}.`,
+        data: { auctionId: input.auctionId, requestId: input.requestId, url: `/auction-closure-requests/${input.requestId}` },
+      }),
+      emailService.sendEmail({
+        to: recipient.email,
+        userId: recipient.id,
+        category: 'system',
+        critical: true,
+        subject: `Approval required: early auction closure for ${input.claimReference}`,
+        html,
+      }),
+    ]);
+    const notificationDelivered = notification.status === 'fulfilled' && notification.value !== null;
+    const emailDelivered = email.status === 'fulfilled' && email.value.success && !email.value.skipped;
+    if (!notificationDelivered || !emailDelivered) {
+      console.error('[Early Close] Managing Director notification delivery incomplete', {
+        recipientId: recipient.id,
+        requestId: input.requestId,
+        notificationDelivered,
+        emailDelivered,
+        emailError: email.status === 'fulfilled' ? email.value.error : String(email.reason),
+      });
+    }
+    return notificationDelivered && emailDelivered;
+  }));
+
+  const delivered = deliveries.filter(Boolean).length;
+  return { delivered, failed: deliveries.length - delivered };
 }
 
 export async function notifyEarlyCloseRequester(input: {

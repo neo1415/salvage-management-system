@@ -783,6 +783,8 @@ export function useRealtimeNotifications() {
       pickupAuthCode?: string;
       pickupLocation?: string;
       pickupDeadline?: string;
+      requestId?: string;
+      url?: string;
     };
   } | null>(null);
 
@@ -804,6 +806,8 @@ export function useRealtimeNotifications() {
             pickupAuthCode?: string;
             pickupLocation?: string;
             pickupDeadline?: string;
+            requestId?: string;
+            url?: string;
           };
         });
       }

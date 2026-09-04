@@ -38,17 +38,31 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  const parsed = departmentSchema.safeParse(await request.json());
+  const parsed = departmentSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid department', details: parsed.error.flatten() }, { status: 400 });
   const code = parsed.data.code || makeCode(parsed.data.name);
   if (!code || (EXECUTIVE_DEPARTMENT_CODES as readonly string[]).includes(code)) {
     return NextResponse.json({ error: 'This department code is reserved' }, { status: 409 });
   }
+  const insuranceClasses = Array.from(new Map(
+    parsed.data.insuranceClasses
+      .map((value) => value.trim().replace(/\s+/g, ' '))
+      .filter(Boolean)
+      .map((value) => [value.toLowerCase(), value])
+  ).values());
+  if (parsed.data.kind === 'claims' && insuranceClasses.length === 0) {
+    return NextResponse.json({ error: 'Claims departments require at least one insurance class' }, { status: 400 });
+  }
   try {
-    const [created] = await db.insert(departments).values({ ...parsed.data, code }).returning();
+    const [created] = await db.insert(departments).values({ ...parsed.data, insuranceClasses, code }).returning();
     return NextResponse.json({ success: true, department: created }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: 'A department with this name or code already exists' }, { status: 409 });
+  } catch (error) {
+    const databaseError = error as { code?: string; cause?: { code?: string } };
+    if ((databaseError.code ?? databaseError.cause?.code) === '23505') {
+      return NextResponse.json({ error: 'A department with this name or code already exists' }, { status: 409 });
+    }
+    console.error('[Departments] Failed to create department', error);
+    return NextResponse.json({ error: 'Department could not be added. Please retry.' }, { status: 503 });
   }
 }
 

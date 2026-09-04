@@ -9,7 +9,7 @@ import { registerServiceWorker } from '@/lib/utils/register-sw';
  */
 export function ServiceWorkerRegister() {
   useEffect(() => {
-    registerServiceWorker();
+    return registerServiceWorker();
   }, []);
 
   return null;

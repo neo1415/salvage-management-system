@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type MouseEvent } from 'react';
 import Image from 'next/image';
-import { AlertTriangle, CheckCircle2, MonitorSmartphone, Rocket, Save, ShieldAlert, Upload } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, MonitorSmartphone, Plus, Rocket, Save, ShieldAlert, Upload } from 'lucide-react';
 import type { BusinessPolicy, PolicyValidationResult } from '@/features/business-policy/types';
 import { validateBusinessPolicy } from '@/features/business-policy/policy-validation';
 import { sanitizeBusinessPolicy } from '@/features/business-policy/policy-sanitization';
@@ -12,9 +12,11 @@ import { WhiteLabelHomeTemplates } from '@/components/landing/home-templates';
 import { getReadableTextColor } from '@/features/branding/brand-colors';
 import { useToast } from '@/components/ui/toast';
 import { collectImageFileMetadata } from '@/features/media/client-image-metadata';
+import { insuranceClassKeyFromLabel, normalizeInsuranceClassLabel } from '@/features/business-policy/insurance-class-options';
 
 type EnterprisePolicyEditorProps = {
   initialPolicy: BusinessPolicy;
+  workflowExtras?: React.ReactNode;
 };
 
 type SaveResult = {
@@ -1346,7 +1348,7 @@ function applyOnboardingPreset(draft: BusinessPolicy, mode: BusinessPolicy['onbo
   }
 }
 
-export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditorProps) {
+export function EnterprisePolicyEditor({ initialPolicy, workflowExtras }: EnterprisePolicyEditorProps) {
   const toast = useToast();
   const [policy, setPolicy] = useState(() => clonePolicy(sanitizeBusinessPolicy(initialPolicy)));
   const [notes, setNotes] = useState('');
@@ -1357,6 +1359,8 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<'success' | 'error' | 'info'>('info');
   const [activeStep, setActiveStep] = useState<SetupStepId>('welcome');
+  const [newInsuranceClass, setNewInsuranceClass] = useState('');
+  const [addingInsuranceClass, setAddingInsuranceClass] = useState(false);
 
   const validation = useMemo(() => validateBusinessPolicy(policy), [policy]);
   const orderedAssetTypeKeys = useMemo(
@@ -1400,6 +1404,33 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
     } else {
       toast.info(text);
     }
+  };
+
+  const addInsuranceClass = () => {
+    if (addingInsuranceClass) return;
+
+    const label = normalizeInsuranceClassLabel(newInsuranceClass);
+    const key = insuranceClassKeyFromLabel(label);
+    if (label.length < 2 || !key) {
+      showMessage('Enter an insurance class name with at least two characters.', 'error');
+      return;
+    }
+    if (Object.keys(policy.cases.insuranceClasses).some((current) => current.toLowerCase() === key)) {
+      showMessage('That insurance class already exists.', 'error');
+      return;
+    }
+
+    setAddingInsuranceClass(true);
+    updatePolicy((draft) => {
+      draft.cases.insuranceClasses[key] = {
+        enabled: true,
+        label,
+        description: '',
+        defaultAssetTypes: ['other'],
+      };
+    });
+    setNewInsuranceClass('');
+    window.setTimeout(() => setAddingInsuranceClass(false), 150);
   };
 
   const saveDraft = async (options?: { quiet?: boolean }) => {
@@ -2481,6 +2512,31 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
           <p className="text-sm text-gray-600">
             Configure the insurance classes shown during case creation and the default asset categories each class usually maps to.
           </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <TextInput
+              aria-label="New insurance class"
+              maxLength={120}
+              value={newInsuranceClass}
+              onChange={(event) => setNewInsuranceClass(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  addInsuranceClass();
+                }
+              }}
+              placeholder="New insurance class"
+            />
+            <button
+              type="button"
+              onClick={addInsuranceClass}
+              disabled={addingInsuranceClass || !newInsuranceClass.trim()}
+              aria-busy={addingInsuranceClass}
+              className="inline-flex min-w-36 items-center justify-center gap-2 rounded-lg bg-[var(--brand-primary)] px-4 py-3 text-sm font-semibold text-[var(--brand-primary-foreground)] disabled:opacity-50"
+            >
+              {addingInsuranceClass ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {addingInsuranceClass ? 'Adding...' : 'Add class'}
+            </button>
+          </div>
           <div className="grid gap-3 lg:grid-cols-2">
             {Object.entries(policy.cases.insuranceClasses).map(([classKey, config]) => (
               <div key={classKey} className="rounded-lg border border-gray-200 p-4">
@@ -2530,6 +2586,10 @@ export function EnterprisePolicyEditor({ initialPolicy }: EnterprisePolicyEditor
             ))}
           </div>
         </div>
+
+        {activeStep === 'workflow' && workflowExtras ? (
+          <div className="xl:col-span-2">{workflowExtras}</div>
+        ) : null}
 
         <div className={`space-y-4 rounded-lg border border-gray-200 p-4 ${visibleStepClass('workflow')}`}>
           <h3 className="font-bold text-gray-900">Case Workflow</h3>

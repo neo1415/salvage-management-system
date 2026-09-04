@@ -81,6 +81,11 @@ interface VendorDashboardData {
 
 interface PendingPickupConfirmation {
   auctionId: string;
+  pickupContact: {
+    name: string;
+    phone: string | null;
+    email: string;
+  };
   pickupConfirmedVendor: boolean;
   pickupConfirmedAdmin: boolean;
   pickupEvidence: {
@@ -167,6 +172,11 @@ export async function GET() {
           ...cachedData,
           pendingPickupConfirmations: (cachedData.pendingPickupConfirmations ?? []).map((pickup) => ({
             ...pickup,
+            pickupContact: pickup.pickupContact ?? {
+              name: `${policy.branding.brandName} pickup team`,
+              phone: policy.branding.supportPhone || null,
+              email: policy.branding.supportEmail,
+            },
             pickupEvidence: pickup.pickupEvidence ?? {
               submitted: false,
               underReview: false,
@@ -276,6 +286,11 @@ export async function GET() {
       const evidence = evidenceByAuction[confirmation.auctionId];
       return {
         ...confirmation,
+        pickupContact: {
+          name: `${policy.branding.brandName} pickup team`,
+          phone: policy.branding.supportPhone || null,
+          email: policy.branding.supportEmail,
+        },
         pickupEvidence: evidence
           ? {
               submitted: true,

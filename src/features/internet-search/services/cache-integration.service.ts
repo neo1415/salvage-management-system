@@ -68,7 +68,7 @@ export interface CacheMetrics {
 }
 
 export class CacheIntegrationService {
-  private readonly CACHE_VERSION = 'v4'; // Action-aware pricing invalidates mixed repair/replacement cache entries
+  private readonly CACHE_VERSION = 'v5'; // Identity-aware pricing invalidates broad-category and mismatched-model entries
   private readonly CACHE_TTL = 24 * 60 * 60; // 24 hours in seconds
   private readonly METRICS_TTL = 7 * 24 * 60 * 60; // 7 days for metrics
   

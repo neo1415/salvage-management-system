@@ -464,6 +464,7 @@ export class InternetSearchService {
         item.type,
         item.type === 'vehicle' ? item.year : undefined,
         {
+          item,
           exchangeRates: valuationPolicy.exchangeRates,
           pricePlausibility: valuationPolicy.pricePlausibility,
         }
@@ -657,6 +658,7 @@ export class InternetSearchService {
         {
           mode: 'part',
           partName,
+          item,
           exchangeRates: valuationPolicy.exchangeRates,
           pricePlausibility: valuationPolicy.pricePlausibility,
         }

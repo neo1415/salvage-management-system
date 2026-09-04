@@ -1777,6 +1777,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+export function getGeminiDamageTimeoutMs(rawValue = process.env.GEMINI_DAMAGE_TIMEOUT_MS): number {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return 45000;
+  return Math.min(90000, Math.max(10000, Math.round(parsed)));
+}
+
+async function withGeminiTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
+
 /**
  * Call Gemini API with timeout and retry logic
  * 
@@ -1798,7 +1819,7 @@ async function callGeminiAPIWithRetry(
   contentParts: Part[],
   requestId: string
 ): Promise<GenerateContentResult> {
-  const timeoutMs = 30000; // 30 seconds per request (increased for multiple photos)
+  const timeoutMs = getGeminiDamageTimeoutMs();
   const retryDelayMs = 2000; // 2 seconds delay before retry
   let lastError: unknown = null;
 
@@ -1818,14 +1839,7 @@ async function callGeminiAPIWithRetry(
       }
     });
 
-    // Implement timeout
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-    });
-
-    const result = await Promise.race([apiCallPromise, timeoutPromise]);
+    const result = await withGeminiTimeout(apiCallPromise, timeoutMs);
     const duration = Date.now() - startTime;
 
     console.info(
@@ -1889,14 +1903,7 @@ async function callGeminiAPIWithRetry(
       }
     });
 
-    // Implement timeout
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-    });
-
-    const result = await Promise.race([apiCallPromise, timeoutPromise]);
+    const result = await withGeminiTimeout(apiCallPromise, timeoutMs);
     const duration = Date.now() - startTime;
 
     console.info(

@@ -853,7 +853,7 @@ export class QueryBuilderService {
   private stripBulkNarrative(value?: string): string {
     if (!value) return '';
     const trimmed = value.trim();
-    const cut = trimmed.search(/\s+(approximately|stored in|across photos|all bags|surrounding|consistent with)/i);
+    const cut = trimmed.search(/\s+(approximately|stored in|across photos|all bags|surrounding|consistent with|no intact|(?:fire|water|flood|smoke|heat)\s+damaged|damaged|burnt|burned|wet|contaminated)/i);
     const short = cut > 0 ? trimmed.slice(0, cut) : trimmed;
     return short.replace(/\s+/g, ' ').trim().slice(0, 80);
   }

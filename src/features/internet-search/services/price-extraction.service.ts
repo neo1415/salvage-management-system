@@ -41,6 +41,7 @@ export interface PriceExtractionResult {
 interface PriceExtractionOptions {
   mode?: 'market' | 'part';
   partName?: string;
+  item?: ItemIdentifier;
   exchangeRates?: Partial<Record<'USD' | 'GBP' | 'EUR', number>>;
   pricePlausibility?: ValuationPolicyConfig['pricePlausibility'];
 }
@@ -56,6 +57,8 @@ const NAIRA_PATTERNS = [
   /([0-9]+(?:\.[0-9]+)?)\s*(million|thousand)\s*naira/gi,
   /(?:₦|N)\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)\s*(?:-|to|and)\s*(?:₦|N)?\s*([0-9]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)?/gi,
 ];
+
+const NAIRA_RANGE_PATTERN = /(?:₦|NGN|N)\s*([0-9,]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)?\s*(?:-|–|to)\s*(?:₦|NGN|N)?\s*([0-9,]+(?:\.[0-9]+)?)\s*([mk]|million|thousand)?/gi;
 
 const CURRENCY_PATTERNS = {
   USD: [/\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi, /USD\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi],
@@ -118,11 +121,20 @@ export class PriceExtractionService {
     options: PriceExtractionOptions
   ): ExtractedPrice[] {
     const prices: ExtractedPrice[] = [];
+    let searchableText = text;
+
+    NAIRA_RANGE_PATTERN.lastIndex = 0;
+    let rangeMatch: RegExpExecArray | null;
+    while ((rangeMatch = NAIRA_RANGE_PATTERN.exec(text)) !== null) {
+      const rangePrice = this.parseNairaRange(rangeMatch, url, title, snippet);
+      if (rangePrice) prices.push(rangePrice);
+    }
+    searchableText = searchableText.replace(NAIRA_RANGE_PATTERN, ' ');
 
     for (const pattern of NAIRA_PATTERNS) {
       pattern.lastIndex = 0;
       let match: RegExpExecArray | null;
-      while ((match = pattern.exec(text)) !== null) {
+      while ((match = pattern.exec(searchableText)) !== null) {
         const price = this.parseNairaPrice(match, url, title, snippet);
         if (price) prices.push(price);
       }
@@ -147,6 +159,24 @@ export class PriceExtractionService {
     }
 
     return prices;
+  }
+
+  private parseNairaRange(match: RegExpExecArray, url: string, title: string, snippet: string): ExtractedPrice | null {
+    const firstMultiplier = match[2] || match[4];
+    const secondMultiplier = match[4] || match[2];
+    const first = this.applyAmountMultiplier(Number(match[1].replace(/,/g, '')), firstMultiplier);
+    const second = this.applyAmountMultiplier(Number(match[3].replace(/,/g, '')), secondMultiplier);
+    if (!Number.isFinite(first) || !Number.isFinite(second) || first <= 0 || second <= 0) return null;
+    const midpoint = Math.round((Math.min(first, second) + Math.max(first, second)) / 2);
+    const confidence = Math.min(95, 75 + this.getSourceConfidenceBonus(url));
+    return this.buildPrice(midpoint, 'NGN', `${match[0]} (range midpoint)`, confidence, url, title, snippet);
+  }
+
+  private applyAmountMultiplier(value: number, multiplier?: string): number {
+    const normalized = multiplier?.toLowerCase();
+    if (normalized?.startsWith('m')) return value * 1_000_000;
+    if (normalized?.startsWith('k') || normalized?.startsWith('t')) return value * 1_000;
+    return value;
   }
 
   private parseNairaPrice(match: RegExpExecArray, url: string, title: string, snippet: string): ExtractedPrice | null {
@@ -315,17 +345,17 @@ export class PriceExtractionService {
       });
     }
 
-    if (validPrices.length >= 5) {
-      validPrices = this.removeStatisticalOutliers(validPrices, rejectedPrices);
-    }
-
     const seen = new Set<string>();
-    const deduplicated = validPrices.filter((price) => {
+    let deduplicated = validPrices.filter((price) => {
       const key = `${Math.round(price.price)}-${price.source}-${price.originalText}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+
+    if (deduplicated.length >= 5) {
+      deduplicated = this.removeStatisticalOutliers(deduplicated, rejectedPrices);
+    }
 
     return {
       validPrices: deduplicated.sort((a, b) => b.confidence - a.confidence),
@@ -341,6 +371,11 @@ export class PriceExtractionService {
     if (!price.price || price.price <= 0 || !Number.isFinite(price.price)) return 'Invalid numeric price';
     if (price.confidence < 30) return 'Extraction confidence below 30%';
 
+    if (options.mode !== 'part' && options.item) {
+      const relevanceFailure = this.getMarketListingRelevanceFailure(price, options.item);
+      if (relevanceFailure) return relevanceFailure;
+    }
+
     if (options.mode === 'part') {
       if (!this.isRelevantPartListing(price, options.partName)) return `Listing is not specific to ${options.partName || 'part'}`;
       const maxPartPrice = this.getMaximumPlausiblePartPrice(itemType, options.partName, options);
@@ -353,7 +388,248 @@ export class PriceExtractionService {
 
     if (price.price < minPrice) return `Price below minimum threshold of NGN ${minPrice.toLocaleString()}`;
 
+    if (options.mode !== 'part') {
+      const maxPrice = this.getMaximumPlausibleMarketPrice(itemType);
+      if (price.price > maxPrice) return `Price above maximum threshold of NGN ${maxPrice.toLocaleString()}`;
+    }
+
     return null;
+  }
+
+  private getMaximumPlausibleMarketPrice(itemType?: ItemIdentifier['type']): number {
+    const thresholds: Partial<Record<ItemIdentifier['type'], number>> = {
+      vehicle: 2_000_000_000,
+      electronics: 25_000_000,
+      appliance: 50_000_000,
+      machinery: 25_000_000_000,
+      property: 2_000_000_000_000,
+      jewelry: 100_000_000_000,
+      furniture: 500_000_000,
+      artwork: 100_000_000_000,
+      stock: 100_000_000_000,
+      goods_in_transit: 100_000_000_000,
+      building_materials: 100_000_000_000,
+      scrap: 100_000_000_000,
+      agriculture: 100_000_000_000,
+      equipment: 25_000_000_000,
+      medical_equipment: 100_000_000_000,
+      energy_equipment: 250_000_000_000,
+      aviation_equipment: 500_000_000_000,
+      other: 100_000_000_000,
+    };
+    return (itemType && thresholds[itemType]) || 100_000_000_000;
+  }
+
+  private getMarketListingRelevanceFailure(price: ExtractedPrice, item: ItemIdentifier): string | null {
+    const text = this.normalizeIdentityText(`${price.title} ${price.snippet}`);
+    if (!text) return 'Listing has no usable identity text';
+
+    const electronicsAccessory = item.type === 'electronics'
+      && /\b(case|cover|screen protector|charger|charging cable|housing|replacement screen|display only|box only|accessory)\b/.test(text);
+    if (electronicsAccessory || /\b(replica|counterfeit|fake|copy)\b/.test(text)) {
+      return 'Listing appears to be an accessory, replacement part, empty box, or replica';
+    }
+
+    if (/\b(per month|monthly payment|monthly repayment|installments?|instalments?|deposit only|down payment|pay small small)\b/.test(text)) {
+      return 'Listing price appears to be a deposit, installment, or recurring payment rather than the full asset price';
+    }
+
+    if ('condition' in item && item.condition) {
+      const explicitlyNew = /\b(brand new|factory sealed|sealed pack|unopened|unused|new in box)\b/.test(text);
+      const explicitlyUsed = /\b(used|pre owned|preowned|tokunbo|refurbished|fairly used|second hand)\b/.test(text);
+      if (explicitlyNew && explicitlyUsed) {
+        return 'Listing condition is ambiguous because it advertises both new and used stock';
+      }
+      if (item.condition === 'Brand New' && explicitlyUsed && !explicitlyNew) {
+        return 'Used listing does not match the requested brand-new condition';
+      }
+      if (item.condition !== 'Brand New' && explicitlyNew && !explicitlyUsed) {
+        return 'Brand-new listing does not match the requested used condition';
+      }
+    }
+
+    switch (item.type) {
+      case 'vehicle':
+        if (!this.containsIdentity(text, item.make) || !this.containsIdentity(text, item.model)) {
+          return 'Vehicle listing does not match the requested make and model';
+        }
+        break;
+      case 'electronics': {
+        const modelFailure = this.getElectronicsModelFailure(text, item.model);
+        if (modelFailure) return modelFailure;
+        if (!this.containsBrandOrProductFamily(text, item.brand, item.model)) {
+          return 'Electronics listing does not match the requested brand';
+        }
+        const storageFailure = this.getStorageMismatch(text, item.storageCapacity || item.storage);
+        if (storageFailure) return storageFailure;
+        break;
+      }
+      case 'appliance':
+        if (!this.containsIdentity(text, item.brand) || !this.containsIdentity(text, item.model)) {
+          return 'Appliance listing does not match the requested brand and model';
+        }
+        break;
+      case 'machinery':
+        if (!this.containsIdentity(text, item.brand)
+          || (item.model && !this.containsIdentity(text, item.model))
+          || (!item.model && !this.containsIdentity(text, item.machineryType))) {
+          return 'Machinery listing does not match the requested brand, type, and model';
+        }
+        break;
+      case 'property': {
+        if (/\b(for rent|to let|lease|per annum|per year|annual rent)\b/.test(text)) {
+          return 'Rental listing does not represent the property sale value';
+        }
+        const locationTokens = this.identityTokens(item.location).filter((token) => token.length > 3);
+        if (!this.containsIdentity(text, item.propertyType)
+          || (locationTokens.length > 0 && !locationTokens.some((token) => text.includes(token)))) {
+          return 'Property listing does not match the requested type and location';
+        }
+        break;
+      }
+      case 'jewelry':
+        if ((item.brand && !this.containsIdentity(text, item.brand)) || !this.containsIdentity(text, item.jewelryType)) {
+          return 'Jewelry listing does not match the requested brand or item type';
+        }
+        break;
+      case 'artwork':
+        if ((item.artist && !this.containsIdentity(text, item.artist)) || !this.containsIdentity(text, item.artworkType)) {
+          return 'Artwork listing does not match the requested artist or work type';
+        }
+        break;
+      case 'furniture':
+        if (item.brand && !this.containsIdentity(text, item.brand)) {
+          return 'Furniture listing does not match the requested brand';
+        }
+        break;
+      default: {
+        const brand = 'brand' in item ? item.brand : undefined;
+        const model = 'model' in item ? item.model : undefined;
+        if ((brand && !this.containsIdentity(text, brand)) || (model && !this.containsIdentity(text, model))) {
+          return 'Listing does not match the requested asset brand and model';
+        }
+        const description = 'description' in item ? item.description : undefined;
+        if (!brand && !model && description && !this.hasDescriptionIdentity(text, description)) {
+          return 'Listing does not match the requested asset description';
+        }
+        if (this.isBulkAsset(item.type)) {
+          const unitFailure = this.getBulkUnitMismatch(text, 'unitOfMeasure' in item ? item.unitOfMeasure : undefined);
+          if (unitFailure) return unitFailure;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private getElectronicsModelFailure(text: string, model: string): string | null {
+    const target = this.normalizeIdentityText(model);
+    const targetIphone = target.match(/\biphone\s*(\d{1,2})(?:\s+(pro))?(?:\s+(max|plus|mini))?\b/);
+    if (targetIphone) {
+      const listingIphone = text.match(/\biphone\s*(\d{1,2})(?:\s+(pro))?(?:\s+(max|plus|mini))?\b/);
+      const targetVariant = [targetIphone[2], targetIphone[3]].filter(Boolean).join(' ');
+      const listingVariant = [listingIphone?.[2], listingIphone?.[3]].filter(Boolean).join(' ');
+      if (!listingIphone || listingIphone[1] !== targetIphone[1] || listingVariant !== targetVariant) {
+        return 'iPhone listing does not match the requested generation and variant';
+      }
+      return null;
+    }
+
+    const targetGalaxy = target.match(/\bgalaxy\s*([asz]\s*\d{1,3})(?:\s+(ultra|plus|fe))?\b/);
+    if (targetGalaxy) {
+      const listingGalaxy = text.match(/\bgalaxy\s*([asz]\s*\d{1,3})(?:\s+(ultra|plus|fe))?\b/);
+      if (!listingGalaxy
+        || listingGalaxy[1].replace(/\s/g, '') !== targetGalaxy[1].replace(/\s/g, '')
+        || (listingGalaxy[2] || '') !== (targetGalaxy[2] || '')) {
+        return 'Galaxy listing does not match the requested generation and variant';
+      }
+      return null;
+    }
+
+    return this.containsIdentity(text, target)
+      ? null
+      : 'Electronics listing does not match the requested model';
+  }
+
+  private getStorageMismatch(text: string, requestedStorage?: string): string | null {
+    if (!requestedStorage) return null;
+    const target = this.storageInGb(requestedStorage);
+    if (!target) return null;
+    const listingStorage = Array.from(text.matchAll(/\b(\d{2,4})\s*(gb|tb)\b/g))
+      .map((match) => this.storageInGb(`${match[1]}${match[2]}`))
+      .filter((value): value is number => value !== null);
+    if (listingStorage.length > 0 && !listingStorage.includes(target)) {
+      return 'Electronics listing storage does not match the requested capacity';
+    }
+    return null;
+  }
+
+  private hasDescriptionIdentity(text: string, description: string): boolean {
+    const ignored = new Set([
+      'asset', 'item', 'goods', 'used', 'new', 'damaged', 'damage', 'salvage', 'stock',
+      'batch', 'lot', 'approximately', 'warehouse', 'available', 'sale', 'nigeria',
+    ]);
+    const tokens = this.identityTokens(description)
+      .filter((token) => token.length > 2 && !ignored.has(token))
+      .slice(0, 8);
+    if (tokens.length === 0) return false;
+    const matches = tokens.filter((token) => (` ${text} `).includes(` ${token} `)).length;
+    return matches >= Math.min(2, tokens.length);
+  }
+
+  private isBulkAsset(type: ItemIdentifier['type']): boolean {
+    return ['stock', 'goods_in_transit', 'building_materials', 'scrap', 'agriculture'].includes(type);
+  }
+
+  private getBulkUnitMismatch(text: string, requestedUnit?: string): string | null {
+    if (!requestedUnit?.trim()) return null;
+    const unitGroups: Array<{ name: string; pattern: RegExp }> = [
+      { name: 'bag', pattern: /\b(bag|bags|sack|sacks)\b/ },
+      { name: 'carton', pattern: /\b(carton|cartons|box|boxes|case|cases)\b/ },
+      { name: 'weight-kg', pattern: /\b(kg|kilogram|kilograms)\b/ },
+      { name: 'weight-tonne', pattern: /\b(ton|tons|tonne|tonnes|metric ton)\b/ },
+      { name: 'volume', pattern: /\b(litre|litres|liter|liters)\b/ },
+      { name: 'pallet', pattern: /\b(pallet|pallets)\b/ },
+      { name: 'unit', pattern: /\b(unit|units|piece|pieces|pcs)\b/ },
+    ];
+    const requested = this.normalizeIdentityText(requestedUnit);
+    const requestedGroup = unitGroups.find((group) => group.pattern.test(requested));
+    if (!requestedGroup) return null;
+    const listingGroups = unitGroups.filter((group) => group.pattern.test(text));
+    if (listingGroups.length > 0 && !listingGroups.some((group) => group.name === requestedGroup.name)) {
+      return `Listing unit does not match requested ${requestedUnit} pricing`;
+    }
+    return null;
+  }
+
+  private storageInGb(value: string): number | null {
+    const match = value.toLowerCase().match(/(\d{1,4})\s*(gb|tb)/);
+    if (!match) return null;
+    const amount = Number(match[1]);
+    return match[2] === 'tb' ? amount * 1024 : amount;
+  }
+
+  private containsBrandOrProductFamily(text: string, brand: string, model: string): boolean {
+    if (this.containsIdentity(text, brand)) return true;
+    const normalizedBrand = this.normalizeIdentityText(brand);
+    const normalizedModel = this.normalizeIdentityText(model);
+    if (normalizedBrand === 'apple' && /\b(iphone|ipad|macbook|imac|apple watch)\b/.test(normalizedModel)) return true;
+    if (normalizedBrand === 'samsung' && /\bgalaxy\b/.test(normalizedModel)) return true;
+    return false;
+  }
+
+  private containsIdentity(text: string, value?: string): boolean {
+    if (!value?.trim()) return true;
+    const normalized = this.normalizeIdentityText(value);
+    return normalized.length > 0 && (` ${text} `).includes(` ${normalized} `);
+  }
+
+  private identityTokens(value: string): string[] {
+    return this.normalizeIdentityText(value).split(' ').filter(Boolean);
+  }
+
+  private normalizeIdentityText(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
   private removeStatisticalOutliers(

@@ -3,7 +3,7 @@
  * Registers the service worker and handles updates
  */
 
-export function registerServiceWorker() {
+export function registerServiceWorker(): (() => void) | undefined {
   if (typeof window === 'undefined') {
     return;
   }
@@ -18,20 +18,33 @@ export function registerServiceWorker() {
   }
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
+    let updateTimer: ReturnType<typeof setInterval> | undefined;
+    let registration: ServiceWorkerRegistration | undefined;
+
+    const updateRegistration = async () => {
+      if (!registration || !navigator.onLine) return;
+      try {
+        await registration.update();
+      } catch (error) {
+        console.warn('Service Worker update deferred until the network is available:', error);
+      }
+    };
+
+    const onLoad = () => {
       navigator.serviceWorker
         .register('/sw.js')
-        .then((registration) => {
-          console.log('Service Worker registered successfully:', registration.scope);
+        .then((registered) => {
+          registration = registered;
+          console.log('Service Worker registered successfully:', registered.scope);
 
           // Check for updates periodically
-          setInterval(() => {
-            registration.update();
+          updateTimer = setInterval(() => {
+            void updateRegistration();
           }, 60 * 60 * 1000); // Check every hour
 
           // Handle service worker updates
-          registration.addEventListener('updatefound', () => {
-            const newWorker = registration.installing;
+          registered.addEventListener('updatefound', () => {
+            const newWorker = registered.installing;
             if (newWorker) {
               newWorker.addEventListener('statechange', () => {
                 if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
@@ -46,14 +59,23 @@ export function registerServiceWorker() {
           });
         })
         .catch((error) => {
-          console.error('Service Worker registration failed:', error);
+          console.warn('Service Worker registration deferred:', error);
         });
+    };
 
-      // Handle controller change (new service worker activated)
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        window.location.reload();
-      });
-    });
+    const onControllerChange = () => window.location.reload();
+    window.addEventListener('load', onLoad);
+    window.addEventListener('online', updateRegistration);
+
+    // Handle controller change (new service worker activated)
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+
+    return () => {
+      window.removeEventListener('load', onLoad);
+      window.removeEventListener('online', updateRegistration);
+      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+      if (updateTimer) clearInterval(updateTimer);
+    };
   } else {
     console.warn('Service Workers are not supported in this browser');
   }
@@ -63,7 +85,7 @@ export function registerServiceWorker() {
  * Unregister service worker (useful for development/testing)
  */
 export async function unregisterServiceWorker() {
-  if ('serviceWorker' in navigator) {
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     const registrations = await navigator.serviceWorker.getRegistrations();
     for (const registration of registrations) {
       await registration.unregister();

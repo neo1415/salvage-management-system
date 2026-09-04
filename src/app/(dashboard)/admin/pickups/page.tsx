@@ -19,6 +19,7 @@ import {
 } from '@/components/admin/admin-pickup-confirmation';
 import { DataLoadingState } from '@/components/ui/loading-states';
 import { PickupConfirmationDesk } from '@/components/pickups/pickup-confirmation-desk';
+import { getTelephoneHref } from '@/lib/utils/phone-link';
 
 interface PickupConfirmation {
   auctionId: string;
@@ -474,7 +475,16 @@ export default function AdminPickupsPage() {
                       </p>
                       <p>
                         <span className="text-gray-600">Phone:</span>{' '}
-                        <span className="font-medium">{pickup.vendor.phone}</span>
+                        {getTelephoneHref(pickup.vendor.phone) ? (
+                          <a
+                            href={getTelephoneHref(pickup.vendor.phone) || undefined}
+                            className="font-medium text-[var(--brand-primary)] hover:underline"
+                          >
+                            {pickup.vendor.phone}
+                          </a>
+                        ) : (
+                          <span className="font-medium text-gray-500">Unavailable</span>
+                        )}
                       </p>
                     </div>
                   </div>

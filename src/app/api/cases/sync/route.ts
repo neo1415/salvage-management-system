@@ -60,6 +60,11 @@ export async function POST(request: NextRequest) {
         // Create case input
         const input: CreateCaseInput = {
           claimReference: offlineCase.claimReference,
+          policyNumber: offlineCase.policyNumber,
+          insuranceClass: offlineCase.insuranceClass,
+          brokerName: offlineCase.brokerName,
+          agencyName: offlineCase.agencyName,
+          branchName: offlineCase.branchName,
           assetType: offlineCase.assetType,
           assetDetails: offlineCase.assetDetails,
           marketValue: offlineCase.marketValue,

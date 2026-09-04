@@ -480,7 +480,6 @@ export async function broadcastNewBid<T extends RealtimeBidData>(auctionId: stri
     console.log(`📢 Broadcasting to room: auction:${auctionId}`);
     console.log(`   - Clients in room: ${clientCount}`);
     console.log(`   - Bid amount: ₦${currentBid.toLocaleString()}`);
-    console.log(`   - Next valid bid: ₦${minimumBid.toLocaleString()}`);
     console.log(`   - EVENT NAME: 'auction:new-bid'`);
     console.log(`   - Payload:`, JSON.stringify({
       auctionId,

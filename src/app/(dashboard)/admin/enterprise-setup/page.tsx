@@ -21,8 +21,12 @@ export default async function EnterpriseSetupPage() {
   return (
     <main className="container mx-auto px-4 py-8">
       <div className="mb-6">
-        <EnterprisePolicyEditor initialPolicy={policy} />
-        <DepartmentManager insuranceClasses={Object.entries(policy.cases.insuranceClasses).filter(([, value]) => value.enabled).map(([value, config]) => ({ value, label: config.label }))} />
+        <EnterprisePolicyEditor
+          initialPolicy={policy}
+          workflowExtras={
+            <DepartmentManager insuranceClasses={Object.entries(policy.cases.insuranceClasses).filter(([, value]) => value.enabled).map(([value, config]) => ({ value, label: config.label }))} />
+          }
+        />
       </div>
     </main>
   );
