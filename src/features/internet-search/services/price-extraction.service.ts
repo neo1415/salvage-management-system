@@ -70,6 +70,7 @@ const SOURCE_QUALITY: Record<'high' | 'medium' | 'low', string[]> = {
 
 export class PriceExtractionService {
   private readonly extractionFailures = new WeakMap<ExtractedPrice, string>();
+  private readonly amountRoles = new WeakMap<ExtractedPrice, 'current' | 'old' | 'shipping'>();
 
   extractPrices(
     results: SerperSearchResult[],
@@ -87,10 +88,19 @@ export class PriceExtractionService {
 
       const structuredPrice = this.createStructuredPrice(result, options);
       if (structuredPrice) listingPrices.push(structuredPrice);
+      const hasCurrentPrice = listingPrices.some((price) => this.amountRoles.get(price) === 'current');
+      const candidates = listingPrices.filter((price) => {
+        const role = this.amountRoles.get(price);
+        if (role === 'shipping' || (role === 'old' && hasCurrentPrice)) {
+          this.extractionFailures.set(price, role === 'shipping' ? 'Separate shipping charge' : 'Explicit old price, not the current listing price');
+          return false;
+        }
+        return true;
+      });
       // Do this before plausibility filtering: a small deposit or another model's
       // amount must not silently disappear and make a multi-price result look exact.
-      if (new Set(listingPrices.map((price) => price.price)).size > 1) {
-        for (const price of listingPrices) {
+      if (new Set(candidates.map((price) => price.price)).size > 1) {
+        for (const price of candidates) {
           this.extractionFailures.set(price, 'Ambiguous listing contains multiple distinct amounts');
         }
       }
@@ -150,7 +160,20 @@ export class PriceExtractionService {
         : Math.min(80, 40 + this.getSourceConfidenceBonus(url));
       const originalText = match[0] + (second ? ' (range midpoint)' : '')
         + (currency !== 'NGN' ? ` (converted from ${currency})` : '');
-      prices.push(this.buildPrice(amount * rate, 'NGN', originalText, confidence, url, title, snippet));
+      const price = this.buildPrice(amount * rate, 'NGN', originalText, confidence, url, title, snippet);
+      // Only immediately adjacent labels establish an amount's role. Never infer
+      // a sale price from size, order, structured data, or an unrelated sentence.
+      const before = text.slice(0, match.index).trimEnd();
+      const after = text.slice(match.index! + match[0].length);
+      if (/\b(?:shipping|delivery)(?:\s+(?:fee|charge|cost))?\s*[:=-]?\s*$/i.test(before)
+        || /^\s*(?:for\s+)?(?:shipping|delivery)\s*(?:$|[.;,)])/i.test(after)) {
+        this.amountRoles.set(price, 'shipping');
+      } else if (/\b(?:was|old\s*price|original\s+price|previous\s+price|rrp)\s*[:=-]?\s*$/i.test(before)) {
+        this.amountRoles.set(price, 'old');
+      } else if (/\b(?:now|current\s+price|sale\s+price|discounted\s+price)\s*[:=-]?\s*$/i.test(before)) {
+        this.amountRoles.set(price, 'current');
+      }
+      prices.push(price);
     }
     return prices;
   }
@@ -274,6 +297,16 @@ export class PriceExtractionService {
     if (itemType === 'vehicle' && targetYear) {
       const tolerance = 2;
       validPrices = validPrices.filter((price) => {
+        if (options.mode === 'part') {
+          const text = `${price.title} ${price.snippet}`;
+          const ranges = [...text.matchAll(/\b((?:19|20)\d{2})\s*(?:-|\u2013|\u2014|to)\s*((?:19|20)\d{2})\b/gi)];
+          const compatible = ranges.length > 0
+            ? ranges.every((range) => Number(range[1]) <= targetYear && targetYear <= Number(range[2]))
+            : price.extractedYear === targetYear;
+          price.yearMatched = compatible;
+          if (!compatible) rejectedPrices.push({ ...price, rejectionReason: 'Part listing does not establish compatible model year' });
+          return compatible;
+        }
         if (!price.extractedYear) {
           if (price.sourceQuality === 'high' && price.confidence >= 90) {
             price.yearMatched = false;
@@ -295,8 +328,8 @@ export class PriceExtractionService {
     }
 
     const seen = new Set<string>();
-    let deduplicated = validPrices.filter((price) => {
-      const key = `${price.price}-${price.source}`;
+    let deduplicated = validPrices.sort((a, b) => b.confidence - a.confidence).filter((price) => {
+      const key = this.listingUrlKey(price.url);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -333,6 +366,16 @@ export class PriceExtractionService {
 
     if (options.mode === 'part') {
       if (!this.isRelevantPartListing(price, options.partName)) return `Listing is not specific to ${options.partName || 'part'}`;
+      if (options.item) {
+        const text = this.normalizeIdentityText(`${price.title} ${price.snippet}`);
+        const item = options.item;
+        const brand = item.type === 'vehicle' ? item.make : 'brand' in item ? item.brand : undefined;
+        const model = 'model' in item ? item.model : undefined;
+        if (!this.containsIdentity(text, brand) || !this.containsIdentity(text, model)
+          || (item.type === 'electronics' && this.getElectronicsModelFailure(text, item.model))) {
+          return 'Part listing does not match the requested asset brand and model';
+        }
+      }
       const maxPartPrice = this.getMaximumPlausiblePartPrice(itemType, options.partName, options);
       if (price.price > maxPartPrice) return `Part price above plausible maximum of NGN ${maxPartPrice.toLocaleString()}`;
     }
@@ -435,10 +478,14 @@ export class PriceExtractionService {
         if (/\b(for rent|to let|lease|per annum|per year|annual rent)\b/.test(text)) {
           return 'Rental listing does not represent the property sale value';
         }
-        const locationTokens = this.identityTokens(item.location).filter((token) => token.length > 3);
+        const locationTokens = this.identityTokens(item.location);
         if (!this.containsIdentity(text, item.propertyType)
-          || (locationTokens.length > 0 && !locationTokens.some((token) => text.includes(token)))) {
+          || locationTokens.length === 0 || !locationTokens.every((token) => this.containsIdentity(text, token))) {
           return 'Property listing does not match the requested type and location';
+        }
+        const bedrooms = [...text.matchAll(/\b(\d+)\s*(?:bedrooms?|beds?)\b/g)].map((match) => Number(match[1]));
+        if (item.bedrooms !== undefined && bedrooms.some((count) => count !== item.bedrooms)) {
+          return 'Property listing does not match the requested bedroom count';
         }
         break;
       }
@@ -692,9 +739,9 @@ export class PriceExtractionService {
 
   private isRelevantPartListing(price: ExtractedPrice, partName?: string): boolean {
     const part = (partName || '').toLowerCase().trim();
-    const text = `${price.title} ${price.snippet}`.toLowerCase();
+    const text = this.normalizeIdentityText(`${price.title} ${price.snippet}`);
     const tokens = this.getPartTokens(part);
-    const hasPartToken = tokens.some((token) => text.includes(token));
+    const hasPartToken = tokens.some((token) => this.containsIdentity(text, token));
     if (!hasPartToken) return false;
 
     const wholeAssetSignals = [
@@ -703,26 +750,36 @@ export class PriceExtractionService {
       'vehicles for sale',
       'vehicle for sale',
       'market range',
-      'foreign used',
-      'tokunbo',
     ];
 
-    if (!wholeAssetSignals.some((signal) => text.includes(signal))) return true;
-    return tokens.some((token) => text.includes(`${token} for`) || text.includes(`${token} available`));
+    return !wholeAssetSignals.some((signal) => text.includes(signal));
   }
 
   private getPartTokens(partName: string): string[] {
-    const baseTokens = partName.split(/[^a-z0-9]+/).filter((token) => token.length > 2);
     const synonyms: Record<string, string[]> = {
       bumper: ['bumper', 'front bumper', 'rear bumper'],
       'body panel': ['body panel', 'panel', 'quarter panel', 'fender', 'bonnet', 'hood'],
       hood: ['hood', 'bonnet'],
       bonnet: ['bonnet', 'hood'],
       'engine parts': ['engine', 'alternator', 'compressor', 'radiator', 'starter'],
-      headlight: ['headlight', 'head lamp', 'lamp'],
-      windshield: ['windshield', 'windscreen', 'glass'],
+      headlight: ['headlight', 'head lamp', 'headlamp'],
+      windshield: ['windshield', 'windscreen'],
     };
-    return Array.from(new Set([...baseTokens, ...(synonyms[partName] || [])]));
+    return synonyms[partName] || [this.normalizeIdentityText(partName)];
+  }
+
+  private listingUrlKey(url: string): string {
+    try {
+      const parsed = new URL(url);
+      parsed.hash = '';
+      for (const key of [...parsed.searchParams.keys()]) {
+        if (/^(utm_.+|gclid|fbclid)$/i.test(key)) parsed.searchParams.delete(key);
+      }
+      parsed.searchParams.sort();
+      return parsed.toString();
+    } catch {
+      return url;
+    }
   }
 
   private getSourceConfidenceBonus(url: string): number {
@@ -742,7 +799,7 @@ export class PriceExtractionService {
 
   private extractDomain(url: string): string {
     try {
-      return new URL(url).hostname;
+      return new URL(url).hostname.replace(/^www\./, '');
     } catch {
       return url;
     }

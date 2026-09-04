@@ -3,6 +3,7 @@ import { GoogleGenerativeAI, type GenerateContentRequest } from '@google/generat
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 import type { ExtractedPrice, PriceExtractionResult } from '@/features/internet-search/services/price-extraction.service';
 import type { ValuationPolicyConfig } from './valuation-policy.service';
+import { collectClaudeGrounding, collectGeminiGrounding, evidenceUrl, extractGroundedPrices } from './grounding-evidence';
 import {
   isClaudePriceAdjudicationEnabled,
   isGeminiPriceAdjudicationEnabled,
@@ -30,6 +31,8 @@ export interface AiPriceOpinion {
   acceptedSources?: string[];
   rejectedSources?: string[];
   rawText?: string;
+  /** Extracted from native citation metadata, never from the opinion JSON. */
+  researchedPrices?: ExtractedPrice[];
 }
 
 export interface PriceAdjudicationResult {
@@ -41,10 +44,11 @@ export interface PriceAdjudicationResult {
   reviewReasons: string[];
   rejectedPrices: Array<ExtractedPrice & { rejectionReason: string }>;
   aiOpinions: AiPriceOpinion[];
+  /** Newly discovered native-cited listings that passed extraction and deterministic guards. */
+  researchedPrices?: ExtractedPrice[];
 }
 
-const AI_ADJUDICATION_TIMEOUT_MS = 12_000;
-const MIN_AI_CONFIDENCE_TO_SELECT = 65;
+const AI_ADJUDICATION_TIMEOUT_MS = 30_000;
 const CLAUDE_WEB_SEARCH_COST_USD = 0.01;
 
 const LOW_TRUST_MARKETPLACE_DOMAINS = [
@@ -142,7 +146,8 @@ function extractSpecialistBrands(item: ItemIdentifier, partName?: string): strin
 }
 
 function sourceDomain(price: ExtractedPrice): string {
-  return (price.source || price.url || '').toLowerCase();
+  const url = evidenceUrl(price.url);
+  return url ? new URL(url).hostname.toLowerCase().replace(/^www\./, '') : price.source.toLowerCase();
 }
 
 function listingText(price: ExtractedPrice): string {
@@ -302,7 +307,7 @@ function spreadPercent(values: number[], center: number): number {
 function confidenceFromPrices(prices: ExtractedPrice[], spread: number): number {
   if (!prices.length) return 0;
   const averageConfidence = average(prices.map((price) => price.confidence)) || 0;
-  const uniqueSourceCount = new Set(prices.map((price) => price.source)).size;
+  const uniqueSourceCount = new Set(prices.map(sourceDomain)).size;
   const highQualityCount = prices.filter((price) => price.sourceQuality === 'high').length;
   return Math.max(0, Math.min(100, Math.round(
     averageConfidence +
@@ -340,7 +345,7 @@ function rebuildPriceData(source: PriceExtractionResult, prices: ExtractedPrice[
       : undefined,
     confidence: confidenceFromPrices(prices, spread),
     evidenceSummary: {
-      uniqueSourceCount: new Set(prices.map((price) => price.source)).size,
+      uniqueSourceCount: new Set(prices.map(sourceDomain)).size,
       priceSpreadPercent: spread,
       highQualitySourceCount: prices.filter((price) => price.sourceQuality === 'high').length,
       noYearPriceCount: prices.filter((price) => price.extractedYear == null).length,
@@ -402,8 +407,9 @@ function promptForAdjudication(input: PriceAdjudicationInput, filteredPrices: Ex
       'Reject counterfeit, replica, accessory-only, irrelevant, stale, low-trust, or implausible prices.',
       'For specialist/luxury assets, prefer appraisal/authorized dealer/auction-house evidence and require manual review when evidence is not definitive.',
       'Do not estimate without accepted listings. Leave recommendedPrice null when exact comparable evidence is unavailable.',
-      'Recommend only a supplied accepted listing price and cite its exact URL in acceptedSources; do not invent or interpolate amounts.',
-      'Return JSON only with keys: recommendedPrice, confidence, manualReviewRequired, reasons, acceptedSources, rejectedSources.',
+      'Find new comparable listings. Write one native-cited statement per listing with exact item/model, year, condition, unit or requested part, currency and advertised amount. Cite each statement to exactly one search result.',
+      'Do not invent amounts or treat a recommendation as listing evidence. Include the complete listing identity in each cited statement.',
+      'After the cited statements, optionally return a JSON summary with keys: recommendedPrice, confidence, manualReviewRequired, reasons, acceptedSources, rejectedSources.',
     ],
     mode: input.mode,
     item: input.item,
@@ -455,8 +461,8 @@ export function shouldEscalatePriceAdjudication(input: {
 }
 
 export function shouldUseClaudeWebFallback(mode: AdjudicationMode, geminiOpinion: AiPriceOpinion | null): boolean {
-  if (mode !== 'market') return false;
-  return !geminiOpinion?.recommendedPrice || geminiOpinion.confidence < MIN_AI_CONFIDENCE_TO_SELECT;
+  void mode;
+  return !geminiOpinion?.researchedPrices?.length;
 }
 
 function logClaudeAdjudicationUsage(response: Anthropic.Message, input: PriceAdjudicationInput): void {
@@ -491,11 +497,22 @@ function logClaudeAdjudicationUsage(response: Anthropic.Message, input: PriceAdj
   });
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return await Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs)),
-  ]);
+async function withTimeout<T>(factory: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      factory(controller.signal),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error(`Timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export class PriceAdjudicationService {
@@ -552,15 +569,16 @@ export class PriceAdjudicationService {
       return true;
     });
 
-    const uniqueSources = new Set(filteredPrices.map((price) => price.source)).size;
+    const uniqueSources = new Set(filteredPrices.map(sourceDomain)).size;
+    const listingCount = new Set(filteredPrices.map(price => evidenceUrl(price.url) || `${price.source}:${price.title}`)).size;
     const medianPrice = median(filteredPrices.map((price) => price.price));
     const spread = medianPrice ? spreadPercent(filteredPrices.map((price) => price.price), medianPrice) : 0;
 
     if (filteredPrices.length === 0) {
       reviewReasons.push('No accepted market evidence survived policy and relevance checks.');
     }
-    if (uniqueSources < input.policy.minimumMarketSourceCount && input.mode === 'market') {
-      reviewReasons.push(`Only ${uniqueSources} accepted market source(s); ${input.policy.minimumMarketSourceCount} required.`);
+    if (listingCount < input.policy.minimumMarketSourceCount && input.mode === 'market') {
+      reviewReasons.push(`Only ${listingCount} accepted market listing(s); ${input.policy.minimumMarketSourceCount} required.`);
     }
     if (input.policy.sourceDiversityRequired && uniqueSources < 2 && input.mode === 'market') {
       reviewReasons.push('Accepted market evidence is not source-diverse.');
@@ -589,12 +607,14 @@ export class PriceAdjudicationService {
         contents: [{ role: 'user', parts: [{ text: promptForAdjudication(input, filteredPrices, rejectedPrices) }] }],
         tools: [{ googleSearch: {} }],
         generationConfig: {
-          responseMimeType: 'application/json',
           temperature: 0.1,
           maxOutputTokens: 900,
         },
       } as unknown as GenerateContentRequest;
-      const result = await withTimeout(model.generateContent(request), AI_ADJUDICATION_TIMEOUT_MS);
+      const result = await withTimeout(
+        signal => model.generateContent(request, { signal } as Parameters<typeof model.generateContent>[1]),
+        AI_ADJUDICATION_TIMEOUT_MS
+      );
       console.info('[Price Adjudication] Gemini usage', {
         mode: input.mode,
         itemType: input.item.type,
@@ -602,7 +622,7 @@ export class PriceAdjudicationService {
         usage: result.response.usageMetadata,
       });
       const text = result.response.text();
-      return coerceAiOpinion('gemini_grounded', text);
+      return { ...coerceAiOpinion('gemini_grounded', text), researchedPrices: extractGroundedPrices(collectGeminiGrounding(result.response), input) };
     } catch (error) {
       return {
         provider: 'gemini_grounded',
@@ -619,28 +639,31 @@ export class PriceAdjudicationService {
     if (!apiKey || !apiKey.startsWith('sk-ant-')) return null;
 
     try {
-      const client = new Anthropic({ apiKey });
+      const client = new Anthropic({ apiKey, timeout: AI_ADJUDICATION_TIMEOUT_MS, maxRetries: 0 });
       const request = {
         model: process.env.CLAUDE_PRICE_ADJUDICATION_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
         max_tokens: 800,
         temperature: 0.1,
         tools: [{
-          type: 'web_search_20260318',
+          type: 'web_search_20250305',
           name: 'web_search',
-          response_inclusion: 'excluded',
+          max_uses: 3,
         }],
         messages: [{
           role: 'user',
           content: promptForAdjudication(input, filteredPrices, rejectedPrices),
         }],
       } as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming;
-      const response = await withTimeout(client.messages.create(request), AI_ADJUDICATION_TIMEOUT_MS);
+      const response = await withTimeout(
+        signal => client.messages.create(request, { signal }),
+        AI_ADJUDICATION_TIMEOUT_MS
+      );
       logClaudeAdjudicationUsage(response, input);
       const text = response.content
         .filter((block) => block.type === 'text')
         .map((block) => (block as { text?: string }).text || '')
         .join('\n');
-      return coerceAiOpinion('claude_web_search', text);
+      return { ...coerceAiOpinion('claude_web_search', text), researchedPrices: extractGroundedPrices(collectClaudeGrounding(response), input) };
     } catch (error) {
       return {
         provider: 'claude_web_search',
@@ -651,22 +674,8 @@ export class PriceAdjudicationService {
     }
   }
 
-  private selectAiOpinion(aiOpinions: AiPriceOpinion[], filteredPrices: ExtractedPrice[]): AiPriceOpinion | null {
-    const credible = aiOpinions
-      .filter((opinion) => !opinion.manualReviewRequired && opinion.confidence >= MIN_AI_CONFIDENCE_TO_SELECT)
-      // Self-reported grounding URLs alone do not prove an AI-generated amount.
-      .filter((opinion) => filteredPrices.some((price) =>
-        Number.isFinite(opinion.recommendedPrice) && opinion.recommendedPrice === price.price
-        && /^https?:\/\//i.test(price.url)
-        && opinion.acceptedSources?.includes(price.url)
-        && !opinion.rejectedSources?.includes(price.url)))
-      .sort((a, b) => b.confidence - a.confidence);
-    return credible[0] || null;
-  }
-
   async adjudicate(input: PriceAdjudicationInput): Promise<PriceAdjudicationResult> {
     const deterministic = this.applyDeterministicGuards(input);
-    const guardedPriceData = rebuildPriceData(input.priceData, deterministic.filteredPrices);
 
     const uniqueSourceCount = new Set(deterministic.filteredPrices.map((price) => price.source)).size;
     const center = median(deterministic.filteredPrices.map((price) => price.price));
@@ -694,7 +703,7 @@ export class PriceAdjudicationService {
       spreadPercent: spread,
       aiEscalationRequired: shouldAskAi,
       sequence: shouldAskAi
-        ? (input.mode === 'market' ? ['gemini_grounded', 'claude_market_fallback'] : ['gemini_grounded'])
+        ? ['gemini_grounded', 'claude_web_search_fallback']
         : ['serper'],
     });
 
@@ -707,9 +716,6 @@ export class PriceAdjudicationService {
       );
       if (geminiOpinion) aiOpinions.push(geminiOpinion);
 
-      // Claude remains available for live market-value escalation. Part prices
-      // use Serper plus Gemini and deterministic missing-part allowances so one
-      // assessment cannot fan out into many paid Claude web searches.
       if (shouldUseClaudeWebFallback(input.mode, geminiOpinion)) {
         const claudeOpinion = await this.getClaudeWebOpinion(
           input,
@@ -720,34 +726,34 @@ export class PriceAdjudicationService {
       }
     }
 
-    const selectedAiOpinion = this.selectAiOpinion(aiOpinions, deterministic.filteredPrices);
-    const serperCount = deterministic.filteredPrices.length;
-    const minSerperSources = input.mode === 'market'
-      ? input.policy.minimumMarketSourceCount
-      : 1;
-    const preferAi = serperCount === 0 || serperCount < minSerperSources;
-    const selectedPrice = preferAi && selectedAiOpinion?.recommendedPrice
-      ? selectedAiOpinion.recommendedPrice
-      : (selectedAiOpinion?.recommendedPrice || guardedPriceData.medianPrice || guardedPriceData.averagePrice);
-    const selectedSource = selectedAiOpinion?.provider || (selectedPrice ? 'serper' : 'none');
+    const groundedCandidates = aiOpinions.flatMap(opinion => opinion.researchedPrices || []);
+    const combinedInput: PriceAdjudicationInput = {
+      ...input,
+      priceData: {
+        ...input.priceData,
+        prices: [...input.priceData.prices, ...groundedCandidates],
+      },
+    };
+    const finalDeterministic = this.applyDeterministicGuards(combinedInput);
+    const finalPriceData = rebuildPriceData(combinedInput.priceData, finalDeterministic.filteredPrices);
+    const selectedPrice = finalPriceData.medianPrice || finalPriceData.averagePrice;
+    const acceptedOriginalEvidence = finalDeterministic.filteredPrices.some(price =>
+      input.priceData.prices.some(original => original.url === price.url && original.price === price.price)
+    );
+    const groundedProvider = aiOpinions.find(opinion => opinion.researchedPrices?.some(candidate =>
+      finalDeterministic.filteredPrices.some(price => price.url === candidate.url && price.price === candidate.price)
+    ))?.provider;
+    const selectedSource = selectedPrice
+      ? (acceptedOriginalEvidence ? 'serper' : groundedProvider || 'none')
+      : 'none';
     const aiReviewReasons = aiOpinions.flatMap((opinion) => opinion.manualReviewRequired ? opinion.reasons : []);
     const reviewReasons = Array.from(new Set([
-      ...deterministic.reviewReasons,
+      ...finalDeterministic.reviewReasons,
       ...aiReviewReasons,
-      ...(aiOpinions.some((opinion) => opinion.recommendedPrice) && !selectedAiOpinion
-        ? ['AI recommended price was not supported by an accepted comparable listing; retained listing evidence only.'] : []),
-      ...(selectedAiOpinion?.manualReviewRequired ? selectedAiOpinion.reasons : []),
+      ...(aiOpinions.some((opinion) => opinion.recommendedPrice) && groundedCandidates.length === 0
+        ? ['AI recommendation had no native-cited comparable listing and was not used.'] : []),
     ].filter(Boolean)));
-
-    const finalPriceData: PriceExtractionResult = {
-      ...guardedPriceData,
-      averagePrice: selectedPrice || guardedPriceData.averagePrice,
-      medianPrice: selectedPrice || guardedPriceData.medianPrice,
-      confidence: selectedAiOpinion
-        ? Math.min(selectedAiOpinion.confidence, guardedPriceData.confidence || selectedAiOpinion.confidence)
-        : guardedPriceData.confidence,
-      rejectedPrices: deterministic.rejectedPrices,
-    };
+    finalPriceData.rejectedPrices = finalDeterministic.rejectedPrices;
 
     return {
       priceData: finalPriceData,
@@ -756,8 +762,9 @@ export class PriceAdjudicationService {
       confidence: finalPriceData.confidence,
       manualReviewRequired: reviewReasons.length > 0 || aiOpinions.some((opinion) => opinion.manualReviewRequired),
       reviewReasons,
-      rejectedPrices: deterministic.rejectedPrices,
+      rejectedPrices: finalDeterministic.rejectedPrices,
       aiOpinions,
+      researchedPrices: finalDeterministic.filteredPrices.filter(price => groundedCandidates.some(candidate => candidate.url === price.url && candidate.price === price.price)),
     };
   }
 }

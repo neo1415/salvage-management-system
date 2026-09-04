@@ -4,12 +4,14 @@ import type { PriceAdjudicationResult } from '@/features/valuations/services/pri
 import { InternetSearchService } from '@/features/internet-search/services/internet-search.service';
 
 const mocks = vi.hoisted(() => ({
-  search: vi.fn(), extract: vi.fn(), adjudicate: vi.fn(), getCache: vi.fn(), setCache: vi.fn(), record: vi.fn(),
+  search: vi.fn(), extract: vi.fn(), adjudicate: vi.fn(), getCache: vi.fn(), setCache: vi.fn(),
+  getPartCache: vi.fn(), setPartCache: vi.fn(), record: vi.fn(),
 }));
 vi.mock('@/lib/integrations/serper-api', () => ({ serperApi: { search: mocks.search } }));
 vi.mock('@/features/internet-search/services/price-extraction.service', () => ({ priceExtractor: { extractPrices: mocks.extract } }));
 vi.mock('@/features/internet-search/services/cache-integration.service', () => ({ cacheIntegrationService: {
   getCachedMarketPrice: mocks.getCache, setCachedMarketPrice: mocks.setCache,
+  getCachedPartPrice: mocks.getPartCache, setCachedPartPrice: mocks.setPartCache,
 } }));
 vi.mock('@/features/valuations/services/price-adjudication.service', () => ({ priceAdjudicationService: { adjudicate: mocks.adjudicate } }));
 vi.mock('@/features/valuations/services/valuation-policy.service', () => ({ getValuationPolicyConfig: vi.fn(async () => ({
@@ -17,6 +19,8 @@ vi.mock('@/features/valuations/services/valuation-policy.service', () => ({ getV
 })) }));
 vi.mock('@/features/internet-search/services/query-builder.service', () => ({ queryBuilder: {
   buildMarketQuery: vi.fn(() => 'exact asset'), generateQueryVariations: vi.fn(() => ['exact asset']),
+  buildPartPriceQuery: vi.fn(() => 'exact asset replacement screen'),
+  getPartPricingContext: vi.fn(() => 'replacement part'),
 } }));
 vi.mock('@/features/internet-search/utils/performance-monitor', () => ({
   performanceMonitor: { recordSearch: mocks.record },
@@ -47,6 +51,7 @@ describe('market orchestration evidence safety', () => {
     vi.resetAllMocks();
     service = new InternetSearchService();
     mocks.getCache.mockResolvedValue(null);
+    mocks.getPartCache.mockResolvedValue(null);
     mocks.search.mockResolvedValue({ organic: [{ link: listing().url, title: listing().title, snippet: listing().snippet }] });
     mocks.extract.mockReturnValue(data());
     mocks.adjudicate.mockImplementation(async ({ priceData }) => decision(priceData));
@@ -95,10 +100,10 @@ describe('market orchestration evidence safety', () => {
       manualReviewRequired: true, reviewReasons: ['Identity requires review.'],
     }));
     const result = await service.getAggregatedMarketPrice(item);
-    expect(result.marketPrice.success).toBe(false);
+    expect(result.marketPrice.success).toBe(true);
     expect(result.marketPrice.priceData.prices).toHaveLength(1);
-    expect(result.recommendedPrice).toBeUndefined();
-    expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({ success: false, fromCache }));
+    expect(result.recommendedPrice).toBe(300_000);
+    expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({ success: true, fromCache }));
     expect(mocks.setCache).not.toHaveBeenCalled();
   });
 
@@ -178,5 +183,44 @@ describe('market orchestration evidence safety', () => {
     const result = await service.searchMarketPrice({ item });
     expect(result.success).toBe(true);
     expect(result.priceData.medianPrice).toBe(300_000);
+  });
+
+  it('does not report a successful part valuation without accepted evidence', async () => {
+    mocks.extract.mockReturnValue(data([]));
+    mocks.adjudicate.mockResolvedValue(decision(data([]), {
+      selectedPrice: undefined,
+      selectedSource: 'none',
+      confidence: 0,
+      manualReviewRequired: true,
+      reviewReasons: ['No accepted comparable listing evidence.'],
+    }));
+
+    const result = await service.searchPartPrice({ item, partName: 'replacement screen' });
+
+    expect(result.success).toBe(false);
+    expect(result.priceData.prices).toEqual([]);
+    expect(mocks.setPartCache).not.toHaveBeenCalled();
+  });
+
+  it('returns cited part evidence for review without caching it as verified', async () => {
+    const partListing = listing({
+      price: 85_000,
+      title: 'Apple iPhone 13 replacement screen',
+      snippet: 'Apple iPhone 13 replacement screen NGN 85,000',
+    });
+    const partData = { ...data([partListing]), averagePrice: 85_000, medianPrice: 85_000 };
+    mocks.extract.mockReturnValue(partData);
+    mocks.adjudicate.mockResolvedValue(decision(partData, {
+      selectedPrice: 85_000,
+      manualReviewRequired: true,
+      reviewReasons: ['Only one comparable part listing was found.'],
+    }));
+
+    const result = await service.searchPartPrice({ item, partName: 'replacement screen' });
+
+    expect(result.success).toBe(true);
+    expect(result.priceData.medianPrice).toBe(85_000);
+    expect(result.error).toContain('Only one comparable part listing');
+    expect(mocks.setPartCache).not.toHaveBeenCalled();
   });
 });

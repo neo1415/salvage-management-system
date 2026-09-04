@@ -2487,7 +2487,7 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
           condition: resolveSearchConditionForItem(itemInfo, 'property', undefined, itemInfo.propertyType),
         },
         maxResults: 10,
-        timeout: 5000,
+        timeout: 20_000,
         forceRefresh: options.forceRefresh,
       });
 
@@ -2522,7 +2522,7 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
       const searchResult = await internetSearchService.searchMarketPrice({
         item: searchIdentifier,
         maxResults: isBulkRecoveryAsset(itemInfo) ? 15 : 10,
-        timeout: 5000,
+        timeout: 20_000,
         forceRefresh: options.forceRefresh,
       });
 
@@ -2618,7 +2618,7 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
       const searchResult = await internetSearchService.searchMarketPrice({
         item: itemIdentifier,
         maxResults: 10,
-        timeout: 5000,
+        timeout: 20_000,
         forceRefresh: options.forceRefresh,
       });
 
@@ -3112,7 +3112,7 @@ async function searchUniversalPartPrices(
         damageType: damage.damageType || damage.damageLevel,
         action: damage.recommendedAction,
         maxResults: 8,
-        timeout: 7500,
+        timeout: 20_000,
         forceRefresh: options.forceRefresh,
       });
 

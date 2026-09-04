@@ -266,8 +266,8 @@ describe('PriceAdjudicationService', () => {
     expect(shouldEscalatePriceAdjudication({ ...shared, mode: 'part', acceptedPriceCount: 1 })).toBe(false);
   });
 
-  it('uses Claude web search only as a market fallback after weak Gemini evidence', () => {
-    expect(shouldUseClaudeWebFallback('part', null)).toBe(false);
+  it('uses Claude when Gemini did not return native-cited listing evidence', () => {
+    expect(shouldUseClaudeWebFallback('part', null)).toBe(true);
     expect(shouldUseClaudeWebFallback('market', null)).toBe(true);
     expect(shouldUseClaudeWebFallback('market', {
       provider: 'gemini_grounded',
@@ -275,6 +275,10 @@ describe('PriceAdjudicationService', () => {
       confidence: 85,
       manualReviewRequired: false,
       reasons: [],
+    })).toBe(true);
+    expect(shouldUseClaudeWebFallback('part', {
+      provider: 'gemini_grounded', confidence: 80, manualReviewRequired: false, reasons: [],
+      researchedPrices: [price({ price: 10_000 })],
     })).toBe(false);
   });
 
@@ -424,7 +428,7 @@ describe('PriceAdjudicationService', () => {
       item: { type: 'equipment', description: 'Pump' }, mode: 'market', policy, priceData: priceData(prices),
     });
     expect(result.selectedPrice).toBe(expected);
-    expect(result.selectedSource).toBe(selectedSource);
+    expect(result.selectedSource).toBe(expected ? 'serper' : selectedSource);
     expect(result.priceData.medianPrice).toBe(expected);
   });
 });

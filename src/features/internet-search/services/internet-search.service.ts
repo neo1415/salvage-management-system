@@ -335,8 +335,9 @@ export class InternetSearchService {
       const decision = await priceAdjudicationService.adjudicate({ item, mode: 'market', priceData, policy });
       // Opinions remain opinions: only accepted, extracted listings can back the
       // public market statistics. Never manufacture a listing from an AI quote.
+      const supportedEvidence = [...priceData.prices, ...(decision.researchedPrices || [])];
       const unsupported = decision.priceData.prices.filter(price =>
-        !priceData.prices.some(evidence => evidence.url === price.url && evidence.price === price.price)
+        !supportedEvidence.some(evidence => evidence.url === price.url && evidence.price === price.price)
       );
       const rejectedPrices = Array.from(new Map([
         ...(priceData.rejectedPrices || []),
@@ -344,7 +345,7 @@ export class InternetSearchService {
         ...decision.rejectedPrices,
         ...unsupported.map(price => ({ ...price, rejectionReason: 'Adjudication supplied a price without extracted listing evidence.' })),
       ].map(price => [JSON.stringify([price.url, price.price, price.rejectionReason]), price])).values());
-      const accepted = priceData.prices.filter(evidence =>
+      const accepted = supportedEvidence.filter(evidence =>
         decision.priceData.prices.some(price => price.url === evidence.url && price.price === evidence.price)
       );
       const finalPriceData = this.recalculatePriceData(accepted, { ...decision.priceData, rejectedPrices });
@@ -366,11 +367,13 @@ export class InternetSearchService {
       const result: MarketPriceResult = {
         priceData: finalPriceData, query, resultsProcessed, executionTime: timer.end(),
         dataSource: 'internet_search',
-        success: accepted.length > 0 && !manualReviewRequired,
+        // A provisional range remains useful. manualReviewRequired controls
+        // approval; it must not turn attributable market evidence into a total failure.
+        success: accepted.length > 0,
         adjudication,
         ...(manualReviewRequired ? { error: adjudication.reviewReasons.join(' ') || 'Market evidence requires manual review.' } : {}),
       };
-      if (result.success && !fromCache) {
+      if (result.success && !manualReviewRequired && !fromCache) {
         try {
           await cacheIntegrationService.setCachedMarketPrice(item, result);
         } catch (error) {
@@ -443,16 +446,21 @@ export class InternetSearchService {
           damageType,
         });
         
-        return {
-          partName: cachedResult.partName,
-          priceData: adjudication.priceData,
-          query: cachedResult.query,
-          resultsProcessed: 0, // From cache
-          executionTime,
-          dataSource: 'internet_search',
-          success: true,
-          adjudication,
-        };
+        if (adjudication.priceData.prices.length > 0) {
+          return {
+            partName: cachedResult.partName,
+            priceData: adjudication.priceData,
+            query: cachedResult.query,
+            resultsProcessed: 0, // From cache
+            executionTime,
+            dataSource: 'internet_search',
+            success: true,
+            adjudication,
+            ...(adjudication.manualReviewRequired
+              ? { error: adjudication.reviewReasons.join(' ') || 'Part evidence requires manual review.' }
+              : {}),
+          };
+        }
       }
       
       // Build part-specific search queries. The first query is the precise part query;
@@ -479,11 +487,13 @@ export class InternetSearchService {
           }
         })
       );
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Search timeout')), timeout)
-      );
-      
-      const searchBatches = await Promise.race([searchPromise, timeoutPromise]) as Awaited<typeof searchPromise>;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const searchBatches = await Promise.race([
+        searchPromise,
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Search timeout')), timeout);
+        }),
+      ]).finally(() => clearTimeout(timeoutId)) as Awaited<typeof searchPromise>;
       const organicResults = this.dedupeOrganicResults(searchBatches.flatMap(batch => batch.organic || [])).slice(0, maxResults);
       
       if (organicResults.length === 0) {
@@ -505,6 +515,9 @@ export class InternetSearchService {
             dataSource: 'internet_search',
             success: true,
             adjudication: aiAdjudication,
+            ...(aiAdjudication.manualReviewRequired
+              ? { error: aiAdjudication.reviewReasons.join(' ') || 'Part evidence requires manual review.' }
+              : {}),
           };
         }
         throw new Error('No search results returned');
@@ -541,6 +554,9 @@ export class InternetSearchService {
             dataSource: 'internet_search',
             success: true,
             adjudication: aiAdjudication,
+            ...(aiAdjudication.manualReviewRequired
+              ? { error: aiAdjudication.reviewReasons.join(' ') || 'Part evidence requires manual review.' }
+              : {}),
           };
         }
       }
@@ -561,12 +577,20 @@ export class InternetSearchService {
         resultsProcessed: organicResults.length,
         executionTime,
         dataSource: 'internet_search',
-        success: true,
+        success: adjudication.priceData.prices.length > 0,
         adjudication,
+        ...(adjudication.manualReviewRequired
+          ? { error: adjudication.reviewReasons.join(' ') || 'Part evidence requires manual review.' }
+          : {}),
       };
       
-      // Cache the result for future use
-      await cacheIntegrationService.setCachedPartPrice(item, result, damageType, action);
+      if (result.success && !adjudication.manualReviewRequired) {
+        try {
+          await cacheIntegrationService.setCachedPartPrice(item, result, damageType, action);
+        } catch (error) {
+          console.warn('Unable to cache accepted part evidence:', error);
+        }
+      }
       
       return result;
       
@@ -592,6 +616,9 @@ export class InternetSearchService {
             dataSource: 'internet_search',
             success: true,
             adjudication: aiAdjudication,
+            ...(aiAdjudication.manualReviewRequired
+              ? { error: aiAdjudication.reviewReasons.join(' ') || 'Part evidence requires manual review.' }
+              : {}),
           };
         }
       } catch (aiError) {

@@ -162,7 +162,7 @@ describe('PriceExtractionService', () => {
       expect(jijiPrice?.confidence).toBeGreaterThan(unknownPrice?.confidence || 0);
     });
 
-    it('should remove duplicate prices from same source', () => {
+    it('retains independent listings with equal prices on the same marketplace', () => {
       const mockResults: SerperSearchResult[] = [
         {
           title: 'Duplicate Price 1',
@@ -180,7 +180,8 @@ describe('PriceExtractionService', () => {
 
       const result = service.extractPrices(mockResults, 'vehicle');
       
-      expect(result.prices).toHaveLength(1); // Duplicate should be removed
+      expect(result.prices).toHaveLength(2);
+      expect(result.evidenceSummary?.uniqueSourceCount).toBe(1);
     });
 
     it('should handle empty or invalid input gracefully', () => {
@@ -193,6 +194,92 @@ describe('PriceExtractionService', () => {
   });
 
   describe('Price Validation', () => {
+    it.each([
+      'Now N420000; was N500000',
+      'Oldprice: N500000; current price: N420000',
+      'Sale price N420000; original price N500000; shipping fee N5000',
+      'N420000; shipping N5000',
+      'Price N420000 + N5000 shipping',
+      'N420000 delivery fee: N5000',
+    ])('retains a full listing amount with explicit secondary-price cues: %s', snippet => {
+      const result = service.extractPrices([listing(snippet, { title: 'Used Apple iPhone 12 128GB' })], 'electronics', undefined, {
+        item: { type: 'electronics', brand: 'Apple', model: 'iPhone 12', storageCapacity: '128GB', condition: 'Nigerian Used' },
+      });
+      expect(result.prices.map(price => price.price)).toEqual([420000]);
+    });
+
+    it.each([
+      'N420000 or N500000',
+      'Price N420000; old price N500000',
+      'Now N420000; another model N500000',
+      'Now N420000; was N500000; other stock N600000',
+      'Now N420000; deposit N50000',
+    ])('preserves ambiguity when roles do not establish one full price: %s', snippet => {
+      expect(service.extractPrices([listing(snippet)], 'electronics').prices).toEqual([]);
+    });
+
+    it('does not let explicit price labels override wrong asset identity or conflicting structured data', () => {
+      const item: ItemIdentifier = { type: 'electronics', brand: 'Apple', model: 'iPhone 12' };
+      expect(service.extractPrices([listing('Now N420000; was N500000', { title: 'iPhone 15' })], 'electronics', undefined, { item }).prices).toEqual([]);
+      expect(service.extractPrices([listing('Now N420000; was N500000', { title: 'iPhone 12', price: 500000, currency: 'NGN' })], 'electronics', undefined, { item }).prices).toEqual([]);
+    });
+
+    it('deduplicates listing URLs and tracking variants, retaining the strongest extraction', () => {
+      const result = service.extractPrices([
+        listing('N420000', { link: 'https://jiji.ng/item?id=1&utm_source=search#price' }),
+        listing('N420000', { link: 'https://jiji.ng/item?id=1', price: 420000, currency: 'NGN' }),
+        listing('N420000', { link: 'https://jiji.ng/item?id=2' }),
+        listing('N420000', { link: 'https://konga.com/item' }),
+      ], 'electronics');
+      expect(result.prices).toHaveLength(3);
+      expect(result.evidenceSummary?.uniqueSourceCount).toBe(2);
+    });
+
+    it.each([
+      [{ type: 'vehicle', make: 'Toyota', model: 'Camry', year: 2012, condition: 'Nigerian Used' }, 'Toyota Camry 2012 used', 'N8400000'],
+      [{ type: 'electronics', brand: 'Samsung', model: 'Galaxy S21', storageCapacity: '128GB' }, 'Samsung Galaxy S21 128GB', 'N420000'],
+      [{ type: 'appliance', brand: 'LG', model: 'GC-B459' }, 'LG GC-B459 refrigerator', 'N450000'],
+      [{ type: 'machinery', brand: 'Komatsu', model: 'PC200', machineryType: 'Excavator' }, 'Komatsu PC200 excavator', 'N42000000'],
+      [{ type: 'property', propertyType: 'detached house', location: 'Lekki Phase 1 Lagos', bedrooms: 3 }, '3 bedroom detached house in Lekki Phase 1, Lagos for sale', 'N150000000'],
+      [{ type: 'furniture', furnitureType: 'sofa', brand: 'IKEA' }, 'IKEA sofa', 'N450000'],
+      [{ type: 'agriculture', description: 'yellow maize grain', unitOfMeasure: 'bags' }, 'Yellow maize grain per bag', 'N85000'],
+      [{ type: 'equipment', brand: 'Honda', model: 'EU2200i' }, 'Honda EU2200i generator', 'N1500000'],
+    ] as const)('retrieves a usable full price for %j', (identifier, title, amount) => {
+      const item = identifier as ItemIdentifier;
+      const result = service.extractPrices([listing(amount, { title })], item.type, 'year' in item ? item.year : undefined, { item });
+      expect(result.prices).toHaveLength(1);
+      expect(result.medianPrice).toBeGreaterThan(0);
+      expect(result.rejectedPrices).toEqual([]);
+    });
+
+    it.each(['OEM', 'aftermarket', 'used', 'foreign used', 'tokunbo'])('accepts %s parts with exact identity and compatible model-year ranges', kind => {
+      const item: ItemIdentifier = { type: 'vehicle', make: 'Toyota', model: 'Camry', year: 2015, condition: 'Nigerian Used' };
+      const result = service.extractPrices([listing('Now N85000; was N100000; shipping N5000', {
+        title: `${kind} front bumper compatible with Toyota Camry 2012-2017`,
+      })], 'vehicle', 2015, { mode: 'part', partName: 'front bumper', item });
+      expect(result.prices.map(price => price.price)).toEqual([85000]);
+      expect(result.prices[0].yearMatched).toBe(true);
+    });
+
+    it.each([
+      'Toyota Corolla 2012-2017 front bumper',
+      'Honda Camry 2012-2017 front bumper',
+      'Toyota Camry 2018-2022 front bumper',
+      'Toyota Camry 2012-2017 rear bumper',
+      'Toyota Camry 2012-2017 front seat',
+      'Toyota Camry 2015 car for sale with front bumper damage',
+    ])('rejects incompatible or whole-asset part evidence: %s', title => {
+      expect(service.extractPrices([listing('N85000', { title })], 'vehicle', 2015, {
+        mode: 'part', partName: 'front bumper', item: { type: 'vehicle', make: 'Toyota', model: 'Camry' },
+      }).prices).toEqual([]);
+    });
+
+    it.each(['Ikeja Lagos', 'Lekki Phase 2 Lagos', 'Lekki Phase 1 Abuja', 'Lekki Lagos'])('requires the precise property location, not one city token: %s', location => {
+      expect(service.extractPrices([listing('N150000000', { title: `3 bedroom detached house for sale in ${location}` })], 'property', undefined, {
+        item: { type: 'property', propertyType: 'detached house', location: 'Lekki Phase 1 Lagos', bedrooms: 3 },
+      }).prices).toEqual([]);
+    });
+
     it.each([
       ['vehicle', 'N8.4m', 8400000],
       ['electronics', 'NGN 420 thousand', 420000],

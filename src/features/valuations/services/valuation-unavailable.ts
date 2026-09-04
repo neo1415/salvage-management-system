@@ -2,7 +2,7 @@
 export class ValuationUnavailableError extends Error {
   readonly code = 'VALUATION_REVIEW_REQUIRED';
 
-  constructor(message = 'Matching market evidence is insufficient. No new valuation was saved. Retry market research or obtain a documented manual appraisal.') {
+  constructor(message = 'No matching market listing with an attributable price was found. Retry research, add more exact asset details, or obtain a documented manual appraisal. No new valuation was saved.') {
     super(message);
     this.name = 'ValuationUnavailableError';
   }

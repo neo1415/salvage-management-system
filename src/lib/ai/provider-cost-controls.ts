@@ -15,15 +15,25 @@ export function isClaudeDamageFallbackEnabled(): boolean {
 }
 
 export function isPriceAdjudicationAiEnabled(): boolean {
-  return enabled('PRICE_ADJUDICATION_AI_ENABLED');
+  const override = process.env.PRICE_ADJUDICATION_AI_ENABLED?.trim().toLowerCase();
+  if (override === 'false') return false;
+  if (override === 'true') return true;
+  return configured('GEMINI_API_KEY', 'your-gemini-api-key')
+    || configured('CLAUDE_API_KEY', 'your-claude-api-key');
 }
 
 export function isGeminiPriceAdjudicationEnabled(): boolean {
-  return isPriceAdjudicationAiEnabled() && enabled('GEMINI_PRICE_ADJUDICATION_ENABLED');
+  const override = process.env.GEMINI_PRICE_ADJUDICATION_ENABLED?.trim().toLowerCase();
+  return isPriceAdjudicationAiEnabled()
+    && override !== 'false'
+    && configured('GEMINI_API_KEY', 'your-gemini-api-key');
 }
 
 export function isClaudePriceAdjudicationEnabled(): boolean {
-  return isPriceAdjudicationAiEnabled() && enabled('CLAUDE_PRICE_ADJUDICATION_ENABLED');
+  const override = process.env.CLAUDE_PRICE_ADJUDICATION_ENABLED?.trim().toLowerCase();
+  return isPriceAdjudicationAiEnabled()
+    && override !== 'false'
+    && configured('CLAUDE_API_KEY', 'your-claude-api-key');
 }
 
 export function isClaudePickupFallbackEnabled(): boolean {
