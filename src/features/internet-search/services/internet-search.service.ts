@@ -321,7 +321,10 @@ export class InternetSearchService {
           new Promise<never>((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error('Search timeout')), timeout);
           }),
-        ]).finally(() => clearTimeout(timeoutId));
+        ]).catch(error => {
+          console.warn('Search unavailable; continuing with grounded providers:', error instanceof Error ? error.message : 'Search failed');
+          return [];
+        }).finally(() => clearTimeout(timeoutId));
         const organic = this.dedupeOrganicResults(batches.flatMap(batch => batch.organic || [])).slice(0, maxResults);
         resultsProcessed = organic.length;
         const extracted = priceExtractor.extractPrices(organic, item.type, targetYear, extractionOptions);
@@ -431,6 +434,7 @@ export class InternetSearchService {
    */
   async searchPartPrice(options: SearchPartPriceOptions): Promise<PartPriceResult> {
     const startTime = Date.now();
+    let researchAttempted = false;
     const { item, partName, damageType, action = 'specialist_review', maxResults = 10, timeout = 3000, forceRefresh = false } = options;
 
     try {
@@ -438,6 +442,7 @@ export class InternetSearchService {
       const cachedResult = forceRefresh ? null : await cacheIntegrationService.getCachedPartPrice(item, partName, damageType, action);
       if (cachedResult) {
         const executionTime = Date.now() - startTime;
+        researchAttempted = true;
         const adjudication = await this.adjudicatePriceData({
           item,
           mode: 'part',
@@ -497,6 +502,7 @@ export class InternetSearchService {
       const organicResults = this.dedupeOrganicResults(searchBatches.flatMap(batch => batch.organic || [])).slice(0, maxResults);
       
       if (organicResults.length === 0) {
+        researchAttempted = true;
         const aiAdjudication = await this.tryAiPriceEstimate({
           item,
           mode: 'part',
@@ -536,6 +542,7 @@ export class InternetSearchService {
         }
       );
       if (priceData.prices.length === 0) {
+        researchAttempted = true;
         const aiAdjudication = await this.tryAiPriceEstimate({
           item,
           mode: 'part',
@@ -559,7 +566,9 @@ export class InternetSearchService {
               : {}),
           };
         }
+        throw new Error('No supported part-price evidence returned');
       }
+      researchAttempted = true;
       const adjudication = await this.adjudicatePriceData({
         item,
         mode: 'part',
@@ -599,6 +608,7 @@ export class InternetSearchService {
       const fallbackQuery = queryBuilder.buildPartPriceQuery(item, partName, damageType, action);
 
       try {
+        if (researchAttempted) throw error;
         const aiAdjudication = await this.tryAiPriceEstimate({
           item,
           mode: 'part',

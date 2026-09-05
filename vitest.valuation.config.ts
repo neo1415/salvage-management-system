@@ -13,6 +13,7 @@ export default defineConfig({
       'tests/unit/valuations/valuation-benchmark.test.ts',
       'tests/unit/valuations/provider-cost-controls.test.ts',
       'tests/unit/valuations/grounding-evidence.test.ts',
+      'tests/unit/integrations/gemini-timeout.test.ts',
       'tests/unit/ai/provider-cost-controls.test.ts',
       'tests/unit/cases/market-evidence-required.test.ts',
       'tests/unit/market-data/*evidence*.test.ts',

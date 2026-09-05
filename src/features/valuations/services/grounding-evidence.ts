@@ -60,8 +60,10 @@ export function collectClaudeGrounding(response: unknown): GroundedPriceStatemen
       const url = evidenceUrl(citation.url);
       if (!url || !nativeUrls.has(url)) continue;
       const citedText = typeof citation.cited_text === 'string' ? citation.cited_text.trim() : '';
-      // Block-level fallback is safe only when the block has one cited source.
-      const text = citedText || (citations.length === 1 && typeof block.text === 'string' ? block.text : '');
+      const title = typeof citation.title === 'string' ? citation.title.trim() : '';
+      // Only source text establishes price and identity; generated prose may
+      // add unsupported condition or model claims even with a real citation.
+      const text = citedText ? [...new Set([title, citedText].filter(Boolean))].join(' ') : '';
       if (text) statements.push({ url, text });
     }
   }
@@ -73,6 +75,7 @@ export function extractGroundedPrices(statements: GroundedPriceStatement[], inpu
   for (const statement of statements) {
     const url = evidenceUrl(statement.url);
     if (!url) continue;
+    if (/\b(?:prices? (?:starting |starts? )?from|starting (?:at|from)|market (?:guide|reference)|current bid)\b/i.test(statement.text)) continue;
     const texts = byUrl.get(url) || new Set<string>();
     texts.add(statement.text);
     byUrl.set(url, texts);

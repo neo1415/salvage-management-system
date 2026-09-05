@@ -82,6 +82,22 @@ describe('market orchestration evidence safety', () => {
     expect(result.priceData.rejectedPrices).toEqual(expect.arrayContaining([expect.objectContaining({ price: 9_000_000 })]));
   });
 
+  it('continues to grounded research when Serper times out', async () => {
+    mocks.search.mockImplementation(() => new Promise(() => {}));
+    mocks.extract.mockReturnValue(data([]));
+    mocks.adjudicate.mockResolvedValue(decision(data([]), { selectedPrice: undefined }));
+    await service.searchMarketPrice({ item, timeout: 1 });
+    expect(mocks.adjudicate).toHaveBeenCalledOnce();
+  });
+
+  it('does not repeat paid research when no part evidence is available', async () => {
+    mocks.search.mockResolvedValue({ organic: [] });
+    mocks.adjudicate.mockResolvedValue(decision(data([]), { selectedPrice: undefined }));
+    const result = await service.searchPartPrice({ item, partName: 'screen' });
+    expect(result.success).toBe(false);
+    expect(mocks.adjudicate).toHaveBeenCalledOnce();
+  });
+
   it('derives public aggregates from accepted evidence, not an AI point estimate', async () => {
     mocks.adjudicate.mockResolvedValue(decision({ ...data(), averagePrice: 9_000_000, medianPrice: 9_000_000 }, {
       selectedPrice: 9_000_000, selectedSource: 'gemini_grounded',

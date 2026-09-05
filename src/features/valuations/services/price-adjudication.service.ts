@@ -48,7 +48,11 @@ export interface PriceAdjudicationResult {
   researchedPrices?: ExtractedPrice[];
 }
 
-const AI_ADJUDICATION_TIMEOUT_MS = 30_000;
+export function getPriceResearchTimeoutMs(rawValue = process.env.PRICE_RESEARCH_TIMEOUT_MS): number {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return 60_000;
+  return Math.min(120_000, Math.max(15_000, Math.round(parsed)));
+}
 const CLAUDE_WEB_SEARCH_COST_USD = 0.01;
 
 const LOW_TRUST_MARKETPLACE_DOMAINS = [
@@ -163,6 +167,26 @@ function containsIdentity(text: string, identity: string): boolean {
   return ` ${normalizedIdentity(text)} `.includes(` ${normalizedIdentity(identity)} `);
 }
 
+function vehicleModelEstablished(item: Extract<ItemIdentifier, { type: 'vehicle' }>, identityText: string): boolean {
+  if (containsIdentity(identityText, item.model)) return true;
+  const model = normalizedIdentity(item.model);
+  // Public listings commonly omit chassis-generation codes even when the exact
+  // model year establishes them. Keep this mapping narrow and deterministic.
+  if (/^wrangler jk$/.test(model) && item.year && item.year >= 2007 && item.year < 2018) {
+    return containsIdentity(identityText, 'wrangler');
+  }
+  if (/^wrangler jl$/.test(model) && item.year && item.year > 2018) {
+    return containsIdentity(identityText, 'wrangler');
+  }
+  return false;
+}
+
+function impliedVehicleVariant(item: Extract<ItemIdentifier, { type: 'vehicle' }>, variant: string): boolean {
+  const model = normalizedIdentity(item.model);
+  return (variant === 'jk' && /^wrangler jk$/.test(model) && !!item.year && item.year >= 2007 && item.year < 2018)
+    || (variant === 'jl' && /^wrangler jl$/.test(model) && !!item.year && item.year > 2018);
+}
+
 function listingMismatch(input: PriceAdjudicationInput, price: ExtractedPrice): string | undefined {
   const { item, mode } = input;
   const text = listingText(price);
@@ -173,13 +197,19 @@ function listingMismatch(input: PriceAdjudicationInput, price: ExtractedPrice): 
   const identityText = price.title?.trim() || text;
   if (mode === 'market' && (item.type === 'vehicle' || item.type === 'electronics')) {
     const brand = item.type === 'vehicle' ? item.make : item.brand;
-    if (!containsIdentity(identityText, item.model) || (item.type === 'vehicle' && !containsIdentity(identityText, brand))) {
+    const modelEstablished = item.type === 'vehicle'
+      ? vehicleModelEstablished(item, identityText)
+      : containsIdentity(identityText, item.model);
+    if (!modelEstablished || (item.type === 'vehicle' && !containsIdentity(identityText, brand))) {
       return 'Listing does not establish the exact requested make/model.';
     }
     const variants = item.type === 'vehicle'
       ? ['le', 'se', 'xle', 'xse', 'lx', 'ex', 'sport', 'hybrid', 'limited', 'platinum', 'prado', 'cross', 'jk', 'jl', 'tj', 'rubicon', 'sahara', 'unlimited']
       : ['pro', 'max', 'plus', 'ultra', 'mini', 'lite', 'fe', 'air'];
-    if (variants.some((variant) => containsIdentity(identityText, variant) !== containsIdentity(item.model, variant))) {
+    if (variants.some((variant) =>
+      !((item.type === 'vehicle' && impliedVehicleVariant(item, variant)))
+      && containsIdentity(identityText, variant) !== containsIdentity(item.model, variant)
+    )) {
       return 'Listing model/variant differs from the requested asset.';
     }
     if (item.type === 'vehicle' && item.year) {
@@ -374,8 +404,8 @@ function coerceAiOpinion(provider: AiProvider, text: string): AiPriceOpinion {
     return {
       provider,
       confidence: 0,
-      manualReviewRequired: true,
-      reasons: ['AI price adjudication did not return parseable JSON.'],
+      manualReviewRequired: false,
+      reasons: [],
       rawText: text.slice(0, 2000),
     };
   }
@@ -407,7 +437,7 @@ function promptForAdjudication(input: PriceAdjudicationInput, filteredPrices: Ex
       'Reject counterfeit, replica, accessory-only, irrelevant, stale, low-trust, or implausible prices.',
       'For specialist/luxury assets, prefer appraisal/authorized dealer/auction-house evidence and require manual review when evidence is not definitive.',
       'Do not estimate without accepted listings. Leave recommendedPrice null when exact comparable evidence is unavailable.',
-      'Find new comparable listings. Write one native-cited statement per listing with exact item/model, year, condition, unit or requested part, currency and advertised amount. Cite each statement to exactly one search result.',
+      'Find individual product or vehicle listing pages, not category pages, price guides, starting prices or current auction bids. Search again using the seller and exact model if initial results are category pages. Write one native-cited statement per listing with exact item/model, year, condition, unit or requested part, currency and advertised amount. Cite source passages containing both identity and amount.',
       'Do not invent amounts or treat a recommendation as listing evidence. Include the complete listing identity in each cited statement.',
       'After the cited statements, optionally return a JSON summary with keys: recommendedPrice, confidence, manualReviewRequired, reasons, acceptedSources, rejectedSources.',
     ],
@@ -608,12 +638,12 @@ export class PriceAdjudicationService {
         tools: [{ googleSearch: {} }],
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 900,
+          maxOutputTokens: 1_500,
         },
       } as unknown as GenerateContentRequest;
       const result = await withTimeout(
         signal => model.generateContent(request, { signal } as Parameters<typeof model.generateContent>[1]),
-        AI_ADJUDICATION_TIMEOUT_MS
+        getPriceResearchTimeoutMs()
       );
       console.info('[Price Adjudication] Gemini usage', {
         mode: input.mode,
@@ -639,10 +669,11 @@ export class PriceAdjudicationService {
     if (!apiKey || !apiKey.startsWith('sk-ant-')) return null;
 
     try {
-      const client = new Anthropic({ apiKey, timeout: AI_ADJUDICATION_TIMEOUT_MS, maxRetries: 0 });
+      const timeoutMs = getPriceResearchTimeoutMs();
+      const client = new Anthropic({ apiKey, timeout: timeoutMs, maxRetries: 0 });
       const request = {
         model: process.env.CLAUDE_PRICE_ADJUDICATION_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
-        max_tokens: 800,
+        max_tokens: 1_800,
         temperature: 0.1,
         tools: [{
           type: 'web_search_20250305',
@@ -656,14 +687,20 @@ export class PriceAdjudicationService {
       } as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming;
       const response = await withTimeout(
         signal => client.messages.create(request, { signal }),
-        AI_ADJUDICATION_TIMEOUT_MS
+        timeoutMs
       );
       logClaudeAdjudicationUsage(response, input);
       const text = response.content
         .filter((block) => block.type === 'text')
         .map((block) => (block as { text?: string }).text || '')
         .join('\n');
-      return { ...coerceAiOpinion('claude_web_search', text), researchedPrices: extractGroundedPrices(collectClaudeGrounding(response), input) };
+      const groundedStatements = collectClaudeGrounding(response);
+      const researchedPrices = extractGroundedPrices(groundedStatements, input);
+      console.info('[Price Adjudication] Claude grounding', {
+        statements: groundedStatements.length,
+        acceptedPrices: researchedPrices.length,
+      });
+      return { ...coerceAiOpinion('claude_web_search', text), researchedPrices };
     } catch (error) {
       return {
         provider: 'claude_web_search',

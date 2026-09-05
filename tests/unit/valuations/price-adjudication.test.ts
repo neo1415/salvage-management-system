@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PriceAdjudicationService,
+  getPriceResearchTimeoutMs,
   shouldEscalatePriceAdjudication,
   shouldUseClaudeWebFallback,
   type AiPriceOpinion,
@@ -32,6 +33,38 @@ function priceData(prices: ExtractedPrice[]): PriceExtractionResult {
     extractedAt: new Date(),
   };
 }
+
+describe('price research timeout', () => {
+  it('uses a production-safe default and clamps invalid extremes', () => {
+    expect(getPriceResearchTimeoutMs(undefined)).toBe(60_000);
+    expect(getPriceResearchTimeoutMs('not-a-number')).toBe(60_000);
+    expect(getPriceResearchTimeoutMs('100')).toBe(15_000);
+    expect(getPriceResearchTimeoutMs('999999')).toBe(120_000);
+  });
+});
+
+describe('vehicle generation aliases', () => {
+  beforeEach(() => vi.stubEnv('PRICE_ADJUDICATION_AI_ENABLED', 'false'));
+  afterEach(() => vi.unstubAllEnvs());
+  it('accepts a Wrangler listing that omits JK when the exact year establishes the generation', async () => {
+    const service = new PriceAdjudicationService();
+    const policy = getDefaultValuationPolicyConfig();
+    const result = await service.adjudicate({
+      item: { type: 'vehicle', make: 'Jeep', model: 'Wrangler JK', year: 2015, condition: 'Foreign Used (Tokunbo)' },
+      mode: 'market',
+      policy,
+      priceData: priceData([price({
+        price: 20_500_000,
+        title: '2015 Jeep Wrangler foreign used tokunbo NGN 20,500,000',
+        snippet: '2015 Jeep Wrangler foreign used tokunbo NGN 20,500,000',
+        extractedYear: 2015,
+        yearMatched: true,
+      })]),
+    });
+    expect(result.priceData.prices).toHaveLength(1);
+    expect(result.selectedPrice).toBe(20_500_000);
+  });
+});
 
 describe('PriceAdjudicationService', () => {
   const service = new PriceAdjudicationService();

@@ -22,6 +22,9 @@ import { auth } from '@/lib/auth/next-auth.config';
 import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
 import { getValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
 
+export const runtime = 'nodejs';
+export const maxDuration = 300;
+
 // In-memory rate limiting store (in production, use Redis)
 const rateLimitStore = new Map<string, number[]>();
 

@@ -1779,7 +1779,7 @@ function sleep(ms: number): Promise<void> {
 
 export function getGeminiDamageTimeoutMs(rawValue = process.env.GEMINI_DAMAGE_TIMEOUT_MS): number {
   const parsed = Number(rawValue);
-  if (!Number.isFinite(parsed)) return 45000;
+  if (!Number.isFinite(parsed)) return 75000;
   return Math.min(90000, Math.max(10000, Math.round(parsed)));
 }
 
@@ -1802,7 +1802,7 @@ async function withGeminiTimeout<T>(promise: Promise<T>, timeoutMs: number): Pro
  * Call Gemini API with timeout and retry logic
  * 
  * This function:
- * - Calls Gemini API with 10-second timeout per request
+ * - Calls Gemini API with a bounded, configurable timeout per request
  * - Classifies errors (transient, authentication, validation, timeout)
  * - Retries once after 2 seconds for transient 5xx errors
  * - No retry for authentication, validation, or timeout errors

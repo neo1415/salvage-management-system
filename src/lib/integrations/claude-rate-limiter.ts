@@ -3,7 +3,7 @@
  * 
  * Implements a local safety limit for paid Claude damage requests.
  * 
- * Claude is available only when the paid fallback is explicitly enabled.
+ * Claude is available when configured unless explicitly disabled.
  * 
  * Limits:
  * - Conservative daily cap, configurable with CLAUDE_DAMAGE_DAILY_LIMIT

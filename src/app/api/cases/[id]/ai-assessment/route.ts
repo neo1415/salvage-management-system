@@ -10,6 +10,9 @@ import { buildUniversalItemInfoFromCase } from '@/features/cases/services/case-i
 import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
 import { ValuationUnavailableError } from '@/features/valuations/services/valuation-unavailable';
 
+export const runtime = 'nodejs';
+export const maxDuration = 300;
+
 const MANAGER_ROLES = new Set(['salvage_manager', 'system_admin']);
 
 export async function POST(
