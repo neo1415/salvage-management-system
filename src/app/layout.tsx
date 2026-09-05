@@ -125,7 +125,6 @@ export default async function RootLayout({
   return (
     <html lang="en" data-scroll-behavior="smooth" style={getBrandCssVariables(branding)} suppressHydrationWarning>
       <head>
-        <link rel="canonical" href={appUrl} />
         <link rel="icon" href={versionedAssetUrl(branding.faviconPath || '/icons/icon-192.png', publicPolicy.version)} />
         <link rel="apple-touch-icon" href={versionedAssetUrl(branding.faviconPath || branding.logoPath || '/icons/icon-192.png', publicPolicy.version)} />
         <meta name="apple-mobile-web-app-capable" content="yes" />

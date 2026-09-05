@@ -1,16 +1,8 @@
 import { MetadataRoute } from 'next';
-
-function getPublicBaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
-    process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
-    'https://salvagebridge.com'
-  );
-}
+import { getAppUrl } from '@/features/notifications/templates/email-urls';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = getPublicBaseUrl();
+  const baseUrl = getAppUrl();
 
   return [
     {
@@ -32,13 +24,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     {
-      url: `${baseUrl}/about`,
+      url: `${baseUrl}/cookies`,
       lastModified: new Date(),
       changeFrequency: 'monthly',
       priority: 0.7,
     },
     {
-      url: `${baseUrl}/help`,
+      url: `${baseUrl}/ndpr`,
       lastModified: new Date(),
       changeFrequency: 'weekly',
       priority: 0.6,
