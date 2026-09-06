@@ -210,6 +210,7 @@ export class InternetSearchService {
     mode: 'market' | 'part';
     partName?: string;
     damageType?: string;
+    action?: DamageAction;
     query: string;
   }): Promise<PriceAdjudicationResult | null> {
     const adjudication = await this.adjudicatePriceData({
@@ -218,6 +219,7 @@ export class InternetSearchService {
       priceData: this.buildEmptyPriceData(),
       partName: input.partName,
       damageType: input.damageType,
+      action: input.action,
     });
 
     if (!adjudication.selectedPrice) {
@@ -236,6 +238,7 @@ export class InternetSearchService {
     priceData: PriceExtractionResult;
     partName?: string;
     damageType?: string;
+    action?: DamageAction;
   }): Promise<PriceAdjudicationResult> {
     const valuationPolicy = await getValuationPolicyConfig();
     return priceAdjudicationService.adjudicate({
@@ -245,6 +248,7 @@ export class InternetSearchService {
       policy: valuationPolicy,
       partName: input.partName,
       damageType: input.damageType,
+      action: input.action,
     });
   }
   
@@ -449,6 +453,7 @@ export class InternetSearchService {
           priceData: cachedResult.priceData,
           partName,
           damageType,
+          action,
         });
         
         if (adjudication.priceData.prices.length > 0) {
@@ -509,6 +514,7 @@ export class InternetSearchService {
           partName,
           damageType,
           query: primaryQuery,
+          action,
         });
         if (aiAdjudication) {
           const executionTime = Date.now() - startTime;
@@ -549,6 +555,7 @@ export class InternetSearchService {
           partName,
           damageType,
           query: primaryQuery,
+          action,
         });
         if (aiAdjudication) {
           const executionTime = Date.now() - startTime;
@@ -575,6 +582,7 @@ export class InternetSearchService {
         priceData,
         partName,
         damageType,
+        action,
       });
       
       const executionTime = Date.now() - startTime;
@@ -615,6 +623,7 @@ export class InternetSearchService {
           partName,
           damageType,
           query: fallbackQuery,
+          action,
         });
         if (aiAdjudication) {
           return {

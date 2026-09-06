@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI, type GenerateContentRequest } from '@google/generative-ai';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
+import type { DamageAction } from '@/lib/ai/damage-evidence';
+import { vehicleModelEstablished } from './vehicle-model-identity';
 import type { ExtractedPrice, PriceExtractionResult } from '@/features/internet-search/services/price-extraction.service';
 import type { ValuationPolicyConfig } from './valuation-policy.service';
 import { collectClaudeGrounding, collectGeminiGrounding, evidenceUrl, extractGroundedPrices } from './grounding-evidence';
@@ -20,6 +22,7 @@ export interface PriceAdjudicationInput {
   policy: ValuationPolicyConfig;
   partName?: string;
   damageType?: string;
+  action?: DamageAction;
 }
 
 export interface AiPriceOpinion {
@@ -165,20 +168,6 @@ function normalizedIdentity(text: string): string {
 
 function containsIdentity(text: string, identity: string): boolean {
   return ` ${normalizedIdentity(text)} `.includes(` ${normalizedIdentity(identity)} `);
-}
-
-function vehicleModelEstablished(item: Extract<ItemIdentifier, { type: 'vehicle' }>, identityText: string): boolean {
-  if (containsIdentity(identityText, item.model)) return true;
-  const model = normalizedIdentity(item.model);
-  // Public listings commonly omit chassis-generation codes even when the exact
-  // model year establishes them. Keep this mapping narrow and deterministic.
-  if (/^wrangler jk$/.test(model) && item.year && item.year >= 2007 && item.year < 2018) {
-    return containsIdentity(identityText, 'wrangler');
-  }
-  if (/^wrangler jl$/.test(model) && item.year && item.year > 2018) {
-    return containsIdentity(identityText, 'wrangler');
-  }
-  return false;
 }
 
 function impliedVehicleVariant(item: Extract<ItemIdentifier, { type: 'vehicle' }>, variant: string): boolean {
@@ -431,6 +420,9 @@ function promptForAdjudication(input: PriceAdjudicationInput, filteredPrices: Ex
     instruction: [
       'You are an insurance salvage valuation adjudicator.',
       'Use live web search where available. Do not rely on training data alone.',
+      input.mode === 'part'
+        ? `Price the requested ${input.action || 'specialist_review'} operation on the named component, not the whole asset. For repair, find a repair service quote and identify whether labour and materials are included. For replace, find a compatible replacement component and identify OEM/aftermarket/used condition; do not substitute a repair-service price. Never infer hidden damage or change the requested operation just to obtain a price.`
+        : 'Price the complete asset, excluding accessories, spare parts, deposits and instalments.',
       noSerperEvidence
         ? 'No usable Serper listings were supplied. Search the web directly for current Nigeria/Naira prices for the exact item, year, and condition.'
         : 'Compare the supplied Serper evidence with current web evidence.',
@@ -445,6 +437,7 @@ function promptForAdjudication(input: PriceAdjudicationInput, filteredPrices: Ex
     item: input.item,
     partName: input.partName,
     damageType: input.damageType,
+    action: input.action,
     normalizedItemText: itemText,
     policy: {
       minimumMarketSourceCount: input.policy.minimumMarketSourceCount,

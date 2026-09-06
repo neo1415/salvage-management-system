@@ -2,6 +2,7 @@ import type { SerperSearchResult } from '@/lib/integrations/serper-api';
 import type { ItemIdentifier } from './query-builder.service';
 import { getDefaultValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
 import type { ValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
+import { vehicleModelEstablished } from '@/features/valuations/services/vehicle-model-identity';
 
 export interface ExtractedPrice {
   price: number;
@@ -448,7 +449,7 @@ export class PriceExtractionService {
 
     switch (item.type) {
       case 'vehicle':
-        if (!this.containsIdentity(text, item.make) || !this.containsIdentity(text, item.model)) {
+        if (!this.containsIdentity(text, item.make) || !vehicleModelEstablished(item, text)) {
           return 'Vehicle listing does not match the requested make and model';
         }
         break;

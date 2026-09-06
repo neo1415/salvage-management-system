@@ -22,6 +22,26 @@ const listing = (snippet: string, extra: Partial<SerperSearchResult> = {}): Serp
 describe('PriceExtractionService', () => {
   const service = new PriceExtractionService();
 
+  it('extracts an exact-year Wrangler listing before generation adjudication', () => {
+    const text = 'Jeep Wrangler 2015 foreign used tokunbo NGN 20,500,000';
+    const result = service.extractPrices([listing(text, { title: text })], 'vehicle', 2015, {
+      mode: 'market',
+      item: { type: 'vehicle', make: 'Jeep', model: 'Wrangler JK', year: 2015, condition: 'Foreign Used (Tokunbo)' },
+    });
+    expect(result.prices.map(value => value.price)).toEqual([20_500_000]);
+  });
+
+  it.each([
+    { year: 2018, text: 'Jeep Wrangler 2018 foreign used tokunbo NGN 20,500,000' },
+    { year: 2015, text: 'Jeep Wrangler JL 2015 foreign used tokunbo NGN 20,500,000' },
+  ])('rejects ambiguous or conflicting Wrangler generation: $text', ({ year, text }) => {
+    const result = service.extractPrices([listing(text, { title: text })], 'vehicle', year, {
+      mode: 'market',
+      item: { type: 'vehicle', make: 'Jeep', model: 'Wrangler JK', year, condition: 'Foreign Used (Tokunbo)' },
+    });
+    expect(result.prices).toEqual([]);
+  });
+
   describe('extractPrices', () => {
     it('should extract Nigerian Naira prices correctly', () => {
       const mockResults: SerperSearchResult[] = [

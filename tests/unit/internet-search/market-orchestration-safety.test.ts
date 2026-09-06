@@ -98,6 +98,16 @@ describe('market orchestration evidence safety', () => {
     expect(mocks.adjudicate).toHaveBeenCalledOnce();
   });
 
+  it.each(['repair', 'replace'] as const)('preserves %s context in Serper-free part research', async action => {
+    mocks.search.mockResolvedValue({ organic: [] });
+    mocks.adjudicate.mockResolvedValue(decision(data([]), { selectedPrice: undefined }));
+    await service.searchPartPrice({ item, partName: 'screen', damageType: 'cracked', action });
+    expect(mocks.adjudicate).toHaveBeenCalledOnce();
+    expect(mocks.adjudicate).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'part', partName: 'screen', damageType: 'cracked', action,
+    }));
+  });
+
   it('derives public aggregates from accepted evidence, not an AI point estimate', async () => {
     mocks.adjudicate.mockResolvedValue(decision({ ...data(), averagePrice: 9_000_000, medianPrice: 9_000_000 }, {
       selectedPrice: 9_000_000, selectedSource: 'gemini_grounded',
