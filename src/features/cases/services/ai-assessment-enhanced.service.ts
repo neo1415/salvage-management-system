@@ -992,6 +992,12 @@ async function assessDamageEnhancedCore(params: {
     );
   }
   const visionResults = damageAnalysis.visionResults;
+  if (damageAnalysis.itemDetails?.notes && /inspection required|not confirmed from the photos/i.test(damageAnalysis.itemDetails.notes)) {
+    valuationReviewReasons.push(damageAnalysis.itemDetails.notes);
+    if (!damageAnalysis.damagedParts?.length) {
+      throw new ValuationUnavailableError('The photos did not establish a confirmed repair scope. Review the inspection questions or provide clearer photos before valuation. No new valuation was saved.');
+    }
+  }
   const geminiTotalLoss = damageAnalysis.geminiTotalLoss; // Capture Gemini's total loss flag
   
   // Step 2: Calculate damage scores

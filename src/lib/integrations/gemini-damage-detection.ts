@@ -20,7 +20,7 @@ import { GoogleGenerativeAI, type GenerativeModel, type GenerateContentResult, t
 import { internetSearchService } from '@/features/internet-search/services/internet-search.service';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
-import { normalizeDamageAction, normalizeDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
+import { normalizeDamageAction, normalizeDamageEvidence, reviewPhotoEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -67,6 +67,8 @@ export interface ItemDetails {
  * Individual damaged part with severity and confidence
  */
 export interface DamagedPart {
+  evidenceStatus?: 'observed' | 'suspected';
+  photoIndices?: number[];
   part: string;              // Specific part name (e.g., "driver front door", "front bumper")
   damageType?: string;
   description?: string;
@@ -414,6 +416,8 @@ const GEMINI_RESPONSE_SCHEMA = {
             type: "string",
             description: "Canonical component/unit/section name without damage adjective (e.g., 'front windscreen', 'left front door')"
           },
+          evidenceStatus: { type: "string", enum: ["observed", "suspected"], description: "Observed requires direct visible damage; inferred hidden damage is suspected." },
+          photoIndices: { type: "array", items: { type: "number" }, description: "One-based photo numbers that directly show this finding." },
           damageType: {
             type: "string",
             description: "Observed damage state only (e.g., shattered, dented, water-contaminated, missing)"
@@ -445,7 +449,7 @@ const GEMINI_RESPONSE_SCHEMA = {
             description: "Confidence in this part's damage assessment (0-100)"
           }
         },
-        required: ["part", "damageType", "description", "recommendedAction", "actionConfidence", "severity", "confidence"]
+        required: ["part", "evidenceStatus", "photoIndices", "damageType", "description", "recommendedAction", "actionConfidence", "severity", "confidence"]
       },
       description: "Array of damaged parts only (exclude undamaged parts)"
     },
@@ -733,6 +737,8 @@ export function parseAndValidateResponse(responseText: string, requestId: string
 
     return normalizeDamageEvidence({
       part: partName,
+          evidenceStatus: part.evidenceStatus === 'observed' ? 'observed' : 'suspected',
+          photoIndices: Array.isArray(part.photoIndices) ? part.photoIndices.filter((index): index is number => typeof index === 'number') : [],
       damageType: typeof part.damageType === 'string' ? part.damageType : undefined,
       description: typeof part.description === 'string' ? part.description : undefined,
       recommendedAction: normalizeDamageAction(part.recommendedAction),
@@ -902,6 +908,8 @@ export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext):
   const profile = getAssetAssessmentProfile(itemType || 'vehicle');
   return `${basePrompt}\n\n**MANDATORY DESCRIPTIVE EVIDENCE CONTRACT:**\n` +
     `For every damagedParts entry, return all fields below:\n` +
+    `- evidenceStatus: observed only for direct visible damage; suspected for an inspection question or inferred failure\n` +
+    `- photoIndices: one-based indices of the supplied photos directly showing that finding\n` +
     `- part: canonical ${profile.evidenceNoun} identity without a damage adjective\n` +
     `- damageType: the observed state/mechanism, such as shattered, dented, crushed, burnt, contaminated, missing, corroded, or water-damaged\n` +
     `- description: a concise staff-facing phrase combining what happened and where/what was affected\n` +
@@ -910,6 +918,7 @@ export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext):
     `- severity: \"minor\" | \"moderate\" | \"severe\"\n` +
     `- confidence: number (0-100)\n` +
     `Top-level airbagDeployed and totalLoss fields must be boolean values.\n` +
+    `Review all views of the same asset together. Different views are not additional damaged components. Use one canonical entry per component; do not list the same damage again as an assembly and its subcomponent. Separate cosmetic covers from load-bearing structure. A turned wheel, perspective, normal articulation, surface rust, or bumper deformation does not prove suspension, steering, frame or mechanical failure. Require direct visible breakage/deformation of the named component itself, not an inference from a neighboring part. Do not infer a missing part from an obscured view.\n` +
     `Severity scoring guide: minor 10-30, moderate 40-60, severe 70-90.\n` +
     `Examples for this asset type: ${profile.evidenceExamples.join('; ')}.\n` +
     `Choose repair only for visibly repairable damage, replace only when visible destruction or mandatory replacement is clear, and specialist_review whenever testing, disassembly, OEM procedure, safety, authenticity, contamination testing or hidden damage controls the decision. ` +
@@ -931,7 +940,7 @@ function constructVehiclePrompt(year: number | undefined, make: string, model: s
 - Example of CORRECT response: {"color": "White"}
 - Example of INCORRECT response: {"color": "White (appears to be white but lighting makes it hard to confirm)"}
 - Your response will be shown directly to insurance adjusters and vendors - it must be professional and concise
-- NO parenthetical explanations, NO hedging language, NO reasoning text in any field values
+- Keep identity fields concise; explicitly state uncertainty in evidence and notes when photos cannot establish a claim.
 
 **VEHICLE CONTEXT PROVIDED:**
 You have been told this is a ${year} ${make} ${model}.
@@ -970,7 +979,7 @@ For each field in itemDetails:
 - overallCondition: Condition assessment (e.g., "Excellent", "Good", "Fair", "Poor") based on visible damage - NO explanations
 - notes: ONLY for vehicle mismatch discrepancies or critical observations - NO reasoning text
 
-**REMEMBER**: If a field is not clearly visible or determinable, OMIT it from your response. Do not include reasoning or uncertainty statements.
+**REMEMBER**: If an identity field is not determinable, OMIT it. Put inspection questions in notes and mark any unconfirmed finding suspected.
 
 **Vehicle-Specific Parts to Consider:**
 - **Exterior**: front bumper, rear bumper, hood, trunk lid, driver/passenger doors (front/rear), driver/passenger fenders, driver/passenger quarter panels, roof, windshield, rear window, side windows, headlights, taillights, side mirrors, grille
@@ -988,7 +997,7 @@ For each field in itemDetails:
 
 **SECTION 3: OVERALL ASSESSMENT**
 
-**Overall Severity**: Classify as minor, moderate, or severe based on the worst damage present.
+**Overall Severity**: Assess the extent of confirmed damage across the vehicle. A severely damaged replaceable bumper or trim component alone does not establish severe vehicle damage. Suspected hidden damage must not increase severity.
 
 **Airbag Deployment**: Set to true only with visible deployment evidence. The required boolean false means deployment is not established; it does not prove intact airbags. If the interior is not visible, the summary must say airbag status cannot be determined from the supplied photos. Never claim no deployment was observed as proof of no deployment.
 
@@ -2057,7 +2066,7 @@ export async function assessDamageWithGemini(
       `Request ID: ${requestId}`
     );
 
-    return assessment;
+    return reviewPhotoEvidence(assessment, convertedPhotos.length);
   } catch (error: unknown) {
     const errorMessage = getErrorMessage(error) || 'Unknown error';
     const errorStack = getErrorStack(error);

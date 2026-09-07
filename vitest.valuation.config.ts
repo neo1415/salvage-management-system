@@ -8,6 +8,7 @@ export default defineConfig({
     environment: 'node',
     setupFiles: [],
     include: [
+      'tests/unit/valuations/photo-evidence.test.ts',
       'tests/unit/valuations/valuation-display.test.ts',
       'tests/unit/valuations/localized-repair-cost.test.ts',
       'tests/unit/valuations/assessment-price-research.test.ts',

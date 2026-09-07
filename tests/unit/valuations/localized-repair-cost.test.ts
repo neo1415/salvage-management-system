@@ -4,8 +4,21 @@ vi.mock('@/features/valuations/services/valuation-policy.service', () => ({ getV
 import { DamageCalculationService } from '@/features/valuations/services/damage-calculation.service';
 import { ValuationUnavailableError } from '@/features/valuations/services/valuation-unavailable';
 import { formatConditionForDisplay } from '@/features/valuations/services/condition-mapping.service';
+import { reviewPhotoEvidence } from '@/lib/ai/damage-evidence';
 
 describe('component cost valuation across assets', () => {
+  it('calculates salvage from confirmed bumper evidence without pricing inferred frame failure', async () => {
+    const observed = reviewPhotoEvidence({ summary: 'Possible frame damage', damagedParts: [
+      { part: 'front bumper', description: 'Crushed bumper', evidenceStatus: 'observed', photoIndices: [3], severity: 'severe', confidence: 95, recommendedAction: 'replace' },
+      { part: 'frame rails', description: 'Possible frame failure', evidenceStatus: 'suspected', photoIndices: [3], severity: 'severe', confidence: 90, recommendedAction: 'specialist_review' },
+    ] as import('@/lib/ai/damage-evidence').DamageEvidence[] }, 5);
+    const result = await new DamageCalculationService().calculateSalvageValueWithPartPrices(35_700_000,
+      observed.damagedParts.map(part => ({ component: part.part, damageLevel: part.severity, recommendedAction: part.recommendedAction })),
+      [{ component: 'front bumper', partPrice: 1_253_488, source: 'internet_search', confidence: 45 }]);
+    expect(result.salvageValue).toBeGreaterThan(30_000_000);
+    expect(result.deductions).toHaveLength(1);
+    expect(result.isTotalLoss).toBe(false);
+  });
   it.each(['bumper', 'screen', 'pump', 'roof', 'furniture panel', 'hull', 'general asset casing'])('does not turn severe %s damage into whole-asset loss', async component => {
     const result = await new DamageCalculationService().calculateSalvageValueWithPartPrices(32_000_000,
       [{ component, damageLevel: 'severe', recommendedAction: 'replace' }],

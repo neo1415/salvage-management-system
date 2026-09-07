@@ -26,7 +26,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
 import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
-import { normalizeDamageAction, normalizeDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
+import { normalizeDamageAction, normalizeDamageEvidence, reviewPhotoEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -73,6 +73,8 @@ export interface ItemDetails {
  * Individual damaged part with severity and confidence
  */
 export interface DamagedPart {
+  evidenceStatus?: 'observed' | 'suspected';
+  photoIndices?: number[];
   part: string;
   damageType?: string;
   description?: string;
@@ -294,6 +296,8 @@ export function parseAndValidateClaudeResponse(responseText: string, requestId: 
 
         return normalizeDamageEvidence({
           part: partName,
+          evidenceStatus: part.evidenceStatus === 'observed' ? 'observed' : 'suspected',
+          photoIndices: Array.isArray(part.photoIndices) ? part.photoIndices.filter((index): index is number => typeof index === 'number') : [],
           damageType: typeof part.damageType === 'string' ? part.damageType : undefined,
           description: typeof part.description === 'string' ? part.description : undefined,
           recommendedAction: normalizeDamageAction(part.recommendedAction),
@@ -749,7 +753,7 @@ export async function assessDamageWithClaude(
         `Request ID: ${requestId}`
       );
 
-      return assessment;
+      return reviewPhotoEvidence(assessment, convertedPhotos.length);
 
     } catch (error: unknown) {
       lastError = error;
@@ -808,7 +812,7 @@ export async function assessDamageWithClaude(
         `Request ID: ${requestId}`
       );
 
-      return assessment;
+      return reviewPhotoEvidence(assessment, convertedPhotos.length);
 
     } catch (retryError: unknown) {
       const retryErrorMessage = getErrorMessage(retryError) || 'Unknown error';

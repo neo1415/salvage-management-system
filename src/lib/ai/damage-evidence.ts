@@ -7,6 +7,8 @@ export type DamageAction =
   | 'specialist_review';
 
 export interface DamageEvidence {
+  evidenceStatus?: 'observed' | 'suspected';
+  photoIndices?: number[];
   part: string;
   damageType?: string;
   description?: string;
@@ -14,6 +16,32 @@ export interface DamageEvidence {
   actionConfidence?: number;
   severity: 'minor' | 'moderate' | 'severe';
   confidence: number;
+}
+
+/** Validate model evidence before it can drive scores or priced repair scope. */
+export function reviewPhotoEvidence<T extends { damagedParts: DamageEvidence[]; summary: string; airbagDeployed?: boolean; itemDetails?: { notes?: string } }>(assessment: T, photoCount: number): T {
+  const inspection: string[] = [];
+  const unique = new Map<string, DamageEvidence>();
+  for (const part of assessment.damagedParts) {
+    const text = `${part.description || ''} ${part.damageType || ''}`;
+    const references = part.photoIndices?.filter(index => Number.isInteger(index) && index >= 1 && index <= photoCount) || [];
+    if (part.evidenceStatus !== 'observed' || !references.length || /\b(possible|possibly|suspected|suggests|may be|might|could|potential|indicating|indicates|inspection required|requires inspection|to confirm)\b/i.test(text)) {
+      inspection.push(`${part.part}: not confirmed from the photos; inspection required.`);
+      continue;
+    }
+    const key = part.part.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const previous = unique.get(key);
+    if (!previous || part.confidence > previous.confidence) unique.set(key, { ...part, photoIndices: references });
+  }
+  const damagedParts = [...unique.values()];
+  const summary = assessment.airbagDeployed === false
+    ? assessment.summary.replace(/(?:no airbag deployment[^.!?]*|airbags? (?:have |has |did )?not (?:been )?deploy(?:ed)?[^.!?]*)[.!?]?/gi, 'Airbag status cannot be confirmed from this assessment.')
+    : assessment.summary;
+  return { ...assessment, summary, damagedParts,
+    ...(inspection.length ? {
+      summary: `${damagedParts.length ? `Visible damage: ${damagedParts.map(formatDamageEvidence).join('; ')}.` : 'No component damage was confirmed with direct photo evidence.'} Inspection required: ${[...new Set(inspection)].join(' ')}`,
+      itemDetails: { ...assessment.itemDetails, notes: [assessment.itemDetails?.notes, ...new Set(inspection)].filter(Boolean).join(' ') },
+    } : {}) };
 }
 
 const DAMAGE_ACTIONS = new Set<DamageAction>([

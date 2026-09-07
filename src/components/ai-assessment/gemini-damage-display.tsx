@@ -35,6 +35,7 @@ export interface ItemDetails {
  * Individual damaged part with severity and confidence
  */
 export interface DamagedPart {
+  photoIndices?: number[];
   part: string;
   damageType?: string;
   description?: string;
@@ -250,6 +251,7 @@ export function GeminiDamageDisplay({
               >
                 <div className="min-w-0 flex-1">
                   <span className="block text-sm text-gray-800 font-medium">{formatDamageEvidence(part)}</span>
+                  {!!part.photoIndices?.length && <span className="block text-xs text-gray-500">Photos: {part.photoIndices.join(', ')}</span>}
                   {formatDamageAction(part.recommendedAction) && (
                     <span className="mt-0.5 block text-xs text-gray-500">
                       {formatDamageAction(part.recommendedAction)}{part.actionConfidence ? ` (${part.actionConfidence}%)` : ''}
@@ -258,7 +260,7 @@ export function GeminiDamageDisplay({
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className={`px-2 py-1 rounded-full text-xs font-bold ${getSeverityColor(part.severity)}`}>
-                    {part.severity.toUpperCase()}
+                    Part: {part.severity.toUpperCase()}
                   </span>
                   <span className="text-xs text-gray-500 font-medium">{part.confidence}%</span>
                 </div>

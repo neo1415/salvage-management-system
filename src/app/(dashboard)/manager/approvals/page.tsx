@@ -57,6 +57,7 @@ function getDisplayableDamageLabels(labels?: string[]): string[] {
 }
 
 type DisplayDamagedPart = {
+  photoIndices?: number[];
   part: string;
   damageType?: string;
   description?: string;
@@ -109,6 +110,7 @@ interface CaseData {
       notes?: string;
     };
     damagedParts?: Array<{
+      photoIndices?: number[];
       part: string;
       damageType?: string;
       description?: string;
@@ -232,6 +234,7 @@ function normalizeDamagedParts(assessment: CaseData['aiAssessment']): DisplayDam
     return assessment.damagedParts
       .filter((part) => typeof part?.part === 'string' && part.part.trim().length > 0)
       .map((part) => normalizeDamageEvidence({
+        photoIndices: part.photoIndices,
         part: part.part.trim(),
         damageType: part.damageType,
         description: part.description,
@@ -1271,8 +1274,8 @@ export default function ApprovalsPage() {
 
                 {/* Damage Percentage */}
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Damage Percentage</span>
-                  <span className="font-medium">{selectedCase.aiAssessment.damagePercentage}%</span>
+                  <span className="text-gray-600">Damage score (not percentage value loss)</span>
+                  <span className="font-medium">{selectedCase.aiAssessment.damagePercentage} / 100</span>
                 </div>
 
                 {/* Gemini Damage Display Component */}
@@ -1337,7 +1340,6 @@ export default function ApprovalsPage() {
                 overrideValue={priceOverrides.marketValue}
                 isEditMode={isEditMode}
                 onChange={(value) => handlePriceChange('marketValue', value)}
-                confidence={selectedCase.aiAssessment?.marketConfidence ?? selectedCase.aiAssessment?.confidence?.valuationAccuracy ?? (repairPricingPending ? undefined : selectedCase.aiAssessment?.confidenceScore)}
                 pendingLabel="Pending Analysis"
                 isAnalyzing={isRunningManagerAi}
               />
