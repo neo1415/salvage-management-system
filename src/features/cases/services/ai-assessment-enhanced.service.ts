@@ -44,7 +44,8 @@ import {
 import { getValuationPolicyConfig, shouldRequireManualReview } from '@/features/valuations/services/valuation-policy.service';
 import type { DamageEvidence } from '@/lib/ai/damage-evidence';
 import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
-import { isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
+import { researchAssessmentPrices, type ResearchedComponentPrice } from '@/features/valuations/services/assessment-price-research.service';
+import { isClaudePriceAdjudicationEnabled, isGeminiPriceAdjudicationEnabled, isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 import { ValuationUnavailableError } from '@/features/valuations/services/valuation-unavailable';
 
 const MOCK_MODE = process.env.MOCK_AI_ASSESSMENT === 'true';
@@ -1016,28 +1017,6 @@ async function assessDamageEnhancedCore(params: {
   if (isBulkRecoveryAsset(enrichedItemInfo) && !parseQuantityValue(userQuantityBeforeAi)) {
     throw new ValuationUnavailableError('Confirm the exact lot quantity and unit before valuation. A visual estimate or quantity range cannot be used as the lot total. No new valuation was saved.');
   }
-  const marketValueResult = await getUniversalMarketValue(marketLookupItemInfo, { forceRefresh });
-  const marketValue = marketValueResult.value;
-  const marketDataConfidence = marketValueResult.confidence;
-  const priceSource = marketValueResult.source;
-  const marketReviewReasons = Array.isArray(marketValueResult.evidence?.reviewReasons)
-    ? marketValueResult.evidence.reviewReasons.filter((reason): reason is string => typeof reason === 'string')
-    : [];
-  valuationReviewReasons.push(...marketReviewReasons);
-  
-  // Step 4: Calculate damage-adjusted salvage value using database (Requirements 6.2, 6.3)
-  let salvageValue: number;
-  let repairCost: number;
-  let damageBreakdown: Array<{
-    component: string;
-    damageLevel: string;
-    repairCost: number;
-    deductionPercent: number;
-    deductionAmount: number;
-  }> | undefined;
-  let isTotalLoss: boolean | undefined;
-  let partPrices: Awaited<ReturnType<typeof searchUniversalPartPrices>> = [];
-  
   // Use AI-identified damaged parts for every asset type when available.
   let damages: DamageInput[];
   if (damageAnalysis.damagedParts && damageAnalysis.damagedParts.length > 0) {
@@ -1061,6 +1040,28 @@ async function assessDamageEnhancedCore(params: {
     damages = identifyDamagedComponents(damageScore);
   }
   
+  const marketValueResult = await getUniversalMarketValue(marketLookupItemInfo, { forceRefresh, damages });
+  const marketValue = marketValueResult.value;
+  const marketDataConfidence = marketValueResult.confidence;
+  const priceSource = marketValueResult.source;
+  const marketReviewReasons = Array.isArray(marketValueResult.evidence?.reviewReasons)
+    ? marketValueResult.evidence.reviewReasons.filter((reason): reason is string => typeof reason === 'string')
+    : [];
+  valuationReviewReasons.push(...marketReviewReasons);
+
+  // Step 4: Calculate damage-adjusted salvage value using database (Requirements 6.2, 6.3)
+  let salvageValue: number;
+  let repairCost: number;
+  let damageBreakdown: Array<{
+    component: string;
+    damageLevel: string;
+    repairCost: number;
+    deductionPercent: number;
+    deductionAmount: number;
+  }> | undefined;
+  let isTotalLoss: boolean | undefined;
+  let partPrices: Awaited<ReturnType<typeof searchUniversalPartPrices>> = [];
+
   // PRISTINE CONDITION HANDLING: If no damage detected, use universal adjustments
   if (damages.length === 0) {
     console.log('✅ No damage detected - using pristine pricing with universal adjustments');
@@ -1177,7 +1178,7 @@ async function assessDamageEnhancedCore(params: {
         });
       } else {
       // NEW: Search for part prices to enhance salvage calculations (Task 7.4)
-      partPrices = await searchUniversalPartPrices(marketLookupItemInfo ?? itemInfo, damages, { forceRefresh });
+      partPrices = marketValueResult.partPrices ?? await searchUniversalPartPrices(marketLookupItemInfo ?? itemInfo, damages, { forceRefresh });
       console.log(`🔍 Part price search results: ${partPrices.filter(p => p.searchedPrice).length}/${partPrices.length} found`);
       
       // Extract item make/brand for make-specific deductions (Requirement 6.1)
@@ -2358,7 +2359,8 @@ function resolveSearchConditionForItem(
   }).searchCondition as UniversalCondition;
 }
 
-export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { forceRefresh?: boolean } = {}): Promise<{
+export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, options: { forceRefresh?: boolean; damages?: DamageInput[] } = {}): Promise<{
+  partPrices?: ResearchedComponentPrice[];
   value: number;
   confidence: number;
   source: 'database' | 'user_provided' | 'internet_search' | 'scraping' | 'estimated';
@@ -2373,11 +2375,17 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
   }
 
   if (itemInfo.marketValueSource === 'manual' && Number.isFinite(itemInfo.marketValue) && itemInfo.marketValue && itemInfo.marketValue > 0) {
+    const manualIdentifier = buildUniversalSearchIdentifier(itemInfo);
+    const manualResearch = manualIdentifier && options.damages?.length && (isGeminiPriceAdjudicationEnabled() || isClaudePriceAdjudicationEnabled())
+      && !isBulkRecoveryAsset(itemInfo) && !isLuxuryJewelryValuation(itemInfo) && !isMultiItemJewelryValuation(itemInfo) && itemInfo.type !== 'artwork'
+      ? await researchAssessmentPrices(manualIdentifier, options.damages, await getValuationPolicyConfig(), false)
+      : undefined;
     console.log('Using user-provided claims paid / asset value:', itemInfo.marketValue);
     return {
       value: Math.round(itemInfo.marketValue),
       confidence: 0,
       source: 'user_provided',
+      partPrices: manualResearch?.partPrices,
       uniqueSourceCount: 0,
       priceSpreadPercent: 0,
       evidence: {
@@ -2397,6 +2405,26 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
 
   if (isBulkRecoveryAsset(itemInfo) && (!parseQuantityValue(itemInfo.quantity) || !itemInfo.unitOfMeasure?.trim())) {
     throw new ValuationUnavailableError('Confirm the exact lot quantity and unit before researching its value. No new valuation was saved.');
+  }
+
+  const batchIdentifier = buildUniversalSearchIdentifier(itemInfo);
+  if (batchIdentifier && (isGeminiPriceAdjudicationEnabled() || isClaudePriceAdjudicationEnabled())) {
+    const research = await researchAssessmentPrices(batchIdentifier, isBulkRecoveryAsset(itemInfo) ? [] : options.damages || [], await getValuationPolicyConfig());
+    const market = research.market;
+    if (!market?.selectedPrice) {
+      const reasons = market?.reviewReasons.filter(reason => /unavailable|timed out|quota|credit|limit/i.test(reason)) || [];
+      console.warn('[Assessment research] No accepted model-search evidence', { reasons: market?.reviewReasons });
+      throw new ValuationUnavailableError(reasons.length
+        ? `Live model research could not verify pricing. ${reasons.join(' ').slice(0, 700)} No new valuation was saved.`
+        : 'Gemini and Claude web research found no attributable matching price. Confirm the asset details or add a documented appraisal. No new valuation was saved.');
+    }
+    const bulkPriceScaling = isBulkRecoveryAsset(itemInfo) ? scaleBulkInternetSearchPrice(itemInfo, market.selectedPrice) : undefined;
+    return { value: Math.round(bulkPriceScaling?.totalValue ?? market.selectedPrice), confidence: market.confidence,
+      source: 'internet_search', partPrices: research.partPrices,
+      uniqueSourceCount: market.priceData.evidenceSummary?.uniqueSourceCount,
+      priceSpreadPercent: market.priceData.evidenceSummary?.priceSpreadPercent,
+      evidence: { provider: market.selectedSource, priceData: market.priceData, adjudication: market,
+        reviewReasons: market.reviewReasons, bulkPriceScaling, researchMode: 'whole_assessment_web_search' } };
   }
 
   // For vehicles, use existing vehicle market data service

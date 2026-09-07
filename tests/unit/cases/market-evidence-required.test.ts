@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/features/market-data/services/market-data.service', () => ({ getMarketPrice: vi.fn() }));
 vi.mock('@/features/internet-search/services/internet-search.service', () => ({ internetSearchService: { searchMarketPrice: vi.fn() } }));
@@ -10,6 +10,8 @@ vi.mock('@/lib/integrations/vision-damage-detection', () => ({ assessDamageWithV
 vi.mock('@/lib/integrations/claude-rate-limiter', () => ({ getClaudeRateLimiter: vi.fn() }));
 vi.mock('@/lib/integrations/gemini-rate-limiter', () => ({ getGeminiRateLimiter: vi.fn() }));
 
+vi.mock('@/features/valuations/services/assessment-price-research.service', () => ({ researchAssessmentPrices: vi.fn() }));
+import { researchAssessmentPrices } from '@/features/valuations/services/assessment-price-research.service';
 import { getMarketPrice } from '@/features/market-data/services/market-data.service';
 import { internetSearchService } from '@/features/internet-search/services/internet-search.service';
 import { enrichItemInfoWithAiIdentification, getAssetIdentityReviewReasons, getUniversalMarketValue, parseQuantityValue, type UniversalItemInfo } from '@/features/cases/services/ai-assessment-enhanced.service';
@@ -18,10 +20,31 @@ import { ValuationUnavailableError } from '@/features/valuations/services/valuat
 const categories: UniversalItemInfo['type'][] = ['vehicle', 'electronics', 'appliance', 'property', 'watch', 'jewelry', 'furniture', 'artwork', 'equipment', 'machinery', 'stock', 'goods_in_transit', 'building_materials', 'scrap', 'agriculture', 'medical_equipment', 'energy_equipment', 'aviation_equipment', 'other'];
 
 describe('market evidence is required across all asset categories', () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('PRICE_ADJUDICATION_AI_ENABLED', 'false');
     vi.mocked(getMarketPrice).mockRejectedValue(new Error('Research unavailable'));
     vi.mocked(internetSearchService.searchMarketPrice).mockResolvedValue({ success: false, priceData: { prices: [], confidence: 0, currency: 'NGN', extractedAt: new Date() }, query: '', resultsProcessed: 0, executionTime: 0, dataSource: 'internet_search' });
+  });
+
+  it('uses one model batch for the case and returns its component prices without Serper', async () => {
+    vi.stubEnv('GEMINI_API_KEY', 'test-key');
+    vi.stubEnv('PRICE_ADJUDICATION_AI_ENABLED', 'true');
+    vi.stubEnv('GEMINI_PRICE_ADJUDICATION_ENABLED', 'true');
+    vi.mocked(researchAssessmentPrices).mockResolvedValue({ market: {
+      selectedPrice: 27_000_000, selectedSource: 'gemini_grounded', confidence: 70,
+      manualReviewRequired: true, reviewReasons: ['Only one source'], rejectedPrices: [], aiOpinions: [],
+      priceData: { prices: [], currency: 'NGN', confidence: 70, extractedAt: new Date() },
+    }, partPrices: [{ component: 'front bumper', searchedPrice: 900_000, action: 'replace', source: 'internet_search' }] });
+    const damages = [{ component: 'front bumper', damageLevel: 'severe' as const, recommendedAction: 'replace' as const }];
+    const result = await getUniversalMarketValue({ type: 'vehicle', make: 'Jeep', model: 'Wrangler', year: 2015, condition: 'Nigerian Used' }, { damages });
+    expect(result.value).toBe(27_000_000);
+    expect(result.partPrices?.[0].searchedPrice).toBe(900_000);
+    expect(researchAssessmentPrices).toHaveBeenCalledOnce();
+    expect(researchAssessmentPrices).toHaveBeenCalledWith(expect.objectContaining({ type: 'vehicle' }), damages, undefined);
+    expect(getMarketPrice).not.toHaveBeenCalled();
+    expect(internetSearchService.searchMarketPrice).not.toHaveBeenCalled();
   });
 
   it('preserves actionable credit exhaustion through the assessment error', async () => {

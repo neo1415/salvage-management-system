@@ -9,6 +9,7 @@ export default defineConfig({
     setupFiles: [],
     include: [
       'tests/unit/valuations/localized-repair-cost.test.ts',
+      'tests/unit/valuations/assessment-price-research.test.ts',
       'tests/unit/internet-search/**/*.test.ts',
       'tests/unit/valuations/price-adjudication.test.ts',
       'tests/unit/valuations/valuation-benchmark.test.ts',
