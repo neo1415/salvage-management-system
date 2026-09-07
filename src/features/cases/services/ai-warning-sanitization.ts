@@ -80,6 +80,8 @@ export function formatStaffReviewNotes(
   );
 
   const staffNotes: string[] = [];
+  const estimatedCosts = actionable.filter(entry => /AI-estimated cost/i.test(entry));
+  if (estimatedCosts.length) staffNotes.push(estimatedCosts.join(' '));
 
   if (manualReviewRequired || confidence < 80 || actionable.length > 0) {
     if (confidence >= 80) {

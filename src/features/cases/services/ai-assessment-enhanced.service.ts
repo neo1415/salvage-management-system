@@ -1370,6 +1370,11 @@ async function assessDamageEnhancedCore(params: {
     marketDataConfidence,
     photoRequirement
   );
+  const estimatedRepairParts = partPrices.filter(part => part.source === 'ai_estimate');
+  if (estimatedRepairParts.length) {
+    confidence.overall = Math.min(confidence.overall, 60);
+    confidence.reasons.push('Salvage includes AI-estimated restoration costs; verify the cost ranges and assumptions.');
+  }
   
   // Step 8: Validate and generate warnings
   const warnings = validateAssessment({

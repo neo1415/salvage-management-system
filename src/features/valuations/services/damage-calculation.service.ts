@@ -216,7 +216,7 @@ export class DamageCalculationService {
           repairCostLow: amount, repairCostHigh: amount, repairCost: amount,
           valuationDeductionLow: amount / basePrice, valuationDeductionHigh: amount / basePrice,
           deductionPercent: amount / basePrice, deductionAmount: amount,
-          source: price.source === 'internet_search' ? 'internet_search' : undefined });
+          source: price.source === 'ai_estimate' ? 'ai_estimate' : 'internet_search' });
       } else {
         const deduction = await this.getDeduction(damage.component, damage.damageLevel, make);
         const amount = (deduction.repairCostLow + deduction.repairCostHigh) / 2;

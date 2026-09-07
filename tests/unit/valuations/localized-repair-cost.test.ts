@@ -7,6 +7,16 @@ import { formatConditionForDisplay } from '@/features/valuations/services/condit
 import { reviewPhotoEvidence } from '@/lib/ai/damage-evidence';
 
 describe('component cost valuation across assets', () => {
+  it('calculates a numeric salvage from labelled AI estimates without requiring database quotes', async () => {
+    const service = new DamageCalculationService();
+    const database = vi.spyOn(service, 'getDeduction');
+    const result = await service.calculateSalvageValueWithPartPrices(35_700_000,
+      [{ component: 'bumper', damageLevel: 'severe', recommendedAction: 'replace' }, { component: 'flare', damageLevel: 'moderate', recommendedAction: 'repair' }],
+      [{component: 'bumper', partPrice: 1_000_000, source: 'ai_estimate', confidence: 60}, {component: 'flare', partPrice: 100_000, source: 'ai_estimate', confidence: 40}]);
+    expect(result.salvageValue).toBe(34_250_000);
+    expect(result.deductions.every(part => part.source === 'ai_estimate')).toBe(true);
+    expect(database).not.toHaveBeenCalled();
+  });
   it('calculates salvage from confirmed bumper evidence without pricing inferred frame failure', async () => {
     const observed = reviewPhotoEvidence({ summary: 'Possible frame damage', damagedParts: [
       { part: 'front bumper', description: 'Crushed bumper', evidenceStatus: 'observed', photoIndices: [3], severity: 'severe', confidence: 95, recommendedAction: 'replace' },

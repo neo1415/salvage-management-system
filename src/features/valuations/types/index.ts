@@ -56,7 +56,7 @@ export interface DamageDeduction {
   repairCost?: number; // Midpoint of range
   deductionPercent?: number; // Calculated from deduction amount
   deductionAmount?: number; // Midpoint of range
-  source?: 'database' | 'internet_search'; // NEW: Source of the deduction data
+  source?: 'database' | 'internet_search' | 'ai_estimate'; // Source of the deduction data
 }
 
 export interface SalvageCalculation {

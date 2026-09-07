@@ -24,6 +24,34 @@ const opinion = (groundedStatements: AiPriceOpinion['groundedStatements'], provi
 afterEach(() => vi.restoreAllMocks());
 
 describe('one research request per provider for an assessment', () => {
+  it.each(['vehicle', 'electronics', 'machinery', 'property', 'furniture', 'stock', 'agriculture', 'equipment', 'other'])('uses labelled fallback estimates for %s without inventing listing evidence', async type => {
+    const service = new PriceAdjudicationService(); const mocks = providers(service);
+    mocks.gemini.mockResolvedValue({ ...opinion([]), repairEstimates: [{key: 'part:front bumper', action: 'replace', low: 800_000, high: 1_200_000, confidence: 85, assumptions: 'Compatible replacement, part only; fitting excluded.'}] });
+    mocks.claude.mockResolvedValue(opinion([], 'claude_web_search'));
+    const request = requests()[1]; request.input.item = { ...item, type } as ItemIdentifier;
+    const result = (await service.researchBatch([request])).get(request.key)!;
+    expect(result.selectedPrice).toBe(1_000_000);
+    expect(result.selectedSource).toBe('ai_estimate');
+    expect(result.confidence).toBe(60);
+    expect(result.priceData.prices).toEqual([]);
+    expect(result.manualReviewRequired).toBe(true);
+    expect(result.estimateRange?.assumptions).toContain('part only');
+    expect(mocks.claude).toHaveBeenCalledOnce();
+  });
+  it('prefers a later sourced quote over an earlier model estimate', async () => {
+    const service = new PriceAdjudicationService(); const mocks = providers(service);
+    mocks.gemini.mockResolvedValue({ ...opinion([]), repairEstimates: [{key: 'part:front bumper', action: 'replace', low: 1_000_000, high: 2_000_000, confidence: 40, assumptions: 'Provisional part'}] });
+    mocks.claude.mockResolvedValue(opinion([bumperStatement], 'claude_web_search'));
+    const result = (await service.researchBatch([requests()[1]])).get('part:front bumper');
+    expect(result?.selectedPrice).toBe(900_000);
+    expect(result?.selectedSource).toBe('claude_web_search');
+  });
+  it.each([{low: -1, high: 10}, {low: 20, high: 10}, {low: NaN, high: 10}, {low: 10, high: Infinity}])('rejects invalid estimate ranges %j', async range => {
+    const service = new PriceAdjudicationService(); const mocks = providers(service);
+    mocks.gemini.mockResolvedValue({ ...opinion([]), repairEstimates: [{key: 'part:front bumper', action: 'replace', ...range, confidence: 40, assumptions: 'Provisional part'}] });
+    mocks.claude.mockResolvedValue(null);
+    expect((await service.researchBatch([requests()[1]])).get('part:front bumper')?.selectedPrice).toBeUndefined();
+  });
   it('accepts attributable Tavily evidence even when both models are unavailable', async () => {
     vi.spyOn(tavilyResearch, 'researchTavilyEvidence').mockResolvedValue([marketStatement, bumperStatement]);
     const service = new PriceAdjudicationService(); const mocks = providers(service);
@@ -102,14 +130,14 @@ describe('one research request per provider for an assessment', () => {
     expect((await service.researchBatch([])).size).toBe(0);
     expect(mocks.gemini).not.toHaveBeenCalled(); expect(mocks.claude).not.toHaveBeenCalled();
   });
-  it('deduplicates components, preserves actions and leaves specialist operations unpriced', async () => {
+  it('deduplicates components and requests provisional specialist operation estimates', async () => {
     const spy = vi.spyOn(priceAdjudicationService, 'researchBatch').mockResolvedValue(new Map());
     const result = await researchAssessmentPrices(item, [
       { component: 'front bumper', damageLevel: 'minor', recommendedAction: 'repair' },
       { component: ' FRONT BUMPER ', damageLevel: 'severe', recommendedAction: 'replace' },
       { component: 'chassis', damageLevel: 'severe', recommendedAction: 'specialist_review' },
     ], policy);
-    expect(spy).toHaveBeenCalledOnce(); expect(spy.mock.calls[0][0]).toHaveLength(2);
+    expect(spy).toHaveBeenCalledOnce(); expect(spy.mock.calls[0][0]).toHaveLength(3);
     expect(spy.mock.calls[0][0][1].input.action).toBe('replace');
     expect(result.partPrices).toHaveLength(2);
     expect(result.partPrices[1].evidence?.reason).toBe('specialist_review_required');

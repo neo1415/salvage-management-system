@@ -34,14 +34,14 @@ export async function researchAssessmentPrices(item: ItemIdentifier, damages: Da
     if (key && (!previous || rank[damage.damageLevel] > rank[previous.damageLevel])) unique.set(key, { ...damage, component: key });
   }
   for (const [key, damage] of unique) {
-    if (!damage.recommendedAction || ['specialist_review', 'dispose'].includes(damage.recommendedAction)) continue;
+    if (!damage.recommendedAction || damage.recommendedAction === 'dispose') continue;
     requests.push({ key: `part:${key}`, input: { item, context, mode: 'part', policy, priceData: empty(), partName: damage.component, action: damage.recommendedAction, damageType: damage.damageType } });
   }
   const results = await priceAdjudicationService.researchBatch(requests);
   const partPrices: ResearchedComponentPrice[] = [...unique].map(([key, damage]) => {
     const result = results.get(`part:${key}`);
     return { component: key, action: damage.recommendedAction, searchedPrice: result?.selectedPrice,
-      confidence: result?.confidence, source: result?.selectedPrice ? 'internet_search' : 'not_found',
+      confidence: result?.confidence, source: result?.selectedPrice ? result.selectedSource === 'ai_estimate' ? 'ai_estimate' : 'internet_search' : 'not_found',
       evidence: { provider: result?.selectedSource, priceData: result?.priceData, adjudication: result,
         reason: result?.selectedPrice ? undefined : damage.recommendedAction === 'dispose' ? 'disposal_not_repair_priced'
           : !damage.recommendedAction || damage.recommendedAction === 'specialist_review' ? 'specialist_review_required' : 'No native-cited repair price found in batch research' } };
