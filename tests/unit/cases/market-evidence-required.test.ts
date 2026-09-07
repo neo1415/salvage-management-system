@@ -42,7 +42,7 @@ describe('market evidence is required across all asset categories', () => {
     expect(result.value).toBe(27_000_000);
     expect(result.partPrices?.[0].searchedPrice).toBe(900_000);
     expect(researchAssessmentPrices).toHaveBeenCalledOnce();
-    expect(researchAssessmentPrices).toHaveBeenCalledWith(expect.objectContaining({ type: 'vehicle' }), damages, undefined);
+    expect(researchAssessmentPrices).toHaveBeenCalledWith(expect.objectContaining({ type: 'vehicle' }), damages, undefined, true, expect.objectContaining({ make: 'Jeep', model: 'Wrangler' }));
     expect(getMarketPrice).not.toHaveBeenCalled();
     expect(internetSearchService.searchMarketPrice).not.toHaveBeenCalled();
   });

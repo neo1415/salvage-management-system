@@ -914,7 +914,7 @@ export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext):
     `Examples for this asset type: ${profile.evidenceExamples.join('; ')}.\n` +
     `Choose repair only for visibly repairable damage, replace only when visible destruction or mandatory replacement is clear, and specialist_review whenever testing, disassembly, OEM procedure, safety, authenticity, contamination testing or hidden damage controls the decision. ` +
     `For stock/material assets, prefer sort_or_recover, dispose, clean_or_restore or specialist_review instead of vehicle repair language. ` +
-    `Never return a bare component name when visible damage can be described. Do not invent hidden damage. ` +
+    `Never return a bare component name when visible damage can be described. Do not invent hidden damage. Rust, dirt, an exposed component, or an unusual camera angle alone does not establish mechanical failure. Describe uncertainty as an inspection need, not confirmed damage. A severely damaged component does not establish severe whole-asset damage. ` +
     `Keep the summary complete but concise, with a maximum of 1200 characters.`;
 }
 

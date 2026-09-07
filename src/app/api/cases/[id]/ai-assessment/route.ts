@@ -91,13 +91,19 @@ export async function POST(
         }
       : undefined;
 
-    const assessment = await assessDamageEnhanced({
-      photos,
-      vehicleInfo,
-      universalItemInfo,
-      forceRefresh,
-      requireDetailedAnalysis: true,
-    });
+    let assessment;
+    try {
+      assessment = await assessDamageEnhanced({ photos, vehicleInfo, universalItemInfo, forceRefresh, requireDetailedAnalysis: true });
+    } catch (error) {
+      if (!(error instanceof ValuationUnavailableError) || !error.partialAssessment) throw error;
+      const partial = error.partialAssessment;
+      await db.update(salvageCases).set({
+        aiAssessment: partial as typeof salvageCases.$inferInsert['aiAssessment'],
+        marketValue: String(partial.marketValue), estimatedSalvageValue: null, reservePrice: null,
+        damageSeverity: partial.damageSeverity,
+      }).where(eq(salvageCases.id, caseId));
+      return NextResponse.json({ success: true, data: { ...partial, aiAssessment: partial, estimatedSalvageValue: null, estimatedRepairCost: null } });
+    }
 
     const staffReviewReasons = formatStaffReviewNotes(
       assessment.reviewReasons,

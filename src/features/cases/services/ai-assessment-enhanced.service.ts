@@ -1302,7 +1302,22 @@ async function assessDamageEnhancedCore(params: {
         partPricesUsed: partPrices.filter(p => p.searchedPrice).length
       });
     } catch (error) {
-      if (error instanceof ValuationUnavailableError) throw error;
+      if (error instanceof ValuationUnavailableError) {
+        const pendingReason = `Repair pricing needs review: ${partPrices.filter(part => !part.searchedPrice).map(part => part.component).join(', ') || 'affected components'}. Confirm the damage and obtain the missing repair costs before setting salvage value.`;
+        error.partialAssessment = {
+          marketValue, damageSeverity: determineSeverity(damagePercentage),
+          labels: visionResults.labels.map(label => label.description), confidenceScore: 0,
+          damagePercentage: Math.round(damagePercentage), damageScore,
+          summary: damageAnalysis.summary, recommendation: pendingReason,
+          itemDetails: damageAnalysis.itemDetails, damagedParts: damageAnalysis.damagedParts,
+          priceSource, processedAt: new Date(), photoCount: photos.length, analysisMethod: damageAnalysis.method,
+          manualReviewRequired: true, reviewReasons: [pendingReason], warnings: [],
+          valuationStatus: 'repair_pricing_pending', estimatedSalvageValue: null, estimatedRepairCost: null,
+          valuationEvidence: { marketEvidence: marketValueResult.evidence, partEvidence: { searchedParts: partPrices },
+            decisionSummary: { manualReviewRequired: true, reviewReasons: [pendingReason], repairPricingIncomplete: true } },
+        };
+        throw error;
+      }
       console.error('❌ Damage calculation failed, using fallback:', error);
       // Fallback to existing estimation logic
       repairCost = estimateRepairCost(damageScore, marketValue);
@@ -2376,9 +2391,9 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
 
   if (itemInfo.marketValueSource === 'manual' && Number.isFinite(itemInfo.marketValue) && itemInfo.marketValue && itemInfo.marketValue > 0) {
     const manualIdentifier = buildUniversalSearchIdentifier(itemInfo);
-    const manualResearch = manualIdentifier && options.damages?.length && (isGeminiPriceAdjudicationEnabled() || isClaudePriceAdjudicationEnabled())
+    const manualResearch = manualIdentifier && options.damages?.length && (process.env.TAVILY_PRICE_RESEARCH_ENABLED?.trim().toLowerCase() !== 'false' || isGeminiPriceAdjudicationEnabled() || isClaudePriceAdjudicationEnabled())
       && !isBulkRecoveryAsset(itemInfo) && !isLuxuryJewelryValuation(itemInfo) && !isMultiItemJewelryValuation(itemInfo) && itemInfo.type !== 'artwork'
-      ? await researchAssessmentPrices(manualIdentifier, options.damages, await getValuationPolicyConfig(), false)
+      ? await researchAssessmentPrices(manualIdentifier, options.damages, await getValuationPolicyConfig(), false, itemInfo)
       : undefined;
     console.log('Using user-provided claims paid / asset value:', itemInfo.marketValue);
     return {
@@ -2408,8 +2423,8 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
   }
 
   const batchIdentifier = buildUniversalSearchIdentifier(itemInfo);
-  if (batchIdentifier && (isGeminiPriceAdjudicationEnabled() || isClaudePriceAdjudicationEnabled())) {
-    const research = await researchAssessmentPrices(batchIdentifier, isBulkRecoveryAsset(itemInfo) ? [] : options.damages || [], await getValuationPolicyConfig());
+  if (batchIdentifier && (process.env.TAVILY_PRICE_RESEARCH_ENABLED?.trim().toLowerCase() !== 'false' || isGeminiPriceAdjudicationEnabled() || isClaudePriceAdjudicationEnabled())) {
+    const research = await researchAssessmentPrices(batchIdentifier, isBulkRecoveryAsset(itemInfo) ? [] : options.damages || [], await getValuationPolicyConfig(), true, itemInfo);
     const market = research.market;
     if (!market?.selectedPrice) {
       const reasons = market?.reviewReasons.filter(reason => /unavailable|timed out|quota|credit|limit/i.test(reason)) || [];

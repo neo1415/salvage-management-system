@@ -87,6 +87,7 @@ export interface MachineryIdentifier {
 }
 
 export interface BulkGoodsIdentifier {
+  condition?: UniversalCondition;
   type: 'stock' | 'goods_in_transit' | 'building_materials' | 'scrap' | 'agriculture';
   description?: string;
   brand?: string;

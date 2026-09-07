@@ -15,6 +15,7 @@ import { auctions } from '@/lib/db/schema/auctions';
 import { users } from '@/lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import { logAction, AuditActionType, AuditEntityType, createAuditLogData } from '@/lib/utils/audit-logger';
+import { canApprovePendingRepair } from '@/features/valuations/services/valuation-unavailable';
 import { validatePriceOverrides } from '@/lib/validation/price-validation';
 import {
   notifyAdjusterOfCaseApproval,
@@ -144,6 +145,10 @@ export async function POST(
         { error: 'Case not found' },
         { status: 404 }
       );
+    }
+
+    if (body.action === 'approve' && !canApprovePendingRepair(caseRecord.aiAssessment, body.priceOverrides?.salvageValue)) {
+      return NextResponse.json({ error: 'Repair pricing is incomplete. Enter a documented salvage valuation and explanation before approval.' }, { status: 400 });
     }
 
     const brokerName = typeof body.brokerName === 'string' ? body.brokerName.trim() : caseRecord.brokerName?.trim();

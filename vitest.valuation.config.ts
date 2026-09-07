@@ -10,6 +10,9 @@ export default defineConfig({
     include: [
       'tests/unit/valuations/localized-repair-cost.test.ts',
       'tests/unit/valuations/assessment-price-research.test.ts',
+      'tests/unit/valuations/tavily-price-research.test.ts',
+      'tests/unit/cases/manager-pending-repair.test.ts',
+      'tests/unit/cases/case-item-info.test.ts',
       'tests/unit/internet-search/**/*.test.ts',
       'tests/unit/valuations/price-adjudication.test.ts',
       'tests/unit/valuations/valuation-benchmark.test.ts',
@@ -22,6 +25,7 @@ export default defineConfig({
       'tests/unit/market-data/*evidence*.test.ts',
     ],
     env: {
+      TAVILY_PRICE_RESEARCH_ENABLED: 'false',
       DATABASE_URL: 'postgres://invalid:invalid@127.0.0.1:1/valuation_tests_disabled',
       TEST_DATABASE_URL: 'postgres://invalid:invalid@127.0.0.1:1/valuation_tests_disabled',
     },

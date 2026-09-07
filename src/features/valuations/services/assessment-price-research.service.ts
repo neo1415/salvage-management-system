@@ -1,6 +1,7 @@
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 import type { DamageInput } from '../types';
 import { priceAdjudicationService, type PriceAdjudicationInput } from './price-adjudication.service';
+import { selectPricingContext } from './tavily-price-research.service';
 import type { ValuationPolicyConfig } from './valuation-policy.service';
 
 export interface ResearchedComponentPrice {
@@ -13,10 +14,18 @@ export interface ResearchedComponentPrice {
 }
 
 /** Uses provider-native search; neither Serper nor a per-component model call is needed. */
-export async function researchAssessmentPrices(item: ItemIdentifier, damages: DamageInput[], policy: ValuationPolicyConfig, includeMarket = true) {
+export async function researchAssessmentPrices(item: ItemIdentifier, damages: DamageInput[], policy: ValuationPolicyConfig, includeMarket = true, formContext: object = item) {
+  const context = selectPricingContext(formContext);
+  if (['Brand New', 'Foreign Used (Tokunbo)', 'Nigerian Used', 'Heavily Used'].includes(String(context.declaredCondition || context.condition))) {
+    item = { ...item, condition: (context.declaredCondition || context.condition) as 'Brand New' | 'Foreign Used (Tokunbo)' | 'Nigerian Used' | 'Heavily Used' };
+  }
+  if (context.declaredCondition && ['excellent', 'good', 'fair', 'poor'].includes(String(context.declaredCondition).toLowerCase())) {
+    context.condition = undefined; // Quality is not proof of newness or import history.
+    item = { ...item, condition: undefined };
+  }
   const empty = () => ({ prices: [], currency: 'NGN' as const, confidence: 0, extractedAt: new Date() });
   const requests: Array<{ key: string; input: PriceAdjudicationInput }> = [];
-  if (includeMarket) requests.push({ key: 'market', input: { item, mode: 'market', policy, priceData: empty() } });
+  if (includeMarket) requests.push({ key: 'market', input: { item, context, mode: 'market', policy, priceData: empty() } });
   const unique = new Map<string, DamageInput>();
   const rank = { minor: 1, moderate: 2, severe: 3 };
   for (const damage of damages) {
@@ -26,7 +35,7 @@ export async function researchAssessmentPrices(item: ItemIdentifier, damages: Da
   }
   for (const [key, damage] of unique) {
     if (!damage.recommendedAction || ['specialist_review', 'dispose'].includes(damage.recommendedAction)) continue;
-    requests.push({ key: `part:${key}`, input: { item, mode: 'part', policy, priceData: empty(), partName: damage.component, action: damage.recommendedAction, damageType: damage.damageType } });
+    requests.push({ key: `part:${key}`, input: { item, context, mode: 'part', policy, priceData: empty(), partName: damage.component, action: damage.recommendedAction, damageType: damage.damageType } });
   }
   const results = await priceAdjudicationService.researchBatch(requests);
   const partPrices: ResearchedComponentPrice[] = [...unique].map(([key, damage]) => {

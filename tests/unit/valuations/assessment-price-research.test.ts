@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PriceAdjudicationService, priceAdjudicationService, type AiPriceOpinion, type PriceAdjudicationInput } from '@/features/valuations/services/price-adjudication.service';
 import { researchAssessmentPrices } from '@/features/valuations/services/assessment-price-research.service';
 import { getDefaultValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
+import * as tavilyResearch from '@/features/valuations/services/tavily-price-research.service';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 
 const policy = getDefaultValuationPolicyConfig();
@@ -23,6 +24,26 @@ const opinion = (groundedStatements: AiPriceOpinion['groundedStatements'], provi
 afterEach(() => vi.restoreAllMocks());
 
 describe('one research request per provider for an assessment', () => {
+  it('accepts attributable Tavily evidence even when both models are unavailable', async () => {
+    vi.spyOn(tavilyResearch, 'researchTavilyEvidence').mockResolvedValue([marketStatement, bumperStatement]);
+    const service = new PriceAdjudicationService(); const mocks = providers(service);
+    mocks.gemini.mockResolvedValue(null); mocks.claude.mockResolvedValue(null);
+    const result = await service.researchBatch(requests());
+    expect(result.get('market')?.selectedPrice).toBe(27_000_000);
+    expect(result.get('market')?.selectedSource).toBe('tavily');
+    expect(result.get('part:front bumper')?.selectedPrice).toBe(900_000);
+  });
+  it('preserves declared usage instead of replacing it with an age-based search assumption', async () => {
+    const spy = vi.spyOn(priceAdjudicationService, 'researchBatch').mockResolvedValue(new Map());
+    await researchAssessmentPrices(item, [], policy, true, { condition: 'Brand New', year: 2015 });
+    expect(spy.mock.calls[0][0][0].input.item).toMatchObject({ condition: 'Brand New', year: 2015 });
+  });
+  it('does not convert a quality grade into import history', async () => {
+    const spy = vi.spyOn(priceAdjudicationService, 'researchBatch').mockResolvedValue(new Map());
+    await researchAssessmentPrices(item, [], policy, true, { condition: 'Brand New', declaredCondition: 'excellent' });
+    expect(spy.mock.calls[0][0][0].input.item).toMatchObject({ condition: undefined });
+    expect(spy.mock.calls[0][0][0].input.context?.declaredCondition).toBe('excellent');
+  });
   it('gets market and component prices in one Gemini call without Claude or Serper', async () => {
     const service = new PriceAdjudicationService(); const mocks = providers(service);
     mocks.gemini.mockResolvedValue(opinion([marketStatement, bumperStatement]));

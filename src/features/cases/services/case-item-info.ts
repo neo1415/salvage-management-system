@@ -27,6 +27,13 @@ export function buildUniversalItemInfoFromCase(input: {
   const base: UniversalItemInfo = {
     type: input.assetType as UniversalItemInfo['type'],
     condition,
+    year: Number(details.year || details.manufactureYear || details.manufacturingYear) || undefined,
+    declaredCondition: conditionRaw,
+    description: typeof details.description === 'string' ? details.description : undefined,
+    size: typeof details.size === 'string' ? details.size : undefined,
+    material: typeof details.material === 'string' ? details.material : undefined,
+    bedrooms: typeof details.bedrooms === 'number' ? details.bedrooms : undefined,
+    batteryHealth: typeof details.batteryHealth === 'number' ? details.batteryHealth : undefined,
     marketValue: Number.isFinite(marketValue) && marketValue > 0 ? marketValue : undefined,
   };
 
@@ -37,7 +44,7 @@ export function buildUniversalItemInfoFromCase(input: {
         type: 'vehicle',
         make: String(details.make || ''),
         model: String(details.model || ''),
-        year: typeof details.year === 'number' ? details.year : Number(details.year) || undefined,
+        year: typeof details.year === 'number' ? details.year : Number(details.year || details.manufactureYear || details.manufacturingYear) || undefined,
         mileage: typeof details.mileage === 'number' ? details.mileage : Number(details.mileage) || undefined,
       };
     case 'property':
@@ -51,22 +58,22 @@ export function buildUniversalItemInfoFromCase(input: {
       return {
         ...base,
         type: 'electronics',
-        brand: String(details.brand || ''),
+        brand: String(details.brand || details.manufacturer || ''),
         model: String(details.model || ''),
-        storageCapacity: typeof details.storage === 'string' ? details.storage : undefined,
+        storageCapacity: typeof details.storageCapacity === 'string' ? details.storageCapacity : typeof details.storage === 'string' ? details.storage : undefined,
       };
     case 'appliance':
       return {
         ...base,
         type: 'appliance',
-        brand: String(details.brand || ''),
+        brand: String(details.brand || details.manufacturer || ''),
         model: String(details.model || ''),
       };
     case 'jewelry':
       return {
         ...base,
         type: 'jewelry',
-        brand: typeof details.brand === 'string' ? details.brand : undefined,
+        brand: typeof details.brand === 'string' ? details.brand : typeof details.manufacturer === 'string' ? details.manufacturer : undefined,
         model: String(details.type || details.material || details.description || ''),
         material: typeof details.material === 'string' ? details.material : undefined,
         quantity: typeof details.weight === 'string' ? details.weight : undefined,
@@ -75,7 +82,7 @@ export function buildUniversalItemInfoFromCase(input: {
       return {
         ...base,
         type: 'furniture',
-        brand: typeof details.brand === 'string' ? details.brand : undefined,
+        brand: typeof details.brand === 'string' ? details.brand : typeof details.manufacturer === 'string' ? details.manufacturer : undefined,
         model: String(details.type || details.description || ''),
         description: [details.type, details.material, details.size]
           .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
@@ -87,10 +94,10 @@ export function buildUniversalItemInfoFromCase(input: {
       return {
         ...base,
         type: 'machinery',
-        brand: String(details.brand || ''),
+        brand: String(details.brand || details.manufacturer || ''),
         machineryType: String(details.type || details.machineryType || ''),
         model: typeof details.model === 'string' ? details.model : undefined,
-        year: typeof details.year === 'number' ? details.year : Number(details.year) || undefined,
+        year: typeof details.year === 'number' ? details.year : Number(details.year || details.manufactureYear || details.manufacturingYear) || undefined,
       };
     case 'stock':
     case 'goods_in_transit':
@@ -100,13 +107,14 @@ export function buildUniversalItemInfoFromCase(input: {
       return {
         ...base,
         type: input.assetType as UniversalItemInfo['type'],
-        brand: typeof details.brand === 'string' ? details.brand : undefined,
+        brand: typeof details.brand === 'string' ? details.brand : typeof details.manufacturer === 'string' ? details.manufacturer : undefined,
         description: String(details.description || ''),
         model: typeof details.packagingType === 'string' ? details.packagingType : undefined,
         quantity: typeof details.quantity === 'string' ? details.quantity : String(details.quantity || ''),
         unitOfMeasure: typeof details.unitOfMeasure === 'string' ? details.unitOfMeasure : undefined,
         packagingType: typeof details.packagingType === 'string' ? details.packagingType : undefined,
       };
+    case 'equipment':
     case 'medical_equipment':
     case 'energy_equipment':
     case 'aviation_equipment':
@@ -114,7 +122,7 @@ export function buildUniversalItemInfoFromCase(input: {
       return {
         ...base,
         type: input.assetType as UniversalItemInfo['type'],
-        brand: typeof details.brand === 'string' ? details.brand : undefined,
+        brand: typeof details.brand === 'string' ? details.brand : typeof details.manufacturer === 'string' ? details.manufacturer : undefined,
         description: String(details.description || ''),
         model: typeof details.model === 'string' ? details.model : undefined,
         quantity: typeof details.quantity === 'string' ? details.quantity : String(details.quantity || ''),

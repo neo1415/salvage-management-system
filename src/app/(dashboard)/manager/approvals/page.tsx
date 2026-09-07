@@ -500,7 +500,7 @@ export default function ApprovalsPage() {
           ...(casePayload.data as CaseData),
           damageSeverity: payload.data?.damageSeverity || (casePayload.data as CaseData).damageSeverity,
           marketValue: String(payload.data?.marketValue ?? (casePayload.data as CaseData).marketValue),
-          estimatedSalvageValue: String(payload.data?.estimatedSalvageValue ?? (casePayload.data as CaseData).estimatedSalvageValue),
+          estimatedSalvageValue: payload.data?.valuationStatus === 'repair_pricing_pending' ? '' : String(payload.data?.estimatedSalvageValue ?? (casePayload.data as CaseData).estimatedSalvageValue),
           aiAssessment: freshAiAssessment || (casePayload.data as CaseData).aiAssessment || selectedCase.aiAssessment,
         });
       } else if (payload.data?.aiAssessment) {
@@ -508,7 +508,7 @@ export default function ApprovalsPage() {
           ...selectedCase,
           damageSeverity: payload.data.damageSeverity || selectedCase.damageSeverity,
           marketValue: String(payload.data.marketValue ?? selectedCase.marketValue),
-          estimatedSalvageValue: String(payload.data.estimatedSalvageValue ?? selectedCase.estimatedSalvageValue),
+          estimatedSalvageValue: payload.data.valuationStatus === 'repair_pricing_pending' ? '' : String(payload.data.estimatedSalvageValue ?? selectedCase.estimatedSalvageValue),
           aiAssessment: payload.data.aiAssessment,
         });
       }
@@ -1346,7 +1346,7 @@ export default function ApprovalsPage() {
                 overrideValue={priceOverrides.salvageValue}
                 isEditMode={isEditMode}
                 onChange={(value) => handlePriceChange('salvageValue', value)}
-                pendingLabel="Pending Analysis"
+                pendingLabel="Pending repair pricing"
                 isAnalyzing={isRunningManagerAi}
               />
               
