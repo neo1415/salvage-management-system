@@ -45,6 +45,12 @@ describe('SerperApiClient', () => {
       client = new SerperApiClient();
     });
 
+    it('reports exhausted credits without retrying an HTTP 400', async () => {
+      mockFetch.mockResolvedValue({ ok: false, status: 400, text: async () => JSON.stringify({ message: 'Not enough credits', statusCode: 400 }) });
+      await expect(client.searchGoogle('Jeep Wrangler 2015')).rejects.toMatchObject({ code: 'CREDITS_EXHAUSTED', retryable: false });
+      expect(mockFetch).toHaveBeenCalledOnce();
+    });
+
     it('should perform successful search', async () => {
       const mockResponse = {
         searchParameters: {
@@ -249,11 +255,11 @@ describe('handleApiError', () => {
     });
   });
 
-  it('should handle unknown error types', () => {
+  it('preserves string error details', () => {
     const result = handleApiError('string error');
     expect(result).toMatchObject({
       code: 'UNKNOWN_ERROR',
-      message: 'Unknown error occurred',
+      message: 'string error',
       retryable: false,
       rateLimited: false
     });

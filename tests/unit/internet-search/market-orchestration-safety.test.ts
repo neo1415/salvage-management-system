@@ -57,6 +57,16 @@ describe('market orchestration evidence safety', () => {
     mocks.adjudicate.mockImplementation(async ({ priceData }) => decision(priceData));
   });
 
+  it('reports exhausted credits when grounded fallback also has no evidence', async () => {
+    mocks.search.mockRejectedValue({ code: 'CREDITS_EXHAUSTED', message: 'Credits exhausted' });
+    mocks.extract.mockReturnValue(data([]));
+    mocks.adjudicate.mockImplementation(async ({ priceData }) => decision(priceData, { selectedPrice: undefined }));
+    const result = await service.searchMarketPrice({ item });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Market search credits are exhausted');
+    expect(mocks.adjudicate).toHaveBeenCalledOnce();
+  });
+
   it('does not expose source-free AI prices when search has no results', async () => {
     mocks.search.mockResolvedValue({ organic: [] });
     mocks.extract.mockReturnValue(data([]));

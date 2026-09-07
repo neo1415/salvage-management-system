@@ -2366,6 +2366,7 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
   uniqueSourceCount?: number;
   priceSpreadPercent?: number;
 }> {
+  let searchCreditsExhausted = false;
   // If no item info, use generic estimation
   if (!itemInfo) {
     throw new ValuationUnavailableError('Asset identity is missing. No new valuation was saved. Complete the asset details before retrying.');
@@ -2467,6 +2468,7 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
         forceRefresh: options.forceRefresh,
       });
 
+      searchCreditsExhausted ||= searchResult.error?.includes('Market search credits are exhausted') === true;
       if (searchResult.success && searchResult.priceData.averagePrice) {
         const adjudicationReviewReasons = searchResult.adjudication?.reviewReasons || [];
         const rawPrice = searchResult.priceData.medianPrice || searchResult.priceData.averagePrice;
@@ -2502,6 +2504,7 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
         forceRefresh: options.forceRefresh,
       });
 
+      searchCreditsExhausted ||= searchResult.error?.includes('Market search credits are exhausted') === true;
       if (searchResult.success && searchResult.priceData.averagePrice) {
         const rawUnitPrice = searchResult.priceData.medianPrice || searchResult.priceData.averagePrice;
         const adjudicationReviewReasons = searchResult.adjudication?.reviewReasons || [];
@@ -2598,6 +2601,7 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
         forceRefresh: options.forceRefresh,
       });
 
+      searchCreditsExhausted ||= searchResult.error?.includes('Market search credits are exhausted') === true;
       if (searchResult.success && searchResult.priceData.averagePrice) {
         const rawPrice = searchResult.priceData.medianPrice || searchResult.priceData.averagePrice;
         const marketValue = Math.round(rawPrice);
@@ -2627,7 +2631,9 @@ export async function getUniversalMarketValue(itemInfo?: UniversalItemInfo, opti
     }
   }
 
-  throw new ValuationUnavailableError();
+  throw new ValuationUnavailableError(searchCreditsExhausted
+    ? 'Market search credits are exhausted and fallback research found no verifiable price. Ask the administrator to replenish the search account credits, then retry. No new valuation was saved.'
+    : undefined);
 }
 
 export function buildUniversalSearchIdentifier(itemInfo: UniversalItemInfo): ItemIdentifier | null {

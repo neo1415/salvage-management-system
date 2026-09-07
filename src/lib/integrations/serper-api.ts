@@ -270,6 +270,10 @@ export class SerperApiClient {
       if (!response.ok) {
         const errorText = await response.text();
         
+        // Credit exhaustion is returned as HTTP 400, not a rate limit.
+        if (response.status === 400 && /not enough credits/i.test(errorText)) {
+          throw this.createError('CREDITS_EXHAUSTED', 'Market search credits are exhausted. Ask the administrator to replenish the search account credits.', false, false);
+        }
         // Handle specific HTTP status codes
         switch (response.status) {
           case 401:

@@ -24,6 +24,11 @@ describe('market evidence is required across all asset categories', () => {
     vi.mocked(internetSearchService.searchMarketPrice).mockResolvedValue({ success: false, priceData: { prices: [], confidence: 0, currency: 'NGN', extractedAt: new Date() }, query: '', resultsProcessed: 0, executionTime: 0, dataSource: 'internet_search' });
   });
 
+  it('preserves actionable credit exhaustion through the assessment error', async () => {
+    vi.mocked(internetSearchService.searchMarketPrice).mockResolvedValue({ success: false, error: 'Market search credits are exhausted', priceData: { prices: [], confidence: 0, currency: 'NGN', extractedAt: new Date() }, query: '', resultsProcessed: 0, executionTime: 0, dataSource: 'internet_search' });
+    await expect(getUniversalMarketValue({ type: 'vehicle', make: 'Jeep', model: 'Wrangler', year: 2015, condition: 'Nigerian Used' })).rejects.toThrow('Market search credits are exhausted');
+  });
+
   it.each(categories)('%s does not manufacture a category price after research failure', async type => {
     await expect(getUniversalMarketValue({ type, condition: 'Nigerian Used', make: 'Example', brand: 'Example', model: 'Specific Model', year: 2015, description: 'Specific asset', propertyType: 'house', location: 'Lagos', quantity: '10', unitOfMeasure: 'units' })).rejects.toBeInstanceOf(ValuationUnavailableError);
   });

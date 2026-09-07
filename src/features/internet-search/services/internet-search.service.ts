@@ -262,6 +262,7 @@ export class InternetSearchService {
     let priceData = this.buildEmptyPriceData();
     let resultsProcessed = 0;
     let fromCache = false;
+    let searchCreditsExhausted = false;
 
     try {
       const policy = await getValuationPolicyConfig();
@@ -308,13 +309,16 @@ export class InternetSearchService {
       }
 
       if (!fromCache) {
-        const queries = queryBuilder.generateQueryVariations(item, Math.max(3, Math.min(5, policy.minimumMarketSourceCount + 1)));
+        const queries = [...new Set(queryBuilder.generateQueryVariations(item, Math.max(3, Math.min(5, policy.minimumMarketSourceCount + 1))))];
         query = queries.join(' | ');
         const perQueryLimit = Math.max(5, Math.ceil(maxResults / Math.max(1, queries.length)));
         const searchPromise = Promise.all(queries.map(async singleQuery => {
           try {
             return await serperApi.search(singleQuery, { num: perQueryLimit });
           } catch (error) {
+            if (error && typeof error === 'object' && 'code' in error && error.code === 'CREDITS_EXHAUSTED') {
+              searchCreditsExhausted = true;
+            }
             console.warn(`Serper query failed: "${singleQuery}"`, error);
             return { organic: [] };
           }
@@ -366,7 +370,9 @@ export class InternetSearchService {
         manualReviewRequired,
         reviewReasons: [...new Set([
           ...decision.reviewReasons,
-          ...(accepted.length === 0 ? ['No accepted comparable listing evidence.'] : []),
+          ...(accepted.length === 0 ? [searchCreditsExhausted
+            ? 'Market search credits are exhausted and fallback research found no verifiable price. Ask the administrator to replenish the search account credits, then retry. No new valuation was saved.'
+            : 'No accepted comparable listing evidence.'] : []),
           ...(unsupported.length ? ['Unsubstantiated adjudication prices require manual review.'] : []),
         ])],
         rejectedPrices,
