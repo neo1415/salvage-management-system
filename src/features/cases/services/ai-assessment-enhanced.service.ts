@@ -1237,31 +1237,6 @@ async function assessDamageEnhancedCore(params: {
         });
       }
 
-      if (partPriceCoverage < 0.35 && damages.length >= 5) {
-        const severeCount = damages.filter((d) => d.damageLevel === 'severe').length;
-        const evidenceMinDeduction = Math.min(
-          0.85,
-          0.22 + (damages.length / 18) * 0.42 + (severeCount / damages.length) * 0.32
-        );
-        if (calculationDeductionPercent < evidenceMinDeduction) {
-          const originalSalvageValue = salvageValue;
-          calculationDeductionPercent = evidenceMinDeduction;
-          salvageValue = Math.round(conditionAdjustedMarketValue * (1 - evidenceMinDeduction));
-          repairCost = Math.round(conditionAdjustedMarketValue - salvageValue);
-          valuationReviewReasons.push(
-            `Only ${partPricesFound}/${damages.length} part prices found; applied evidence-based minimum deduction of ${(evidenceMinDeduction * 100).toFixed(0)}%. Review photos and pricing evidence before approval.`
-          );
-          console.log('Applied evidence minimum deduction for thin part-price coverage:', {
-            originalSalvageValue,
-            adjustedSalvageValue: salvageValue,
-            originalDeduction: salvageCalc.totalDeductionPercent,
-            adjustedDeduction: evidenceMinDeduction,
-            partPriceCoverage,
-            damageParts: damages.length,
-          });
-        }
-      }
-      
       // CRITICAL: Ensure salvage value never exceeds condition-adjusted market value
       if (salvageValue > conditionAdjustedMarketValue) {
         console.warn(`⚠️ Salvage value (${salvageValue}) exceeds condition-adjusted market value (${conditionAdjustedMarketValue}), capping at condition-adjusted market value`);
@@ -1326,6 +1301,7 @@ async function assessDamageEnhancedCore(params: {
         partPricesUsed: partPrices.filter(p => p.searchedPrice).length
       });
     } catch (error) {
+      if (error instanceof ValuationUnavailableError) throw error;
       console.error('❌ Damage calculation failed, using fallback:', error);
       // Fallback to existing estimation logic
       repairCost = estimateRepairCost(damageScore, marketValue);

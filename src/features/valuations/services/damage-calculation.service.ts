@@ -9,66 +9,8 @@ import { db } from '@/lib/db';
 import { damageDeductions } from '@/lib/db/schema/vehicle-valuations';
 import { eq, and, isNull } from 'drizzle-orm';
 import type { DamageInput, DamageDeduction, SalvageCalculation } from '../types';
+import { ValuationUnavailableError } from './valuation-unavailable';
 import { getValuationPolicyConfig } from './valuation-policy.service';
-
-/**
- * Default deduction percentages when component not found in database
- * Requirements: 4.5
- */
-const DEFAULT_DEDUCTIONS = {
-  minor: 0.06,    // 6%
-  moderate: 0.18, // 18%
-  severe: 0.35,   // 35%
-} as const;
-
-/**
- * Severity multipliers for realistic damage assessment
- * Applied when damage severity is high to amplify deductions
- */
-const SEVERITY_MULTIPLIERS = {
-  minor: 1.0,     // No amplification for minor damage
-  moderate: 1.2,  // 20% amplification for moderate damage
-  severe: 1.5,    // 50% amplification for severe damage
-} as const;
-
-/**
- * Cumulative damage multipliers based on number of damaged parts
- * Reflects the reality that multiple damaged parts compound the overall damage
- */
-const CUMULATIVE_DAMAGE_MULTIPLIERS = [
-  { minParts: 1, maxParts: 3, multiplier: 1.0 },    // 1-3 parts: no amplification
-  { minParts: 4, maxParts: 6, multiplier: 1.15 },   // 4-6 parts: 15% amplification
-  { minParts: 7, maxParts: 9, multiplier: 1.25 },   // 7-9 parts: 25% amplification
-  { minParts: 10, maxParts: 12, multiplier: 1.35 }, // 10-12 parts: 35% amplification
-  { minParts: 13, maxParts: 999, multiplier: 1.5 }, // 13+ parts: 50% amplification
-] as const;
-
-/**
- * Minimum deductions for severe damage cases
- * Ensures severely damaged vehicles have realistic deductions
- */
-const MINIMUM_SEVERE_DEDUCTIONS = {
-  singleSevere: 0.45,      // Single severe damage: minimum 45% deduction
-  multipleSevere: 0.65,    // Multiple severe damages: minimum 65% deduction
-  massiveDamage: 0.78,     // 10+ damaged parts: minimum 78% deduction
-} as const;
-
-/**
- * Evidence-based minimum deduction when part-price coverage is thin.
- * Scales with damaged-part count and severity mix.
- */
-function computeEvidenceMinimumDeduction(damages: DamageInput[]): number {
-  if (damages.length === 0) return 0;
-
-  const severeCount = damages.filter((d) => d.damageLevel === 'severe').length;
-  const moderateCount = damages.filter((d) => d.damageLevel === 'moderate').length;
-  const partCountFactor = Math.min(0.5, damages.length / 18);
-  const severeFactor = severeCount / damages.length;
-  const moderateFactor = moderateCount / damages.length;
-
-  const minimum = 0.18 + partCountFactor * 0.42 + severeFactor * 0.32 + moderateFactor * 0.12;
-  return Math.min(0.85, Math.max(0.22, minimum));
-}
 
 /**
  * Maximum total deduction cap
@@ -108,7 +50,7 @@ const STRUCTURAL_COMPONENTS = ['frame', 'chassis', 'body', 'structure'];
 export class DamageCalculationService {
   /**
    * Get damage deduction for a specific component and level
-   * Returns default deduction if not found in database
+   * Requires review if no documented component pricing exists
    * Requirements: 4.5, 6.1, 6.2
    * 
    * @param component - The vehicle component (e.g., "Front Bumper", "Engine")
@@ -183,34 +125,10 @@ export class DamageCalculationService {
         };
       }
 
-      // Step 4: Fallback to default deduction percentages
-      return {
-        component: normalizedComponent,
-        damageLevel,
-        repairCostLow: 0,
-        repairCostHigh: 0,
-        valuationDeductionLow: DEFAULT_DEDUCTIONS[damageLevel],
-        valuationDeductionHigh: DEFAULT_DEDUCTIONS[damageLevel],
-        // Computed fields for backward compatibility
-        repairCost: 0,
-        deductionPercent: DEFAULT_DEDUCTIONS[damageLevel],
-        deductionAmount: 0, // Will be calculated later
-      };
+      throw new ValuationUnavailableError(`Repair pricing is unavailable for ${component}. Obtain a documented repair estimate before saving a new salvage valuation.`);
     } catch (error) {
-      console.error('Error fetching damage deduction:', error);
-      // Return default on error
-      return {
-        component: component.toLowerCase(),
-        damageLevel,
-        repairCostLow: 0,
-        repairCostHigh: 0,
-        valuationDeductionLow: DEFAULT_DEDUCTIONS[damageLevel],
-        valuationDeductionHigh: DEFAULT_DEDUCTIONS[damageLevel],
-        // Computed fields for backward compatibility
-        repairCost: 0,
-        deductionPercent: DEFAULT_DEDUCTIONS[damageLevel],
-        deductionAmount: 0,
-      };
+      if (error instanceof ValuationUnavailableError) throw error;
+      throw new ValuationUnavailableError(`Repair pricing could not be verified for ${component}. No new valuation was saved.`);
     }
   }
 
@@ -220,7 +138,7 @@ export class DamageCalculationService {
    * 
    * PRIORITY: Real data over assumptions
    * - When we have real part prices, use them directly without multipliers
-   * - Only apply multipliers to parts without real prices (fallback)
+   * - Missing repair evidence requires review
    */
   async calculateSalvageValueWithPartPrices(
     basePrice: number,
@@ -256,7 +174,7 @@ export class DamageCalculationService {
    * Calculate salvage value using real part prices from internet search
    * PRIORITY: Real data over assumptions
    * - Parts with real prices: Use actual cost directly (NO multipliers)
-   * - Parts without prices: Use traditional deductions WITH multipliers
+   * - Parts without prices: require documented database repair costs
    */
   private async calculateSalvageValueFromPartPrices(
     basePrice: number,
@@ -275,363 +193,53 @@ export class DamageCalculationService {
     realPartsCost: number;
     partPriceConfidence: number;
   }> {
-    // Deduplicate damages by component, keeping highest severity
-    const deduplicatedDamages = this.deduplicateDamages(damages);
-
-    // Separate parts with real prices from parts without
-    const partsWithRealPrices = partPrices.filter(
-      (p) =>
-        p.partPrice &&
-        p.partPrice > 0 &&
-        (p.source === 'internet_search' || p.source === 'ai_estimate')
-    );
-    const componentsWithRealPrices = new Set(partsWithRealPrices.map(p => p.component));
-    const budgetExcludedComponents = new Set(
-      partPrices
-        .filter((part) => ['part_search_budget_cap', 'specialist_review_required', 'disposal_not_repair_priced'].includes(part.evidence?.reason || ''))
-        .map((part) => part.component)
-    );
-    const componentsWithoutPrices = deduplicatedDamages.filter(damage => 
-      !componentsWithRealPrices.has(damage.component) &&
-      !budgetExcludedComponents.has(damage.component)
-    );
-
-    console.log(`\n🔍 Salvage Calculation Strategy:`);
-    console.log(`   ✅ Parts with REAL prices: ${partsWithRealPrices.length} (use actual cost, NO multipliers)`);
-    console.log(`   ⚠️  Searched parts without prices: ${componentsWithoutPrices.length}`);
-    if (budgetExcludedComponents.size > 0) {
-      console.log(`   ℹ️ Search-budget deferred parts: ${budgetExcludedComponents.size} (covered by aggregate damage evidence)`);
+    if (!Number.isFinite(basePrice) || basePrice <= 0) {
+      throw new ValuationUnavailableError('A positive, verified market value is required.');
     }
-
-    // ========================================
-    // PART 1: Calculate deduction from REAL part prices (NO MULTIPLIERS)
-    // ========================================
-    const valuationPolicy = await getValuationPolicyConfig();
-    const repairMultipliers = valuationPolicy.repairCostMultipliers;
-    const repairLoadFactor = 1 + (
-      repairMultipliers.laborPercent +
-      repairMultipliers.paintAndMaterialsPercent +
-      repairMultipliers.logisticsPercent
-    ) / 100;
-    const loadedPartCost = (part: { component: string; partPrice?: number; action?: DamageInput['recommendedAction'] }) => {
-      const price = part.partPrice || 0;
-      // Repair, cleaning and recovery searches ask for complete service estimates.
-      // Replacement searches ask for a part price, so configured installation,
-      // paint/material and logistics costs are added once here.
-      return part.action === 'replace' ? price * repairLoadFactor : price;
-    };
-
-    const totalRealPartsCost = partsWithRealPrices.reduce((sum, part) => sum + loadedPartCost(part), 0);
-    const realPartsDeductionPercent = totalRealPartsCost / basePrice;
-    const averagePartConfidence = partsWithRealPrices.length > 0 
-      ? partsWithRealPrices.reduce((sum, part) => sum + (part.confidence || 0), 0) / partsWithRealPrices.length
-      : 0;
-
-    console.log(`\n💰 Real part-price repair estimate:`);
-    console.log(`   Total cost: ₦${totalRealPartsCost.toLocaleString()}`);
-    console.log(`   Deduction: ${(realPartsDeductionPercent * 100).toFixed(1)}%`);
-    console.log(`   Confidence: ${averagePartConfidence.toFixed(1)}%`);
-
-    // ========================================
-    // PART 2: Parts WITHOUT prices — hybrid vs full-traditional
-    // ========================================
-    let traditionalDeductionPercent = 0;
-    let missingPartsDeductionAmount = 0;
-    const traditionalDeductions: DamageDeduction[] = [];
-    const isHybridPartPricing = partsWithRealPrices.length > 0;
-    
-    if (componentsWithoutPrices.length > 0) {
-      console.log(`\n🔧 Evidence allowance for searched parts without prices:`);
-      
-      const deductions = await Promise.all(
-        componentsWithoutPrices.map(damage =>
-          this.getDeduction(damage.component, damage.damageLevel, make)
-        )
-      );
-
-      if (isHybridPartPricing) {
-        const loadedKnownCosts = partsWithRealPrices
-          .map(loadedPartCost)
-          .filter((cost) => Number.isFinite(cost) && cost > 0)
-          .sort((left, right) => left - right);
-        const medianKnownCost = loadedKnownCosts.length > 0
-          ? loadedKnownCosts[Math.floor(loadedKnownCosts.length / 2)]
-          : 0;
-        const severityProxy: Record<DamageInput['damageLevel'], number> = {
-          severe: 1,
-          moderate: 0.65,
-          minor: 0.35,
-        };
-        missingPartsDeductionAmount = componentsWithoutPrices.reduce(
-          (sum, damage) => sum + medianKnownCost * severityProxy[damage.damageLevel],
-          0
-        );
-        traditionalDeductionPercent = missingPartsDeductionAmount / basePrice;
-        console.log(`   Missing-part repair allowance: ₦${missingPartsDeductionAmount.toLocaleString()} (${(traditionalDeductionPercent * 100).toFixed(1)}% of market)`);
-
-        componentsWithoutPrices.forEach((damage, index) => {
-          const proxyAmount = medianKnownCost * severityProxy[damage.damageLevel];
-          const proxyPercent = proxyAmount / basePrice;
-          traditionalDeductions.push({
-            ...deductions[index],
-            deductionPercent: proxyPercent,
-            deductionAmount: proxyAmount,
-            source: 'database',
-          });
-        });
+    const normalized = (value: string) => value.trim().toLowerCase();
+    const uniqueDamages = this.deduplicateDamages(damages);
+    const policy = await getValuationPolicyConfig();
+    const load = 1 + Object.values(policy.repairCostMultipliers).reduce((sum, value) => sum + value, 0) / 100;
+    const deductions: DamageDeduction[] = [];
+    let realPartsCost = 0;
+    let pricedCount = 0;
+    let confidenceSum = 0;
+    for (const damage of uniqueDamages) {
+      const price = partPrices.find(part => normalized(part.component) === damage.component &&
+        part.source !== 'not_found' && Number.isFinite(part.partPrice) && (part.partPrice ?? 0) > 0);
+      if (price) {
+        const amount = price.partPrice! * ((price.action ?? damage.recommendedAction) === 'replace' ? load : 1);
+        realPartsCost += amount;
+        pricedCount++;
+        confidenceSum += Math.max(0, Math.min(100, price.confidence ?? 0)) / 100;
+        deductions.push({ component: damage.component, damageLevel: damage.damageLevel,
+          repairCostLow: amount, repairCostHigh: amount, repairCost: amount,
+          valuationDeductionLow: amount / basePrice, valuationDeductionHigh: amount / basePrice,
+          deductionPercent: amount / basePrice, deductionAmount: amount,
+          source: price.source === 'internet_search' ? 'internet_search' : undefined });
       } else {
-        // Without reliable part prices, use one aggregate evidence estimate.
-        // Summing a whole-asset percentage per component can exceed 100% and
-        // incorrectly force unrelated asset types to the minimum salvage value.
-        const severeCounts = componentsWithoutPrices.filter(d => d.damageLevel === 'severe').length;
-        const moderateCounts = componentsWithoutPrices.filter(d => d.damageLevel === 'moderate').length;
-        const totalDamagedPartsWithoutPrices = componentsWithoutPrices.length;
-        console.log(`   Severe: ${severeCounts}, Moderate: ${moderateCounts}, Minor: ${totalDamagedPartsWithoutPrices - severeCounts - moderateCounts}`);
-        traditionalDeductionPercent = computeEvidenceMinimumDeduction(componentsWithoutPrices);
-        missingPartsDeductionAmount = basePrice * traditionalDeductionPercent;
-        console.log(`   Aggregate evidence deduction: ${(traditionalDeductionPercent * 100).toFixed(1)}%`);
-
-        traditionalDeductions.push(...deductions);
+        const deduction = await this.getDeduction(damage.component, damage.damageLevel, make);
+        const amount = (deduction.repairCostLow + deduction.repairCostHigh) / 2;
+        if (!Number.isFinite(amount) || amount <= 0) {
+          throw new ValuationUnavailableError(`A documented repair cost is required for ${damage.component}. Component severity alone cannot determine whole-asset value loss.`);
+        }
+        deductions.push({ ...deduction, deductionPercent: amount / basePrice, deductionAmount: amount, source: 'database' });
       }
     }
-
-    // ========================================
-    // PART 3: Combine priced repair costs + missing-part allowance (amount-based)
-    // ========================================
-    let totalDeductionAmount = totalRealPartsCost + missingPartsDeductionAmount;
-    let totalDeductionPercent = totalDeductionAmount / basePrice;
-
-    console.log(`\n📊 Combined Deduction:`);
-    console.log(`   From priced parts: ₦${totalRealPartsCost.toLocaleString()} (${(realPartsDeductionPercent * 100).toFixed(1)}%)`);
-    console.log(`   From missing parts: ₦${missingPartsDeductionAmount.toLocaleString()} (${(traditionalDeductionPercent * 100).toFixed(1)}%)`);
-    console.log(`   Total: ${(totalDeductionPercent * 100).toFixed(1)}% (₦${totalDeductionAmount.toLocaleString()})`);
-
-    const thinPartPriceCoverage = deduplicatedDamages.length > 0
-      ? partsWithRealPrices.length / deduplicatedDamages.length
-      : 0;
-    if (thinPartPriceCoverage < 0.4 && deduplicatedDamages.length >= 4) {
-      const evidenceMinimum = computeEvidenceMinimumDeduction(deduplicatedDamages);
-      if (totalDeductionPercent < evidenceMinimum) {
-        console.log(
-          `   ⚠️ Thin part-price coverage (${partsWithRealPrices.length}/${deduplicatedDamages.length}); ` +
-          `enforcing evidence minimum ${(evidenceMinimum * 100).toFixed(1)}%`
-        );
-        totalDeductionPercent = evidenceMinimum;
-        totalDeductionAmount = basePrice * evidenceMinimum;
-      }
-    }
-
-    // Apply 90% cap on total deductions
-    if (totalDeductionPercent > MAX_DEDUCTION_PERCENT) {
-      console.log(`   ⚠️ Capping at maximum: ${MAX_DEDUCTION_PERCENT * 100}%`);
-      totalDeductionPercent = MAX_DEDUCTION_PERCENT;
-      totalDeductionAmount = basePrice * MAX_DEDUCTION_PERCENT;
-    }
-
-    let salvageValue = basePrice - totalDeductionAmount;
-
-    console.log(`\n💰 Final Result:`);
-    console.log(`   Deduction: ${(totalDeductionPercent * 100).toFixed(1)}% (₦${totalDeductionAmount.toLocaleString()})`);
-    console.log(`   Salvage value: ₦${salvageValue.toLocaleString()}`);
-
-    // Ensure non-negative salvage value
-    if (salvageValue < 0) {
-      salvageValue = 0;
-    }
-
-    // Determine if total loss
-    const isTotalLoss = totalDeductionPercent >= TOTAL_LOSS_THRESHOLD;
-
-    // Enhanced confidence based on part price availability and confidence
-    const priceCoverageForConfidence = partsWithRealPrices.length / deduplicatedDamages.length;
-    const normalizedPartConfidence = Math.max(0, Math.min(1, averagePartConfidence / 100));
-    const confidence = 0.85 + (priceCoverageForConfidence * normalizedPartConfidence * 0.15);
-
-    // Create deductions array combining real prices and traditional deductions
-    const processedDeductions: DamageDeduction[] = [];
-    
-    // Add real part price deductions
-    partsWithRealPrices.forEach(part => {
-      const matchingDamage = deduplicatedDamages.find(d => d.component === part.component);
-      if (matchingDamage && part.partPrice) {
-        processedDeductions.push({
-          component: part.component,
-          damageLevel: matchingDamage.damageLevel,
-          repairCostLow: loadedPartCost(part),
-          repairCostHigh: loadedPartCost(part),
-          valuationDeductionLow: loadedPartCost(part) / basePrice,
-          valuationDeductionHigh: loadedPartCost(part) / basePrice,
-          deductionPercent: loadedPartCost(part) / basePrice,
-          deductionAmount: loadedPartCost(part),
-          make: make || undefined,
-          source: 'internet_search'
-        });
-      }
-    });
-
-    // Add traditional deductions for components without real prices
-    traditionalDeductions.forEach(deduction => {
-      processedDeductions.push({
-        ...deduction,
-        deductionAmount: deduction.deductionAmount ?? basePrice * (deduction.deductionPercent ?? 0),
-        source: 'database'
-      });
-    });
-
-    return {
-      basePrice,
-      totalDeductionPercent,
-      totalDeductionAmount,
-      salvageValue,
-      deductions: processedDeductions,
-      isTotalLoss,
-      confidence,
-      partPricesUsed: true,
-      realPartsCost: totalRealPartsCost,
-      partPriceConfidence: averagePartConfidence
-    };
+    const totalDeductionAmount = Math.min(basePrice * MAX_DEDUCTION_PERCENT,
+      deductions.reduce((sum, deduction) => sum + (deduction.deductionAmount ?? 0), 0));
+    const totalDeductionPercent = totalDeductionAmount / basePrice;
+    return { basePrice, totalDeductionAmount, totalDeductionPercent,
+      salvageValue: basePrice - totalDeductionAmount, deductions,
+      isTotalLoss: totalDeductionPercent >= TOTAL_LOSS_THRESHOLD,
+      confidence: uniqueDamages.length ? confidenceSum / uniqueDamages.length : 0,
+      partPricesUsed: pricedCount > 0, realPartsCost,
+      partPriceConfidence: pricedCount ? confidenceSum / pricedCount * 100 : 0 };
   }
 
-  /**
-   * Calculate salvage value with damage deductions
-   * Applies cumulative deductions up to 90% max
-   * Requirements: 4.1, 4.2, 4.3, 4.4, 6.1
-   * 
-   * @param basePrice - The base vehicle price
-   * @param damages - Array of damage inputs
-   * @param make - Optional vehicle make for make-specific deductions
-   */
-  async calculateSalvageValue(
-    basePrice: number,
-    damages: DamageInput[],
-    make?: string
-  ): Promise<SalvageCalculation> {
-    // Deduplicate damages by component, keeping highest severity
-    // Requirements: 4.3
-    const deduplicatedDamages = this.deduplicateDamages(damages);
-
-    // Count damage severity distribution
-    const severeCounts = deduplicatedDamages.filter(d => d.damageLevel === 'severe').length;
-    const moderateCounts = deduplicatedDamages.filter(d => d.damageLevel === 'moderate').length;
-    const minorCounts = deduplicatedDamages.filter(d => d.damageLevel === 'minor').length;
-    const totalDamagedParts = deduplicatedDamages.length;
-
-    console.log(`🔍 Damage assessment - total score: ${totalDamagedParts * 30}`);
-    console.log(`- Severe damage: ${severeCounts} parts`);
-    console.log(`- Moderate damage: ${moderateCounts} parts`);
-    console.log(`- Minor damage: ${minorCounts} parts`);
-
-    // Fetch deductions for each damage, passing make if provided
-    const deductionPromises = deduplicatedDamages.map(damage =>
-      this.getDeduction(damage.component, damage.damageLevel, make)
-    );
-    const deductions = await Promise.all(deductionPromises);
-
-    // Calculate base deduction amounts
-    let totalDeductionPercent = 0;
-    const processedDeductions: DamageDeduction[] = deductions.map(deduction => {
-      const deductionPercent = deduction.deductionPercent ?? 0;
-      totalDeductionPercent += deductionPercent;
-      return {
-        ...deduction,
-        deductionAmount: basePrice * deductionPercent,
-      };
-    });
-
-    console.log(`📊 Base deduction before multipliers: ${(totalDeductionPercent * 100).toFixed(1)}%`);
-
-    // Apply severity multiplier based on overall damage severity
-    let severityMultiplier = 1.0;
-    if (severeCounts >= 3) {
-      // Multiple severe damages
-      severityMultiplier = SEVERITY_MULTIPLIERS.severe;
-      console.log(`⚠️ Applying severe damage multiplier: ${severityMultiplier}x (${severeCounts} severe parts)`);
-    } else if (severeCounts >= 1 || moderateCounts >= 5) {
-      // Some severe or many moderate damages
-      severityMultiplier = SEVERITY_MULTIPLIERS.moderate;
-      console.log(`⚠️ Applying moderate damage multiplier: ${severityMultiplier}x`);
-    }
-
-    // Apply cumulative damage multiplier based on number of damaged parts
-    let cumulativeMultiplier = 1.0;
-    for (const range of CUMULATIVE_DAMAGE_MULTIPLIERS) {
-      if (totalDamagedParts >= range.minParts && totalDamagedParts <= range.maxParts) {
-        cumulativeMultiplier = range.multiplier;
-        console.log(`📈 Applying cumulative damage multiplier: ${cumulativeMultiplier}x (${totalDamagedParts} damaged parts)`);
-        break;
-      }
-    }
-
-    // Apply both multipliers
-    const combinedMultiplier = severityMultiplier * cumulativeMultiplier;
-    totalDeductionPercent = totalDeductionPercent * combinedMultiplier;
-
-    console.log(`🔧 Combined multiplier: ${combinedMultiplier.toFixed(2)}x`);
-    console.log(`📊 Deduction after multipliers: ${(totalDeductionPercent * 100).toFixed(1)}%`);
-
-    // Enforce minimum deductions for severe cases
-    if (severeCounts >= 10 || totalDamagedParts >= 13) {
-      // Massive damage: minimum 75% deduction
-      if (totalDeductionPercent < MINIMUM_SEVERE_DEDUCTIONS.massiveDamage) {
-        console.log(`⚠️ Enforcing minimum deduction for massive damage: ${MINIMUM_SEVERE_DEDUCTIONS.massiveDamage * 100}%`);
-        totalDeductionPercent = MINIMUM_SEVERE_DEDUCTIONS.massiveDamage;
-      }
-    } else if (severeCounts >= 3) {
-      // Multiple severe damages: minimum 60% deduction
-      if (totalDeductionPercent < MINIMUM_SEVERE_DEDUCTIONS.multipleSevere) {
-        console.log(`⚠️ Enforcing minimum deduction for multiple severe damages: ${MINIMUM_SEVERE_DEDUCTIONS.multipleSevere * 100}%`);
-        totalDeductionPercent = MINIMUM_SEVERE_DEDUCTIONS.multipleSevere;
-      }
-    } else if (severeCounts >= 1) {
-      // Single severe damage: minimum 40% deduction
-      if (totalDeductionPercent < MINIMUM_SEVERE_DEDUCTIONS.singleSevere) {
-        console.log(`⚠️ Enforcing minimum deduction for severe damage: ${MINIMUM_SEVERE_DEDUCTIONS.singleSevere * 100}%`);
-        totalDeductionPercent = MINIMUM_SEVERE_DEDUCTIONS.singleSevere;
-      }
-    }
-
-    if (totalDamagedParts >= 4) {
-      const evidenceMinimum = computeEvidenceMinimumDeduction(deduplicatedDamages);
-      if (totalDeductionPercent < evidenceMinimum) {
-        console.log(`⚠️ Enforcing evidence minimum deduction: ${(evidenceMinimum * 100).toFixed(1)}%`);
-        totalDeductionPercent = evidenceMinimum;
-      }
-    }
-
-    // Apply 90% cap on total deductions
-    // Requirements: 4.2
-    if (totalDeductionPercent > MAX_DEDUCTION_PERCENT) {
-      console.log(`⚠️ Capping deduction at maximum: ${MAX_DEDUCTION_PERCENT * 100}%`);
-      totalDeductionPercent = MAX_DEDUCTION_PERCENT;
-    }
-
-    const totalDeductionAmount = basePrice * totalDeductionPercent;
-    let salvageValue = basePrice - totalDeductionAmount;
-
-    console.log(`💰 Final deduction: ${(totalDeductionPercent * 100).toFixed(1)}% (₦${totalDeductionAmount.toLocaleString()})`);
-    console.log(`💰 Salvage value: ₦${salvageValue.toLocaleString()}`);
-
-    // Ensure non-negative salvage value
-    // Requirements: 4.6
-    if (salvageValue < 0) {
-      salvageValue = 0;
-    }
-
-    // Determine if total loss
-    const isTotalLoss = totalDeductionPercent >= TOTAL_LOSS_THRESHOLD;
-
-    // Calculate confidence score (placeholder for now)
-    const confidence = 0.85;
-
-    return {
-      basePrice,
-      totalDeductionPercent,
-      totalDeductionAmount,
-      salvageValue,
-      deductions: processedDeductions,
-      isTotalLoss,
-      confidence,
-    };
+  /** Apply the same component-cost policy when internet prices are unavailable. */
+  async calculateSalvageValue(basePrice: number, damages: DamageInput[], make?: string): Promise<SalvageCalculation> {
+    return this.calculateSalvageValueFromPartPrices(basePrice, damages, [], make);
   }
 
   /**
@@ -679,13 +287,13 @@ export class DamageCalculationService {
     const componentMap = new Map<string, DamageInput>();
 
     for (const damage of damages) {
-      const key = damage.component.toLowerCase();
+      const key = damage.component.trim().toLowerCase();
       const existing = componentMap.get(key);
 
       if (!existing || severityOrder[damage.damageLevel] > severityOrder[existing.damageLevel]) {
         componentMap.set(key, {
+          ...damage,
           component: key,
-          damageLevel: damage.damageLevel,
         });
       }
     }

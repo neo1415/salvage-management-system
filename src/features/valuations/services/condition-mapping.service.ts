@@ -4,9 +4,9 @@
  * Implements a 4-tier quality-based vehicle condition categorization system.
  * 
  * Quality Tiers (Primary Labels):
- * - Excellent (Brand New)
- * - Good (Foreign Used)
- * - Fair (Nigerian Used)
+ * - Excellent
+ * - Good
+ * - Fair
  * - Poor
  * 
  * This service provides:
@@ -45,9 +45,9 @@ export type LegacyCondition =
 export interface ConditionDisplay {
   /** The quality tier value (stored in database) */
   value: QualityTier;
-  /** The formatted label for display (e.g., "Excellent (Brand New)") */
+  /** The formatted label for display (e.g., "Excellent") */
   label: string;
-  /** The market term shown in brackets (e.g., "Brand New"), undefined for "Poor" */
+  /** Reserved for explicitly supplied usage history; quality alone does not supply it */
   marketTerm?: string;
 }
 
@@ -94,12 +94,12 @@ export function mapLegacyToQuality(legacy: LegacyCondition): QualityTier {
 }
 
 /**
- * Formats quality tier for UI display with bracketed market term
+ * Formats quality without inferring age, usage history or country of use
  * 
  * Display Format:
- * - "excellent" → "Excellent (Brand New)"
- * - "good" → "Good (Foreign Used)"
- * - "fair" → "Fair (Nigerian Used)"
+ * - "excellent" → "Excellent"
+ * - "good" → "Good"
+ * - "fair" → "Fair"
  * - "poor" → "Poor" (no brackets)
  * 
  * @param quality - The quality tier value
@@ -107,7 +107,7 @@ export function mapLegacyToQuality(legacy: LegacyCondition): QualityTier {
  * 
  * @example
  * formatConditionForDisplay("excellent")
- * // returns { value: "excellent", label: "Excellent (Brand New)", marketTerm: "Brand New" }
+ * // returns { value: "excellent", label: "Excellent", marketTerm: undefined }
  * 
  * formatConditionForDisplay("poor")
  * // returns { value: "poor", label: "Poor", marketTerm: undefined }
@@ -117,22 +117,22 @@ export function formatConditionForDisplay(quality: QualityTier): ConditionDispla
     case "excellent":
       return {
         value: "excellent",
-        label: "Excellent (Brand New)",
-        marketTerm: "Brand New",
+        label: "Excellent",
+        marketTerm: undefined,
       };
     
     case "good":
       return {
         value: "good",
-        label: "Good (Foreign Used)",
-        marketTerm: "Foreign Used",
+        label: "Good",
+        marketTerm: undefined,
       };
     
     case "fair":
       return {
         value: "fair",
-        label: "Fair (Nigerian Used)",
-        marketTerm: "Nigerian Used",
+        label: "Fair",
+        marketTerm: undefined,
       };
     
     case "poor":
@@ -157,9 +157,9 @@ export function formatConditionForDisplay(quality: QualityTier): ConditionDispla
  * @example
  * const options = getQualityTiers();
  * // returns [
- * //   { value: "excellent", label: "Excellent (Brand New)", marketTerm: "Brand New" },
- * //   { value: "good", label: "Good (Foreign Used)", marketTerm: "Foreign Used" },
- * //   { value: "fair", label: "Fair (Nigerian Used)", marketTerm: "Nigerian Used" },
+ * //   { value: "excellent", label: "Excellent", marketTerm: undefined },
+ * //   { value: "good", label: "Good", marketTerm: undefined },
+ * //   { value: "fair", label: "Fair", marketTerm: undefined },
  * //   { value: "poor", label: "Poor", marketTerm: undefined }
  * // ]
  */

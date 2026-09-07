@@ -1211,7 +1211,7 @@ export default function ApprovalsPage() {
                           : 'Not provided'}
                       </p>
                       {!vehicleMileage && (
-                        <p className="text-xs text-blue-700 mt-1">Estimated from vehicle age</p>
+                        <p className="text-xs text-blue-700 mt-1">Mileage requires confirmation</p>
                       )}
                     </div>
                     <div className="p-3 bg-purple-50 rounded-lg">
@@ -1222,10 +1222,10 @@ export default function ApprovalsPage() {
                       <p className="text-sm font-bold text-purple-900">
                         {vehicleCondition 
                           ? formatConditionForDisplay(vehicleCondition).label
-                          : 'Good (Foreign Used) (default)'}
+                          : 'Not provided'}
                       </p>
                       {!vehicleCondition && (
-                        <p className="text-xs text-purple-700 mt-1">Default assumption</p>
+                        <p className="text-xs text-purple-700 mt-1">Condition requires confirmation</p>
                       )}
                     </div>
                   </div>
@@ -1239,8 +1239,8 @@ export default function ApprovalsPage() {
                       {!vehicleMileage && !vehicleCondition 
                         ? 'Mileage and condition data not provided. Estimates may be less accurate.'
                         : !vehicleMileage
-                        ? 'Mileage data not provided. Using estimated mileage based on vehicle age.'
-                        : 'Condition data not provided. Assuming "good" condition.'}
+                        ? 'Mileage data not provided. Confirm the odometer reading.'
+                        : 'Condition data not provided. Confirm the asset condition.'}
                     </p>
                   </div>
                 )}
