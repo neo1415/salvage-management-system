@@ -8,6 +8,7 @@ export default defineConfig({
     environment: 'node',
     setupFiles: [],
     include: [
+      'tests/unit/valuations/valuation-display.test.ts',
       'tests/unit/valuations/localized-repair-cost.test.ts',
       'tests/unit/valuations/assessment-price-research.test.ts',
       'tests/unit/valuations/tavily-price-research.test.ts',

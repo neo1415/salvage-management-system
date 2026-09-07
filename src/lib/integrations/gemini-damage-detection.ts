@@ -990,7 +990,7 @@ For each field in itemDetails:
 
 **Overall Severity**: Classify as minor, moderate, or severe based on the worst damage present.
 
-**Airbag Deployment**: Set to true if ANY airbags have deployed (look for deployed airbags, open airbag covers, white powder residue). Set to false otherwise.
+**Airbag Deployment**: Set to true only with visible deployment evidence. The required boolean false means deployment is not established; it does not prove intact airbags. If the interior is not visible, the summary must say airbag status cannot be determined from the supplied photos. Never claim no deployment was observed as proof of no deployment.
 
 **Total Loss Determination** (EXTREMELY CONSERVATIVE CRITERIA):
 

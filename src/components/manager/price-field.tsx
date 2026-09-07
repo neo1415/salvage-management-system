@@ -111,12 +111,12 @@ export function PriceField({
   const isLowConfidence = confidence !== undefined && confidence < 70;
 
   // Local state for input value (to handle typing)
-  const [inputValue, setInputValue] = useState(formatNumberInput(displayValue));
+  const [inputValue, setInputValue] = useState(isPendingValue ? '' : formatNumberInput(displayValue));
 
   // Update input value when displayValue changes
   useEffect(() => {
-    setInputValue(formatNumberInput(displayValue));
-  }, [displayValue]);
+    setInputValue(isPendingValue ? '' : formatNumberInput(displayValue));
+  }, [displayValue, isPendingValue]);
 
   /**
    * Handle input change
@@ -141,7 +141,7 @@ export function PriceField({
       setInputValue(formatNumberInput(numericValue));
     } else {
       // Reset to display value if invalid
-      setInputValue(formatNumberInput(displayValue));
+      setInputValue(isPendingValue ? '' : formatNumberInput(displayValue));
     }
   };
 

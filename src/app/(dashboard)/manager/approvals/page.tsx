@@ -36,6 +36,7 @@ import { ResultModal } from '@/components/ui/result-modal';
 import { Star, Check, X, CheckCircle, Banknote, Loader2, Save, RotateCcw } from 'lucide-react';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
+import { parseValuationNumber, salvageDisplayValue } from '@/features/valuations/services/valuation-display';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
 import { formatNairaOrPending } from '@/lib/utils/currency-formatter';
@@ -82,6 +83,8 @@ interface CaseData {
   aiAssessment: {
     labels: string[];
     confidenceScore: number;
+    marketConfidence?: number;
+    valuationStatus?: string;
     damagePercentage: number;
     processedAt: string;
     warnings?: string[];
@@ -219,13 +222,7 @@ function formatInsuranceClass(value?: string | null): string {
 }
 
 function parseNumberLike(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const cleaned = value.replace(/[^\d.-]/g, '');
-    const parsed = Number(cleaned);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
+  return parseValuationNumber(value);
 }
 
 function normalizeDamagedParts(assessment: CaseData['aiAssessment']): DisplayDamagedPart[] {
@@ -978,7 +975,8 @@ export default function ApprovalsPage() {
     const vehicleMileage = getVehicleMileage(selectedCase);
     const vehicleCondition = getVehicleCondition(selectedCase);
     const marketValue = parseFiniteNumber(selectedCase.marketValue);
-    const salvageValue = parseFiniteNumber(selectedCase.estimatedSalvageValue);
+    const repairPricingPending = selectedCase.aiAssessment?.valuationStatus === 'repair_pricing_pending';
+    const salvageValue = salvageDisplayValue(selectedCase.estimatedSalvageValue, selectedCase.aiAssessment?.valuationStatus);
     const canRunManagerAnalysis = managerRunsAiAssessment && selectedCase.status === 'pending_approval';
     const displayDamageLabels = getDisplayableDamageLabels(selectedCase.aiAssessment?.labels);
     const displayDamagedParts = normalizeDamagedParts(selectedCase.aiAssessment);
@@ -1164,7 +1162,10 @@ export default function ApprovalsPage() {
             ) : (
               <div className="space-y-3">
                 {/* Overall Confidence Score - Prominent Display */}
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                {repairPricingPending ? <div role="status" className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900">
+                  <p className="font-medium">Salvage valuation incomplete — repair pricing pending</p>
+                  <p className="text-sm mt-1">Damage analysis and market research are available. A salvage value cannot be calculated until the missing repair costs are confirmed.</p>
+                </div> : <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                   <span className="text-gray-700 font-medium">Overall Confidence</span>
                   <div className="flex items-center">
                     <div className="w-32 h-3 bg-gray-200 rounded-full mr-3">
@@ -1187,8 +1188,9 @@ export default function ApprovalsPage() {
                   </div>
                 </div>
 
+                }
                 {/* Low Confidence Warning */}
-                {selectedCase.aiAssessment.confidenceScore < 70 && (
+                {!repairPricingPending && selectedCase.aiAssessment.confidenceScore < 70 && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start">
                     <svg className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -1217,7 +1219,7 @@ export default function ApprovalsPage() {
                     <div className="p-3 bg-purple-50 rounded-lg">
                       <p className="text-xs text-purple-600 font-medium mb-1 flex items-center gap-1">
                         <Star className="w-4 h-4" aria-hidden="true" />
-                        <span>Condition</span>
+                        <span>Declared condition</span>
                       </p>
                       <p className="text-sm font-bold text-purple-900">
                         {vehicleCondition 
@@ -1247,7 +1249,7 @@ export default function ApprovalsPage() {
 
                 {/* AI Warnings */}
                 {(() => {
-                  const warnings = formatStaffReviewNotes(
+                  const warnings = repairPricingPending ? (selectedCase.aiAssessment.reviewReasons?.length ? selectedCase.aiAssessment.reviewReasons : ['Confirm the missing repair costs before setting a salvage value.']) : formatStaffReviewNotes(
                     selectedCase.aiAssessment.reviewReasons,
                     selectedCase.aiAssessment.warnings,
                     {
@@ -1335,7 +1337,7 @@ export default function ApprovalsPage() {
                 overrideValue={priceOverrides.marketValue}
                 isEditMode={isEditMode}
                 onChange={(value) => handlePriceChange('marketValue', value)}
-                confidence={selectedCase.aiAssessment?.confidenceScore}
+                confidence={selectedCase.aiAssessment?.marketConfidence ?? selectedCase.aiAssessment?.confidence?.valuationAccuracy ?? (repairPricingPending ? undefined : selectedCase.aiAssessment?.confidenceScore)}
                 pendingLabel="Pending Analysis"
                 isAnalyzing={isRunningManagerAi}
               />
@@ -1863,7 +1865,7 @@ export default function ApprovalsPage() {
                     <div>
                       <p className="text-gray-600">Estimated Salvage Value</p>
                       <p className="font-medium">
-                        {formatPendingCurrency(parseFiniteNumber(caseData.estimatedSalvageValue))}
+                        {caseData.aiAssessment?.valuationStatus === 'repair_pricing_pending' ? 'Pending repair pricing' : formatPendingCurrency(parseFiniteNumber(caseData.estimatedSalvageValue))}
                       </p>
                     </div>
                     <div>
@@ -1875,7 +1877,7 @@ export default function ApprovalsPage() {
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center text-gray-600">
                       <span className="mr-1">🤖</span>
-                      <span>AI Confidence: {caseData.aiAssessment?.confidenceScore ?? 'N/A'}%</span>
+                      <span>{caseData.aiAssessment?.valuationStatus === 'repair_pricing_pending' ? 'Salvage valuation incomplete' : `AI Confidence: ${caseData.aiAssessment?.confidenceScore ?? 'N/A'}%`}</span>
                     </div>
                     <div className="flex items-center text-gray-600">
                       <span className="mr-1">📷</span>

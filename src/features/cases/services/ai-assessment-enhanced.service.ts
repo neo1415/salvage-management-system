@@ -1306,7 +1306,9 @@ async function assessDamageEnhancedCore(params: {
         const pendingReason = `Repair pricing needs review: ${partPrices.filter(part => !part.searchedPrice).map(part => part.component).join(', ') || 'affected components'}. Confirm the damage and obtain the missing repair costs before setting salvage value.`;
         error.partialAssessment = {
           marketValue, damageSeverity: determineSeverity(damagePercentage),
-          labels: visionResults.labels.map(label => label.description), confidenceScore: 0,
+          labels: visionResults.labels.map(label => label.description),
+          confidenceScore: calculateUniversalConfidence(photos, itemInfo, visionResults, damageScore, marketDataConfidence, photoRequirement).overall,
+          marketConfidence: marketDataConfidence,
           damagePercentage: Math.round(damagePercentage), damageScore,
           summary: damageAnalysis.summary, recommendation: pendingReason,
           itemDetails: damageAnalysis.itemDetails, damagedParts: damageAnalysis.damagedParts,
