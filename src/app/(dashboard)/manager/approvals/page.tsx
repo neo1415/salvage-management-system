@@ -1165,10 +1165,7 @@ export default function ApprovalsPage() {
             ) : (
               <div className="space-y-3">
                 {/* Overall Confidence Score - Prominent Display */}
-                {repairPricingPending ? <div role="status" className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900">
-                  <p className="font-medium">Salvage valuation incomplete — repair pricing pending</p>
-                  <p className="text-sm mt-1">Damage analysis and market research are available. A salvage value cannot be calculated until the missing repair costs are confirmed.</p>
-                </div> : <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                {repairPricingPending ? null : <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                   <span className="text-gray-700 font-medium">Overall Confidence</span>
                   <div className="flex items-center">
                     <div className="w-32 h-3 bg-gray-200 rounded-full mr-3">
@@ -1274,8 +1271,8 @@ export default function ApprovalsPage() {
 
                 {/* Damage Percentage */}
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Damage score (not percentage value loss)</span>
-                  <span className="font-medium">{selectedCase.aiAssessment.damagePercentage} / 100</span>
+                  <span className="text-gray-600">Damage Percentage</span>
+                  <span className="font-medium">{selectedCase.aiAssessment.damagePercentage}%</span>
                 </div>
 
                 {/* Gemini Damage Display Component */}

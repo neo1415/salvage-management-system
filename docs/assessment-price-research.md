@@ -6,6 +6,8 @@ Source-backed listings accepted by identity, currency, unit and operation checks
 
 ## Configuration
 
+If the search responses omit usable component estimates, a separate JSON-only batch estimates the remaining restoration costs without search tools. Gemini is tried first, then Claude for any remaining gaps. Numeric target IDs prevent component-name variations from dropping results. The same context and operation rules apply across asset types. `REPAIR_COST_ESTIMATION_ENABLED=false` disables this final estimation stage (used by the isolated test suite).
+
 Existing provider controls remain authoritative: `PRICE_ADJUDICATION_AI_ENABLED`, `GEMINI_PRICE_ADJUDICATION_ENABLED`, `CLAUDE_PRICE_ADJUDICATION_ENABLED`. With configured keys, research is enabled unless explicitly disabled. Tavily remains available when the model providers are disabled or unconfigured; the legacy search path is used only when Tavily and both model providers are disabled. Serper is not a prerequisite for model research.
 
 `GEMINI_PRICE_ADJUDICATION_MODEL` overrides `GEMINI_MODEL`; otherwise research uses `gemini-2.5-flash`. `CLAUDE_PRICE_ADJUDICATION_MODEL` overrides `CLAUDE_MODEL`; otherwise it uses `claude-sonnet-4-6`. `PRICE_RESEARCH_TIMEOUT_MS` bounds each provider request (default 60 seconds). Claude permits at most 10 searches in its single batch request. A single model request may perform multiple billed web searches.

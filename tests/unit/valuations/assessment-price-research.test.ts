@@ -3,6 +3,7 @@ import { PriceAdjudicationService, priceAdjudicationService, type AiPriceOpinion
 import { researchAssessmentPrices } from '@/features/valuations/services/assessment-price-research.service';
 import { getDefaultValuationPolicyConfig } from '@/features/valuations/services/valuation-policy.service';
 import * as tavilyResearch from '@/features/valuations/services/tavily-price-research.service';
+import * as estimation from '@/features/valuations/services/repair-estimation.service';
 import type { ItemIdentifier } from '@/features/internet-search/services/query-builder.service';
 
 const policy = getDefaultValuationPolicyConfig();
@@ -24,6 +25,13 @@ const opinion = (groundedStatements: AiPriceOpinion['groundedStatements'], provi
 afterEach(() => vi.restoreAllMocks());
 
 describe('one research request per provider for an assessment', () => {
+  it.each(['vehicle', 'electronics', 'appliance', 'machinery', 'property', 'furniture', 'equipment', 'medical_equipment', 'energy_equipment', 'aviation_equipment', 'stock', 'goods_in_transit', 'building_materials', 'scrap', 'agriculture', 'other'])('estimates missing %s costs independently when search supplies no estimates', async type => {
+    vi.spyOn(priceAdjudicationService, 'researchBatch').mockResolvedValue(new Map());
+    const fallback = vi.spyOn(estimation, 'estimateMissingRepairs').mockResolvedValue([{component:'panel', low:100_000,high:200_000,confidence:40,assumptions:'Provisional restoration including labour',provider:'gemini'}]);
+    const result = await researchAssessmentPrices({type, brand:'Example',model:'A'} as ItemIdentifier,[{component:'panel',damageLevel:'moderate',recommendedAction:'repair'}],policy);
+    expect(fallback).toHaveBeenCalledOnce();
+    expect(result.partPrices[0]).toMatchObject({searchedPrice:150_000,source:'ai_estimate',confidence:40});
+  });
   it.each(['vehicle', 'electronics', 'machinery', 'property', 'furniture', 'stock', 'agriculture', 'equipment', 'other'])('uses labelled fallback estimates for %s without inventing listing evidence', async type => {
     const service = new PriceAdjudicationService(); const mocks = providers(service);
     mocks.gemini.mockResolvedValue({ ...opinion([]), repairEstimates: [{key: 'part:front bumper', action: 'replace', low: 800_000, high: 1_200_000, confidence: 85, assumptions: 'Compatible replacement, part only; fitting excluded.'}] });

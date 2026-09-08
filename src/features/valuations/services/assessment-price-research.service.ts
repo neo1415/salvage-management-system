@@ -2,6 +2,7 @@ import type { ItemIdentifier } from '@/features/internet-search/services/query-b
 import type { DamageInput } from '../types';
 import { priceAdjudicationService, type PriceAdjudicationInput } from './price-adjudication.service';
 import { selectPricingContext } from './tavily-price-research.service';
+import { estimateMissingRepairs } from './repair-estimation.service';
 import type { ValuationPolicyConfig } from './valuation-policy.service';
 
 export interface ResearchedComponentPrice {
@@ -46,5 +47,15 @@ export async function researchAssessmentPrices(item: ItemIdentifier, damages: Da
         reason: result?.selectedPrice ? undefined : damage.recommendedAction === 'dispose' ? 'disposal_not_repair_priced'
           : !damage.recommendedAction || damage.recommendedAction === 'specialist_review' ? 'specialist_review_required' : 'No native-cited repair price found in batch research' } };
   });
+  const missing = partPrices.filter(part => !part.searchedPrice).map(part => ({component: part.component, action: part.action, damageType: unique.get(part.component)?.damageType, severity: unique.get(part.component)?.damageLevel}));
+  const estimates = await estimateMissingRepairs(item, context, missing);
+  for (const estimate of estimates) {
+    const part = partPrices.find(part => part.component === estimate.component);
+    if (!part || part.searchedPrice) continue;
+    part.searchedPrice = Math.round(estimate.low + (estimate.high - estimate.low) / 2);
+    part.source = 'ai_estimate';
+    part.confidence = estimate.confidence;
+    part.evidence = {provider: estimate.provider, estimateRange: estimate, adjudication: {reviewReasons:[`${part.component}: AI-estimated cost ₦${estimate.low.toLocaleString()}–₦${estimate.high.toLocaleString()}; ${estimate.assumptions}`]}};
+  }
   return { market: results.get('market'), partPrices };
 }
