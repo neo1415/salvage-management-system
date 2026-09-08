@@ -13,6 +13,7 @@ import {
 } from '@/lib/ai/provider-cost-controls';
 
 import { researchTavilyEvidence, type PricingContext } from './tavily-price-research.service';
+import { providerErrorMessage } from '@/lib/ai/provider-error-message';
 
 type AdjudicationMode = 'market' | 'part';
 type AiProvider = 'gemini_grounded' | 'claude_web_search';
@@ -603,8 +604,12 @@ export class PriceAdjudicationService {
           aiOpinions: opinions.map(({ groundedStatements: _statements, ...opinion }) => opinion), researchedPrices: guarded.filteredPrices });
       }
     };
-    const gemini = await this.getGeminiGroundedOpinion(requests[0].input, [], [], prompt(requests));
-    if (gemini) opinions.push(gemini);
+    evaluate();
+    const initialGaps = requests.filter(({key}) => !results.get(key)?.selectedPrice);
+    if (initialGaps.length) {
+      const gemini = await this.getGeminiGroundedOpinion(initialGaps[0].input, [], [], prompt(initialGaps));
+      if (gemini) opinions.push(gemini);
+    }
     evaluate();
     const missing = requests.filter(({ key }) => !results.get(key)?.selectedPrice);
     if (missing.length) {
@@ -746,7 +751,7 @@ export class PriceAdjudicationService {
         provider: 'gemini_grounded',
         confidence: 0,
         manualReviewRequired: true,
-        reasons: [`Gemini grounded price adjudication unavailable: ${error instanceof Error ? error.message : 'unknown error'}`],
+        reasons: [providerErrorMessage('Gemini', error)],
       };
     }
   }
@@ -794,7 +799,7 @@ export class PriceAdjudicationService {
         provider: 'claude_web_search',
         confidence: 0,
         manualReviewRequired: true,
-        reasons: [`Claude web price adjudication unavailable: ${error instanceof Error ? error.message : 'unknown error'}`],
+        reasons: [providerErrorMessage('Claude', error)],
       };
     }
   }

@@ -8,6 +8,7 @@ export default defineConfig({
     environment: 'node',
     setupFiles: [],
     include: [
+      'tests/unit/valuations/provider-error-message.test.ts',
       'tests/unit/valuations/restoration-cost-regression.test.ts',
       'tests/unit/valuations/as-is-recovery.test.ts',
       'tests/unit/valuations/repair-estimation.test.ts',

@@ -68,6 +68,8 @@ describe('one research request per provider for an assessment', () => {
     expect(result.get('market')?.selectedPrice).toBe(27_000_000);
     expect(result.get('market')?.selectedSource).toBe('tavily');
     expect(result.get('part:front bumper')?.selectedPrice).toBe(900_000);
+    expect(mocks.gemini).not.toHaveBeenCalled();
+    expect(mocks.claude).not.toHaveBeenCalled();
   });
   it('preserves declared usage instead of replacing it with an age-based search assumption', async () => {
     const spy = vi.spyOn(priceAdjudicationService, 'researchBatch').mockResolvedValue(new Map());
