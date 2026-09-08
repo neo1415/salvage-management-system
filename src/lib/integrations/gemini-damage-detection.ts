@@ -907,6 +907,7 @@ export function constructDamageAssessmentPrompt(vehicleContext: VehicleContext):
 
   const profile = getAssetAssessmentProfile(itemType || 'vehicle');
   return `${basePrompt}\n\n**MANDATORY DESCRIPTIVE EVIDENCE CONTRACT:**\n` +
+    `Check that the photos depict the same asset before combining damage findings. Different model styling or incompatible body details must be noted as a possible mixed photo set; do not combine contradictory observations into one confident diagnosis. Photo filenames are not verified model/year evidence. If visual identity conflicts with supplied make/model/year, describe the conflict in itemDetails.notes and avoid asserting an exact replacement identity without clear evidence. Supplied identity remains the pricing reference pending confirmation.\n` +
     `For every damagedParts entry, return all fields below:\n` +
     `- evidenceStatus: observed only for direct visible damage; suspected for an inspection question or inferred failure\n` +
     `- photoIndices: one-based indices of the supplied photos directly showing that finding\n` +

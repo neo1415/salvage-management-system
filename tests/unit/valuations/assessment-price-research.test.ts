@@ -129,7 +129,7 @@ describe('one research request per provider for an assessment', () => {
   it.each(['repair', 'clean_or_restore', 'sort_or_recover'] as const)('keeps %s quotes separate from replacement part prices', async action => {
     const service = new PriceAdjudicationService(); const mocks = providers(service);
     const input = requests()[1].input;
-    mocks.gemini.mockResolvedValue(opinion([bumperStatement]));
+    mocks.gemini.mockResolvedValue({...opinion([bumperStatement]),quotaExceeded:true});
     mocks.claude.mockResolvedValue(opinion([{ url: 'https://workshop.example/quote', text: 'Jeep Wrangler 2015 front bumper repair cleaning restoration sorting recovery service including labour and materials NGN 120,000' }], 'claude_web_search'));
     const result = await service.researchBatch([{ key: 'repair', input: { ...input, action } }]);
     expect(result.get('repair')?.selectedPrice).toBe(120_000);

@@ -190,6 +190,7 @@ function listingMismatch(input: PriceAdjudicationInput, price: ExtractedPrice): 
   const text = listingText(price);
   if (!Number.isFinite(price.price) || price.price <= 0) return 'Price must be a finite positive amount.';
   if (price.currency !== 'NGN') return 'Price has not been converted to the NGN valuation currency.';
+  if (mode === 'market' && /\b(salvage title|accident damaged|accidented|non[- ]running|non[- ]working|for parts only|wrecked)\b/i.test(text)) return 'Damaged-asset listing cannot establish pre-damage market value.';
 
   // A search snippet can mention the requested model while advertising a different item.
   const identityText = price.title?.trim() || text;

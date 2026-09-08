@@ -62,6 +62,7 @@ describe('market evidence is required across all asset categories', () => {
   });
 
   it('preserves exact entered identity when vision returns a generic label', () => {
+    expect(enrichItemInfoWithAiIdentification({type:'vehicle',make:'Toyota',model:'Camry',year:2018}, {itemDetails:{detectedMake:'Toyota',detectedModel:'Corolla'}})).toMatchObject({model:'Camry',description:'Camry',year:2018});
     expect(enrichItemInfoWithAiIdentification({ type: 'vehicle', make: 'Jeep', model: 'Wrangler JK Rubicon', year: 2015, condition: 'Nigerian Used' }, { itemDetails: { detectedMake: 'Jeep', detectedModel: 'Wrangler' } })).toMatchObject({ make: 'Jeep', model: 'Wrangler JK Rubicon', year: 2015 });
     expect(enrichItemInfoWithAiIdentification({ type: 'electronics', brand: 'Apple', model: 'iPhone 12 Pro Max', condition: 'Nigerian Used' }, { itemDetails: { detectedModel: 'iPhone' } })).toMatchObject({ model: 'iPhone 12 Pro Max' });
   });

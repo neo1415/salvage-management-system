@@ -333,6 +333,11 @@ describe('PriceAdjudicationService', () => {
     expect(result.rejectedPrices[0].rejectionReason).toContain(reason);
   });
 
+  it('rejects damaged comparables from pre-damage market pricing', async () => {
+    const result = await service.adjudicate({item:{type:'vehicle',make:'Toyota',model:'Camry SE',year:2018},mode:'market',policy,priceData:priceData([price({title:'2018 Toyota Camry SE accidented',price:14_000_000})])});
+    expect(result.selectedPrice).toBeUndefined();
+    expect(result.rejectedPrices[0].rejectionReason).toContain('pre-damage');
+  });
   it('keeps exact vehicle evidence and recomputes statistics without mismatches', async () => {
     const result = await service.adjudicate({
       item: { type: 'vehicle', make: 'Toyota', model: 'Camry SE', year: 2018 }, mode: 'market', policy,

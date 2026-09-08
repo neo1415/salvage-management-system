@@ -496,7 +496,7 @@ export function enrichItemInfoWithAiIdentification(
       enriched.model = enriched.model || details.detectedModel;
     }
     if (enriched.type === 'vehicle') {
-      enriched.description = details.detectedModel;
+      enriched.description = enriched.description || enriched.model;
     }
   }
 
@@ -1276,9 +1276,15 @@ async function assessDamageEnhancedCore(params: {
   });
   if (recoveryAppraisal) {
     salvageValue = recoveryAppraisal.salvageValue;
-    valuationReviewReasons.push(`As-is recovery estimate: working pre-damage value ₦${recoveryAppraisal.preDamageValue.toLocaleString()}, restoration cost ₦${repairCost.toLocaleString()}, selling allowance ₦${recoveryAppraisal.sellingAllowance.toLocaleString()}, uncertainty allowance ₦${recoveryAppraisal.uncertaintyAllowance.toLocaleString()}; estimated recovery ₦${salvageValue.toLocaleString()}, subject to existing recovery caps. Assumptions: ${recoveryAppraisal.assumptions}`);
+    if (recoveryAppraisal.basis === 'as_is_recovery' && recoveryAppraisal.recoveryRange) {
+      valuationReviewReasons.push(`AI-estimated damaged-asset recovery: gross range ₦${recoveryAppraisal.recoveryRange.low.toLocaleString()} to ₦${recoveryAppraisal.recoveryRange.high.toLocaleString()}, selling allowance ₦${recoveryAppraisal.sellingAllowance.toLocaleString()}, uncertainty allowance ₦${recoveryAppraisal.uncertaintyAllowance.toLocaleString()}; net estimated recovery ₦${salvageValue.toLocaleString()}. Restoration costs are excluded from this recovery method. Assumptions: ${recoveryAppraisal.assumptions}`);
+    } else {
+      valuationReviewReasons.push(`As-is recovery estimate: working pre-damage value ₦${recoveryAppraisal.preDamageValue.toLocaleString()}, restoration cost ₦${repairCost.toLocaleString()}, selling allowance ₦${recoveryAppraisal.sellingAllowance.toLocaleString()}, uncertainty allowance ₦${recoveryAppraisal.uncertaintyAllowance.toLocaleString()}; estimated recovery ₦${salvageValue.toLocaleString()}, subject to existing recovery caps. Assumptions: ${recoveryAppraisal.assumptions}`);
+    }
   } else if (salvageValue > 0 && process.env.AS_IS_RECOVERY_ENABLED !== 'false') {
-    valuationReviewReasons.push('As-is recovery estimate: sale allowances could not be estimated; the displayed amount is the existing repair/recovery calculation and requires review before use as expected sale proceeds.');
+    valuationReviewReasons.push(repairCost >= marketValue * 0.7
+      ? 'Independent damaged-asset recovery appraisal was unavailable. The displayed amount is a provisional policy calculation, including deduction limits, not a researched resale or reusable-parts estimate. Repair cost exceeds the economic-repair threshold.'
+      : 'As-is recovery estimate: sale allowances could not be estimated; the displayed amount is the existing repair/recovery calculation and requires review before use as expected sale proceeds.');
   }
   // Step 5: Determine severity
   let damageSeverity = determineSeverity(damagePercentage);
