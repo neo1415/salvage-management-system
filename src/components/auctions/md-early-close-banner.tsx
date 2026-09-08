@@ -26,7 +26,7 @@ export function MdEarlyCloseBanner() {
         const accessResponse = await fetch('/api/staff/department-access', { cache: 'no-store' });
         const access = accessResponse.ok ? await accessResponse.json() : null;
         if (!active || sequence !== loadSequence) return;
-        if (access?.isManagingDirector !== true) {
+        if (access?.canApproveEarlyClosure !== true) {
           setPendingCount(0);
           return;
         }

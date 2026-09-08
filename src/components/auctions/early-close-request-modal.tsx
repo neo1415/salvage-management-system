@@ -26,7 +26,7 @@ export function EarlyCloseRequestModal({
         <button type="button" aria-label="Close" disabled={isLoading} onClick={onClose} className="absolute right-4 top-4 p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"><X className="h-5 w-5" /></button>
         <AlertTriangle className="mb-4 h-10 w-10 text-amber-600" />
         <h2 id="early-close-title" className="text-xl font-semibold text-gray-950">Request early auction closure</h2>
-        <p className="mt-2 text-sm text-gray-600">The auction remains active until the Managing Director approves this request.</p>
+        <p className="mt-2 text-sm text-gray-600">The auction remains active until a Managing Director or Executive Director approves this request.</p>
         <label htmlFor="early-close-reason" className="mt-5 block text-sm font-medium text-gray-900">Reason</label>
         <textarea id="early-close-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={2000} rows={5} disabled={isLoading} placeholder="Explain the operational reason for ending this auction early." className="mt-2 w-full resize-y rounded-md border border-gray-300 px-3 py-2 focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-focus-ring)]" />
         <div className="mt-1 flex justify-between text-xs text-gray-500"><span>{valid ? 'Ready to submit' : 'At least 20 characters required'}</span><span>{reason.length}/2000</span></div>

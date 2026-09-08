@@ -286,7 +286,7 @@ export default function DashboardSidebar() {
       .then((result) => {
         if (active) {
           setCanAccessCasePortfolio(result?.canAccessCasePortfolio === true);
-          setIsManagingDirector(result?.isManagingDirector === true);
+          setIsManagingDirector(result?.canApproveEarlyClosure === true);
         }
       })
       .catch(() => {

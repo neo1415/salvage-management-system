@@ -8,7 +8,7 @@ import { auctionEarlyCloseRequests } from '@/lib/db/schema/auction-early-close';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { users } from '@/lib/db/schema/users';
-import { isManagingDirector } from '@/features/departments/department-access';
+import { isEarlyClosureApprover } from '@/features/departments/department-access';
 import { auctionClosureService } from '@/features/auctions/services/closure.service';
 import { notifyEarlyCloseRequester } from '@/features/auctions/services/early-close-approval.service';
 import { AuditActionType, AuditEntityType, getDeviceTypeFromUserAgent, getIpAddress, logAction } from '@/lib/utils/audit-logger';
@@ -25,7 +25,7 @@ const decisionSchema = z.object({
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!await isManagingDirector(session.user.id)) return NextResponse.json({ error: 'Only the Managing Director can decide this request' }, { status: 403 });
+  if (!await isEarlyClosureApprover(session.user.id)) return NextResponse.json({ error: 'Only a Managing Director or Executive Director can decide this request' }, { status: 403 });
   const parsed = decisionSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Invalid decision' }, { status: 400 });
   const { id } = await params;

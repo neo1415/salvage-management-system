@@ -13,7 +13,7 @@ import { AppShell } from '@/components/providers/app-shell';
 import { PublicBusinessPolicyProvider } from '@/hooks/public-business-policy-context';
 import { businessPolicyService } from '@/features/business-policy';
 import { getBrandCssVariables } from '@/features/branding/brand-colors';
-import { getAppUrl } from '@/features/notifications/templates/email-urls';
+import { getPublicSiteUrl, isPublicSiteIndexable } from '@/lib/seo/public-site';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 const sora = Sora({
@@ -33,7 +33,7 @@ function versionedAssetUrl(url: string, version: string) {
 export async function generateMetadata(): Promise<Metadata> {
   const publicPolicy = await businessPolicyService.getPublicPolicy();
   const branding = publicPolicy.branding;
-  const appUrl = getAppUrl();
+  const appUrl = getPublicSiteUrl();
   const title = `${branding.brandName} - Salvage Recovery And Auction Management`;
   const description =
     branding.homepageCopy.heroSubtitle ||
@@ -89,10 +89,10 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [imageUrl],
     },
     robots: {
-      index: true,
+      index: isPublicSiteIndexable(),
       follow: true,
       googleBot: {
-        index: true,
+        index: isPublicSiteIndexable(),
         follow: true,
         'max-video-preview': -1,
         'max-image-preview': 'large',
@@ -120,7 +120,7 @@ export default async function RootLayout({
 }>) {
   const publicPolicy = await businessPolicyService.getPublicPolicy();
   const branding = publicPolicy.branding;
-  const appUrl = getAppUrl();
+  const appUrl = getPublicSiteUrl();
 
   return (
     <html lang="en" data-scroll-behavior="smooth" style={getBrandCssVariables(branding)} suppressHydrationWarning>

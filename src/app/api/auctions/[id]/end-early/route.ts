@@ -49,7 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const managingDirectors = await getActiveManagingDirectors();
   if (managingDirectors.length === 0) {
-    return NextResponse.json({ error: 'No active Managing Director is available to review this request' }, { status: 409 });
+    return NextResponse.json({ error: 'No active Managing Director or Executive Director is available to review this request' }, { status: 409 });
   }
 
   try {
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       request: created,
       notificationDelivery,
       message: notificationDelivery.failed === 0
-        ? 'Approval request sent to the Managing Director.'
+        ? 'Approval request sent to a Managing Director or Executive Director.'
         : 'Approval request created, but one or more notification channels need attention.',
     }, { status: 202 });
   } catch (error) {

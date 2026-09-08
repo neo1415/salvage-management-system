@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import { getAppUrl } from '@/features/notifications/templates/email-urls';
+import { getPublicSiteUrl } from '@/lib/seo/public-site';
 import { businessPolicyService } from '@/features/business-policy';
 import { HomeClient } from '@/components/landing/home-client';
 
 export function generateMetadata(): Metadata {
-  return { alternates: { canonical: getAppUrl() } };
+  return { alternates: { canonical: getPublicSiteUrl() } };
 }
 
 export default async function Home() {

@@ -1,4 +1,4 @@
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, ne, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { departments } from '@/lib/db/schema/departments';
 import { users } from '@/lib/db/schema/users';
@@ -21,7 +21,7 @@ export async function getActiveManagingDirectors(): Promise<StaffRecipient[]> {
     .from(users)
     .innerJoin(departments, eq(users.departmentId, departments.id))
     .where(and(
-      eq(departments.code, 'managing_director'),
+      inArray(departments.code, ['managing_director', 'executive_director']),
       eq(departments.isActive, true),
       eq(users.role, 'system_admin'),
       ne(users.status, 'suspended'),

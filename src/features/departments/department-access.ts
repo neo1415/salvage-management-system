@@ -87,3 +87,14 @@ export async function isManagingDirector(userId: string): Promise<boolean> {
 
   return row?.role === 'system_admin' && row.departmentCode === 'managing_director';
 }
+
+export function canApproveEarlyClosure(role: string | undefined, code: string | null): boolean {
+  return role === 'system_admin' && (code === 'managing_director' || code === 'executive_director');
+}
+
+export async function isEarlyClosureApprover(userId: string): Promise<boolean> {
+  const [row] = await db.select({role:users.role, code:departments.code, status:users.status})
+    .from(users).innerJoin(departments, and(eq(users.departmentId,departments.id),eq(departments.isActive,true)))
+    .where(eq(users.id,userId)).limit(1);
+  return Boolean(row && !['suspended','deleted'].includes(row.status) && canApproveEarlyClosure(row.role,row.code));
+}

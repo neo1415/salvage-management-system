@@ -1,8 +1,9 @@
 import { MetadataRoute } from 'next';
-import { getAppUrl } from '@/features/notifications/templates/email-urls';
+import { getPublicSiteUrl, isPublicSiteIndexable } from '@/lib/seo/public-site';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = getAppUrl();
+  if (!isPublicSiteIndexable()) return [];
+  const baseUrl = getPublicSiteUrl();
 
   return [
     {

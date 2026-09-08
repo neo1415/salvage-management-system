@@ -16,6 +16,14 @@ describe('public search discovery', () => {
     expect(entries.length).toBeGreaterThan(0);
     expect(entries.every(entry => new URL(entry.url).origin === 'https://nemsalvage.com')).toBe(true);
   });
+  it('uses NEM canonicals even on the legacy domain', () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL','https://salvagebridge.com');
+    expect(sitemap()[0].url).toBe('https://nemsalvage.com');
+  });
+  it('does not advertise staging URLs for indexing', () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL','https://staging.nemsalvage.com');
+    expect(sitemap()).toEqual([]);
+  });
 
   it('only advertises existing public routes', () => {
     expect(sitemap().map(entry => new URL(entry.url).pathname)).toEqual([

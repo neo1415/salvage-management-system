@@ -78,6 +78,16 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/:path*',
+        has: [{ type: 'host', value: '(www\\.)?salvagebridge\\.com' }],
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex, follow' }],
+      },
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'staging\\..*' }],
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+      },
+      {
+        source: '/:path*',
         headers: [
           // Content Security Policy
           {

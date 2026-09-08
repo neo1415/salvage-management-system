@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canAccessDepartmentPortfolio,
   canHoldDepartmentDesignation,
+  canApproveEarlyClosure,
   canViewDepartmentCase,
   isExecutiveDepartment,
   type StaffDepartmentAccess,
@@ -17,6 +18,15 @@ const baseAccess: StaffDepartmentAccess = {
 };
 
 describe('department portfolio authorization', () => {
+  it('allows both directors to approve early closure but excludes other roles and departments', () => {
+    for (const code of ['managing_director','executive_director']) {
+      expect(canApproveEarlyClosure('system_admin',code)).toBe(true);
+      expect(canApproveEarlyClosure('salvage_manager',code)).toBe(false);
+      expect(canApproveEarlyClosure('vendor',code)).toBe(false);
+    }
+    expect(canApproveEarlyClosure('system_admin','head_of_claims')).toBe(false);
+    expect(canApproveEarlyClosure('system_admin',null)).toBe(false);
+  });
   it('keeps an ordinary claims adjuster scoped to their own cases', () => {
     expect(canAccessDepartmentPortfolio('claims_adjuster', baseAccess)).toBe(false);
     expect(canViewDepartmentCase('claims_adjuster', 'adjuster-1', 'adjuster-2', 'Motor', baseAccess)).toBe(false);

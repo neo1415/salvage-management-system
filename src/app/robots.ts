@@ -1,8 +1,8 @@
 import { MetadataRoute } from 'next';
-import { getAppUrl } from '@/features/notifications/templates/email-urls';
+import { getPublicSiteUrl } from '@/lib/seo/public-site';
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = getAppUrl();
+  const baseUrl = getPublicSiteUrl();
 
   return {
     rules: [

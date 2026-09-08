@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import {
   canAccessDepartmentPortfolio,
+  canApproveEarlyClosure,
   getStaffDepartmentAccess,
 } from '@/features/departments/department-access';
 
@@ -17,5 +18,6 @@ export async function GET() {
     access,
     canAccessCasePortfolio: canAccessDepartmentPortfolio(session.user.role, access),
     isManagingDirector: session.user.role === 'system_admin' && access.departmentCode === 'managing_director',
+    canApproveEarlyClosure: canApproveEarlyClosure(session.user.role, access.departmentCode),
   });
 }

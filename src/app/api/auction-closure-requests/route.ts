@@ -7,12 +7,12 @@ import { auctionEarlyCloseRequests } from '@/lib/db/schema/auction-early-close';
 import { auctions } from '@/lib/db/schema/auctions';
 import { salvageCases } from '@/lib/db/schema/cases';
 import { users } from '@/lib/db/schema/users';
-import { isManagingDirector } from '@/features/departments/department-access';
+import { isEarlyClosureApprover } from '@/features/departments/department-access';
 
 export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!await isManagingDirector(session.user.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!await isEarlyClosureApprover(session.user.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const status = request.nextUrl.searchParams.get('status');
   const requester = alias(users, 'early_close_requester');
