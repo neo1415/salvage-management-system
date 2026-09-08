@@ -1,3 +1,5 @@
+import { customerText } from '@/lib/utils/customer-text';
+
 const TECHNICAL_MESSAGE_PATTERNS = [
   /generativelanguage/i,
   /GoogleGenerativeAI/i,
@@ -90,11 +92,11 @@ export function formatStaffReviewNotes(
       staffNotes.push('Review AI valuation and confirm market value before approval.');
     } else if (confidence >= 65) {
       staffNotes.push(
-        'AI confidence is moderate — verify market value and salvage estimate against photos and policy schedule.'
+        'AI confidence is moderate. Verify market value and salvage estimate against photos and policy schedule.'
       );
     } else {
       staffNotes.push(
-        'AI confidence is low — manually verify market value and salvage estimate before approval.'
+        'AI confidence is low. Manually verify market value and salvage estimate before approval.'
       );
     }
   }
@@ -107,7 +109,7 @@ export function formatStaffReviewNotes(
     staffNotes.push(specialistNotes[0]);
   }
 
-  return Array.from(new Set(staffNotes)).slice(0, 2);
+  return Array.from(new Set(staffNotes.map(customerText))).slice(0, 2);
 }
 
 export function sanitizeAiAssessmentWarnings(

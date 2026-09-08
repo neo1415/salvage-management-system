@@ -13,6 +13,7 @@
  */
 
 import React from 'react';
+import { customerText } from '@/lib/utils/customer-text';
 import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
 import { formatDamageAction, formatDamageEvidence, type DamageAction } from '@/lib/ai/damage-evidence';
 
@@ -161,7 +162,7 @@ export function GeminiDamageDisplay({
             </div>
             <div className="flex-1">
               <p className="text-sm font-bold text-purple-900 mb-1">{displayLabels.summaryTitle}</p>
-              <p className="text-sm text-gray-800 leading-relaxed">{summary}</p>
+              <p className="text-sm text-gray-800 leading-relaxed">{customerText(summary || '')}</p>
             </div>
           </div>
         </div>
@@ -228,7 +229,7 @@ export function GeminiDamageDisplay({
           </div>
           {itemDetails.notes && shouldShowField('notes') && (
             <div className="mt-3 pt-3 border-t border-purple-200">
-              <p className="text-xs text-gray-600 italic">{itemDetails.notes}</p>
+              <p className="text-xs text-gray-600 italic">{customerText(itemDetails.notes)}</p>
             </div>
           )}
         </div>
@@ -250,7 +251,7 @@ export function GeminiDamageDisplay({
                 className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg shadow-sm"
               >
                 <div className="min-w-0 flex-1">
-                  <span className="block text-sm text-gray-800 font-medium">{formatDamageEvidence(part)}</span>
+                  <span className="block text-sm text-gray-800 font-medium">{customerText(formatDamageEvidence(part))}</span>
                   {!!part.photoIndices?.length && <span className="block text-xs text-gray-500">Photos: {part.photoIndices.join(', ')}</span>}
                   {formatDamageAction(part.recommendedAction) && (
                     <span className="mt-0.5 block text-xs text-gray-500">
@@ -329,7 +330,7 @@ export function GeminiDamageDisplayCompact({
       {hasSummary && (
         <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
           <p className="text-xs font-bold text-purple-900 mb-1">{displayLabels.summaryTitle}</p>
-          <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">{summary}</p>
+          <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">{customerText(summary || '')}</p>
         </div>
       )}
 
@@ -362,7 +363,7 @@ export function GeminiDamageDisplayCompact({
             {damagedParts.map((part, index) => (
               <div key={index} className="flex items-center justify-between gap-2 p-2 bg-white rounded text-xs">
                 <div className="min-w-0 flex-1">
-                  <span className="block truncate text-gray-800 font-medium">{formatDamageEvidence(part)}</span>
+                  <span className="block truncate text-gray-800 font-medium">{customerText(formatDamageEvidence(part))}</span>
                   {formatDamageAction(part.recommendedAction) && (
                     <span className="block truncate text-[11px] text-gray-500">{formatDamageAction(part.recommendedAction)}</span>
                   )}

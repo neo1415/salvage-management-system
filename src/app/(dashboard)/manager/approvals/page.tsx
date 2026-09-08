@@ -36,6 +36,7 @@ import { ResultModal } from '@/components/ui/result-modal';
 import { Star, Check, X, CheckCircle, Banknote, Loader2, Save, RotateCcw } from 'lucide-react';
 import { OfflineAwareButton } from '@/components/ui/offline-aware-button';
 import { formatStaffReviewNotes } from '@/features/cases/services/ai-warning-sanitization';
+import { customerText } from '@/lib/utils/customer-text';
 import { parseValuationNumber, salvageDisplayValue } from '@/features/valuations/services/valuation-display';
 import { usePublicBusinessPolicy } from '@/hooks/use-public-business-policy';
 import { GeminiDamageDisplay } from '@/components/ai-assessment/gemini-damage-display';
@@ -1258,14 +1259,23 @@ export default function ApprovalsPage() {
                     }
                   );
                   return warnings.length > 0 ? (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-gray-700">Review Notes:</p>
+                    <details key={selectedCase.id} className="group overflow-hidden rounded-xl border border-amber-200 bg-amber-50/60">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-600 [&::-webkit-details-marker]:hidden">
+                        <span className="flex items-center gap-2.5">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm" aria-hidden="true">ⓘ</span>
+                          <span className="text-sm font-semibold text-gray-900">Review Notes</span>
+                          <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-amber-800">{warnings.length}</span>
+                        </span>
+                        <svg className="h-4 w-4 shrink-0 text-amber-800 transition-transform group-open:rotate-180 motion-reduce:transition-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+                      </summary>
+                      <div className="space-y-3 border-t border-amber-200/70 p-4">
                       {warnings.map((warning, index) => (
-                        <div key={index} className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                          <p className="text-sm text-orange-800">{warning}</p>
+                        <div key={index} className="rounded-lg border border-amber-100 bg-white p-3.5">
+                          <p className="text-sm leading-6 text-gray-700">{customerText(warning)}</p>
                         </div>
                       ))}
-                    </div>
+                      </div>
+                    </details>
                   ) : null;
                 })()}
 
