@@ -299,15 +299,17 @@ describe('PriceAdjudicationService', () => {
     expect(shouldEscalatePriceAdjudication({ ...shared, mode: 'part', acceptedPriceCount: 1 })).toBe(false);
   });
 
-  it('uses Claude when Gemini did not return native-cited listing evidence', () => {
-    expect(shouldUseClaudeWebFallback('part', null)).toBe(true);
-    expect(shouldUseClaudeWebFallback('market', null)).toBe(true);
+  it('uses Claude only when Gemini explicitly reports provider quota exhaustion', () => {
+    expect(shouldUseClaudeWebFallback('part', null)).toBe(false);
     expect(shouldUseClaudeWebFallback('market', {
       provider: 'gemini_grounded',
       recommendedPrice: 1_000_000,
       confidence: 85,
       manualReviewRequired: false,
       reasons: [],
+    })).toBe(false);
+    expect(shouldUseClaudeWebFallback('market', {
+      provider: 'gemini_grounded', confidence: 0, manualReviewRequired: true, reasons: [], quotaExceeded: true,
     })).toBe(true);
     expect(shouldUseClaudeWebFallback('part', {
       provider: 'gemini_grounded', confidence: 80, manualReviewRequired: false, reasons: [],

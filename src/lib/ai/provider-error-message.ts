@@ -1,6 +1,8 @@
 /** Public provider errors must never expose response bodies or request identifiers. */
 export function providerErrorMessage(provider: 'Claude' | 'Gemini', error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  if (/timeout|timed out|abort/i.test(message)) return `${provider} API request timed out before completing. Provider work may still have been billed. Ask the administrator to inspect the request logs.`;
+  if (/overloaded|\b529\b|\b503\b/i.test(message)) return `${provider} API is overloaded. Retry later.`;
   if (/specified (?:workspace )?API usage limits|spend limit|spending limit/i.test(message)) {
     return `${provider} API spending limit reached. The account administrator must review organization and workspace limits in the provider console; a credit balance alone does not remove this limit.`;
   }

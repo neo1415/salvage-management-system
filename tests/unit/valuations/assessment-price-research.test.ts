@@ -44,15 +44,16 @@ describe('one research request per provider for an assessment', () => {
     expect(result.priceData.prices).toEqual([]);
     expect(result.manualReviewRequired).toBe(true);
     expect(result.estimateRange?.assumptions).toContain('part only');
-    expect(mocks.claude).toHaveBeenCalledOnce();
+    expect(mocks.claude).not.toHaveBeenCalled();
   });
-  it('prefers a later sourced quote over an earlier model estimate', async () => {
+  it('keeps a model estimate when Gemini succeeded without sourced evidence', async () => {
     const service = new PriceAdjudicationService(); const mocks = providers(service);
     mocks.gemini.mockResolvedValue({ ...opinion([]), repairEstimates: [{key: 'part:front bumper', action: 'replace', low: 1_000_000, high: 2_000_000, confidence: 40, assumptions: 'Provisional part'}] });
     mocks.claude.mockResolvedValue(opinion([bumperStatement], 'claude_web_search'));
     const result = (await service.researchBatch([requests()[1]])).get('part:front bumper');
-    expect(result?.selectedPrice).toBe(900_000);
-    expect(result?.selectedSource).toBe('claude_web_search');
+    expect(result?.selectedPrice).toBe(1_500_000);
+    expect(result?.selectedSource).toBe('ai_estimate');
+    expect(mocks.claude).not.toHaveBeenCalled();
   });
   it.each([{low: -1, high: 10}, {low: 20, high: 10}, {low: NaN, high: 10}, {low: 10, high: Infinity}])('rejects invalid estimate ranges %j', async range => {
     const service = new PriceAdjudicationService(); const mocks = providers(service);
@@ -92,19 +93,18 @@ describe('one research request per provider for an assessment', () => {
     expect(result.get('market')?.selectedPrice).toBe(27_000_000);
     expect(result.get('part:front bumper')?.selectedPrice).toBe(900_000);
   });
-  it('sends only remaining gaps to Claude once and preserves the market result', async () => {
+  it('does not spend on Claude for ordinary Gemini gaps', async () => {
     const service = new PriceAdjudicationService(); const mocks = providers(service);
     mocks.gemini.mockResolvedValue(opinion([marketStatement]));
     mocks.claude.mockResolvedValue(opinion([bumperStatement], 'claude_web_search'));
     const result = await service.researchBatch(requests());
-    expect(mocks.gemini).toHaveBeenCalledOnce(); expect(mocks.claude).toHaveBeenCalledOnce();
-    expect(JSON.parse(mocks.claude.mock.calls[0][3]).requests).toHaveLength(1);
+    expect(mocks.gemini).toHaveBeenCalledOnce(); expect(mocks.claude).not.toHaveBeenCalled();
     expect(result.get('market')?.selectedPrice).toBe(27_000_000);
-    expect(result.get('part:front bumper')?.selectedSource).toBe('claude_web_search');
+    expect(result.get('part:front bumper')?.selectedPrice).toBeUndefined();
   });
   it('falls back once for the entire request when Gemini is unavailable', async () => {
     const service = new PriceAdjudicationService(); const mocks = providers(service);
-    mocks.gemini.mockResolvedValue(null); mocks.claude.mockResolvedValue(opinion([marketStatement, bumperStatement], 'claude_web_search'));
+    mocks.gemini.mockResolvedValue({ ...opinion([]), quotaExceeded: true }); mocks.claude.mockResolvedValue(opinion([marketStatement, bumperStatement], 'claude_web_search'));
     const result = await service.researchBatch(requests());
     expect(mocks.claude).toHaveBeenCalledOnce();
     expect(JSON.parse(mocks.claude.mock.calls[0][3]).requests).toHaveLength(2);

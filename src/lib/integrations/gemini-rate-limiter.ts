@@ -24,7 +24,12 @@ export class GeminiRateLimiter {
 
   // Rate limit constants
   private readonly MINUTE_LIMIT = 10;
-  private readonly DAILY_LIMIT = Math.max(1, Number(process.env.GEMINI_DAILY_REQUEST_LIMIT) || 20);
+  // Do not invent a provider quota locally. An optional cap can be supplied for
+  // operational protection, but reaching it must never authorize a paid fallback.
+  private readonly DAILY_LIMIT = (() => {
+    const configured = Number(process.env.GEMINI_DAILY_REQUEST_LIMIT);
+    return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : Number.MAX_SAFE_INTEGER;
+  })();
   private readonly MINUTE_WINDOW_MS = 60000; // 60 seconds
   private readonly WARNING_THRESHOLD_80 = Math.ceil(this.DAILY_LIMIT * 0.8);
   private readonly WARNING_THRESHOLD_90 = Math.ceil(this.DAILY_LIMIT * 0.9);
@@ -196,14 +201,19 @@ export class GeminiRateLimiter {
 
 // Singleton instance for application-wide rate limiting
 let rateLimiterInstance: GeminiRateLimiter | null = null;
+let rateLimiterCredentialKey: string | undefined;
 
 /**
  * Get the singleton rate limiter instance
  * @returns GeminiRateLimiter instance
  */
 export function getGeminiRateLimiter(): GeminiRateLimiter {
-  if (!rateLimiterInstance) {
+  // A rotated key must not inherit a stale in-memory counter from the old key.
+  // The key itself is never logged or persisted.
+  const credentialKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+  if (!rateLimiterInstance || rateLimiterCredentialKey !== credentialKey) {
     rateLimiterInstance = new GeminiRateLimiter();
+    rateLimiterCredentialKey = credentialKey;
   }
   return rateLimiterInstance;
 }
@@ -213,4 +223,5 @@ export function getGeminiRateLimiter(): GeminiRateLimiter {
  */
 export function resetGeminiRateLimiter(): void {
   rateLimiterInstance = null;
+  rateLimiterCredentialKey = undefined;
 }

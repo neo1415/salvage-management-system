@@ -14,6 +14,7 @@ import {
 
 import { researchTavilyEvidence, type PricingContext } from './tavily-price-research.service';
 import { providerErrorMessage } from '@/lib/ai/provider-error-message';
+import { isProviderQuotaError, logProviderFailure } from '@/lib/ai/quota-fallback';
 
 type AdjudicationMode = 'market' | 'part';
 type AiProvider = 'gemini_grounded' | 'claude_web_search';
@@ -30,6 +31,7 @@ export interface PriceAdjudicationInput {
 }
 
 export interface AiPriceOpinion {
+  quotaExceeded?: boolean;
   repairEstimates?: Array<{ key: string; action: string; low: number; high: number; confidence: number; assumptions: string }>;
   provider: AiProvider;
   recommendedPrice?: number;
@@ -493,7 +495,7 @@ export function shouldEscalatePriceAdjudication(input: {
 
 export function shouldUseClaudeWebFallback(mode: AdjudicationMode, geminiOpinion: AiPriceOpinion | null): boolean {
   void mode;
-  return !geminiOpinion?.researchedPrices?.length;
+  return geminiOpinion?.quotaExceeded === true;
 }
 
 function logClaudeAdjudicationUsage(response: Anthropic.Message, input: PriceAdjudicationInput): void {
@@ -612,7 +614,7 @@ export class PriceAdjudicationService {
     }
     evaluate();
     const missing = requests.filter(({ key }) => !results.get(key)?.selectedPrice);
-    if (missing.length) {
+    if (missing.length && opinions.some(opinion => opinion.provider === 'gemini_grounded' && opinion.quotaExceeded)) {
       const claude = await this.getClaudeWebOpinion(missing[0].input, [], [], prompt(missing));
       if (claude) opinions.push(claude);
       evaluate();
@@ -747,8 +749,10 @@ export class PriceAdjudicationService {
       const groundedStatements = collectGeminiGrounding(result.response);
       return { ...coerceAiOpinion('gemini_grounded', text), groundedStatements, researchedPrices: extractGroundedPrices(groundedStatements, input) };
     } catch (error) {
+      logProviderFailure('gemini','price-research',error);
       return {
         provider: 'gemini_grounded',
+        quotaExceeded: isProviderQuotaError(error),
         confidence: 0,
         manualReviewRequired: true,
         reasons: [providerErrorMessage('Gemini', error)],
@@ -766,12 +770,12 @@ export class PriceAdjudicationService {
       const client = new Anthropic({ apiKey, timeout: timeoutMs, maxRetries: 0 });
       const request = {
         model: process.env.CLAUDE_PRICE_ADJUDICATION_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
-        max_tokens: batchPrompt ? 8_192 : 1_800,
+        max_tokens: batchPrompt ? 4_096 : 1_800,
         temperature: 0.1,
         tools: [{
           type: 'web_search_20250305',
           name: 'web_search',
-          max_uses: batchPrompt ? 10 : 3,
+          max_uses: 2,
         }],
         messages: [{
           role: 'user',
@@ -795,6 +799,7 @@ export class PriceAdjudicationService {
       });
       return { ...coerceAiOpinion('claude_web_search', text), groundedStatements, researchedPrices };
     } catch (error) {
+      logProviderFailure('claude','price-research',error);
       return {
         provider: 'claude_web_search',
         confidence: 0,

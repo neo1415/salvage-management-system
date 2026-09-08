@@ -47,6 +47,7 @@ import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-pro
 import { researchAssessmentPrices, type ResearchedComponentPrice } from '@/features/valuations/services/assessment-price-research.service';
 import { estimateAsIsRecovery } from '@/features/valuations/services/as-is-recovery.service';
 import { selectPricingContext } from '@/features/valuations/services/tavily-price-research.service';
+import { isProviderQuotaError } from '@/lib/ai/quota-fallback';
 import { isClaudePriceAdjudicationEnabled, isGeminiPriceAdjudicationEnabled, isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 import { ValuationUnavailableError } from '@/features/valuations/services/valuation-unavailable';
 
@@ -1473,6 +1474,7 @@ async function analyzePhotosWithFallback(
   const hasVehicleContext = vehicleInfo?.make && vehicleInfo?.model && vehicleInfo?.year;
   const hasUniversalContext = hasUsableUniversalContext(universalItemInfo);
   const hasItemContext = hasVehicleContext || hasUniversalContext;
+  let geminiQuotaExceeded = false;
   
   // ATTEMPT 1: Try Gemini FIRST (FREE - if enabled, rate limit allows, and item context provided)
   if (isGeminiEnabled() && hasItemContext) {
@@ -1541,15 +1543,13 @@ async function analyzePhotosWithFallback(
         const reason = quotaStatus.dailyRemaining === 0 
           ? `Daily quota exhausted`
           : `Minute quota exhausted`;
-        console.warn(`⚠️ Gemini rate limit exceeded: ${reason}. Falling back to Claude.`);
+        console.warn(`⚠️ Gemini local rate limit reached: ${reason}. Claude fallback remains disabled because this was not a provider quota response.`);
       }
     } catch (geminiError: unknown) {
       const geminiErrorMessage = geminiError instanceof Error ? geminiError.message : String(geminiError);
-      if (/429|quota exceeded|resource[_\s-]?exhausted/i.test(geminiErrorMessage)) {
-        getGeminiRateLimiter().markQuotaExceeded();
-      }
+      geminiQuotaExceeded = isProviderQuotaError(geminiError);
       console.error('❌ Gemini assessment failed:', geminiErrorMessage || 'Unknown error');
-      console.log('   Falling back to Claude...');
+      console.log(geminiQuotaExceeded ? '   Gemini provider quota reported; Claude fallback may be used.' : '   Claude fallback skipped because Gemini did not report quota exhaustion.');
     }
   } else {
     if (!isGeminiEnabled()) {
@@ -1561,7 +1561,7 @@ async function analyzePhotosWithFallback(
   
   // ATTEMPT 2: Try Claude as BACKUP (PAID - only if Gemini failed or unavailable)
   const claudeFallbackEnabled = isClaudeDamageFallbackEnabled();
-  if (claudeFallbackEnabled && isClaudeEnabled() && hasItemContext) {
+  if (geminiQuotaExceeded && claudeFallbackEnabled && isClaudeEnabled() && hasItemContext) {
     try {
       // Check rate limiter
       const claudeRateLimiter = getClaudeRateLimiter();
