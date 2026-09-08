@@ -45,6 +45,8 @@ import { getValuationPolicyConfig, shouldRequireManualReview } from '@/features/
 import type { DamageEvidence } from '@/lib/ai/damage-evidence';
 import { getAssetAssessmentProfile } from '@/features/cases/asset-assessment-profiles';
 import { researchAssessmentPrices, type ResearchedComponentPrice } from '@/features/valuations/services/assessment-price-research.service';
+import { estimateAsIsRecovery } from '@/features/valuations/services/as-is-recovery.service';
+import { selectPricingContext } from '@/features/valuations/services/tavily-price-research.service';
 import { isClaudePriceAdjudicationEnabled, isGeminiPriceAdjudicationEnabled, isClaudeDamageFallbackEnabled } from '@/lib/ai/provider-cost-controls';
 import { ValuationUnavailableError } from '@/features/valuations/services/valuation-unavailable';
 
@@ -1349,6 +1351,19 @@ async function assessDamageEnhancedCore(params: {
     }
   }
   
+  const recoveryAppraisal = await estimateAsIsRecovery({
+    asset: {type:itemInfo?.type, ...selectPricingContext(itemInfo || {})},
+    marketValue, repairCost, currentRecovery:salvageValue,
+    manualMarket:itemInfo?.marketValueSource === 'manual',
+    damage:damageAnalysis.damagedParts,
+    marketEvidence:marketValueResult.evidence,
+  });
+  if (recoveryAppraisal) {
+    salvageValue = recoveryAppraisal.salvageValue;
+    valuationReviewReasons.push(`As-is recovery estimate: working pre-damage value ₦${recoveryAppraisal.preDamageValue.toLocaleString()}, restoration cost ₦${repairCost.toLocaleString()}, selling allowance ₦${recoveryAppraisal.sellingAllowance.toLocaleString()}, uncertainty allowance ₦${recoveryAppraisal.uncertaintyAllowance.toLocaleString()}; estimated recovery ₦${salvageValue.toLocaleString()}, subject to existing recovery caps. Assumptions: ${recoveryAppraisal.assumptions}`);
+  } else if (salvageValue > 0 && process.env.AS_IS_RECOVERY_ENABLED !== 'false') {
+    valuationReviewReasons.push('As-is recovery estimate: sale allowances could not be estimated; the displayed amount is the existing repair/recovery calculation and requires review before use as expected sale proceeds.');
+  }
   // Step 5: Determine severity
   let damageSeverity = determineSeverity(damagePercentage);
   
@@ -1371,6 +1386,7 @@ async function assessDamageEnhancedCore(params: {
     photoRequirement
   );
   const estimatedRepairParts = partPrices.filter(part => part.source === 'ai_estimate');
+  if (recoveryAppraisal) confidence.overall = Math.min(confidence.overall, recoveryAppraisal.confidence);
   if (estimatedRepairParts.length) {
     confidence.overall = Math.min(confidence.overall, 60);
     confidence.reasons.push('Salvage includes AI-estimated restoration costs; verify the cost ranges and assumptions.');
@@ -1432,6 +1448,8 @@ async function assessDamageEnhancedCore(params: {
   ];
   const manualReviewRequired = reviewReasons.length > 0;
   const valuationEvidence = {
+    recoveryAppraisal,
+    recoveryBasis: recoveryAppraisal ? 'ai_as_is_appraisal' : 'existing_recovery_calculation',
     marketEvidence: marketValueResult.evidence || {
       source: priceSource,
       value: marketValue,
@@ -1471,12 +1489,12 @@ async function assessDamageEnhancedCore(params: {
     confidence,
     itemDetails: damageAnalysis.itemDetails, // NEW: Include detailed item identification
     damagedParts: damageAnalysis.damagedParts, // NEW: Include detailed damaged parts list
-    marketValue: Math.round(marketValue),
+    marketValue: recoveryAppraisal?.preDamageValue ?? Math.round(marketValue),
     estimatedRepairCost: Math.round(repairCost),
     estimatedSalvageValue: Math.round(salvageValue),
     damageBreakdown, // NEW: Detailed breakdown (Requirement 6.3)
     isTotalLoss, // NEW: Total loss indicator (Requirement 6.3)
-    priceSource, // NEW: Indicates source (Requirement 6.3)
+    priceSource: recoveryAppraisal && recoveryAppraisal.preDamageValue !== Math.round(marketValue) ? 'estimated' : priceSource,
     qualityTier, // NEW: Quality tier assessment (Requirement 4.1)
     isRepairable: repairability.isRepairable,
     recommendation: repairability.recommendation,

@@ -6,6 +6,8 @@ Source-backed listings accepted by identity, currency, unit and operation checks
 
 ## Configuration
 
+After restoration/recoverability calculations, a shared as-is appraisal estimates a working pre-damage value, a selling allowance and a separate uncertainty allowance. Code subtracts restoration costs once and preserves existing recovery caps. It can revise a weak researched market value downward but cannot change a manual market value. Original listing evidence, all allowances and the model's assumptions remain stored; confidence is capped at 60. This is an estimate, not completed-sale evidence, and no target outcome or fixed asset-wide discount is coded. `AS_IS_RECOVERY_ENABLED=false` disables this stage. If both models fail, the existing numeric recovery calculation remains available and its limited basis is explicitly noted.
+
 If the search responses omit usable component estimates, a separate JSON-only batch estimates the remaining restoration costs without search tools. Gemini is tried first, then Claude for any remaining gaps. Numeric target IDs prevent component-name variations from dropping results. The same context and operation rules apply across asset types. `REPAIR_COST_ESTIMATION_ENABLED=false` disables this final estimation stage (used by the isolated test suite).
 
 Existing provider controls remain authoritative: `PRICE_ADJUDICATION_AI_ENABLED`, `GEMINI_PRICE_ADJUDICATION_ENABLED`, `CLAUDE_PRICE_ADJUDICATION_ENABLED`. With configured keys, research is enabled unless explicitly disabled. Tavily remains available when the model providers are disabled or unconfigured; the legacy search path is used only when Tavily and both model providers are disabled. Serper is not a prerequisite for model research.

@@ -8,6 +8,7 @@ export default defineConfig({
     environment: 'node',
     setupFiles: [],
     include: [
+      'tests/unit/valuations/as-is-recovery.test.ts',
       'tests/unit/valuations/repair-estimation.test.ts',
       'tests/unit/valuations/photo-evidence.test.ts',
       'tests/unit/valuations/valuation-display.test.ts',
@@ -28,6 +29,7 @@ export default defineConfig({
       'tests/unit/market-data/*evidence*.test.ts',
     ],
     env: {
+      AS_IS_RECOVERY_ENABLED: 'false',
       REPAIR_COST_ESTIMATION_ENABLED: 'false',
       TAVILY_PRICE_RESEARCH_ENABLED: 'false',
       DATABASE_URL: 'postgres://invalid:invalid@127.0.0.1:1/valuation_tests_disabled',

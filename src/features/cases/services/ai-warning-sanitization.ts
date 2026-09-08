@@ -80,6 +80,8 @@ export function formatStaffReviewNotes(
   );
 
   const staffNotes: string[] = [];
+  const recoveryNote = actionable.find(entry => /As-is recovery estimate:/i.test(entry));
+  if (recoveryNote) staffNotes.push(recoveryNote);
   const estimatedCosts = actionable.filter(entry => /AI-estimated cost/i.test(entry));
   if (estimatedCosts.length) staffNotes.push(estimatedCosts.join(' '));
 
