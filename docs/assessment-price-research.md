@@ -20,6 +20,8 @@ Sources: https://ai.google.dev/gemini-api/docs/pricing and https://platform.clau
 
 ## Verification
 
+Component severity does not impose a minimum whole-asset monetary deduction. The former visual-evidence floor was removed because it overwrote priced restoration work. Restoration cost is the sum of component repair costs (including configured service allowances), independent of any recovery cap. As-is sale allowances are recorded separately. The reported bumper/fog-light regression is covered in `restoration-cost-regression.test.ts`.
+
 Run `npx vitest run --config vitest.valuation.config.ts`. Batch regressions cover provider call counts, partial fallback, citation-only amounts, separation of component and market evidence, operation compatibility, duplicate components and asset-category routing. A live local Wrangler probe confirmed both configured models can perform native web research independently of Serper. Its findings are diagnostics, not a saved case appraisal.
 
 ## Tavily and incomplete repair pricing

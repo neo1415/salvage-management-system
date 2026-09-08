@@ -12,6 +12,11 @@ import type { DamageInput, DamageDeduction, SalvageCalculation } from '../types'
 import { ValuationUnavailableError } from './valuation-unavailable';
 import { getValuationPolicyConfig } from './valuation-policy.service';
 
+/** Sum restoration work only; whole-asset recovery caps are not repair costs. */
+export function sumRestorationCosts(deductions: Array<Pick<DamageDeduction, 'repairCost' | 'repairCostLow' | 'repairCostHigh'>>): number {
+  return Math.round(deductions.reduce((sum, deduction) => sum + (deduction.repairCost ?? (deduction.repairCostLow + deduction.repairCostHigh) / 2), 0));
+}
+
 /**
  * Maximum total deduction cap
  * Requirements: 4.2

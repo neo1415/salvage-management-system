@@ -5,10 +5,12 @@ import { evidenceUrl, type GroundedPriceStatement } from './grounding-evidence';
 export type PricingContext = Record<string, string | number | undefined>;
 const fields = ['make', 'brand', 'model', 'year', 'condition', 'declaredCondition', 'mileage', 'storage', 'storageCapacity', 'storageType', 'batteryHealth', 'propertyType', 'location', 'bedrooms', 'machineryType', 'material', 'size', 'movementType', 'quantity', 'unitOfMeasure', 'packagingType', 'description'];
 export function selectPricingContext(value: object): PricingContext {
-  return Object.fromEntries(fields.flatMap(key => {
+  const selected = Object.fromEntries(fields.flatMap(key => {
     const entry = (value as Record<string, unknown>)[key];
     return typeof entry === 'string' || typeof entry === 'number' ? [[key, entry]] : [];
   }));
+  if (typeof selected.declaredCondition === 'string' && /^(excellent|good|fair|poor)$/i.test(selected.declaredCondition)) delete selected.condition;
+  return selected;
 }
 export function buildTavilyPricingQueries(requests: Array<{ key: string; input: PriceAdjudicationInput }>): string[] {
   if (!requests.length) return [];

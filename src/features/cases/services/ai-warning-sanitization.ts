@@ -71,7 +71,7 @@ export function formatStaffReviewNotes(
     .filter((entry) => typeof entry === 'string' && entry.trim().length > 0)
     .map((entry) => entry.replace(/^Manual review:\s*/i, '').trim());
 
-  const actionable = normalized.filter(isActionableStaffNote);
+  const actionable = [...new Set(normalized.filter(isActionableStaffNote))];
   const specialistNotes = actionable.filter(
     (entry) => isLuxurySpecialistReason(entry) || isPartPriceFloorReason(entry)
   );
